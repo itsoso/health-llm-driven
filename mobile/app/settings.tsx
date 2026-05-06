@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,9 +9,13 @@ import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
 import { invalidateHealthSnapshot, queryKeys } from '../applib/queryKeys';
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 export default function SettingsScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
@@ -63,7 +67,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>设置</Text>
         <View style={{ width: 40 }} />
@@ -74,7 +78,7 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.profileRow}>
             <View style={styles.avatar}>
-              <Ionicons name="person" size={24} color={colors.brand} />
+              <Ionicons name="person" size={24} color={c.brand} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={txt.name}>{user?.username || (user as any)?.name || '用户'}</Text>
@@ -130,10 +134,10 @@ export default function SettingsScreen() {
             onPress={showSiriInfo} />
           {bioSupported && (
             <View style={styles.settingRow}>
-              <Ionicons name="finger-print-outline" size={18} color={colors.labelSecondary} />
+              <Ionicons name="finger-print-outline" size={18} color={c.labelSecondary} />
               <Text style={txt.settingLabel}>Face ID 锁定</Text>
               <Switch value={bioEnabled} onValueChange={toggleBio}
-                trackColor={{ false: colors.fill, true: colors.brand }} thumbColor="#fff" />
+                trackColor={{ false: c.fill, true: c.brand }} thumbColor="#fff" />
             </View>
           )}
         </View>
@@ -153,13 +157,16 @@ export default function SettingsScreen() {
 }
 
 function SettingRow({ icon, label, value, onPress }: { icon: any; label: string; value?: string; onPress?: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const Wrapper = onPress ? TouchableOpacity : View;
   return (
     <Wrapper style={styles.settingRow} onPress={onPress} activeOpacity={0.6}>
-      <Ionicons name={icon} size={18} color={colors.labelSecondary} />
+      <Ionicons name={icon} size={18} color={c.labelSecondary} />
       <Text style={txt.settingLabel}>{label}</Text>
       <Text style={txt.settingValue}>{value || ''}</Text>
-      {onPress && <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />}
+      {onPress && <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />}
     </Wrapper>
   );
 }
@@ -173,6 +180,9 @@ function GarminStatusRow({
   syncing: boolean;
   onSync: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const health = status?.health as 'healthy' | 'stale' | 'error' | 'unbound' | undefined;
   const mins = status?.minutes_since_last_sync as number | null | undefined;
 
@@ -180,7 +190,7 @@ function GarminStatusRow({
     health === 'healthy' ? '#30D158' :
     health === 'stale' ? '#FF9F0A' :
     health === 'error' ? '#FF453A' :
-    colors.labelTertiary;
+    c.labelTertiary;
 
   const statusText = (() => {
     if (syncing) return '同步中...';
@@ -200,43 +210,43 @@ function GarminStatusRow({
   return (
     <TouchableOpacity style={styles.settingRow} onPress={onSync} activeOpacity={0.6} disabled={syncing}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Ionicons name="watch-outline" size={18} color={colors.labelSecondary} />
+        <Ionicons name="watch-outline" size={18} color={c.labelSecondary} />
         <View style={{
           width: 8, height: 8, borderRadius: 4, backgroundColor: dot,
         }} />
       </View>
       <Text style={txt.settingLabel}>Garmin</Text>
       <Text style={[txt.settingValue, health === 'error' && { color: '#FF453A' }]}>{statusText}</Text>
-      <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={colors.labelTertiary} />
+      <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={c.labelTertiary} />
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg },
-  card: { backgroundColor: colors.bgCard, borderRadius: radii.lg, marginBottom: spacing.md, ...shadows.subtle },
+  card: { backgroundColor: c.bgCard, borderRadius: radii.lg, marginBottom: spacing.md, ...shadows.subtle },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: spacing.lg },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.brandLight, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: c.brandLight, alignItems: 'center', justifyContent: 'center' },
   settingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: spacing.lg, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
   logoutBtn: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg,
     ...shadows.subtle,
   },
 });
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  name: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  email: { fontSize: 13, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
-  settingLabel: { fontSize: 15, color: colors.labelPrimary, flex: 1 } as TextStyle,
-  settingValue: { fontSize: 14, color: colors.labelTertiary } as TextStyle,
+const createTxt = (c: ColorPalette) => ({
+  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+  name: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  email: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
+  settingLabel: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
+  settingValue: { fontSize: 14, color: c.labelTertiary } as TextStyle,
   logoutText: { fontSize: 16, fontWeight: '500', color: '#FF453A' } as TextStyle,
-};
+});

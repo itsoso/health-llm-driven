@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,9 +10,13 @@ import { createGoal, generateGoalsFromAnalysis, type GoalResponse, type GoalCrea
 import GoalCard from '../components/goals/GoalCard';
 import ProgressUpdateSheet from '../components/goals/ProgressUpdateSheet';
 import SectionHeader from '../components/design-system/SectionHeader';
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 export default function GoalsScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const { data: goals, isLoading, refetch, isRefetching } = useGoals('active');
@@ -48,32 +52,32 @@ export default function GoalsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>健康目标</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
           data={goals}
           keyExtractor={i => String(i.id)}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
           ListHeaderComponent={
             <View style={styles.actionRow}>
               <TouchableOpacity style={styles.actionBtn} onPress={handleGenerate} disabled={generating} activeOpacity={0.7}>
-                <Ionicons name="sparkles-outline" size={18} color={colors.brand} />
+                <Ionicons name="sparkles-outline" size={18} color={c.brand} />
                 <Text style={txt.actionText}>{generating ? 'AI 分析中...' : 'AI 生成目标'}</Text>
               </TouchableOpacity>
             </View>
           }
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Ionicons name="flag-outline" size={48} color={colors.labelQuaternary} />
+              <Ionicons name="flag-outline" size={48} color={c.labelQuaternary} />
               <Text style={txt.empty}>暂无目标</Text>
               <Text style={txt.emptyHint}>点击"AI 生成目标"自动创建</Text>
             </View>
@@ -87,23 +91,23 @@ export default function GoalsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   list: { padding: spacing.lg, paddingBottom: 100 },
   actionRow: { marginBottom: spacing.lg },
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, ...shadows.subtle,
   },
   emptyBox: { alignItems: 'center', gap: 8, paddingVertical: 60 },
 });
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  actionText: { fontSize: 15, fontWeight: '600', color: colors.brand } as TextStyle,
-  empty: { fontSize: 16, fontWeight: '600', color: colors.labelTertiary } as TextStyle,
-  emptyHint: { fontSize: 13, color: colors.labelQuaternary } as TextStyle,
-};
+const createTxt = (c: ColorPalette) => ({
+  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+  actionText: { fontSize: 15, fontWeight: '600', color: c.brand } as TextStyle,
+  empty: { fontSize: 16, fontWeight: '600', color: c.labelTertiary } as TextStyle,
+  emptyHint: { fontSize: 13, color: c.labelQuaternary } as TextStyle,
+});
