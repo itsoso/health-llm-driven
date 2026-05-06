@@ -13,6 +13,7 @@ import { recordWater, deleteWater } from '../../services/records';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
+import FitnessSnapshotCard from '../../components/dashboard/FitnessSnapshotCard';
 import SupplementCheckin from '../../components/dashboard/SupplementCheckin';
 import RhinitisCard from '../../components/dashboard/RhinitisCard';
 import StrengthCard from '../../components/dashboard/StrengthCard';
@@ -107,6 +108,9 @@ export default function RecordScreen() {
 
         {/* 2. Activity */}
         <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
+
+        {/* 2.5 Fitness Snapshot — 体能年龄 + 本周强度 */}
+        <FitnessSnapshotCard />
 
         {/* 3. Workout Week */}
         <WorkoutWeekCard />
