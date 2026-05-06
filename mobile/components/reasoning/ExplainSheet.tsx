@@ -6,7 +6,7 @@
  *
  * 可见时才发起请求 (enabled=visible), 关闭后 React Query 按 staleTime 缓存.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -19,12 +19,15 @@ import {
 import { useReasoningExplain } from '../../hooks/useReasoningExplain';
 import type { ExplainResponse } from '../../services/reasoningTrace';
 import { emitClientEvent } from '../../services/clientEvents';
+import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 
 type Props =
   | { visible: boolean; onClose: () => void; source: 'safety'; auditId: number; ruleId: string }
   | { visible: boolean; onClose: () => void; source: 'specialist'; auditId: number; specialist: string };
 
 export function ExplainSheet(props: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const q = useReasoningExplain(
     props.source === 'safety'
       ? {
@@ -75,7 +78,7 @@ export function ExplainSheet(props: Props) {
               加载失败: {(q.error as Error)?.message || '未知错误'}
             </Text>
           )}
-          {q.data && <Body data={q.data} />}
+          {q.data && <Body data={q.data} styles={styles} />}
 
           <Pressable onPress={props.onClose} style={styles.close}>
             <Text style={styles.closeText}>关闭</Text>
@@ -86,7 +89,7 @@ export function ExplainSheet(props: Props) {
   );
 }
 
-function Body({ data }: { data: ExplainResponse }) {
+function Body({ data, styles }: { data: ExplainResponse; styles: ReturnType<typeof createStyles> }) {
   return (
     <ScrollView
       style={{ maxHeight: 480 }}
@@ -95,7 +98,7 @@ function Body({ data }: { data: ExplainResponse }) {
       <Text style={styles.summary}>{data.summary}</Text>
 
       {data.rule && (
-        <Section title="规则">
+        <Section title="规则" styles={styles}>
           <Text style={styles.kv}>
             {data.rule.name} · {data.rule.category}
           </Text>
@@ -106,7 +109,7 @@ function Body({ data }: { data: ExplainResponse }) {
       )}
 
       {data.specialist && (
-        <Section title="专家">
+        <Section title="专家" styles={styles}>
           <Text style={styles.kv}>
             {data.specialist}
             {data.kind ? ` · ${data.kind}` : ''}
@@ -114,7 +117,7 @@ function Body({ data }: { data: ExplainResponse }) {
         </Section>
       )}
 
-      <Section title={`Twin 证据 (${data.twin_evidence.length})`}>
+      <Section title={`Twin 证据 (${data.twin_evidence.length})`} styles={styles}>
         {data.twin_evidence.length === 0 ? (
           <Text style={styles.hint}>数据不足</Text>
         ) : (
@@ -127,7 +130,7 @@ function Body({ data }: { data: ExplainResponse }) {
         )}
       </Section>
 
-      <Section title={`记忆关联 (${data.related_facts.length})`}>
+      <Section title={`记忆关联 (${data.related_facts.length})`} styles={styles}>
         {data.related_facts.length === 0 ? (
           <Text style={styles.hint}>基于确定性规则, 无记忆关联</Text>
         ) : (
@@ -148,9 +151,11 @@ function Body({ data }: { data: ExplainResponse }) {
 function Section({
   title,
   children,
+  styles,
 }: {
   title: string;
   children: React.ReactNode;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <View style={{ marginTop: 16 }}>
@@ -166,33 +171,43 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-end',
   },
-  sheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#D1D5DB',
-    marginBottom: 12,
-  },
-  title: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  summary: { fontSize: 16, color: '#111827' },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 6,
-  },
-  kv: { fontSize: 14, color: '#111827', marginVertical: 2 },
-  hint: { color: '#6B7280', fontSize: 12 },
-  footer: { marginTop: 16, color: '#9CA3AF', fontSize: 12 },
-  err: { color: '#B91C1C', marginTop: 12 },
-  close: { alignSelf: 'center', marginTop: 16, padding: 8 },
-  closeText: { color: '#4F46E5', fontSize: 15 },
 });
+
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      backgroundColor: c.bgCard,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      padding: 20,
+      paddingBottom: 32,
+    },
+    handle: {
+      alignSelf: 'center',
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: c.separator,
+      marginBottom: 12,
+    },
+    title: { fontSize: 20, fontWeight: '600' as const, marginBottom: 8, color: c.labelPrimary },
+    summary: { fontSize: 16, color: c.labelPrimary },
+    sectionTitle: {
+      fontSize: 13,
+      fontWeight: '600' as const,
+      color: c.labelSecondary,
+      marginBottom: 6,
+    },
+    kv: { fontSize: 14, color: c.labelPrimary, marginVertical: 2 },
+    hint: { color: c.labelTertiary, fontSize: 12 },
+    footer: { marginTop: 16, color: c.labelTertiary, fontSize: 12 },
+    err: { color: c.red, marginTop: 12 },
+    close: { alignSelf: 'center', marginTop: 16, padding: 8 },
+    closeText: { color: c.brand, fontSize: 15 },
+  });
+}

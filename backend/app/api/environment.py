@@ -22,12 +22,38 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_city(db: Session, user_id: int) -> str:
-    """解析用户当前城市：手动设置 > IP检测 > 静态城市 > 杭州"""
+    """解析用户当前城市：手动设置 > IP检测 > 静态城市 > 杭州
+
+    用于**显示**和 AQI 查询. AQI 一般能支持区级.
+    """
     # 用户画像：手动 > IP检测 > city字段
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
     if profile:
         if profile.use_manual_location and profile.manual_city:
             return profile.manual_city
+        if profile.detected_city:
+            return profile.detected_city
+        if profile.city:
+            return profile.city
+
+    return "杭州"
+
+
+def _resolve_weather_city(db: Session, user_id: int) -> str:
+    """天气/天气预报用的城市 — 始终解析到**市级** (qweather 区级查不到天气).
+
+    策略:
+    - 手动模式: 用 manual_city (用户显式选的, 一般就是市级)
+    - 自动模式: 优先 detected_region (e.g. "北京市" → "北京"), 避免 detected_city="海淀" 这种区级
+    - fallback: detected_city / city / 杭州
+    """
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if profile:
+        if profile.use_manual_location and profile.manual_city:
+            return profile.manual_city
+        if profile.detected_region:
+            # "北京市" / "浙江省" → "北京" / "浙江"
+            return profile.detected_region.rstrip("市省").strip() or profile.detected_region
         if profile.detected_city:
             return profile.detected_city
         if profile.city:
@@ -56,9 +82,9 @@ async def get_weather(
 
     支持通过城市名或经纬度查询
     """
-    # 如果没有提供位置，智能解析用户当前城市
+    # 如果没有提供位置，智能解析用户当前城市 — 天气要市级, 不是区级
     if not city and (lat is None or lon is None):
-        city = _resolve_city(db, current_user.id)
+        city = _resolve_weather_city(db, current_user.id)
 
     weather = await weather_service.get_current_weather(city, lat, lon)
     exercise_advice = weather_service.get_exercise_advice(weather)
@@ -82,7 +108,7 @@ async def get_weather_forecast(
     获取未来几天的天气预报
     """
     if not city and (lat is None or lon is None):
-        city = _resolve_city(db, current_user.id)
+        city = _resolve_weather_city(db, current_user.id)
 
     forecast = await weather_service.get_weather_forecast(city, lat, lon, days)
     return forecast
