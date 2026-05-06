@@ -33,6 +33,43 @@ const SEV_LABEL: Record<string, string> = {
   info: '提示',
 };
 
+// rule.id → 人话标题 + 主题图标. 后端 title 是 "metric_name rule_id" 的字面拼接 (如 "spo2_avg spo2_low"),
+// 这里重写为用户可读的一行. 未知 rule.id 降级为 t.title (能显示就行).
+const RULE_LABEL: Record<string, { title: string; icon: keyof typeof Ionicons.glyphMap; color: string }> = {
+  spo2_low: { title: '血氧偏低', icon: 'medkit-outline', color: colors.red },
+  spo2_drop: { title: '血氧下降', icon: 'trending-down-outline', color: colors.red },
+  battery_low: { title: '身体电量不足', icon: 'battery-dead-outline', color: colors.amber },
+  hrv_drop: { title: 'HRV 下降', icon: 'pulse-outline', color: colors.amber },
+  hrv_low: { title: 'HRV 偏低', icon: 'pulse-outline', color: colors.amber },
+  resting_hr_high: { title: '静息心率偏高', icon: 'heart-outline', color: colors.red },
+  resting_hr_drop: { title: '静息心率下降', icon: 'heart-outline', color: colors.labelTertiary },
+  sleep_short: { title: '睡眠偏短', icon: 'moon-outline', color: colors.amber },
+  sleep_debt: { title: '睡眠负债累积', icon: 'moon-outline', color: colors.amber },
+  stress_high: { title: '压力偏高', icon: 'alert-circle-outline', color: colors.amber },
+  steps_low: { title: '活动不足', icon: 'walk-outline', color: colors.labelTertiary },
+  weight_gain: { title: '体重上升', icon: 'trending-up-outline', color: colors.amber },
+  weight_loss: { title: '体重下降', icon: 'trending-down-outline', color: colors.amber },
+  bp_high: { title: '血压偏高', icon: 'heart-circle-outline', color: colors.red },
+  bp_low: { title: '血压偏低', icon: 'heart-circle-outline', color: colors.amber },
+};
+
+function humanize(t: ReasoningTrace): { title: string; icon: keyof typeof Ionicons.glyphMap; color: string } {
+  const cfg = RULE_LABEL[t.rule.id];
+  if (cfg) return cfg;
+  // 降级: 用原始 title, 按 severity 涂色, 通用图标
+  return {
+    title: t.title || t.rule.id || '未分类决策',
+    icon: 'information-circle-outline',
+    color: SEV_COLOR[t.severity] ?? colors.labelTertiary,
+  };
+}
+
+// 剥消息尾部的礼貌冗余: "...,请注意" / "...,请关注" 等
+const MESSAGE_SUFFIX_RE = /[,，]?\s*请(注意|关注|留意|观察)[。.!！]?\s*$/;
+function cleanMessage(msg: string): string {
+  return (msg || '').replace(MESSAGE_SUFFIX_RE, '').trim();
+}
+
 function fmtRelative(iso: string | null): string {
   if (!iso) return '';
   const diffD = Math.floor((Date.now() - new Date(iso).getTime()) / 86400_000);
@@ -47,23 +84,28 @@ function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
   const hasOutcome = !!t.outcome;
   const hasMemory = t.related_memory.length > 0;
   const isArbitration = t.decision_type === 'llm_arbitration';
+  const { title, icon, color } = humanize(t);
+  const cleanMsg = cleanMessage(t.message);
+
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} accessibilityLabel={`${t.title}, ${t.message}`}>
+    <TouchableOpacity style={styles.row} onPress={onPress} accessibilityLabel={`${title}, ${cleanMsg}`}>
       <View style={styles.rowHeader}>
         {isArbitration ? (
           <View style={[styles.typeBadge, { backgroundColor: `${colors.orange}18` }]}>
-            <Ionicons name="people" size={12} color={colors.orange} />
+            <Ionicons name="people" size={14} color={colors.orange} />
           </View>
         ) : (
-          <View style={[styles.sevDot, { backgroundColor: sevColor }]} />
+          <View style={[styles.typeBadge, { backgroundColor: `${color}18` }]}>
+            <Ionicons name={icon} size={14} color={color} />
+          </View>
         )}
-        <Text style={styles.rowTitle} numberOfLines={1}>{t.title}</Text>
+        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
         <View style={[styles.sevChip, { backgroundColor: `${sevColor}18` }]}>
           <Text style={[styles.sevText, { color: sevColor }]}>{SEV_LABEL[t.severity] ?? t.severity}</Text>
         </View>
       </View>
 
-      <Text style={styles.rowMessage} numberOfLines={2}>{t.message}</Text>
+      {cleanMsg ? <Text style={styles.rowMessage} numberOfLines={2}>{cleanMsg}</Text> : null}
 
       {/* Evidence bar */}
       {t.evidence.current !== null && t.evidence.baseline !== null && (
@@ -89,10 +131,6 @@ function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
       )}
 
       <View style={styles.rowFooter}>
-        <View style={styles.ruleChip}>
-          <Ionicons name="construct-outline" size={11} color={colors.labelSecondary} />
-          <Text style={styles.ruleChipText}>{t.rule.engine} / {t.rule.id}</Text>
-        </View>
         {hasOutcome && (
           <View style={[styles.outcomeChip, { backgroundColor: `${colors.brand}18` }]}>
             <Ionicons name="flag-outline" size={11} color={colors.brand} />
@@ -239,7 +277,7 @@ const styles = StyleSheet.create({
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   sevDot: { width: 8, height: 8, borderRadius: 4 },
   typeBadge: {
-    width: 20, height: 20, borderRadius: 10,
+    width: 24, height: 24, borderRadius: 8,
     justifyContent: 'center', alignItems: 'center',
   },
   rowTitle: { flex: 1, fontSize: 15, fontWeight: '600' as const, color: colors.labelPrimary },

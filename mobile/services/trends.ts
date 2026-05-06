@@ -121,3 +121,64 @@ export async function fetchIndicatorTrend(
     },
   ];
 }
+
+/**
+ * Garmin 日数据趋势 (心率 / HRV / Body Battery / 睡眠).
+ * 复用 dashboard 端点: /daily-health/garmin/me?start_date=&end_date=
+ * 返回按 record_date 升序的点序列. metric 取值:
+ *   - heart_rate → resting_heart_rate
+ *   - hrv → hrv
+ *   - body_battery → body_battery_current (主) / body_battery_most_charged (次)
+ *   - sleep → total_sleep_duration / 60 (h)
+ */
+const GARMIN_METRIC_CFG: Record<string, { label: string; color: string; unit: string; field: string; transform?: (v: number) => number; refRange?: { low: number; high: number } }> = {
+  heart_rate: { label: '静息心率', color: '#FF375F', unit: 'bpm', field: 'resting_heart_rate', refRange: { low: 50, high: 80 } },
+  hrv: { label: 'HRV', color: '#40C8E0', unit: 'ms', field: 'hrv' },
+  body_battery: { label: '电量 (当前)', color: '#30D158', unit: '', field: 'body_battery_current' },
+  sleep: { label: '睡眠时长', color: '#BF5AF2', unit: 'h', field: 'total_sleep_duration', transform: (v) => v / 60, refRange: { low: 7, high: 9 } },
+};
+
+export async function fetchGarminMetricTrend(
+  metric: string,
+  range: TimeRange,
+): Promise<TrendSeries[]> {
+  const cfg = GARMIN_METRIC_CFG[metric];
+  if (!cfg) return [];
+
+  const { start, end } = timeRangeToDates(range);
+  const { data } = await api.get('/daily-health/garmin/me', {
+    params: { start_date: start, end_date: end },
+  });
+  const days = Array.isArray(data) ? data : data?.records ?? [];
+
+  const points: TrendDataPoint[] = days
+    .map((d: any) => {
+      const raw = d[cfg.field];
+      if (raw == null || raw === 0) return null;
+      const v = cfg.transform ? cfg.transform(raw) : raw;
+      return { date: d.record_date, value: Number.isFinite(v) ? v : 0, unit: cfg.unit };
+    })
+    .filter((p: TrendDataPoint | null): p is TrendDataPoint => p !== null)
+    .sort((a: TrendDataPoint, b: TrendDataPoint) => a.date.localeCompare(b.date));
+
+  const series: TrendSeries[] = [
+    { label: cfg.label, color: cfg.color, data: points, referenceRange: cfg.refRange },
+  ];
+
+  // 电量附上"峰值"副线
+  if (metric === 'body_battery') {
+    const peakPoints: TrendDataPoint[] = days
+      .map((d: any) => {
+        const raw = d.body_battery_most_charged;
+        if (raw == null || raw === 0) return null;
+        return { date: d.record_date, value: raw, unit: '' };
+      })
+      .filter((p: TrendDataPoint | null): p is TrendDataPoint => p !== null)
+      .sort((a: TrendDataPoint, b: TrendDataPoint) => a.date.localeCompare(b.date));
+    if (peakPoints.length > 0) {
+      series.push({ label: '当日峰值', color: '#A0E7C0', data: peakPoints });
+    }
+  }
+
+  return series;
+}

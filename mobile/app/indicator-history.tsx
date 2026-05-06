@@ -13,25 +13,31 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, radii } from '../constants/theme';
 import type { TimeRange } from '../services/trends';
-import { useWeightHistory, useBPHistory, useIndicatorTrend } from '../hooks/useTrendData';
+import { useWeightHistory, useBPHistory, useIndicatorTrend, useGarminMetricTrend, isGarminMetric } from '../hooks/useTrendData';
 import TrendChart from '../components/charts/TrendChart';
 import TimeRangeSelector from '../components/charts/TimeRangeSelector';
 
 const TYPE_TITLES: Record<string, string> = {
   weight: '体重趋势',
   blood_pressure: '血压趋势',
+  heart_rate: '静息心率',
+  hrv: 'HRV 趋势',
+  body_battery: '身体电量',
+  sleep: '睡眠时长',
 };
 
 function useHistoryData(type: string, range: TimeRange) {
   const weight = useWeightHistory(range);
   const bp = useBPHistory(range);
+  const garmin = useGarminMetricTrend(isGarminMetric(type) ? type : '', range);
   const indicator = useIndicatorTrend(
-    type !== 'weight' && type !== 'blood_pressure' ? type : '',
+    type !== 'weight' && type !== 'blood_pressure' && !isGarminMetric(type) ? type : '',
     range,
   );
 
   if (type === 'weight') return weight;
   if (type === 'blood_pressure') return bp;
+  if (isGarminMetric(type)) return garmin;
   return indicator;
 }
 

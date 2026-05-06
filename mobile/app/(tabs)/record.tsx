@@ -9,9 +9,7 @@ import api from '../../services/api';
 import { useRouter } from 'expo-router';
 import { emitClientEvent } from '../../services/clientEvents';
 import { useLatestGarmin } from '../../hooks/useDashboardData';
-import { useDataHealth } from '../../hooks/useDataHealth';
 import { recordWater, deleteWater } from '../../services/records';
-import DataPromptCard from '../../components/data-health/DataPromptCard';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
@@ -19,7 +17,6 @@ import SupplementCheckin from '../../components/dashboard/SupplementCheckin';
 import RhinitisCard from '../../components/dashboard/RhinitisCard';
 import StrengthCard from '../../components/dashboard/StrengthCard';
 import WorkoutWeekCard from '../../components/dashboard/WorkoutWeekCard';
-import TrendMiniCharts from '../../components/dashboard/TrendMiniCharts';
 import HealthCard from '../../components/design-system/HealthCard';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
@@ -33,14 +30,12 @@ export default function RecordScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const { data, refetch, isRefetching } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboardData, staleTime: 60_000 });
-  const dataHealth = useDataHealth();
   const garmin = useLatestGarmin(data);
   const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
   const [weightInput, setWeightInput] = useState('');
   const [bpSysInput, setBpSysInput] = useState('');
   const [bpDiaInput, setBpDiaInput] = useState('');
   const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
-  const [dismissedPrompts, setDismissedPrompts] = useState<string[]>([]);
 
   const sleepH = garmin?.total_sleep_duration ? garmin.total_sleep_duration / 60 : null;
   const deepH = garmin?.deep_sleep_duration ? garmin.deep_sleep_duration / 60 : null;
@@ -66,10 +61,6 @@ export default function RecordScreen() {
   const waterData = data?.waterRecords;
   const waterTotal = waterData?.total_amount ?? (Array.isArray(waterData) ? waterData.reduce((s: number, r: any) => s + (r.amount || 0), 0) : 0);
   const waterTarget = waterData?.target_amount ?? 2000;
-  const visibleDataPrompts = useMemo(
-    () => dataHealth.prompts.filter(prompt => !dismissedPrompts.includes(prompt.key)).slice(0, 3),
-    [dataHealth.prompts, dismissedPrompts],
-  );
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
   const doWater = useCallback(async (amt: number) => {
@@ -81,19 +72,6 @@ export default function RecordScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />} showsVerticalScrollIndicator={false}>
         <Text style={txt.title}>健康记录</Text>
-
-        {visibleDataPrompts.length > 0 && (
-          <View style={styles.promptStack}>
-            {visibleDataPrompts.map(prompt => (
-              <DataPromptCard
-                key={prompt.key}
-                prompt={prompt}
-                onPress={prompt.route ? () => router.push(prompt.route as any) : undefined}
-                onDismiss={() => setDismissedPrompts(prev => [...prev, prompt.key])}
-              />
-            ))}
-          </View>
-        )}
 
         {/* Quick navigation */}
         <View style={styles.quickNav}>
@@ -108,7 +86,24 @@ export default function RecordScreen() {
         </View>
 
         {/* 1. Vitals */}
-        <VitalsGrid sleep={sleepH} deepSleep={deepH} sleepScore={garmin?.sleep_score} heartRate={garmin?.resting_heart_rate} hrv={garmin?.hrv} bodyBattery={garmin?.body_battery_most_charged ?? garmin?.body_battery_current} batteryMax={garmin?.body_battery_most_charged} />
+        <VitalsGrid
+          sleep={sleepH}
+          deepSleep={deepH}
+          sleepScore={garmin?.sleep_score}
+          heartRate={garmin?.resting_heart_rate}
+          hrv={garmin?.hrv}
+          bodyBatteryCurrent={garmin?.body_battery_current ?? garmin?.body_battery_most_charged}
+          bodyBatteryMax={garmin?.body_battery_most_charged}
+          garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []}
+          onTilePress={(metric) => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (metric === 'sleep') {
+              router.push('/sleep' as any);
+            } else {
+              router.push(`/indicator-history?type=${metric}` as any);
+            }
+          }}
+        />
 
         {/* 2. Activity */}
         <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
@@ -282,7 +277,7 @@ export default function RecordScreen() {
         )}
 
         {/* 9. Trends */}
-        <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
+        {/* 周趋势已合并到 VitalsGrid 每卡底部 sparkline, 原 TrendMiniCharts 删除避免信息重复 */}
 
         {/* 10. Water (low priority) */}
         <HealthCard title="饮水" icon="water-outline" iconColor={c.blue} iconBg={c.tintBlue}
