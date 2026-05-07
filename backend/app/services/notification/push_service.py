@@ -282,7 +282,8 @@ class PushService:
                 "reason": "没有可用的推送渠道"
             }
 
-        # 逐渠道发送
+        # 逐渠道发送 — 收集各通道结果, 最后写 1 行汇总 log (2026-05-07 重构)
+        channels_log: list[dict] = []
         for channel in channels:
             try:
                 if channel == NotificationChannel.WECHAT.value:
@@ -302,17 +303,12 @@ class PushService:
 
                 results["channels"][channel] = result
 
-                # 记录日志
-                self._log_notification(
-                    user_id=user_id,
-                    notification_type=notification_type,
-                    channel=channel,
-                    title=title,
-                    content=content,
-                    data=data,
-                    status=NotificationStatus.SENT.value if result.get("success") else NotificationStatus.FAILED.value,
-                    error_message=result.get("error")
-                )
+                # 记录到合并 log
+                channels_log.append({
+                    "name": channel,
+                    "status": NotificationStatus.SENT.value if result.get("success") else NotificationStatus.FAILED.value,
+                    "error": (result.get("error") or None) if not result.get("success") else None,
+                })
 
                 if result.get("success"):
                     results["success"] = True
@@ -320,16 +316,33 @@ class PushService:
             except Exception as e:
                 logger.error(f"发送推送失败 (user={user_id}, channel={channel}): {e}")
                 results["channels"][channel] = {"success": False, "error": str(e)}
-                self._log_notification(
-                    user_id=user_id,
-                    notification_type=notification_type,
-                    channel=channel,
-                    title=title,
-                    content=content,
-                    data=data,
-                    status=NotificationStatus.FAILED.value,
-                    error_message=str(e)
-                )
+                channels_log.append({
+                    "name": channel,
+                    "status": NotificationStatus.FAILED.value,
+                    "error": str(e),
+                })
+
+        # 汇总写 1 行 log. 整体 status: 任一通道 sent → sent, 全败 → failed.
+        # channel 列用 "multi" 表示这是新结构 log (mobile UI 可识别).
+        overall_status = (
+            NotificationStatus.SENT.value
+            if any(c["status"] == NotificationStatus.SENT.value for c in channels_log)
+            else NotificationStatus.FAILED.value
+        )
+        overall_err = None
+        if overall_status == NotificationStatus.FAILED.value:
+            # 整体 failed 时把第一个 error 放 error_message 做 quick glance
+            overall_err = next((c.get("error") for c in channels_log if c.get("error")), None)
+        self._log_notification_multi(
+            user_id=user_id,
+            notification_type=notification_type,
+            title=title,
+            content=content,
+            data=data,
+            status=overall_status,
+            channels=channels_log,
+            error_message=overall_err,
+        )
 
         return results
 
@@ -425,7 +438,7 @@ class PushService:
         status: str,
         error_message: Optional[str] = None
     ):
-        """记录推送日志"""
+        """记录推送日志 (legacy: 单 channel)"""
         log = NotificationLog(
             user_id=user_id,
             notification_type=notification_type,
@@ -436,6 +449,37 @@ class PushService:
             status=status,
             error_message=error_message,
             sent_at=get_china_now() if status == NotificationStatus.SENT.value else None
+        )
+        self.db.add(log)
+        self.db.commit()
+
+    def _log_notification_multi(
+        self,
+        user_id: int,
+        notification_type: str,
+        title: str,
+        content: str,
+        data: Optional[Dict[str, Any]],
+        status: str,
+        channels: list[dict],
+        error_message: Optional[str] = None,
+    ):
+        """记录推送日志 (new: 单 row 汇总所有通道).
+
+        channel 列存 'multi', channels JSON 存各通道状态.
+        旧查询 / 旧 row 仍兼容 (channel 列还在, 值不同而已).
+        """
+        log = NotificationLog(
+            user_id=user_id,
+            notification_type=notification_type,
+            channel="multi",
+            title=title,
+            content=content,
+            data=data,
+            status=status,
+            error_message=error_message,
+            channels=channels,
+            sent_at=get_china_now() if status == NotificationStatus.SENT.value else None,
         )
         self.db.add(log)
         self.db.commit()

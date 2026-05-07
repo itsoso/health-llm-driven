@@ -98,7 +98,7 @@ class NotificationLog(Base):
 
     # 通知内容
     notification_type = Column(String(50), nullable=False, index=True)
-    channel = Column(String(20), nullable=False)  # wechat, ios_apns, email
+    channel = Column(String(20), nullable=False)  # wechat, ios_apns, email — 历史: 单 channel 的旧 row
     title = Column(String(200), nullable=False)
     content = Column(Text, nullable=True)
     data = Column(JSON, nullable=True)  # 额外数据
@@ -106,6 +106,10 @@ class NotificationLog(Base):
     # 状态
     status = Column(String(20), default="pending")
     error_message = Column(Text, nullable=True)
+    # 2026-05-07 重构: 一次 send_notification 只写 1 行 log,
+    # channels 存所有通道 + 各自结果. 旧 row (channel 列单值, channels NULL) 保持兼容.
+    # 元素: {"name": "ios_apns" | "wechat" | "telegram", "status": "sent"|"failed", "error": str?}
+    channels = Column(JSON, nullable=True)
 
     # 时间
     scheduled_at = Column(DateTime(timezone=True), nullable=True)  # 计划发送时间

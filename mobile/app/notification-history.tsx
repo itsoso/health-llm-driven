@@ -27,15 +27,19 @@ function groupByDate(logs: NotificationLog[]) {
 }
 
 /**
- * 合并同一条推送的 per-channel log 行 (backend push_service 每通道写一行 NotificationLog,
- * 导致 UI 看到"3 条重复"). 按 (notification_type, title, content, ±30s) 聚合, 保留最早时间 +
- * 合并所有 channel 状态. 2026-05-07 修复.
+ * 兼容旧 row (per-channel 独立行) 的合并 fallback.
+ * 新 row 已经自带 channels JSON, 不走这里.
+ * 旧 row 按 (notification_type, title, content, ±60s) 聚合.
  */
 function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & { channels?: Array<{ name: string; status: string }> }> {
   const buckets: Array<NotificationLog & { channels: Array<{ name: string; status: string }> }> = [];
   for (const log of logs) {
+    // 新 row: 已携带 channels 字段, 直接透传
+    if ((log as any).channels && Array.isArray((log as any).channels)) {
+      buckets.push({ ...log, channels: (log as any).channels });
+      continue;
+    }
     const logTime = new Date(log.sent_at || log.created_at || 0).getTime();
-    // 查是否有"同 title + 同 type + ±60s"的已存条目
     const existing = buckets.find(b =>
       b.notification_type === log.notification_type &&
       b.title === log.title &&
@@ -44,7 +48,6 @@ function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & 
     );
     if (existing) {
       existing.channels.push({ name: log.channel, status: log.status });
-      // 任意一个 channel sent, 视整条 sent
       if (log.status === 'sent' && existing.status !== 'sent') {
         existing.status = 'sent';
         existing.sent_at = log.sent_at || existing.sent_at;
@@ -104,7 +107,7 @@ export default function NotificationHistoryScreen() {
   );
 }
 
-function LogRow({ log }: { log: NotificationLog & { channels?: Array<{ name: string; status: string }> } }) {
+function LogRow({ log }: { log: NotificationLog }) {
   const meta = TYPE_META[log.notification_type] || TYPE_META.test;
   const time = log.sent_at?.slice(11, 16) || log.created_at?.slice(11, 16) || '';
   const channelIcon: Record<string, string> = {
