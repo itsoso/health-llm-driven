@@ -26,6 +26,39 @@ function groupByDate(logs: NotificationLog[]) {
   return Array.from(map.entries()).map(([title, data]) => ({ title, data }));
 }
 
+/**
+ * 合并同一条推送的 per-channel log 行 (backend push_service 每通道写一行 NotificationLog,
+ * 导致 UI 看到"3 条重复"). 按 (notification_type, title, content, ±30s) 聚合, 保留最早时间 +
+ * 合并所有 channel 状态. 2026-05-07 修复.
+ */
+function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & { channels?: Array<{ name: string; status: string }> }> {
+  const buckets: Array<NotificationLog & { channels: Array<{ name: string; status: string }> }> = [];
+  for (const log of logs) {
+    const logTime = new Date(log.sent_at || log.created_at || 0).getTime();
+    // 查是否有"同 title + 同 type + ±60s"的已存条目
+    const existing = buckets.find(b =>
+      b.notification_type === log.notification_type &&
+      b.title === log.title &&
+      b.content === log.content &&
+      Math.abs(new Date(b.sent_at || b.created_at || 0).getTime() - logTime) <= 60_000,
+    );
+    if (existing) {
+      existing.channels.push({ name: log.channel, status: log.status });
+      // 任意一个 channel sent, 视整条 sent
+      if (log.status === 'sent' && existing.status !== 'sent') {
+        existing.status = 'sent';
+        existing.sent_at = log.sent_at || existing.sent_at;
+      }
+    } else {
+      buckets.push({
+        ...log,
+        channels: [{ name: log.channel, status: log.status }],
+      });
+    }
+  }
+  return buckets;
+}
+
 export default function NotificationHistoryScreen() {
   const router = useRouter();
 
@@ -35,7 +68,8 @@ export default function NotificationHistoryScreen() {
     staleTime: 30_000,
   });
 
-  const sections = groupByDate(logs);
+  const collapsed = React.useMemo(() => collapseMultiChannel(logs), [logs]);
+  const sections = groupByDate(collapsed);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -70,9 +104,14 @@ export default function NotificationHistoryScreen() {
   );
 }
 
-function LogRow({ log }: { log: NotificationLog }) {
+function LogRow({ log }: { log: NotificationLog & { channels?: Array<{ name: string; status: string }> } }) {
   const meta = TYPE_META[log.notification_type] || TYPE_META.test;
   const time = log.sent_at?.slice(11, 16) || log.created_at?.slice(11, 16) || '';
+  const channelIcon: Record<string, string> = {
+    ios_apns: '📱',
+    wechat: '💬',
+    telegram: '✈️',
+  };
 
   return (
     <View style={styles.logRow}>
@@ -82,6 +121,13 @@ function LogRow({ log }: { log: NotificationLog }) {
       <View style={{ flex: 1 }}>
         <Text style={txt.logTitle} numberOfLines={1}>{log.title}</Text>
         <Text style={txt.logContent} numberOfLines={2}>{log.content}</Text>
+        {log.channels && log.channels.length > 0 && (
+          <Text style={txt.channelLine}>
+            {log.channels.map(ch =>
+              `${channelIcon[ch.name] || ch.name}${ch.status === 'sent' ? '' : '❌'}`,
+            ).join(' ')}
+          </Text>
+        )}
       </View>
       <Text style={txt.logTime}>{time}</Text>
     </View>
@@ -110,4 +156,5 @@ const txt = {
   logTitle: { fontSize: 15, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
   logContent: { fontSize: 13, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
   logTime: { fontSize: 12, color: colors.labelTertiary } as TextStyle,
+  channelLine: { fontSize: 11, color: colors.labelTertiary, marginTop: 3 } as TextStyle,
 };
