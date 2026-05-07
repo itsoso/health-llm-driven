@@ -156,6 +156,10 @@ export default function WelcomeDashboard({
             <StrengthCard exerciseType="深蹲" icon="🦵" dailyTarget={100} color="#8b5cf6"
               colorLight="bg-violet-50" colorText="text-violet-600" colorBorder="border-violet-200"
               colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
+            <StrengthCard exerciseType="引体向上" icon="🏋️" dailyTarget={30} color="#0ea5e9"
+              colorLight="bg-sky-50" colorText="text-sky-600" colorBorder="border-sky-200"
+              colorBar="bg-sky-500" colorBarLight="bg-sky-200"
+              quickAmounts={[3, 5, 8, 10]} />
             <HandstandCard />
           </div>
         );

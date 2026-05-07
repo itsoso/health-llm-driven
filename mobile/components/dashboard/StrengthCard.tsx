@@ -42,9 +42,10 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   const txt = useMemo(() => createTxt(c), [c]);
 
   const EXERCISES: ExerciseConfig[] = useMemo(() => [
-    { type: '俯卧撑', label: '俯卧撑', icon: 'body-outline',    color: c.orange, bg: c.tintOrange, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
-    { type: '深蹲',   label: '深蹲',   icon: 'barbell-outline', color: c.purple, bg: c.tintPurple, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
-    { type: '倒立',   label: '倒立',   icon: 'sync-outline',    color: c.teal,   bg: c.tintTeal,   mode: 'duration_seconds', quickAmounts: [30, 60, 90, 120],  dailyTarget: 300 },
+    { type: '俯卧撑',   label: '俯卧撑',   icon: 'body-outline',    color: c.orange, bg: c.tintOrange, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
+    { type: '深蹲',     label: '深蹲',     icon: 'barbell-outline', color: c.purple, bg: c.tintPurple, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
+    { type: '引体向上', label: '引体向上', icon: 'fitness-outline', color: c.blue,   bg: c.tintBlue,   mode: 'reps',             quickAmounts: [3, 5, 8, 10],      dailyTarget: 30  },
+    { type: '倒立',     label: '倒立',     icon: 'sync-outline',    color: c.teal,   bg: c.tintTeal,   mode: 'duration_seconds', quickAmounts: [30, 60, 90, 120],  dailyTarget: 300 },
   ], [c]);
 
   // 本地乐观计数, 按 type 累加 (reps: 个数; duration: 秒数)
