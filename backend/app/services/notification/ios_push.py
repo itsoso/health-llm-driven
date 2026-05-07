@@ -127,7 +127,8 @@ class IOSPushService:
         sound: str = "default",
         category: Optional[str] = None,
         priority: int = 10,
-        expiration: Optional[int] = None
+        expiration: Optional[int] = None,
+        bundle_id_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         发送 iOS 推送通知
@@ -182,7 +183,7 @@ class IOSPushService:
 
         headers = {
             "authorization": f"bearer {jwt_token}",
-            "apns-topic": self.bundle_id,
+            "apns-topic": bundle_id_override or self.bundle_id,
             "apns-priority": str(priority),
             "apns-push-type": "alert"
         }

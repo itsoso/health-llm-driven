@@ -79,8 +79,8 @@ export interface NotificationLog {
   created_at: string | null;
 }
 
-export async function bindIOSToken(deviceToken: string): Promise<void> {
-  await api.post('/notification/bind/ios', { device_token: deviceToken });
+export async function bindIOSToken(deviceToken: string, bundleId?: string): Promise<void> {
+  await api.post('/notification/bind/ios', { device_token: deviceToken, bundle_id: bundleId });
 }
 
 export async function unbindIOS(): Promise<void> {

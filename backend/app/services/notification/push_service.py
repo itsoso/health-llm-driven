@@ -379,6 +379,9 @@ class PushService:
             body=content,
             data=data,
             category=category,
+            # 用户绑定 token 时上报的 bundle (variant 可能是 .dev / 正式),
+            # APNs topic 必须匹配 token 的 bundle, 否则返 DeviceTokenNotForTopic
+            bundle_id_override=getattr(settings, "ios_bundle_id", None),
         )
 
     async def _send_telegram(

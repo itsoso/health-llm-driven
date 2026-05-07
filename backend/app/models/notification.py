@@ -78,6 +78,9 @@ class UserNotificationSetting(Base):
 
     # iOS 推送设置
     ios_device_token = Column(String(200), nullable=True)  # APNs Device Token
+    # bundle_id (apns-topic) per-token. variant 机制后用户可能装 .dev 或正式包,
+    # token 是 per-bundle 的, topic 必须匹配, 否则 APNs 返 DeviceTokenNotForTopic.
+    ios_bundle_id = Column(String(100), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { bindIOSToken } from '../services/notifications';
 import { emitClientEvent } from '../services/clientEvents';
@@ -79,7 +80,10 @@ async function registerForPush() {
 
   try {
     const token = await Notifications.getDevicePushTokenAsync();
-    await bindIOSToken(token.data as string);
+    // 上报当前 bundle (variant 后 dev-client 是 .dev, 正式包 .health),
+    // 后端用它做 apns-topic, 否则 APNs 返 DeviceTokenNotForTopic
+    const bundleId = Constants.expoConfig?.ios?.bundleIdentifier;
+    await bindIOSToken(token.data as string, bundleId || undefined);
   } catch {
     // simulator or token error — silently ignore
   }

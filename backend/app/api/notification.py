@@ -55,6 +55,7 @@ class WeChatBindRequest(BaseModel):
 class IOSDeviceBindRequest(BaseModel):
     """iOS 设备绑定请求"""
     device_token: str
+    bundle_id: Optional[str] = None  # variant 后必传, 不传退回默认 life.executor.health
 
 
 class ReminderCreate(BaseModel):
@@ -178,10 +179,10 @@ def bind_ios_device(
     """绑定 iOS Device Token（用于接收推送通知）"""
     push_service = PushService(db)
 
-    push_service.create_or_update_settings(
-        current_user.id,
-        {"ios_device_token": data.device_token}
-    )
+    updates = {"ios_device_token": data.device_token}
+    if data.bundle_id:
+        updates["ios_bundle_id"] = data.bundle_id
+    push_service.create_or_update_settings(current_user.id, updates)
 
     return {"message": "iOS 设备绑定成功"}
 
