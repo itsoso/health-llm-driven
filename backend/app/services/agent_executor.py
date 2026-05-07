@@ -601,6 +601,7 @@ class AgentExecutor:
         dim = args.get("dimension", "comprehensive")
         days = args.get("days", 7)
         indicator = args.get("indicator", "")
+        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
         endpoint_map = {
             "comprehensive": f"/garmin-analysis/me/comprehensive?days={days}",
@@ -616,7 +617,8 @@ class AgentExecutor:
             "blood_pressure": "/blood-pressure/records/me/recent?limit=10",
             "supplements": f"/supplements/me/stats?days={days}",
             "water": "/water/records/me/today",
-            "diet": "/diet/records/me/today",
+            # diet 没有 /me/today 端点, 只有 /me/date/{record_date}; 用 today() 拼路径.
+            "diet": f"/diet/records/me/date/{today}",
             # exercise 既包含 ExerciseRecord (手动录入的锻炼如俯卧撑/瑜伽),
             # 也要包含 WorkoutRecord (Garmin 同步的跑步/骑行等). LLM 问"昨天跑步"
             # 时应该拿到完整的运动数据.

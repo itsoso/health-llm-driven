@@ -128,7 +128,8 @@ async def get_air_quality(
     包含 AQI、PM2.5、PM10 等指标及健康建议
     """
     if not city and (lat is None or lon is None):
-        city = _resolve_city(db, current_user.id)
+        # AQI 同样要市级 — qweather/aqicn 区级查不到, 会 fallback 到杭州坐标 (脏数据)
+        city = _resolve_weather_city(db, current_user.id)
 
     # 优先使用和风天气空气质量API
     aqi = await weather_service.get_air_quality(city, lat, lon)
