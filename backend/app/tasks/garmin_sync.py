@@ -169,7 +169,11 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                                     notification_type="health_alert",
                                     title=f"[{alert.severity.label_zh}] {alert.title}",
                                     content=alert.message,
-                                    respect_quiet_hours=False,
+                                    # 用户反馈 (2026-05-07): 凌晨 1 点推 3 条同样 SpO2 告警 — 两个 bug:
+                                    # 1) 缺 data={"rule_id":...} 导致 push_service rule-id 去重失效, 同 rule 反复推
+                                    # 2) respect_quiet_hours=False 直接穿透免打扰, SpO2 异常并非急救场景, 可等天亮
+                                    data={"rule_id": alert.rule_id},
+                                    respect_quiet_hours=True,
                                 )
                             asyncio.run(_push_safety())
                         logger.info(f"用户 {user_id} Safety Guardian 发现 {len(critical_alerts)} 条 critical 告警，已推送")

@@ -33,7 +33,11 @@ export interface VoiceTurn {
   at: number;
 }
 
-const SENTENCE_END = /[。！？.!?\n]/;
+// 只用真标点切句; \n 不算句末 — 段落换行交给标点本身的自然停顿,
+// 否则 \n\n 会触发额外的 synth 来回 (网络 500ms+), 听起来"卡顿"
+const SENTENCE_END = /[。！？.!?]/;
+// 太短的句子 (< 3 字) 直接合并到下一个, 避免"是。" / "OK!" 这种微音轨抖动
+const MIN_SENTENCE_LEN = 3;
 
 function stripMarkdownForTTS(s: string): string {
   return s
@@ -48,7 +52,10 @@ function stripMarkdownForTTS(s: string): string {
     .replace(/^[\s|:\-]+$/gm, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
-    .replace(/~~([^~]+)~~/g, '$1');
+    .replace(/~~([^~]+)~~/g, '$1')
+    // 段落换行变成单空格, 让标点自己定停顿,不让 TTS 把段落空行当 "全部停"
+    .replace(/\n+/g, ' ')
+    .replace(/\s{2,}/g, ' ');
 }
 
 /**
@@ -306,7 +313,12 @@ export function useVoiceConversation() {
       pendingTextRef.current = pendingTextRef.current.slice(cut);
       if (sentence) {
         const clean = stripMarkdownForTTS(sentence).trim();
-        if (clean) ttsQueueRef.current.push(clean);
+        // 太短的微句 (< MIN_SENTENCE_LEN) 退回 pending, 攒到下一句一起 synth, 避免段落首句"是。"独立成轨
+        if (clean.length >= MIN_SENTENCE_LEN) {
+          ttsQueueRef.current.push(clean);
+        } else if (clean) {
+          pendingTextRef.current = clean + (pendingTextRef.current.startsWith(' ') ? '' : ' ') + pendingTextRef.current;
+        }
       }
     }
     flushTTS();
