@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextStyle, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +6,8 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { createAudioPlayer } from 'expo-audio';
-import { colors, spacing, radii } from '../constants/theme';
+import { spacing, radii } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   VOICE_STYLES, type VoiceStyle,
   loadVoiceStyle, saveVoiceStyle, resolveIosSpeechOptions, getVoiceStyle,
@@ -16,6 +17,9 @@ import { synthesize as cloudSynthesize } from '../services/cloudTts';
 const PREVIEW_TEXT = '你好，我是你的健康助理。今天血氧不错，建议继续保持。';
 
 export default function VoiceStyleScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const [current, setCurrent] = useState<VoiceStyle | null>(null);
   const [previewing, setPreviewing] = useState<VoiceStyle | null>(null);
@@ -89,7 +93,7 @@ export default function VoiceStyleScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>语音风格</Text>
         <View style={{ width: 40 }} />
@@ -145,6 +149,9 @@ function Row({
   onPress: () => void;
   divider: boolean;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity
       style={[styles.row, divider && styles.rowDivider]}
@@ -163,9 +170,9 @@ function Row({
         <Text style={txt.desc}>{opt.description}</Text>
       </View>
       {previewing ? (
-        <ActivityIndicator size="small" color={colors.brand} />
+        <ActivityIndicator size="small" color={c.brand} />
       ) : selected ? (
-        <Ionicons name="checkmark" size={22} color={colors.brand} />
+        <Ionicons name="checkmark" size={22} color={c.brand} />
       ) : (
         <View style={{ width: 22 }} />
       )}
@@ -173,33 +180,33 @@ function Row({
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg },
   card: {
-    backgroundColor: colors.bgCard, borderRadius: radii.md,
+    backgroundColor: c.bgCard, borderRadius: radii.md,
     marginTop: 8, overflow: 'hidden',
   },
   row: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: spacing.md, paddingHorizontal: spacing.md, gap: spacing.sm,
   },
-  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator },
   badge: {
-    backgroundColor: colors.brandLight,
+    backgroundColor: c.brandLight,
     paddingHorizontal: 6, paddingVertical: 1,
     borderRadius: radii.sm,
   },
 });
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  hint: { fontSize: 13, color: colors.labelSecondary, lineHeight: 19 } as TextStyle,
-  sectionLabel: { fontSize: 12, color: colors.labelTertiary, marginTop: spacing.md, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 } as TextStyle,
-  label: { fontSize: 15, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
-  badgeText: { fontSize: 10, fontWeight: '600', color: colors.brand } as TextStyle,
-  desc: { fontSize: 12, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
-  footerHint: { fontSize: 12, color: colors.labelTertiary, lineHeight: 18, marginTop: spacing.md } as TextStyle,
-};
+const createTxt = (c: ColorPalette) => ({
+  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+  hint: { fontSize: 13, color: c.labelSecondary, lineHeight: 19 } as TextStyle,
+  sectionLabel: { fontSize: 12, color: c.labelTertiary, marginTop: spacing.md, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 } as TextStyle,
+  label: { fontSize: 15, color: c.labelPrimary, fontWeight: '500' } as TextStyle,
+  badgeText: { fontSize: 10, fontWeight: '600', color: c.brand } as TextStyle,
+  desc: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
+  footerHint: { fontSize: 12, color: c.labelTertiary, lineHeight: 18, marginTop: spacing.md } as TextStyle,
+});

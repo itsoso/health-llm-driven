@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Switch, Alert, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,9 +6,13 @@ import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { getSettings, updateSettings, sendTestPush, type NotificationSettings, type NotificationSettingsUpdate } from '../services/notifications';
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 export default function NotificationSettingsScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const [testing, setTesting] = useState(false);
@@ -52,7 +56,7 @@ export default function NotificationSettingsScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
       </SafeAreaView>
     );
   }
@@ -61,7 +65,7 @@ export default function NotificationSettingsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>推送通知</Text>
         <View style={{ width: 40 }} />
@@ -121,7 +125,7 @@ export default function NotificationSettingsScreen() {
             <View style={styles.card}>
               {(settings?.alert_rule_opt_outs || []).map((rid) => (
                 <View key={rid} style={styles.row}>
-                  <Ionicons name="volume-mute-outline" size={18} color={colors.labelSecondary} />
+                  <Ionicons name="volume-mute-outline" size={18} color={c.labelSecondary} />
                   <Text style={[txt.rowLabel, { fontSize: 13 }]} numberOfLines={1}>
                     {rid}
                   </Text>
@@ -132,7 +136,7 @@ export default function NotificationSettingsScreen() {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
                   >
-                    <Text style={{ color: colors.brand, fontSize: 13 }}>取消静音</Text>
+                    <Text style={{ color: c.brand, fontSize: 13 }}>取消静音</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -189,6 +193,9 @@ function TimePickerModal({
   onPick: (value: string) => void;
   onClose: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose}>
@@ -221,33 +228,42 @@ function TimePickerModal({
 }
 
 function TimeRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.6}>
       <Text style={txt.rowLabel}>{label}</Text>
       <Text style={txt.rowValue}>{value}</Text>
-      <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
+      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
     </TouchableOpacity>
   );
 }
 
 function ToggleRow({ label, icon, value, onToggle }: { label: string; icon?: any; value: boolean; onToggle: (v: boolean) => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.row}>
-      {icon && <Ionicons name={icon} size={18} color={colors.labelSecondary} />}
+      {icon && <Ionicons name={icon} size={18} color={c.labelSecondary} />}
       <Text style={txt.rowLabel}>{label}</Text>
       <Switch value={value} onValueChange={onToggle}
-        trackColor={{ false: colors.fill, true: colors.brand }}
+        trackColor={{ false: c.fill, true: c.brand }}
         thumbColor="#fff" />
     </View>
   );
 }
 
 function NavRow({ label, icon, onPress }: { label: string; icon: any; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.6}>
-      <Ionicons name={icon} size={18} color={colors.labelSecondary} />
+      <Ionicons name={icon} size={18} color={c.labelSecondary} />
       <Text style={txt.rowLabel}>{label}</Text>
-      <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
+      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
     </TouchableOpacity>
   );
 }
@@ -256,6 +272,9 @@ function ClarifyModePicker({ current, onPick }: {
   current: 'silent' | 'notify' | 'converse';
   onPick: (v: 'silent' | 'notify' | 'converse') => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const options: Array<{
     v: 'silent' | 'notify' | 'converse';
     label: string;
@@ -273,13 +292,13 @@ function ClarifyModePicker({ current, onPick }: {
         return (
           <TouchableOpacity
             key={o.v}
-            style={[styles.row, active && { backgroundColor: colors.fill + '55' }]}
+            style={[styles.row, active && { backgroundColor: c.fill + '55' }]}
             onPress={() => onPick(o.v)}
             activeOpacity={0.6}
           >
             <View style={{
               width: 20, height: 20, borderRadius: 10, borderWidth: 2,
-              borderColor: active ? o.color : colors.labelTertiary,
+              borderColor: active ? o.color : c.labelTertiary,
               backgroundColor: active ? o.color : 'transparent',
               justifyContent: 'center', alignItems: 'center',
             }}>
@@ -300,6 +319,9 @@ function SeverityPicker({ current, onPick }: {
   current: 'info' | 'warning' | 'critical';
   onPick: (v: 'info' | 'warning' | 'critical') => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const options: Array<{
     v: 'info' | 'warning' | 'critical';
     label: string;
@@ -317,13 +339,13 @@ function SeverityPicker({ current, onPick }: {
         return (
           <TouchableOpacity
             key={o.v}
-            style={[styles.row, active && { backgroundColor: colors.fill + '55' }]}
+            style={[styles.row, active && { backgroundColor: c.fill + '55' }]}
             onPress={() => onPick(o.v)}
             activeOpacity={0.6}
           >
             <View style={{
               width: 20, height: 20, borderRadius: 10, borderWidth: 2,
-              borderColor: active ? o.color : colors.labelTertiary,
+              borderColor: active ? o.color : c.labelTertiary,
               backgroundColor: active ? o.color : 'transparent',
               justifyContent: 'center', alignItems: 'center',
             }}>
@@ -340,20 +362,20 @@ function SeverityPicker({ current, onPick }: {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg, paddingBottom: 60 },
-  card: { backgroundColor: colors.bgCard, borderRadius: radii.lg, marginBottom: spacing.md, ...shadows.subtle },
+  card: { backgroundColor: c.bgCard, borderRadius: radii.lg, marginBottom: spacing.md, ...shadows.subtle },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: spacing.lg, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
   testBtn: {
-    backgroundColor: colors.brand, borderRadius: radii.lg,
+    backgroundColor: c.brand, borderRadius: radii.lg,
     paddingVertical: 14, alignItems: 'center', marginTop: spacing.xl,
   },
   modalBackdrop: {
@@ -361,7 +383,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: spacing.lg,
   },
   modalCard: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, width: '100%', maxWidth: 360,
   },
   chipGrid: {
@@ -370,27 +392,27 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: 16, paddingVertical: 10,
-    borderRadius: radii.md, backgroundColor: colors.fill,
+    borderRadius: radii.md, backgroundColor: c.fill,
   },
   chipSelected: {
-    backgroundColor: colors.brand,
+    backgroundColor: c.brand,
   },
   modalClose: {
     alignItems: 'center', paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
   },
 });
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  section: { fontSize: 13, fontWeight: '500', color: colors.labelSecondary, marginBottom: spacing.xs, marginTop: spacing.sm, marginLeft: spacing.xs } as TextStyle,
-  rowLabel: { fontSize: 15, color: colors.labelPrimary, flex: 1 } as TextStyle,
-  rowValue: { fontSize: 14, color: colors.labelTertiary } as TextStyle,
+const createTxt = (c: ColorPalette) => ({
+  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+  section: { fontSize: 13, fontWeight: '500', color: c.labelSecondary, marginBottom: spacing.xs, marginTop: spacing.sm, marginLeft: spacing.xs } as TextStyle,
+  rowLabel: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
+  rowValue: { fontSize: 14, color: c.labelTertiary } as TextStyle,
   testBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' } as TextStyle,
-  hint: { fontSize: 12, color: colors.labelTertiary, textAlign: 'center', marginTop: spacing.md } as TextStyle,
-  hintSmall: { fontSize: 11, color: colors.labelTertiary, marginLeft: spacing.xs, marginBottom: spacing.xs, lineHeight: 16 } as TextStyle,
-  modalTitle: { fontSize: 16, fontWeight: '600', color: colors.labelPrimary, textAlign: 'center' } as TextStyle,
-  chipText: { fontSize: 15, color: colors.labelPrimary } as TextStyle,
+  hint: { fontSize: 12, color: c.labelTertiary, textAlign: 'center', marginTop: spacing.md } as TextStyle,
+  hintSmall: { fontSize: 11, color: c.labelTertiary, marginLeft: spacing.xs, marginBottom: spacing.xs, lineHeight: 16 } as TextStyle,
+  modalTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary, textAlign: 'center' } as TextStyle,
+  chipText: { fontSize: 15, color: c.labelPrimary } as TextStyle,
   chipTextSelected: { color: '#fff', fontWeight: '600' } as TextStyle,
-  modalCloseText: { fontSize: 15, color: colors.labelSecondary } as TextStyle,
-};
+  modalCloseText: { fontSize: 15, color: c.labelSecondary } as TextStyle,
+});

@@ -9,7 +9,7 @@
  * - 可撤销任何一条
  * - 可自己创建 (自然语言或结构化)
  */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, ActivityIndicator,
   Modal, TextInput, KeyboardAvoidingView, Platform, ScrollView,
@@ -25,11 +25,14 @@ import {
   KIND_LABEL, SEVERITY_LABEL, SEVERITY_COLOR, sourceLabel,
   type UserDirective,
 } from '../services/userDirectives';
-import { colors, spacing, radii } from '../constants/theme';
+import { spacing, radii } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 const QK = ['userDirectives'] as const;
 
 export default function DirectivesScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
@@ -86,7 +89,7 @@ export default function DirectivesScreen() {
       <Swipeable renderRightActions={() => renderRight(item)}>
         <View style={styles.row}>
           <View style={styles.rowHeader}>
-            <View style={[styles.kindBadge, { backgroundColor: colors.fill }]}>
+            <View style={[styles.kindBadge, { backgroundColor: c.fill }]}>
               <Text style={styles.kindBadgeText}>{KIND_LABEL[item.kind]}</Text>
             </View>
             <View style={[styles.sevBadge, { borderColor: sevColor }]}>
@@ -119,16 +122,16 @@ export default function DirectivesScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>硬性指令</Text>
         <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
-          <Ionicons name="add" size={24} color={colors.brand} />
+          <Ionicons name="add" size={24} color={c.brand} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.complianceBanner}>
-        <Ionicons name="information-circle-outline" size={14} color={colors.labelSecondary} />
+        <Ionicons name="information-circle-outline" size={14} color={c.labelSecondary} />
         <Text style={styles.complianceText}>
           这些是你设置给 AI 的硬性约束 · AI 在推荐时会遵循 · 不替代医生诊断
         </Text>
@@ -138,7 +141,7 @@ export default function DirectivesScreen() {
         <View style={styles.center}><ActivityIndicator /></View>
       ) : directives.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="document-text-outline" size={48} color={colors.labelTertiary} />
+          <Ionicons name="document-text-outline" size={48} color={c.labelTertiary} />
           <Text style={styles.emptyTitle}>暂无指令</Text>
           <Text style={styles.emptyHint}>
             你可以给 AI 下硬性约束, 比如"血压控制在 130 以下"
@@ -197,7 +200,7 @@ export default function DirectivesScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="写下你的约束..."
-                placeholderTextColor={colors.labelTertiary}
+                placeholderTextColor={c.labelTertiary}
                 multiline
                 value={freeText}
                 onChangeText={setFreeText}
@@ -220,26 +223,26 @@ const EXAMPLES = [
   '不要再推鱼油和银杏',
 ];
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.separator,
+    borderColor: c.separator,
   },
   backBtn: { padding: 4 },
   addBtn: { padding: 4 },
-  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: colors.labelPrimary },
+  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: c.labelPrimary },
   complianceBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    backgroundColor: colors.fill,
+    backgroundColor: c.fill,
   },
-  complianceText: { fontSize: 11, color: colors.labelSecondary, flex: 1 },
+  complianceText: { fontSize: 11, color: c.labelSecondary, flex: 1 },
   list: { padding: spacing.md, gap: spacing.sm },
   row: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.md,
     marginBottom: spacing.sm,
@@ -247,13 +250,13 @@ const styles = StyleSheet.create({
   },
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   kindBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  kindBadgeText: { fontSize: 11, color: colors.labelSecondary },
+  kindBadgeText: { fontSize: 11, color: c.labelSecondary },
   sevBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   sevBadgeText: { fontSize: 11, fontWeight: '600' },
-  source: { fontSize: 11, color: colors.labelTertiary },
-  instruction: { fontSize: 15, color: colors.labelPrimary, lineHeight: 22 },
+  source: { fontSize: 11, color: c.labelTertiary },
+  instruction: { fontSize: 15, color: c.labelPrimary, lineHeight: 22 },
   meta: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  metaText: { fontSize: 11, color: colors.labelTertiary },
+  metaText: { fontSize: 11, color: c.labelTertiary },
   swipeRevoke: {
     width: 80, backgroundColor: '#FF453A',
     justifyContent: 'center', alignItems: 'center',
@@ -262,30 +265,30 @@ const styles = StyleSheet.create({
   swipeText: { color: '#fff', fontSize: 12, marginTop: 2 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, gap: spacing.md },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.labelSecondary },
-  emptyHint: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 17, fontWeight: '600', color: c.labelSecondary },
+  emptyHint: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 20 },
   emptyBtn: {
     marginTop: spacing.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm,
-    backgroundColor: colors.brand, borderRadius: radii.md,
+    backgroundColor: c.brand, borderRadius: radii.md,
   },
   emptyBtnText: { color: '#fff', fontWeight: '600' },
-  modalSafe: { flex: 1, backgroundColor: colors.bgPrimary },
+  modalSafe: { flex: 1, backgroundColor: c.bgPrimary },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
   },
-  modalCancel: { color: colors.labelSecondary, fontSize: 15 },
-  modalTitle: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary },
-  modalSubmit: { color: colors.brand, fontSize: 15, fontWeight: '600' },
-  modalSubmitDisabled: { color: colors.labelQuaternary },
+  modalCancel: { color: c.labelSecondary, fontSize: 15 },
+  modalTitle: { fontSize: 17, fontWeight: '600', color: c.labelPrimary },
+  modalSubmit: { color: c.brand, fontSize: 15, fontWeight: '600' },
+  modalSubmitDisabled: { color: c.labelQuaternary },
   modalBody: { padding: spacing.md, gap: spacing.md },
-  modalHint: { fontSize: 13, color: colors.labelSecondary, lineHeight: 20 },
-  examplesBox: { backgroundColor: colors.bgCard, borderRadius: radii.md, padding: spacing.md, gap: 4 },
-  example: { fontSize: 13, color: colors.labelSecondary, lineHeight: 22 },
+  modalHint: { fontSize: 13, color: c.labelSecondary, lineHeight: 20 },
+  examplesBox: { backgroundColor: c.bgCard, borderRadius: radii.md, padding: spacing.md, gap: 4 },
+  example: { fontSize: 13, color: c.labelSecondary, lineHeight: 22 },
   input: {
-    backgroundColor: colors.bgCard, borderRadius: radii.md, padding: spacing.md,
-    minHeight: 120, fontSize: 15, color: colors.labelPrimary,
+    backgroundColor: c.bgCard, borderRadius: radii.md, padding: spacing.md,
+    minHeight: 120, fontSize: 15, color: c.labelPrimary,
     textAlignVertical: 'top',
   },
 });

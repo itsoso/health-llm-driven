@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextStyle, ScrollView,
   ActivityIndicator, RefreshControl, Pressable,
@@ -9,7 +9,8 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   getSpo2Longitudinal,
   SEVERITY_LABEL, SEVERITY_COLOR, FLAG_LABEL,
@@ -23,6 +24,9 @@ const RANGES: Array<{ days: number; label: string }> = [
 ];
 
 export default function Spo2LongitudinalScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const [days, setDays] = useState(30);
 
@@ -36,7 +40,7 @@ export default function Spo2LongitudinalScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.btn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>SpO2 趋势 · {days} 天</Text>
         <View style={{ width: 40 }} />
@@ -62,12 +66,12 @@ export default function Spo2LongitudinalScreen() {
       </View>
 
       {isLoading || !data ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}
           refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />
           }
         >
           <PatternCard data={data} />
@@ -80,7 +84,7 @@ export default function Spo2LongitudinalScreen() {
               <Text style={txt.sectionTitle}>观察到的模式</Text>
               {data.pattern.pattern_flags.map(f => (
                 <View key={f} style={styles.flagRow}>
-                  <Ionicons name="pulse" size={14} color={colors.brand} />
+                  <Ionicons name="pulse" size={14} color={c.brand} />
                   <View style={{ flex: 1 }}>
                     <Text style={txt.flagLabel}>{FLAG_LABEL[f]?.label ?? f}</Text>
                     <Text style={txt.flagHint}>{FLAG_LABEL[f]?.hint}</Text>
@@ -122,6 +126,9 @@ export default function Spo2LongitudinalScreen() {
 }
 
 function PatternCard({ data }: { data: LongitudinalResponse }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const p = data.pattern;
   const avgOdi = p.avg_odi ?? 0;
   const medSpo2 = p.median_min_spo2 ?? 0;
@@ -177,6 +184,9 @@ function PatternCard({ data }: { data: LongitudinalResponse }) {
 function SummaryStat({ label, value, hint, color }: {
   label: string; value: string; hint: string; color: string;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={{ flex: 1 }}>
       <Text style={txt.statLabel}>{label}</Text>
@@ -187,11 +197,17 @@ function SummaryStat({ label, value, hint, color }: {
 }
 
 function SevSegment({ pct, color }: { pct: number; color: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   if (pct <= 0) return null;
   return <View style={{ flex: pct, backgroundColor: color, height: '100%' }} />;
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.legendItem}>
       <View style={[styles.dot, { backgroundColor: color }]} />
@@ -203,6 +219,9 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 function NightRow({ night, last, onPress }: {
   night: NightSummary; last: boolean; onPress: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const sevColor = SEVERITY_COLOR[night.severity];
   return (
     <Pressable
@@ -223,13 +242,13 @@ function NightRow({ night, last, onPress }: {
       <Text style={[txt.sevPill, { backgroundColor: sevColor + '22', color: sevColor }]}>
         {SEVERITY_LABEL[night.severity]}
       </Text>
-      <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} style={{ marginLeft: 4 }} />
+      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} style={{ marginLeft: 4 }} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -242,17 +261,17 @@ const styles = StyleSheet.create({
   },
   rangeChip: {
     paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 16, backgroundColor: colors.fill,
+    borderRadius: 16, backgroundColor: c.fill,
   },
-  rangeChipActive: { backgroundColor: colors.brand },
+  rangeChipActive: { backgroundColor: c.brand },
   content: { padding: spacing.lg, paddingBottom: 60 },
   card: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, marginBottom: spacing.md,
     ...shadows.subtle,
   },
   flagsCard: {
-    backgroundColor: colors.brandLight, borderRadius: radii.lg,
+    backgroundColor: c.brandLight, borderRadius: radii.lg,
     padding: spacing.lg, marginBottom: spacing.md,
   },
   flagRow: {
@@ -262,7 +281,7 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: 'row', gap: spacing.lg },
   severityBar: {
     flexDirection: 'row', height: 10, borderRadius: 5,
-    backgroundColor: colors.fill, overflow: 'hidden',
+    backgroundColor: c.fill, overflow: 'hidden',
   },
   legendRow: {
     flexDirection: 'row', flexWrap: 'wrap',
@@ -271,7 +290,7 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   timelineCard: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     marginBottom: spacing.md, ...shadows.subtle,
   },
   nightRow: {
@@ -280,46 +299,46 @@ const styles = StyleSheet.create({
   },
   nightRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
+    borderBottomColor: c.separator,
   },
   nightDot: { width: 10, height: 10, borderRadius: 5 },
 });
 
-const txt = {
+const createTxt = (c: ColorPalette) => ({
   title: {
-    fontSize: 17, fontWeight: '600', color: colors.labelPrimary,
+    fontSize: 17, fontWeight: '600', color: c.labelPrimary,
     flex: 1, textAlign: 'center',
   } as TextStyle,
   hint: {
-    fontSize: 11, color: colors.labelTertiary,
+    fontSize: 11, color: c.labelTertiary,
     marginBottom: spacing.md, textAlign: 'center',
   } as TextStyle,
   sectionTitle: {
-    fontSize: 14, fontWeight: '600', color: colors.brand,
+    fontSize: 14, fontWeight: '600', color: c.brand,
     marginBottom: spacing.xs,
   } as TextStyle,
   sectionLabel: {
-    fontSize: 13, fontWeight: '500', color: colors.labelSecondary,
+    fontSize: 13, fontWeight: '500', color: c.labelSecondary,
     marginLeft: spacing.xs, marginBottom: spacing.xs,
   } as TextStyle,
-  flagLabel: { fontSize: 14, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  flagHint: { fontSize: 11, color: colors.labelSecondary, marginTop: 2, lineHeight: 16 } as TextStyle,
+  flagLabel: { fontSize: 14, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  flagHint: { fontSize: 11, color: c.labelSecondary, marginTop: 2, lineHeight: 16 } as TextStyle,
   disclaimer: {
-    fontSize: 10, color: colors.labelTertiary,
+    fontSize: 10, color: c.labelTertiary,
     marginTop: spacing.sm, lineHeight: 14, fontStyle: 'italic',
   } as TextStyle,
-  rangeText: { fontSize: 13, color: colors.labelPrimary } as TextStyle,
+  rangeText: { fontSize: 13, color: c.labelPrimary } as TextStyle,
   rangeTextActive: { color: '#fff', fontWeight: '600' } as TextStyle,
-  statLabel: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
+  statLabel: { fontSize: 11, color: c.labelTertiary } as TextStyle,
   statValue: { fontSize: 28, fontWeight: '700', marginVertical: 2 } as TextStyle,
-  statHint: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-  legendText: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  nightDate: { fontSize: 14, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
-  nightMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  statHint: { fontSize: 10, color: c.labelTertiary } as TextStyle,
+  legendText: { fontSize: 10, color: c.labelSecondary } as TextStyle,
+  nightDate: { fontSize: 14, color: c.labelPrimary, fontWeight: '500' } as TextStyle,
+  nightMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   sevPill: {
     fontSize: 11, fontWeight: '600',
     paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 8, overflow: 'hidden',
   } as TextStyle,
-  empty: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', lineHeight: 19 } as TextStyle,
-};
+  empty: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 19 } as TextStyle,
+});

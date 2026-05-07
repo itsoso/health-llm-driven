@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, typography, radii } from '../constants/theme';
+import { spacing, typography, radii } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import type { TimeRange } from '../services/trends';
 import { useWeightHistory, useBPHistory, useIndicatorTrend, useGarminMetricTrend, isGarminMetric } from '../hooks/useTrendData';
 import TrendChart from '../components/charts/TrendChart';
@@ -27,6 +28,8 @@ const TYPE_TITLES: Record<string, string> = {
 };
 
 function useHistoryData(type: string, range: TimeRange) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const weight = useWeightHistory(range);
   const bp = useBPHistory(range);
   const garmin = useGarminMetricTrend(isGarminMetric(type) ? type : '', range);
@@ -42,6 +45,8 @@ function useHistoryData(type: string, range: TimeRange) {
 }
 
 export default function IndicatorHistoryScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { type = 'weight' } = useLocalSearchParams<{ type: string }>();
   const router = useRouter();
   const [range, setRange] = useState<TimeRange>('1M');
@@ -64,7 +69,7 @@ export default function IndicatorHistoryScreen() {
       {/* header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} testID="back-button">
-          <Ionicons name="chevron-back" size={28} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={28} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{title}</Text>
         <View style={{ width: 28 }} />
@@ -115,10 +120,10 @@ export default function IndicatorHistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ColorPalette) => StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.bgPrimary,
+    backgroundColor: c.bgPrimary,
   },
   header: {
     flexDirection: 'row',
@@ -126,20 +131,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
+    borderBottomColor: c.separator,
   },
   headerTitle: {
     ...typography.titleSmall,
-    color: colors.labelPrimary,
+    color: c.labelPrimary,
   } as TextStyle,
   content: {
     padding: spacing.lg,
     paddingBottom: 40,
   },
   summaryCard: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.lg,
     padding: spacing.lg,
     alignItems: 'center',
@@ -147,7 +152,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     ...typography.caption,
-    color: colors.labelTertiary,
+    color: c.labelTertiary,
     marginBottom: spacing.xs,
   },
   summaryRow: {
@@ -160,15 +165,15 @@ const styles = StyleSheet.create({
     fontWeight: typography.metric.fontWeight,
     lineHeight: typography.metric.lineHeight,
     fontVariant: ['tabular-nums'],
-    color: colors.labelPrimary,
+    color: c.labelPrimary,
   } satisfies TextStyle,
   summaryUnit: {
     ...typography.bodyMedium,
-    color: colors.labelSecondary,
+    color: c.labelSecondary,
   },
   summaryDate: {
     ...typography.caption,
-    color: colors.labelTertiary,
+    color: c.labelTertiary,
     marginTop: spacing.xs,
   },
   loading: {
@@ -178,17 +183,17 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...typography.bodyMedium,
-    color: colors.labelTertiary,
+    color: c.labelTertiary,
   },
   refInfo: {
     marginTop: spacing.lg,
     padding: spacing.md,
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.sm,
   },
   refText: {
     ...typography.caption,
-    color: colors.labelSecondary,
+    color: c.labelSecondary,
     marginBottom: 2,
   },
 });

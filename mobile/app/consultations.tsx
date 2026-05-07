@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +7,8 @@ import { useQuery } from '@tanstack/react-query';
 import { listConsultations, type ConsultListItem } from '../services/consultations';
 import { buildOutcomeReviewMetrics, getMyOutcomeTimeline } from '../services/personalOutcome';
 import OutcomeReviewCard from '../components/outcome/OutcomeReviewCard';
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 const TYPE_LABEL: Record<string, string> = {
   symptom_advisory: '症状',
@@ -33,10 +34,16 @@ const STATUS_COLOR: Record<string, { bg: string; fg: string }> = {
 };
 
 function fmtDate(s?: string) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return s ? s.slice(0, 10) : '—';
 }
 
 function ConsultationRow({ item, onPress }: { item: ConsultListItem; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const typeColor = TYPE_COLOR[item.consultation_type] || { bg: '#F3F4F6', fg: '#374151' };
   const statusColor = STATUS_COLOR[item.status] || { bg: '#F3F4F6', fg: '#4B5563' };
   return (
@@ -88,6 +95,9 @@ function ConsultationRow({ item, onPress }: { item: ConsultListItem; onPress: ()
 }
 
 export default function ConsultationsScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const { data = [], isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['consultations', 'list'],
@@ -112,7 +122,7 @@ export default function ConsultationsScreen() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={22} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={22} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.headerTitle}>健康咨询中心</Text>
         <View style={styles.backBtn} />
@@ -124,7 +134,7 @@ export default function ConsultationsScreen() {
 
       {isLoading ? (
         <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.brand} />
+          <ActivityIndicator size="large" color={c.brand} />
         </View>
       ) : isError ? (
         <View style={styles.empty}>
@@ -152,8 +162,8 @@ export default function ConsultationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
@@ -163,7 +173,7 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   list: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   row: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.lg,
     padding: spacing.md,
     gap: 6,
@@ -176,20 +186,20 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
 });
 
-const txt = {
-  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+const createTxt = (c: ColorPalette) => ({
+  headerTitle: { fontSize: 17, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   headerSub: {
-    fontSize: 12, color: colors.labelSecondary,
+    fontSize: 12, color: c.labelSecondary,
     paddingHorizontal: spacing.lg, paddingBottom: spacing.md, lineHeight: 18,
   } as TextStyle,
-  version: { fontSize: 11, fontWeight: '700', color: colors.labelTertiary } as TextStyle,
+  version: { fontSize: 11, fontWeight: '700', color: c.labelTertiary } as TextStyle,
   badgeText: { fontSize: 10, fontWeight: '600' } as TextStyle,
   pendingCountNum: { fontSize: 20, fontWeight: '800', color: '#EA580C' } as TextStyle,
-  pendingCountLabel: { fontSize: 9, color: colors.labelTertiary } as TextStyle,
-  title: { fontSize: 15, fontWeight: '700', color: colors.labelPrimary, marginTop: 4 } as TextStyle,
-  topic: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-  summary: { fontSize: 12, color: colors.labelSecondary, lineHeight: 18, marginTop: 2 } as TextStyle,
-  stat: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  meta: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-  emptyText: { fontSize: 13, color: colors.labelTertiary } as TextStyle,
-};
+  pendingCountLabel: { fontSize: 9, color: c.labelTertiary } as TextStyle,
+  title: { fontSize: 15, fontWeight: '700', color: c.labelPrimary, marginTop: 4 } as TextStyle,
+  topic: { fontSize: 10, color: c.labelTertiary } as TextStyle,
+  summary: { fontSize: 12, color: c.labelSecondary, lineHeight: 18, marginTop: 2 } as TextStyle,
+  stat: { fontSize: 10, color: c.labelSecondary } as TextStyle,
+  meta: { fontSize: 10, color: c.labelTertiary } as TextStyle,
+  emptyText: { fontSize: 13, color: c.labelTertiary } as TextStyle,
+});

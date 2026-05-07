@@ -20,8 +20,9 @@ import { getSleepQuestionPrompt } from '../services/dataHealth';
 import { createInterventionDraft } from '../services/actionCards';
 import { buildInterventionDraft, type InterventionDraft } from '../services/interventionDraft';
 import { invalidateQueryKeys, queryKeys } from '../applib/queryKeys';
-import { colors, spacing } from '../constants/theme';
-import { styles, txt } from './sleep-spo2-analysis.styles';
+import { spacing } from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
+import { createStyles, createTxt } from './sleep-spo2-analysis.styles';
 
 // 北京时区 (UTC+8) 的 YYYY-MM-DD. 用 toISOString 会被转成 UTC, 早上 8 点前会偏一天.
 function todayISOInBeijing(): string {
@@ -59,6 +60,9 @@ const CATEGORY_ICON: Record<string, any> = {
 };
 
 export default function SleepSpo2AnalysisScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const params = useLocalSearchParams<{ night_date?: string }>();
@@ -145,7 +149,7 @@ export default function SleepSpo2AnalysisScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.btn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>夜间血氧分析</Text>
         <View style={{ flexDirection: 'row' }}>
@@ -154,10 +158,10 @@ export default function SleepSpo2AnalysisScreen() {
             style={styles.btn}
             accessibilityLabel="查看 30 天趋势"
           >
-            <Ionicons name="stats-chart-outline" size={20} color={colors.labelPrimary} />
+            <Ionicons name="stats-chart-outline" size={20} color={c.labelPrimary} />
           </TouchableOpacity>
           <TouchableOpacity onPress={onRefresh} style={styles.btn} disabled={reanalyzeM.isPending}>
-            <Ionicons name="refresh" size={22} color={reanalyzeM.isPending ? colors.labelTertiary : colors.labelPrimary} />
+            <Ionicons name="refresh" size={22} color={reanalyzeM.isPending ? c.labelTertiary : c.labelPrimary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -165,7 +169,7 @@ export default function SleepSpo2AnalysisScreen() {
       {/* 日期选择 */}
       <View style={styles.dateBar}>
         <TouchableOpacity onPress={() => shift(-1)} style={styles.dateBtn}>
-          <Ionicons name="chevron-back" size={18} color={colors.brand} />
+          <Ionicons name="chevron-back" size={18} color={c.brand} />
         </TouchableOpacity>
         <Text style={txt.dateLabel}>{selectedDate}</Text>
         <TouchableOpacity
@@ -176,7 +180,7 @@ export default function SleepSpo2AnalysisScreen() {
           <Ionicons
             name="chevron-forward"
             size={18}
-            color={selectedDate >= todayISOInBeijing() ? colors.labelTertiary : colors.brand}
+            color={selectedDate >= todayISOInBeijing() ? c.labelTertiary : c.brand}
           />
         </TouchableOpacity>
       </View>
@@ -187,7 +191,7 @@ export default function SleepSpo2AnalysisScreen() {
       >
         {isLoading && !analysis ? (
           <View style={styles.loading}>
-            <ActivityIndicator size="large" color={colors.brand} />
+            <ActivityIndicator size="large" color={c.brand} />
             <Text style={[txt.body, { marginTop: 12 }]}>加载分析中...</Text>
           </View>
         ) : !analysis ? (
@@ -202,7 +206,7 @@ export default function SleepSpo2AnalysisScreen() {
                 label="最低 SpO₂"
                 value={analysis.min_spo2 != null ? `${analysis.min_spo2.toFixed(0)}%` : '—'}
                 color={
-                  !analysis.min_spo2 ? colors.labelTertiary :
+                  !analysis.min_spo2 ? c.labelTertiary :
                   analysis.min_spo2 < 85 ? '#DC2626' :
                   analysis.min_spo2 < 88 ? '#D97706' :
                   '#10B981'
@@ -221,12 +225,12 @@ export default function SleepSpo2AnalysisScreen() {
               <SummaryTile
                 label="氧降事件"
                 value={String(analysis.events_count)}
-                color={colors.labelPrimary}
+                color={c.labelPrimary}
               />
               <SummaryTile
                 label="睡眠"
                 value={`${(analysis.total_sleep_minutes / 60).toFixed(1)}h`}
-                color={colors.labelPrimary}
+                color={c.labelPrimary}
               />
             </View>
 
@@ -371,7 +375,7 @@ export default function SleepSpo2AnalysisScreen() {
 
             {analysis.correlations.length === 0 ? (
               <View style={styles.noFindings}>
-                <Ionicons name="checkmark-circle" size={40} color={colors.green} />
+                <Ionicons name="checkmark-circle" size={40} color={c.green} />
                 <Text style={[txt.body, { marginTop: 8 }]}>本夜无规则触发</Text>
                 <Text style={[txt.caption, { marginTop: 4, textAlign: 'center' }]}>
                   继续记录用药时间、运动、饮食，规则会给出更针对的建议
@@ -403,6 +407,9 @@ function SummaryTile({
   color: string;
   sub?: string;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.sumTile}>
       <Text style={txt.sumLabel}>{label}</Text>
@@ -412,6 +419,9 @@ function SummaryTile({
 }
 
 function OverlayBtn({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity
       onPress={onPress}

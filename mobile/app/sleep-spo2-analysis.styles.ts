@@ -1,8 +1,9 @@
 import { StyleSheet, type TextStyle } from 'react-native';
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme';
+import type { ColorPalette } from '../hooks/useTheme';
 
-export const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+export const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -28,14 +29,14 @@ export const styles = StyleSheet.create({
   },
   sumTile: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.sm,
     alignItems: 'center',
     ...shadows.subtle,
   },
   chartCard: {
-    backgroundColor: '#fff',
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.sm,
     marginBottom: spacing.md,
@@ -53,37 +54,37 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.fill,
   },
-  overlayBtnActive: { backgroundColor: colors.brand },
+  overlayBtnActive: { backgroundColor: c.brand },
   actionCard: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: c.tintGreen,
     borderRadius: radii.md,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderLeftWidth: 3,
-    borderLeftColor: '#10B981',
+    borderLeftColor: c.green,
     gap: spacing.sm,
   },
   askCard: {
-    backgroundColor: '#FFF7ED',
+    backgroundColor: c.tintOrange,
     borderRadius: radii.md,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderLeftWidth: 3,
-    borderLeftColor: '#F97316',
+    borderLeftColor: c.orange,
   },
   askItem: {
     marginTop: 10, paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FED7AA',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
   },
   askBtnRow: { flexDirection: 'row', gap: 8, marginTop: 8, justifyContent: 'flex-end' },
   askChip: {
     paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: radii.full, backgroundColor: '#fff',
-    borderWidth: 1, borderColor: '#F97316',
+    borderRadius: radii.full, backgroundColor: c.bgCard,
+    borderWidth: 1, borderColor: c.orange,
   },
-  askChipPrimary: { backgroundColor: '#F97316', borderColor: '#F97316' },
+  askChipPrimary: { backgroundColor: c.orange, borderColor: c.orange },
   findingCard: {
     borderRadius: radii.md,
     padding: spacing.md,
@@ -102,24 +103,24 @@ export const styles = StyleSheet.create({
   },
 });
 
-export const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  dateLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  sectionTitle: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  askTitle: { fontSize: 15, fontWeight: '600', color: '#9A3412' } as TextStyle,
-  askSub: { fontSize: 12, color: '#9A3412', marginTop: 4 } as TextStyle,
-  askText: { fontSize: 13, color: '#7C2D12', lineHeight: 19 } as TextStyle,
+export const createTxt = (c: ColorPalette) => ({
+  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  dateLabel: { fontSize: 16, fontWeight: '500', color: c.labelPrimary } as TextStyle,
+  sectionTitle: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  askTitle: { fontSize: 15, fontWeight: '600', color: c.orange } as TextStyle,
+  askSub: { fontSize: 12, color: c.orange, marginTop: 4 } as TextStyle,
+  askText: { fontSize: 13, color: c.labelPrimary, lineHeight: 19 } as TextStyle,
   askChipPrimary: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-  askChipSecondary: { fontSize: 13, fontWeight: '600', color: '#F97316' } as TextStyle,
-  body: { fontSize: 14, color: colors.labelPrimary } as TextStyle,
-  caption: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
-  sumLabel: { fontSize: 11, color: colors.labelSecondary, marginBottom: 4 } as TextStyle,
-  sumValue: { fontSize: 20, fontWeight: '700' } as TextStyle,
-  sumSub: { fontSize: 11, fontWeight: '400', color: colors.labelSecondary } as TextStyle,
-  findingSubject: { fontSize: 14, fontWeight: '600', flex: 1 } as TextStyle,
-  confidence: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  hypothesis: { fontSize: 13, color: colors.labelPrimary, marginTop: 4, lineHeight: 19 } as TextStyle,
-  action: { fontSize: 13, fontWeight: '500', marginTop: 8, lineHeight: 19 } as TextStyle,
-  overlayBtn: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
+  askChipSecondary: { fontSize: 13, fontWeight: '600', color: c.orange } as TextStyle,
+  body: { fontSize: 14, color: c.labelPrimary } as TextStyle,
+  caption: { fontSize: 12, color: c.labelSecondary } as TextStyle,
+  sumLabel: { fontSize: 11, color: c.labelSecondary, marginBottom: 4 } as TextStyle,
+  sumValue: { fontSize: 20, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+  sumSub: { fontSize: 11, fontWeight: '400', color: c.labelSecondary } as TextStyle,
+  findingSubject: { fontSize: 14, fontWeight: '600', flex: 1, color: c.labelPrimary } as TextStyle,
+  confidence: { fontSize: 10, color: c.labelSecondary } as TextStyle,
+  hypothesis: { fontSize: 13, color: c.labelPrimary, marginTop: 4, lineHeight: 19 } as TextStyle,
+  action: { fontSize: 13, fontWeight: '500', marginTop: 8, lineHeight: 19, color: c.labelPrimary } as TextStyle,
+  overlayBtn: { fontSize: 11, color: c.labelSecondary } as TextStyle,
   overlayBtnActive: { color: '#fff', fontWeight: '600' } as TextStyle,
-};
+});

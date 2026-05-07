@@ -26,7 +26,8 @@ import {
   getMyScorecard, specialistLabel,
   type ScorecardCard, type ScorecardSpecialistRow,
 } from '../services/personalOutcome';
-import { colors, spacing, radii } from '../constants/theme';
+import { spacing, radii } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 const FACTS_QK = ['memoryFacts'] as const;
 const STATS_QK = ['memoryStats'] as const;
@@ -37,6 +38,8 @@ const TIERS: MemoryTier[] = ['semantic', 'procedural', 'episodic', 'working'];
 type TabKey = 'memory' | 'scorecard';
 
 export default function AiProfileScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>('memory');
@@ -103,14 +106,14 @@ export default function AiProfileScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>AI 对我的画像</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <View style={styles.complianceBanner}>
-        <Ionicons name="information-circle-outline" size={14} color={colors.labelSecondary} />
+        <Ionicons name="information-circle-outline" size={14} color={c.labelSecondary} />
         <Text style={styles.complianceText}>
           这是 AI 在跨对话中记住的事实和它给你的建议的命中率. 觉得某条不对, 左滑删掉, AI 下次不会再用它.
         </Text>
@@ -163,6 +166,8 @@ function MemoryTab(props: {
   onDismiss: (f: MemoryFact) => void;
   onRefresh: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { facts, isLoading, byTierStats, activeTier, onTierChange, onDismiss, onRefresh } = props;
 
   const renderRight = (fact: MemoryFact) => (
@@ -222,7 +227,7 @@ function MemoryTab(props: {
       >
         <TierChip
           label="全部"
-          color={colors.labelPrimary}
+          color={c.labelPrimary}
           count={Array.from(byTierStats.values()).reduce((a, b) => a + b.total, 0)}
           active={activeTier === 'all'}
           onPress={() => onTierChange('all')}
@@ -246,7 +251,7 @@ function MemoryTab(props: {
         <View style={styles.center}><ActivityIndicator /></View>
       ) : facts.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="bulb-outline" size={48} color={colors.labelTertiary} />
+          <Ionicons name="bulb-outline" size={48} color={c.labelTertiary} />
           <Text style={styles.emptyTitle}>还没有记忆</Text>
           <Text style={styles.emptyHint}>
             AI 会在你使用过程中逐步记住: 你的化验异常、对哪些建议响应好、哪些不对口味.
@@ -273,6 +278,8 @@ function TierChip(props: {
   active: boolean;
   onPress: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <TouchableOpacity
       style={[
@@ -295,6 +302,8 @@ function ScorecardTab(props: {
   isLoading: boolean;
   onRefresh: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { data, isLoading } = props;
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator /></View>;
@@ -302,7 +311,7 @@ function ScorecardTab(props: {
   if (!data || data.overall.total === 0) {
     return (
       <View style={styles.empty}>
-        <Ionicons name="analytics-outline" size={48} color={colors.labelTertiary} />
+        <Ionicons name="analytics-outline" size={48} color={c.labelTertiary} />
         <Text style={styles.emptyTitle}>暂无可评建议</Text>
         <Text style={styles.emptyHint}>
           AI 给你的建议会在到期复查后自动评分, 形成命中率. 持续使用 2-3 周即可看到结果.
@@ -370,6 +379,8 @@ function ScorecardTab(props: {
 }
 
 function SpecialistRow({ row }: { row: ScorecardSpecialistRow }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const color =
     row.hit_rate >= 60 ? '#34C759' : row.hit_rate >= 30 ? '#FF9500' : '#FF3B30';
   return (
@@ -389,6 +400,8 @@ function SpecialistRow({ row }: { row: ScorecardSpecialistRow }) {
 }
 
 function CardRow({ card, color }: { card: ScorecardCard; color: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <View style={[styles.cardRow, { borderLeftColor: color }]}>
       <Text style={styles.cardTitle} numberOfLines={2}>{card.title}</Text>
@@ -420,30 +433,30 @@ function relativeTime(iso: string): string {
   return `${Math.floor(days / 365)} 年前`;
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
   },
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary },
+  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary },
   complianceBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 6,
     marginHorizontal: spacing.md, marginBottom: spacing.sm,
     paddingVertical: 8, paddingHorizontal: 10,
-    backgroundColor: colors.fill, borderRadius: radii.sm,
+    backgroundColor: c.fill, borderRadius: radii.sm,
   },
-  complianceText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.labelSecondary },
+  complianceText: { flex: 1, fontSize: 12, lineHeight: 17, color: c.labelSecondary },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: spacing.md, marginBottom: spacing.xs,
-    backgroundColor: colors.fill, borderRadius: radii.sm, padding: 3,
+    backgroundColor: c.fill, borderRadius: radii.sm, padding: 3,
   },
   tabBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: radii.sm - 2 },
-  tabBtnActive: { backgroundColor: colors.bgCard },
-  tabText: { fontSize: 14, color: colors.labelSecondary, fontWeight: '500' },
-  tabTextActive: { color: colors.labelPrimary, fontWeight: '600' },
+  tabBtnActive: { backgroundColor: c.bgCard },
+  tabText: { fontSize: 14, color: c.labelSecondary, fontWeight: '500' },
+  tabTextActive: { color: c.labelPrimary, fontWeight: '600' },
 
   tierChipScroll: {
     // 给一个显式高度让 ScrollView 在父 flex 里不被挤扁 (iOS).
@@ -460,14 +473,14 @@ const styles = StyleSheet.create({
   },
   tierChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.separator, backgroundColor: colors.bgCard,
+    borderWidth: 1, borderColor: c.separator, backgroundColor: c.bgCard,
   },
-  tierChipText: { fontSize: 12, color: colors.labelSecondary },
+  tierChipText: { fontSize: 12, color: c.labelSecondary },
 
   list: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl },
 
   factRow: {
-    backgroundColor: colors.bgCard, padding: spacing.md,
+    backgroundColor: c.bgCard, padding: spacing.md,
     borderRadius: radii.md, marginBottom: spacing.sm,
   },
   factHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
@@ -475,12 +488,12 @@ const styles = StyleSheet.create({
   tierBadgeText: { fontSize: 11, fontWeight: '600' },
   confBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   confBadgeText: { fontSize: 11, fontWeight: '600' },
-  factText: { fontSize: 15, lineHeight: 21, color: colors.labelPrimary, marginBottom: 6 },
+  factText: { fontSize: 15, lineHeight: 21, color: c.labelPrimary, marginBottom: 6 },
   factSubject: { fontWeight: '600' },
-  factPredicate: { color: colors.labelSecondary },
-  factObject: { color: colors.labelPrimary },
+  factPredicate: { color: c.labelSecondary },
+  factObject: { color: c.labelPrimary },
   factMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  factMetaText: { fontSize: 11, color: colors.labelTertiary },
+  factMetaText: { fontSize: 11, color: c.labelTertiary },
 
   swipeDismiss: {
     backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center',
@@ -490,58 +503,58 @@ const styles = StyleSheet.create({
 
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl, gap: 10 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.labelSecondary },
-  emptyHint: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: c.labelSecondary },
+  emptyHint: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 19 },
 
   // Scorecard
   scoreScroll: { padding: spacing.md, paddingBottom: spacing.xl },
   overallCard: {
-    backgroundColor: colors.bgCard, padding: spacing.lg,
+    backgroundColor: c.bgCard, padding: spacing.lg,
     borderRadius: radii.md, marginBottom: spacing.md, alignItems: 'center',
   },
-  overallLabel: { fontSize: 13, color: colors.labelSecondary, marginBottom: 4 },
+  overallLabel: { fontSize: 13, color: c.labelSecondary, marginBottom: 4 },
   overallValue: { fontSize: 40, fontWeight: '700', marginBottom: spacing.sm },
   overallBarWrap: {
-    width: '100%', height: 6, backgroundColor: colors.fill, borderRadius: 3,
+    width: '100%', height: 6, backgroundColor: c.fill, borderRadius: 3,
     overflow: 'hidden', marginBottom: spacing.sm,
   },
   overallBar: { height: '100%' },
   overallStats: { flexDirection: 'row', gap: 12, flexWrap: 'wrap', justifyContent: 'center' },
-  overallStatText: { fontSize: 12, color: colors.labelSecondary },
+  overallStatText: { fontSize: 12, color: c.labelSecondary },
 
   sectionTitle: {
-    fontSize: 14, fontWeight: '600', color: colors.labelPrimary,
+    fontSize: 14, fontWeight: '600', color: c.labelPrimary,
     marginTop: spacing.md, marginBottom: spacing.sm,
   },
 
   specialistList: {
-    backgroundColor: colors.bgCard, borderRadius: radii.md,
+    backgroundColor: c.bgCard, borderRadius: radii.md,
     paddingHorizontal: spacing.md,
   },
   specialistRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
-  specialistName: { width: 70, fontSize: 13, color: colors.labelPrimary },
+  specialistName: { width: 70, fontSize: 13, color: c.labelPrimary },
   specialistBarWrap: {
-    flex: 1, height: 4, backgroundColor: colors.fill,
+    flex: 1, height: 4, backgroundColor: c.fill,
     borderRadius: 2, overflow: 'hidden',
   },
   specialistBar: { height: '100%' },
   specialistRate: { width: 40, fontSize: 12, fontWeight: '600', textAlign: 'right' },
-  specialistCount: { width: 36, fontSize: 11, color: colors.labelTertiary, textAlign: 'right' },
+  specialistCount: { width: 36, fontSize: 11, color: c.labelTertiary, textAlign: 'right' },
 
   cardList: {},
   cardRow: {
-    backgroundColor: colors.bgCard, padding: spacing.md,
+    backgroundColor: c.bgCard, padding: spacing.md,
     borderRadius: radii.md, marginBottom: spacing.sm, borderLeftWidth: 3,
   },
-  cardTitle: { fontSize: 14, color: colors.labelPrimary, marginBottom: 4, lineHeight: 19 },
+  cardTitle: { fontSize: 14, color: c.labelPrimary, marginBottom: 4, lineHeight: 19 },
   cardMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, alignItems: 'center' },
   cardScore: { fontSize: 13, fontWeight: '600' },
-  cardMetaText: { fontSize: 11, color: colors.labelTertiary },
+  cardMetaText: { fontSize: 11, color: c.labelTertiary },
   scoreFooter: {
-    fontSize: 11, color: colors.labelTertiary, textAlign: 'center',
+    fontSize: 11, color: c.labelTertiary, textAlign: 'center',
     marginTop: spacing.md, lineHeight: 17,
   },
 });

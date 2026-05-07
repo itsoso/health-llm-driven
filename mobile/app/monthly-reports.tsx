@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextStyle,
   FlatList, ActivityIndicator, RefreshControl,
@@ -8,7 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   listMyMonthlyReports, formatMonth, relativeTime,
   type MonthlyReportSummary,
@@ -17,6 +18,9 @@ import {
 const QK = ['monthlyReports'];
 
 export default function MonthlyReportsScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
 
   const { data, isLoading, isRefetching, refetch } = useQuery<MonthlyReportSummary[]>({
@@ -44,7 +48,7 @@ export default function MonthlyReportsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>月度复盘</Text>
         <View style={{ width: 40 }} />
@@ -52,7 +56,7 @@ export default function MonthlyReportsScreen() {
 
       {isLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={colors.brand} />
+          <ActivityIndicator color={c.brand} />
         </View>
       ) : (
         <FlatList
@@ -60,7 +64,7 @@ export default function MonthlyReportsScreen() {
           keyExtractor={(r) => `${r.year}-${r.month}`}
           contentContainerStyle={styles.content}
           refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />
           }
           renderItem={({ item }) => (
             <ReportRow
@@ -85,6 +89,9 @@ export default function MonthlyReportsScreen() {
 function ReportRow({ item, onPress }: {
   item: MonthlyReportSummary; onPress: () => void;
 }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const notReady = item.generated_at === null;
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -115,6 +122,9 @@ function ReportRow({ item, onPress }: {
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View>
       <Text style={txt.statLabel}>{label}</Text>
@@ -130,6 +140,9 @@ function buildRecentMonths(n: number, now: Date): { year: number; month: number 
   // 从当前月开始向前 n 个月 (含当前月，若是 1 号就排除)
   // 实际只显示已结束的月份：若今天是 1 号则排除当月
   if (now.getDate() === 1) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
     m -= 1; if (m === 0) { m = 12; y -= 1; }
   }
   for (let i = 0; i < n; i++) {
@@ -139,8 +152,8 @@ function buildRecentMonths(n: number, now: Date): { year: number; month: number 
   return out;
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -149,7 +162,7 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg, paddingBottom: 60 },
   card: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, marginBottom: spacing.md,
     ...shadows.subtle,
   },
@@ -160,26 +173,26 @@ const styles = StyleSheet.create({
   },
 });
 
-const txt = {
+const createTxt = (c: ColorPalette) => ({
   title: {
-    fontSize: 17, fontWeight: '600', color: colors.labelPrimary,
+    fontSize: 17, fontWeight: '600', color: c.labelPrimary,
     flex: 1, textAlign: 'center',
   } as TextStyle,
   intro: {
-    fontSize: 12, color: colors.labelTertiary,
+    fontSize: 12, color: c.labelTertiary,
     marginBottom: spacing.md, lineHeight: 18,
   } as TextStyle,
-  monthLabel: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  generatedAt: { fontSize: 12, color: colors.labelTertiary } as TextStyle,
-  pending: { fontSize: 12, color: colors.brand, fontWeight: '500' } as TextStyle,
-  statLabel: { fontSize: 11, color: colors.labelTertiary, marginBottom: 2 } as TextStyle,
-  statValue: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
+  monthLabel: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  generatedAt: { fontSize: 12, color: c.labelTertiary } as TextStyle,
+  pending: { fontSize: 12, color: c.brand, fontWeight: '500' } as TextStyle,
+  statLabel: { fontSize: 11, color: c.labelTertiary, marginBottom: 2 } as TextStyle,
+  statValue: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
   narrative: {
-    fontSize: 13, color: colors.labelSecondary, lineHeight: 19,
+    fontSize: 13, color: c.labelSecondary, lineHeight: 19,
     marginTop: spacing.sm,
   } as TextStyle,
   placeholder: {
-    fontSize: 13, color: colors.labelTertiary,
+    fontSize: 13, color: c.labelTertiary,
     marginTop: spacing.sm, fontStyle: 'italic',
   } as TextStyle,
-};
+});

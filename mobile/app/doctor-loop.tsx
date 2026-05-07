@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextStyle, ScrollView,
   ActivityIndicator, RefreshControl, Alert, Share, TextInput,
@@ -11,7 +11,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme'
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   exportDoctorReport, submitDoctorFeedback, listDoctorFeedback,
   type DoctorExport, type DoctorFeedback,
@@ -21,6 +22,9 @@ const EXPORT_QK = (days: number) => ['doctorExport', days];
 const FEEDBACK_QK = ['doctorFeedback'];
 
 export default function DoctorLoopScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const [days] = useState(30);
@@ -86,7 +90,7 @@ export default function DoctorLoopScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.btn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>医生回路</Text>
         <View style={{ width: 40 }} />
@@ -101,7 +105,7 @@ export default function DoctorLoopScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing}
               onRefresh={() => { expQ.refetch(); fbQ.refetch(); }}
-              tintColor={colors.brand}
+              tintColor={c.brand}
             />
           }
           keyboardShouldPersistTaps="handled"
@@ -110,7 +114,7 @@ export default function DoctorLoopScreen() {
           <Text style={txt.section}>给医生看的摘要</Text>
           <View style={styles.card}>
             {loading ? (
-              <ActivityIndicator color={colors.brand} />
+              <ActivityIndicator color={c.brand} />
             ) : (
               <>
                 <Text style={txt.exportSummary}>
@@ -125,7 +129,7 @@ export default function DoctorLoopScreen() {
                     <Text style={txt.primaryBtnText}>分享</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.secondaryBtn} onPress={onCopy} activeOpacity={0.7}>
-                    <Ionicons name="copy-outline" size={16} color={colors.brand} />
+                    <Ionicons name="copy-outline" size={16} color={c.brand} />
                     <Text style={txt.secondaryBtnText}>复制 Markdown</Text>
                   </TouchableOpacity>
                 </View>
@@ -147,7 +151,7 @@ export default function DoctorLoopScreen() {
               value={summary}
               onChangeText={setSummary}
               placeholder="例如: 夜间呼吸暂停疑虑, 准备 PSG..."
-              placeholderTextColor={colors.labelTertiary}
+              placeholderTextColor={c.labelTertiary}
               multiline
             />
             <Text style={txt.label}>医生评估</Text>
@@ -156,7 +160,7 @@ export default function DoctorLoopScreen() {
               value={assessment}
               onChangeText={setAssessment}
               placeholder="例如: 轻度 OSAHS 倾向, AHI 预估 8-12..."
-              placeholderTextColor={colors.labelTertiary}
+              placeholderTextColor={c.labelTertiary}
               multiline
             />
             <Text style={txt.label}>下一步计划</Text>
@@ -165,7 +169,7 @@ export default function DoctorLoopScreen() {
               value={plan}
               onChangeText={setPlan}
               placeholder="例如: 2 周后复查 SpO2 趋势; 改用鼻贴..."
-              placeholderTextColor={colors.labelTertiary}
+              placeholderTextColor={c.labelTertiary}
               multiline
             />
             <TouchableOpacity
@@ -208,8 +212,8 @@ export default function DoctorLoopScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+const createStyles = (c: ColorPalette) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
@@ -217,7 +221,7 @@ const styles = StyleSheet.create({
   btn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg, paddingBottom: 120 },
   card: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, marginBottom: spacing.md,
     ...shadows.subtle,
   },
@@ -226,55 +230,55 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: colors.brand,
+    gap: 6, backgroundColor: c.brand,
     paddingVertical: 10, paddingHorizontal: 16,
     borderRadius: radii.md, flex: 1,
   },
   secondaryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: colors.brandLight,
+    gap: 6, backgroundColor: c.brandLight,
     paddingVertical: 10, paddingHorizontal: 16,
     borderRadius: radii.md, flex: 1,
   },
   submitBtn: { marginTop: spacing.sm },
   input: {
-    minHeight: 60, backgroundColor: colors.fill,
+    minHeight: 60, backgroundColor: c.fill,
     borderRadius: radii.md, padding: 10,
-    color: colors.labelPrimary, fontSize: 14,
+    color: c.labelPrimary, fontSize: 14,
     marginBottom: spacing.md,
     textAlignVertical: 'top',
   },
   fbRow: { paddingVertical: spacing.sm },
   fbRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
+    borderBottomColor: c.separator,
   },
 });
 
-const txt = {
+const createTxt = (c: ColorPalette) => ({
   title: {
-    fontSize: 17, fontWeight: '600', color: colors.labelPrimary,
+    fontSize: 17, fontWeight: '600', color: c.labelPrimary,
     flex: 1, textAlign: 'center',
   } as TextStyle,
   section: {
-    fontSize: 13, fontWeight: '500', color: colors.labelSecondary,
+    fontSize: 13, fontWeight: '500', color: c.labelSecondary,
     marginBottom: spacing.xs, marginTop: spacing.sm, marginLeft: spacing.xs,
   } as TextStyle,
   hint: {
-    fontSize: 11, color: colors.labelTertiary,
+    fontSize: 11, color: c.labelTertiary,
     marginLeft: spacing.xs, marginBottom: spacing.xs,
   } as TextStyle,
-  exportSummary: { fontSize: 13, color: colors.labelSecondary } as TextStyle,
+  exportSummary: { fontSize: 13, color: c.labelSecondary } as TextStyle,
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' } as TextStyle,
-  secondaryBtnText: { color: colors.brand, fontSize: 14, fontWeight: '600' } as TextStyle,
+  secondaryBtnText: { color: c.brand, fontSize: 14, fontWeight: '600' } as TextStyle,
   preview: {
-    fontSize: 11, color: colors.labelTertiary, lineHeight: 16,
-    backgroundColor: colors.fill, padding: 10, borderRadius: radii.sm,
+    fontSize: 11, color: c.labelTertiary, lineHeight: 16,
+    backgroundColor: c.fill, padding: 10, borderRadius: radii.sm,
   } as TextStyle,
   label: {
-    fontSize: 12, fontWeight: '500', color: colors.labelSecondary,
+    fontSize: 12, fontWeight: '500', color: c.labelSecondary,
     marginBottom: 4,
   } as TextStyle,
-  fbDate: { fontSize: 12, color: colors.labelTertiary, marginBottom: 4 } as TextStyle,
-  fbBody: { fontSize: 13, color: colors.labelPrimary, lineHeight: 19, marginTop: 2 } as TextStyle,
-};
+  fbDate: { fontSize: 12, color: c.labelTertiary, marginBottom: 4 } as TextStyle,
+  fbBody: { fontSize: 13, color: c.labelPrimary, lineHeight: 19, marginTop: 2 } as TextStyle,
+});
