@@ -69,6 +69,13 @@ class PhysiologicalState(BaseModel):
     vo2max_running: Optional[float] = None
     vo2max_cycling: Optional[float] = None
 
+    # 夜间呼吸 (2026-05-07 接入 Garmin respiration_samples) —
+    # OSAHS 筛查信号: 夜间 avg rate + 变异度 (stddev). 正常 12-20 brpm,
+    # 变异大 (stddev>3) 结合 SpO2 dip 是呼吸暂停前兆.
+    respiration_nightly_avg: Optional[float] = None    # 昨夜 22:00-07:00 平均
+    respiration_nightly_stddev: Optional[float] = None  # 同时间窗标准差
+    respiration_nightly_samples: int = 0                # 样本数 (判断数据可靠)
+
     last_updated: Optional[date] = None
 
 

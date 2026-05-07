@@ -92,6 +92,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("cgm",                   lambda s: _fill_cgm(s, user_id, twin, sources)),
         ("spo2_overnight",        lambda s: _fill_spo2_overnight(s, user_id, twin, sources)),
         ("hrv_nightly",           lambda s: _fill_hrv_nightly(s, user_id, twin, sources)),
+        ("respiration_nightly",   lambda s: _fill_respiration_nightly(s, user_id, twin, sources)),
         ("garmin_official",       lambda s: _fill_garmin_official(s, user_id, twin, sources)),
     ]
 
@@ -699,6 +700,58 @@ def _fill_hrv_nightly(db: Session, user_id: int, twin: HealthTwin, sources: Set[
             sources.add("hrv_readings_timeseries")
     except Exception as e:
         logger.warning(f"[twin] hrv_nightly 失败: {e}")
+
+
+def _fill_respiration_nightly(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """夜间 22:00-07:00 呼吸率平均 + 变异度 (OSAHS 筛查信号).
+
+    策略:
+    - 取最新有 respiration_samples 的一天 (用户 record_date)
+    - 聚合 22:00-07:00 样本 (Time 列比较)
+    - 若样本 < 20 视为数据不足 (睡眠期 Garmin 应至少每 5 分钟一个点, 9 小时 ~100 点)
+    """
+    try:
+        from app.models.garmin_timeseries import RespirationSample
+        from sqlalchemy import func as sa_func
+        from datetime import time as _time
+
+        # 找最新有数据的日期
+        latest_date = (
+            db.query(sa_func.max(RespirationSample.record_date))
+            .filter(RespirationSample.user_id == user_id)
+            .scalar()
+        )
+        if not latest_date:
+            return
+
+        # 该 record_date 的夜间窗: 22:00-24:00 (前一天晚) + 00:00-07:00 (本日早)
+        # 简化: 只用同 record_date 内 22:00-24:00 和 00:00-07:00 的样本.
+        # Garmin 的 record_date 归属逻辑: 睡眠主日期 = 起床那天.
+        # 实际 Garmin 样本 record_date=N 可能横跨 前晚 22:00 和 次晨 07:00.
+        night_samples = (
+            db.query(RespirationSample.respiration_rate)
+            .filter(
+                RespirationSample.user_id == user_id,
+                RespirationSample.record_date == latest_date,
+                (RespirationSample.sample_time >= _time(22, 0))
+                | (RespirationSample.sample_time <= _time(7, 0)),
+            )
+            .all()
+        )
+        rates = [float(r.respiration_rate) for r in night_samples if r.respiration_rate is not None]
+        if len(rates) < 20:
+            return
+
+        avg = sum(rates) / len(rates)
+        var = sum((x - avg) ** 2 for x in rates) / len(rates)
+        stddev = var ** 0.5
+
+        twin.physiological.respiration_nightly_avg = round(avg, 1)
+        twin.physiological.respiration_nightly_stddev = round(stddev, 2)
+        twin.physiological.respiration_nightly_samples = len(rates)
+        sources.add("respiration_samples")
+    except Exception as e:
+        logger.warning(f"[twin] respiration_nightly 失败: {e}")
 
 
 # ─────────────────────────── 11. 直接收集器 ───────────────────────────
