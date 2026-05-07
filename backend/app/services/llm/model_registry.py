@@ -53,34 +53,11 @@ MODELS: List[ModelEntry] = [
         requires_env=("OPENAI_API_KEY",),
     ),
 
-    # ──── 阿里百炼 TokenPlan (国内直连, qwen 系) ────
-    ModelEntry(
-        id="qwen-turbo",
-        label="Qwen Turbo · 阿里",
-        provider="tokenplan",
-        model="qwen-turbo",
-        speed_tier="fast",
-        note="国内最快, 适合实时对话",
-        requires_env=("TOKENPLAN_API_KEY",),
-    ),
-    ModelEntry(
-        id="qwen-plus",
-        label="Qwen Plus · 阿里",
-        provider="tokenplan",
-        model="qwen-plus",
-        speed_tier="balanced",
-        note="平衡速度+质量",
-        requires_env=("TOKENPLAN_API_KEY",),
-    ),
-    ModelEntry(
-        id="qwen-max",
-        label="Qwen Max · 阿里",
-        provider="tokenplan",
-        model="qwen-max",
-        speed_tier="balanced",
-        note="阿里最强常规模型",
-        requires_env=("TOKENPLAN_API_KEY",),
-    ),
+    # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
+    # 当前套餐 (2026-05-07) 支持的模型: qwen3.6-plus / deepseek-v3.2 / glm-5 /
+    # MiniMax-M2.5 + qwen-image / wan2.7-image (图像生成, 暂不接).
+    # 全部走同一个 base_url + 同一个 API Key, 只换 model 字段.
+    # qwen-turbo/plus/max 不在套餐里, 保留是 fallback 提示 (运行时若被选会走 base_url 默认报错).
     ModelEntry(
         id="qwen3.6-plus",
         label="Qwen3.6 Plus 推理 · 阿里",
@@ -90,27 +67,43 @@ MODELS: List[ModelEntry] = [
         note="thinking 模型, 慢但深度强 (10-50s)",
         requires_env=("TOKENPLAN_API_KEY",),
     ),
+    ModelEntry(
+        id="deepseek-v3.2",
+        label="DeepSeek V3.2 · 阿里直连",
+        provider="tokenplan",
+        model="deepseek-v3.2",
+        speed_tier="reasoning",
+        note="推理模型, 中文强, 套餐内",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="glm-5",
+        label="GLM-5 · 智谱 (阿里直连)",
+        provider="tokenplan",
+        model="glm-5",
+        speed_tier="balanced",
+        note="国产质量好, 通过 TokenPlan 套餐",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="minimax-m2.5",
+        label="MiniMax M2.5 · 阿里直连",
+        provider="tokenplan",
+        model="MiniMax-M2.5",
+        speed_tier="reasoning",
+        note="推理模型, 通过 TokenPlan 套餐",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
 
-    # ──── Kimi 月之暗面 (需独立 API Key) ────
+    # ──── Kimi (不在 TokenPlan 套餐, 需独立 Moonshot Key) ────
     ModelEntry(
         id="kimi-k2",
-        label="Kimi K2 · 月之暗面",
+        label="Kimi K2 · 月之暗面 (需独立 Key)",
         provider="moonshot",
         model="kimi-k2-turbo-preview",
         speed_tier="balanced",
-        note="长上下文 200k, 中文好",
+        note="长上下文 200k. 需配 MOONSHOT_API_KEY",
         requires_env=("MOONSHOT_API_KEY",),
-    ),
-
-    # ──── GLM 智谱 (需独立 API Key) ────
-    ModelEntry(
-        id="glm-4.6",
-        label="GLM-4.6 · 智谱",
-        provider="zhipu",
-        model="glm-4.6",
-        speed_tier="balanced",
-        note="国产质量好, 数学推理强",
-        requires_env=("ZHIPU_API_KEY",),
     ),
 
     # ──── OpenClaw (内部) ────
