@@ -13,22 +13,24 @@ _provider_instance: Optional[LLMProvider] = None
 
 def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
     """
-    根据配置创建 LLM Provider 实例
+    根据配置创建 LLM Provider 实例.
 
-    优先使用新配置字段（llm_provider / llm_*），不存在时回退到遗留配置
-    （openai_api_key、openclaw_base_url 等）。
+    优先级:
+    1. model_registry 当前 active model (admin 切换的)
+    2. settings.llm_provider 默认值
 
     Args:
-        provider_type: 指定 provider 类型 ("openai" | "ollama" | "openclaw")，
-                       None 则从 settings.llm_provider 读取
-
-    Returns:
-        对应的 LLMProvider 实例
-
-    Raises:
-        ValueError: 未知的 provider 类型
+        provider_type: 强制指定 provider, None = 走优先级
     """
+    # 优先用 admin 切换过的活跃 model
     if provider_type is None:
+        from app.services.llm.model_registry import get_active_model_id, get_model
+        active = get_active_model_id()
+        if active:
+            entry = get_model(active)
+            if entry:
+                logger.info(f"[LLM Factory] 用 admin 选定模型 {entry.id} (provider={entry.provider})")
+                return _create_from_entry(entry)
         provider_type = getattr(settings, "llm_provider", "openclaw")
 
     provider_type = provider_type.lower().strip()
@@ -51,6 +53,43 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
             f"未知的 LLM provider 类型: {provider_type!r}，"
             f"支持的类型: openclaw, openai, ollama, tokenplan"
         )
+
+
+def _create_from_entry(entry) -> LLMProvider:
+    """根据 ModelEntry 创建 provider — 模型级路由."""
+    from app.services.llm.providers.openai_provider import OpenAIProvider
+
+    if entry.provider == "openai-proxy":
+        return OpenAIProvider(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            model=entry.model,
+        )
+    if entry.provider == "tokenplan":
+        return OpenAIProvider(
+            api_key=settings.tokenplan_api_key,
+            base_url=settings.tokenplan_base_url,
+            model=entry.model,
+        )
+    if entry.provider == "moonshot":
+        if not settings.moonshot_api_key:
+            raise ValueError("MOONSHOT_API_KEY 未配置, 无法用 Kimi")
+        return OpenAIProvider(
+            api_key=settings.moonshot_api_key,
+            base_url=settings.moonshot_base_url,
+            model=entry.model,
+        )
+    if entry.provider == "zhipu":
+        if not settings.zhipu_api_key:
+            raise ValueError("ZHIPU_API_KEY 未配置, 无法用 GLM")
+        return OpenAIProvider(
+            api_key=settings.zhipu_api_key,
+            base_url=settings.zhipu_base_url,
+            model=entry.model,
+        )
+    if entry.provider == "openclaw":
+        return _create_openclaw_provider()
+    raise ValueError(f"unknown entry.provider: {entry.provider}")
 
 
 def _create_openai_provider() -> LLMProvider:

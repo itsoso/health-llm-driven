@@ -179,3 +179,147 @@ async def llm_ping(
             sample_reply="",
             error=str(e)[:200],
         )
+
+
+# ───── 多模型管理: list / select / latency snapshot ─────
+
+
+class ModelInfo(BaseModel):
+    id: str
+    label: str
+    provider: str
+    model: str
+    speed_tier: str
+    note: str = ""
+    available: bool       # env 是否齐全
+    is_active: bool       # 当前选中的
+
+
+class ModelListResponse(BaseModel):
+    active_id: Optional[str]   # None = 走 settings 默认
+    fallback_provider: str     # active 缺失时落到哪个 provider
+    fallback_model: str
+    models: list[ModelInfo]
+
+
+@router.get("/models", response_model=ModelListResponse)
+def list_available_models(admin: User = Depends(get_admin_user)):
+    """列出所有注册的模型 + 可用性 + 当前选中."""
+    from app.services.llm.model_registry import MODELS, get_active_model_id, list_models
+    available_ids = {m.id for m in list_models(only_available=True)}
+    active = get_active_model_id()
+
+    out = []
+    for m in MODELS:
+        out.append(ModelInfo(
+            id=m.id,
+            label=m.label,
+            provider=m.provider,
+            model=m.model,
+            speed_tier=m.speed_tier,
+            note=m.note,
+            available=m.id in available_ids,
+            is_active=(active == m.id),
+        ))
+
+    # fallback
+    fp = settings.llm_provider
+    if fp == "openai":
+        fm = settings.openai_model
+    elif fp == "tokenplan":
+        fm = settings.tokenplan_model
+    elif fp == "openclaw":
+        fm = settings.openclaw_model
+    else:
+        fm = "?"
+
+    return ModelListResponse(
+        active_id=active,
+        fallback_provider=fp,
+        fallback_model=fm,
+        models=out,
+    )
+
+
+class SelectModelRequest(BaseModel):
+    model_id: Optional[str]   # None / 空 = 恢复默认
+
+
+@router.post("/select-model")
+def select_model(req: SelectModelRequest, admin: User = Depends(get_admin_user)):
+    """切换活跃模型. 进程内, 重启失效."""
+    from app.services.llm.model_registry import get_model, set_active_model_id
+    from app.services.llm.factory import reset_llm_provider
+
+    if not req.model_id:
+        set_active_model_id(None)
+        reset_llm_provider()
+        logger.warning(f"[admin.llm.select-model] user={admin.id} 恢复默认")
+        return {"ok": True, "active_id": None, "note": "恢复默认 provider"}
+
+    entry = get_model(req.model_id)
+    if not entry:
+        raise HTTPException(404, f"未注册的 model: {req.model_id}")
+
+    # 验 env 齐全
+    from app.services.llm.model_registry import _env_present
+    missing = [e for e in entry.requires_env if not _env_present(e, settings)]
+    if missing:
+        raise HTTPException(400, f"模型 {req.model_id} 需要的 env 缺失: {missing}")
+
+    set_active_model_id(req.model_id)
+    reset_llm_provider()
+    logger.warning(f"[admin.llm.select-model] user={admin.id} 选中 {req.model_id}")
+    return {"ok": True, "active_id": req.model_id, "label": entry.label}
+
+
+class BenchmarkResponse(BaseModel):
+    model_id: str
+    label: str
+    runs: int
+    latency_ms: list[int]
+    avg_ms: float
+    ok: bool
+    sample_reply: str
+
+
+@router.post("/benchmark/{model_id}", response_model=BenchmarkResponse)
+async def benchmark_model(
+    model_id: str,
+    runs: int = 3,
+    admin: User = Depends(get_admin_user),
+):
+    """跑指定模型 N 次, 测延迟. 用于对比. 不切换活跃 model."""
+    from app.services.llm.model_registry import get_model
+    from app.services.llm.factory import _create_from_entry
+    entry = get_model(model_id)
+    if not entry:
+        raise HTTPException(404, f"未注册: {model_id}")
+
+    try:
+        provider = _create_from_entry(entry)
+    except Exception as e:
+        raise HTTPException(400, f"创建 provider 失败: {e}")
+
+    latencies = []
+    sample = ""
+    ok = True
+    for _ in range(max(1, min(runs, 5))):
+        t0 = time.time()
+        try:
+            reply = await provider.chat(
+                messages=[{"role": "user", "content": "用一句话回答: 现在是早晨还是下午"}],
+                max_tokens=40,
+            )
+            text = reply if isinstance(reply, str) else reply.get("content", "")
+            sample = text[:40]
+        except Exception as e:
+            sample = f"ERR: {type(e).__name__}: {str(e)[:60]}"
+            ok = False
+        latencies.append(int((time.time() - t0) * 1000))
+
+    avg = sum(latencies) / len(latencies)
+    return BenchmarkResponse(
+        model_id=model_id, label=entry.label, runs=len(latencies),
+        latency_ms=latencies, avg_ms=round(avg, 1), ok=ok, sample_reply=sample,
+    )

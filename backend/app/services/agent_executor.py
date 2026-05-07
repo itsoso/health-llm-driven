@@ -462,7 +462,19 @@ class AgentExecutor:
             try:
                 logger.info(f"[_call_llm_direct] attempt={attempt+1} POST start")
                 resp = await client.post(url, headers=headers, json=payload)
-                logger.info(f"[_call_llm_direct] attempt={attempt+1} POST done in {time.time()-t0:.1f}s status={resp.status_code}")
+                latency_ms = int((time.time() - t0) * 1000)
+                logger.info(f"[_call_llm_direct] attempt={attempt+1} POST done in {latency_ms/1000:.1f}s status={resp.status_code}")
+                # 结构化 perf 指标 (machine-parseable, 用于 admin 看板汇总):
+                # metric: llm_call provider=<base_url主机> model=<model> latency_ms=<n> status=<n> attempt=<n>
+                try:
+                    from urllib.parse import urlparse
+                    host = urlparse(base_url).netloc
+                except Exception:
+                    host = base_url[:30]
+                logger.info(
+                    f"metric: llm_call provider={host} model={model} "
+                    f"latency_ms={latency_ms} status={resp.status_code} attempt={attempt+1}"
+                )
                 if resp.status_code == 429:
                     wait = min(2 * (2 ** attempt), 10)  # 2s, 4s, 8s
                     logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")

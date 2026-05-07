@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     tokenplan_model: str = "qwen3.6-plus"
 
+    # 月之暗面 Kimi (兼容 OpenAI 协议)
+    moonshot_api_key: Optional[str] = None
+    moonshot_base_url: str = "https://api.moonshot.cn/v1"
+
+    # 智谱 GLM (兼容 OpenAI 协议)
+    zhipu_api_key: Optional[str] = None
+    zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+
     # Garmin 凭据 (用于后台自动同步)
     garmin_email: Optional[str] = None
     garmin_password: Optional[str] = None
