@@ -108,6 +108,67 @@ export function compareExams(current: MedicalExam, previous: MedicalExam): ExamC
   return out;
 }
 
+// ========== 上传入口 (Iter 1 Day 2/3: /import 页) ==========
+
+export interface MedicalExamPdfUploadResult {
+  message: string;
+  exam_id: number;
+  patient_name?: string | null;
+  exam_date: string;
+  exam_type?: string | null;
+  hospital_name?: string | null;
+  items_count: number;
+  conclusions_count?: number;
+  category_summary?: Record<string, number>;
+}
+
+export interface MedicalExamImageUploadResult {
+  message: string;
+  exam_id: number;
+  exam_date: string;
+  exam_type?: string | null;
+  hospital_name?: string | null;
+  items_count: number;
+  abnormal_count: number;
+  conclusion?: string | null;
+}
+
+/**
+ * 体检 PDF 上传 → /medical-exams/import/pdf (multipart).
+ */
+export async function uploadMedicalExamPdf(
+  fileUri: string,
+  fileName: string,
+): Promise<MedicalExamPdfUploadResult> {
+  const form = new FormData();
+  // RN FormData 接受 { uri, name, type } 对象
+  form.append('file', { uri: fileUri, name: fileName, type: 'application/pdf' } as any);
+  const res = await api.post<MedicalExamPdfUploadResult>(
+    '/medical-exams/import/pdf',
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 },
+  );
+  return res.data;
+}
+
+/**
+ * 体检照片上传 → /medical-exams/import/image (multipart, 走 vision OCR).
+ */
+export async function uploadMedicalExamImage(
+  fileUri: string,
+  fileName: string,
+  mimeType: string = 'image/jpeg',
+): Promise<MedicalExamImageUploadResult> {
+  const form = new FormData();
+  form.append('file', { uri: fileUri, name: fileName, type: mimeType } as any);
+  const res = await api.post<MedicalExamImageUploadResult>(
+    '/medical-exams/import/image',
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 },
+  );
+  return res.data;
+}
+
 /**
  * 把 exam_date 'YYYY-MM-DD' 转成"6 月 / 3 个月前 / 2 年前" 这种相对时间.
  */
