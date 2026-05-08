@@ -172,10 +172,13 @@ export default function VoiceChatScreen() {
   const onBallPress = () => {
     if (voice.state === 'listening') {
       voice.stopListening();
+    } else if (voice.state === 'speaking' || voice.state === 'thinking') {
+      // 打断 AI: startListening 自己会 stopCurrentSpeech + 清 TTS 队列 + abort LLM 请求
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      voice.startListening();
     } else if (voice.state === 'idle' || voice.state === 'error') {
       voice.startListening();
     }
-    // thinking / speaking 期间点击忽略; speaking 打断通过"再说"交互走 startListening
   };
 
   const statusText = (() => {
@@ -321,7 +324,11 @@ export default function VoiceChatScreen() {
           </Animated.View>
         </Pressable>
         <Text style={txt.hint}>
-          {voice.state === 'listening' ? '停 1 秒自动发，或再点一下立即结束' : voice.state === 'idle' ? '点一下开始说话' : ' '}
+          {voice.state === 'listening' ? '停 1 秒自动发，或再点一下立即结束'
+            : voice.state === 'speaking' ? '点一下打断，换你说'
+            : voice.state === 'thinking' ? '点一下打断，换你说'
+            : voice.state === 'idle' ? '点一下开始说话'
+            : ' '}
         </Text>
       </View>
 

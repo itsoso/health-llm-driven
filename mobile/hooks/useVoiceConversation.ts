@@ -542,9 +542,14 @@ export function useVoiceConversation() {
 
   const startListening = useCallback(async () => {
     try {
-      stopCurrentSpeech();
+      // 顺序很重要: 先清队列 + preSynth, 再 stopCurrentSpeech.
+      // stopCurrentSpeech 会同步触发 finish → onDone → flushTTS, 若此时队列未清
+      // 就会继续播下一句, 打断失败.
       ttsQueueRef.current = [];
+      pendingTextRef.current = '';
+      preSynthRef.current = null;
       abortRef.current?.abort();
+      stopCurrentSpeech();
       setError(null);
       setTranscript('');
       latestPartialRef.current = '';
