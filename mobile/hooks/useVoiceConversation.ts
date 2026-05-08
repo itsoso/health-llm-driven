@@ -151,6 +151,8 @@ export function useVoiceConversation() {
   const assistantTextRef = useRef('');
   const ttsQueueRef = useRef<string[]>([]);
   const isSpeakingRef = useRef(false);
+  // prefetch: 当前句在播时, 提前合成队列下一句的音频, 消除句间 network gap
+  const preSynthRef = useRef<{ text: string; promise: Promise<string> } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // I Phase 2: 本次会话内成功 health_record 的录入摘要 (关闭 voice-chat 时弹 summary 卡用)
@@ -246,7 +248,23 @@ export function useVoiceConversation() {
     const opt = getVoiceStyle(voiceStyleRef.current);
     const voiceKey = opt.cloudVoiceKey ?? 'cloned_private_female';
     try {
-      const { localUri } = await cloudSynthesize({ text, voiceKey });
+      // 优先复用 prefetch 好的 audio (另一句在播时合成的)
+      let localUri: string;
+      const pre = preSynthRef.current;
+      if (pre && pre.text === text) {
+        preSynthRef.current = null;
+        localUri = await pre.promise;
+      } else {
+        const synth = await cloudSynthesize({ text, voiceKey });
+        localUri = synth.localUri;
+      }
+
+      // 立即为队列下一句预合成, 跟本句播放并行, 消除句间 network gap
+      const nextText = ttsQueueRef.current[0];
+      if (nextText && !preSynthRef.current) {
+        const p = cloudSynthesize({ text: nextText, voiceKey }).then(r => r.localUri).catch(() => '');
+        preSynthRef.current = { text: nextText, promise: p };
+      }
       // 新 player 每句一个, 简化生命周期 (非高频场景, 代价可接受)
       const player = createAudioPlayer({ uri: localUri });
       let finished = false;

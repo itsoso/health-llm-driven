@@ -106,6 +106,16 @@ function AppContent() {
         <Stack.Screen name="trace/index" options={{ headerShown: false }} />
         <Stack.Screen name="trace/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="voice-chat" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="timeline" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="medications" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="family" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="location" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="voice-style" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="doctor-loop" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="goals" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="monthly-reports" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ai-profile" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="admin-llm" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
       <NotificationBanner />
       <NetworkBanner />

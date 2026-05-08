@@ -20,6 +20,29 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 
+# 后端指标字段名 → 用户可读标签 + 单位. 用于 timeline subtitle 人话化.
+_METRIC_LABELS: dict[str, tuple[str, str]] = {
+    "spo2_avg": ("血氧平均", "%"),
+    "spo2_min": ("血氧最低", "%"),
+    "spo2_below_90_pct": ("低氧占比", "%"),
+    "resting_heart_rate": ("静息心率", " bpm"),
+    "hrv": ("HRV", " ms"),
+    "sleep_score": ("睡眠评分", ""),
+    "sleep_duration": ("睡眠时长", " h"),
+    "stress_level": ("压力", ""),
+    "body_battery": ("身体电量", ""),
+    "weight": ("体重", " kg"),
+    "blood_pressure": ("血压", " mmHg"),
+}
+
+
+def _metric_humanize(metric_name: str) -> tuple[str, str]:
+    """metric_name → (label, unit). 未知 metric 原样返回无单位."""
+    if metric_name in _METRIC_LABELS:
+        return _METRIC_LABELS[metric_name]
+    return (metric_name, "")
+
+
 @dataclass
 class TimelineEvent:
     """Timeline 统一事件."""
@@ -109,11 +132,15 @@ def _alerts(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
             from app.services.alert_clarification import get_clarification_opener
             has_clarify = get_clarification_opener(a) is not None
             deep = f"voice-chat?intent=clarify&alert_id={a.id}" if has_clarify else f"trace/anomaly_{a.id}"
+            # 把开发者字段名映射成人话 + 加单位
+            metric_label, unit = _metric_humanize(a.metric_name)
+            sub_val = f"{a.current_value}{unit}" if a.current_value is not None else ""
+            subtitle = f"{metric_label} {sub_val}".strip()
             out.append(TimelineEvent(
                 id=f"alert_{a.id}",
                 source="alert",
                 title=a.message[:40],
-                subtitle=f"{a.metric_name}" + (f" ({a.current_value})" if a.current_value is not None else ""),
+                subtitle=subtitle or None,
                 icon="warning-outline" if a.severity != "critical" else "alert-circle",
                 color=color,
                 # detection_date 只到天, 给个稳定的 12:00 防排序抖动
