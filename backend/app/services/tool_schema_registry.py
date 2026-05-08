@@ -234,6 +234,131 @@ reminder:         {"title": "吃药", "remind_at": "2026-05-06T08:00:00+08:00"}"
     {
         "type": "function",
         "function": {
+            "name": "upload_genetic_txt",
+            "description": """用户语音/对话粘贴 23andMe / 微基因 / 全基因组 TXT 原始数据时调用.
+
+触发场景:
+- "我把基因报告 raw data 发给你"
+- "这是我的 23andMe 文件" + 长文本
+- 用户粘贴了大段含 rsid 的 tab 分隔行 (如 'rs1801133\\t1\\t...\\tAG')
+
+行为: 解析 SNP 位点, 自动写入 GeneticProfile + GeneticVariant 表, 写完触发 Twin 失效.
+之后用户问"我有什么基因风险"就能查到. 不要让用户重复粘贴.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "txt_content": {
+                        "type": "string",
+                        "description": "23andMe / WeGene 格式的 TXT 原始内容. tab 分隔, # 开头是注释, 第 1 列 rsid, 第 4 列 genotype.",
+                    },
+                    "test_provider": {
+                        "type": "string",
+                        "description": "检测机构, 如 '23andMe' / 'WeGene' / '微基因'. 用户没说就填 'unknown'.",
+                        "default": "unknown",
+                    },
+                    "test_date": {
+                        "type": "string",
+                        "description": "检测日期 ISO 格式 YYYY-MM-DD. 用户没说就填今天.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "可选备注",
+                    },
+                },
+                "required": ["txt_content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_genetic_profile",
+            "description": """列出用户的基因档案 (profiles) — 多份就返回多条, 含每份的 variant_count + 解析状态.
+
+何时调用:
+- "我有几份基因报告"
+- "我之前传过基因数据吗"
+- "上次的基因报告解析完了吗"
+
+返回每份: id / test_provider / test_date / variant_count / status (processing/done/failed).
+如果用户问基因 *指标* (MTHFR / APOE 等), 用 health_query(dimension='genetic', indicator=...) 而不是这个.""",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "upload_medical_exam_text",
+            "description": """用户口述/粘贴体检化验结果文本时调用 (非 PDF 非图片, 纯文本).
+
+触发场景:
+- "我刚去抽血, LDL 3.8, ALT 42, 空腹血糖 5.6"
+- 用户从微信/短信粘贴的化验结果文本
+- 拍照 OCR 都不方便, 用户直接念出来
+
+行为: 调 medical_text_parser 抽取指标 → 写 MedicalExamItem + MedicalIndicator → 触发 Twin 失效.
+之后 query_lab_indicators 能查到.
+
+不要为单一指标 (单条血压 130/85) 走这个, 那个用 health_record(record_type='blood_pressure'). 这个适合 *多指标体检结果*.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "用户口述的体检 / 化验文本. 例: 'LDL 3.8 mmol/L, ALT 42 U/L, 空腹血糖 5.6'",
+                    },
+                    "exam_date": {
+                        "type": "string",
+                        "description": "检查日期 ISO YYYY-MM-DD. 用户没说就填今天.",
+                    },
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_lab_indicators",
+            "description": """查询用户的化验/体检指标历史 (MedicalIndicator 表).
+
+触发场景:
+- "我上次 LDL 多少"
+- "我的 ALT 历史" / "甲状腺过去几年的趋势"
+- 用户想看某个指标的随时间变化
+
+参数 name 是中文/英文都行 (LDL / 低密度脂蛋白). since 是 YYYY-MM-DD, 不传就给最近 1 年.
+返回每条: record_date / value / unit / is_abnormal / reference_low / reference_high.
+
+如果用户问的是"我体检结果怎么样"那种宽泛问题, 用 health_query(dimension='medical_exam') 拿最新整体快照, 不要走这个.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "指标名, 中英文均可 (LDL / 低密度脂蛋白胆固醇 / ALT / 谷丙转氨酶). 不传则返回最近全部异常项.",
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": "起始日期 ISO YYYY-MM-DD. 不传默认最近 365 天.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "最多返回多少条",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_plan",
             "description": "管理健康计划：生成周计划、完成计划项、保存内容到首页卡片。",
             "parameters": {

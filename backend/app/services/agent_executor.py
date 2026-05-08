@@ -631,6 +631,14 @@ class AgentExecutor:
                 return await self._exec_supplement_guide(base_url, headers, args)
             elif tool_name == "manage_plan":
                 return await self._exec_manage_plan(base_url, headers, args)
+            elif tool_name == "upload_genetic_txt":
+                return await self._exec_upload_genetic_txt(base_url, headers, args)
+            elif tool_name == "query_genetic_profile":
+                return await self._exec_query_genetic_profile(base_url, headers, args)
+            elif tool_name == "upload_medical_exam_text":
+                return await self._exec_upload_medical_exam_text(base_url, headers, args)
+            elif tool_name == "query_lab_indicators":
+                return await self._exec_query_lab_indicators(base_url, headers, args)
             else:
                 return f"Error: 未知工具 {tool_name}"
         except Exception as e:
@@ -1011,6 +1019,90 @@ class AgentExecutor:
         elif action == "save_to_card":
             return await self._api_post(f"{base}/action-cards/from-message", headers, data)
         return f"Error: 不支持的计划操作 {action}"
+
+    async def _exec_upload_genetic_txt(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """上传 23andMe / WeGene TXT 原始数据."""
+        txt = args.get("txt_content") or ""
+        if len(txt) < 50:
+            return "Error: txt_content 太短, 不像是 23andMe/WeGene 原始数据 (应是含 rsid 的 tab 分隔行)"
+        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        payload = {
+            "test_provider": args.get("test_provider") or "unknown",
+            "test_date": args.get("test_date") or today,
+            "txt_content": txt,
+            "notes": args.get("notes") or "LLM 工具自动上传",
+        }
+        return await self._api_post(f"{base}/genetic/profiles/upload-txt", headers, payload)
+
+    async def _exec_query_genetic_profile(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """列出基因档案."""
+        return await self._api_get(f"{base}/genetic/profiles/me", headers)
+
+    async def _exec_upload_medical_exam_text(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """口述化验文本 → medical_text_parser → 入 MedicalExam + Indicator."""
+        text = (args.get("text") or "").strip()
+        if not text:
+            return "Error: text 不能为空"
+        # 复用 family_health 的 parse-medical-text (内部 LLM 抽指标 + 路由入库)
+        return await self._api_post(
+            f"{base}/family-health/parse-medical-text", headers, {"text": text}
+        )
+
+    async def _exec_query_lab_indicators(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """查询 MedicalIndicator (跨次体检的单指标历史). 直接读 DB, 不走 HTTP."""
+        from app.models.family_health import MedicalIndicator
+        from sqlalchemy import or_, desc as sa_desc
+
+        if self._current_user_id is None:
+            return "Error: 当前会话无 user_id, 无法查询"
+
+        name = (args.get("name") or "").strip()
+        since_str = args.get("since")
+        limit = max(1, min(int(args.get("limit") or 20), 100))
+
+        try:
+            from datetime import date as _date
+            if since_str:
+                since = datetime.strptime(since_str, "%Y-%m-%d").date()
+            else:
+                since = _date.today() - timedelta(days=365)
+        except Exception:
+            return f"Error: since 必须是 YYYY-MM-DD, got {since_str!r}"
+
+        q = self.db.query(MedicalIndicator).filter(
+            MedicalIndicator.user_id == self._current_user_id,
+            MedicalIndicator.record_date >= since,
+        )
+        if name:
+            up = name.upper()
+            q = q.filter(or_(
+                MedicalIndicator.name == name,
+                MedicalIndicator.name_en == up,
+                MedicalIndicator.name.ilike(f"%{name}%"),
+            ))
+        rows = q.order_by(sa_desc(MedicalIndicator.record_date)).limit(limit).all()
+        if not rows:
+            return json.dumps({"count": 0, "items": [], "hint": f"未找到 {name or '任何'} 指标"}, ensure_ascii=False)
+        items = [
+            {
+                "name": r.name, "name_en": r.name_en,
+                "value": r.value, "unit": r.unit,
+                "record_date": r.record_date.isoformat() if r.record_date else None,
+                "is_abnormal": r.is_abnormal,
+                "reference_low": r.reference_low,
+                "reference_high": r.reference_high,
+            }
+            for r in rows
+        ]
+        return json.dumps({"count": len(items), "items": items}, ensure_ascii=False)
 
     async def _api_get(self, url: str, headers: dict) -> str:
         """HTTP GET"""
