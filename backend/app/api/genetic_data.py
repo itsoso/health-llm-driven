@@ -572,6 +572,49 @@ def list_profiles(
     ]
 
 
+@router.get("/profiles/{profile_id}/status", summary="基因档案解析状态 (轻量轮询端点)")
+def get_profile_status(
+    profile_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    PDF 异步解析专用轮询端点 — 只返 status + variant_count + notes, 不带 variants 列表.
+
+    status 语义:
+      - "processing": notes 为空或含"提取中/正在"
+      - "failed":     notes 含"失败"
+      - "done":       notes 含"完成" 或 variant_count > 0
+    """
+    profile = (
+        db.query(GeneticProfile)
+        .filter(GeneticProfile.id == profile_id, GeneticProfile.user_id == current_user.id)
+        .first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="基因档案不存在")
+
+    variant_count = (
+        db.query(GeneticVariant)
+        .filter(GeneticVariant.profile_id == profile.id)
+        .count()
+    )
+    notes = profile.notes or ""
+    if "失败" in notes:
+        status = "failed"
+    elif "完成" in notes or variant_count > 0:
+        status = "done"
+    else:
+        status = "processing"
+
+    return {
+        "id": profile.id,
+        "status": status,
+        "variant_count": variant_count,
+        "notes": notes,
+    }
+
+
 @router.get("/profiles/{profile_id}", summary="基因档案详情（含变异位点）")
 def get_profile_detail(
     profile_id: int,

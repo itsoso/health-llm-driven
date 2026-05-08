@@ -10,7 +10,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (43 路由)              │      │
+                        │   mobile/app/*.tsx (44 路由)              │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -116,7 +116,7 @@
 | `backend/app/tasks/*.py` | 41 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 43 RN 路由 + Tab 导航 |
+| `mobile/app/` | 44 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -702,7 +702,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 
 | 日期 | 更新者 | 摘要 |
 |---|---|---|
-| 2026-05-08 | Claude Opus 4.7 | 首次全量重写; 覆盖 Agent-Native 四层架构 / 116 API / 43 mobile 路由 / 68 web 页 / 41 Celery 任务 / 13 Twin 分区 / 51 Safety 规则 / 3 push 通道 / 双通道 mobile 部署 / 9 LLM 模型注册表 |
+| 2026-05-08 | Claude Opus 4.7 | 首次全量重写; 覆盖 Agent-Native 四层架构 / 116 API / 44 mobile 路由 / 68 web 页 / 41 Celery 任务 / 13 Twin 分区 / 51 Safety 规则 / 3 push 通道 / 双通道 mobile 部署 / 9 LLM 模型注册表 |
 | 2026-05-08 | Claude Opus 4.7 | feat: SymptomEntry 通用症状录入 (Home + Record tab + voice); fix: 莫米松 checkin 字段不存在 → 改走 medication_logs; fix: 计划提醒推送前按今日实际天气校对 title (修"雨天力量维护日"但今天没下雨 badcase). 数字: API 116→117, models 68→69, mobile 42→43 |
 
 ---

@@ -6,8 +6,8 @@
  *
  * 流程:
  *   1. 用户点 "选择文件" → DocumentPicker → 按扩展名分发:
- *        .txt           → 基因 raw_data  → POST /genetic-data/profiles/upload-txt
- *        .pdf (基因报告) → POST /genetic-data/profiles/upload-pdf
+ *        .txt           → 基因 raw_data  → POST /genetic/profiles/upload-txt
+ *        .pdf (基因报告) → POST /genetic/profiles/upload-pdf
  *        .pdf (体检报告) → POST /medical-exams/import/pdf
  *        .jpg/.png      → POST /medical-exams/import/image
  *      让用户手动选"基因/体检"类型 (.pdf 歧义, 无法靠扩展名猜)
@@ -19,6 +19,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, TextStyle,
   Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  Modal, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +30,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { uploadMedicalExamPdf, uploadMedicalExamImage } from '../services/medicalExams';
-import { uploadGeneticTxt, uploadGeneticPdf } from '../services/geneticData';
+import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '../services/geneticData';
+import api from '../services/api';
 
 type FileKind = 'genetic_txt' | 'genetic_pdf' | 'medical_pdf' | 'medical_image';
 
@@ -45,7 +47,10 @@ export default function ImportScreen() {
   const txt = useMemo(() => createTxt(c), [c]);
 
   const [busy, setBusy] = useState(false);
+  const [busyHint, setBusyHint] = useState<string>('AI 正在解析, 请稍候 (10-60 秒)...');
   const [result, setResult] = useState<UploadResult | null>(null);
+  const [fallbackOpen, setFallbackOpen] = useState(false);
+  const [fallbackText, setFallbackText] = useState('');
 
   const onPickFile = async () => {
     if (busy) return;
@@ -125,6 +130,9 @@ export default function ImportScreen() {
 
   async function runUpload<T>(kind: FileKind, fn: () => Promise<T>) {
     setBusy(true);
+    setBusyHint(kind === 'genetic_pdf'
+      ? '基因 PDF 已上传, AI 后台解析中, 最长 1-3 分钟...'
+      : 'AI 正在解析, 请稍候 (10-60 秒)...');
     setResult(null);
     try {
       const data: any = await fn();
@@ -136,8 +144,23 @@ export default function ImportScreen() {
         message = `成功匹配 ${data.matched_count ?? 0} 个健康相关基因位点`;
         detail = data.message || '';
       } else if (kind === 'genetic_pdf') {
-        message = 'PDF 已上传, AI 正在后台解析基因位点...';
-        detail = '解析需 1-2 分钟, 完成后在"基因档案"里可以查看.';
+        // PDF 异步 — 立刻回一个 "上传成功" 再轮询真实结果
+        const profileId = data.id;
+        setBusyHint(`档案 #${profileId} 上传成功, 正在轮询解析进度...`);
+        const final = await pollGeneticProfileStatus(profileId, {
+          onTick: (s) => {
+            if (s.variant_count > 0) setBusyHint(`已提取 ${s.variant_count} 个位点, 继续解析中...`);
+          },
+        });
+        if (final.status === 'done') {
+          message = `基因报告解析完成: 提取 ${final.variant_count} 个位点`;
+          detail = final.notes || '';
+        } else if (final.status === 'failed') {
+          throw new Error(final.notes || '基因 PDF 解析失败');
+        } else {
+          message = `基因报告上传成功, 仍在后台解析 (已提取 ${final.variant_count} 个位点)`;
+          detail = '稍后在"基因档案"里可以查看最终结果.';
+        }
       } else if (kind === 'medical_pdf') {
         message = `体检报告解析成功: ${data.items_count ?? 0} 个指标`;
         detail = data.hospital_name ? `来源: ${data.hospital_name}` : '';
@@ -152,14 +175,50 @@ export default function ImportScreen() {
       const status = e?.response?.status;
       const serverMsg = e?.response?.data?.detail || e?.message || '未知错误';
       let hint = '';
-      if (status === 413) hint = '文件过大 — 请压缩到 10MB (图片) / 20MB (PDF) 以内再试.';
-      else if (status === 422) hint = 'AI 未能识别出结构化数据 — 换一张更清晰的图, 或上传 PDF 原件.';
-      else if (status === 400) hint = '文件格式不对 — 请检查扩展名.';
-      Alert.alert('上传失败', `${serverMsg}${hint ? '\n\n' + hint : ''}`);
+      let showFallback = false;
+
+      if (status === 413) {
+        hint = '文件过大 — 请压缩到 10MB (图片) / 20MB (PDF) 以内再试.';
+      } else if (status === 422 || status === 400) {
+        showFallback = true;
+        hint = 'AI 未能识别出结构化数据 — 可以尝试手工贴文字, 让 AI 抽取指标.';
+      } else {
+        hint = '请稍后再试';
+      }
+
+      if (showFallback) {
+        setFallbackOpen(true);
+      } else {
+        Alert.alert('上传失败', `${serverMsg}${hint ? '\n\n' + hint : ''}`);
+      }
     } finally {
       setBusy(false);
     }
   }
+
+  const onFallbackSubmit = async () => {
+    const text = fallbackText.trim();
+    if (!text) {
+      Alert.alert('请输入内容', '至少输入一点文字, 比如 "血压 130/85".');
+      return;
+    }
+    setFallbackOpen(false);
+    setBusy(true);
+    setBusyHint('AI 正在从文字中抽取健康指标...');
+    try {
+      const res = await api.post('/family-health/parse-medical-text', { text });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const items = res.data?.indicators || [];
+      const count = items.length;
+      let message = count > 0 ? `从文字中识别出 ${count} 项指标` : '未能识别出指标';
+      let detail = count > 0 ? `例如: ${items.slice(0, 3).map((i: any) => i.name || i.item_name).join(', ')}` : '';
+      setResult({ kind: 'medical_image', message, detail });
+    } catch (e: any) {
+      Alert.alert('文字解析失败', e?.response?.data?.detail || e?.message || '请稍后再试');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -213,7 +272,7 @@ export default function ImportScreen() {
           {busy && (
             <View style={styles.busyBox}>
               <ActivityIndicator size="small" color={c.brand} />
-              <Text style={txt.busyText}>AI 正在解析, 请稍候 (10-60 秒)...</Text>
+              <Text style={txt.busyText}>{busyHint}</Text>
             </View>
           )}
 
@@ -246,6 +305,48 @@ export default function ImportScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={fallbackOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setFallbackOpen(false)}
+      >
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => setFallbackOpen(false)} hitSlop={10} style={{ padding: 6 }}>
+              <Ionicons name="close" size={26} color={c.labelPrimary} />
+            </TouchableOpacity>
+            <Text style={txt.title}>手工贴文字</Text>
+            <TouchableOpacity onPress={onFallbackSubmit} hitSlop={10} style={{ padding: 6 }}>
+              <Text style={txt.saveBtn}>解析</Text>
+            </TouchableOpacity>
+          </View>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            <ScrollView contentContainerStyle={styles.scroll}>
+              <Text style={txt.lead}>
+                AI 没识别成功? 把化验单 / 体检结果文字粘贴进来 (或者手打), AI 会从中抽取指标.
+              </Text>
+              <TextInput
+                style={styles.fallbackInput}
+                value={fallbackText}
+                onChangeText={setFallbackText}
+                placeholder={'例如:\n血压 130/85\nLDL 3.8\nHbA1c 5.7%\nALT 42 U/L'}
+                placeholderTextColor={c.labelTertiary}
+                multiline
+                autoFocus
+                maxLength={4000}
+              />
+              <Text style={[txt.tipsItem, { color: c.labelTertiary, marginTop: spacing.md }]}>
+                提示: 一行一项, 包含数值 + 单位 (如 "LDL 3.8 mmol/L") 准确率最高.
+              </Text>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -288,12 +389,20 @@ function createStyles(c: ColorPalette) {
       backgroundColor: c.bgCard, borderRadius: radii.md,
       borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
     },
+    fallbackInput: {
+      marginTop: spacing.md, padding: spacing.md,
+      backgroundColor: c.bgCard, borderRadius: radii.md,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
+      color: c.labelPrimary, fontSize: 15, minHeight: 240,
+      textAlignVertical: 'top',
+    },
   });
 }
 
 function createTxt(c: ColorPalette) {
   return {
     title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+    saveBtn: { fontSize: 16, fontWeight: '600', color: c.brand } as TextStyle,
     lead: { fontSize: 14, color: c.labelSecondary, lineHeight: 20, marginBottom: spacing.sm } as TextStyle,
     ctaTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary, marginBottom: 2 } as TextStyle,
     ctaSub: { fontSize: 12, color: c.labelTertiary, lineHeight: 17 } as TextStyle,
