@@ -400,6 +400,37 @@ class AgentExecutor:
         except Exception:
             pass
 
+        # 告诉 LLM 自己是哪个模型 — 用户问 "你是什么模型" 时如实答
+        try:
+            from app.services.llm.model_registry import get_active_model_id, get_model
+            from app.config import settings as _settings
+            active_id = get_active_model_id()
+            if active_id:
+                entry = get_model(active_id)
+                if entry:
+                    model_label = f"{entry.label} ({entry.model})"
+                else:
+                    model_label = active_id
+            else:
+                # 回落到 settings 默认
+                provider = _settings.llm_provider
+                if provider == "openai":
+                    model_label = f"OpenAI {_settings.openai_model}"
+                elif provider == "tokenplan":
+                    model_label = f"Aliyun TokenPlan {_settings.tokenplan_model}"
+                elif provider == "openclaw":
+                    model_label = f"OpenClaw {_settings.openclaw_model}"
+                else:
+                    model_label = provider
+            parts.append(
+                "\n## 自我标识\n"
+                f"- 你当前由 **{model_label}** 驱动。\n"
+                "- 用户若问'你是什么模型'/'你用的是哪家 AI'/'底层模型版本'之类问题, 如实回答上面的 model_label.\n"
+                "- 不要自称是 ChatGPT / Claude / 其他 — 以用户 admin 切换的为准."
+            )
+        except Exception:
+            pass
+
         return "\n".join(parts)
 
     async def _call_llm(
