@@ -175,6 +175,18 @@ def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
             available_total += weight
 
     if available_total <= 0:
+        # 自算组件全缺, 但如果 Garmin 有 readiness 分数, 直接用它 — 不要 early return 成 unknown
+        garmin_score_fallback = _safe(getattr(p, "training_readiness_score", None))
+        if garmin_score_fallback is not None and 0 <= garmin_score_fallback <= 100:
+            return ReadinessBreakdown(
+                score=int(round(garmin_score_fallback)),
+                components={},
+                weights_used={},
+                penalty=0.0,
+                missing_components=list(_DEFAULT_WEIGHTS.keys()),
+                zone=_readiness_zone(float(garmin_score_fallback), []),
+                source="garmin",
+            )
         return ReadinessBreakdown(
             score=0,
             components={},
@@ -211,7 +223,10 @@ def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
     garmin_score = _safe(getattr(p, "training_readiness_score", None))
     if garmin_score is not None and 0 <= garmin_score <= 100:
         score_final = float(garmin_score)
-        zone = _readiness_zone(score_final, missing)
+        # 注意: zone 不传 missing — Garmin 分数自成一体 (它已经综合考虑 HRV/sleep/load),
+        # 不能因为"我们自算路径的 HRV 组件没采到"就把 Garmin 的 zone 打成 unknown.
+        # 传空 list 让 _readiness_zone 按 score 正常分档.
+        zone = _readiness_zone(score_final, [])
         return ReadinessBreakdown(
             score=int(round(score_final)),
             components={k: round(v, 3) for k, v in components.items() if v is not None},
