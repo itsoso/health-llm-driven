@@ -5,7 +5,7 @@ import Voice, {
 } from '@react-native-voice/voice';
 import * as Speech from 'expo-speech';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import { streamChat } from '../services/chat';
+import { streamChat, getConversationMessages } from '../services/chat';
 import {
   loadVoiceStyle, resolveIosSpeechOptions, getVoiceStyle, type VoiceStyle,
 } from '../services/voiceStyle';
@@ -645,6 +645,24 @@ export function useVoiceConversation() {
     stopListening,
     reset,
     speakDirect,
+    loadConversation: useCallback(async (conversationId: number) => {
+      // 加载历史对话 → 填 turns 展示 (不触发 TTS 回放, 只是历史气泡 review).
+      // 用户可以接着说, 新消息会 append 到同一 conversation_id.
+      try {
+        const { messages } = await getConversationMessages(conversationId);
+        conversationIdRef.current = conversationId;
+        const mapped: VoiceTurn[] = messages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({
+            role: m.role as 'user' | 'assistant',
+            text: (m.content || '').toString(),
+            at: Date.parse((m as any).created_at || '') || Date.now(),
+          }));
+        setTurns(mapped);
+      } catch {
+        // 静默失败, 保留空 turns
+      }
+    }, []),
     isActive: state !== 'idle' && state !== 'error',
     // I Phase 2: 本次会话内成功 health_record 摘要 (调用方读 .current 即可, 不需要 React state)
     recordedItemsRef,

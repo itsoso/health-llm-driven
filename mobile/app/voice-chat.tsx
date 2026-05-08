@@ -35,9 +35,20 @@ export default function VoiceChatScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
-  const params = useLocalSearchParams<{ autoStart?: string; prompt?: string; intent?: string; alert_id?: string; workout_type?: string }>();
+  const params = useLocalSearchParams<{ autoStart?: string; prompt?: string; intent?: string; alert_id?: string; workout_type?: string; conversation_id?: string }>();
   const voice = useVoiceConversation();
   const scrollRef = React.useRef<ScrollView>(null);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [historyList, setHistoryList] = React.useState<Array<{ id: number; title: string; updated_at?: string }>>([]);
+
+  // ?conversation_id=XXX 进来 → 加载该对话 turns, 供 review
+  useEffect(() => {
+    const cid = params.conversation_id ? Number(params.conversation_id) : null;
+    if (cid && Number.isFinite(cid)) {
+      voice.loadConversation(cid);
+    }
+
+  }, [params.conversation_id]);
 
   const scale = useSharedValue(1);
   useEffect(() => {
@@ -219,6 +230,25 @@ export default function VoiceChatScreen() {
         >
           <Ionicons name="share-outline" size={22} color={c.labelSecondary} />
         </TouchableOpacity>
+        <TouchableOpacity
+          onPress={async () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            try {
+              const { getConversations } = await import('../services/chat');
+              const convs = await getConversations();
+              setHistoryList(convs.map((c: any) => ({
+                id: c.id, title: c.title || '(未命名对话)', updated_at: c.updated_at || c.created_at,
+              })));
+              setShowHistory(true);
+            } catch {
+              Alert.alert('加载失败', '无法加载历史对话');
+            }
+          }}
+          style={{ padding: 6, marginRight: 4 }}
+          accessibilityLabel="历史对话"
+        >
+          <Ionicons name="time-outline" size={22} color={c.labelSecondary} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => {
           // I Phase 2: 关闭前若本次对话有 health_record 录入, 弹 summary 卡让用户 review
           // (复用 RN Alert, 简单可靠 — 进阶版可做自定义 modal + 撤销按钮)
@@ -294,6 +324,42 @@ export default function VoiceChatScreen() {
           {voice.state === 'listening' ? '停 1 秒自动发，或再点一下立即结束' : voice.state === 'idle' ? '点一下开始说话' : ' '}
         </Text>
       </View>
+
+      {/* 历史对话列表 — 与 home chat 共享 backend, 选中加载 turns 到当前页 */}
+      {showHistory && (
+        <View style={historyStyles.overlay}>
+          <TouchableOpacity style={historyStyles.backdrop} onPress={() => setShowHistory(false)} />
+          <View style={[historyStyles.sheet, { backgroundColor: c.bgCard }]}>
+            <View style={historyStyles.sheetHeader}>
+              <Text style={[historyStyles.sheetTitle, { color: c.labelPrimary }]}>历史对话</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)}>
+                <Ionicons name="close" size={24} color={c.labelSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 500 }}>
+              {historyList.length === 0 && (
+                <Text style={{ textAlign: 'center', color: c.labelTertiary, padding: 24 }}>暂无历史</Text>
+              )}
+              {historyList.map(h => (
+                <TouchableOpacity
+                  key={h.id}
+                  style={[historyStyles.row, { borderBottomColor: c.separator }]}
+                  onPress={() => {
+                    setShowHistory(false);
+                    voice.reset();
+                    voice.loadConversation(h.id);
+                  }}
+                >
+                  <Text style={{ color: c.labelPrimary, fontSize: 15, fontWeight: '500' }} numberOfLines={1}>{h.title}</Text>
+                  {h.updated_at && (
+                    <Text style={{ color: c.labelTertiary, fontSize: 11, marginTop: 3 }}>{h.updated_at.slice(0, 16).replace('T', ' ')}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -333,3 +399,21 @@ function createTxt(c: ColorPalette) {
     bubbleText: { fontSize: 15, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
   };
 }
+
+const historyStyles = StyleSheet.create({
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 16, paddingBottom: 32, paddingHorizontal: 16,
+  },
+  sheetHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 4, paddingBottom: 12,
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '600' },
+  row: {
+    paddingVertical: 12, paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+});
