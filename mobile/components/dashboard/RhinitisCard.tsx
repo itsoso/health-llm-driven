@@ -42,7 +42,6 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
 
   const sneezeCount = checkin?.sneeze_count || 0;
   const washCount = checkin?.nasal_wash_count || 0;
-  const mometasone = !!checkin?.mometasone;
 
   const doAction = useCallback(async (field: string, value: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -67,6 +66,10 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
   const ipratropiumTaken = (medications || []).some(
     (m: any) => ['异丙托溴铵', '异丙托溴铵鼻喷雾剂'].includes(m.name) && m.taken_count > 0
   );
+  // 莫米松同样从 medications 拉, 不再写到 health_checkin (没那个列, 老代码静默 422)
+  const mometasoneTaken = (medications || []).some(
+    (m: any) => ['糠酸莫米松鼻喷雾剂', '糠酸莫米松', '莫米松', 'Mometasone'].includes(m.name) && m.taken_count > 0
+  );
 
   return (
     <View style={styles.card}>
@@ -83,8 +86,16 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
           <Text style={[txt.chipVal, { color: c.amber }]}>{sneezeCount}</Text>
           <Text style={txt.chipLabel}>喷嚏</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.chip, mometasone && { backgroundColor: c.tintGreen }]} onPress={() => doAction('mometasone', mometasone ? 0 : 1)} activeOpacity={0.7}>
-          <Ionicons name={mometasone ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={mometasone ? c.green : c.labelTertiary} />
+        <TouchableOpacity
+          style={[styles.chip, mometasoneTaken && { backgroundColor: c.tintGreen }]}
+          onPress={() => logMed(
+            ['糠酸莫米松鼻喷雾剂', '糠酸莫米松', '莫米松', 'Mometasone'],
+            { name: '糠酸莫米松鼻喷雾剂', dosage: '每侧2喷', frequency: '每日1次', category: 'prescription', purpose: '过敏性鼻炎', notes: '鼻喷糖皮质激素' },
+            '每侧2喷',
+          )}
+          activeOpacity={0.7}
+        >
+          <Ionicons name={mometasoneTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={mometasoneTaken ? c.green : c.labelTertiary} />
           <Text style={txt.chipLabel}>莫米松</Text>
         </TouchableOpacity>
         <TouchableOpacity
