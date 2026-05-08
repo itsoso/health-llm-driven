@@ -53,6 +53,15 @@ function stripMarkdownForTTS(s: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
     .replace(/~~([^~]+)~~/g, '$1')
+    // "7.7 小时" → "7 小时 42 分钟" (TTS 默认读"七点七小时", 不自然)
+    // 只规范时间类 decimal, 其他 decimal (7.7 公里 / 百分比) 保留原样
+    .replace(/(\d+)\.(\d+)\s*小时/g, (_, h, frac) => {
+      const hInt = parseInt(h, 10);
+      const mins = Math.round(parseFloat(`0.${frac}`) * 60);
+      if (mins === 0) return `${hInt} 小时`;
+      if (mins === 60) return `${hInt + 1} 小时`;
+      return `${hInt} 小时 ${mins} 分`;
+    })
     // 段落换行变成单空格, 让标点自己定停顿,不让 TTS 把段落空行当 "全部停"
     .replace(/\n+/g, ' ')
     .replace(/\s{2,}/g, ' ');
