@@ -7,6 +7,7 @@ import type { CardSpec } from './types';
 
 interface WorkoutData {
   activity_type?: string;
+  workout_date?: string;  // YYYY-MM-DD, 显示在卡片顶部, 让"什么时候的运动"一目了然
   duration_min?: number;
   distance_km?: number;
   calories?: number;
@@ -14,6 +15,50 @@ interface WorkoutData {
   max_hr?: number;
   avg_pace?: string;
   steps?: number;
+}
+
+/**
+ * 从 query 里抽取时间窗口. 命中"昨天/前天/今天/上周/本周/最近 X 天"时返回日期范围,
+ * 没命中返回 null (= 用户问"最近"或泛化, 可兜底拉 latest).
+ *
+ * 关键: 如果命中了时间词但按该范围拉不到运动 → build 返回 null, 不渲染卡片.
+ * 避免 "昨天没有运动数据" 的 LLM 回答下面并排一张前几天运动卡片 (badcase 2026-05-08).
+ */
+function parseDateWindow(q: string): { start: string; end: string } | null {
+  const today = new Date();
+  const toYMD = (d: Date) => d.toISOString().slice(0, 10);
+  const shift = (d: Date, n: number) => { const nd = new Date(d); nd.setDate(d.getDate() + n); return nd; };
+
+  if (/今天|今日/.test(q)) {
+    const s = toYMD(today);
+    return { start: s, end: s };
+  }
+  if (/昨天|昨日/.test(q)) {
+    const s = toYMD(shift(today, -1));
+    return { start: s, end: s };
+  }
+  if (/前天/.test(q)) {
+    const s = toYMD(shift(today, -2));
+    return { start: s, end: s };
+  }
+  if (/大前天/.test(q)) {
+    const s = toYMD(shift(today, -3));
+    return { start: s, end: s };
+  }
+  if (/本周|这周/.test(q)) {
+    const day = today.getDay() || 7;
+    return { start: toYMD(shift(today, -(day - 1))), end: toYMD(today) };
+  }
+  if (/上周|上礼拜/.test(q)) {
+    const day = today.getDay() || 7;
+    return { start: toYMD(shift(today, -(day - 1 + 7))), end: toYMD(shift(today, -day)) };
+  }
+  const m = q.match(/最近\s*(\d+)\s*天/);
+  if (m) {
+    const n = Math.max(1, Math.min(90, Number(m[1])));
+    return { start: toYMD(shift(today, -(n - 1))), end: toYMD(today) };
+  }
+  return null;
 }
 
 function Stat({ icon, color, label, value }: { icon: string; color: string; label: string; value: string }) {
@@ -27,7 +72,8 @@ function Stat({ icon, color, label, value }: { icon: string; color: string; labe
 }
 
 export function WorkoutCardView(d: WorkoutData) {
-  const title = d.activity_type ? `${d.activity_type}分析` : '运动分析';
+  const baseTitle = d.activity_type ? `${d.activity_type}分析` : '运动分析';
+  const title = d.workout_date ? `${baseTitle} · ${humanizeDate(d.workout_date)}` : baseTitle;
   return (
     <CardShell icon="fitness" iconColor="#FF375F" title={title} bg="#FFF5F5">
       <View style={styles.grid}>
@@ -43,6 +89,19 @@ export function WorkoutCardView(d: WorkoutData) {
   );
 }
 
+function humanizeDate(ymd: string): string {
+  const today = new Date();
+  const toYMD = (d: Date) => d.toISOString().slice(0, 10);
+  const t = toYMD(today);
+  if (ymd === t) return '今天';
+  const yest = new Date(today); yest.setDate(today.getDate() - 1);
+  if (ymd === toYMD(yest)) return '昨天';
+  const dBefore = new Date(today); dBefore.setDate(today.getDate() - 2);
+  if (ymd === toYMD(dBefore)) return '前天';
+  // 更早的直接显示 MM-DD
+  return ymd.slice(5);
+}
+
 export const WorkoutCardSpec: CardSpec<WorkoutData> = {
   type: 'workout',
   label: '运动分析',
@@ -52,15 +111,22 @@ export const WorkoutCardSpec: CardSpec<WorkoutData> = {
     if (/配速|心率区间|有氧|无氧|训练效果|卡路里消耗/.test(query_lower)) return 15;
     return null;
   },
-  async build({ data, api: apiClient }) {
+  async build({ query_lower, data, api: apiClient }) {
     const g = data.garmin;
     const cardData: WorkoutData = {};
+    const window = parseDateWindow(query_lower);
 
     try {
-      const { data: workouts } = await apiClient.get('/workout/me', { params: { limit: 1 } });
+      const params: any = window
+        ? { start_date: window.start, end_date: window.end }
+        : { limit: 1 };
+      const { data: workouts } = await apiClient.get('/workout/me', { params });
+
       if (Array.isArray(workouts) && workouts.length > 0) {
+        // 有时间窗: 拿该窗口内最近的一条; 无时间窗: API 已按 limit 返回 latest
         const w = workouts[0];
         cardData.activity_type = w.workout_name || w.workout_type;
+        if (w.workout_date) cardData.workout_date = w.workout_date;
         if (w.duration_seconds) cardData.duration_min = Math.round(w.duration_seconds / 60);
         if (w.distance_meters) cardData.distance_km = w.distance_meters / 1000;
         if (w.calories) cardData.calories = w.calories;
@@ -77,10 +143,13 @@ export const WorkoutCardSpec: CardSpec<WorkoutData> = {
         }
         return cardData;
       }
+
+      // 有时间窗但无匹配数据 → 不要兜底拉 latest (会渲染错日期的运动, 与 LLM 文本矛盾)
+      if (window) return null;
     } catch {}
 
-    // Fallback: use garmin daily data
-    if (g) {
+    // Fallback: 仅在泛化问题(无时间窗)时, 用 garmin daily data
+    if (!window && g) {
       if (g.active_minutes) cardData.duration_min = g.active_minutes;
       if (g.active_calories) cardData.calories = g.active_calories;
       if (g.steps) cardData.steps = g.steps;

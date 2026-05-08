@@ -84,7 +84,8 @@ function AppContent() {
 
   return (
     <>
-      <Stack>
+      {/* 全局默认 headerShown: false — 任何新增 route 也不会意外露出 Expo stack 默认 header (e.g. "< (tabs)  timeline") */}
+      <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="memory" options={{ headerShown: false, presentation: 'modal' }} />
