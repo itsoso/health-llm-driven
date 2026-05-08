@@ -3,6 +3,8 @@
 """
 import logging
 from datetime import UTC, date, datetime, timedelta
+from typing import Optional
+
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import selectinload
 from app.celery_app import celery_app
@@ -24,6 +26,68 @@ PLAN_CATEGORY_TIMES = {
     "health": ["09:00"],
     "mindfulness": ["08:00"],
 }
+
+
+# ---- 天气前缀清洗 (修 "雨天力量维护日" 但今天没下雨 的 badcase) ----------
+# 计划项 title 在生成时根据 7 天预报固化, 比如周一生成的计划写 "周四:雨天力量维护日";
+# 周四真到了天气可能变了, 推送时不修正就会误导. 这里推送前再校对一次今天实际天气,
+# 不一致就把前缀剥掉, 让 title 只保留实际可执行的核心 (如 "力量维护日").
+#
+# 长期方案: 计划项里存 weather_condition_tag, 渲染时按需注入文案. 见 #66 follow-up.
+
+_WEATHER_PREFIX_RULES = [
+    # (前缀, 触发剥离的判断: 真天气文本不含哪些字)
+    ("雨天",   lambda w: ("雨" not in w) and ("雷" not in w)),
+    ("下雨日", lambda w: "雨" not in w),
+    ("雷雨日", lambda w: "雨" not in w and "雷" not in w),
+    ("阴雨日", lambda w: "雨" not in w),
+    ("雪天",   lambda w: "雪" not in w),
+    ("下雪日", lambda w: "雪" not in w),
+    ("晴天",   lambda w: "晴" not in w),
+    ("大晴天", lambda w: "晴" not in w),
+    ("雾天",   lambda w: ("雾" not in w) and ("霾" not in w)),
+    ("雾霾日", lambda w: ("雾" not in w) and ("霾" not in w)),
+    ("雷暴日", lambda w: "雷" not in w),
+    ("大风日", lambda w: ("风" not in w) and ("大风" not in w)),
+]
+
+
+def _get_user_city(db, user_id: int) -> Optional[str]:
+    """与 smart_plan_service._get_user_city 等价 — 优先 manual, 其次 detected, 最后 legacy city."""
+    from app.models.user_profile import UserProfile
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile:
+        return None
+    if profile.use_manual_location and profile.manual_city:
+        return profile.manual_city
+    if profile.detected_city:
+        return profile.detected_city
+    return profile.city
+
+
+def _today_weather_text(city: Optional[str]) -> str:
+    """同步包装. 失败返回空串 (调用方不剥任何前缀)."""
+    if not city:
+        return ""
+    try:
+        import asyncio
+        from app.services.environment.weather_service import WeatherService
+        result = asyncio.run(WeatherService().get_current_weather(city=city))
+        return result.get("weather", "") or ""
+    except Exception as e:
+        logger.warning(f"_today_weather_text 失败 city={city}: {e}")
+        return ""
+
+
+def _strip_stale_weather_prefix(title: str, actual_weather: str) -> str:
+    """如果 title 开头的天气前缀与今日实际不符, 剥掉. 不是天气前缀的标题原样返回."""
+    if not title or not actual_weather:
+        return title
+    for prefix, should_strip in _WEATHER_PREFIX_RULES:
+        if title.startswith(prefix) and should_strip(actual_weather):
+            stripped = title[len(prefix):].lstrip(" -—_:,，·")
+            return stripped or title  # 万一全是前缀, 保留原文
+    return title
 
 
 @celery_app.task
@@ -136,7 +200,9 @@ def send_plan_morning_reminder():
                 today_items = [i for i in plan.items if i.day_of_week == day_of_week and not i.is_completed]
                 if not today_items:
                     continue
-                titles = [i.title for i in today_items[:3]]
+                # 推送前用今日实际天气校对 title (修 "雨天力量维护日" 但今天没下雨 badcase)
+                actual = _today_weather_text(_get_user_city(db, plan.user_id))
+                titles = [_strip_stale_weather_prefix(i.title, actual) for i in today_items[:3]]
                 body = f"今日 {len(today_items)} 项待完成：{', '.join(titles)}"
                 if len(today_items) > 3:
                     body += f" 等{len(today_items)}项"
@@ -181,7 +247,9 @@ def send_plan_evening_summary():
                     continue
                 done = sum(1 for i in today_items if i.is_completed)
                 total = len(today_items)
-                undone = [i.title for i in today_items if not i.is_completed]
+                # 同 morning 推送, 推送前洗一下过期天气前缀
+                actual = _today_weather_text(_get_user_city(db, plan.user_id))
+                undone = [_strip_stale_weather_prefix(i.title, actual) for i in today_items if not i.is_completed]
 
                 if done == total:
                     body = f"今日 {total} 项计划全部完成，太棒了！本周完成率 {plan.completion_rate:.0f}%"
@@ -256,7 +324,9 @@ def send_plan_item_reminders():
                     "health": "❤️",
                     "mindfulness": "🧘",
                 }
-                titles = [i.title for i in items[:3]]
+                # 推送前用今日实际天气校对 title (修 "雨天力量维护日" 但今天没下雨 badcase)
+                actual = _today_weather_text(_get_user_city(db, plan.user_id))
+                titles = [_strip_stale_weather_prefix(i.title, actual) for i in items[:3]]
                 emoji = category_emoji.get(items[0].category, "📋")
                 body = f"{', '.join(titles)}"
                 if len(items) > 3:
