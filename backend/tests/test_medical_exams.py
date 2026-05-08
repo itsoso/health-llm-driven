@@ -200,3 +200,26 @@ def test_import_image_empty_items(client, db):
             headers=headers,
         )
     assert resp.status_code == 422
+
+
+def test_import_image_rejects_oversized_file(client, db):
+    """超过 MAX_IMAGE_BYTES 的图片 → 413"""
+    from app.api.medical_exams import MAX_IMAGE_BYTES
+    _, headers = _create_user(db)
+    oversized = b"x" * (MAX_IMAGE_BYTES + 1024)
+    resp = client.post(
+        "/api/v1/medical-exams/import/image",
+        files={"file": ("huge.jpg", oversized, "image/jpeg")},
+        headers=headers,
+    )
+    assert resp.status_code == 413
+    assert "图片过大" in resp.json()["detail"]
+
+
+def test_parse_pdf_preview_requires_auth(client):
+    """/parse-pdf-preview 也要 auth (消耗 LLM vision 配额,不能裸奔)"""
+    resp = client.post(
+        "/api/v1/medical-exams/parse-pdf-preview",
+        files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+    assert resp.status_code == 401

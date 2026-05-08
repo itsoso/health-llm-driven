@@ -1,6 +1,7 @@
 """体检数据API"""
 import tempfile
 import os
+import base64
 import logging
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
@@ -18,6 +19,8 @@ from app.services.ai.medical_report_ocr import recognize_medical_report
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB,防 OCR 被大图灌穿
 
 
 def parse_date(date_str) -> date:
@@ -291,8 +294,6 @@ async def import_medical_exam_from_image(
     走 vision model OCR (medical_report_ocr.recognize_medical_report),
     返回结构化指标后按同 /import/pdf 的路径入库 (MedicalExam + MedicalExamItem + MedicalIndicator).
     """
-    import base64
-
     user_id = current_user.id
 
     filename = (file.filename or "").lower()
@@ -303,6 +304,11 @@ async def import_medical_exam_from_image(
     image_type = "jpeg" if ext in ("jpg", "jpeg") else ext
 
     content = await file.read()
+    if len(content) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"图片过大 ({len(content) // 1024 // 1024}MB),请压缩到 {MAX_IMAGE_BYTES // 1024 // 1024}MB 以内"
+        )
     image_base64 = base64.b64encode(content).decode("ascii")
 
     logger.info(f"开始 OCR 识别体检报告图片: {file.filename} ({len(content)} bytes)")
@@ -395,12 +401,14 @@ async def import_medical_exam_from_image(
 
 @router.post("/parse-pdf-preview")
 async def parse_pdf_preview(
-    file: UploadFile = File(..., description="PDF文件")
+    file: UploadFile = File(..., description="PDF文件"),
+    current_user: User = Depends(get_current_user_required),
 ):
     """
     预览PDF解析结果（不保存到数据库）
 
     用于在正式导入前预览解析结果，确认内容正确。
+    需要登录 — 该路径会消耗 LLM vision 配额,不能裸奔.
     """
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="请上传PDF格式文件")
