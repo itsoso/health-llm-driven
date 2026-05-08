@@ -13,6 +13,7 @@ import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { ToastProvider } from '../hooks/useToast';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBiometricLock } from '../hooks/useBiometricLock';
+import { useGPSAutoRefresh } from '../hooks/useGPSAutoRefresh';
 import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
@@ -59,6 +60,7 @@ function AppContent() {
   const { isLocked, authenticate } = useBiometricLock(isAuthenticated);
 
   useNotifications(isAuthenticated);
+  useGPSAutoRefresh(isAuthenticated);
 
   useEffect(() => {
     if (isAuthenticated && isLocked) {
