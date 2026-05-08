@@ -258,6 +258,13 @@ async def import_medical_exam_from_pdf(
             cat = item.get("category", "other")
             category_counts[cat] = category_counts.get(cat, 0) + 1
 
+        # Twin invalidation: 化验入库后让 specialist 立刻拿新数据 (旁路)
+        try:
+            from app.twin.cache import invalidate_twin
+            invalidate_twin(user_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[体检PDF] Twin invalidation 失败 (旁路): {e}")
+
         return {
             "message": "PDF解析并导入成功",
             "exam_id": db_exam.id,
@@ -380,6 +387,13 @@ async def import_medical_exam_from_image(
         db.refresh(db_exam)
 
         abnormal_count = sum(1 for i in items if i.get("is_abnormal"))
+
+        # Twin invalidation: OCR 入库后让 specialist 立刻拿新数据 (旁路)
+        try:
+            from app.twin.cache import invalidate_twin
+            invalidate_twin(user_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[化验图片] Twin invalidation 失败 (旁路): {e}")
 
         return {
             "message": "图片 OCR 导入成功",

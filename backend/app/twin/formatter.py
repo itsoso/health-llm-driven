@@ -226,6 +226,13 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         if risk_lines:
             lines.append(f"基因风险: {', '.join(risk_lines)}")
 
+    # 解析中提示: PDF 上传后 LLM 应回 "解析中, 稍后补充" 而不是 "无数据"
+    if twin.genetic.pending_profile_count > 0:
+        lines.append(
+            f"基因报告解析中: {twin.genetic.pending_profile_count} 份 PDF 还在 AI 后台处理 "
+            f"(基因相关问题暂时无法回答, 请提示用户稍后再问)"
+        )
+
     # ─── 环境
     e = twin.environment
     env_parts: List[str] = []

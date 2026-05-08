@@ -348,6 +348,13 @@ def upload_genetic_txt(
         db.rollback()
         logger.warning(f"[基因TXT] KG extract 失败 (旁路): {e}")
 
+    # Twin invalidation: 让下次 specialist 立刻拿到新基因数据 (旁路)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[基因TXT] Twin invalidation 失败 (旁路): {e}")
+
     return {
         "id": profile.id,
         "matched_count": len(matched),
@@ -503,6 +510,13 @@ category 分类规则：
         except Exception as e:  # noqa: BLE001
             db.rollback()
             logger.warning(f"[基因PDF] KG extract 失败 (旁路): {e}")
+
+        # Twin invalidation: 让下次 specialist 立刻拿到新基因数据 (旁路)
+        try:
+            from app.twin.cache import invalidate_twin
+            invalidate_twin(user_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[基因PDF] Twin invalidation 失败 (旁路): {e}")
 
     except Exception as e:
         logger.error(f"[基因PDF] profile={profile_id} 处理失败: {e}", exc_info=True)

@@ -165,6 +165,9 @@ class SupplementState(BaseModel):
 class GeneticContext(BaseModel):
     has_profile: bool = False
     total_variants: int = 0
+    # 异步解析: PDF 上传后 1-3 分钟内 has_profile=True 但 total_variants 可能为 0
+    # specialist 看到该字段时应回 "解析中, 稍后补充" 而不是 "用户没有基因数据"
+    pending_profile_count: int = 0
     drug_sensitivity: List[Dict[str, Any]] = Field(default_factory=list)
     risk_variants: List[Dict[str, Any]] = Field(default_factory=list)
     protective_variants: List[Dict[str, Any]] = Field(default_factory=list)

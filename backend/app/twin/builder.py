@@ -824,6 +824,25 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         twin.genetic.nutrition_variants = gen.get("nutrition_variants", [])
         sources.add("genetic")
 
+    # — Pending genetic profiles (PDF 解析中: profile 已建但 variant 尚未抽完)
+    try:
+        from app.models.genetic_data import GeneticProfile, GeneticVariant
+        from sqlalchemy import func, and_
+        pending = (
+            db.query(func.count(GeneticProfile.id))
+            .outerjoin(GeneticVariant, GeneticVariant.profile_id == GeneticProfile.id)
+            .filter(
+                GeneticProfile.user_id == user_id,
+                ~(GeneticProfile.notes.contains("失败")),
+            )
+            .group_by(GeneticProfile.id)
+            .having(func.count(GeneticVariant.id) == 0)
+            .count()
+        )
+        twin.genetic.pending_profile_count = int(pending or 0)
+    except Exception:  # noqa: BLE001
+        pass
+
 
 # ─────────────────────────── 工具 ─────────────────────────────────────
 
