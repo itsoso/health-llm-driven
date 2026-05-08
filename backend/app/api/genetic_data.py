@@ -403,7 +403,7 @@ def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
         # PDF 转图片
         from app.api.family_health import _pdf_to_images_base64
         from app.services.llm.usage_tracker import set_caller
-        set_caller("genetic.pdf_vision", user_id=current_user.id)
+        set_caller("genetic.pdf_vision", user_id=user_id)
         images = _pdf_to_images_base64(pdf_base64)
         logger.info(f"[基因PDF] profile={profile_id} PDF 转换为 {len(images)} 页")
 

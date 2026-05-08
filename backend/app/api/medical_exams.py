@@ -14,6 +14,7 @@ from app.api.deps import get_current_user_required
 from app.services.data_collection.medical_exam_import import MedicalExamImportService
 from app.services.pdf_parser import pdf_parser
 from app.services.exam_packages import create_indicator_from_item
+from app.services.ai.medical_report_ocr import recognize_medical_report
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,10 +35,13 @@ def parse_date(date_str) -> date:
 @router.post("/", response_model=MedicalExamResponse)
 def create_medical_exam(
     exam: MedicalExamCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建体检记录"""
-    db_exam = MedicalExam(**exam.model_dump(exclude={"items"}))
+    # 忽略 payload 里的 user_id,强制绑到当前登录用户 (防止越权写别人数据)
+    payload = exam.model_dump(exclude={"items", "user_id"})
+    db_exam = MedicalExam(user_id=current_user.id, **payload)
     db.add(db_exam)
     db.flush()
 
@@ -49,7 +53,7 @@ def create_medical_exam(
         )
         db.add(db_item)
         indicator = create_indicator_from_item(
-            user_id=exam.user_id, exam_id=db_exam.id,
+            user_id=current_user.id, exam_id=db_exam.id,
             record_date=db_exam.exam_date,
             item_dict=item.model_dump(), source="manual",
         )
@@ -119,9 +123,12 @@ def get_user_medical_exams(
     user_id: int,
     skip: int = 0,
     limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户的体检记录"""
+    """获取用户的体检记录 (只能看自己的)"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只能查看自己的体检记录")
     exams = db.query(MedicalExam).filter(
         MedicalExam.user_id == user_id
     ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
@@ -130,21 +137,21 @@ def get_user_medical_exams(
 
 @router.post("/import/json")
 def import_medical_exam_from_json(
-    user_id: int,
     exam_data: dict,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """从JSON格式导入体检数据"""
     service = MedicalExamImportService()
-    exam = service.import_from_json(db, user_id, exam_data)
+    exam = service.import_from_json(db, current_user.id, exam_data)
     return {"message": "导入成功", "exam_id": exam.id}
 
 
 @router.post("/import/csv")
 async def import_medical_exam_from_csv(
-    user_id: int,
     file: UploadFile = File(...),
     exam_info: dict = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """从CSV格式导入体检数据"""
@@ -155,7 +162,7 @@ async def import_medical_exam_from_csv(
 
     try:
         service = MedicalExamImportService()
-        exam = service.import_from_csv(db, user_id, tmp_file_path, exam_info or {})
+        exam = service.import_from_csv(db, current_user.id, tmp_file_path, exam_info or {})
         return {"message": "导入成功", "exam_id": exam.id}
     finally:
         os.unlink(tmp_file_path)
@@ -163,8 +170,8 @@ async def import_medical_exam_from_csv(
 
 @router.post("/import/pdf")
 async def import_medical_exam_from_pdf(
-    user_id: int = Query(..., description="用户ID"),
     file: UploadFile = File(..., description="PDF文件"),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -173,6 +180,7 @@ async def import_medical_exam_from_pdf(
     上传体检报告PDF，系统会自动解析并结构化保存。
     使用AI分析PDF内容，提取检查项目、数值、参考范围等信息。
     """
+    user_id = current_user.id
     # 验证文件类型
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="请上传PDF格式文件")
@@ -269,6 +277,120 @@ async def import_medical_exam_from_pdf(
         raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
     finally:
         os.unlink(tmp_file_path)
+
+
+@router.post("/import/image")
+async def import_medical_exam_from_image(
+    file: UploadFile = File(..., description="体检报告图片 (jpg/png/heic/webp)"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    从图片导入体检数据 (拍照路径)
+
+    走 vision model OCR (medical_report_ocr.recognize_medical_report),
+    返回结构化指标后按同 /import/pdf 的路径入库 (MedicalExam + MedicalExamItem + MedicalIndicator).
+    """
+    import base64
+
+    user_id = current_user.id
+
+    filename = (file.filename or "").lower()
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png", "heic", "webp"):
+        raise HTTPException(status_code=400, detail="请上传图片文件 (jpg/png/heic/webp)")
+
+    image_type = "jpeg" if ext in ("jpg", "jpeg") else ext
+
+    content = await file.read()
+    image_base64 = base64.b64encode(content).decode("ascii")
+
+    logger.info(f"开始 OCR 识别体检报告图片: {file.filename} ({len(content)} bytes)")
+    result = await recognize_medical_report(image_base64, image_type=image_type)
+
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=result["error"])
+
+    items = result.get("items", []) or []
+    if not items:
+        raise HTTPException(status_code=422, detail="未能从图片中识别出检查指标,请换一张更清晰的照片")
+
+    logger.info(f"OCR 识别完成: {result.get('report_type', '未知')} 共 {len(items)} 项")
+
+    try:
+        db_exam = MedicalExam(
+            user_id=user_id,
+            exam_date=parse_date(result.get("report_date")),
+            exam_type=result.get("report_type", "comprehensive"),
+            hospital_name=result.get("institution"),
+            overall_assessment=result.get("conclusion"),
+            notes=f"从图片 OCR 导入: {file.filename}"
+        )
+        db.add(db_exam)
+        db.flush()
+
+        for it in items:
+            value = it.get("value")
+            if isinstance(value, str):
+                try:
+                    value = float(value)
+                except (ValueError, TypeError):
+                    value = None
+
+            is_ab_flag = "abnormal" if it.get("is_abnormal") else "normal"
+
+            ref_range_str = None
+            if it.get("reference_low") is not None and it.get("reference_high") is not None:
+                ref_range_str = f"{it.get('reference_low')}-{it.get('reference_high')}"
+
+            db_item = MedicalExamItem(
+                exam_id=db_exam.id,
+                item_name=it.get("name"),
+                item_code=it.get("name_en"),
+                value=value,
+                unit=it.get("unit"),
+                reference_range=ref_range_str,
+                is_abnormal=is_ab_flag,
+            )
+            db.add(db_item)
+
+            indicator = create_indicator_from_item(
+                user_id=user_id, exam_id=db_exam.id,
+                record_date=db_exam.exam_date,
+                item_dict={
+                    "item_name": it.get("name"),
+                    "item_code": it.get("name_en"),
+                    "value": value,
+                    "unit": it.get("unit"),
+                    "reference_low": it.get("reference_low"),
+                    "reference_high": it.get("reference_high"),
+                    "is_abnormal": bool(it.get("is_abnormal")),
+                },
+                source="image_ocr",
+            )
+            db.add(indicator)
+
+        db.commit()
+        db.refresh(db_exam)
+
+        abnormal_count = sum(1 for i in items if i.get("is_abnormal"))
+
+        return {
+            "message": "图片 OCR 导入成功",
+            "exam_id": db_exam.id,
+            "exam_date": str(db_exam.exam_date),
+            "exam_type": db_exam.exam_type,
+            "hospital_name": db_exam.hospital_name,
+            "items_count": len(items),
+            "abnormal_count": abnormal_count,
+            "conclusion": result.get("conclusion"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"图片导入入库失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"入库失败: {str(e)}")
 
 
 @router.post("/parse-pdf-preview")

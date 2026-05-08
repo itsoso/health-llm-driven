@@ -1,66 +1,83 @@
-"""体检数据API测试"""
-import pytest
+"""体检数据API测试 — 所有端点强制 auth 到 current_user"""
 import uuid
 from datetime import date
+from unittest.mock import patch, AsyncMock
 from app.models.user import User
 from app.services.auth import auth_service
 
 
-def _create_admin_and_user(db, client):
-    """创建管理员，然后用管理员创建一个普通用户，返回 (user_id, admin_headers)"""
-    admin = User(
-        username=f"admin_{uuid.uuid4().hex[:8]}",
-        email=f"admin_{uuid.uuid4().hex[:8]}@example.com",
+def _create_user(db):
+    """创建普通用户,返回 (user, headers)"""
+    user = User(
+        username=f"u_{uuid.uuid4().hex[:8]}",
+        email=f"u_{uuid.uuid4().hex[:8]}@example.com",
         hashed_password="hashed_password",
-        name="管理员",
+        name="测试用户",
         birth_date=date(1990, 1, 1),
         gender="男",
         is_active=True,
         is_approved=True,
-        is_admin=True,
     )
-    db.add(admin)
+    db.add(user)
     db.commit()
-    db.refresh(admin)
-    token = auth_service.create_access_token({"sub": str(admin.id)})
-    headers = {"Authorization": f"Bearer {token}"}
+    db.refresh(user)
+    token = auth_service.create_access_token({"sub": str(user.id)})
+    return user, {"Authorization": f"Bearer {token}"}
 
-    sample_user_data = {"name": "测试用户", "birth_date": "1990-01-01", "gender": "男"}
-    user_response = client.post("/api/v1/users", json=sample_user_data, headers=headers)
-    user_id = user_response.json()["id"]
-    return user_id, headers
+
+def test_create_medical_exam_requires_auth(client, sample_medical_exam_data):
+    """未登录 → 401"""
+    resp = client.post("/api/v1/medical-exams", json=sample_medical_exam_data)
+    assert resp.status_code == 401
 
 
 def test_create_medical_exam(client, db, sample_medical_exam_data):
-    """测试创建体检记录"""
-    user_id, headers = _create_admin_and_user(db, client)
-    sample_medical_exam_data["user_id"] = user_id
+    """创建体检记录 — 强制绑到 current_user"""
+    user, headers = _create_user(db)
+    # 即使 payload 传 user_id=999,也应被忽略强制为 current_user.id
+    sample_medical_exam_data["user_id"] = 999
 
-    response = client.post("/api/v1/medical-exams", json=sample_medical_exam_data)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["user_id"] == user_id
+    resp = client.post("/api/v1/medical-exams", json=sample_medical_exam_data, headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user_id"] == user.id
     assert data["exam_type"] == sample_medical_exam_data["exam_type"]
     assert len(data["items"]) == len(sample_medical_exam_data["items"])
 
 
-def test_get_user_medical_exams(client, db, sample_medical_exam_data):
-    """测试获取用户的体检记录"""
-    user_id, headers = _create_admin_and_user(db, client)
-    sample_medical_exam_data["user_id"] = user_id
+def test_get_user_medical_exams_self(client, db, sample_medical_exam_data):
+    """GET /user/{id} 只能看自己的"""
+    user, headers = _create_user(db)
+    client.post("/api/v1/medical-exams", json=sample_medical_exam_data, headers=headers)
 
-    client.post("/api/v1/medical-exams", json=sample_medical_exam_data)
-
-    response = client.get(f"/api/v1/medical-exams/user/{user_id}")
-    assert response.status_code == 200
-    data = response.json()
+    resp = client.get(f"/api/v1/medical-exams/user/{user.id}", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
     assert isinstance(data, list)
     assert len(data) > 0
 
 
+def test_get_other_user_medical_exams_forbidden(client, db):
+    """试图看别人的体检记录 → 403"""
+    _, headers = _create_user(db)
+    other, _ = _create_user(db)
+    resp = client.get(f"/api/v1/medical-exams/user/{other.id}", headers=headers)
+    assert resp.status_code == 403
+
+
+def test_get_my_medical_exams(client, db, sample_medical_exam_data):
+    """GET /me 端点"""
+    _, headers = _create_user(db)
+    client.post("/api/v1/medical-exams", json=sample_medical_exam_data, headers=headers)
+
+    resp = client.get("/api/v1/medical-exams/me", headers=headers)
+    assert resp.status_code == 200
+    assert len(resp.json()) > 0
+
+
 def test_import_medical_exam_from_json(client, db):
-    """测试从JSON导入体检数据"""
-    user_id, headers = _create_admin_and_user(db, client)
+    """JSON 导入不再需要 user_id 参数,自动绑当前用户"""
+    _, headers = _create_user(db)
 
     import_data = {
         "exam": {
@@ -81,10 +98,105 @@ def test_import_medical_exam_from_json(client, db):
         ]
     }
 
-    response = client.post(
-        f"/api/v1/medical-exams/import/json?user_id={user_id}",
-        json=import_data
+    resp = client.post("/api/v1/medical-exams/import/json", json=import_data, headers=headers)
+    assert resp.status_code == 200
+    assert "exam_id" in resp.json()
+
+
+def test_import_medical_exam_from_json_requires_auth(client):
+    """导入也需要 auth"""
+    resp = client.post("/api/v1/medical-exams/import/json", json={})
+    assert resp.status_code == 401
+
+
+def test_import_image_requires_auth(client):
+    resp = client.post("/api/v1/medical-exams/import/image")
+    assert resp.status_code in (401, 422)  # 401 auth / 422 missing file
+
+
+def test_import_image_rejects_non_image(client, db):
+    _, headers = _create_user(db)
+    resp = client.post(
+        "/api/v1/medical-exams/import/image",
+        files={"file": ("report.txt", b"not an image", "text/plain")},
+        headers=headers,
     )
-    assert response.status_code == 200
-    data = response.json()
+    assert resp.status_code == 400
+    assert "图片" in resp.json()["detail"]
+
+
+def test_import_image_ocr_success(client, db):
+    _, headers = _create_user(db)
+
+    mock_ocr = {
+        "report_type": "生化",
+        "report_date": "2026-03-15",
+        "institution": "测试医院",
+        "items": [
+            {
+                "name": "丙氨酸氨基转移酶",
+                "name_en": "ALT",
+                "value": 25.0,
+                "unit": "U/L",
+                "reference_low": 0,
+                "reference_high": 40,
+                "is_abnormal": False,
+            },
+            {
+                "name": "低密度脂蛋白",
+                "name_en": "LDL-C",
+                "value": 3.9,
+                "unit": "mmol/L",
+                "reference_low": 0,
+                "reference_high": 3.37,
+                "is_abnormal": True,
+            },
+        ],
+        "conclusion": "血脂偏高,建议饮食调整",
+    }
+
+    with patch(
+        "app.api.medical_exams.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        resp = client.post(
+            "/api/v1/medical-exams/import/image",
+            files={"file": ("report.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+            headers=headers,
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["items_count"] == 2
+    assert data["abnormal_count"] == 1
+    assert data["hospital_name"] == "测试医院"
     assert "exam_id" in data
+
+
+def test_import_image_ocr_error_passes_through(client, db):
+    _, headers = _create_user(db)
+    with patch(
+        "app.api.medical_exams.recognize_medical_report",
+        new=AsyncMock(return_value={"error": "无法识别"}),
+    ):
+        resp = client.post(
+            "/api/v1/medical-exams/import/image",
+            files={"file": ("blurry.jpg", b"fake", "image/jpeg")},
+            headers=headers,
+        )
+    assert resp.status_code == 422
+    assert "无法识别" in resp.json()["detail"]
+
+
+def test_import_image_empty_items(client, db):
+    _, headers = _create_user(db)
+    with patch(
+        "app.api.medical_exams.recognize_medical_report",
+        new=AsyncMock(return_value={"report_type": "unknown", "items": []}),
+    ):
+        resp = client.post(
+            "/api/v1/medical-exams/import/image",
+            files={"file": ("report.png", b"fake", "image/png")},
+            headers=headers,
+        )
+    assert resp.status_code == 422
