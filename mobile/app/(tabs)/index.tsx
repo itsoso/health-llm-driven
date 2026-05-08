@@ -205,6 +205,7 @@ export default function HomeScreen() {
         onSettings={() => router.push('/settings' as any)}
         onNewChat={chat.newChat}
         onHistory={() => { setShowHistory(true); loadHistory(); }}
+        onSymptom={() => router.push('/symptom-record' as any)}
       />
       {/* P3 (2026-05-04): TodayCoach 提到 SpecialistChipRow 之前 — 一句话指令性
           判断 ("今天注意 X" / "继续执行 Y" / "今天恢复良好...") 比 "AI 押注 4 张"

@@ -54,6 +54,8 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.ai_insights import AIInsight, RealtimeRecommendation
 # 情绪追踪模型
 from app.models.mood import MoodRecord
+# 通用症状记录 (偶发症状, 不绑慢病档案)
+from app.models.symptom_entry import SymptomEntry
 # 健康报告模型
 from app.models.health_report import HealthReport
 # 用药管理模型
@@ -154,6 +156,7 @@ __all__ = [
     "RealtimeRecommendation",
     # 情绪追踪模型
     "MoodRecord",
+    "SymptomEntry",
     # 健康报告模型
     "HealthReport",
     # 用药管理模型

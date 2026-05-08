@@ -17,6 +17,7 @@ import FitnessSnapshotCard from '../../components/dashboard/FitnessSnapshotCard'
 import SupplementCheckin from '../../components/dashboard/SupplementCheckin';
 import RhinitisCard from '../../components/dashboard/RhinitisCard';
 import StrengthCard from '../../components/dashboard/StrengthCard';
+import SymptomCard from '../../components/dashboard/SymptomCard';
 import WorkoutWeekCard from '../../components/dashboard/WorkoutWeekCard';
 import HealthCard from '../../components/design-system/HealthCard';
 import { spacing, radii, shadows } from '../../constants/theme';
@@ -117,6 +118,9 @@ export default function RecordScreen() {
 
         {/* 4. Rhinitis */}
         <RhinitisCard checkin={data?.checkin} medications={medications} onUpdate={refetch} />
+
+        {/* 4.5 Symptoms — 偶发症状通用录入 */}
+        <SymptomCard />
 
         {/* 5. Strength */}
         <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />

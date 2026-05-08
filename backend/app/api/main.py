@@ -51,6 +51,7 @@ from app.api import (
     speech,
     ai_insights,
     mood,
+    symptoms,
     health_report,
     body_composition,
     health_score,
@@ -161,6 +162,7 @@ api_router.include_router(timeline.router)
 api_router.include_router(sleep_record.router)
 api_router.include_router(excretion.router)
 api_router.include_router(mood.router)
+api_router.include_router(symptoms.router, prefix="/symptoms", tags=["symptoms"])
 
 # ── Diet & Supplements ─────────────────────────────────────────────
 api_router.include_router(diet.router, prefix="/diet", tags=["diet"])

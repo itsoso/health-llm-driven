@@ -117,6 +117,7 @@ function AppContent() {
         <Stack.Screen name="monthly-reports" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="ai-profile" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="admin-llm" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="symptom-record" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
       <NotificationBanner />
       <NetworkBanner />

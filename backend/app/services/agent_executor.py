@@ -907,14 +907,20 @@ class AgentExecutor:
             "reminder": ("/reminders/me", "POST", data),
         }
 
-        # symptom 需要 profile_id
+        # symptom: 通用身体症状 (眼痒/嗓子疼 ...). 不再需要 profile_id (新 /symptoms 表,
+        # 2026-05-08 改, 替换旧 disease_tracking.SymptomLog 路径 — 那路径强行要 profile_id,
+        # 用户体验差, 已废弃. 鼻炎打卡走 record_type="rhinitis".
         if rtype == "symptom":
-            profile_id = data.get("profile_id")
-            if not profile_id:
-                return "Error: 症状记录需要提供 profile_id（疾病档案 ID）"
-            return await self._api_post(
-                f"{base}/disease/profiles/{profile_id}/symptoms", headers, data
-            )
+            body_part = data.get("body_part")
+            description = data.get("description")
+            if not body_part:
+                return "Error: symptom 必须提供 body_part (eye/respiratory/skin/digestive/musculoskeletal/head/general/other)"
+            if not description:
+                return "Error: symptom 必须提供 description (如 '眼睛痒' / '右膝盖钝痛')"
+            # 标记 source=voice 便于前端区分手工 / 语音入口
+            payload = dict(data)
+            payload.setdefault("source", "voice")
+            return await self._api_post(f"{base}/symptoms", headers, payload)
 
         if rtype in record_map:
             path, method, payload = record_map[rtype]

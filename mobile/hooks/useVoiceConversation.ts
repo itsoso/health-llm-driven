@@ -109,6 +109,18 @@ function formatRecordLabel(recordType: string, d: Record<string, any>): string {
     case 'mood':
       return `心情 ${d.score ?? '-'}${d.notes ? ' - ' + String(d.notes).slice(0, 20) : ''}`;
     case 'symptom': {
+      // 新 schema (2026-05-08): body_part + description + optional severity
+      if (d.body_part || d.description) {
+        const partLabels: Record<string, string> = {
+          eye: '眼', respiratory: '呼吸道', skin: '皮肤', digestive: '消化',
+          musculoskeletal: '肌肉骨', head: '头', general: '全身', other: '其他',
+        };
+        const part = partLabels[d.body_part] || d.body_part || '症状';
+        const desc = d.description || '';
+        const sev = d.severity ? ` (严重度 ${d.severity}/10)` : '';
+        return `${part}: ${desc}${sev}`;
+      }
+      // 旧 schema fallback (disease_tracking.SymptomLog, 迁移期)
       const sym = Array.isArray(d.symptoms) ? d.symptoms.map((s: any) => s.name).join('/') : '';
       return `症状: ${sym || '记录'}`;
     }

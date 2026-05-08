@@ -41,6 +41,7 @@ interface Props {
   onSettings?: () => void;
   onNewChat?: () => void;
   onHistory?: () => void;
+  onSymptom?: () => void;
 }
 
 function getAqiColor(v: number | null | undefined, c: ColorPalette): string {
@@ -60,7 +61,7 @@ export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, sleepScore, steps, hr, battery,
   batteryCurrent, batteryPeak, isLoading,
-  onSettings, onNewChat, onHistory,
+  onSettings, onNewChat, onHistory, onSymptom,
 }: Props) {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
@@ -120,6 +121,11 @@ export default function HomeHeader({
             <Ionicons name="chatbubbles-outline" size={15} color={c.labelTertiary} />
           </TouchableOpacity>
         )}
+        {onSymptom && (
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSymptom(); }} style={styles.miniAction} hitSlop={10} activeOpacity={0.6}>
+            <Ionicons name="medkit-outline" size={15} color={c.labelTertiary} />
+          </TouchableOpacity>
+        )}
         {onNewChat && (
           <TouchableOpacity onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onNewChat(); }} style={styles.miniAction} hitSlop={10} activeOpacity={0.6}>
             <Ionicons name="create-outline" size={15} color={c.labelTertiary} />
@@ -148,6 +154,11 @@ export default function HomeHeader({
             {onHistory && (
               <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onHistory(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
                 <Ionicons name="chatbubbles-outline" size={18} color={c.labelTertiary} />
+              </TouchableOpacity>
+            )}
+            {onSymptom && (
+              <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSymptom(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
+                <Ionicons name="medkit-outline" size={18} color={c.labelTertiary} />
               </TouchableOpacity>
             )}
             {onNewChat && (
