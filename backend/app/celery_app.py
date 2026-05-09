@@ -34,6 +34,8 @@ celery_app = Celery(
         "app.tasks.memory_lifecycle",
         "app.tasks.insights",
         "app.tasks.monthly_report",
+        "app.tasks.episode_scheduler",
+        "app.tasks.episode_reflection",
     ]
 )
 
@@ -248,6 +250,21 @@ celery_app.conf.beat_schedule = {
     "monthly-report-generate": {
         "task": "app.tasks.monthly_report.generate_previous_month_reports",
         "schedule": crontab(hour=8, minute=10, day_of_month=1),
+    },
+
+    # Agent-Native v3 Increment 3 §3 — Episode action 时间窗扫描:
+    # 每分钟扫一次, 推 due reminders + 翻 expired actions + 触发 auto-close.
+    "episode-action-window-scan": {
+        "task": "app.tasks.episode_scheduler.scan_episode_action_windows",
+        "schedule": crontab(minute="*"),
+    },
+
+    # Agent-Native v3 Increment 4 §1 — Episode Reflection 回填:
+    # 每天早上 09:43 北京 (UTC 01:43, Garmin 同步 01:30 完成后),
+    # 对最近关闭的 Episode 拉次日 HRV/Sleep, 写 metrics_delta + summary.
+    "episode-reflection": {
+        "task": "app.tasks.episode_reflection.run_episode_reflection",
+        "schedule": crontab(hour=1, minute=43),
     },
 }
 

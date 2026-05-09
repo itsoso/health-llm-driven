@@ -94,6 +94,10 @@ from app.models.shared_conversation import SharedConversation
 from app.models.supplement_audit import SupplementAudit, SupplementAuditItem
 # 健康咨询
 from app.models.health_consultation import HealthConsultation, ConsultationItem
+# Agent-Native v3 — Episode 闭环 (Run Recovery Coach 第一刀)
+from app.models.episode import (
+    HealthEpisode, EpisodeAction, EpisodeFeedback, EpisodeOutcome,
+)
 
 __all__ = [
     "User",
@@ -201,4 +205,9 @@ __all__ = [
     # 健康咨询
     "HealthConsultation",
     "ConsultationItem",
+    # Agent-Native v3 Episode 闭环
+    "HealthEpisode",
+    "EpisodeAction",
+    "EpisodeFeedback",
+    "EpisodeOutcome",
 ]

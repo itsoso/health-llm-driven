@@ -10,7 +10,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (44 路由)              │      │
+                        │   mobile/app/*.tsx (45 路由)              │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 117 API 路由 · 140 services              │
+│                  health-api.executor.life · 118 API 路由 · 147 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (10 specialist) │  │ (tool-calling LLM) │            │
@@ -43,7 +43,7 @@
          ▼           ▼                ▼                    ▼                  ▼
   ┌──────────┐ ┌──────────┐  ┌─────────────┐    ┌──────────────────┐  ┌─────────────┐
   │ Postgres │ │  Redis   │  │  Celery     │    │  LLM Providers   │  │  3rd-party  │
-  │ (多表)   │ │ (cache + │  │ (41 任务)   │    │ openai-proxy /   │  │ Garmin API  │
+  │ (多表)   │ │ (cache + │  │ (43 任务)   │    │ openai-proxy /   │  │ Garmin API  │
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
@@ -62,7 +62,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 117 API 路由, 140 services, 69 models, 41 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 118 API 路由, 147 services, 70 models, 43 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 42 路由 |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
@@ -111,12 +111,12 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 117 条 API 路由 |
-| `backend/app/services/*.py` | 140 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
-| `backend/app/tasks/*.py` | 41 Celery 异步任务 |
+| `backend/app/api/*.py` | 118 条 API 路由 |
+| `backend/app/services/*.py` | 147 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
+| `backend/app/tasks/*.py` | 43 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 44 RN 路由 + Tab 导航 |
+| `mobile/app/` | 45 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -393,7 +393,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(41 个任务)
+## 九、Celery 调度(43 个任务)
 
 `backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
 
@@ -702,8 +702,10 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 
 | 日期 | 更新者 | 摘要 |
 |---|---|---|
-| 2026-05-08 | Claude Opus 4.7 | 首次全量重写; 覆盖 Agent-Native 四层架构 / 116 API / 44 mobile 路由 / 68 web 页 / 41 Celery 任务 / 13 Twin 分区 / 51 Safety 规则 / 3 push 通道 / 双通道 mobile 部署 / 9 LLM 模型注册表 |
+| 2026-05-08 | Claude Opus 4.7 | 首次全量重写; 覆盖 Agent-Native 四层架构 / API / Mobile / Web / Celery / 13 Twin 分区 / 51 Safety 规则 / 3 push 通道 / 双通道 mobile 部署 / 9 LLM 模型注册表 (历史 116/44/68/41) |
 | 2026-05-08 | Claude Opus 4.7 | feat: SymptomEntry 通用症状录入 (Home + Record tab + voice); fix: 莫米松 checkin 字段不存在 → 改走 medication_logs; fix: 计划提醒推送前按今日实际天气校对 title (修"雨天力量维护日"但今天没下雨 badcase). 数字: API 116→117, models 68→69, mobile 42→43 |
+| 2026-05-09 | Claude Opus 4.6 | feat: Agent-Native v3 Episode 闭环 — Run Recovery Coach 落地 (Increment 1-3): backend/protocols/ YAML registry, services/episode/ planner+lifecycle, ActionGraph + 详情页 + Home OpenEpisodeCard, Garmin sync hook 推 episode_created 推送, Celery beat episode_scheduler 每分钟扫 due reminder + auto-expire + auto-close, 11 单测 + 4 scheduler 单测全绿. 数字: API 117→118, mobile 44→45, Celery 41→42, services 140→147 |
+| 2026-05-09 | Claude Opus 4.6 | feat: Agent-Native v3 Increment 4 §1 — Episode Reflection Worker. Celery beat 每天 09:43 北京 (Garmin 同步后) 对 48h 内关闭的 Episode 拉次日 HRV/Sleep, 写 EpisodeOutcome.metrics_delta + 中文模板 summary (无 LLM 成本). API GET /episodes/{id} 现回 outcome 字段 (mobile 可渲染反馈). 5 单测覆盖正路径/数据缺失/幂等/48h 边界/baseline fallback. Celery 42→43 |
 
 ---
 

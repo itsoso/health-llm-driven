@@ -1,0 +1,107 @@
+slug: post_run_recovery_sleep_deprived
+version: 0.1.0
+title: 睡眠不足后跑后恢复
+owner: itsoso
+medical_review_date: null
+risk_level_hint: L1
+
+description: |
+  前一晚睡眠 < 6h 时使用. 睡眠剥夺会拉低恢复力, 这次重点不在补充, 而在保护
+  ——降低当晚训练欲望, 推荐早睡, 把 evening check-in 提前到傍晚.
+
+evidence:
+  - id: hrv_sleep_recovery_2019
+    source: Sleep & HRV Recovery Meta-analysis (Sports Med 2019)
+    statement: 单晚睡眠 <6h 后 HRV 平均下降 15-20%, 训练承受力同步下降.
+  - id: nsf_sleep_extension_2014
+    source: National Sleep Foundation — Sleep Extension Recommendation
+    statement: 训练日睡眠不足时, 加 30-60 分钟午睡或当晚提早 1h 入睡可恢复 70%.
+
+match:
+  episode_type: run
+  all_of:
+    - field: context.sleep_prior_h
+      op: lt
+      value: 6.0
+
+actions:
+  - sequence: 0
+    template_id: rehydrate_basic
+    action_type: rehydrate
+    icon: water
+    title: 等心率平静后补 400-500ml 温水
+    body: 基础补水, 不需要喝太多.
+    evidence_id: acsm_2018_post_exercise_recovery
+    time_window:
+      offset_min_start: 0
+      offset_min_end: 180
+    completion_check:
+      kind: self_report
+      prompt: 补水了吗?
+
+  - sequence: 1
+    template_id: protein_basic
+    action_type: protein
+    icon: nutrition
+    title: 60 分钟内 20-25g 蛋白 (量比平时少)
+    body: 睡眠不足影响合成代谢, 不强求大量蛋白, 够用就行.
+    evidence_id: iaaf_runner_recovery_2020
+    time_window:
+      offset_min_start: 0
+      offset_min_end: 60
+
+  - sequence: 2
+    template_id: nap_recommendation
+    action_type: rest
+    icon: bed
+    title: 今天有空就午睡 20-30 分钟 — 别超过 40 分钟
+    body: 短睡能恢复 ~70% 认知和恢复力, 超过 40 分钟反而进入深睡, 醒来更累.
+    evidence_id: nsf_sleep_extension_2014
+    time_window:
+      offset_min_start: 60
+      offset_min_end: 360
+    completion_check:
+      kind: self_report
+      prompt: 午睡了吗?
+
+  - sequence: 3
+    template_id: early_sleep_tonight
+    action_type: rest
+    icon: moon
+    title: 今晚比平时早 1 小时上床, 别熬夜训练或工作
+    body: 连续 2 晚不足 6h 睡眠, 第三天的训练承受力会显著下降.
+    evidence_id: hrv_sleep_recovery_2019
+    time_window:
+      offset_min_start: 600
+      offset_min_end: 900
+    completion_check:
+      kind: self_report
+      prompt: 今晚有没有提早睡?
+
+  - sequence: 4
+    template_id: early_check_in_sleepdep
+    action_type: check_in
+    icon: pulse-outline
+    title: 傍晚 check-in — 还困吗? 想训练吗?
+    body: 提前到傍晚, 帮你判断今晚要不要 skip 训练.
+    evidence_id: rpe_borg_15point_2010
+    time_window:
+      offset_min_start: 360
+      offset_min_end: 540
+    completion_check:
+      kind: inline_question
+      questions:
+        - id: alertness
+          prompt: 现在精神状态?
+          type: enum
+          options: [清醒, 一般, 很困]
+        - id: training_appetite
+          prompt: 想训练吗?
+          type: enum
+          options: [想, 不太想, 完全不想]
+
+red_flags:
+  - id: severe_fatigue
+    condition: feedback.symptom in ['extreme_fatigue', 'palpitation', 'chest_pain']
+    risk_level: L3
+    action: refer_clinic

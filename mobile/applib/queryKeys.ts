@@ -14,6 +14,7 @@ export const queryKeys = {
   actionCards: ['actionCards'] as const,
   profile: ['profile'] as const,
   twin: ['twin'] as const,
+  episodesRoot: ['episodes'] as const,
 } as const;
 
 export const healthSnapshotQueryKeys = [

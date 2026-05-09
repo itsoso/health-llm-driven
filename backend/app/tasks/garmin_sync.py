@@ -335,6 +335,16 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
 
             analysis = asyncio.run(_analyze_and_notify())
 
+            # Agent-Native v3 — 跑步类 workout 自动建 Episode + ActionGraph.
+            # 失败不影响主流程 (post-run analysis 已成功), 只记 warning.
+            try:
+                _maybe_create_run_episode(db, user_id, workout)
+            except Exception as ep_err:
+                logger.warning(
+                    f"[自动分析] Episode 创建失败 user={user_id} workout={workout_id}: {ep_err}",
+                    exc_info=True,
+                )
+
             logger.info(f"[自动分析] 完成: user={user_id} workout={workout_id} status={analysis.get('status')}")
             return {"status": "success", "workout_id": workout_id}
 
@@ -517,3 +527,125 @@ def _save_session_to_db(db, cred, garth_client):
     except Exception as e:
         logger.warning(f"[session-renew] 保存 session 失败: {e}")
         db.rollback()
+
+
+# ─────────────────────────────────────────────────────────
+# Episode hook (Agent-Native v3) — 跑步 workout 自动建 Episode
+# ─────────────────────────────────────────────────────────
+
+# 跑步 workout_type 集合 (workout_sync.py 标准化后的值).
+_RUN_TYPES = {"running"}
+
+
+def _maybe_create_run_episode(db, user_id: int, workout: WorkoutRecord):
+    """跑步 workout 同步完成后建一个 Episode + ActionGraph.
+
+    幂等: 同一 workout_id 只建一个 Episode (用 source_type/source_id 防重).
+    非跑步 / 时长不足 5 分钟 / 距离 < 1km 不触发.
+    """
+    if (workout.workout_type or "").lower() not in _RUN_TYPES:
+        return
+    if not workout.duration_seconds or workout.duration_seconds < 300:
+        return
+    if not workout.distance_meters or workout.distance_meters < 1000:
+        return
+
+    # 幂等检查
+    from app.models.episode import HealthEpisode
+    existing = db.query(HealthEpisode).filter(
+        HealthEpisode.user_id == user_id,
+        HealthEpisode.source_type == "workout",
+        HealthEpisode.source_id == workout.id,
+    ).first()
+    if existing:
+        logger.info(
+            f"[Episode] 已存在, 跳过: user={user_id} workout={workout.id} ep={existing.id}"
+        )
+        return
+
+    from app.services.episode import (
+        parse_run_episode,
+        plan_run_recovery,
+        persist_action_graph,
+    )
+
+    episode_input = parse_run_episode(db, user_id, workout, weather=None)
+    graph = plan_run_recovery(episode_input.occurred_at, episode_input.context)
+
+    episode = persist_action_graph(
+        db,
+        user_id=user_id,
+        episode_type="run_recovery",
+        occurred_at=episode_input.occurred_at,
+        graph=graph,
+        source_type="workout",
+        source_id=workout.id,
+        context_snapshot=episode_input.context,
+        baseline_snapshot=episode_input.baseline,
+    )
+    logger.info(
+        f"[Episode] 建好 user={user_id} workout={workout.id} ep={episode.id} "
+        f"protocol={graph.protocol_slug}@{graph.protocol_version} "
+        f"risk={graph.risk.level} actions={len(graph.actions)}"
+    )
+
+    # Increment 3 §2: Episode 创建后发推送, 点 deep_link 直进详情页.
+    # 失败只 warning, 不影响主流程 (Episode 已落库, mobile 下次开 app 还能拉到).
+    try:
+        _push_episode_created(user_id, episode, graph)
+    except Exception as push_err:
+        logger.warning(
+            f"[Episode] 推送失败 user={user_id} ep={episode.id}: {push_err}",
+            exc_info=True,
+        )
+
+
+def _push_episode_created(user_id: int, episode, graph) -> None:
+    """Episode 创建推送 — 跑后/L1+/L4 都走同一通道, 区分 severity.
+
+    Title 走 headline (Planner 已经做了一句话教练话), 没 headline 时 fallback 到通用文案.
+    deep_link 指向 mobile /episode/{id}, 由 useNotifications.ts 路由.
+    rule_id = episode_{id} 保证同一 Episode 只推一次.
+    """
+    risk = graph.risk.level if graph and graph.risk else "L0"
+    severity_map = {
+        "L0": "info",
+        "L1": "low",
+        "L2": "warning",
+        "L3": "high",
+        "L4": "critical",
+    }
+    severity = severity_map.get(risk, "info")
+
+    title_prefix = "跑后恢复"
+    if risk in ("L3", "L4"):
+        title_prefix = "⚠️ 健康警示"
+    elif risk in ("L1", "L2"):
+        title_prefix = "跑后教练"
+
+    title = title_prefix
+    body = (graph.headline if graph and graph.headline else
+            "刚刚的跑步已生成恢复方案, 点开查看 4 步引导.")
+
+    # 用一个新 SQLAlchemy session 跑推送, 避免和外层 transaction 状态纠缠.
+    with SessionLocal() as push_db:
+        from app.services.notification.push_service import PushService
+
+        push_svc = PushService(push_db)
+        asyncio.run(push_svc.send_notification(
+            user_id=user_id,
+            notification_type="episode_created",
+            title=title,
+            content=body,
+            data={
+                "deep_link": f"/episode/{episode.id}",
+                "kind": "episode_created",
+                "episode_id": episode.id,
+                "episode_type": episode.episode_type,
+                "risk_level": risk,
+                # rule_id 让 push_service 在 24h 窗口内只推一次同 Episode
+                "rule_id": f"episode_{episode.id}",
+            },
+            severity=severity,
+            dedup_window_hours=168,
+        ))

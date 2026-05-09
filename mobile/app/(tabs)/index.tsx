@@ -13,6 +13,7 @@ import { getConversations, deleteConversation } from '../../services/chat';
 import api from '../../services/api';
 import { getSafetyReport } from '../../services/safety';
 import HomeHeader from '../../components/dashboard/HomeHeader';
+import OpenEpisodeCard from '../../components/dashboard/OpenEpisodeCard';
 import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
 import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
 import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
@@ -213,6 +214,10 @@ export default function HomeScreen() {
         onSymptom={() => router.push('/symptom-record' as any)}
         onImport={() => router.push('/import' as any)}
       />
+      {/* Agent-Native v3: Open Episode 卡 — 跑后恢复 / 睡眠复盘 等闭环单元的入口.
+          没 open episode 时不渲染, 不打扰用户. 在 TodayCoach 之上是因为它是
+          "本次还没收尾的事", 比 "今日大方向" 更具体可执行. */}
+      <OpenEpisodeCard />
       {/* P3 (2026-05-04): TodayCoach 提到 SpecialistChipRow 之前 — 一句话指令性
           判断 ("今天注意 X" / "继续执行 Y" / "今天恢复良好...") 比 "AI 押注 4 张"
           (用户不知道是什么意思) 更优先. 让 home 第一眼是决策, 不是 chrome. */}

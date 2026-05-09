@@ -1,0 +1,96 @@
+slug: post_run_recovery_normal
+version: 0.1.0
+title: 跑后常规恢复
+owner: itsoso
+medical_review_date: null
+risk_level_hint: L0
+
+description: |
+  适用于温度 < 28°C, 睡眠 ≥ 6h, ACWR ≤ 1.3 的常规跑步训练后. 给出补水 / 蛋白 /
+  晚间 check-in 三条 action, 全部停留在 General Wellness 区, 不涉及医疗建议.
+
+evidence:
+  - id: acsm_2018_post_exercise_recovery
+    source: ACSM Guidelines for Exercise Testing and Prescription, 10th ed.
+    statement: 训练后 2-4 小时内分次补水有助于恢复血浆容量.
+  - id: iaaf_runner_recovery_2020
+    source: IAAF Runner Recovery Standards
+    statement: 训练后 30-60 分钟内摄入 20-30g 蛋白质有助于肌肉修复.
+  - id: rpe_borg_15point_2010
+    source: Borg RPE 15-point scale
+    statement: 主观疲劳与第二天训练承受力呈强相关.
+
+match:
+  episode_type: run
+  all_of:
+    - field: context.weather.temperature_c
+      op: lt
+      value: 28
+    - field: context.sleep_prior_h
+      op: gte
+      value: 6.0
+    - field: context.acwr
+      op: lte
+      value: 1.3
+
+actions:
+  - sequence: 0
+    template_id: rehydrate_post_run
+    action_type: rehydrate
+    icon: water
+    title: 等心率明显下降、汗流变缓后, 补 400-500ml 温水
+    body: 训练后 2 小时内分次补水, 补到尿色变浅为止. 不要一次灌完.
+    evidence_id: acsm_2018_post_exercise_recovery
+    time_window:
+      offset_min_start: 0
+      offset_min_end: 180
+    condition_expr: breathing_calm AND hr_below_baseline_plus_15
+    completion_check:
+      kind: self_report
+      prompt: 已经补完水了吗?
+    risk_condition:
+      escalate_if:
+        - feedback.symptom == 'dizziness'
+        - feedback.symptom == 'severe_thirst'
+
+  - sequence: 1
+    template_id: protein_window
+    action_type: protein
+    icon: nutrition
+    title: 60 分钟内吃 25-30g 蛋白 (鸡胸/牛肉/蛋/蛋白粉)
+    body: 一份手掌大的瘦肉 ≈ 25-30g. 不强求, 时间过了也没关系.
+    evidence_id: iaaf_runner_recovery_2020
+    time_window:
+      offset_min_start: 0
+      offset_min_end: 60
+    completion_check:
+      kind: self_report
+      prompt: 蛋白补上了吗?
+
+  - sequence: 2
+    template_id: evening_check_in
+    action_type: check_in
+    icon: bed-outline
+    title: 睡前快速 check-in — 腿酸吗? 主观疲劳几分?
+    body: 用来判断明天训练负荷怎么排.
+    evidence_id: rpe_borg_15point_2010
+    time_window:
+      offset_min_start: 480
+      offset_min_end: 900
+    completion_check:
+      kind: inline_question
+      questions:
+        - id: rpe
+          prompt: 今天主观疲劳 1-10 分?
+          type: scale
+          range: [1, 10]
+        - id: soreness
+          prompt: 腿/全身酸吗?
+          type: enum
+          options: [不酸, 轻微, 中等, 明显]
+
+red_flags:
+  - id: post_run_chest_pain
+    condition: feedback.symptom in ['chest_pain', 'syncope', 'severe_dyspnea']
+    risk_level: L4
+    action: emergency_template

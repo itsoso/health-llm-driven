@@ -1,0 +1,110 @@
+slug: post_run_recovery_hot_weather
+version: 0.1.0
+title: 高温环境跑后恢复
+owner: itsoso
+medical_review_date: null
+risk_level_hint: L1
+
+description: |
+  环境温度 ≥ 28°C 的训练后, 重点放在补液 / 电解质 / cool down. 加大补水量,
+  加 cool down 行动, 推迟蛋白窗口 (热应激下消化吸收变慢).
+
+evidence:
+  - id: acsm_heat_illness_2007
+    source: ACSM Position Stand — Exertional Heat Illness
+    statement: 高温运动后液体丢失 1-2L/h, 需补 1.25-1.5x 体重下降的水量.
+  - id: nata_fluid_replacement_2017
+    source: NATA Position Statement — Fluid Replacement
+    statement: 长时间高温训练后建议补充电解质 (300-700mg Na+/L).
+
+match:
+  episode_type: run
+  all_of:
+    - field: context.weather.temperature_c
+      op: gte
+      value: 28
+
+actions:
+  - sequence: 0
+    template_id: cool_down_hot
+    action_type: cool_down
+    icon: snow-outline
+    title: 别立刻冲冷水澡 — 先到阴凉处, 用湿毛巾敷颈/手腕降温 5-10 分钟
+    body: 高温后骤冷可能诱发头晕. 等汗流变缓、心率明显下降后再温水洗澡.
+    evidence_id: acsm_heat_illness_2007
+    time_window:
+      offset_min_start: 0
+      offset_min_end: 30
+    condition_expr: hr_above_baseline_plus_30
+    completion_check:
+      kind: self_report
+      prompt: 降温做了吗?
+
+  - sequence: 1
+    template_id: rehydrate_hot
+    action_type: rehydrate
+    icon: water
+    title: 多补水 — 600-800ml 温水, 加点盐或喝运动饮料
+    body: 高温训练液体丢失大, 单纯白水可能稀释血钠. 推荐含 300-700mg Na+/L 的饮料.
+    evidence_id: nata_fluid_replacement_2017
+    time_window:
+      offset_min_start: 0
+      offset_min_end: 240
+    completion_check:
+      kind: self_report
+      prompt: 已经补到 600ml 以上 + 含电解质了吗?
+    risk_condition:
+      escalate_if:
+        - feedback.symptom == 'dizziness'
+        - feedback.symptom == 'muscle_cramp'
+        - feedback.symptom == 'nausea'
+
+  - sequence: 2
+    template_id: protein_delayed
+    action_type: protein
+    icon: nutrition
+    title: 等没那么热再吃蛋白 — 90-120 分钟内 25-30g
+    body: 热应激下消化吸收变慢. 先把核心体温降下来, 再补蛋白.
+    evidence_id: iaaf_runner_recovery_2020
+    time_window:
+      offset_min_start: 30
+      offset_min_end: 120
+    completion_check:
+      kind: self_report
+      prompt: 蛋白补上了吗?
+
+  - sequence: 3
+    template_id: evening_check_in_hot
+    action_type: check_in
+    icon: bed-outline
+    title: 睡前 check-in — 头还晕吗? 尿色正常吗? 主观疲劳几分?
+    body: 高温后要确认没有持续脱水信号.
+    evidence_id: rpe_borg_15point_2010
+    time_window:
+      offset_min_start: 480
+      offset_min_end: 900
+    completion_check:
+      kind: inline_question
+      questions:
+        - id: dizziness
+          prompt: 还有头晕/恶心吗?
+          type: enum
+          options: [完全没有, 轻微, 明显]
+        - id: urine_color
+          prompt: 尿色?
+          type: enum
+          options: [淡黄正常, 偏深, 茶色 ⚠]
+        - id: rpe
+          prompt: 主观疲劳 1-10?
+          type: scale
+          range: [1, 10]
+
+red_flags:
+  - id: heat_stroke_signs
+    condition: feedback.symptom in ['confusion', 'severe_headache', 'fainting', 'core_temp_high']
+    risk_level: L4
+    action: emergency_template
+  - id: tea_color_urine
+    condition: feedback.urine_color == '茶色 ⚠'
+    risk_level: L3
+    action: refer_clinic
