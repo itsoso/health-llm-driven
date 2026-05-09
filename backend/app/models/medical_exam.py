@@ -94,6 +94,13 @@ class MedicalExamItem(Base):
 
     notes = Column(Text)  # 备注
 
+    # OCR 来源标记 + 手工校正时间 (Iter 2 Day 6-7 Calibrate UI)
+    # source: manual / ocr / pdf / csv / json — 来源是 OCR 时, UI 给"原值"标识让用户知道可能不准
+    source = Column(String, default="manual")
+    manually_corrected_at = Column(DateTime(timezone=True))  # 用户手工改过的最近时间
+    original_value = Column(Float)  # 第一次落库的 OCR 原值, 校正后保留作回溯
+    original_value_text = Column(Text)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     exam = relationship("MedicalExam", back_populates="items")

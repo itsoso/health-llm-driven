@@ -21,6 +21,20 @@ export interface MedicalExamItem {
   reference_range?: string | null;
   is_abnormal?: 'normal' | 'high' | 'low' | 'abnormal' | string | null;
   notes?: string | null;
+  source?: 'manual' | 'ocr' | 'pdf' | 'csv' | 'json' | string | null;
+  manually_corrected_at?: string | null;
+  original_value?: number | null;
+  original_value_text?: string | null;
+}
+
+export interface MedicalExamItemUpdate {
+  item_name?: string;
+  value?: number | null;
+  value_text?: string | null;
+  unit?: string;
+  reference_range?: string;
+  is_abnormal?: 'normal' | 'high' | 'low' | 'abnormal' | string;
+  notes?: string;
 }
 
 export interface MedicalExam {
@@ -181,4 +195,16 @@ export function relativeExamDate(dateStr: string, now: Date = new Date()): strin
   if (days < 365) return `${Math.floor(days / 30)} 个月前`;
   const years = Math.floor(days / 365);
   return `${years} 年前`;
+}
+
+/**
+ * Calibrate UI — 用户手工校正单条 item.
+ * 后端 PATCH /medical-exams/items/{id} 会同步写 medical_indicators + invalidate Twin.
+ */
+export async function updateMedicalExamItem(
+  itemId: number,
+  patch: MedicalExamItemUpdate,
+): Promise<MedicalExamItem> {
+  const res = await api.patch<MedicalExamItem>(`/medical-exams/items/${itemId}`, patch);
+  return res.data;
 }

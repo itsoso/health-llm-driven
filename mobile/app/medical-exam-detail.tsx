@@ -6,25 +6,27 @@
  * - 与上一次同指标对比 ("LDL 4.1 ↑ 17% 比 6 月升 0.6")
  * - AI overall_assessment + conclusions
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextStyle,
-  ActivityIndicator,
+  ActivityIndicator, Modal, TextInput, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   listMedicalExams,
   compareExams,
+  updateMedicalExamItem,
   type MedicalExam,
   type MedicalExamItem,
   type ExamComparison,
 } from '../services/medicalExams';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
+import { useRouteBiometricGate } from '../hooks/useRouteBiometricGate';
 
 export default function MedicalExamDetailScreen() {
   const router = useRouter();
@@ -33,11 +35,16 @@ export default function MedicalExamDetailScreen() {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
+  const queryClient = useQueryClient();
+
+  const [editing, setEditing] = useState<MedicalExamItem | null>(null);
+  const gate = useRouteBiometricGate('解锁查看化验报告');
 
   const examsQuery = useQuery({
     queryKey: ['medical-exams'],
     queryFn: () => listMedicalExams(50),
     staleTime: 60_000,
+    enabled: gate.status === 'unlocked',
   });
 
   const exams = examsQuery.data ?? [];
@@ -50,6 +57,33 @@ export default function MedicalExamDetailScreen() {
     () => (exam && previous ? compareExams(exam, previous) : []),
     [exam, previous],
   );
+
+  if (gate.status !== 'unlocked') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          </Pressable>
+          <Text style={txt.title}>化验详情</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.lockWrap}>
+          <Ionicons name="lock-closed" size={48} color={c.labelTertiary} />
+          <Text style={[txt.assessmentBody, { textAlign: 'center', marginTop: spacing.md }]}>
+            化验数据为敏感信息,需要 Face ID 解锁
+          </Text>
+          <Pressable
+            onPress={gate.retry}
+            style={[styles.unlockBtn, { backgroundColor: c.brand }]}
+          >
+            <Ionicons name="finger-print" size={18} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>解锁</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (examsQuery.isLoading) {
     return (
@@ -137,10 +171,20 @@ export default function MedicalExamDetailScreen() {
         <View style={styles.itemsCard}>
           <Text style={txt.sectionTitle}>检查项目 ({sortedItems.length})</Text>
           {sortedItems.map(item => (
-            <ItemRow key={item.id} item={item} c={c} />
+            <ItemRow key={item.id} item={item} c={c} onPress={() => setEditing(item)} />
           ))}
         </View>
       </ScrollView>
+
+      <EditItemSheet
+        item={editing}
+        c={c}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          queryClient.invalidateQueries({ queryKey: ['medical-exams'] });
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -176,18 +220,35 @@ function ComparisonRow({ comp, c }: { comp: ExamComparison; c: ColorPalette }) {
   );
 }
 
-function ItemRow({ item, c }: { item: MedicalExamItem; c: ColorPalette }) {
+function ItemRow({ item, c, onPress }: { item: MedicalExamItem; c: ColorPalette; onPress?: () => void }) {
   const txt = createTxt(c);
   const isAbnormal = item.is_abnormal && item.is_abnormal !== 'normal';
   const tone = isAbnormal ? c.red : c.labelPrimary;
   const value = item.value != null ? String(item.value) : item.value_text || '—';
+  const isOcr = item.source === 'ocr';
+  const wasCorrected = !!item.manually_corrected_at;
 
   return (
-    <View style={itemStyles.row}>
+    <Pressable onPress={onPress} style={({ pressed }) => [itemStyles.row, pressed && { opacity: 0.6 }]}>
       <View style={{ flex: 1 }}>
-        <Text style={txt.itemName}>{item.item_name}</Text>
+        <View style={itemStyles.nameRow}>
+          <Text style={txt.itemName}>{item.item_name}</Text>
+          {isOcr && !wasCorrected ? (
+            <View style={[itemStyles.pill, { backgroundColor: c.bgElevated }]}>
+              <Text style={[txt.pill, { color: c.labelSecondary }]}>OCR</Text>
+            </View>
+          ) : null}
+          {wasCorrected ? (
+            <View style={[itemStyles.pill, { backgroundColor: c.brandLight }]}>
+              <Text style={[txt.pill, { color: c.brand }]}>已校正</Text>
+            </View>
+          ) : null}
+        </View>
         {item.reference_range ? (
           <Text style={txt.itemRef}>参考: {item.reference_range}</Text>
+        ) : null}
+        {wasCorrected && item.original_value != null && item.original_value !== item.value ? (
+          <Text style={txt.itemRef}>原值: {item.original_value}{item.unit ? ` ${item.unit}` : ''}</Text>
         ) : null}
       </View>
       <View style={itemStyles.valueWrap}>
@@ -202,7 +263,129 @@ function ItemRow({ item, c }: { item: MedicalExamItem; c: ColorPalette }) {
           </Text>
         ) : null}
       </View>
-    </View>
+      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} style={{ marginLeft: 4 }} />
+    </Pressable>
+  );
+}
+
+const ABNORMAL_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: 'normal', label: '正常' },
+  { key: 'high', label: '偏高' },
+  { key: 'low', label: '偏低' },
+  { key: 'abnormal', label: '异常' },
+];
+
+function EditItemSheet({
+  item, c, onClose, onSaved,
+}: {
+  item: MedicalExamItem | null;
+  c: ColorPalette;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const txt = createTxt(c);
+  const [valueStr, setValueStr] = useState('');
+  const [abnormal, setAbnormal] = useState<string>('normal');
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (item) {
+      setValueStr(item.value != null ? String(item.value) : '');
+      setAbnormal((item.is_abnormal as string) || 'normal');
+    }
+  }, [item?.id]);
+
+  if (!item) return null;
+
+  const onSave = async () => {
+    const trimmed = valueStr.trim();
+    const parsed = trimmed === '' ? null : Number(trimmed);
+    if (trimmed !== '' && Number.isNaN(parsed)) {
+      Alert.alert('请输入数字', `"${trimmed}" 不是合法数值`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateMedicalExamItem(item.id, {
+        value: parsed,
+        is_abnormal: abnormal,
+      });
+      onSaved();
+    } catch (e: any) {
+      Alert.alert('保存失败', e?.response?.data?.detail || e?.message || '请稍后重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={editStyles.backdrop}>
+        <View style={[editStyles.sheet, { backgroundColor: c.bgCard }]}>
+          <View style={editStyles.handle} />
+          <Text style={txt.title}>校正 {item.item_name}</Text>
+          {item.source === 'ocr' ? (
+            <Text style={txt.itemRef}>OCR 抽取的原值: {item.original_value ?? item.value ?? '—'}{item.unit ? ` ${item.unit}` : ''}</Text>
+          ) : null}
+
+          <View style={{ gap: 6, marginTop: spacing.md }}>
+            <Text style={txt.sectionTitle}>检测值{item.unit ? ` (${item.unit})` : ''}</Text>
+            <TextInput
+              value={valueStr}
+              onChangeText={setValueStr}
+              keyboardType="decimal-pad"
+              placeholder="例如 4.1"
+              placeholderTextColor={c.labelTertiary}
+              style={[editStyles.input, { color: c.labelPrimary, borderColor: c.separator, backgroundColor: c.bgPrimary }]}
+            />
+          </View>
+
+          <View style={{ gap: 6, marginTop: spacing.md }}>
+            <Text style={txt.sectionTitle}>异常状态</Text>
+            <View style={editStyles.chipRow}>
+              {ABNORMAL_OPTIONS.map(opt => {
+                const active = abnormal === opt.key;
+                return (
+                  <Pressable
+                    key={opt.key}
+                    onPress={() => setAbnormal(opt.key)}
+                    style={[
+                      editStyles.chip,
+                      { backgroundColor: active ? c.brand : c.bgElevated },
+                    ]}
+                  >
+                    <Text style={{ color: active ? '#fff' : c.labelPrimary, fontSize: 13, fontWeight: '500' }}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={editStyles.actions}>
+            <Pressable
+              onPress={onClose}
+              style={[editStyles.btn, { backgroundColor: c.bgElevated }]}
+              disabled={saving}
+            >
+              <Text style={{ color: c.labelPrimary, fontWeight: '500' }}>取消</Text>
+            </Pressable>
+            <Pressable
+              onPress={onSave}
+              style={[editStyles.btn, { backgroundColor: c.brand, opacity: saving ? 0.6 : 1 }]}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontWeight: '600' }}>保存</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -223,8 +406,47 @@ const itemStyles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: spacing.sm,
     gap: spacing.sm,
+    alignItems: 'center',
+  },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  pill: {
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: radii.sm,
   },
   valueWrap: { alignItems: 'flex-end', gap: 2 },
+});
+
+const editStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl + spacing.md,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    gap: spacing.xs,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(127,127,127,0.4)',
+    marginBottom: spacing.md,
+  },
+  input: {
+    borderWidth: 1, borderRadius: radii.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    fontSize: 16,
+  },
+  chipRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  chip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
+    borderRadius: radii.full,
+  },
+  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  btn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: spacing.md, borderRadius: radii.md,
+  },
 });
 
 function createStyles(c: ColorPalette, _isDark: boolean) {
@@ -240,6 +462,15 @@ function createStyles(c: ColorPalette, _isDark: boolean) {
     content: { padding: spacing.lg, paddingTop: 0, gap: spacing.md, paddingBottom: 40 },
     loadingWrap: { paddingVertical: 60, alignItems: 'center' },
     emptyWrap: { paddingVertical: 80, alignItems: 'center' },
+    lockWrap: {
+      flex: 1, alignItems: 'center', justifyContent: 'center',
+      paddingHorizontal: spacing.xl, gap: spacing.md,
+    },
+    unlockBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+      paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+      borderRadius: radii.full, marginTop: spacing.md,
+    },
     assessmentCard: {
       backgroundColor: c.brandLight,
       borderRadius: radii.md,
@@ -277,6 +508,7 @@ function createTxt(c: ColorPalette) {
     itemRef: { fontSize: 11, color: c.labelTertiary, marginTop: 1 } as TextStyle,
     itemValue: { fontSize: 14, fontWeight: '500' } as TextStyle,
     itemAbnormal: { fontSize: 11, fontWeight: '500' } as TextStyle,
+    pill: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 } as TextStyle,
     empty: { fontSize: 14, color: c.labelSecondary } as TextStyle,
   };
 }

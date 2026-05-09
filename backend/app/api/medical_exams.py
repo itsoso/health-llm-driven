@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
-from app.schemas.medical_exam import MedicalExamCreate, MedicalExamResponse
+from app.schemas.medical_exam import MedicalExamCreate, MedicalExamResponse, MedicalExamItemUpdate, MedicalExamItemResponse
 from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.user import User
 from app.api.deps import get_current_user_required
@@ -119,6 +119,73 @@ def get_my_medical_exams(
         MedicalExam.user_id == current_user.id
     ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
     return exams
+
+
+# ========== Calibrate UI: 单条 item 校正 (OCR 抽错值后用户回写) ==========
+
+@router.patch("/items/{item_id}", response_model=MedicalExamItemResponse)
+def update_medical_exam_item(
+    item_id: int,
+    body: MedicalExamItemUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """手工校正单条 item — 同步更新 medical_indicators (按 exam_id + item_code/name 关联).
+
+    第一次校正时, 把当前值快照到 original_value/original_value_text (作为 OCR 原值轨迹).
+    """
+    item = db.query(MedicalExamItem).filter(MedicalExamItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    exam = db.query(MedicalExam).filter(MedicalExam.id == item.exam_id).first()
+    if not exam or exam.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权操作")
+
+    # 第一次校正: 把现值快照成 original
+    if item.manually_corrected_at is None and item.original_value is None and item.original_value_text is None:
+        item.original_value = item.value
+        item.original_value_text = item.value_text
+
+    payload = body.model_dump(exclude_unset=True)
+    for field, val in payload.items():
+        setattr(item, field, val)
+    item.manually_corrected_at = datetime.utcnow()
+
+    # 同步 medical_indicators — 按 exam_id + (item_code or item_name) 关联.
+    # 历史 OCR 写入会同时落 MedicalIndicator (source='image_ocr'), 校正必须 mirror.
+    from app.models.family_health import MedicalIndicator
+    indicator_q = db.query(MedicalIndicator).filter(MedicalIndicator.exam_id == item.exam_id)
+    if item.item_code:
+        indicator = indicator_q.filter(MedicalIndicator.item_code == item.item_code).first()
+    else:
+        indicator = indicator_q.filter(MedicalIndicator.name == item.item_name).first()
+    if indicator:
+        if "value" in payload:
+            indicator.value = item.value
+        if "value_text" in payload:
+            indicator.value_text = item.value_text
+        if "unit" in payload:
+            indicator.unit = item.unit
+        if "reference_range" in payload:
+            indicator.reference_range = item.reference_range
+        if "is_abnormal" in payload:
+            ab = (item.is_abnormal or "").strip().lower()
+            indicator.is_abnormal = ab not in ("", "normal")
+        if "item_name" in payload:
+            indicator.name = item.item_name
+
+    db.commit()
+    db.refresh(item)
+
+    # 让 Twin 重读 (基因/化验改动 → invalidate, 同 Iter 2 Day 1 hook)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
+
+    return item
 
 
 @router.get("/user/{user_id}", response_model=List[MedicalExamResponse])
@@ -364,6 +431,8 @@ async def import_medical_exam_from_image(
                 unit=it.get("unit"),
                 reference_range=ref_range_str,
                 is_abnormal=is_ab_flag,
+                source="ocr",
+                original_value=value,
             )
             db.add(db_item)
 

@@ -49,8 +49,23 @@ class MedicalExamItemResponse(BaseModel):
     result: Optional[str] = None
     is_abnormal: Optional[str] = None
     notes: Optional[str] = None
+    source: Optional[str] = None
+    manually_corrected_at: Optional[datetime] = None
+    original_value: Optional[float] = None
+    original_value_text: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MedicalExamItemUpdate(BaseModel):
+    """Calibrate UI — 用户手工校正 OCR 抽错的值. 所有字段可选, 只改传入的部分."""
+    item_name: Optional[str] = None
+    value: Optional[float] = None
+    value_text: Optional[str] = None
+    unit: Optional[str] = None
+    reference_range: Optional[str] = None
+    is_abnormal: Optional[str] = None  # normal/abnormal/high/low
+    notes: Optional[str] = None
 
 
 class MedicalExamResponse(BaseModel):
