@@ -35,7 +35,9 @@ export interface VoiceTurn {
 
 // 只用真标点切句; \n 不算句末 — 段落换行交给标点本身的自然停顿,
 // 否则 \n\n 会触发额外的 synth 来回 (网络 500ms+), 听起来"卡顿"
-const SENTENCE_END = /[。！？.!?]/;
+// `.` 前后都是数字 (3.6 / 1.0.2) 不当句末 — 否则 "3.6 公里" 会被切成 "3" + "6 公里"
+// 后面的 stripMarkdownForTTS 拿不到完整 decimal 就没法念成"3 点 6"
+const SENTENCE_END = /[。！？!?]|(?<!\d)\.(?!\d)/;
 // 太短的句子 (< 3 字) 直接合并到下一个, 避免"是。" / "OK!" 这种微音轨抖动
 const MIN_SENTENCE_LEN = 3;
 
