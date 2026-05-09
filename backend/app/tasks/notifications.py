@@ -79,14 +79,24 @@ def _today_weather_text(city: Optional[str]) -> str:
         return ""
 
 
-def _strip_stale_weather_prefix(title: str, actual_weather: str) -> str:
-    """如果 title 开头的天气前缀与今日实际不符, 剥掉. 不是天气前缀的标题原样返回."""
+def _strip_stale_weather_prefix(title: str, actual_weather: str, tag: Optional[str] = None) -> str:
+    """如果 title 开头的天气前缀与今日实际不符, 剥掉. 不是天气前缀的标题原样返回.
+
+    优先用 PlanItem.weather_condition_tag (#67), 没有时回退到 title prefix 扫描 (历史数据).
+    """
     if not title or not actual_weather:
         return title
+    # 新路径: 已结构化 tag, 直接判
+    if tag:
+        from app.utils.weather_tag import weather_text_matches_tag, strip_tag_prefix
+        if not weather_text_matches_tag(actual_weather, tag):
+            return strip_tag_prefix(title, tag)
+        return title
+    # 回退: 历史 plan items 没 tag, 走老 prefix 扫描
     for prefix, should_strip in _WEATHER_PREFIX_RULES:
         if title.startswith(prefix) and should_strip(actual_weather):
             stripped = title[len(prefix):].lstrip(" -—_:,，·")
-            return stripped or title  # 万一全是前缀, 保留原文
+            return stripped or title
     return title
 
 
@@ -202,7 +212,7 @@ def send_plan_morning_reminder():
                     continue
                 # 推送前用今日实际天气校对 title (修 "雨天力量维护日" 但今天没下雨 badcase)
                 actual = _today_weather_text(_get_user_city(db, plan.user_id))
-                titles = [_strip_stale_weather_prefix(i.title, actual) for i in today_items[:3]]
+                titles = [_strip_stale_weather_prefix(i.title, actual, getattr(i, 'weather_condition_tag', None)) for i in today_items[:3]]
                 body = f"今日 {len(today_items)} 项待完成：{', '.join(titles)}"
                 if len(today_items) > 3:
                     body += f" 等{len(today_items)}项"
@@ -249,7 +259,7 @@ def send_plan_evening_summary():
                 total = len(today_items)
                 # 同 morning 推送, 推送前洗一下过期天气前缀
                 actual = _today_weather_text(_get_user_city(db, plan.user_id))
-                undone = [_strip_stale_weather_prefix(i.title, actual) for i in today_items if not i.is_completed]
+                undone = [_strip_stale_weather_prefix(i.title, actual, getattr(i, 'weather_condition_tag', None)) for i in today_items if not i.is_completed]
 
                 if done == total:
                     body = f"今日 {total} 项计划全部完成，太棒了！本周完成率 {plan.completion_rate:.0f}%"
@@ -326,7 +336,7 @@ def send_plan_item_reminders():
                 }
                 # 推送前用今日实际天气校对 title (修 "雨天力量维护日" 但今天没下雨 badcase)
                 actual = _today_weather_text(_get_user_city(db, plan.user_id))
-                titles = [_strip_stale_weather_prefix(i.title, actual) for i in items[:3]]
+                titles = [_strip_stale_weather_prefix(i.title, actual, getattr(i, 'weather_condition_tag', None)) for i in items[:3]]
                 emoji = category_emoji.get(items[0].category, "📋")
                 body = f"{', '.join(titles)}"
                 if len(items) > 3:

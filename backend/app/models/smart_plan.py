@@ -48,6 +48,7 @@ class PlanItem(Base):
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime, nullable=True)
     sort_order = Column(Integer, default=0)
+    weather_condition_tag = Column(String(20), nullable=True)  # rain/snow/sun/fog/wind/thunder, 由 title 前缀抽出
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     plan = relationship("WeeklyPlan", back_populates="items")

@@ -678,16 +678,19 @@ class SmartPlanService:
                 template_id = self._match_template(item_data.get("title", ""), templates)
                 if template_id:
                     matched_templates += 1
+                from app.utils.weather_tag import extract_weather_tag
+                title_str = item_data.get("title", "")
                 plan_item = PlanItem(
                     plan_id=plan.id,
                     day_of_week=day_num,
                     category=item_data.get("category", "other"),
-                    title=item_data.get("title", ""),
+                    title=title_str,
                     description=item_data.get("description", ""),
                     target_value=item_data.get("target_value"),
                     target_unit=item_data.get("target_unit"),
                     checkin_template_id=template_id,
                     sort_order=idx,
+                    weather_condition_tag=extract_weather_tag(title_str),
                 )
                 self.db.add(plan_item)
                 total_items += 1
