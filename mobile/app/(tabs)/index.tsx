@@ -121,8 +121,13 @@ export default function HomeScreen() {
     ? `${batteryCurrent}/${batteryPeak}` : `${batteryCurrent ?? batteryPeak ?? '--'}`;
 
   // ── Send handler (wraps chat engine) ──
+  // 用户主动发消息 = 明确想看回复. 强制锁 isNearBottom=true 并立即 scrollToEnd,
+  // 否则键盘弹出/setMessages 触发的 onScroll 会把 isNearBottom 误判成 false,
+  // 后续流式 token 的 onContentSizeChange 不会滚, 视图卡在 dashboard 顶端.
   const handleSend = useCallback((text: string, images?: any) => {
+    isNearBottom.current = true;
     chat.sendMessage(text, images);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [chat.sendMessage]);
 
   const handleTodayCoachAction = useCallback((focus: TodayCoachFocus) => {

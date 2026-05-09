@@ -81,7 +81,9 @@ export default function ChatScreen() {
   }, []);
 
   const handleSend = useCallback((text: string, images?: any) => {
+    isNearBottom.current = true;
     chat.sendMessage(text, images);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [chat.sendMessage]);
 
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => (
