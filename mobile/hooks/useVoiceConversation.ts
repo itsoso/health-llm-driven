@@ -64,7 +64,10 @@ function stripMarkdownForTTS(s: string): string {
     })
     // 段落换行变成单空格, 让标点自己定停顿,不让 TTS 把段落空行当 "全部停"
     .replace(/\n+/g, ' ')
-    .replace(/\s{2,}/g, ' ');
+    .replace(/\s{2,}/g, ' ')
+    // 兜底: 数字间的英文 "." 替换成中文 "点" — iOS Speech / 部分 TTS 会把
+    // "3.6 公里" 读成 "三 六公里" (吞掉 .). 这条放最后, "小时" 已经在前面消化掉了.
+    .replace(/(\d)\.(\d)/g, '$1点$2');
 }
 
 /**
