@@ -20,12 +20,22 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# CosyVoice 默认会把 "3.6千米" 里的 "." 吞掉读成 "3 6千米". 把数字间的小数点
+# 替换成 "点" 让模型按中文习惯读. IP / 版本号 (1.0.2) / 比分 (3:1) 也能正确处理.
+_DECIMAL_RE = re.compile(r"(?<=\d)\.(?=\d)")
+
+
+def _normalize_for_tts(text: str) -> str:
+    """把阿拉伯数字之间的英文 '.' 替换成中文 '点', 让 CosyVoice 念得出来."""
+    return _DECIMAL_RE.sub("点", text)
 
 VOICE_MAP = {
     # cosyvoice-v2 真人级音质. voice id 带 _v2 后缀.
@@ -108,19 +118,22 @@ async def synthesize(
     if not text or not text.strip():
         raise ValueError("text 不能为空")
 
+    # 进模型前做一次文本规范化 (数字小数点等). 缓存 key 用规范化后的文本,
+    # 不然旧 cache 命中会绕过新逻辑.
+    normalized = _normalize_for_tts(text)
     voice_id = _resolve_voice_id(voice_style)
 
     if settings.tts_cache_enabled:
-        cache = _cache_path(text, voice_id, speed)
+        cache = _cache_path(normalized, voice_id, speed)
         if cache.exists():
             return cache.read_bytes()
 
     # dashscope SDK 是同步阻塞 I/O → to_thread 放线程池避免卡 event loop
-    audio_bytes = await asyncio.to_thread(_synth_blocking, text, voice_id, speed)
+    audio_bytes = await asyncio.to_thread(_synth_blocking, normalized, voice_id, speed)
 
     if settings.tts_cache_enabled:
         try:
-            cache = _cache_path(text, voice_id, speed)
+            cache = _cache_path(normalized, voice_id, speed)
             cache.write_bytes(audio_bytes)
         except Exception as e:
             logger.warning("TTS 缓存写入失败: %s", e)
