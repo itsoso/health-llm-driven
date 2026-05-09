@@ -87,6 +87,12 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* AI 模型 — 置顶 */}
+        <View style={styles.card}>
+          <SettingRow icon="sparkles-outline" label="AI 模型"
+            onPress={() => router.push('/admin-llm' as any)} />
+        </View>
+
         {/* Settings items */}
         <View style={styles.card}>
           <SettingRow icon="location-outline" label="当前城市" value={city} />
@@ -145,8 +151,6 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
           <SettingRow icon="shield-checkmark-outline" label="隐私政策" onPress={() => {}} />
-          <SettingRow icon="cog-outline" label="LLM 模型 (admin)"
-            onPress={() => router.push('/admin-llm' as any)} />
         </View>
 
         {/* Logout */}
