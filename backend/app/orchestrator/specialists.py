@@ -142,11 +142,13 @@ def _build_registry() -> List[Specialist]:
     from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
     from app.agents.movement_coach import MovementCoachSpecialist
     from app.agents.recovery_coach import RecoveryCoachSpecialist
+    from app.agents.supplement_advisor import SupplementAdvisorSpecialist
 
     return [
         SafetyGuardianSpecialist(),            # 安全优先
         RecoveryCoachSpecialist(),             # 在 MovementCoach 之前
         FuelStrategistSpecialist(),
+        SupplementAdvisorSpecialist(),         # 基因/化验驱动补剂, Episode 闭环
         MovementCoachSpecialist(),             # 从 context 读 readiness_zone
         MentalHealthCompanionSpecialist(),     # Tier 5 隐私
         # 慢病专科

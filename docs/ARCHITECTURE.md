@@ -24,7 +24,7 @@
 │                  health-api.executor.life · 118 API 路由 · 147 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
-│  │           │  │ dispatch │  │ (10 specialist) │  │ (tool-calling LLM) │            │
+│  │           │  │ dispatch │  │ (11 specialist) │  │ (tool-calling LLM) │            │
 │  └───────────┘  └──────────┘  └────────┬────────┘  └──────────┬─────────┘            │
 │                                        │                      │                      │
 │                                        ▼                      ▼                      │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**主要入口**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 10 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (13 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 11 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (13 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 
 ---
@@ -158,7 +158,7 @@
                 │
                 ▼
 ┌────────────────────────────────────────────────────────────────┐
-│  10 Specialists                                                │
+│  11 Specialists                                                │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ SafetyGuardian  — 51 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │

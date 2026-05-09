@@ -214,7 +214,7 @@ psql $DATABASE_URL -f backend/migrations/create_xxx_tables.sql
     ↓
 Orchestrator (L4)  ← 意图路由 + 专家调度 + LLM 合成
     ↓
-10 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
+11 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
     ↓
 Digital Health Twin (L2) ← 13 语义分区的统一状态视图 (Redis 5min 缓存)
     ↓
@@ -229,7 +229,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 - 对话记忆：注入 `conversation_memory_service` 到 LLM prompt
 - LLM 失败自动回退 OpenClaw provider
 
-**10 Specialists** (`app/agents/`):
+**11 Specialists** (`app/agents/`):
 
 | Specialist | 模块 | 职责 |
 |---|---|---|
@@ -243,6 +243,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 | RhinitisSpecialist | `agents/chronic_specialists/` | 症状分级 + AQI/湿度环境关联 + 用药依从性 |
 | KnowledgeLibrarian | `agents/knowledge_librarian/` | 得到 wiki → ChromaDB RAG 检索 |
 | LongitudinalAnalyst | `agents/longitudinal_analyst/` | 6 个月趋势 + 干预事件×指标变化因果叙事 |
+| SupplementAdvisor | `agents/supplement_advisor/` | SNP+化验驱动补剂建议 (MTHFR/APOE/HFE/COMT/VDR/FADS1) + Episode 12 周 N-of-1 闭环 + HFE 硬阻断 |
 
 **Safety Guardian 规则分类** (`agents/safety_guardian/rules/`, total 51):
 - `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
@@ -287,7 +288,7 @@ OpenClaw Gateway          Agent Executor / Orchestrator
 ```
 
 - **数据记录意图** → 走 OpenClaw（skill 才能调 POST API 写入）
-- **分析/知识/问答** → 走 Orchestrator（10 specialist 协作）
+- **分析/知识/问答** → 走 Orchestrator（11 specialist 协作）
 - **有附件（图片/文件）** → 走 OpenClaw（支持多模态）
 
 Two entry points:
@@ -316,7 +317,7 @@ Two entry points:
 ### Frontend AI Assistant Components
 
 - `components/assistant/SafetyPanel.tsx` — 安全告警卡片 + 颜色分级 + 展开/折叠 + LLM 解读 + AI 综合分析弹窗
-- `components/assistant/SpecialistsPanel.tsx` — 10 specialist 结果面板 + 类型化渲染
+- `components/assistant/SpecialistsPanel.tsx` — 11 specialist 结果面板 + 类型化渲染
 - `components/assistant/HeroCard.tsx` — 仪表盘主卡
 - `components/assistant/QuickRecordBar.tsx` — 快速打卡 + undo + action-lock 防双击
 - `components/assistant/AlertsBanner.tsx` — 饮水/血氧/HRV 实时提醒
