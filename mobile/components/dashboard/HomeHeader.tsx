@@ -43,6 +43,7 @@ interface Props {
   onHistory?: () => void;
   onSymptom?: () => void;
   onImport?: () => void;
+  onLiveRun?: () => void;
 }
 
 function getAqiColor(v: number | null | undefined, c: ColorPalette): string {
@@ -62,7 +63,7 @@ export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, sleepScore, steps, hr, battery,
   batteryCurrent, batteryPeak, isLoading,
-  onSettings, onNewChat, onHistory, onSymptom, onImport,
+  onSettings, onNewChat, onHistory, onSymptom, onImport, onLiveRun,
 }: Props) {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
@@ -117,6 +118,11 @@ export default function HomeHeader({
           <MiniVital color={c.pink} value={hr || '--'} />
           <MiniVital color={c.green} value={battery || '--'} />
         </TouchableOpacity>
+        {onLiveRun && (
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onLiveRun(); }} style={styles.miniAction} hitSlop={10} activeOpacity={0.6}>
+            <Ionicons name="walk-outline" size={15} color={c.brand} />
+          </TouchableOpacity>
+        )}
         {onHistory && (
           <TouchableOpacity onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onHistory(); }} style={styles.miniAction} hitSlop={10} activeOpacity={0.6}>
             <Ionicons name="chatbubbles-outline" size={15} color={c.labelTertiary} />
@@ -157,6 +163,11 @@ export default function HomeHeader({
                 <Text style={styles.dateText}>  {dateStr}</Text>
               </View>
             </View>
+            {onLiveRun && (
+              <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onLiveRun(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
+                <Ionicons name="walk-outline" size={18} color={c.brand} />
+              </TouchableOpacity>
+            )}
             {onHistory && (
               <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onHistory(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
                 <Ionicons name="chatbubbles-outline" size={18} color={c.labelTertiary} />

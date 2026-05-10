@@ -212,6 +212,7 @@ export default function HomeScreen() {
         onNewChat={chat.newChat}
         onHistory={() => { setShowHistory(true); loadHistory(); }}
         onSymptom={() => router.push('/symptom-record' as any)}
+        onLiveRun={() => router.push('/live-run' as any)}
         onImport={() => router.push('/import' as any)}
       />
       {/* Agent-Native v3: Open Episode 卡 — 跑后恢复 / 睡眠复盘 等闭环单元的入口.
