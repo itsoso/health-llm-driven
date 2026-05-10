@@ -40,17 +40,31 @@ export default function LiveRunDetailScreen() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+
+    const fetchOnce = async () => {
       try {
         const s = await getLiveRun(Number(id));
-        if (!cancelled) setSession(s);
+        if (cancelled) return;
+        setSession(s);
+        // narrative 还在生成 → 4s 后再拉, 最多 15 次 (1 分钟)
+        if ((s.narrative_status === 'pending' || s.narrative_status === 'running') && attempts < 15) {
+          attempts += 1;
+          timer = setTimeout(fetchOnce, 4000);
+        }
       } catch (e: any) {
         console.warn('[LiveRunDetail] fetch failed:', e);
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    fetchOnce();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [id]);
 
   if (loading) {
@@ -186,13 +200,15 @@ export default function LiveRunDetailScreen() {
         {/* LLM 复盘 */}
         <View style={styles.card}>
           <Text style={txt.sectionTitle}>AI 复盘</Text>
-          {session.narrative_status === 'pending' ? (
+          {session.narrative_status === 'pending' || session.narrative_status === 'running' ? (
             <View style={styles.narrativePending}>
               <ActivityIndicator size="small" color={c.brand} />
               <Text style={[txt.subLabel, { marginLeft: spacing.sm }]}>生成中...</Text>
             </View>
-          ) : session.narrative_status === 'done' && session.narrative ? (
+          ) : session.narrative_status === 'completed' && session.narrative ? (
             <Text style={txt.narrative}>{session.narrative}</Text>
+          ) : session.narrative_status === 'skipped' ? (
+            <Text style={[txt.subLabel, { color: c.labelTertiary }]}>跑量太短, 跳过复盘</Text>
           ) : (
             <Text style={[txt.subLabel, { color: c.red }]}>复盘生成失败</Text>
           )}

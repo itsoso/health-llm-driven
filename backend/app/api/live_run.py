@@ -188,11 +188,20 @@ def end_run(
     s.gps_samples = [g.model_dump(mode="json") for g in req.gps_samples]
     s.aborted = req.aborted
 
-    # narrative 跑后异步生成 (V1: 留 pending, V2: enqueue Celery)
+    # narrative 跑后异步生成 — 入 Celery 队列
     s.narrative_status = "pending"
 
     db.commit()
     db.refresh(s)
+
+    try:
+        from app.tasks.live_run_narrative import generate_narrative
+        generate_narrative.delay(s.id)
+    except Exception as e:
+        # Celery 不可用不应阻塞 end 调用
+        import logging
+        logging.getLogger(__name__).warning(f"[live-run] enqueue narrative failed: {e}")
+
     return _to_response(s)
 
 

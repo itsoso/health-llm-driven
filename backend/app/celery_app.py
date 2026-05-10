@@ -36,6 +36,7 @@ celery_app = Celery(
         "app.tasks.monthly_report",
         "app.tasks.episode_scheduler",
         "app.tasks.episode_reflection",
+        "app.tasks.live_run_narrative",
     ]
 )
 
