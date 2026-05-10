@@ -13,6 +13,12 @@ import * as Location from 'expo-location';
 import type { LiveRunGpsSample, LiveRunEvent } from '../services/liveRun/api';
 import { evaluateRules, resetRuleEngine } from '../services/liveRun/ruleEngine';
 import { triggerRule, clearQueue as clearVoiceQueue } from '../services/liveRun/voicePrompter';
+import {
+  startBackgroundTracking,
+  stopBackgroundTracking,
+  subscribeLocation,
+  type LocationSubscription,
+} from '../services/liveRun/backgroundLocation';
 
 const WINDOW_MS = 30_000;
 const GPS_LOSS_THRESHOLD_MS = 10_000;
@@ -70,7 +76,7 @@ export function useLiveRun(targetPaceSeconds: number = 360) {
   const startedAtRef = useRef<number>(0);
   const pausedTotalMsRef = useRef<number>(0);
   const pauseStartRef = useRef<number | null>(null);
-  const subRef = useRef<Location.LocationSubscription | null>(null);
+  const subRef = useRef<LocationSubscription | null>(null);
   const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const targetPaceRef = useRef<number>(targetPaceSeconds);
 
@@ -81,6 +87,7 @@ export function useLiveRun(targetPaceSeconds: number = 360) {
   const stop = useCallback(() => {
     subRef.current?.remove();
     subRef.current = null;
+    stopBackgroundTracking().catch(() => { /* best effort */ });
     if (tickerRef.current) {
       clearInterval(tickerRef.current);
       tickerRef.current = null;
@@ -135,16 +142,6 @@ export function useLiveRun(targetPaceSeconds: number = 360) {
 
   const start = useCallback(async () => {
     setState((s) => ({ ...s, status: 'requesting_permission', error: null }));
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setState((s) => ({ ...s, status: 'idle', error: '定位权限未授权' }));
-        return false;
-      }
-    } catch (e: any) {
-      setState((s) => ({ ...s, status: 'idle', error: e?.message || '定位权限请求失败' }));
-      return false;
-    }
 
     startedAtRef.current = Date.now();
     pausedTotalMsRef.current = 0;
@@ -156,14 +153,12 @@ export function useLiveRun(targetPaceSeconds: number = 360) {
     resetRuleEngine();
 
     try {
-      subRef.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000,
-          distanceInterval: 2,
-        },
-        onPoint,
-      );
+      const ok = await startBackgroundTracking();
+      if (!ok) {
+        setState((s) => ({ ...s, status: 'idle', error: '定位权限未授权' }));
+        return false;
+      }
+      subRef.current = subscribeLocation(onPoint);
     } catch (e: any) {
       setState((s) => ({ ...s, status: 'idle', error: e?.message || 'GPS 启动失败' }));
       return false;
