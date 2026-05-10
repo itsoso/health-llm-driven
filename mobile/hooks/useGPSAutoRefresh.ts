@@ -99,17 +99,21 @@ export function useGPSAutoRefresh(enabled: boolean) {
           [LAST_LON_KEY, String(pos.coords.longitude)],
         ]);
 
+        // GPS 反查成功 → 一律清天气/AQI/dashboard cache. 后端已清 server-side
+        // cache, 这里同步清 React Query, 否则 stale UI 会继续显示旧城市数据.
+        // 不依赖 city 变化判断 — 即使 city 字符串没变 (北京→朝阳→北京), 经纬度
+        // 也已变, 后端 forecast 数据可能更新.
+        qc.invalidateQueries({ queryKey: ['profileLocation'] });
+        qc.invalidateQueries({ queryKey: ['weather'] });
+        qc.invalidateQueries({ queryKey: ['weatherForecast'] });
+        qc.invalidateQueries({ queryKey: ['airQuality'] });
+        qc.invalidateQueries({ queryKey: ['environment'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
+
         if (loc.city) {
-          // 城市变了才 invalidate (减少无谓 refetch)
           const prevCity = await AsyncStorage.getItem(LAST_CITY_KEY);
           if (prevCity !== loc.city) {
             await AsyncStorage.setItem(LAST_CITY_KEY, loc.city);
-            qc.invalidateQueries({ queryKey: ['profileLocation'] });
-            qc.invalidateQueries({ queryKey: ['weather'] });
-            qc.invalidateQueries({ queryKey: ['weatherForecast'] });
-            qc.invalidateQueries({ queryKey: ['airQuality'] });
-            qc.invalidateQueries({ queryKey: ['environment'] });
-            qc.invalidateQueries({ queryKey: ['dashboard'] });
             if (__DEV__) console.log(`[GPS] 城市更新: ${prevCity || '(空)'} → ${loc.city}`);
           }
         }

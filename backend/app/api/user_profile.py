@@ -372,6 +372,8 @@ async def update_gps_location(
             weather_service.invalidate_cache_for(city=c)
             if hasattr(air_quality_service, "invalidate_cache_for"):
                 air_quality_service.invalidate_cache_for(city=c, lat=lat, lon=lon)
+        # 经纬度键的 cache 也清 (有些 forecast key 是 'forecast_<lat>,<lon>_<days>')
+        weather_service.invalidate_cache_for(lat=lat, lon=lon)
     except Exception as e:
         log.warning(f"[gps-location] 清缓存失败 (不致命): {e}")
 
