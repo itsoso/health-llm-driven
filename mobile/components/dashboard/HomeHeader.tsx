@@ -38,6 +38,7 @@ interface Props {
   batteryCurrent?: number | null;
   batteryPeak?: number | null;
   isLoading?: boolean;
+  defaultCollapsed?: boolean;
   onSettings?: () => void;
   onNewChat?: () => void;
   onHistory?: () => void;
@@ -62,12 +63,12 @@ function sc(score: number, c: ColorPalette): string {
 export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, sleepScore, steps, hr, battery,
-  batteryCurrent, batteryPeak, isLoading,
+  batteryCurrent, batteryPeak, isLoading, defaultCollapsed,
   onSettings, onNewChat, onHistory, onSymptom, onImport, onLiveRun,
 }: Props) {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
   // 实时时钟: 每 30s 刷一次, 只存时间展示字符串, 不触发其他重渲
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {

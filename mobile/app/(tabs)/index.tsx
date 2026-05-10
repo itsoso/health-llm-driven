@@ -11,8 +11,8 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getConversations, deleteConversation } from '../../services/chat';
 import api from '../../services/api';
-import { getSafetyReport } from '../../services/safety';
 import HomeHeader from '../../components/dashboard/HomeHeader';
+import AgentSurface from '../../components/dashboard/AgentSurface';
 import OpenEpisodeCard from '../../components/dashboard/OpenEpisodeCard';
 import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
 import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
@@ -72,7 +72,6 @@ export default function HomeScreen() {
   const { data: garminData, isLoading: garminLoading } = useQuery({ queryKey: queryKeys.garminToday, queryFn: () => api.get(`/daily-health/garmin/me?start_date=${today()}&end_date=${today()}`).then(r => r.data), staleTime: 120_000 });
   const { data: weatherData } = useQuery({ queryKey: queryKeys.weather, queryFn: () => api.get('/environment/weather').then(r => r.data), staleTime: 300_000 });
   const { data: aqiData } = useQuery({ queryKey: queryKeys.aqi, queryFn: () => api.get('/environment/air-quality').then(r => r.data), staleTime: 300_000 });
-  const { data: safetyData } = useQuery({ queryKey: queryKeys.safety, queryFn: getSafetyReport, staleTime: 300_000 });
   const { data: profileData } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const { data: forecastData } = useQuery({ queryKey: queryKeys.forecast, queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
   const todayCoach = useTodayCoach();
@@ -108,10 +107,7 @@ export default function HomeScreen() {
   const weather = weatherData?.weather ?? weatherData;
   const city = profileData?.manual_location?.city || profileData?.detected_location?.city || profileData?.city || '';
   const tomorrowFc = forecastData?.forecasts?.[1];
-  const criticalAlerts = (safetyData?.alerts || []).filter((a: any) => {
-    const sev = typeof a.severity === 'string' ? a.severity : a.severity?.label;
-    return sev === 'critical' || sev === 'high';
-  });
+  // criticalAlerts 现在由 AgentSurface 自取 (queryKeys.safety 共享缓存), 不再在 home 顶层计算.
 
   const sleepH = garmin?.total_sleep_duration ? (garmin.total_sleep_duration / 60).toFixed(1) : '--';
   const steps = garmin?.steps ?? '--';
@@ -194,7 +190,12 @@ export default function HomeScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  // ── Dashboard 头部: 全部放到 FlatList ListHeaderComponent, 与聊天一起滚 ──
+  const [showMore, setShowMore] = useState(false);
+
+  // ── Dashboard 头部: Agent Surface 单卡 + 对话, 其余 panel 折叠在"更多"里 ──
+  // 设计原则: 首页第一眼是 Agent 当前最想说的一句话, 不是 8 张数据卡墙.
+  // HomeHeader 默认 mini-bar; AgentSurface 自己按优先级选 1 张 (safety > episode > coach);
+  // SpecialistChipRow / Insight / Timeline / Agenda / Freshness 全部进 "更多" 折叠.
   const dashboardHeader = useMemo(() => (
     <View>
       <HomeHeader
@@ -208,6 +209,7 @@ export default function HomeScreen() {
         hr={`${hrVal}`} battery={`${batteryVal}`}
         batteryCurrent={batteryCurrent} batteryPeak={batteryPeak}
         isLoading={scoreLoading || garminLoading}
+        defaultCollapsed
         onSettings={() => router.push('/settings' as any)}
         onNewChat={chat.newChat}
         onHistory={() => { setShowHistory(true); loadHistory(); }}
@@ -215,29 +217,39 @@ export default function HomeScreen() {
         onLiveRun={() => router.push('/live-run' as any)}
         onImport={() => router.push('/import' as any)}
       />
-      {/* Agent-Native v3: Open Episode 卡 — 跑后恢复 / 睡眠复盘 等闭环单元的入口.
-          没 open episode 时不渲染, 不打扰用户. 在 TodayCoach 之上是因为它是
-          "本次还没收尾的事", 比 "今日大方向" 更具体可执行. */}
-      <OpenEpisodeCard />
-      {/* P3 (2026-05-04): TodayCoach 提到 SpecialistChipRow 之前 — 一句话指令性
-          判断 ("今天注意 X" / "继续执行 Y" / "今天恢复良好...") 比 "AI 押注 4 张"
-          (用户不知道是什么意思) 更优先. 让 home 第一眼是决策, 不是 chrome. */}
-      <TodayCoachPanel
-        focus={todayCoach.data}
-        isLoading={todayCoach.isLoading}
-        onAction={handleTodayCoachAction}
-      />
-      <SpecialistChipRow />
-      <InsightCard />
-      <HomeTimelinePreview />
-      <AgentAgendaPanel agenda={agentAgenda.data} onOpenItem={handleAgendaItem} />
-      <DataFreshnessPanel />
-      {criticalAlerts.length > 0 && todayCoach.data?.status !== 'risk' && (
-        <View style={styles.alertBanner} accessibilityRole="alert">
-          <Ionicons name="warning" size={16} color="#FF453A" />
-          <Text style={txt.alertText} numberOfLines={2}>{criticalAlerts[0].title}: {criticalAlerts[0].message}</Text>
+
+      {/* Agent Surface — 唯一主卡: critical alert > open episode > today coach > 空 */}
+      <AgentSurface />
+
+      {/* 更多: 把原来的 5 个 panel + 完整版 Episode/Coach 折叠起来.
+          AgentSurface 已经露了头一条 critical / episode / coach, 这里是回看完整列表. */}
+      <TouchableOpacity
+        style={styles.moreToggle}
+        onPress={() => setShowMore(s => !s)}
+        activeOpacity={0.6}
+        accessibilityRole="button"
+        accessibilityLabel={showMore ? '收起更多' : '展开更多'}
+      >
+        <Text style={txt.moreToggleText}>{showMore ? '收起' : '更多'}</Text>
+        <Ionicons name={showMore ? 'chevron-up' : 'chevron-down'} size={14} color={c.labelTertiary} />
+      </TouchableOpacity>
+
+      {showMore && (
+        <View>
+          <OpenEpisodeCard />
+          <TodayCoachPanel
+            focus={todayCoach.data}
+            isLoading={todayCoach.isLoading}
+            onAction={handleTodayCoachAction}
+          />
+          <SpecialistChipRow />
+          <InsightCard />
+          <HomeTimelinePreview />
+          <AgentAgendaPanel agenda={agentAgenda.data} onOpenItem={handleAgendaItem} />
+          <DataFreshnessPanel />
         </View>
       )}
+
       {chat.messages.length > 0 && (
         <View style={styles.chatDivider}>
           <View style={styles.chatDividerLine} />
@@ -249,9 +261,9 @@ export default function HomeScreen() {
   ), [
     score, city, weather, aqiData, tomorrowFc, sleepH, garmin, steps, hrVal, batteryVal,
     batteryCurrent, batteryPeak, scoreLoading, garminLoading,
-    todayCoach.data, todayCoach.isLoading, agentAgenda.data, criticalAlerts,
+    todayCoach.data, todayCoach.isLoading, agentAgenda.data,
     chat.messages.length, handleTodayCoachAction, handleAgendaItem,
-    chat.newChat, loadHistory, router,
+    chat.newChat, loadHistory, router, showMore, c, txt, styles,
   ]);
 
   return (
@@ -354,11 +366,10 @@ export default function HomeScreen() {
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: c.bgPrimary },
-    alertBanner: {
-      flexDirection: 'row', alignItems: 'center', gap: 8,
-      marginHorizontal: spacing.lg, marginBottom: 6,
-      backgroundColor: c.tintRed, borderRadius: radii.md,
-      padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: c.red,
+    moreToggle: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+      alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 12,
+      marginBottom: spacing.sm,
     },
     msgList: { paddingTop: spacing.sm, paddingBottom: 4, paddingHorizontal: spacing.md },
     chatDivider: {
@@ -410,7 +421,7 @@ function createStyles(c: ColorPalette) {
 
 function createTxt(c: ColorPalette) {
   return {
-    alertText: { fontSize: 13, color: c.red, flex: 1, lineHeight: 18 } as TextStyle,
+    moreToggleText: { fontSize: 12, color: c.labelTertiary, fontWeight: '500' } as TextStyle,
     welcomeTitle: { fontSize: 20, fontWeight: '700', color: c.labelPrimary } as TextStyle,
     welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4 } as TextStyle,
     sugText: { fontSize: 13, color: c.brand } as TextStyle,
