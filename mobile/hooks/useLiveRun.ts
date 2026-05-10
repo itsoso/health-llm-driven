@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import type { LiveRunGpsSample, LiveRunEvent } from '../services/liveRun/api';
-import { evaluateRules } from '../services/liveRun/ruleEngine';
+import { evaluateRules, resetRuleEngine } from '../services/liveRun/ruleEngine';
 import { triggerRule, clearQueue as clearVoiceQueue } from '../services/liveRun/voicePrompter';
 
 const WINDOW_MS = 30_000;
@@ -153,6 +153,7 @@ export function useLiveRun(targetPaceSeconds: number = 360) {
     gpsSamplesRef.current = [];
     eventsRef.current = [];
     lastSampleTsRef.current = 0;
+    resetRuleEngine();
 
     try {
       subRef.current = await Location.watchPositionAsync(
