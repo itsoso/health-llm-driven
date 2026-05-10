@@ -5,18 +5,19 @@
  * - expo-location.watchPositionAsync 1Hz 高精度定位
  * - 维护 30s 滑窗, 算瞬时配速 (单点 GPS 配速噪声大)
  * - GPS 信号丢失 >10s 自动暂停计时 (隧道/桥下)
- * - 暴露给 UI: distance / duration / currentPace / avgPace / status
- *
- * 不做: 规则引擎 (P2), 语音提示 (P2), HR 读取 (P3)
+ * - 跑步中本地评估 R1/R2/R3 规则, 触发离线语音
+ * - 暴露给 UI: distance / duration / currentPace / avgPace / status / events
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
-import type { LiveRunGpsSample } from '../services/liveRun/api';
+import type { LiveRunGpsSample, LiveRunEvent } from '../services/liveRun/api';
+import { evaluateRules } from '../services/liveRun/ruleEngine';
+import { triggerRule, clearQueue as clearVoiceQueue } from '../services/liveRun/voicePrompter';
 
-const WINDOW_MS = 30_000;            // 30s 滑窗算瞬时配速
-const GPS_LOSS_THRESHOLD_MS = 10_000; // GPS 丢失 10s 视为暂停
-const SAMPLE_INTERVAL_MS = 30_000;   // 轨迹抽样: 每 30s 存一个点
-const MIN_ACCURACY_M = 30;           // 精度 >30m 的点丢弃
+const WINDOW_MS = 30_000;
+const GPS_LOSS_THRESHOLD_MS = 10_000;
+const SAMPLE_INTERVAL_MS = 30_000;
+const MIN_ACCURACY_M = 30;
 
 export type RunStatus = 'idle' | 'requesting_permission' | 'running' | 'paused' | 'ended';
 
@@ -35,6 +36,7 @@ interface RunState {
   currentPace: number | null;
   avgPace: number | null;
   error: string | null;
+  events: LiveRunEvent[];
 }
 
 function distanceMeters(a: TrackPoint, b: TrackPoint): number {
@@ -50,7 +52,7 @@ function distanceMeters(a: TrackPoint, b: TrackPoint): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-export function useLiveRun() {
+export function useLiveRun(targetPaceSeconds: number = 360) {
   const [state, setState] = useState<RunState>({
     status: 'idle',
     distanceM: 0,
@@ -58,9 +60,11 @@ export function useLiveRun() {
     currentPace: null,
     avgPace: null,
     error: null,
+    events: [],
   });
 
   const gpsSamplesRef = useRef<LiveRunGpsSample[]>([]);
+  const eventsRef = useRef<LiveRunEvent[]>([]);
   const trackRef = useRef<TrackPoint[]>([]);
   const lastSampleTsRef = useRef<number>(0);
   const startedAtRef = useRef<number>(0);
@@ -68,6 +72,11 @@ export function useLiveRun() {
   const pauseStartRef = useRef<number | null>(null);
   const subRef = useRef<Location.LocationSubscription | null>(null);
   const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const targetPaceRef = useRef<number>(targetPaceSeconds);
+
+  useEffect(() => {
+    targetPaceRef.current = targetPaceSeconds;
+  }, [targetPaceSeconds]);
 
   const stop = useCallback(() => {
     subRef.current?.remove();
@@ -76,6 +85,7 @@ export function useLiveRun() {
       clearInterval(tickerRef.current);
       tickerRef.current = null;
     }
+    clearVoiceQueue();
   }, []);
 
   useEffect(() => () => stop(), [stop]);
@@ -141,6 +151,7 @@ export function useLiveRun() {
     pauseStartRef.current = null;
     trackRef.current = [];
     gpsSamplesRef.current = [];
+    eventsRef.current = [];
     lastSampleTsRef.current = 0;
 
     try {
@@ -177,12 +188,36 @@ export function useLiveRun() {
         }
       }
 
-      let status: RunStatus = 'running';
+      let nextStatus: RunStatus = 'running';
       if (track.length > 0 && now - track[track.length - 1].ts > GPS_LOSS_THRESHOLD_MS) {
-        status = 'paused';
+        nextStatus = 'paused';
         if (pauseStartRef.current == null) {
           pauseStartRef.current = track[track.length - 1].ts + GPS_LOSS_THRESHOLD_MS;
         }
+      }
+
+      const ruleResults = evaluateRules({
+        currentPace,
+        targetPace: targetPaceRef.current,
+        elapsedS: durationS,
+        currentHr: null,
+        z4PlusMinutes: 0,
+      });
+
+      const triggeredEvents: LiveRunEvent[] = [];
+      for (const result of ruleResults) {
+        if (result.type !== 'triggered') continue;
+        const evt = result.event;
+        const fired = triggerRule(evt.ruleId, evt.message, evt.metricSnapshot);
+        if (!fired) continue;
+        const newEvent: LiveRunEvent = {
+          ts: new Date(evt.ts).toISOString(),
+          rule_id: evt.ruleId,
+          message: evt.message,
+          metric_snapshot: evt.metricSnapshot,
+        };
+        triggeredEvents.push(newEvent);
+        eventsRef.current.push(newEvent);
       }
 
       setState((s) => {
@@ -190,7 +225,9 @@ export function useLiveRun() {
           s.distanceM > 50 && durationS > 10
             ? Math.round(durationS / (s.distanceM / 1000))
             : null;
-        return { ...s, status, durationS, currentPace, avgPace };
+        const events =
+          triggeredEvents.length > 0 ? [...s.events, ...triggeredEvents] : s.events;
+        return { ...s, status: nextStatus, durationS, currentPace, avgPace, events };
       });
     }, 1000);
 
@@ -203,6 +240,7 @@ export function useLiveRun() {
     setState((s) => ({ ...s, status: 'ended' }));
     return {
       gpsSamples: gpsSamplesRef.current,
+      events: eventsRef.current,
     };
   }, [stop]);
 
@@ -211,6 +249,7 @@ export function useLiveRun() {
     start,
     end,
     gpsSamples: gpsSamplesRef.current,
+    events: state.events,
   };
 }
 

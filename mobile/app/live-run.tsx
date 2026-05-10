@@ -36,9 +36,13 @@ export default function LiveRunScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
 
-  const { state, start, end } = useLiveRun();
-  const [session, setSession] = useState<LiveRunSession | null>(null);
   const [selected, setSelected] = useState<LiveRunTargetLabel>('easy');
+  const targetPace = useMemo(
+    () => PRESETS.find((p) => p.label === selected)?.pace ?? 360,
+    [selected],
+  );
+  const { state, start, end } = useLiveRun(targetPace);
+  const [session, setSession] = useState<LiveRunSession | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleStart = async () => {
@@ -69,7 +73,7 @@ export default function LiveRunScreen() {
           text: '结束',
           style: 'destructive',
           onPress: async () => {
-            const { gpsSamples } = end();
+            const { gpsSamples, events } = end();
             setSubmitting(true);
             try {
               const aborted = state.distanceM < 100;
@@ -78,7 +82,7 @@ export default function LiveRunScreen() {
                 total_duration_s: state.durationS,
                 avg_pace_seconds: state.avgPace ?? undefined,
                 z4_plus_minutes: 0,
-                events: [],
+                events,
                 gps_samples: gpsSamples,
                 aborted,
               });
@@ -193,6 +197,20 @@ export default function LiveRunScreen() {
             </View>
           )}
 
+          {state.events.length > 0 && (
+            <View style={styles.eventsBlock}>
+              <Text style={txt.eventsTitle}>实时提示</Text>
+              <ScrollView style={{ maxHeight: 140 }}>
+                {state.events.slice(-5).reverse().map((e, i) => (
+                  <View key={`${e.ts}-${i}`} style={styles.eventRow}>
+                    <Ionicons name="volume-high" size={14} color={c.brand} />
+                    <Text style={txt.eventMsg}>{e.message}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.endBtn, submitting && { opacity: 0.6 }]}
             onPress={handleEnd}
@@ -250,6 +268,15 @@ function createStyles(c: ColorPalette) {
       ...shadows.subtle,
     },
     metricCell: { alignItems: 'center', gap: 4 },
+    eventsBlock: {
+      backgroundColor: c.bgCard, borderRadius: radii.md,
+      padding: spacing.md, gap: spacing.xs, marginTop: spacing.md,
+      ...shadows.subtle,
+    },
+    eventRow: {
+      flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+      paddingVertical: 6,
+    },
     endBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
       backgroundColor: c.red, borderRadius: radii.md,
@@ -277,5 +304,7 @@ function createTxt(c: ColorPalette) {
       fontVariant: ['tabular-nums'] as const,
     } as TextStyle,
     metricLabel: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+    eventsTitle: { fontSize: 13, fontWeight: '600', color: c.labelSecondary } as TextStyle,
+    eventMsg: { fontSize: 14, color: c.labelPrimary, flex: 1 } as TextStyle,
   };
 }
