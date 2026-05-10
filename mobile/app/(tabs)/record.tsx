@@ -122,6 +122,21 @@ export default function RecordScreen() {
         {/* 4.5 Symptoms — 偶发症状通用录入 */}
         <SymptomCard />
 
+        {/* 4.6 Live Run Coach — 跑步动态指导 */}
+        <TouchableOpacity
+          style={styles.runCard}
+          onPress={() => router.push('/live-run' as any)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.runCardContent}>
+            <Text style={styles.runCardTitle}>跑步指导</Text>
+            <Text style={styles.runCardSubtitle}>GPS 实时配速 · 规则引擎 · 跑后复盘</Text>
+            <View style={{ width: 32, height: 32, backgroundColor: c.tintGreen, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="play" size={18} color="#fff" />
+            </View>
+          </View>
+        </TouchableOpacity>
+
         {/* 5. Strength */}
         <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
 
@@ -419,6 +434,15 @@ function createStyles(c: ColorPalette) {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 10, ...shadows.heavy,
   },
+  runCard: {
+    backgroundColor: c.bgCard, borderRadius: radii.md,
+    padding: spacing.md, ...shadows.subtle,
+  },
+  runCardContent: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  runCardTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  runCardSubtitle: { fontSize: 12, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   });
 }
 

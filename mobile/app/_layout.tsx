@@ -120,6 +120,8 @@ function AppContent() {
         <Stack.Screen name="ai-profile" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="admin-llm" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="symptom-record" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="live-run" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="live-run/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="episode/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="import" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
