@@ -24,11 +24,25 @@ from app.orchestrator.schema import (
     SpecialistFinding,
 )
 from app.orchestrator.specialists import all_specialists, get_specialist
+from app.services.episode.validator import validate_text, TextValidationResult
 from app.twin.builder import build_twin
 from app.twin.formatter import twin_to_prompt_blob
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
+
+
+def _safety_wrap(text: str, *, source: str = "orchestrator") -> TextValidationResult:
+    """v3 cross-cutting: 所有 LLM 终态文本输出统一过 validator.
+
+    异常时降级 (返回 ok=True / pass / 原文), 不能因为 validator 自身 bug
+    把整个 orchestrator 弄挂.
+    """
+    try:
+        return validate_text(text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[safety_wrap %s] validator 异常, 降级原文: %s", source, e)
+        return TextValidationResult(ok=True, action="pass", safe_text=text or "")
 
 
 # ───────────────────── 专家调度 ────────────────────────
@@ -754,6 +768,10 @@ async def run_orchestrator(
 
     synthesis = await _call_llm(system_prompt, user_prompt)
 
+    # v3 cross-cutting safety: 所有 LLM 终态自由文本统一过 validator
+    safety = _safety_wrap(synthesis, source="orchestrator.run")
+    synthesis = safety.safe_text
+
     # 信任循环: 把 specialist 的 proposed_cards 落地为 ActionCard
     persisted_card_ids = _persist_proposed_cards(db, user_id, findings)
 
@@ -825,6 +843,8 @@ async def run_orchestrator(
         twin_build_ms=twin.meta.build_ms,
         total_ms=int((time.monotonic() - t_start) * 1000),
         persisted_card_ids=persisted_card_ids,
+        safety_disclaimer=safety.disclaimer or None,
+        safety_action=safety.action,
     )
 
 
@@ -863,6 +883,10 @@ async def _run_orchestrator_fast(
 
     synthesis = await _call_llm(system_prompt, user_prompt)
 
+    # v3 cross-cutting safety: Siri 路径同样过 validator
+    safety = _safety_wrap(synthesis, source="orchestrator.siri_fast")
+    synthesis = safety.safe_text
+
     # 审计 (旁路, 失败不阻塞返回)
     try:
         from app.agents.audit import log_orchestrator_run
@@ -890,6 +914,8 @@ async def _run_orchestrator_fast(
         used_specialists=[],
         twin_build_ms=twin.meta.build_ms,
         total_ms=int((time.monotonic() - t_start) * 1000),
+        safety_disclaimer=safety.disclaimer or None,
+        safety_action=safety.action,
     )
 
 
@@ -925,10 +951,19 @@ async def _stream_orchestrator_fast(
             full += chunk
             yield _sse("chunk", chunk)
 
+        # v3 cross-cutting safety: stream 结束后对累积文本做一次校验.
+        # 取舍: chunk 已经发出去了, 黑名单命中时发 safety_override 让客户端替换显示.
+        safety = _safety_wrap(full, source="orchestrator.siri_fast.stream")
+
         yield _sse("done", {
             "total_ms": int((time.monotonic() - t_start) * 1000),
             "synthesis_len": len(full),
+            "safety_action": safety.action,
         })
+        if safety.action == "replace":
+            yield _sse("safety_override", {"safe_text": safety.safe_text})
+        elif safety.action == "append_disclaimer":
+            yield _sse("safety_disclaimer", {"disclaimer": safety.disclaimer})
 
         try:
             from app.agents.audit import log_orchestrator_run
@@ -1068,6 +1103,9 @@ async def stream_orchestrator(
             full += chunk
             yield _sse("chunk", chunk)
 
+        # v3 cross-cutting safety: 对累积文本做最终校验
+        safety = _safety_wrap(full, source="orchestrator.stream")
+
         total_ms = int((time.monotonic() - t_start) * 1000)
 
         # 旁路审计: stream 路径也记录一次 orchestrator.run, 与非流式对齐.
@@ -1094,7 +1132,12 @@ async def stream_orchestrator(
         yield _sse("done", {
             "total_ms": total_ms,
             "persisted_card_ids": persisted_ids,
+            "safety_action": safety.action,
         })
+        if safety.action == "replace":
+            yield _sse("safety_override", {"safe_text": safety.safe_text})
+        elif safety.action == "append_disclaimer":
+            yield _sse("safety_disclaimer", {"disclaimer": safety.disclaimer})
     except Exception as e:  # noqa: BLE001
         logger.exception("[orchestrator.stream] 未捕获异常")
         yield _sse("error", {"detail": str(e)})

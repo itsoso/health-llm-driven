@@ -79,6 +79,14 @@ class OrchestratorResponse(BaseModel):
         default_factory=list,
         description="本次 specialist proposed_cards 落地后的 ActionCard ID 列表",
     )
+    safety_disclaimer: Optional[str] = Field(
+        None,
+        description="v3 cross-cutting validator: 命中医疗灰/黑名单时附带的提示语",
+    )
+    safety_action: Optional[str] = Field(
+        None,
+        description="validator 处置动作: 'pass' | 'append_disclaimer' | 'replace'",
+    )
 
 
 # Forward-ref resolution for SpecialistFinding.proposed_cards
