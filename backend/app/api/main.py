@@ -52,6 +52,7 @@ from app.api import (
     ai_insights,
     mood,
     symptoms,
+    live_run,
     episodes,
     health_report,
     health_report,
@@ -165,6 +166,7 @@ api_router.include_router(sleep_record.router)
 api_router.include_router(excretion.router)
 api_router.include_router(mood.router)
 api_router.include_router(symptoms.router, prefix="/symptoms", tags=["symptoms"])
+api_router.include_router(live_run.router, prefix="/live-run", tags=["live-run"])
 api_router.include_router(episodes.router, prefix="/episodes", tags=["episodes"])
 
 # ── Diet & Supplements ─────────────────────────────────────────────
