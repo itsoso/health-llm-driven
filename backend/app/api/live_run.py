@@ -202,6 +202,15 @@ def end_run(
         import logging
         logging.getLogger(__name__).warning(f"[live-run] enqueue narrative failed: {e}")
 
+    # Phase 5: HR 回放 (R2/R3) — Garmin 同步后回填. 5min 后首次尝试,
+    # 留时间让 Garmin sync 把活动落库.
+    try:
+        from app.tasks.live_run_hr_replay import replay_hr_rules
+        replay_hr_rules.apply_async(args=[s.id], countdown=300)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[live-run] enqueue hr_replay failed: {e}")
+
     return _to_response(s)
 
 
