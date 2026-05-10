@@ -575,7 +575,12 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
 
 
 async def _call_llm(system_prompt: str, user_prompt: str) -> str:
-    """调用 LLM，失败时尝试 openclaw fallback。返回空字符串表示失败。"""
+    """调用 LLM，失败时尝试 openai fallback。返回空字符串表示失败。
+
+    主路径走 settings.llm_provider (默认 tokenplan / 阿里云 MiniMax),
+    失败回退到 openai (DashScope vision key 也可作 OpenAI-兼容).
+    OpenClaw 已退役为非默认 provider, 不再作为兜底.
+    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -601,7 +606,7 @@ async def _call_llm(system_prompt: str, user_prompt: str) -> str:
 
     text = await _try(None)
     if not text:
-        text = await _try("openclaw")
+        text = await _try("openai")
     return text or ""
 
 
@@ -714,7 +719,7 @@ async def _stream_llm(
         yield chunk
 
     if not got_any:
-        async for chunk in _try_stream("openclaw"):
+        async for chunk in _try_stream("openai"):
             got_any = True
             yield chunk
 

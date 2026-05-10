@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
 
     # === LLM Provider 统一配置 ===
-    llm_provider: str = "openclaw"  # openclaw | openai | ollama | tokenplan
+    llm_provider: str = "tokenplan"  # tokenplan (默认, 阿里云 MiniMax) | openclaw | openai | ollama
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # 模型选项: qwen3.6-plus / deepseek-v3.2 / glm-5 / MiniMax-M2.5
     tokenplan_api_key: Optional[str] = None
     tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
-    tokenplan_model: str = "qwen3.6-plus"
+    tokenplan_model: str = "MiniMax-M2.5"
 
     # 月之暗面 Kimi (兼容 OpenAI 协议)
     moonshot_api_key: Optional[str] = None
