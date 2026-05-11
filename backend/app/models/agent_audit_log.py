@@ -30,7 +30,9 @@ class JSONColumn(TypeDecorator):
             return None
         if dialect.name != "postgresql":
             return json.dumps(value, default=str, ensure_ascii=False)
-        return value
+        # PostgreSQL JSONB: psycopg2 不认 date/datetime/Decimal, 统一 round-trip
+        # 过 json.dumps(default=str) 把它们转成 ISO 字符串再反序列化成 JSON-safe dict
+        return json.loads(json.dumps(value, default=str, ensure_ascii=False))
 
     def process_result_value(self, value, dialect):
         if value is None:
