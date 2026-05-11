@@ -928,8 +928,9 @@ class AgentExecutor:
                 return f"Error: 用药记录失败: {e}"
 
         record_map = {
+            # water 走前面早返路径 (L732), 不会从 record_map 命中, 但保留占位避免后续误判
             "water": ("/water/records/quick", "POST", {
-                "amount": data["amount"],
+                "amount": data.get("amount"),
                 **({"drink_type": data["drink_type"]} if data.get("drink_type") else {}),
             }),
             "weight": ("/weight/records", "POST", data),
