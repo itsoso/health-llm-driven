@@ -70,9 +70,15 @@ async def recognize_medical_report(
             },
         ]
 
-        response = await provider.chat_completion(messages=messages, temperature=0.1)
-        content = response.get("content", "")
-        json_str = extract_json_from_text(content)
+        # provider.chat() 接受 multi-part content (text + image_url),
+        # 返回纯文本 str 或 tool_calls dict. 这里不用 tool, 结果就是 str.
+        response = await provider.chat(
+            messages=messages,
+            temperature=0.1,
+            max_tokens=3000,
+        )
+        content = response if isinstance(response, str) else response.get("content", "")
+        json_str = extract_json_from_text(content or "")
         result = json.loads(json_str)
 
         if "error" in result:

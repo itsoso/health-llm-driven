@@ -128,6 +128,31 @@ export default function ImportScreen() {
     }
   };
 
+  const onPickFromLibrary = async () => {
+    if (busy) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('需要相册权限', '在"设置 → 健康助理"中开启"照片"权限,才能选取化验单图片.');
+        return;
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        allowsEditing: false,
+        // 允许 HEIC/PNG/JPEG,后端都支持
+      });
+      if (picked.canceled || !picked.assets?.[0]) return;
+      const asset = picked.assets[0];
+      const mime = asset.mimeType || 'image/jpeg';
+      await runUpload('medical_image', () =>
+        uploadMedicalExamImage(asset.uri, asset.fileName || 'photo.jpg', mime));
+    } catch (e: any) {
+      Alert.alert('选图失败', e?.message || '请稍后再试');
+    }
+  };
+
   async function runUpload<T>(kind: FileKind, fn: () => Promise<T>) {
     setBusy(true);
     setBusyHint(kind === 'genetic_pdf'
@@ -265,6 +290,22 @@ export default function ImportScreen() {
             <View style={{ flex: 1 }}>
               <Text style={txt.ctaTitle}>拍化验单</Text>
               <Text style={txt.ctaSub}>对准报告拍一张, AI 自动识别指标和异常项</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={c.labelTertiary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.cta, busy && { opacity: 0.5 }]}
+            onPress={onPickFromLibrary}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
+            <View style={styles.ctaIcon}>
+              <Ionicons name="images-outline" size={28} color={c.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={txt.ctaTitle}>从相册选图片</Text>
+              <Text style={txt.ctaSub}>已存在手机里的化验单 / 体检单照片 (.jpg/.png/.heic)</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={c.labelTertiary} />
           </TouchableOpacity>
