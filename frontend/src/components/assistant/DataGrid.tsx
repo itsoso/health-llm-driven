@@ -40,7 +40,7 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
       {sleepTotal > 0 && (
         <div className={`rounded-2xl p-4 ${pressStyle}`}
           style={{ background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)', boxShadow: '0 1px 3px rgba(94,92,230,0.08)' }}
-          onClick={() => router.push('/garmin')}>
+          onClick={() => router.push('/settings')}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold" style={{ color: '#5E5CE6' }}>😴 睡眠分析</span>
             <span className="text-xs" style={{ color: '#8E8E93' }}>{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>

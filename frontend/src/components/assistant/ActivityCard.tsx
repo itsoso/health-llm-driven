@@ -15,7 +15,7 @@ export default function ActivityCard({ todayGarmin, workoutRecent, medToday }: A
   const displayMinutes = Math.max(todayGarmin?.active_minutes || 0, intensityMinutes);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 cursor-pointer" onClick={() => router.push('/garmin')}>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 cursor-pointer" onClick={() => router.push('/settings')}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-gray-600">🏃 活动</span>
         {todayGarmin?.active_calories > 0 && <span className="text-[10px] font-bold text-orange-500">{todayGarmin.active_calories}kcal</span>}

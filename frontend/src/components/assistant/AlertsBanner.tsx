@@ -57,7 +57,7 @@ export default function AlertsBanner({ waterToday, todayGarmin, onWaterRecord, o
   }
 
   if (todayGarmin?.spo2_avg && todayGarmin.spo2_avg < 90) {
-    alerts.push({ icon: '🫁', text: `血氧 ${todayGarmin.spo2_avg}% 低于90%，注意休息`, actionLabel: '查看', onAction: () => router.push('/garmin'), color: '#ef4444', bg: '#fef2f2' });
+    alerts.push({ icon: '🫁', text: `血氧 ${todayGarmin.spo2_avg}% 低于90%，注意休息`, actionLabel: '查看', onAction: () => router.push('/settings'), color: '#ef4444', bg: '#fef2f2' });
   }
 
   if (todayGarmin?.hrv && todayGarmin.hrv < 40) {

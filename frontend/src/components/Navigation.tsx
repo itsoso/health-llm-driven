@@ -348,14 +348,6 @@ export default function Navigation() {
                             <Ticket className="w-4 h-4" />
                             <span>邀请码审批</span>
                           </Link>
-                          <Link
-                            href="/knowledge"
-                            onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
-                          >
-                            <Book className="w-4 h-4" />
-                            <span>知识库管理</span>
-                          </Link>
                         </div>
                       )}
                       <div className="border-t border-purple-900/30 py-1">
@@ -500,14 +492,6 @@ export default function Navigation() {
                         >
                           <Ticket className="mr-3 w-5 h-5" />
                           邀请码审批
-                        </Link>
-                        <Link
-                          href="/knowledge"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className="flex items-center px-4 py-3 rounded-lg text-lg font-medium text-purple-400 hover:bg-purple-600/10"
-                        >
-                          <Book className="mr-3 w-5 h-5" />
-                          知识库管理
                         </Link>
                       </>
                     )}

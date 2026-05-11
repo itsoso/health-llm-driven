@@ -212,7 +212,7 @@ function DailyInsightsContent() {
             <h2 className="text-2xl font-bold text-gray-800 mb-4">{errorMessage}</h2>
             <p className="text-gray-600 mb-6">请先同步Garmin数据后再查看每日分析</p>
             <Link
-              href="/garmin"
+              href="/settings"
               className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
             >
               前往Garmin数据页面
@@ -236,7 +236,7 @@ function DailyInsightsContent() {
             <h2 className="text-2xl font-bold text-gray-800 mb-4">暂无数据</h2>
             <p className="text-gray-600 mb-6">请先同步Garmin数据后再查看每日分析</p>
             <Link
-              href="/garmin"
+              href="/settings"
               className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
             >
               前往Garmin数据页面

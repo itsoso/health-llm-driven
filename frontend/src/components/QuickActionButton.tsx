@@ -83,7 +83,7 @@ export default function QuickActionButton() {
     { icon: '💧', label: '喝水 +250ml', onClick: quickWater },
     { icon: '✅', label: '打卡', onClick: openCheckinModal },
     { icon: '🍽️', label: '记饮食', onClick: () => { setIsOpen(false); router.push('/diet'); } },
-    { icon: '🤖', label: 'AI助手', onClick: () => { setIsOpen(false); router.push('/ai-assistant'); } },
+    { icon: '💬', label: '健康咨询', onClick: () => { setIsOpen(false); router.push('/health-consultations'); } },
   ];
 
   return (

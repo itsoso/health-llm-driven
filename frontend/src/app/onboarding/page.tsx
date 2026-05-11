@@ -412,7 +412,7 @@ export default function OnboardingPage() {
               </button>
 
               <button
-                onClick={() => router.push('/ai-assistant')}
+                onClick={() => router.push('/dashboard')}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition text-left"
               >
                 <span className="text-2xl">🤖</span>

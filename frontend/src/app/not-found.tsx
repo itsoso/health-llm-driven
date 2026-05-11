@@ -23,10 +23,10 @@ export default function NotFound() {
             返回首页
           </Link>
           <Link
-            href="/ai-assistant"
+            href="/dashboard"
             className="px-6 py-3 bg-white text-indigo-600 font-semibold rounded-lg border-2 border-indigo-200 hover:border-indigo-400 shadow-md transition-all"
           >
-            AI 助理
+            仪表盘
           </Link>
         </div>
       </div>

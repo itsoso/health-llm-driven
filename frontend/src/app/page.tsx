@@ -14,13 +14,13 @@ export default function Home() {
     <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {/* AI 助手 - 最重要的入口 */}
+          {/* 主入口: Web 端深度阅读, 日常对话用 mobile "会诊" */}
           <Link
-            href="/ai-assistant"
+            href="/dashboard"
             className="p-6 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105 md:col-span-2 lg:col-span-1"
           >
-            <h2 className="text-xl font-bold mb-2">✨ 健康助手</h2>
-            <p className="text-purple-100 text-sm">智能日程、实时建议、健康提醒</p>
+            <h2 className="text-xl font-bold mb-2">✨ 健康仪表盘</h2>
+            <p className="text-purple-100 text-sm">数据全景, 多维分析, 趋势洞察</p>
           </Link>
 
           {/* 数字孪生 - 个性化健康模型 */}
@@ -74,11 +74,11 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/garmin"
+            href="/health-trends"
             className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
           >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">⌚ Garmin数据</h2>
-            <p className="text-gray-600 text-sm">查看和分析Garmin健康数据</p>
+            <h2 className="text-xl font-bold mb-2 text-gray-800">📈 健康趋势</h2>
+            <p className="text-gray-600 text-sm">长期指标变化与预测</p>
           </Link>
 
           <Link
@@ -98,19 +98,11 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/knowledge"
-            className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
-          >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">📚 知识库</h2>
-            <p className="text-gray-600 text-sm">健康知识管理与问答</p>
-          </Link>
-
-          <Link
-            href="/environment"
+            href="/smart-plan"
             className="p-6 bg-gradient-to-r from-blue-500 to-cyan-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
           >
-            <h2 className="text-xl font-bold mb-2">🌤️ 环境健康</h2>
-            <p className="text-blue-100 text-sm">天气、空气质量与运动建议</p>
+            <h2 className="text-xl font-bold mb-2">📅 智能周计划</h2>
+            <p className="text-blue-100 text-sm">本周训练 / 营养 / 复查节奏</p>
           </Link>
         </div>
 
