@@ -31,6 +31,7 @@ import { getActiveCards, type ActionCard } from '../../services/actionCards';
 import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
+import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -118,11 +119,23 @@ export default function TodayScreen() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
       >
         <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: c.labelPrimary }]}>今日</Text>
-          <Text style={[styles.headerSub, { color: c.labelTertiary }]}>
-            Agent 替你看,只在该看时打扰你
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.headerTitle, { color: c.labelPrimary }]}>今日</Text>
+            <Text style={[styles.headerSub, { color: c.labelTertiary }]}>
+              Agent 替你看,只在该看时打扰你
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => router.push('/settings' as any)}
+            accessibilityLabel="设置"
+            style={styles.headerSettings}
+          >
+            <Ionicons name="settings-outline" size={22} color={c.labelTertiary} />
+          </TouchableOpacity>
         </View>
+
+        {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
+        <EnvironmentCard />
 
         {isLoading && (
           <View style={styles.loading}>
@@ -272,7 +285,14 @@ function fmt(v?: number | null): string {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.lg },
-  header: { gap: 4, marginTop: spacing.sm },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: spacing.sm },
+  headerSettings: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
   headerTitle: { fontSize: 28, fontWeight: '700' },
   headerSub: { fontSize: 13 },
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
