@@ -440,18 +440,21 @@ class AgentExecutor:
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
 
-        model = settings.agent_model or settings.llm_model
-
+        # agent_model 仅当 AGENT_BASE_URL 显式配置时才用 (走 _call_llm_direct).
+        # 否则走默认 provider 路径, model=None 让 provider 用自己 init 时的默认 model
+        # (如 TokenPlan 用 settings.tokenplan_model = MiniMax-M2.5).
+        # 旧逻辑用 settings.llm_model (gpt-4o-mini) 当 fallback model 名,
+        # 直接发给 TokenPlan → Model not exist.
         if agent_base and agent_key:
+            model = settings.agent_model or settings.llm_model
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
-        # 回退到默认 provider
+        # 回退到默认 provider — 不传 model, 让 provider 用 init 时的默认
         from app.services.llm.factory import get_llm_provider
         provider = get_llm_provider()
-        provider_model = model if settings.llm_provider != "openclaw" else None
         pass_tools = tools if settings.llm_provider != "openclaw" else None
         return await provider.chat(
-            messages=messages, model=provider_model,
+            messages=messages, model=None,
             temperature=0.3, max_tokens=4000, stream=False, tools=pass_tools,
         )
 
