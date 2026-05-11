@@ -117,6 +117,27 @@ class PushService:
             # 例如 01:00 - 06:00
             return start <= current_time < end
 
+    def next_quiet_hours_end(self, user_id: int) -> datetime:
+        """计算下一次静默时段结束的本地时间.
+
+        例: now=03:14, quiet_hours_end=08:30 → 今天 08:30
+        例: now=14:00, quiet_hours_end=08:30, quiet_hours_start=22:00
+            → 明天 08:30 (今天 14:00 不在静默, 但若强制延迟到下一次结束就是次日)
+        但实际只在 is_quiet_hours()=True 时才调本函数, 所以"今天 end"或"明天 end"都成立.
+        """
+        settings = self.get_user_settings(user_id)
+        end_str = (settings.quiet_hours_end if settings else None) or "08:30"
+        try:
+            h, m = (int(x) for x in end_str.split(":"))
+        except Exception:
+            h, m = 8, 30
+        now = get_china_now()
+        candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        # 若候选时间已过 (例如现在是 09:00, end=08:30), 推到次日同时刻
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
     def can_send_notification(
         self,
         user_id: int,
@@ -158,13 +179,10 @@ class PushService:
                 )
                 return False
 
-        # 免打扰时段：只有 critical 级别放行
-        if respect_quiet_hours and severity != "critical":
-            if self.is_quiet_hours(user_id):
-                logger.info(
-                    f"用户 {user_id} 当前在免打扰时段，severity={severity} 跳过推送"
-                )
-                return False
+        # 注: 静默时段不再在 can_send_notification 里检查.
+        # is_quiet_hours 不是"拒绝", 而是"延迟"语义 — 由 send_notification 顶层处理:
+        # 命中静默时段 → 写 status='delayed' log + scheduled_at, 由 Celery flush 任务后续 fire.
+        # 严格不打扰 (2026-05-11 决定): critical 也不穿透静默, 紧急穿透走紧急联系人系统.
 
         # 检查具体类型开关
         type_switches = {
@@ -213,14 +231,46 @@ class PushService:
         """
         rule_id = (data or {}).get("rule_id") if data else None
 
-        # 检查是否可以发送
+        # WSCLA 深链注入: data 带 action_card_id → 自动生成 health://card/{id} 深链.
+        # 客户端点击通知 → 调 P1-5 click endpoint 回写 push_clicked_at, 然后跳卡片详情页.
+        # 已有 deep_link 时不覆盖 (调用方显式优先).
+        if data and data.get("action_card_id") and not data.get("deep_link"):
+            data = dict(data)  # 不污染调用方的字典
+            data["deep_link"] = f"health://card/{data['action_card_id']}"
+
+        # 检查是否可以发送 (用户开关 / threshold / opt-out / 类型开关)
+        # 注: can_send 不再检查静默时段, 由下方 quiet_hours 路径独立处理 (延迟而非拒绝).
         if not self.can_send_notification(
             user_id, notification_type, respect_quiet_hours,
             severity=severity, rule_id=rule_id,
         ):
             return {
                 "success": False,
-                "reason": "通知已禁用/在免打扰/低于阈值/规则已静音",
+                "reason": "通知已禁用/低于阈值/规则已静音",
+            }
+
+        # 严格不打扰睡眠 (2026-05-11 决定): 静默时段对所有 severity (含 critical)
+        # 都不立刻推, 写 status='delayed' log + scheduled_at, 由 Celery 任务
+        # flush_delayed_pushes 在 quiet_hours_end 后再 fire.
+        if respect_quiet_hours and self.is_quiet_hours(user_id):
+            scheduled_at = self.next_quiet_hours_end(user_id)
+            self._log_notification_delayed(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                content=content,
+                data=data,
+                severity=severity,
+                scheduled_at=scheduled_at,
+            )
+            logger.info(
+                f"[push] 用户 {user_id} 静默时段命中, severity={severity}, "
+                f"延迟到 {scheduled_at.isoformat()} 再推"
+            )
+            return {
+                "success": False,
+                "reason": "delayed_for_quiet_hours",
+                "scheduled_at": scheduled_at.isoformat(),
             }
 
         # 去重检查: 有 rule_id 时按 rule_id 去重 (同一规则窗口内只推一次),
@@ -509,6 +559,105 @@ class PushService:
         if card.push_sent_at is None:
             card.push_sent_at = get_china_now()
             self.db.commit()
+
+    def _log_notification_delayed(
+        self,
+        user_id: int,
+        notification_type: str,
+        title: str,
+        content: str,
+        data: Optional[Dict[str, Any]],
+        severity: str,
+        scheduled_at: datetime,
+    ) -> None:
+        """写一条 status='delayed' 的 NotificationLog, 等 flush_delayed_pushes 后再 fire.
+
+        scheduled_at 是计划发送时间 (静默时段结束后的本地时间).
+        sent_at 留空, 等真正 fire 时由 _log_notification_multi 盖.
+        action_card.push_sent_at 也等真正 fire 时盖, 这里不 stamp.
+        """
+        # data 里塞一份 severity, flush 时回放需要
+        data_with_meta = dict(data or {})
+        data_with_meta.setdefault("severity", severity)
+
+        log = NotificationLog(
+            user_id=user_id,
+            notification_type=notification_type,
+            channel="multi",
+            title=title,
+            content=content,
+            data=data_with_meta,
+            status=NotificationStatus.DELAYED.value,
+            scheduled_at=scheduled_at,
+        )
+        self.db.add(log)
+        self.db.commit()
+
+    async def flush_delayed_pushes(self, batch_limit: int = 100) -> Dict[str, int]:
+        """
+        Celery 任务调用: 取所有 status='delayed' 且 scheduled_at <= now 的 log,
+        重新走 send_notification (但 respect_quiet_hours=False, 避免再次延迟).
+
+        返回: {"flushed": N, "succeeded": K, "failed": M}
+        """
+        now = get_china_now()
+        delayed_logs = (
+            self.db.query(NotificationLog)
+            .filter(
+                NotificationLog.status == NotificationStatus.DELAYED.value,
+                NotificationLog.scheduled_at <= now,
+            )
+            .order_by(NotificationLog.scheduled_at.asc())
+            .limit(batch_limit)
+            .all()
+        )
+
+        flushed = 0
+        succeeded = 0
+        failed = 0
+        for log in delayed_logs:
+            flushed += 1
+            severity = (log.data or {}).get("severity", "info")
+            try:
+                # 标记为 pending 再发, 防止 flush 任务重叠
+                log.status = NotificationStatus.PENDING.value
+                self.db.commit()
+
+                result = await self.send_notification(
+                    user_id=log.user_id,
+                    notification_type=log.notification_type,
+                    title=log.title,
+                    content=log.content,
+                    data=log.data,
+                    respect_quiet_hours=False,  # flush 时不再二次延迟
+                    severity=severity,
+                    dedup_window_hours=0,  # flush 跳过 dedup, 因为这些是已经决定要发的
+                )
+
+                if result.get("success"):
+                    log.status = NotificationStatus.SENT.value
+                    log.sent_at = now
+                    succeeded += 1
+                else:
+                    log.status = NotificationStatus.FAILED.value
+                    log.error_message = result.get("reason", "flush 失败")
+                    failed += 1
+                self.db.commit()
+            except Exception as e:  # noqa: BLE001
+                logger.error(
+                    f"[flush_delayed_pushes] log_id={log.id} 失败: {e}",
+                    exc_info=False,
+                )
+                log.status = NotificationStatus.FAILED.value
+                log.error_message = str(e)[:500]
+                self.db.commit()
+                failed += 1
+
+        if flushed > 0:
+            logger.info(
+                f"[flush_delayed_pushes] flushed={flushed} ok={succeeded} fail={failed}"
+            )
+        return {"flushed": flushed, "succeeded": succeeded, "failed": failed}
 
     def get_notification_logs(
         self,

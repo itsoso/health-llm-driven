@@ -94,6 +94,19 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*"),
     },
 
+    # 每 5 分钟扫描静默时段延迟的推送, scheduled_at 到点就 fire
+    # 严格不打扰睡眠 (2026-05-11): Critical 也走延迟队列, 紧急穿透走紧急联系人系统
+    "flush-delayed-pushes": {
+        "task": "app.tasks.notifications.flush_delayed_pushes",
+        "schedule": crontab(minute="*/5"),
+    },
+
+    # 每小时检查: Critical 告警 24h 仍未决策 → 升级再推 (max 3 次)
+    "escalate-critical-unresolved": {
+        "task": "app.tasks.notifications.escalate_critical_unresolved",
+        "schedule": crontab(minute=15),  # 每小时第 15 分钟跑, 错开整点
+    },
+
     # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)
     # v2: 聚合数据 + 跨实体行动对照 + prediction 中期校验 + 基因对齐度评分
     "weekly-report": {

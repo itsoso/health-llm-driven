@@ -10,8 +10,8 @@ ActionCard API —— 对话固化到首页。
 
 import logging
 import re
-from datetime import UTC, datetime, timedelta
-from typing import Literal, Optional
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -386,6 +386,102 @@ def archive_card(
     return {"message": "已归档", "id": card_id}
 
 
+# ─────────────────────── WSCLA 生命周期 (Phase 1) ────────────────────────
+
+_VALID_DECISIONS = {"accepted", "adjusted", "declined", "dismissed", "false_positive"}
+
+
+class CardDecisionBody(BaseModel):
+    decision: str
+    reason: Optional[str] = None
+    adjusted_payload: Optional[Dict[str, Any]] = None
+
+
+@router.post("/{card_id}/decision")
+def record_card_decision(
+    card_id: int,
+    body: CardDecisionBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """用户对卡片做决策 — accepted / adjusted / declined / dismissed / false_positive.
+
+    幂等: 同 decision 重复调用只更新 reason, 不刷新 decided_at;
+          换 decision 会更新 decided_at + decision_reason.
+    """
+    if body.decision not in _VALID_DECISIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"decision 必须是 {sorted(_VALID_DECISIONS)} 之一",
+        )
+
+    card = db.query(ActionCard).filter(
+        ActionCard.id == card_id,
+        ActionCard.user_id == current_user.id,
+    ).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+
+    now = datetime.now(timezone.utc)
+
+    if card.user_decision != body.decision:
+        card.user_decision = body.decision
+        card.decided_at = now
+    card.decision_reason = body.reason
+
+    # declined / dismissed / false_positive → status='archived' + is_visible=False (从首页消失但留库)
+    if body.decision in {"declined", "dismissed", "false_positive"}:
+        card.status = "archived"
+        card.is_visible = False
+
+    # adjusted 时把用户调整后的 payload 保留进 latest_assessment 便于后续 review
+    if body.decision == "adjusted" and body.adjusted_payload:
+        meta = dict(card.latest_assessment or {})
+        meta["adjusted_payload"] = body.adjusted_payload
+        meta["adjusted_at"] = now.isoformat()
+        card.latest_assessment = meta
+
+    db.commit()
+    db.refresh(card)
+    logger.info(
+        f"[ActionCard] user={current_user.id} card={card_id} decision={body.decision}"
+    )
+    return _card_to_dict(card)
+
+
+@router.post("/{card_id}/click")
+def record_card_push_click(
+    card_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """通知点击回写 — 客户端打开 health://card/{id} 深链时调.
+
+    幂等: 已 stamp 过 push_clicked_at 不再覆盖. seen_at 同时盖 (用户打开了卡片).
+    """
+    card = db.query(ActionCard).filter(
+        ActionCard.id == card_id,
+        ActionCard.user_id == current_user.id,
+    ).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+
+    now = datetime.now(timezone.utc)
+    changed = False
+    if card.push_clicked_at is None:
+        card.push_clicked_at = now
+        changed = True
+    if card.seen_at is None:
+        card.seen_at = now
+        changed = True
+    if changed:
+        db.commit()
+    return {
+        "id": card_id,
+        "push_clicked_at": card.push_clicked_at.isoformat() if card.push_clicked_at else None,
+    }
+
+
 # ─────────────────────── 序列化 ────────────────────────
 
 
@@ -417,4 +513,15 @@ def _card_to_dict(card: ActionCard) -> dict:
         "grading_notes": card.grading_notes,
         "adherence_kind": card.adherence_kind,
         "adherence_confidence": card.adherence_confidence,
+        # WSCLA 生命周期 (Phase 0/1)
+        "severity": card.severity,
+        "user_decision": card.user_decision,
+        "decided_at": card.decided_at.isoformat() if card.decided_at else None,
+        "decision_reason": card.decision_reason,
+        "outcome": card.outcome,
+        "effect_size": card.effect_size,
+        "seen_at": card.seen_at.isoformat() if card.seen_at else None,
+        "push_sent_at": card.push_sent_at.isoformat() if card.push_sent_at else None,
+        "push_delivered_at": card.push_delivered_at.isoformat() if card.push_delivered_at else None,
+        "push_clicked_at": card.push_clicked_at.isoformat() if card.push_clicked_at else None,
     }

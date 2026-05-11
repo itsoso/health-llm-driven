@@ -1849,3 +1849,103 @@ def scan_medication_reminders():
     if sent:
         logger.info(f"[MedicationReminder] {today_date} {cur_hhmm} 发送 {sent} 条")
     return {"scheduled_time": cur_hhmm, "sent": sent}
+
+
+@celery_app.task
+def flush_delayed_pushes():
+    """每 5 分钟扫一次 NotificationLog 里 status='delayed' 且 scheduled_at <= now 的记录,
+    重新走 send_notification (respect_quiet_hours=False) fire 出去.
+
+    严格不打扰睡眠 (2026-05-11 决定): 静默时段所有 severity 都进 delayed 队列,
+    quiet_hours_end 后由本任务批量 fire.
+    """
+    with SessionLocal() as db:
+        push_service = PushService(db)
+        try:
+            result = run_async(push_service.flush_delayed_pushes())
+            if result.get("flushed", 0) > 0:
+                logger.info(f"[FlushDelayedPushes] {result}")
+            return result
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[FlushDelayedPushes] 失败: {e}", exc_info=True)
+            return {"flushed": 0, "succeeded": 0, "failed": 0, "error": str(e)}
+
+
+@celery_app.task
+def escalate_critical_unresolved():
+    """每小时跑: Critical 告警 24h 内未 decided 且 push 已发 → 升级再推 (max 3 次).
+
+    严格不打扰睡眠 (2026-05-11): 升级推送命中静默时段也走 delayed 队列, 不强推.
+    使用 latest_assessment.escalation_count + last_escalated_at 跟踪重推次数.
+    """
+    from app.models.action_card import ActionCard
+
+    MAX_ESCALATIONS = 3
+    MIN_GAP_HOURS = 12  # 重推之间最少间隔 12h, 防 spam
+
+    now = get_china_now()
+    cutoff = now - timedelta(hours=24)
+    min_gap_cutoff = now - timedelta(hours=MIN_GAP_HOURS)
+
+    with SessionLocal() as db:
+        cards = db.query(ActionCard).filter(
+            ActionCard.severity == "critical",
+            ActionCard.user_decision.is_(None),
+            ActionCard.status == "active",
+            ActionCard.push_sent_at.isnot(None),
+            ActionCard.push_sent_at < cutoff,  # 首次推送 24h 前
+        ).limit(50).all()
+
+        push_service = PushService(db)
+        escalated = 0
+        skipped = 0
+
+        for card in cards:
+            meta = dict(card.latest_assessment or {})
+            escalation_count = meta.get("escalation_count", 0)
+            last_escalated_at = meta.get("last_escalated_at")
+
+            if escalation_count >= MAX_ESCALATIONS:
+                skipped += 1
+                continue
+
+            # 离上次升级太近就跳过
+            if last_escalated_at:
+                try:
+                    last_dt = datetime.fromisoformat(last_escalated_at.replace("Z", "+00:00"))
+                    if last_dt > min_gap_cutoff.replace(tzinfo=last_dt.tzinfo):
+                        skipped += 1
+                        continue
+                except Exception:
+                    pass
+
+            try:
+                run_async(push_service.send_notification(
+                    user_id=card.user_id,
+                    notification_type="health_alert",
+                    title=f"⚠️ 仍未处理: {card.title}",
+                    content=card.content,
+                    severity="critical",
+                    data={
+                        "rule_id": card.source_id,
+                        "action_card_id": card.id,
+                        "escalation": True,
+                        "escalation_count": escalation_count + 1,
+                    },
+                ))
+                meta["escalation_count"] = escalation_count + 1
+                meta["last_escalated_at"] = now.isoformat()
+                card.latest_assessment = meta
+                db.commit()
+                escalated += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    f"[escalate_critical] card={card.id} 失败: {e}"
+                )
+
+    if escalated or skipped:
+        logger.info(
+            f"[escalate_critical] escalated={escalated} skipped={skipped} "
+            f"checked={len(cards) if cards else 0}"
+        )
+    return {"escalated": escalated, "skipped": skipped}

@@ -33,6 +33,7 @@ class NotificationStatus(str, enum.Enum):
     DELIVERED = "delivered"  # 已送达
     READ = "read"  # 已读
     FAILED = "failed"  # 发送失败
+    DELAYED = "delayed"  # 命中静默时段, scheduled_at 后由 flush 任务再推
 
 
 class UserNotificationSetting(Base):

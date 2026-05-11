@@ -55,38 +55,78 @@ def _make_settings(
 
 
 class TestQuietHoursSeverity:
-    """quiet_hours 内：只有 critical 穿透，其他 severity 被抑制."""
+    """quiet_hours 严格不打扰 (2026-05-11 决定): 所有 severity 含 critical 都进 delayed 队列, 不立刻推."""
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_medium_alert_suppressed_at_night(self, mock_now, db):
+        """medium 在静默时段不再立刻推, 进 delayed 队列 (走 send_notification 路径)."""
         mock_now.return_value = datetime(2026, 5, 1, 23, 30)
         user_id = _make_user(db)
         _make_settings(db, user_id)
         svc = PushService(db)
+        # 入口 can_send 不再检查 quiet_hours, 由 send_notification 顶层延迟; 这里 can_send 应通过.
         assert svc.can_send_notification(
             user_id, "health_alert", severity="medium"
-        ) is False
+        ) is True
+
+        result = asyncio.run(svc.send_notification(
+            user_id=user_id,
+            notification_type="health_alert",
+            title="medium 告警",
+            content="x",
+            severity="medium",
+            data={"rule_id": "test.medium"},
+        ))
+        assert result["success"] is False
+        assert result["reason"] == "delayed_for_quiet_hours"
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_high_alert_suppressed_at_night(self, mock_now, db):
-        """HIGH 级别也不再穿透 — 修复前会吵醒人的场景."""
+        """HIGH 级别也走 delayed 队列, 不再"被丢弃" — 静默时段后会自动 fire."""
         mock_now.return_value = datetime(2026, 5, 1, 23, 30)
         user_id = _make_user(db)
         _make_settings(db, user_id)
         svc = PushService(db)
         assert svc.can_send_notification(
             user_id, "health_alert", severity="high"
-        ) is False
+        ) is True
+
+        result = asyncio.run(svc.send_notification(
+            user_id=user_id,
+            notification_type="health_alert",
+            title="high 告警",
+            content="x",
+            severity="high",
+            data={"rule_id": "test.high"},
+        ))
+        assert result["success"] is False
+        assert result["reason"] == "delayed_for_quiet_hours"
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_critical_alert_punches_through_at_night(self, mock_now, db):
+        """严格不打扰 (2026-05-11): critical 也不再穿透静默时段, 进 delayed 队列.
+
+        紧急穿透走紧急联系人系统 (Telegram/SMS), 不在本流程.
+        """
         mock_now.return_value = datetime(2026, 5, 1, 23, 30)
         user_id = _make_user(db)
         _make_settings(db, user_id)
         svc = PushService(db)
+        # can_send 仍 True (不在 can_send 拦截), 但 send_notification 会延迟
         assert svc.can_send_notification(
             user_id, "health_alert", severity="critical"
         ) is True
+
+        result = asyncio.run(svc.send_notification(
+            user_id=user_id,
+            notification_type="health_alert",
+            title="critical 告警",
+            content="x",
+            severity="critical",
+            data={"rule_id": "test.critical"},
+        ))
+        assert result["success"] is False
+        assert result["reason"] == "delayed_for_quiet_hours"
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_default_quiet_hours_covers_0830(self, mock_now, db):
