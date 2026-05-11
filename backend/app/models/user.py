@@ -37,6 +37,13 @@ class User(Base):
     # 空时 fallback 到 Telegram / APNs
     doctor_email = Column(String, nullable=True)
 
+    # Phase 3 P3-1 (2026-05-11): Coach Persona — orchestrator 合成时切换语气
+    #   strict_coach    严厉教练: 直接, 命令式, 数字驱动, 不允许借口
+    #   gentle_advisor  温和顾问 (默认): 共情, 建议式, 解释原因
+    #   data_driven     数据派: 专注指标, 每条建议必带具体数据/阈值
+    # 不影响任何 specialist 逻辑, 只切 prompt 风格.
+    coach_persona = Column(String(20), nullable=True, default="gentle_advisor")
+
     # 家庭代管（shadow user，不需要登录凭据，由管理员代管）
     is_managed = Column(Boolean, default=False)
     managed_by = Column(Integer, ForeignKey("users.id"), nullable=True)

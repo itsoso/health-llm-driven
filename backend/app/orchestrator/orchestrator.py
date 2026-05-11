@@ -297,6 +297,48 @@ def _build_per_specialist_track_block(
         return ""
 
 
+# ─── Coach Persona (P3-1, 2026-05-11) ──────────────────────────────────────
+#
+# 三档语气, 只加在主 system prompt 末尾, 不改 specialist / Twin / safety 输入.
+# 不影响 source='siri' 路径 (Siri 已有自己的口语化规则).
+
+PERSONA_ADDENDUM = {
+    "strict_coach": (
+        "12. **风格 (严厉教练)**: 直接命令式. 用户问题先给结论, 再给"
+        "**1 个**最关键的行动. 不要软化, 不要'可以考虑/建议尝试', "
+        "用'立刻'/'必须'/'今天就'. 用户找借口时, 引用具体数据反驳. "
+        "目标: 让用户行动, 不让用户舒服."
+    ),
+    "gentle_advisor": (
+        "12. **风格 (温和顾问)**: 共情开场, 解释为什么这条数据重要, "
+        "再给 2-3 个可选行动让用户选. 用'看起来/好像/可以考虑/或许'等"
+        "缓冲词. 高严重度内容仍然要明示, 不要过度温和到掩盖紧急性. "
+        "目标: 让用户感到被理解, 在理解中接受改变."
+    ),
+    "data_driven": (
+        "12. **风格 (数据派)**: 每条建议**必须**带具体数字阈值或参考范围. "
+        "例: '减到 5g/天'/'保持在 60-100bpm'/'>140 立刻测'. "
+        "不允许'适量/规律/坚持'等模糊词. 不解释生理机制, 直接给 "
+        "metric → action → expected change 三段式. 目标: 让爱看数据的"
+        "用户能验证每一条建议."
+    ),
+}
+
+
+def _build_persona_addendum(db: Session, user_id: int) -> str:
+    """查 user.coach_persona, 返回对应风格指令. 失败返回空 (不影响主 prompt)."""
+    try:
+        from app.models.user import User
+        u = db.query(User).filter(User.id == user_id).first()
+        if u is None:
+            return ""
+        persona = (u.coach_persona or "gentle_advisor").lower()
+        return PERSONA_ADDENDUM.get(persona, "")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[orchestrator] persona addendum 失败 (旁路): {e}")
+        return ""
+
+
 def _build_synthesis_prompt(
     query: str, twin: HealthTwin, findings: List[SpecialistFinding],
     db: Optional[Session] = None, user_id: Optional[int] = None,
@@ -310,6 +352,10 @@ def _build_synthesis_prompt(
 
     source: 'siri' → 走语音播报口语化 prompt (短句/无 markdown/数字口语化/250 字上限),
            其它值 (chat/widget/None) → 走常规详细 prompt.
+
+    P3-1 (2026-05-11): 末尾按 user.coach_persona 切语气 (strict_coach /
+    gentle_advisor / data_driven). 不改 specialist 输入也不改主 system 规则,
+    只追加一条 12. 风格指令.
     """
 
     twin_blob = twin_to_prompt_blob(twin)
@@ -435,6 +481,12 @@ def _build_synthesis_prompt(
             "  没用到差异化数据的通用建议**不要**加 marker (避免噪声). "
             "  用了就**必须**加, 不加视为输出不合格."
         )
+
+        # P3-1 Coach Persona: 末尾追加风格指令 (不改前面规则, 只加语气)
+        if db is not None and user_id is not None:
+            persona_addendum = _build_persona_addendum(db, user_id)
+            if persona_addendum:
+                system_prompt = system_prompt + "\n\n" + persona_addendum
 
     user_prompt_parts = [
         f"【用户原始问题】\n{query}",

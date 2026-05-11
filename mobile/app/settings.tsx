@@ -91,6 +91,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/admin-llm' as any)} />
+          <SettingRow icon="person-outline" label="AI 教练风格"
+            onPress={() => router.push('/coach-persona' as any)} />
         </View>
 
         {/* Settings items */}

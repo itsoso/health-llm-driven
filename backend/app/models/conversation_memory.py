@@ -27,6 +27,11 @@ class ConversationMemory(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
 
+    # P3-2 (2026-05-11): 冲突解决支持 — 不删旧, 标 superseded
+    status = Column(String(20), default="active")  # active / superseded / deleted
+    superseded_by = Column(Integer, ForeignKey("conversation_memories.id"), nullable=True)
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+
     user = relationship("User", backref="conversation_memories")
 
     __table_args__ = (

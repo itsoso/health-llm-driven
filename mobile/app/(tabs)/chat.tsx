@@ -15,6 +15,7 @@ import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
 import OpenerCard from '../../components/chat/OpenerCard';
 import { fetchConversationOpener, type ConversationOpener } from '../../services/conversationOpener';
+import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -49,6 +50,16 @@ export default function ChatScreen() {
     let cancelled = false;
     fetchConversationOpener().then(o => {
       if (!cancelled) setOpener(o);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // P3-3: 拉 top 1-2 条 memory, 显示在 opener 上方"我记得你: <X>"
+  const [memoryOpener, setMemoryOpener] = useState<MemoryOpenerItem[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchMemoryOpener(2).then(items => {
+      if (!cancelled) setMemoryOpener(items);
     });
     return () => { cancelled = true; };
   }, []);
@@ -143,6 +154,15 @@ export default function ChatScreen() {
           scrollEventThrottle={100}
           ListEmptyComponent={
             <View>
+              {memoryOpener.length > 0 && (
+                <View style={styles.memoryOpener}>
+                  <Ionicons name="bookmark-outline" size={14} color={c.brand} />
+                  <Text style={styles.memoryOpenerText}>
+                    我记得你
+                    {memoryOpener.map(m => `: ${m.content}`).join(' /')}
+                  </Text>
+                </View>
+              )}
               {opener && (
                 <OpenerCard
                   opener={opener}
@@ -207,6 +227,18 @@ function createStyles(c: ColorPalette) {
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   messageList: { padding: spacing.lg, paddingBottom: 8 },
+  // P3-3: 会诊页 opener "我记得你 X" banner
+  memoryOpener: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: c.brandLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+  },
+  memoryOpenerText: { flex: 1, color: c.brand, fontSize: 12, lineHeight: 17 },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',

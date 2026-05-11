@@ -48,6 +48,46 @@ def update_my_name(
     return UpdateNameResponse(success=True, name=current_user.name)
 
 
+# ─── Coach Persona (Phase 3 P3-1) ──────────────────────────────────────────
+_VALID_PERSONAS = {"strict_coach", "gentle_advisor", "data_driven"}
+
+
+class CoachPersonaRequest(BaseModel):
+    coach_persona: str
+
+
+class CoachPersonaResponse(BaseModel):
+    coach_persona: str
+
+
+@router.get("/me/coach-persona", response_model=CoachPersonaResponse, summary="获取当前用户的 Coach Persona")
+def get_my_coach_persona(
+    current_user: User = Depends(get_current_user_required),
+):
+    return CoachPersonaResponse(coach_persona=current_user.coach_persona or "gentle_advisor")
+
+
+@router.patch("/me/coach-persona", response_model=CoachPersonaResponse, summary="切换 Coach Persona")
+def set_my_coach_persona(
+    request: CoachPersonaRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """三档: strict_coach (严厉教练) / gentle_advisor (温和顾问, 默认) / data_driven (数据派).
+
+    只切 LLM 合成语气, 不改 specialist 逻辑.
+    """
+    if request.coach_persona not in _VALID_PERSONAS:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"coach_persona 必须是 {sorted(_VALID_PERSONAS)} 之一",
+        )
+    current_user.coach_persona = request.coach_persona
+    db.commit()
+    return CoachPersonaResponse(coach_persona=current_user.coach_persona)
+
+
 @router.post("/me/avatar", response_model=AvatarResponse, summary="上传头像")
 async def upload_avatar(
     file: UploadFile = File(...),

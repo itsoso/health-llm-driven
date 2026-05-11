@@ -313,6 +313,34 @@ LLM 看到"已过期"会主动说"建议你重新测一下"，看到 raw timesta
 
 ---
 
+## 7.5. Coach Persona — 语气切换 (P3-1, 2026-05-11)
+
+**问题**: 同一份 specialist 输出 + 同一份 Twin, 不同用户期望的语气差极远。爱看数据的工程师要"减到 5g/天",慢性病老人要"少放点盐"。一个 prompt 服所有人 = 谁都不满意。
+
+**实现**: `app/orchestrator/orchestrator.py::_build_persona_addendum`
+
+`User.coach_persona` 三档:
+
+| 档 | 风格 | 关键指令 |
+|---|---|---|
+| `strict_coach` | 严厉教练 | 直接命令式, "立刻/必须/今天就", 最多 1 个行动, 借口被数据反驳 |
+| `gentle_advisor` (默认) | 温和顾问 | 共情开场, 解释 why, 2-3 个可选行动, 缓冲词允许 |
+| `data_driven` | 数据派 | 每条带数字阈值, 禁"适量/规律"模糊词, metric→action→expected change 三段 |
+
+**注入位置**: 末尾追加在 system_prompt 第 12 条, 不改前 11 条规则 (信任校准/冲突仲裁/Trust Loop/显式归因 全部保留)。siri fast path 不走 persona (已有自己的口语化规则)。
+
+**为什么不用 LLM 选 persona**: 用户偏好稳定 (一选三个月不会换), 让 LLM 每次推理 = 浪费 token + 不一致。让用户在 Settings 里显式选, prompt 拼接零成本。
+
+**API**:
+- `GET /api/v1/users/me/coach-persona` → `{coach_persona}`
+- `PATCH /api/v1/users/me/coach-persona` body `{coach_persona}` 三档之一
+
+**反模式**:
+- ❌ 在 specialist 内部根据 persona 改输出 — specialist 是确定性裁决, 不该看 persona
+- ❌ 加 persona-specific specialist (如 "StrictCoachAlertSpecialist") — 维护爆炸, 1 specialist × 3 persona = 3 倍代码
+
+---
+
 ## 8. 路由：什么时候走 Orchestrator vs Skill
 
 **业界对应**：Anthropic 把 *routing*（分类后分流）列为五大 workflow pattern 之一，建议"separation of concerns and building more specialized prompts"。我们用正则做 router 而不是 LLM 做 router 是个有意识的取舍 — Anthropic 也强调 *"start with the simplest solution"*。
