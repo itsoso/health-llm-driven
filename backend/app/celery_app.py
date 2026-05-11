@@ -107,6 +107,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=15),  # 每小时第 15 分钟跑, 错开整点
     },
 
+    # 每周日 21:07 跑 WeeklyAdvisor — 给活跃用户产 3-5 条本周建议
+    # 错开 weekly-report (周日 20:30), 让 weekly_report 的 Specialist 缓存先暖
+    "weekly-advisor-run": {
+        "task": "app.tasks.notifications.weekly_advisor_run",
+        "schedule": crontab(hour=21, minute=7, day_of_week=0),  # 周日 21:07 北京时间
+    },
+
     # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)
     # v2: 聚合数据 + 跨实体行动对照 + prediction 中期校验 + 基因对齐度评分
     "weekly-report": {

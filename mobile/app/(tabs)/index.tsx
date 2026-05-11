@@ -1,434 +1,329 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+/**
+ * 今日 Tab —— Phase 2 重做 (2026-05-11).
+ *
+ * 设计 (Agent Native Mobile First):
+ *   1. Critical/High 告警卡片 (0 条不显示)
+ *   2. 本周建议队列 (source_type='weekly_advisor', 3-5 条)
+ *   3. Twin 摘要 (4 个数, 折叠)
+ *   4. AI 会诊入口
+ *
+ * 旧 10+ 组件 (HomeHeader / AgentSurface / TodayCoachPanel / ...) 全部先沉默,
+ * 备份在 index.legacy.tsx.bak. 数据观察 1-2 周后决定保留或删.
+ */
+
+import React, { useCallback, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, StyleSheet,
-  KeyboardAvoidingView, Platform, TextStyle,
-  Alert, RefreshControl, Keyboard, Modal, Pressable, useWindowDimensions,
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getConversations, deleteConversation } from '../../services/chat';
-import api from '../../services/api';
-import HomeHeader from '../../components/dashboard/HomeHeader';
-import AgentSurface from '../../components/dashboard/AgentSurface';
-import OpenEpisodeCard from '../../components/dashboard/OpenEpisodeCard';
-import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
-import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
-import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
-import InsightCard from '../../components/dashboard/InsightCard';
-import HomeTimelinePreview from '../../components/dashboard/HomeTimelinePreview';
-import SpecialistChipRow from '../../components/home/SpecialistChipRow';
-import ChatInputBar from '../../components/chat/ChatInputBar';
-import ConversationSheet from '../../components/chat/ConversationSheet';
-import BrandCircle from '../../components/chat/BrandCircle';
-import ChatBubble from '../../components/chat/ChatBubble';
-import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
-import { useTodayCoach } from '../../hooks/useTodayCoach';
-import { useAgentAgenda } from '../../hooks/useAgentAgenda';
-import type { TodayCoachFocus } from '../../services/todayCoach';
-import type { AgentAgendaItem } from '../../services/agentAgenda';
-import { invalidateHealthSnapshot, queryKeys } from '../../applib/queryKeys';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+import { getSafetyReport, type SafetyAlert } from '../../services/safety';
+import { getActiveCards, type ActionCard } from '../../services/actionCards';
+import api from '../../services/api';
+import { spacing, radii } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
+
+interface TwinSnapshot {
+  hrv?: number | null;
+  sleep_score?: number | null;
+  systolic_bp?: number | null;
+  diastolic_bp?: number | null;
+  spo2_avg?: number | null;
+  resting_hr?: number | null;
 }
 
-export default function HomeScreen() {
+function getSeverityKey(s: any): string {
+  return typeof s === 'string' ? s : s?.label ?? 'info';
+}
+
+function pickTwinSnapshot(twin: any): TwinSnapshot {
+  if (!twin) return {};
+  const phys = twin.physiological ?? {};
+  const body = twin.body_composition ?? {};
+  return {
+    hrv: phys.hrv?.value ?? phys.hrv ?? null,
+    sleep_score: phys.sleep?.score ?? phys.sleep_score ?? null,
+    resting_hr: phys.resting_hr?.value ?? phys.resting_hr ?? null,
+    systolic_bp: body.systolic_bp ?? phys.bp?.systolic ?? null,
+    diastolic_bp: body.diastolic_bp ?? phys.bp?.diastolic ?? null,
+    spo2_avg: phys.spo2?.average ?? phys.spo2 ?? null,
+  };
+}
+
+export default function TodayScreen() {
   const router = useRouter();
-  const qc = useQueryClient();
   const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const [twinExpanded, setTwinExpanded] = useState(false);
 
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setHistoryError(null);
-    try {
-      const convs = await getConversations();
-      setConversations(convs);
-    } catch (e: any) {
-      setHistoryError(e?.message ? `加载失败: ${e.message.slice(0, 60)}` : '加载失败，检查网络');
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
-  const [refreshing, setRefreshing] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  const isNearBottom = useRef(true);
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const safetyQuery = useQuery({
+    queryKey: ['safety', 'me'],
+    queryFn: getSafetyReport,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  // ── Data queries ──
-  const { data: scoreData, isLoading: scoreLoading } = useQuery({ queryKey: queryKeys.healthScore, queryFn: () => api.get(`/health-score/daily/me?target_date=${today()}`).then(r => r.data), staleTime: 120_000 });
-  const { data: garminData, isLoading: garminLoading } = useQuery({ queryKey: queryKeys.garminToday, queryFn: () => api.get(`/daily-health/garmin/me?start_date=${today()}&end_date=${today()}`).then(r => r.data), staleTime: 120_000 });
-  const { data: weatherData } = useQuery({ queryKey: queryKeys.weather, queryFn: () => api.get('/environment/weather').then(r => r.data), staleTime: 300_000 });
-  const { data: aqiData } = useQuery({ queryKey: queryKeys.aqi, queryFn: () => api.get('/environment/air-quality').then(r => r.data), staleTime: 300_000 });
-  const { data: profileData } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
-  const { data: forecastData } = useQuery({ queryKey: queryKeys.forecast, queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
-  const todayCoach = useTodayCoach();
-  const agentAgenda = useAgentAgenda();
-  const insets = useSafeAreaInsets();
-  // KeyboardAvoidingView 只需抵消被键盘遮盖的量. tabBar 是 absolute 定位,
-  // 键盘出现时会被挡住, 不需要额外 offset —— 设成 0 避免输入框和键盘之间出现空隙.
-  const kbOffset = 0;
+  const cardsQuery = useQuery({
+    queryKey: ['action-cards', 'active'],
+    queryFn: getActiveCards,
+    staleTime: 60 * 1000,
+  });
 
-  const contextData = useMemo(() => ({
-    garmin: Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null,
-    score: scoreData, weather: weatherData, aqi: aqiData, profile: profileData,
-  }), [garminData, scoreData, weatherData, aqiData, profileData]);
+  const twinQuery = useQuery({
+    queryKey: ['twin', 'me'],
+    queryFn: async () => {
+      const { data } = await api.get('/twin/me');
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const chat = useChatEngine({ contextData });
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
+      qc.invalidateQueries({ queryKey: ['action-cards', 'active'] }),
+      qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
+    ]);
+  }, [qc]);
 
-  // Load conversation on mount
-  useEffect(() => { chat.loadLatestConversation(); }, []);
+  const isLoading = safetyQuery.isLoading || cardsQuery.isLoading || twinQuery.isLoading;
+  const isRefreshing = safetyQuery.isRefetching || cardsQuery.isRefetching || twinQuery.isRefetching;
 
-  // Scroll to bottom when keyboard appears
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
-      setKeyboardVisible(true);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
+  const alerts: SafetyAlert[] = safetyQuery.data?.alerts ?? [];
+  const criticalAlerts = alerts.filter(a =>
+    ['critical', 'high'].includes(getSeverityKey(a.severity)),
+  );
 
-  // Derived data
-  const score = scoreData?.total_score ?? 0;
-  const garmin = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
-  const weather = weatherData?.weather ?? weatherData;
-  const city = profileData?.manual_location?.city || profileData?.detected_location?.city || profileData?.city || '';
-  const tomorrowFc = forecastData?.forecasts?.[1];
-  // criticalAlerts 现在由 AgentSurface 自取 (queryKeys.safety 共享缓存), 不再在 home 顶层计算.
+  const cards: ActionCard[] = cardsQuery.data ?? [];
+  const weeklyAdvice = cards.filter(c => c.source_type === 'weekly_advisor');
 
-  const sleepH = garmin?.total_sleep_duration ? (garmin.total_sleep_duration / 60).toFixed(1) : '--';
-  const steps = garmin?.steps ?? '--';
-  const hrVal = garmin?.resting_heart_rate ?? '--';
-  const batteryCurrent = garmin?.body_battery_current;
-  const batteryPeak = garmin?.body_battery_most_charged;
-  const batteryVal = batteryCurrent != null && batteryPeak != null
-    ? `${batteryCurrent}/${batteryPeak}` : `${batteryCurrent ?? batteryPeak ?? '--'}`;
-
-  // ── Send handler (wraps chat engine) ──
-  // 用户主动发消息 = 明确想看回复. 强制锁 isNearBottom=true 并立即 scrollToEnd,
-  // 否则键盘弹出/setMessages 触发的 onScroll 会把 isNearBottom 误判成 false,
-  // 后续流式 token 的 onContentSizeChange 不会滚, 视图卡在 dashboard 顶端.
-  const handleSend = useCallback((text: string, images?: any) => {
-    isNearBottom.current = true;
-    chat.sendMessage(text, images);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [chat.sendMessage]);
-
-  const handleTodayCoachAction = useCallback((focus: TodayCoachFocus) => {
-    if (focus.actionRoute) {
-      router.push(focus.actionRoute as any);
-      return;
-    }
-    handleSend('今天健康如何？给我一份简报', null);
-  }, [handleSend, router]);
-
-  const handleAgendaItem = useCallback((item: AgentAgendaItem) => {
-    if (item.route) router.push(item.route as any);
-  }, [router]);
-
-  // ── Render message ──
-  const renderMessage = useCallback(({ item }: { item: UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' } }) => {
-    if ((item as any).type === 'date') {
-      return (
-        <View style={styles.dateDivider}>
-          <View style={styles.dateLine} />
-          <Text style={txt.dateText}>{(item as any).label}</Text>
-          <View style={styles.dateLine} />
-        </View>
-      );
-    }
-    if ((item as any).type === 'load-more') {
-      return (
-        <TouchableOpacity style={styles.loadMoreBtn} onPress={chat.loadMoreHistory} activeOpacity={0.7}>
-          <Ionicons name="chevron-up" size={14} color={c.brand} />
-          <Text style={txt.loadMoreText}>查看更早</Text>
-        </TouchableOpacity>
-      );
-    }
-    return <ChatBubble item={item as UIMessage} onViewImage={setViewingImage} />;
-  }, [chat.loadMoreHistory]);
-
-  // 在消息之间插入日期分割条
-  const itemsWithDateDividers = useMemo(() => {
-    const out: (UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' })[] = [];
-    if (chat.hasMoreHistory && chat.messages.length > 0) {
-      out.push({ id: 'load-more', type: 'load-more' });
-    }
-    let lastDay: string | null = null;
-    for (const m of chat.messages) {
-      const createdAt = (m as any).createdAt;
-      if (createdAt) {
-        const d = new Date(createdAt);
-        const dayKey = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-        if (dayKey !== lastDay) {
-          const weekday = ['日','一','二','三','四','五','六'][d.getDay()];
-          out.push({
-            id: `date-${dayKey}`,
-            type: 'date',
-            label: `${d.getMonth()+1}-${d.getDate()} 周${weekday}`,
-          });
-          lastDay = dayKey;
-        }
-      }
-      out.push(m);
-    }
-    return out;
-  }, [chat.messages, chat.hasMoreHistory]);
-
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-
-  const [showMore, setShowMore] = useState(false);
-
-  // ── Dashboard 头部: Agent Surface 单卡 + 对话, 其余 panel 折叠在"更多"里 ──
-  // 设计原则: 首页第一眼是 Agent 当前最想说的一句话, 不是 8 张数据卡墙.
-  // HomeHeader 默认 mini-bar; AgentSurface 自己按优先级选 1 张 (safety > episode > coach);
-  // SpecialistChipRow / Insight / Timeline / Agenda / Freshness 全部进 "更多" 折叠.
-  const dashboardHeader = useMemo(() => (
-    <View>
-      <HomeHeader
-        score={score} city={city}
-        temperature={weather?.temperature} weatherDesc={weather?.weather}
-        aqiValue={aqiData?.aqi} pm25={aqiData?.pm25}
-        tomorrowWeather={tomorrowFc?.weather}
-        tomorrowTempRange={tomorrowFc ? `${tomorrowFc.temp_min}~${tomorrowFc.temp_max}°C` : undefined}
-        sleep={`${sleepH}h`} sleepScore={garmin?.sleep_score}
-        steps={typeof steps === 'number' ? steps.toLocaleString() : `${steps}`}
-        hr={`${hrVal}`} battery={`${batteryVal}`}
-        batteryCurrent={batteryCurrent} batteryPeak={batteryPeak}
-        isLoading={scoreLoading || garminLoading}
-        defaultCollapsed
-        onSettings={() => router.push('/settings' as any)}
-        onNewChat={chat.newChat}
-        onHistory={() => { setShowHistory(true); loadHistory(); }}
-        onSymptom={() => router.push('/symptom-record' as any)}
-        onLiveRun={() => router.push('/live-run' as any)}
-        onImport={() => router.push('/import' as any)}
-      />
-
-      {/* Agent Surface — 唯一主卡: critical alert > open episode > today coach > 空 */}
-      <AgentSurface />
-
-      {/* 更多: 把原来的 5 个 panel + 完整版 Episode/Coach 折叠起来.
-          AgentSurface 已经露了头一条 critical / episode / coach, 这里是回看完整列表. */}
-      <TouchableOpacity
-        style={styles.moreToggle}
-        onPress={() => setShowMore(s => !s)}
-        activeOpacity={0.6}
-        accessibilityRole="button"
-        accessibilityLabel={showMore ? '收起更多' : '展开更多'}
-      >
-        <Text style={txt.moreToggleText}>{showMore ? '收起' : '更多'}</Text>
-        <Ionicons name={showMore ? 'chevron-up' : 'chevron-down'} size={14} color={c.labelTertiary} />
-      </TouchableOpacity>
-
-      {showMore && (
-        <View>
-          <OpenEpisodeCard />
-          <TodayCoachPanel
-            focus={todayCoach.data}
-            isLoading={todayCoach.isLoading}
-            onAction={handleTodayCoachAction}
-          />
-          <SpecialistChipRow />
-          <InsightCard />
-          <HomeTimelinePreview />
-          <AgentAgendaPanel agenda={agentAgenda.data} onOpenItem={handleAgendaItem} />
-          <DataFreshnessPanel />
-        </View>
-      )}
-
-      {chat.messages.length > 0 && (
-        <View style={styles.chatDivider}>
-          <View style={styles.chatDividerLine} />
-          <Text style={txt.chatDividerText}>对话</Text>
-          <View style={styles.chatDividerLine} />
-        </View>
-      )}
-    </View>
-  ), [
-    score, city, weather, aqiData, tomorrowFc, sleepH, garmin, steps, hrVal, batteryVal,
-    batteryCurrent, batteryPeak, scoreLoading, garminLoading,
-    todayCoach.data, todayCoach.isLoading, agentAgenda.data,
-    chat.messages.length, handleTodayCoachAction, handleAgendaItem,
-    chat.newChat, loadHistory, router, showMore, c, txt, styles,
-  ]);
+  const twinSnap = pickTwinSnapshot(twinQuery.data);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={kbOffset}>
-        <FlatList
-          ref={flatListRef}
-          data={itemsWithDateDividers}
-          keyExtractor={item => item.id}
-          renderItem={renderMessage}
-          ListHeaderComponent={dashboardHeader}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={async () => {
-              setRefreshing(true);
-              try { await api.post('/data-collection/garmin/me/sync?days=1'); } catch { console.warn('Garmin sync failed'); }
-              await Promise.all([
-                invalidateHealthSnapshot(qc),
-                qc.invalidateQueries({ queryKey: queryKeys.weather }),
-                qc.invalidateQueries({ queryKey: queryKeys.aqi }),
-                qc.invalidateQueries({ queryKey: queryKeys.forecast }),
-              ]);
-              setRefreshing(false);
-            }} tintColor={c.brand} />
-          }
-          contentContainerStyle={styles.msgList}
-          onContentSizeChange={() => { if (isNearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }}
-          onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
-          scrollEventThrottle={100}
-          ListEmptyComponent={
-            <View style={styles.welcome}>
-              <BrandCircle size={56} style={{ marginBottom: 12 }}>
-                <Ionicons name="sparkles" size={24} color="#fff" />
-              </BrandCircle>
-              <Text style={txt.welcomeTitle}>健康助理</Text>
-              <Text style={txt.welcomeSub}>说点什么，或试试这些</Text>
-              <View style={styles.primaryBtnRow}>
-                <TouchableOpacity style={styles.briefingBtn} onPress={() => handleSend('今天健康如何？给我一份简报', null)} activeOpacity={0.7} accessibilityLabel="生成今日健康简报">
-                  <Ionicons name="sparkles-outline" size={16} color={c.brand} />
-                  <Text style={txt.briefingBtnText}>健康简报</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.voiceBtn} onPress={() => router.push('/voice-chat' as any)} activeOpacity={0.7} accessibilityLabel="进入语音对话">
-                  <Ionicons name="mic" size={16} color="#fff" />
-                  <Text style={txt.voiceBtnText}>语音对话</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.sugRow}>
-                {['记录喝了杯水', '分析睡眠质量', '吃了鱼油', '最近HRV趋势'].map(s => (
-                  <TouchableOpacity key={s} style={styles.sugChip} onPress={() => handleSend(s, null)} accessibilityLabel={s}>
-                    <Text style={txt.sugText}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+      >
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: c.labelPrimary }]}>今日</Text>
+          <Text style={[styles.headerSub, { color: c.labelTertiary }]}>
+            Agent 替你看,只在该看时打扰你
+          </Text>
+        </View>
+
+        {isLoading && (
+          <View style={styles.loading}>
+            <ActivityIndicator />
+          </View>
+        )}
+
+        {/* 1. Critical/High 告警卡 */}
+        {criticalAlerts.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>需要立即处理</Text>
+            {criticalAlerts.slice(0, 3).map(a => (
+              <AlertRow
+                key={a.rule_id}
+                alert={a}
+                onPress={() => router.push(`/alerts`)}
+              />
+            ))}
+            {criticalAlerts.length > 3 && (
+              <TouchableOpacity onPress={() => router.push('/alerts')} style={styles.moreLink}>
+                <Text style={[styles.moreText, { color: c.brand }]}>查看全部 {criticalAlerts.length} 条</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* 2. 本周建议队列 */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>本周建议</Text>
+          {weeklyAdvice.length === 0 ? (
+            <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
+              <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
+                本周尚无 Agent 主动建议. 周日晚 21:07 自动生成.
+              </Text>
             </View>
-          }
-        />
-
-        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} />
-        {!keyboardVisible && <View style={{ height: 83 }} />}
-      </KeyboardAvoidingView>
-
-      <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
-        <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
-          {viewingImage && (
-            <Image
-              source={{ uri: viewingImage }}
-              style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
-              contentFit="contain"
-            />
+          ) : (
+            weeklyAdvice.map(card => (
+              <SuggestionRow
+                key={card.id}
+                card={card}
+                onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
+              />
+            ))
           )}
-          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
-            <Ionicons name="close-circle" size={32} color="#fff" />
-          </TouchableOpacity>
-        </Pressable>
-      </Modal>
+        </View>
 
-      <ConversationSheet
-        visible={showHistory}
-        onClose={() => setShowHistory(false)}
-        conversations={conversations}
-        setConversations={setConversations}
-        currentConversationId={chat.conversationId}
-        loading={historyLoading}
-        error={historyError}
-        onRetry={loadHistory}
-        onSelectConversation={async (id) => {
-          try { await chat.loadConversation(id); } catch { Alert.alert('加载失败', '无法加载对话内容'); }
-        }}
-        onDeleteConversation={async (id) => {
-          await deleteConversation(id);
-          setConversations(prev => prev.filter((c: any) => c.id !== id));
-          if (chat.conversationId === id) chat.newChat();
-        }}
-      />
+        {/* 3. Twin 摘要 */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.collapseHeader}
+            onPress={() => setTwinExpanded(v => !v)}
+          >
+            <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>身体快照</Text>
+            <Ionicons
+              name={twinExpanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={c.labelTertiary}
+            />
+          </TouchableOpacity>
+          {twinExpanded && (
+            <View style={styles.twinGrid}>
+              <TwinCell label="HRV" value={fmt(twinSnap.hrv)} unit="ms" />
+              <TwinCell label="睡眠" value={fmt(twinSnap.sleep_score)} unit="分" />
+              <TwinCell
+                label="血压"
+                value={
+                  twinSnap.systolic_bp && twinSnap.diastolic_bp
+                    ? `${twinSnap.systolic_bp}/${twinSnap.diastolic_bp}`
+                    : '—'
+                }
+                unit=""
+              />
+              <TwinCell label="SpO2" value={fmt(twinSnap.spo2_avg)} unit="%" />
+            </View>
+          )}
+        </View>
+
+        {/* 4. AI 会诊入口 */}
+        <TouchableOpacity
+          style={[styles.chatEntry, { backgroundColor: c.brand }]}
+          onPress={() => router.push('/(tabs)/chat')}
+        >
+          <Ionicons name="chatbubbles" size={20} color="#fff" />
+          <Text style={styles.chatEntryText}>AI 会诊</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: c.bgPrimary },
-    moreToggle: {
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-      alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 12,
-      marginBottom: spacing.sm,
-    },
-    msgList: { paddingTop: spacing.sm, paddingBottom: 4, paddingHorizontal: spacing.md },
-    chatDivider: {
-      flexDirection: 'row', alignItems: 'center',
-      marginTop: spacing.lg, marginBottom: spacing.sm,
-      paddingHorizontal: spacing.lg,
-    },
-    chatDividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: c.separator },
-    imageViewerOverlay: {
-      flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
-      justifyContent: 'center', alignItems: 'center',
-    },
-    imageViewerClose: {
-      position: 'absolute', top: 60, right: 20,
-    },
-    welcome: { alignItems: 'center', paddingTop: 80 },
-    primaryBtnRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 10,
-      marginTop: 16, marginBottom: 8,
-    },
-    briefingBtn: {
-      flexDirection: 'row', alignItems: 'center', gap: 6,
-      backgroundColor: c.brandLight, borderRadius: radii.full,
-      paddingHorizontal: 18, paddingVertical: 10,
-    },
-    voiceBtn: {
-      flexDirection: 'row', alignItems: 'center', gap: 6,
-      backgroundColor: c.brand, borderRadius: radii.full,
-      paddingHorizontal: 18, paddingVertical: 10,
-    },
-    sugRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20, justifyContent: 'center', paddingHorizontal: spacing.xl },
-    sugChip: {
-      backgroundColor: c.bgCard, borderRadius: radii.full,
-      paddingHorizontal: 14, paddingVertical: 8,
-      borderWidth: 1, borderColor: c.separator,
-    },
-    dateDivider: {
-      flexDirection: 'row', alignItems: 'center',
-      marginVertical: 12, paddingHorizontal: spacing.md,
-    },
-    dateLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: c.separator },
-    loadMoreBtn: {
-      flexDirection: 'row', alignItems: 'center', gap: 4,
-      alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14,
-      marginBottom: 8, backgroundColor: c.brandLight, borderRadius: radii.full,
-    },
-  });
+function AlertRow({ alert, onPress }: { alert: SafetyAlert; onPress: () => void }) {
+  const { c } = useTheme();
+  const sev = getSeverityKey(alert.severity);
+  const color = sev === 'critical' ? c.red : c.amber;
+  return (
+    <TouchableOpacity style={[styles.row, { borderColor: color }]} onPress={onPress}>
+      <View style={styles.rowMain}>
+        <Text style={[styles.rowTitle, { color: c.labelPrimary }]}>{alert.title}</Text>
+        <Text style={[styles.rowSub, { color: c.labelSecondary }]} numberOfLines={2}>
+          {alert.message}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={color} />
+    </TouchableOpacity>
+  );
 }
 
-function createTxt(c: ColorPalette) {
-  return {
-    moreToggleText: { fontSize: 12, color: c.labelTertiary, fontWeight: '500' } as TextStyle,
-    welcomeTitle: { fontSize: 20, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-    welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4 } as TextStyle,
-    sugText: { fontSize: 13, color: c.brand } as TextStyle,
-    briefingBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
-    voiceBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' } as TextStyle,
-    dateText: { fontSize: 11, color: c.labelTertiary, paddingHorizontal: 10, fontWeight: '500' } as TextStyle,
-    loadMoreText: { fontSize: 12, color: c.brand, fontWeight: '500' } as TextStyle,
-    chatDividerText: { fontSize: 11, color: c.labelTertiary, paddingHorizontal: 10, fontWeight: '600' } as TextStyle,
-  };
+function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => void }) {
+  const { c } = useTheme();
+  const decided = !!card.user_decision;
+  return (
+    <TouchableOpacity style={[styles.row, { borderColor: c.separator }]} onPress={onPress}>
+      <View style={styles.rowMain}>
+        <Text style={[styles.rowTitle, { color: c.labelPrimary }]}>{card.title}</Text>
+        <Text style={[styles.rowSub, { color: c.labelSecondary }]} numberOfLines={2}>
+          {card.content}
+        </Text>
+        {decided && (
+          <View style={styles.decidedTag}>
+            <Text style={styles.decidedText}>{card.user_decision}</Text>
+          </View>
+        )}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+    </TouchableOpacity>
+  );
 }
+
+function TwinCell({ label, value, unit }: { label: string; value: string; unit: string }) {
+  const { c } = useTheme();
+  return (
+    <View style={[styles.twinCell, { backgroundColor: c.bgCard }]}>
+      <Text style={[styles.twinLabel, { color: c.labelTertiary }]}>{label}</Text>
+      <Text style={[styles.twinValue, { color: c.labelPrimary }]}>
+        {value}
+        {value !== '—' && unit ? <Text style={styles.twinUnit}> {unit}</Text> : null}
+      </Text>
+    </View>
+  );
+}
+
+function fmt(v?: number | null): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1 },
+  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.lg },
+  header: { gap: 4, marginTop: spacing.sm },
+  headerTitle: { fontSize: 28, fontWeight: '700' },
+  headerSub: { fontSize: 13 },
+  loading: { paddingVertical: spacing.xl, alignItems: 'center' },
+  section: { gap: spacing.sm },
+  sectionTitle: { fontSize: 15, fontWeight: '600' },
+  collapseHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  emptyBlock: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    borderStyle: 'dashed',
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  emptyText: { fontSize: 13, lineHeight: 20, textAlign: 'center' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  rowMain: { flex: 1, gap: 4 },
+  rowTitle: { fontSize: 15, fontWeight: '600' },
+  rowSub: { fontSize: 13, lineHeight: 18 },
+  decidedTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  decidedText: { fontSize: 11, color: '#475569', fontWeight: '600' },
+  moreLink: { paddingVertical: spacing.xs, alignItems: 'center' },
+  moreText: { fontSize: 13, fontWeight: '500' },
+  twinGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  twinCell: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    gap: 4,
+  },
+  twinLabel: { fontSize: 11, fontWeight: '500' },
+  twinValue: { fontSize: 22, fontWeight: '700' },
+  twinUnit: { fontSize: 12, fontWeight: '400' },
+  chatEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: radii.md,
+    marginTop: spacing.sm,
+  },
+  chatEntryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+});

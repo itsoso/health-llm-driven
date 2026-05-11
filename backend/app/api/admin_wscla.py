@@ -204,3 +204,20 @@ def get_wscla_dashboard(
         "by_source_type": by_source_type,
         "recent_cards": recent,
     }
+
+
+@router.post("/trigger-weekly-advisor")
+async def trigger_weekly_advisor(
+    user_id: Optional[int] = Query(None, description="若指定则只为该用户产建议; 省略走当前 admin"),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """手动触发 WeeklyAdvisor (P2-1) — 不等周日 21:07.
+
+    用于本地/线上联调首屏的"本周建议队列".
+    """
+    from app.services.weekly_advisor import generate_weekly_advice
+
+    target_id = user_id if user_id is not None else admin_user.id
+    result = await generate_weekly_advice(db, target_id)
+    return {"user_id": target_id, **result}

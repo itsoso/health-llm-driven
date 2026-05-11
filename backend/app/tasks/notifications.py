@@ -1949,3 +1949,66 @@ def escalate_critical_unresolved():
             f"checked={len(cards) if cards else 0}"
         )
     return {"escalated": escalated, "skipped": skipped}
+
+
+@celery_app.task
+def weekly_advisor_run():
+    """每周日 21:07 跑: 给所有 7 天内活跃用户产 3-5 条本周建议, 写 action_cards.
+
+    幂等: 本周已有 weekly_advisor 卡的用户跳过 (生成两次会让首页堆乱).
+    """
+    from app.services.weekly_advisor import generate_weekly_advice
+    from app.utils.async_helpers import run_async
+    from sqlalchemy import distinct
+    from app.models.daily_health import GarminData
+
+    logger.info("[WeeklyAdvisor] 开始本周建议产出")
+    cutoff = (get_china_now() - timedelta(days=7)).date()
+
+    with SessionLocal() as db:
+        user_ids = [
+            r[0] for r in db.query(distinct(GarminData.user_id))
+            .filter(GarminData.record_date >= cutoff)
+            .all()
+        ]
+        if not user_ids:
+            user_ids = [
+                r[0] for r in db.query(User.id)
+                .filter(User.is_active == True, User.is_approved == True)
+                .all()
+            ]
+
+    logger.info(f"[WeeklyAdvisor] 候选用户 {len(user_ids)} 个")
+
+    total_created = 0
+    total_skipped = 0
+    total_fallback = 0
+    failed = 0
+
+    for uid in user_ids:
+        try:
+            with SessionLocal() as db:
+                result = run_async(generate_weekly_advice(db, uid))
+            created = result.get("created", 0)
+            if created > 0:
+                total_created += created
+                if result.get("fallback"):
+                    total_fallback += 1
+            else:
+                total_skipped += 1
+        except Exception as e:  # noqa: BLE001
+            failed += 1
+            logger.warning(f"[WeeklyAdvisor] user={uid} 失败: {e}")
+
+    logger.info(
+        f"[WeeklyAdvisor] 完成: created={total_created} "
+        f"users_done={len(user_ids) - total_skipped - failed}/{len(user_ids)} "
+        f"skipped={total_skipped} fallback={total_fallback} failed={failed}"
+    )
+    return {
+        "users_total": len(user_ids),
+        "created": total_created,
+        "skipped": total_skipped,
+        "fallback": total_fallback,
+        "failed": failed,
+    }
