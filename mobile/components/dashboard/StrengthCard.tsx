@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -51,6 +51,8 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   // 本地乐观计数, 按 type 累加 (reps: 个数; duration: 秒数)
   const [localAdd, setLocalAdd] = useState<Record<string, number>>({});
   const [recording, setRecording] = useState<string | null>(null);
+  // 同步锁: 比 React state 快, 阻挡同 type 的并发调用 (双击 race fix)
+  const inFlightRef = useRef<Set<string>>(new Set());
 
   const getCount = (cfg: ExerciseConfig): number => {
     const rows = (exerciseToday || []).filter((e: any) => e.exercise_type === cfg.type);
@@ -62,6 +64,13 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   };
 
   const doRecord = useCallback(async (cfg: ExerciseConfig, amount: number) => {
+    // 防双击重入: setRecording 是 React state, 异步更新, 渲染前 button disabled
+    // 还没生效, 用户双击会两次进 doRecord. 用 ref 锁同步阻挡 (16ms 渲染窗口).
+    // 见 https://github.com/facebook/react-native/issues/known-touch-rebound
+    const lockKey = cfg.type;
+    if (inFlightRef.current.has(lockKey)) return;
+    inFlightRef.current.add(lockKey);
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setRecording(cfg.type);
     setLocalAdd(prev => ({ ...prev, [cfg.type]: (prev[cfg.type] || 0) + amount }));
@@ -84,6 +93,7 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
       setLocalAdd(prev => ({ ...prev, [cfg.type]: (prev[cfg.type] || 0) - amount }));
     } finally {
       setRecording(null);
+      inFlightRef.current.delete(lockKey);
     }
   }, [onUpdate]);
 

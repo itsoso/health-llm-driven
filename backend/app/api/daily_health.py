@@ -130,8 +130,35 @@ def create_exercise_record(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """创建锻炼记录"""
-    db_exercise = ExerciseRecord(user_id=current_user.id, **exercise.model_dump())
+    """创建锻炼记录.
+
+    幂等保护 (2026-05-11): 5 秒窗口内, 同 user + 同 exercise_type + 同 reps + 同 sets
+    + 同 duration_seconds 视为重复请求, 直接返回已有记录, 不重复写.
+    根因: 移动端 button 防双击锁基于 React state (异步), 16ms 渲染窗口前
+    用户双击都能挤进 doRecord. 前端有 useRef 锁兜底, 后端这层是 belt-and-suspenders.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    payload = exercise.model_dump()
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
+
+    dedup_q = db.query(ExerciseRecord).filter(
+        ExerciseRecord.user_id == current_user.id,
+        ExerciseRecord.exercise_type == payload.get("exercise_type"),
+        ExerciseRecord.reps == payload.get("reps"),
+        ExerciseRecord.sets == payload.get("sets"),
+        ExerciseRecord.duration_seconds == payload.get("duration_seconds"),
+        ExerciseRecord.created_at >= cutoff,
+    )
+    existing = dedup_q.order_by(ExerciseRecord.created_at.desc()).first()
+    if existing is not None:
+        logger.info(
+            f"[exercise] dedup hit: user={current_user.id} type={payload.get('exercise_type')} "
+            f"reps={payload.get('reps')} 5s 窗口内已存 id={existing.id}, 跳过"
+        )
+        return existing
+
+    db_exercise = ExerciseRecord(user_id=current_user.id, **payload)
     db.add(db_exercise)
     db.commit()
     db.refresh(db_exercise)
