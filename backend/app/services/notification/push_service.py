@@ -484,6 +484,32 @@ class PushService:
         self.db.add(log)
         self.db.commit()
 
+        # WSCLA 生命周期 surface: 若 data 带 action_card_id 且任一通道发送成功,
+        # 回写 action_cards.push_sent_at. 旁路, 失败不影响主流程.
+        if status == NotificationStatus.SENT.value and data and data.get("action_card_id"):
+            try:
+                self._stamp_action_card_push_sent(data["action_card_id"], user_id)
+            except Exception as e:
+                logger.warning(
+                    f"[action_card_surface] push_sent_at 回写失败 "
+                    f"(user={user_id}, card_id={data.get('action_card_id')}): {e}"
+                )
+
+    def _stamp_action_card_push_sent(self, card_id: int, user_id: int) -> None:
+        """把 push_sent_at 盖到对应 action_card. 只认 user_id 匹配, 防跨用户串写."""
+        from app.models.action_card import ActionCard
+
+        card = (
+            self.db.query(ActionCard)
+            .filter(ActionCard.id == card_id, ActionCard.user_id == user_id)
+            .first()
+        )
+        if card is None:
+            return
+        if card.push_sent_at is None:
+            card.push_sent_at = get_china_now()
+            self.db.commit()
+
     def get_notification_logs(
         self,
         user_id: int,

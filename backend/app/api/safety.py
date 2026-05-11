@@ -134,6 +134,15 @@ def get_my_safety_report(
         dismissed_ids = set()
         dismissed_alerts = []
 
+    # WSCLA 生命周期 surface: 把活跃告警写入 action_cards (旁路, 失败不影响响应).
+    # 幂等 upsert 策略见 action_card_surface.py.
+    try:
+        from app.services.action_card_surface import surface_safety_alerts
+
+        surface_safety_alerts(db, current_user.id, report.alerts)
+    except Exception:
+        pass
+
     # Severity 门槛
     if severity_min > 0:
         report.alerts = [a for a in report.alerts if int(a.severity) >= severity_min]

@@ -10,7 +10,7 @@ ActionCard —— 对话产出固化到首页的行动卡片。
 - manual: 用户手动创建
 """
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -72,5 +72,25 @@ class ActionCard(Base):
     #   None            — 未评估依从度, 按 1.0 处理 (兼容历史卡)
     adherence_kind = Column(String(30))
     adherence_confidence = Column(Integer)  # 0-100 整数便于过滤查询 (0=完全没做, 100=完全做到)
+
+    # ===== WSCLA 生命周期 (Phase 0 · W1 定基线) =====
+    # 通知生命周期 (Push CTR / 送达率基础)
+    seen_at = Column(DateTime(timezone=True))
+    push_sent_at = Column(DateTime(timezone=True))
+    push_delivered_at = Column(DateTime(timezone=True))
+    push_clicked_at = Column(DateTime(timezone=True))
+
+    # 用户决策语义 (与 status 正交: status 是系统视角, user_decision 是用户意图)
+    # accepted / adjusted / declined / dismissed / false_positive
+    user_decision = Column(String(20))
+    decided_at = Column(DateTime(timezone=True))
+    decision_reason = Column(Text)
+
+    # safety alert 分级 (critical / high / medium / low / info), 普通建议 NULL
+    severity = Column(String(20))
+
+    # outcome 分类 (improved / unchanged / worsened / inconclusive), 与 accuracy_score 数字配合
+    outcome = Column(String(20))
+    effect_size = Column(Float)  # 标准化效应值, 可空
 
     user = relationship("User", backref="action_cards")
