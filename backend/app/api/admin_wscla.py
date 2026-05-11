@@ -221,3 +221,46 @@ async def trigger_weekly_advisor(
     target_id = user_id if user_id is not None else admin_user.id
     result = await generate_weekly_advice(db, target_id)
     return {"user_id": target_id, **result}
+
+
+@router.post("/trigger-verify")
+async def trigger_verify_outcomes(
+    card_id: Optional[int] = Query(None, description="若指定只评单卡; 省略走全表 batch"),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """手动触发 N-of-1 验证 (P5-1) — 不等每天 02:00.
+
+    card_id 给定: 强制评单卡 (即使 check_back_date 未到), 用于联调.
+    省略: 走 batch (但只评 check_back_date <= now 且 graded_at IS NULL 的).
+    """
+    from app.tasks.verify_outcomes import _verify_impl, _verify_one, _score_from_outcome
+    from datetime import datetime as _dt, timezone as _tz
+
+    if card_id is None:
+        return _verify_impl(dry_run=False)
+
+    card = db.query(ActionCard).filter(ActionCard.id == card_id).first()
+    if card is None:
+        return {"error": f"card {card_id} not found"}
+
+    now = _dt.now(_tz.utc)
+    today = now.date()
+    outcome, effect, actual = _verify_one(db, card, today)
+    card.outcome = outcome
+    card.effect_size = effect
+    if actual is not None:
+        card.actual_value = str(actual)
+    card.graded_at = now
+    card.accuracy_score = _score_from_outcome(outcome)
+    db.commit()
+    db.refresh(card)
+    return {
+        "card_id": card.id,
+        "metric_key": card.metric_key,
+        "baseline_value": card.baseline_value,
+        "actual_value": card.actual_value,
+        "outcome": outcome,
+        "effect_size": effect,
+        "accuracy_score": card.accuracy_score,
+    }

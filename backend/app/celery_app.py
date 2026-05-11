@@ -38,6 +38,7 @@ celery_app = Celery(
         "app.tasks.episode_reflection",
         "app.tasks.live_run_narrative",
         "app.tasks.live_run_hr_replay",
+        "app.tasks.verify_outcomes",
     ]
 )
 
@@ -112,6 +113,14 @@ celery_app.conf.beat_schedule = {
     "weekly-advisor-run": {
         "task": "app.tasks.notifications.weekly_advisor_run",
         "schedule": crontab(hour=21, minute=7, day_of_week=0),  # 周日 21:07 北京时间
+    },
+
+    # 每天 02:00 跑 N-of-1 自动验证 (P5-1) — 扫到期未评的 accepted 卡,
+    # 拉 metric 对比 baseline → 写 outcome + effect_size + graded_at.
+    # WSCLA 闭环最后一公里, 没这个 outcome 永远 NULL → WSCLA = 0.
+    "verify-action-card-outcomes": {
+        "task": "app.tasks.verify_outcomes.verify_action_card_outcomes",
+        "schedule": crontab(hour=2, minute=0),
     },
 
     # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)

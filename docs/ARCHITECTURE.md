@@ -43,7 +43,7 @@
          ▼           ▼                ▼                    ▼                  ▼
   ┌──────────┐ ┌──────────┐  ┌─────────────┐    ┌──────────────────┐  ┌─────────────┐
   │ Postgres │ │  Redis   │  │  Celery     │    │  LLM Providers   │  │  3rd-party  │
-  │ (多表)   │ │ (cache + │  │ (48 任务)   │    │ openai-proxy /   │  │ Garmin API  │
+  │ (多表)   │ │ (cache + │  │ (49 任务)   │    │ openai-proxy /   │  │ Garmin API  │
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
@@ -62,7 +62,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 122 API 路由, 149 services, 71 models, 48 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 122 API 路由, 149 services, 71 models, 49 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 42 路由 |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
@@ -113,7 +113,7 @@
 |------|------|
 | `backend/app/api/*.py` | 122 条 API 路由 |
 | `backend/app/services/*.py` | 148 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
-| `backend/app/tasks/*.py` | 48 Celery 异步任务 |
+| `backend/app/tasks/*.py` | 49 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
 | `mobile/app/` | 49 RN 路由 + Tab 导航 |
@@ -393,7 +393,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(48 个任务)
+## 九、Celery 调度(49 个任务)
 
 `backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
 
