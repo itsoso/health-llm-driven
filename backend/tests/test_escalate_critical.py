@@ -26,7 +26,7 @@ def patch_session_local(db):
         finally:
             pass
 
-    with patch("app.tasks.notifications.SessionLocal", new=_ctx):
+    with patch("app.tasks.notifications_wscla.SessionLocal", new=_ctx):
         yield
 
 

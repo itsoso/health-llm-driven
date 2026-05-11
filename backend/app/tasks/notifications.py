@@ -1853,162 +1853,20 @@ def scan_medication_reminders():
 
 @celery_app.task
 def flush_delayed_pushes():
-    """每 5 分钟扫一次 NotificationLog 里 status='delayed' 且 scheduled_at <= now 的记录,
-    重新走 send_notification (respect_quiet_hours=False) fire 出去.
-
-    严格不打扰睡眠 (2026-05-11 决定): 静默时段所有 severity 都进 delayed 队列,
-    quiet_hours_end 后由本任务批量 fire.
-    """
-    with SessionLocal() as db:
-        push_service = PushService(db)
-        try:
-            result = run_async(push_service.flush_delayed_pushes())
-            if result.get("flushed", 0) > 0:
-                logger.info(f"[FlushDelayedPushes] {result}")
-            return result
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"[FlushDelayedPushes] 失败: {e}", exc_info=True)
-            return {"flushed": 0, "succeeded": 0, "failed": 0, "error": str(e)}
+    """已迁移到 app.tasks.notifications_wscla. Wrapper 保留 task name 不变."""
+    from app.tasks.notifications_wscla import flush_delayed_pushes_impl
+    return flush_delayed_pushes_impl()
 
 
 @celery_app.task
 def escalate_critical_unresolved():
-    """每小时跑: Critical 告警 24h 内未 decided 且 push 已发 → 升级再推 (max 3 次).
-
-    严格不打扰睡眠 (2026-05-11): 升级推送命中静默时段也走 delayed 队列, 不强推.
-    使用 latest_assessment.escalation_count + last_escalated_at 跟踪重推次数.
-    """
-    from app.models.action_card import ActionCard
-
-    MAX_ESCALATIONS = 3
-    MIN_GAP_HOURS = 12  # 重推之间最少间隔 12h, 防 spam
-
-    now = get_china_now()
-    cutoff = now - timedelta(hours=24)
-    min_gap_cutoff = now - timedelta(hours=MIN_GAP_HOURS)
-
-    with SessionLocal() as db:
-        cards = db.query(ActionCard).filter(
-            ActionCard.severity == "critical",
-            ActionCard.user_decision.is_(None),
-            ActionCard.status == "active",
-            ActionCard.push_sent_at.isnot(None),
-            ActionCard.push_sent_at < cutoff,  # 首次推送 24h 前
-        ).limit(50).all()
-
-        push_service = PushService(db)
-        escalated = 0
-        skipped = 0
-
-        for card in cards:
-            meta = dict(card.latest_assessment or {})
-            escalation_count = meta.get("escalation_count", 0)
-            last_escalated_at = meta.get("last_escalated_at")
-
-            if escalation_count >= MAX_ESCALATIONS:
-                skipped += 1
-                continue
-
-            # 离上次升级太近就跳过
-            if last_escalated_at:
-                try:
-                    last_dt = datetime.fromisoformat(last_escalated_at.replace("Z", "+00:00"))
-                    if last_dt > min_gap_cutoff.replace(tzinfo=last_dt.tzinfo):
-                        skipped += 1
-                        continue
-                except Exception:
-                    pass
-
-            try:
-                run_async(push_service.send_notification(
-                    user_id=card.user_id,
-                    notification_type="health_alert",
-                    title=f"⚠️ 仍未处理: {card.title}",
-                    content=card.content,
-                    severity="critical",
-                    data={
-                        "rule_id": card.source_id,
-                        "action_card_id": card.id,
-                        "escalation": True,
-                        "escalation_count": escalation_count + 1,
-                    },
-                ))
-                meta["escalation_count"] = escalation_count + 1
-                meta["last_escalated_at"] = now.isoformat()
-                card.latest_assessment = meta
-                db.commit()
-                escalated += 1
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    f"[escalate_critical] card={card.id} 失败: {e}"
-                )
-
-    if escalated or skipped:
-        logger.info(
-            f"[escalate_critical] escalated={escalated} skipped={skipped} "
-            f"checked={len(cards) if cards else 0}"
-        )
-    return {"escalated": escalated, "skipped": skipped}
+    """已迁移到 app.tasks.notifications_wscla. Wrapper 保留 task name 不变."""
+    from app.tasks.notifications_wscla import escalate_critical_unresolved_impl
+    return escalate_critical_unresolved_impl()
 
 
 @celery_app.task
 def weekly_advisor_run():
-    """每周日 21:07 跑: 给所有 7 天内活跃用户产 3-5 条本周建议, 写 action_cards.
-
-    幂等: 本周已有 weekly_advisor 卡的用户跳过 (生成两次会让首页堆乱).
-    """
-    from app.services.weekly_advisor import generate_weekly_advice
-    from app.utils.async_helpers import run_async
-    from sqlalchemy import distinct
-    from app.models.daily_health import GarminData
-
-    logger.info("[WeeklyAdvisor] 开始本周建议产出")
-    cutoff = (get_china_now() - timedelta(days=7)).date()
-
-    with SessionLocal() as db:
-        user_ids = [
-            r[0] for r in db.query(distinct(GarminData.user_id))
-            .filter(GarminData.record_date >= cutoff)
-            .all()
-        ]
-        if not user_ids:
-            user_ids = [
-                r[0] for r in db.query(User.id)
-                .filter(User.is_active == True, User.is_approved == True)
-                .all()
-            ]
-
-    logger.info(f"[WeeklyAdvisor] 候选用户 {len(user_ids)} 个")
-
-    total_created = 0
-    total_skipped = 0
-    total_fallback = 0
-    failed = 0
-
-    for uid in user_ids:
-        try:
-            with SessionLocal() as db:
-                result = run_async(generate_weekly_advice(db, uid))
-            created = result.get("created", 0)
-            if created > 0:
-                total_created += created
-                if result.get("fallback"):
-                    total_fallback += 1
-            else:
-                total_skipped += 1
-        except Exception as e:  # noqa: BLE001
-            failed += 1
-            logger.warning(f"[WeeklyAdvisor] user={uid} 失败: {e}")
-
-    logger.info(
-        f"[WeeklyAdvisor] 完成: created={total_created} "
-        f"users_done={len(user_ids) - total_skipped - failed}/{len(user_ids)} "
-        f"skipped={total_skipped} fallback={total_fallback} failed={failed}"
-    )
-    return {
-        "users_total": len(user_ids),
-        "created": total_created,
-        "skipped": total_skipped,
-        "fallback": total_fallback,
-        "failed": failed,
-    }
+    """已迁移到 app.tasks.notifications_wscla. Wrapper 保留 task name 不变."""
+    from app.tasks.notifications_wscla import weekly_advisor_run_impl
+    return weekly_advisor_run_impl()

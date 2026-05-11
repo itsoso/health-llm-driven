@@ -49,13 +49,17 @@ function pickTwinSnapshot(twin: any): TwinSnapshot {
   if (!twin) return {};
   const phys = twin.physiological ?? {};
   const body = twin.body_composition ?? {};
+  // 字段名对齐后端 app/twin/schema.py:
+  //   PhysiologicalState: hrv_latest / hrv_7d_avg / sleep_score_latest /
+  //                       resting_hr_latest / spo2_avg / spo2_min_overnight
+  //   BodyCompositionState: blood_pressure_systolic / blood_pressure_diastolic
   return {
-    hrv: phys.hrv?.value ?? phys.hrv ?? null,
-    sleep_score: phys.sleep?.score ?? phys.sleep_score ?? null,
-    resting_hr: phys.resting_hr?.value ?? phys.resting_hr ?? null,
-    systolic_bp: body.systolic_bp ?? phys.bp?.systolic ?? null,
-    diastolic_bp: body.diastolic_bp ?? phys.bp?.diastolic ?? null,
-    spo2_avg: phys.spo2?.average ?? phys.spo2 ?? null,
+    hrv: phys.hrv_latest ?? phys.hrv_7d_avg ?? null,
+    sleep_score: phys.sleep_score_latest ?? null,
+    resting_hr: phys.resting_hr_latest ?? null,
+    systolic_bp: body.blood_pressure_systolic ?? null,
+    diastolic_bp: body.blood_pressure_diastolic ?? null,
+    spo2_avg: phys.spo2_avg ?? phys.spo2_min_overnight ?? null,
   };
 }
 
