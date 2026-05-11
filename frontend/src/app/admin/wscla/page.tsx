@@ -120,6 +120,9 @@ export default function WsclaDashboardPage() {
             {data.window.user_id && <> · 用户 #{data.window.user_id}</>}
           </div>
 
+          {/* SLO 区块 — Phase 4 P4-4, 三条主链路健康 */}
+          <SloBar />
+
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
             <MetricCard
               label="WSCLA"
@@ -316,5 +319,64 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
     <span className={`px-2 py-0.5 text-xs rounded ${style[outcome] || ''}`}>
       {outcome}
     </span>
+  );
+}
+
+// ─── SLO 区块 (P4-4) ──────────────────────────────────────────────────
+
+interface SloItem {
+  key: string;
+  name: string;
+  value: number | null;
+  value_display: string;
+  unit: string;
+  grade: 'green' | 'yellow' | 'red' | 'unknown';
+  detail: string;
+}
+
+interface SloDashboard {
+  window: { since: string; until: string };
+  slos: SloItem[];
+}
+
+function SloBar() {
+  const { data, error } = useQuery<SloDashboard>({
+    queryKey: ['admin', 'slo'],
+    queryFn: async () => {
+      const res = await api.get('/admin/slo');
+      return res.data;
+    },
+    refetchInterval: 60_000,
+  });
+
+  if (error) return null;
+  if (!data) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+      {data.slos.map(s => (
+        <SloPill key={s.key} item={s} />
+      ))}
+    </div>
+  );
+}
+
+function SloPill({ item }: { item: SloItem }) {
+  const colorMap: Record<string, { bg: string; border: string; text: string; dot: string }> = {
+    green: { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-800', dot: 'bg-green-500' },
+    yellow: { bg: 'bg-yellow-50', border: 'border-yellow-300', text: 'text-yellow-800', dot: 'bg-yellow-500' },
+    red: { bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-800', dot: 'bg-red-500' },
+    unknown: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-600', dot: 'bg-gray-300' },
+  };
+  const c = colorMap[item.grade];
+  return (
+    <div className={`border rounded-lg p-3 ${c.bg} ${c.border}`}>
+      <div className="flex items-center gap-2 mb-1">
+        <div className={`w-2 h-2 rounded-full ${c.dot}`} />
+        <div className="text-xs font-medium text-gray-700">{item.name}</div>
+      </div>
+      <div className={`text-2xl font-bold ${c.text}`}>{item.value_display}</div>
+      <div className="text-xs text-gray-500 mt-1">{item.detail}</div>
+    </div>
   );
 }
