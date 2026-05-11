@@ -43,7 +43,20 @@ export interface ActionCard {
   accuracy_score?: number | null;
   graded_at?: string | null;
   grading_notes?: string | null;
+  // WSCLA 生命周期 (Phase 0/1)
+  severity?: 'critical' | 'high' | 'medium' | 'low' | 'info' | null;
+  user_decision?: 'accepted' | 'adjusted' | 'declined' | 'dismissed' | 'false_positive' | null;
+  decided_at?: string | null;
+  decision_reason?: string | null;
+  outcome?: 'improved' | 'unchanged' | 'worsened' | 'inconclusive' | null;
+  effect_size?: number | null;
+  seen_at?: string | null;
+  push_sent_at?: string | null;
+  push_delivered_at?: string | null;
+  push_clicked_at?: string | null;
 }
+
+export type CardDecision = 'accepted' | 'adjusted' | 'declined' | 'dismissed' | 'false_positive';
 
 export interface ActionCardCreateInput {
   title: string;
@@ -167,4 +180,36 @@ function scoreFromOutcomeStatus(status: OutcomeReviewDraft['status']): number {
   if (status === 'not_met') return 3;
   if (status === 'inconclusive') return 5;
   return 0;
+}
+
+/**
+ * P1-4 (2026-05-11): 用户对卡片做决策 — accepted / adjusted / declined / dismissed / false_positive.
+ * 后端落 user_decision + decided_at + decision_reason. declined / dismissed / false_positive 自动归档.
+ */
+export async function recordCardDecision(
+  cardId: number,
+  decision: CardDecision,
+  reason?: string,
+  adjustedPayload?: Record<string, unknown>,
+): Promise<ActionCard> {
+  const { data } = await api.post<ActionCard>(`/action-cards/${cardId}/decision`, {
+    decision,
+    reason,
+    adjusted_payload: adjustedPayload,
+  });
+  return data;
+}
+
+/**
+ * P1-5 (2026-05-11): 通知点击回写 — 客户端打开 health://card/{id} 深链时调.
+ * 后端落 push_clicked_at + seen_at, 已 stamp 不覆盖.
+ * 失败静默 (旁路语义): 是埋点, 不该影响用户打开页面.
+ */
+export async function recordCardPushClick(cardId: number): Promise<void> {
+  try {
+    await api.post(`/action-cards/${cardId}/click`);
+  } catch (err) {
+    // 失败不抛, 不影响 UI
+    console.warn('[actionCards] click 回写失败', err);
+  }
 }
