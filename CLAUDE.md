@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Doc map — read the right file
+
+Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` → `AGENTS.md`。两条路径下 `AGENTS.md` 都是安全/日志/测试/部署/隐私的最终裁判 —— **本文件不重述 `AGENTS.md` 的硬规范**，只在需要时指一下章节。
+
+| 我要做的事 | 读这个 |
+|---|---|
+| 项目结构 / 命令 / 架构总览 / Multi-Agent 系统 | 本文件 |
+| 安全 / 日志 / 测试 / 隐私 / 部署 / DB / 提交规范的硬约束 | `AGENTS.md` (992 行) |
+| LLM Harness 设计（source-aware fast path / verification before write / tool schema / memory 4-stage / streaming） | `docs/HARNESS.md` |
+| iOS / Expo 工作流通用经验（Metro / dev-client / EAS 异步双通道） | `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md` |
+| Expo local native module 手写规则 | `~/work/personal/PRACTICES/expo-local-module-podspec.md` |
+| 新功能起步（四问 + ASCII 数据流） | `~/work/personal/PRACTICES/feature-plan.md` |
+
+> **README.md 关于移动端的描述已过时**（仍写 Capacitor），以本文件 §"移动端构建方向" 为准。
+
 ## Project Overview
 
 AI-driven health management platform with a Next.js web frontend, FastAPI backend, an Expo React Native app for iPhone/iPad, a WeChat mini program, and a standalone MCP server. Integrates Garmin/Withings wearables, LLM-based health analysis, and an OpenClaw AI assistant.
@@ -419,20 +434,19 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 
 ## Conventions
 
-- **Git commits**: Conventional Commits in Chinese — `feat: 新功能`, `fix: 修复`, `docs:`, `refactor:`, `test:`
-- **Frontend**: TypeScript, Tailwind CSS, Next.js App Router
-- **Backend**: Python PEP 8, FastAPI, SQLAlchemy ORM, Pydantic schemas
-- **API prefix**: All backend routes under `/api/v1`
-- **Environment vars**: Production secrets in `.env-online` (not committed), synced by deploy script
-- **Database types**: `JSONB` for JSON columns, `TIMESTAMP WITH TIME ZONE` for timestamps
-- **Security & quality standards**: `AGENTS.md` 是安全/日志/测试/性能/隐私/提交/应急响应/部署/数据库 9 大规范的权威来源（992 行）。**必读触发**：
-  - 新增 API 路由 / 改认证 / 改 CORS → §1 安全规范
-  - 加日志或改日志格式 → §2 日志规范
-  - 加测试（单元/集成/E2E）或改 fixture → §3 测试规范
-  - 改 DB schema / 索引 / JSONB → §9 数据库规范
-  - 部署脚本或 CI 改动 → §8 部署规范
-  - 处理用户敏感数据（基因、化验、CGM、消息）→ §5 数据安全与隐私
-  - 写 commit / 发 PR → §6 代码提交规范
+硬规范的权威来源是 `AGENTS.md`（992 行，9 大章节）。下面只列本文件必要的提示，**细节别在这里重述,去读 `AGENTS.md` 对应章节**：
+
+| 触发场景 | 去读 |
+|---|---|
+| 新 API 路由 / 改认证 / 改 CORS | `AGENTS.md §1 安全` |
+| 加/改日志 | `§2 日志` |
+| 加测试 / 改 fixture | `§3 测试` |
+| 改 DB schema / 索引 / JSONB | `§9 数据库` |
+| 部署脚本 / CI 改动 | `§8 部署` |
+| 处理敏感数据（基因、化验、CGM、消息） | `§5 数据安全与隐私` |
+| 写 commit / 发 PR | `§6 代码提交规范` |
+
+本文件范围内只记与架构相关的一条：所有后端路由挂在 `/api/v1` 下;生产密钥在 `.env-online`(不入库,`deploy.sh` 同步)。
 
 ## Complexity Budget (复杂度预算)
 
@@ -441,12 +455,14 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 ### File size
 
 - **目标**：单个 `.py` / `.tsx` / `.ts` 文件不超过 500 行。新代码应遵守；已超限的文件不应扩大。
-- **豁免**：自动生成的文件（文件名含 `.generated.`，如 `frontend/src/types/api.generated.ts`）不受约束。
-- **现状是债务而非合规**：截至最近一次检查，已有 20+ 个文件超过 500 行（扫描 `find backend/app frontend/src mobile -name '*.py' -o -name '*.tsx'`）。重点超标项：
-  - `backend/app/services/data_collection/garmin_connect.py`（~2800 行）
-  - `backend/app/tasks/notifications.py`（~1500 行）
-  - `backend/app/api/genetic_data.py`、`services/workout_sync.py`、`services/daily_recommendation.py`、`api/knowledge.py`、`api/workout.py`、`services/health_analysis.py`、`api/family_health.py` 等（~1000–1300 行）
-  - `frontend/src/app/goals/page.tsx`、`app/dashboard/page.tsx`、`app/settings/components/GarminSection.tsx` 等（~800–950 行）
+- **豁免**：自动生成的文件（文件名含 `.generated.`）不受约束。
+- **现状是债务而非合规**：仓库有 20+ 文件超过 500 行，少数接近 2000+。需要当前实况时现场跑（别把数字钉在文档里,会过时）：
+
+  ```bash
+  find backend/app frontend/src mobile -type f \( -name '*.py' -o -name '*.tsx' -o -name '*.ts' \) \
+    ! -name '*.generated.*' -exec wc -l {} + | sort -rn | head -20
+  ```
+
 - **操作原则**：修复不是目标，但"下次碰这个文件的时候顺手拆"是默认姿势。新加功能禁止往 1000+ 行的文件继续堆。
 
 ### Router organization
