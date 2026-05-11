@@ -722,6 +722,32 @@ class AgentExecutor:
         data = args.get("data", {})
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
+        # water: 必须显式提供 amount, 不再悄悄默认 250ml.
+        # 之前 LLM 在回答健康问题时偶发误调 health_record(water) 不带 amount,
+        # 静默默认 250 → 用户看到莫名打卡. 现在: 没传 amount 直接 Error;
+        # 传了也走 confirm gate, 跟 weight/blood_pressure 一致.
+        if rtype == "water":
+            amount = data.get("amount") or args.get("amount")
+            if amount is None:
+                return (
+                    "Error: water 记录必须提供 amount (毫升, 整数). 例如 "
+                    '{"record_type":"water","data":{"amount":250}}. '
+                    "若用户没提具体毫升数, 请先问'喝了多少 ml?'再调用本工具."
+                )
+            try:
+                amount_int = int(amount)
+            except (ValueError, TypeError):
+                return f"Error: water amount 必须是整数毫升 (got {amount!r})"
+            if amount_int <= 0 or amount_int > 5000:
+                return f"Error: water amount={amount_int} 不合理 (1-5000ml)"
+            data["amount"] = amount_int
+            check = _confirm_or_describe(
+                args, data,
+                preview=f"喝水 {amount_int}ml" + (f", {data['drink_type']}" if data.get("drink_type") else ""),
+            )
+            if check:
+                return check
+
         # 补全 diet 必填字段
         if rtype == "diet":
             data.setdefault("record_date", today)
@@ -900,7 +926,7 @@ class AgentExecutor:
 
         record_map = {
             "water": ("/water/records/quick", "POST", {
-                "amount": data.get("amount", 250),
+                "amount": data["amount"],
                 **({"drink_type": data["drink_type"]} if data.get("drink_type") else {}),
             }),
             "weight": ("/weight/records", "POST", data),

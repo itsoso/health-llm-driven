@@ -128,7 +128,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                         "type": "object",
                         "description": """记录的具体数据. 每种 type 的 schema:
 
-water: {"amount": 250}  // 毫升, 默认 250
+water: {"amount": 250}  // 毫升, **必填整数 1-5000**. 用户没提具体毫升数就先问'喝了多少 ml?', 不要自己默认
 diet:  {"meal_type": "breakfast|lunch|dinner|snack",  // 用英文枚举
         "food_items": "牛奶 200ml + 面包 1 片",      // 必填, 不能只给 calories
         "calories": 450,                              // 可选, 用户没提就 LLM 自己估
