@@ -507,7 +507,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建 + 缓存 + 格式化 |
-| `backend/app/agents/safety_guardian/` | 47 条安全规则引擎（不依赖 LLM） |
+| `backend/app/agents/safety_guardian/` | 51 条安全规则引擎（不依赖 LLM） |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 + 恢复行动 |
 | `backend/app/agents/fuel_strategist/` | 营养缺口 + 基因驱动饮食 |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 |
