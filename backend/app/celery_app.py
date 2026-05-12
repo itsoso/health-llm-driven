@@ -77,10 +77,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=6, minute=0),
     },
 
-    # 每2小时同步 Garmin 数据（Agent Native: 趋势检测 + session 复用不限流）
+    # 每2小时同步 Garmin 数据(Agent Native: 趋势检测 + session 复用不限流)
     "sync-garmin-2hourly": {
         "task": "app.tasks.garmin_sync.sync_all_users_garmin",
-        "schedule": crontab(hour="1,3,5,7,9,11,13,15", minute=1),  # UTC → 北京 09/11/13/15/17/19/21/23 点
+        "schedule": crontab(hour="9,11,13,15,17,19,21,23", minute=1),  # 北京 09/11/13/15/17/19/21/23 点
     },
 
     # 每日 22:00 发送睡眠提醒
@@ -185,10 +185,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=30),
     },
 
-    # 每日 09:30 早安健康摘要（等 Garmin 09:01 同步完成后推送）
+    # 每日 09:30 早安健康摘要(等 Garmin 09:01 同步完成后推送)
     "morning-health-summary": {
         "task": "app.tasks.notifications.send_morning_health_summary",
-        "schedule": crontab(hour=1, minute=30),  # UTC 01:30 = 北京 09:30
+        "schedule": crontab(hour=9, minute=30),  # 北京 09:30
     },
 
     # 每12小时续期 Garmin OAuth session
@@ -197,16 +197,16 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour="*/12", minute=15),
     },
 
-    # 每日 09:32 健康简报（写入 AI 对话，等 Garmin 同步后）
+    # 每日 09:32 健康简报(写入 AI 对话,等 Garmin 同步后)
     "daily-briefing-message": {
         "task": "app.tasks.notifications.generate_daily_briefing_message",
-        "schedule": crontab(hour=1, minute=32),  # UTC 01:32 = 北京 09:32
+        "schedule": crontab(hour=9, minute=32),  # 北京 09:32
     },
 
     # 每日 09:20 Insight 生成 (briefing 前跑, briefing 能读到最新 insight)
     "daily-insight-generate": {
         "task": "app.tasks.insights.generate_daily_insights_all_users",
-        "schedule": crontab(hour=1, minute=20),  # UTC 01:20 = 北京 09:20
+        "schedule": crontab(hour=9, minute=20),  # 北京 09:20
     },
 
     # 每周一 09:05 周报（写入 AI 对话）
@@ -291,11 +291,11 @@ celery_app.conf.beat_schedule = {
     },
 
     # Agent-Native v3 Increment 4 §1 — Episode Reflection 回填:
-    # 每天早上 09:43 北京 (UTC 01:43, Garmin 同步 01:30 完成后),
+    # 每天早上 09:43 北京 (Garmin 同步 09:01 完成后),
     # 对最近关闭的 Episode 拉次日 HRV/Sleep, 写 metrics_delta + summary.
     "episode-reflection": {
         "task": "app.tasks.episode_reflection.run_episode_reflection",
-        "schedule": crontab(hour=1, minute=43),
+        "schedule": crontab(hour=9, minute=43),  # 北京 09:43
     },
 }
 
