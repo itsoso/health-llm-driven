@@ -260,3 +260,39 @@ def test_summary_flags_blocks():
     ])
     f = s.run(t, {})
     assert "⛔" in f.summary
+
+
+# ─────────── 肾结石 + VDR → 自动降 VD 剂量 (memory bug 修复 2026-05-12) ───────────
+
+def test_kidney_stone_history_downscales_vitamin_d():
+    """memory feedback: itsoso 肾结石 3mm 史 + VDR + 5000IU 长期有钙沉积风险.
+    应自动降 dose 到 1000 IU + warning."""
+    from app.twin.schema import ChronicConditionState
+    s = SupplementAdvisorSpecialist()
+    t = _twin_with_genes([
+        {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
+    ])
+    t.chronic = ChronicConditionState(active_conditions=["左肾结石", "过敏性鼻炎"])
+    f = s.run(t, {})
+    d_rec = next((x for x in f.findings if x.get("id") == "vdr_vitamin_d"), None)
+    assert d_rec is not None
+    assert "1000 IU" in d_rec["dose"]
+    assert "肾结石" in d_rec.get("warning", "")
+    # 肾结石史也不加 K2
+    ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
+    assert "vdr_vitamin_k2" not in ids
+
+
+def test_no_kidney_stone_keeps_normal_vitamin_d_dose():
+    """不带肾结石史 → dose 维持 2000-4000 IU + 加 K2."""
+    s = SupplementAdvisorSpecialist()
+    t = _twin_with_genes([
+        {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
+    ])
+    f = s.run(t, {})
+    d_rec = next((x for x in f.findings if x.get("id") == "vdr_vitamin_d"), None)
+    assert d_rec is not None
+    assert "2000-4000 IU" in d_rec["dose"]
+    assert "肾结石" not in d_rec.get("warning", "")
+    ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
+    assert "vdr_vitamin_k2" in ids

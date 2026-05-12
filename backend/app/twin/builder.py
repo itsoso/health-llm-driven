@@ -774,6 +774,25 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         twin.chronic.rhinitis_today = checkin
         sources.add("health_checkin")
 
+    # — Chronic conditions (active user_disease_profiles)
+    # 让 SupplementAdvisor 等 specialist 能拿到"肾结石/高血压/糖尿病"等病史做剂量调整
+    try:
+        from app.models.disease_tracking import UserDiseaseProfile
+        active_profiles = (
+            db.query(UserDiseaseProfile)
+            .filter(
+                UserDiseaseProfile.user_id == user_id,
+                UserDiseaseProfile.status.in_(["chronic", "improving", "controlled"]),
+            )
+            .all()
+        )
+        condition_names = [p.disease_name for p in active_profiles if p.disease_name]
+        if condition_names:
+            twin.chronic.active_conditions = condition_names
+            sources.add("chronic_conditions")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] 拉 chronic conditions 失败 (旁路): {e}")
+
     # — Supplement
     supp = _collectors.fetch_supplement_today(db, user_id)
     twin.supplement = SupplementState(**supp)

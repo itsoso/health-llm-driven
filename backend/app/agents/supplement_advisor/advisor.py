@@ -325,13 +325,32 @@ class SupplementAdvisorSpecialist:
             if hit_vdr or low_vd:
                 rule_d = next(r for r in SUPPLEMENT_RULES if r["id"] == "vdr_vitamin_d")
                 rec_d = self._rule_to_rec(rule_d, twin)
+                # 肾结石史 → 自动降 dose 到 1000 IU + warning (memory 提的硬规则)
+                conditions = (twin.chronic.active_conditions or [])
+                has_kidney_stone = any(
+                    any(k in (cond or "") for k in ["肾结石", "结石", "kidney stone", "nephrolithiasis"])
+                    for cond in conditions
+                )
+                if has_kidney_stone:
+                    rec_d["dose"] = "1000 IU/日 (因肾结石史降量)"
+                    rec_d["warning"] = (
+                        "⚠️ 你有肾结石病史, 高剂量 VD 增加钙沉积风险 → "
+                        "建议起始 1000 IU/日, 复查 25-OH-D 与血钙后再调整"
+                    )
                 if _has_med(twin, ["华法林", "warfarin"]):
-                    rec_d["warning"] = "⚠️ 华法林 × D3 安全，但 K2 与华法林绝对禁忌 — 本次不建议加 K2。"
+                    if not has_kidney_stone:
+                        rec_d["warning"] = "⚠️ 华法林 × D3 安全, 但 K2 与华法林绝对禁忌 — 本次不建议加 K2."
+                    else:
+                        rec_d["warning"] = (
+                            rec_d.get("warning", "") + " 华法林 × D3 安全, 但 K2 与华法林禁忌 — 不加 K2."
+                        )
                     recommendations.append(rec_d)
                 else:
                     recommendations.append(rec_d)
-                    rule_k = next(r for r in SUPPLEMENT_RULES if r["id"] == "vdr_vitamin_k2")
-                    recommendations.append(self._rule_to_rec(rule_k, twin))
+                    # 肾结石史也不加 K2 — 钙调控更谨慎
+                    if not has_kidney_stone:
+                        rule_k = next(r for r in SUPPLEMENT_RULES if r["id"] == "vdr_vitamin_k2")
+                        recommendations.append(self._rule_to_rec(rule_k, twin))
 
             # 7. SOD2 / statin → CoQ10
             hit_sod, _ = _has_snp(twin, "SOD2")
