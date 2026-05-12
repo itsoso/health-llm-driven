@@ -42,8 +42,16 @@ class Goal(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # 目标基本信息
-    goal_type = Column(Enum(GoalType, native_enum=False, length=50), nullable=False)  # 目标类型
-    goal_period = Column(Enum(GoalPeriod, native_enum=False, length=50), nullable=False)  # 目标周期
+    goal_type = Column(
+        Enum(GoalType, native_enum=False, length=50,
+             values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )  # 目标类型
+    goal_period = Column(
+        Enum(GoalPeriod, native_enum=False, length=50,
+             values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )  # 目标周期
     title = Column(String, nullable=False)  # 目标标题
     description = Column(Text)  # 目标描述
 
@@ -60,7 +68,11 @@ class Goal(Base):
     implementation_steps = Column(Text)  # 实现步骤（JSON字符串或文本）
 
     # 状态
-    status = Column(Enum(GoalStatus, native_enum=False, length=50), default=GoalStatus.ACTIVE)  # 目标状态
+    status = Column(
+        Enum(GoalStatus, native_enum=False, length=50,
+             values_callable=lambda x: [e.value for e in x]),
+        default=GoalStatus.ACTIVE,
+    )  # 目标状态
 
     # 优先级
     priority = Column(Integer, default=5)  # 优先级 (1-10)

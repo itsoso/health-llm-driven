@@ -14,19 +14,21 @@ import api from '../../services/api';
 import { useTheme } from '../../hooks/useTheme';
 import { spacing, radii } from '../../constants/theme';
 
-interface Weather {
-  temp_c?: number;
-  feels_like_c?: number;
-  description?: string;
-  text?: string;
+interface WeatherInner {
+  available?: boolean;
+  temperature?: number;
+  feels_like?: number;
+  weather?: string;
   humidity?: number;
-  city?: string;
+}
+interface WeatherResponse {
+  weather?: WeatherInner;
 }
 
 interface AirQuality {
   aqi?: number;
-  level?: string;
-  category?: string;
+  aqi_level?: string;
+  aqi_description?: string;
   primary_pollutant?: string;
 }
 
@@ -52,12 +54,12 @@ export default function EnvironmentCard() {
   const router = useRouter();
   const { c } = useTheme();
 
-  const weatherQ = useQuery<Weather | null>({
+  const weatherQ = useQuery<WeatherInner | null>({
     queryKey: ['env', 'weather'],
     queryFn: async () => {
       try {
-        const { data } = await api.get<Weather>('/environment/weather');
-        return data;
+        const { data } = await api.get<WeatherResponse>('/environment/weather');
+        return data?.weather ?? null;
       } catch {
         return null;
       }
@@ -84,7 +86,7 @@ export default function EnvironmentCard() {
   // 整卡都没数据 → 不显示
   if (!w && !a) return null;
 
-  const weatherDesc = w?.description || w?.text || '';
+  const weatherDesc = w?.weather || '';
   const aqi = a?.aqi;
 
   return (
@@ -93,11 +95,11 @@ export default function EnvironmentCard() {
         {/* 左: 天气 */}
         <View style={styles.left}>
           <Text style={[styles.temp, { color: c.labelPrimary }]}>
-            {w?.temp_c != null ? `${Math.round(w.temp_c)}°` : '—'}
+            {w?.temperature != null ? `${Math.round(w.temperature)}°` : '—'}
           </Text>
           <Text style={[styles.weatherText, { color: c.labelSecondary }]} numberOfLines={1}>
             {weatherDesc || '天气数据暂无'}
-            {w?.city ? ` · ${w.city}` : ''}
+            {w?.humidity != null ? ` · 湿度 ${w.humidity}%` : ''}
           </Text>
         </View>
 

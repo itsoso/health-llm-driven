@@ -92,12 +92,20 @@ def _resolve_training_status(twin) -> tuple[str, str]:
     """优先用 Garmin 官方 training_status, 否则用自算 ACWR 派生.
 
     Returns: (status, source) — source ∈ {"garmin", "computed"}
+
+    冲突保护 (2026-05-12, G-W4 自评发现): Garmin 偶尔在用户高强度周仍标
+    'recovery'/'detraining', 但 ACWR > 1.5 明确指向过载. 此时以数据为准,
+    覆盖到 'overload', source 标 'computed' 让 UI 显示 "自算".
+    避免 summary 出现 "负荷偏低（ACWR 2.38）" 这种自相矛盾。
     """
     b = twin.behavioral
+    acwr = _safe(b.acute_chronic_ratio)
     garmin_status = getattr(b, "training_status", None)
     if garmin_status and garmin_status in _GARMIN_STATUS_MAP:
-        return _GARMIN_STATUS_MAP[garmin_status], "garmin"
-    acwr = _safe(b.acute_chronic_ratio)
+        mapped = _GARMIN_STATUS_MAP[garmin_status]
+        if acwr is not None and acwr > 1.5 and mapped in ("undertrained", "detraining"):
+            return "overload", "computed"
+        return mapped, "garmin"
     return _training_status(acwr, b.workouts_this_week), "computed"
 
 

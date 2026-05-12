@@ -274,15 +274,17 @@ class FuelStrategistSpecialist:
             for n in nudges:
                 findings.append({"type": "gene_nudge", **n})
 
-            # 7. 代谢异常标记
-            abnormal_names = [
-                a.get("item_name")
-                for a in (twin.labs.flagged_abnormal or [])
-                if a.get("item_name") in (
+            # 7. 代谢异常标记 (按 item_name 去重, 多次复查同一指标只显示一次)
+            seen_lab = set()
+            abnormal_names: List[str] = []
+            for a in (twin.labs.flagged_abnormal or []):
+                name = a.get("item_name")
+                if name in (
                     "LDL", "低密度脂蛋白", "甘油三酯", "血糖", "HbA1c",
                     "糖化血红蛋白", "谷丙转氨酶", "谷草转氨酶",
-                )
-            ]
+                ) and name not in seen_lab:
+                    seen_lab.add(name)
+                    abnormal_names.append(name)
             if abnormal_names:
                 findings.append({
                     "type": "labs_concern",
