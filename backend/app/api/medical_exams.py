@@ -123,6 +123,25 @@ def get_my_medical_exams(
 
 # ========== Calibrate UI: 单条 item 校正 (OCR 抽错值后用户回写) ==========
 
+@router.get("/{exam_id}/explain", summary="体检异常解释包 (review #2, 2026-05-12)")
+def get_exam_explain(
+    exam_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """单次体检 → 异常项 + 基因关联 + 趋势 + LLM 解释 + 行动 + 复查建议.
+
+    用户痛点是"我体检异常怎么办" — 这个端点把单次 exam 一次性聚合成
+    "为什么异常 + 你能做什么 + 何时复查 + 找什么医生" 的完整包.
+    """
+    from app.services.exam_explain_service import build_exam_explain
+
+    pkg = build_exam_explain(db, current_user.id, exam_id)
+    if pkg is None:
+        raise HTTPException(status_code=404, detail="体检不存在或无权限")
+    return pkg
+
+
 @router.patch("/items/{item_id}", response_model=MedicalExamItemResponse)
 def update_medical_exam_item(
     item_id: int,
