@@ -99,7 +99,7 @@ export default function GeneticReportScreen() {
   if (!data.profile) {
     return (
       <>
-        <Stack.Screen options={{ title: '我的基因' }} />
+        <Stack.Screen options={{ title: '我的基因', headerShown: true }} />
         <View style={styles.center}>
           <Ionicons name="cellular-outline" size={48} color={c.labelTertiary} />
           <Text style={[styles.emptyTitle, { color: c.labelPrimary }]}>还没上传基因数据</Text>
@@ -113,7 +113,7 @@ export default function GeneticReportScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: '我的基因', headerBackTitle: '返回' }} />
+      <Stack.Screen options={{ title: '我的基因', headerBackTitle: '返回', headerShown: true }} />
       <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['bottom']}>
         <ScrollView
           contentContainerStyle={styles.content}

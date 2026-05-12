@@ -351,7 +351,7 @@ function fmt(v?: number | null): string {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.lg },
+  content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.lg },  // 110 = tab bar 83 + 缓冲, 否则 AI 会诊被遮
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: spacing.sm },
   headerSettings: {
     width: 40,

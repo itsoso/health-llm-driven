@@ -78,7 +78,7 @@ export default function MyProgressScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: '我的进度', headerBackTitle: '返回' }} />
+      <Stack.Screen options={{ title: '我的进度', headerBackTitle: '返回', headerShown: true }} />
       <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['bottom']}>
         <ScrollView
           contentContainerStyle={styles.content}

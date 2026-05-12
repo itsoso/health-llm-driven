@@ -79,7 +79,7 @@ export default function MovementPlanScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: '我的运动方案', headerBackTitle: '返回' }} />
+      <Stack.Screen options={{ title: '我的运动方案', headerBackTitle: '返回', headerShown: true }} />
       <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['bottom']}>
         <ScrollView
           contentContainerStyle={styles.content}
