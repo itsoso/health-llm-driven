@@ -110,11 +110,16 @@ def test_build_report_orders_hits_first_high_risk_top(db):
     assert last_hit_idx < first_miss_idx
 
 
-def test_build_report_picks_profile_with_most_variants(db):
+def test_build_report_picks_profile_with_most_known_hits(db):
+    """优先选 KNOWN_SNPS 命中多的 profile, 不是 variants 总数最多的.
+
+    bug 历史 (2026-05-12): user 3 的 PDF profile 有 605 variants 但 gene/result
+    串字段, TXT profile 只 104 variants 但干净. 之前简单按总数排选了脏 PDF.
+    """
     user = _make_user(db, "multi_profile")[0]
     p1 = _make_profile(db, user.id, "微基因 (旧)")
     p2 = _make_profile(db, user.id, "WeGene 完整")
-    # p2 有 2 条 variants, p1 有 1 条 → 选 p2
+    # p2 有 2 条字典命中, p1 只 1 条 → 选 p2
     _make_variant(db, p1, gene="MTHFR", variant_name="C677T")
     _make_variant(db, p2, gene="MTHFR", variant_name="C677T")
     _make_variant(db, p2, gene="ALDH2", variant_name="酒精代谢")
@@ -122,6 +127,31 @@ def test_build_report_picks_profile_with_most_variants(db):
     r = genetic_report.build_report(db, user.id)
     assert r["profile"]["id"] == p2.id
     assert r["stats"]["hits"] == 2
+
+
+def test_build_report_prefers_clean_txt_over_dirty_pdf(db):
+    """profile_5 风格: variants 多但字段串错, 应该选 profile_4 风格干净小集合."""
+    user = _make_user(db, "clean_vs_dirty")[0]
+    clean = _make_profile(db, user.id, "WeGene TXT")
+    dirty = _make_profile(db, user.id, "PDF 脏数据")
+
+    # 干净的 — 3 条字典命中
+    _make_variant(db, clean, gene="MTHFR", variant_name="C677T", risk_level="medium")
+    _make_variant(db, clean, gene="ALDH2", variant_name="酒精代谢", risk_level="medium")
+    _make_variant(db, clean, gene="VDR", variant_name="维生素D受体", risk_level="low")
+
+    # 脏的 — 100 条 variants, 但 gene_name 不在字典里 (模拟 PDF 解析串字段)
+    for i in range(100):
+        _make_variant(
+            db, dirty,
+            gene=f"BOGUS_GENE_{i}",
+            variant_name=f"RS{1000000 + i}",
+            risk_level="low",
+        )
+
+    r = genetic_report.build_report(db, user.id)
+    assert r["profile"]["id"] == clean.id
+    assert r["stats"]["hits"] == 3
 
 
 # ── endpoint ────────────────────────────────────────────────────────────
