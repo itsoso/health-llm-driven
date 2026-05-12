@@ -50,16 +50,19 @@ function pickTwinSnapshot(twin: any): TwinSnapshot {
   if (!twin) return {};
   const phys = twin.physiological ?? {};
   const body = twin.body_composition ?? {};
-  // 字段名对齐后端 app/twin/schema.py:
+  const labs = twin.labs ?? {};
+  // 字段名对齐后端 app/twin/schema.py + builder.py:
   //   PhysiologicalState: hrv_latest / hrv_7d_avg / sleep_score_latest /
   //                       resting_hr_latest / spo2_avg / spo2_min_overnight
-  //   BodyCompositionState: blood_pressure_systolic / blood_pressure_diastolic
+  //   LabsState: blood_pressure_systolic / blood_pressure_diastolic / blood_pressure_date
+  //     (注意: BodyCompositionState 也声明了 blood_pressure_*, 但 builder 只填 labs.
+  //      2026-05-12 修: 之前读 body 永远 null, 改读 labs 优先, body 兜底)
   return {
     hrv: phys.hrv_latest ?? phys.hrv_7d_avg ?? null,
     sleep_score: phys.sleep_score_latest ?? null,
     resting_hr: phys.resting_hr_latest ?? null,
-    systolic_bp: body.blood_pressure_systolic ?? null,
-    diastolic_bp: body.blood_pressure_diastolic ?? null,
+    systolic_bp: labs.blood_pressure_systolic ?? body.blood_pressure_systolic ?? null,
+    diastolic_bp: labs.blood_pressure_diastolic ?? body.blood_pressure_diastolic ?? null,
     spo2_avg: phys.spo2_avg ?? phys.spo2_min_overnight ?? null,
   };
 }
