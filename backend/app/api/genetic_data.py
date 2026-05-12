@@ -1483,6 +1483,24 @@ def get_my_genetic_report(
     }
 
 
+@router.get("/snp/{rsid}", summary="单 SNP 详情 + LLM 个性化建议")
+def get_snp_detail_endpoint(
+    rsid: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """单 SNP 详情页. 返回静态信息 + 用户命中 + LLM 个性化 actions
+    (饮食/补剂/运动/复查/药物注意, cached 24h) + 关联 cards + 同 cluster siblings.
+
+    rsid 必须在 KNOWN_SNPS 字典中, 否则 404."""
+    from app.services.genetic_report import get_snp_detail
+
+    detail = get_snp_detail(db, current_user.id, rsid)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"未知 SNP rsid={rsid}")
+    return detail
+
+
 @router.post("/profiles/{profile_id}/reconcile", summary="管理员: 按 KNOWN_SNPS 字典校对脏 profile")
 def reconcile_profile_by_dict(
     profile_id: int,

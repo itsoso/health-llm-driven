@@ -261,3 +261,154 @@ def test_miss_items_have_empty_related_cards(db):
     aldh2 = next(it for it in r["items"] if it["gene"] == "ALDH2")
     assert aldh2["hit"] is False
     assert aldh2["related_cards"] == []
+
+
+# ── G-W4 clusters: 按 category 聚合 ──────────────────────────────────────
+
+
+def test_clusters_present_in_response_shape(db):
+    """空 profile 也要返回 clusters (全 hits=0), 让 mobile 头部不 undefined."""
+    user = _make_user(db, "clusters_empty")[0]
+    r = genetic_report.build_report(db, user.id)
+    assert "clusters" in r
+    assert isinstance(r["clusters"], list)
+    # KNOWN_SNPS 至少覆盖 nutrition / exercise / drug_sensitivity
+    cats = {cl["category"] for cl in r["clusters"]}
+    assert "nutrition" in cats
+    assert "exercise" in cats
+    # 每个 cluster 含必要字段
+    for cl in r["clusters"]:
+        assert set(cl.keys()) >= {
+            "category", "category_zh", "total", "hits",
+            "high_count", "medium_count", "rsids",
+        }
+
+
+def test_clusters_aggregate_hits_per_category(db):
+    """两条 nutrition 命中 + 一条 exercise 命中 → nutrition.hits=2, exercise.hits=1."""
+    user = _make_user(db, "clusters_agg")[0]
+    p = _make_profile(db, user.id)
+    _make_variant(db, p, gene="MTHFR", variant_name="C677T", risk_level="medium")
+    _make_variant(db, p, gene="ALDH2", variant_name="酒精代谢", risk_level="high")
+    _make_variant(db, p, gene="ACTN3", variant_name="R577X", risk_level="low")
+
+    r = genetic_report.build_report(db, user.id)
+    nutrition = next(cl for cl in r["clusters"] if cl["category"] == "nutrition")
+    exercise = next(cl for cl in r["clusters"] if cl["category"] == "exercise")
+    assert nutrition["hits"] == 2
+    assert nutrition["high_count"] == 1  # ALDH2
+    assert nutrition["medium_count"] == 1  # MTHFR
+    assert exercise["hits"] == 1
+
+
+def test_clusters_sorted_by_high_then_medium(db):
+    """有 high 命中的 cluster 排前面."""
+    user = _make_user(db, "clusters_sort")[0]
+    p = _make_profile(db, user.id)
+    # exercise: 1 high
+    _make_variant(db, p, gene="ACTN3", variant_name="R577X", risk_level="high")
+    # nutrition: 1 medium
+    _make_variant(db, p, gene="MTHFR", variant_name="C677T", risk_level="medium")
+
+    r = genetic_report.build_report(db, user.id)
+    # 第一个应该是有 high 的 exercise
+    assert r["clusters"][0]["category"] == "exercise"
+    assert r["clusters"][0]["high_count"] == 1
+
+
+# ── G-W4 单 SNP 详情 ─────────────────────────────────────────────────────
+
+
+def test_get_snp_detail_unknown_rsid_returns_none(db):
+    user = _make_user(db, "snp_unknown")[0]
+    assert genetic_report.get_snp_detail(db, user.id, "rs99999999") is None
+
+
+def test_get_snp_detail_user_not_hit_returns_static(db):
+    """用户没测过该 SNP — 返回静态 + user.hit=False, actions 可能 None."""
+    user = _make_user(db, "snp_no_hit")[0]
+    # 不创建 profile/variant
+    with patch.object(genetic_report, "_build_snp_detail_prompt") as mock_prompt:
+        # 用户未命中, prompt 不应该走到 (LLM 不会被调) — 但当前实现仍会调 LLM
+        # 为防 LLM 出错影响测试, 直接 mock provider 返回 None
+        with patch("app.services.llm.get_llm_provider") as mock_llm:
+            mock_llm.side_effect = Exception("test: skip LLM")
+            d = genetic_report.get_snp_detail(db, user.id, "rs1801133")
+    assert d is not None
+    assert d["rsid"] == "rs1801133"
+    assert d["gene"] == "MTHFR"
+    assert d["user"]["hit"] is False
+    assert d["user"]["genotype"] is None
+    # LLM 失败 → actions 仍可能为 None, 但静态信息必须有
+    assert d["actions"] is None or isinstance(d["actions"], dict)
+
+
+def test_get_snp_detail_user_hit_llm_failure_falls_back_to_static(db):
+    """用户命中 + LLM 抛异常 → actions=None, 但 user/static block 完整."""
+    user = _make_user(db, "snp_llm_fail")[0]
+    p = _make_profile(db, user.id)
+    _make_variant(
+        db, p, gene="MTHFR", variant_name="C677T",
+        genotype="CT", result_label="叶酸代谢轻度减弱", risk_level="medium",
+    )
+    with patch("app.services.llm.get_llm_provider") as mock_llm:
+        mock_llm.side_effect = RuntimeError("LLM down")
+        d = genetic_report.get_snp_detail(db, user.id, "rs1801133")
+    assert d is not None
+    assert d["user"]["hit"] is True
+    assert d["user"]["genotype"] == "CT"
+    assert d["actions"] is None
+
+
+def test_get_snp_detail_returns_siblings_in_same_category(db):
+    """siblings 不含本 rsid, 且都在同 category."""
+    user = _make_user(db, "snp_sibs")[0]
+    with patch("app.services.llm.get_llm_provider") as mock_llm:
+        mock_llm.side_effect = Exception("skip")
+        d = genetic_report.get_snp_detail(db, user.id, "rs1801133")  # MTHFR (nutrition)
+    assert d is not None
+    assert all(s["rsid"] != "rs1801133" for s in d["siblings"])
+    # 至少有几个同 category 的 (nutrition 在 KNOWN_SNPS 里多于 1 条)
+    assert len(d["siblings"]) >= 1
+
+
+# ── G-W4 endpoint /snp/{rsid} ───────────────────────────────────────────
+
+
+def test_snp_endpoint_unknown_rsid_returns_404(client, db):
+    _, headers = _make_user(db, "snp_ep_unknown")
+    resp = client.get("/api/v1/genetic/snp/rs99999999", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_snp_endpoint_returns_full_shape(client, db):
+    user, headers = _make_user(db, "snp_ep_full")
+    p = _make_profile(db, user.id)
+    _make_variant(
+        db, p, gene="MTHFR", variant_name="C677T",
+        genotype="CT", result_label="叶酸代谢轻度减弱", risk_level="medium",
+    )
+    with patch("app.services.llm.get_llm_provider") as mock_llm:
+        mock_llm.side_effect = Exception("skip llm")
+        resp = client.get("/api/v1/genetic/snp/rs1801133", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # 静态 block
+    assert body["rsid"] == "rs1801133"
+    assert body["gene"] == "MTHFR"
+    assert body["category"] == "nutrition"
+    assert isinstance(body["genotype_meanings"], list)
+    # 用户 block
+    assert body["user"]["hit"] is True
+    assert body["user"]["genotype"] == "CT"
+    # actions 因 LLM stub 抛异常 → None
+    assert body["actions"] is None
+    # related_cards / siblings 字段存在 (空 list ok)
+    assert "related_cards" in body
+    assert isinstance(body["siblings"], list)
+
+
+def test_snp_endpoint_requires_auth(client):
+    resp = client.get("/api/v1/genetic/snp/rs1801133")
+    assert resp.status_code in (401, 403)

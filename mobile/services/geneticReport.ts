@@ -30,6 +30,16 @@ export interface GeneticReportItem {
   related_cards: RelatedCard[];
 }
 
+export interface Cluster {
+  category: string;
+  category_zh: string;
+  total: number;
+  hits: number;
+  high_count: number;
+  medium_count: number;
+  rsids: string[];
+}
+
 export interface GeneticReport {
   profile: {
     id: number;
@@ -38,12 +48,46 @@ export interface GeneticReport {
     notes: string | null;
   } | null;
   items: GeneticReportItem[];
+  clusters: Cluster[];
   stats: {
     total_known: number;
     hits: number;
     miss: number;
   };
   agent_summary: string | null;
+}
+
+export interface SnpActions {
+  headline: string;
+  nutrition_actions: string[];
+  supplement_actions: string[];
+  exercise_actions: string[];
+  lab_to_check: string[];
+  drug_caution: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface SnpDetail {
+  rsid: string;
+  gene: string;
+  variant_name: string;
+  category: string;
+  description: string;
+  genotype_meanings: Array<{
+    genotype: string;
+    display: string;
+    label: string;
+    risk: string;
+  }>;
+  user: {
+    hit: boolean;
+    genotype: string | null;
+    result_label: string | null;
+    risk_level: 'high' | 'medium' | 'low' | 'info' | null;
+  };
+  actions: SnpActions | null;
+  related_cards: RelatedCard[];
+  siblings: Array<{ rsid: string; gene: string; variant_name: string }>;
 }
 
 /**
@@ -56,6 +100,17 @@ export async function fetchGeneticReport(
   const { data } = await api.get<GeneticReport>(
     `/genetic/report/me?include_summary=${includeSummary}`,
   );
+  return data;
+}
+
+/**
+ * G-W4 (2026-05-12): 单 SNP 详情. 后端 LLM 缓存 24h, 返回静态信息 +
+ * 用户命中 + 个性化 actions + 关联 cards + 同 cluster siblings.
+ *
+ * actions 可能为 null (LLM 失败或用户未命中) — UI 需 fallback.
+ */
+export async function fetchSnpDetail(rsid: string): Promise<SnpDetail> {
+  const { data } = await api.get<SnpDetail>(`/genetic/snp/${rsid}`);
   return data;
 }
 

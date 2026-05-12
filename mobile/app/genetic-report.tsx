@@ -21,7 +21,7 @@ import {
   View,
   RefreshControl,
 } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -31,6 +31,7 @@ import {
   type GeneticReport,
   type GeneticReportItem,
   type RelatedCard,
+  type Cluster,
   CATEGORY_LABELS,
   RISK_COLORS,
 } from '../services/geneticReport';
@@ -40,6 +41,7 @@ import { useTheme } from '../hooks/useTheme';
 export default function GeneticReportScreen() {
   const { c } = useTheme();
   const qc = useQueryClient();
+  const router = useRouter();
   const [filterCat, setFilterCat] = useState<string | null>(null);
   const [showMisses, setShowMisses] = useState(false);
   const [expandedRsid, setExpandedRsid] = useState<Set<string>>(new Set());
@@ -138,6 +140,21 @@ export default function GeneticReportScreen() {
             </View>
           )}
 
+          {/* G-W4 Cluster 头部: 按 category 聚合, 高风险靠前. tap 切到对应 filter. */}
+          {data.clusters && data.clusters.length > 0 && (
+            <View style={styles.clusterRow}>
+              {data.clusters.map(cl => (
+                <ClusterChip
+                  key={cl.category}
+                  cluster={cl}
+                  active={filterCat === cl.category}
+                  onPress={() => setFilterCat(cl.category === filterCat ? null : cl.category)}
+                  c={c}
+                />
+              ))}
+            </View>
+          )}
+
           {/* Category filter chips */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
             <Chip label="全部" active={filterCat === null} onPress={() => setFilterCat(null)} c={c} />
@@ -174,6 +191,7 @@ export default function GeneticReportScreen() {
               item={it}
               expanded={expandedRsid.has(it.rsid)}
               onToggle={() => toggleExpand(it.rsid)}
+              onPressDetail={() => router.push(`/snp/${it.rsid}` as never)}
               c={c}
             />
           ))}
@@ -203,15 +221,64 @@ function Chip({ label, active, onPress, c }: any) {
   );
 }
 
+// G-W4: cluster 头部 — 一眼看到 nutrition/exercise/drug 等组占比, tap 可筛选.
+function ClusterChip({
+  cluster,
+  active,
+  onPress,
+  c,
+}: {
+  cluster: Cluster;
+  active: boolean;
+  onPress: () => void;
+  c: any;
+}) {
+  const hasHigh = cluster.high_count > 0;
+  const hasMed = cluster.medium_count > 0;
+  const accent = hasHigh ? '#FEE2E2' : hasMed ? '#FEF3C7' : c.bgCard;
+  const accentText = hasHigh ? '#991B1B' : hasMed ? '#92400E' : c.labelSecondary;
+  return (
+    <TouchableOpacity
+      style={[
+        styles.clusterChip,
+        {
+          backgroundColor: active ? c.brand : accent,
+          borderColor: active ? c.brand : c.separator,
+        },
+      ]}
+      onPress={onPress}
+    >
+      <Text
+        style={[
+          styles.clusterCategoryText,
+          { color: active ? '#fff' : accentText },
+        ]}
+      >
+        {cluster.category_zh}
+      </Text>
+      <Text
+        style={[
+          styles.clusterCountText,
+          { color: active ? '#fff' : c.labelTertiary },
+        ]}
+      >
+        {cluster.hits}/{cluster.total}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function SnpCard({
   item,
   expanded,
   onToggle,
+  onPressDetail,
   c,
 }: {
   item: GeneticReportItem;
   expanded: boolean;
   onToggle: () => void;
+  onPressDetail: () => void;
   c: any;
 }) {
   const isMiss = !item.hit;
@@ -280,6 +347,14 @@ function SnpCard({
             <Text style={[styles.relatedNone, { color: c.labelTertiary }]}>
               暂无基于这条基因的活跃建议
             </Text>
+          )}
+
+          {/* G-W4: 跳详情页 (LLM 个性化建议在那里) */}
+          {!isMiss && (
+            <TouchableOpacity style={styles.detailLink} onPress={onPressDetail}>
+              <Text style={[styles.detailLinkText, { color: c.brand }]}>查看 AI 详细解读</Text>
+              <Ionicons name="chevron-forward" size={14} color={c.brand} />
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -414,5 +489,34 @@ const styles = StyleSheet.create({
   stageText: { fontSize: 10, fontWeight: '600' },
   effectText: { fontSize: 12, fontWeight: '700' },
   effectMeta: { fontSize: 10 },
+  // G-W4 cluster 头 + 详情链接
+  clusterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginVertical: spacing.xs,
+  },
+  clusterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  clusterCategoryText: { fontSize: 12, fontWeight: '600' },
+  clusterCountText: { fontSize: 11, fontFamily: 'Courier' },
+  detailLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    marginTop: 4,
+  },
+  detailLinkText: { fontSize: 12, fontWeight: '600' },
   empty: { textAlign: 'center', padding: spacing.xl, fontSize: 13 },
 });

@@ -43,6 +43,33 @@ _RISK_WEIGHT = {"high": 0, "medium": 1, "low": 2, "info": 3}
 # 每个 SNP 关联建议数量上限 (避免长卡膨胀)
 _RELATED_CARDS_LIMIT = 3
 
+# G-W4 cluster 头部用的 category 中文名
+_CATEGORY_ZH = {
+    "nutrition": "营养代谢",
+    "exercise": "运动天赋",
+    "drug_sensitivity": "药物敏感",
+    "disease_risk": "疾病风险",
+    "sleep": "睡眠节律",
+}
+
+
+def _empty_clusters(known: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """无 profile 时也返回完整 cluster 列表 (hits=0), 让 mobile 头部不闪."""
+    cluster_map: Dict[str, Dict[str, Any]] = {}
+    for snp in known.values():
+        cat = snp["category"]
+        cl = cluster_map.setdefault(cat, {
+            "category": cat,
+            "category_zh": _CATEGORY_ZH.get(cat, cat),
+            "total": 0,
+            "hits": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "rsids": [],
+        })
+        cl["total"] += 1
+    return sorted(cluster_map.values(), key=lambda c: -c["total"])
+
 
 def _get_known_snps() -> Dict[str, Dict[str, Any]]:
     """惰性 import 避免循环依赖. KNOWN_SNPS 在 api/genetic_data.py."""
@@ -165,6 +192,7 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
         return {
             "profile": None,
             "items": [],
+            "clusters": _empty_clusters(known),
             "stats": {"total_known": len(known), "hits": 0, "miss": len(known)},
         }
 
@@ -234,6 +262,44 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
         it["gene"],
     ))
 
+    # G-W4 圆 (2026-05-12): cluster 聚合 — 按 category 分组, 每组 hits/total + top
+    # risk_level. 让 mobile 头部一眼看到"叶酸/运动/药物/疾病" 各组占比.
+    cluster_map: Dict[str, Dict[str, Any]] = {
+        cat: {
+            "category": cat,
+            "category_zh": _CATEGORY_ZH.get(cat, cat),
+            "total": 0,
+            "hits": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "rsids": [],
+        }
+        for cat in {snp["category"] for snp in known.values()}
+    }
+    for it in items:
+        cat = it["category"]
+        c = cluster_map.setdefault(cat, {
+            "category": cat,
+            "category_zh": _CATEGORY_ZH.get(cat, cat),
+            "total": 0,
+            "hits": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "rsids": [],
+        })
+        c["total"] += 1
+        if it["hit"]:
+            c["hits"] += 1
+            if it["risk_level"] == "high":
+                c["high_count"] += 1
+            elif it["risk_level"] == "medium":
+                c["medium_count"] += 1
+            c["rsids"].append(it["rsid"])
+    clusters = sorted(
+        cluster_map.values(),
+        key=lambda c: (-c["high_count"], -c["medium_count"], -c["hits"]),
+    )
+
     return {
         "profile": {
             "id": profile.id,
@@ -242,6 +308,7 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
             "notes": profile.notes,
         },
         "items": items,
+        "clusters": clusters,
         "stats": {
             "total_known": len(known),
             "hits": hits,
@@ -347,3 +414,211 @@ def get_agent_summary(db: Session, user_id: int) -> Optional[str]:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[genetic_report] agent summary 失败 user={user_id}: {e}")
         return None
+
+
+# ── 单 SNP 详情 (LLM, 缓存 24h, key 包含 genotype) ─────────────────────
+
+_SNP_DETAIL_TTL_SECONDS = 86400
+
+
+def _snp_cache_key(user_id: int, rsid: str, genotype: Optional[str]) -> str:
+    return f"genetic_snp_detail:v1:user={user_id}:rsid={rsid}:gt={genotype or 'none'}"
+
+
+def _build_snp_detail_prompt(
+    snp_static: Dict[str, Any],
+    user_item: Dict[str, Any],
+    user_context: Dict[str, Any],
+) -> str:
+    """生成 SNP 详情 LLM prompt. snp_static 是 KNOWN_SNPS 的条目, user_item
+    是用户实测命中, user_context 含化验/在服补剂/慢病等差异化数据."""
+    gene = snp_static["gene"]
+    variant = snp_static["variant"]
+    desc = snp_static["desc"]
+
+    if user_item.get("hit"):
+        gt = user_item.get("genotype")
+        label = user_item.get("result_label")
+        risk = user_item.get("risk_level") or "info"
+        user_part = f"用户实测: 基因型 {gt} → {label} (风险 {risk})"
+    else:
+        user_part = "用户未在该位点测出 (报告中无对应数据)"
+
+    ctx_lines: List[str] = []
+    labs = user_context.get("flagged_labs") or []
+    if labs:
+        ctx_lines.append(f"近期化验异常: {', '.join(labs[:5])}")
+    sups = user_context.get("active_supplements") or []
+    if sups:
+        ctx_lines.append(f"在服补剂: {', '.join(sups[:6])}")
+    chronic = user_context.get("active_conditions") or []
+    if chronic:
+        ctx_lines.append(f"慢病: {', '.join(chronic[:5])}")
+    ctx_block = "\n".join(ctx_lines) or "(暂无化验/补剂/慢病数据)"
+
+    return f"""你是基因解读 Agent. 用户在看 {gene} ({variant}) 这一个 SNP 的详情. 你要在结合用户**这条**位点 + **他的差异化数据**之后, 给出可执行建议.
+
+【SNP 静态描述】
+{desc}
+
+【用户在该位点的命中】
+{user_part}
+
+【用户其它差异化数据】
+{ctx_block}
+
+输出严格按以下 JSON shape, 中文, 不要 markdown, 不要解释:
+{{
+  "headline": "1 句话给用户讲清这个 SNP 对他意味着什么 (≤30 字)",
+  "nutrition_actions": ["饮食上具体做什么 1", "..."],   // 0-3 条, 每条≤25字, 涉及食材/克数/频率
+  "supplement_actions": ["补剂上具体做什么 1", "..."],  // 0-3 条, 含成分/剂量/时段; 用户已在服的不重复
+  "exercise_actions": ["运动上具体做什么 1", "..."],    // 0-2 条, 跟用户基因型相关时才给; 不相关留空
+  "lab_to_check": ["建议复查指标 1", "..."],            // 0-3 条, 写化验项名 + 频率, 例 '同型半胱氨酸 / 6 月一次'
+  "drug_caution": ["药物注意 1", "..."],                // 0-3 条, drug_sensitivity 类才给, 否则空
+  "confidence": "high|medium|low"  // 该 SNP 证据等级 (MTHFR/APOE/SLCO1B1 这类强证据=high, 单一研究=low)
+}}
+
+如果用户未命中, nutrition/supplement/exercise/lab/drug 全部留空 (不强行给), headline 说明"未在你的报告中测到".
+不要捏造用户没在化验中显示的数据."""
+
+
+def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, Any]]:
+    """单 SNP 详情. 静态信息 + 用户命中 + LLM 个性化建议 (cached 24h).
+
+    返回 None 表示 rsid 不在 KNOWN_SNPS 字典中. 即使 LLM 失败, 也返回
+    静态信息 + 命中, 让 mobile 能 fallback 渲染."""
+    known = _get_known_snps()
+    snp_static = known.get(rsid)
+    if not snp_static:
+        return None
+
+    # 找用户命中
+    profile = _resolve_active_profile(db, user_id)
+    user_item: Dict[str, Any] = {
+        "hit": False,
+        "genotype": None,
+        "result_label": None,
+        "risk_level": None,
+    }
+    related_cards: List[Dict[str, Any]] = []
+    if profile is not None:
+        from app.models.genetic_data import GeneticVariant
+        v = (
+            db.query(GeneticVariant)
+            .filter(
+                GeneticVariant.profile_id == profile.id,
+                GeneticVariant.gene_name == snp_static["gene"],
+            )
+            .first()
+        )
+        if v is not None:
+            user_item = {
+                "hit": True,
+                "genotype": v.genotype,
+                "result_label": v.result_label,
+                "risk_level": v.risk_level or "info",
+            }
+            user_cards = _fetch_related_cards(db, user_id)
+            keys = _gene_to_card_match_keys(snp_static["gene"], snp_static["variant"])
+            related_cards = [
+                _card_to_dict(c) for c in user_cards if _card_matches_gene(c, keys)
+            ][:_RELATED_CARDS_LIMIT]
+
+    static_block = {
+        "rsid": rsid,
+        "gene": snp_static["gene"],
+        "variant_name": snp_static["variant"],
+        "category": snp_static["category"],
+        "description": snp_static["desc"],
+        "genotype_meanings": [
+            {"genotype": gt, "display": meaning[0], "label": meaning[1], "risk": meaning[2]}
+            for gt, meaning in snp_static.get("map", {}).items()
+        ],
+    }
+
+    # cluster siblings (同 category 其它 SNP, 已命中靠前)
+    siblings: List[Dict[str, Any]] = []
+    for r2, s2 in known.items():
+        if r2 == rsid or s2["category"] != snp_static["category"]:
+            continue
+        siblings.append({
+            "rsid": r2,
+            "gene": s2["gene"],
+            "variant_name": s2["variant"],
+        })
+    siblings = siblings[:8]
+
+    # LLM 个性化建议 (cached)
+    cache_key = _snp_cache_key(user_id, rsid, user_item.get("genotype"))
+    actions: Optional[Dict[str, Any]] = None
+    try:
+        from app.utils.redis_cache import RedisCache
+        cached = RedisCache.get(cache_key)
+        if isinstance(cached, dict) and cached.get("actions"):
+            actions = cached["actions"]
+    except Exception:
+        pass
+
+    if actions is None:
+        # 抓用户差异化上下文
+        user_context: Dict[str, Any] = {}
+        try:
+            from app.twin import build_twin
+            twin = build_twin(db, user_id)
+            user_context["flagged_labs"] = [
+                a.get("item_name") for a in (twin.labs.flagged_abnormal or [])
+                if a.get("item_name")
+            ][:8]
+            user_context["active_supplements"] = [
+                s.get("name") for s in (twin.supplement.active_supplements or [])
+                if s.get("name")
+            ][:8]
+            user_context["active_conditions"] = list(twin.chronic.active_conditions or [])
+        except Exception as e:
+            logger.debug(f"[snp_detail] twin context 获取失败: {e}")
+
+        prompt = _build_snp_detail_prompt(snp_static, user_item, user_context)
+        try:
+            from app.services.llm import get_llm_provider
+            provider = get_llm_provider()
+            import asyncio, json as _json
+
+            async def _call():
+                result = await provider.chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=700,
+                )
+                return result if isinstance(result, str) else (result or {}).get("content", "")
+
+            try:
+                raw = asyncio.run(_call())
+            except RuntimeError:
+                import nest_asyncio
+                nest_asyncio.apply()
+                raw = asyncio.get_event_loop().run_until_complete(_call())
+
+            if raw:
+                # 提 JSON (LLM 偶尔加 ```json 包裹)
+                t = raw.strip()
+                if t.startswith("```"):
+                    t = t.strip("`").lstrip("json").strip()
+                actions = _json.loads(t)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[snp_detail] LLM 失败 user={user_id} rsid={rsid}: {e}")
+            actions = None
+
+        if actions:
+            try:
+                from app.utils.redis_cache import RedisCache
+                RedisCache.set(cache_key, {"actions": actions}, ttl=_SNP_DETAIL_TTL_SECONDS)
+            except Exception:
+                pass
+
+    return {
+        **static_block,
+        "user": user_item,
+        "actions": actions,
+        "related_cards": related_cards,
+        "siblings": siblings,
+    }
