@@ -32,6 +32,11 @@ from app.twin.schema import HealthTwin
 logger = logging.getLogger(__name__)
 
 
+# G-W9: 客户端断开后 bg task 继续跑完 audit / memory / journal.
+# set 持 task 引用防 GC; done_callback 自动清理.
+_BACKGROUND_STREAM_TASKS: set = set()
+
+
 def _safety_wrap(text: str, *, source: str = "orchestrator") -> TextValidationResult:
     """v3 cross-cutting: 所有 LLM 终态文本输出统一过 validator.
 
@@ -983,6 +988,8 @@ async def _stream_orchestrator_fast(
 
     跳过和 _run_orchestrator_fast 相同的所有重负载, 只额外把 LLM 调用从
     一次性 _call_llm 换成 _stream_llm, 让 client 第一个字 1-2s 内就能听到。
+
+    G-W9: bg task + queue 模式 — 客户端断开不影响 audit 落库.
     """
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.stream.siri_fast", user_id=user_id)
@@ -993,55 +1000,88 @@ async def _stream_orchestrator_fast(
         payload = data if isinstance(data, str) else json.dumps(data, default=str, ensure_ascii=False)
         return f"event: {event}\ndata: {payload}\n\n"
 
-    try:
-        twin = build_twin(db, user_id)
-        intent = classify_intent(req.query)
+    chunk_queue: asyncio.Queue = asyncio.Queue()
 
-        system_prompt, user_prompt = _build_synthesis_prompt(
-            req.query, twin, findings=[], db=db, user_id=user_id,
-            conflict_arb_block="", source="siri",
-        )
-        user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=[])
-
-        full = ""
-        async for chunk in _stream_llm(system_prompt, user_prompt):
-            full += chunk
-            yield _sse("chunk", chunk)
-
-        # v3 cross-cutting safety: stream 结束后对累积文本做一次校验.
-        # 取舍: chunk 已经发出去了, 黑名单命中时发 safety_override 让客户端替换显示.
-        safety = _safety_wrap(full, source="orchestrator.siri_fast.stream")
-
-        yield _sse("done", {
-            "total_ms": int((time.monotonic() - t_start) * 1000),
-            "synthesis_len": len(full),
-            "safety_action": safety.action,
-        })
-        if safety.action == "replace":
-            yield _sse("safety_override", {"safe_text": safety.safe_text})
-        elif safety.action == "append_disclaimer":
-            yield _sse("safety_disclaimer", {"disclaimer": safety.disclaimer})
-
+    async def _background_task():
+        from app.database import SessionLocal as _SessionLocal
+        bg_db = _SessionLocal()
         try:
-            from app.agents.audit import log_orchestrator_run
-            log_orchestrator_run(
-                db=db, user_id=user_id,
-                query=req.query,
-                intent_categories=intent.categories,
-                used_specialists=[],
-                findings_count=0,
-                twin_build_ms=twin.meta.build_ms,
-                total_ms=int((time.monotonic() - t_start) * 1000),
-                result_summary=full[:200],
-                source="siri",
-                memory_trace=memory_trace,
-                output_text=full,
+            twin = build_twin(bg_db, user_id)
+            intent = classify_intent(req.query)
+
+            system_prompt, user_prompt = _build_synthesis_prompt(
+                req.query, twin, findings=[], db=bg_db, user_id=user_id,
+                conflict_arb_block="", source="siri",
             )
+            user_prompt, memory_trace = _inject_memory(bg_db, user_id, user_prompt, findings=[])
+
+            full = ""
+            try:
+                async for chunk in _stream_llm(system_prompt, user_prompt):
+                    full += chunk
+                    await chunk_queue.put(_sse("chunk", chunk))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[orchestrator.stream.siri_fast] LLM stream 失败: {e}")
+
+            safety = _safety_wrap(full, source="orchestrator.siri_fast.stream")
+            total_ms = int((time.monotonic() - t_start) * 1000)
+
+            await chunk_queue.put(_sse("done", {
+                "total_ms": total_ms,
+                "synthesis_len": len(full),
+                "safety_action": safety.action,
+            }))
+            if safety.action == "replace":
+                await chunk_queue.put(_sse("safety_override", {"safe_text": safety.safe_text}))
+            elif safety.action == "append_disclaimer":
+                await chunk_queue.put(_sse("safety_disclaimer", {"disclaimer": safety.disclaimer}))
+
+            try:
+                from app.agents.audit import log_orchestrator_run
+                log_orchestrator_run(
+                    db=bg_db, user_id=user_id,
+                    query=req.query,
+                    intent_categories=intent.categories,
+                    used_specialists=[],
+                    findings_count=0,
+                    twin_build_ms=twin.meta.build_ms,
+                    total_ms=total_ms,
+                    result_summary=full[:200],
+                    source="siri",
+                    memory_trace=memory_trace,
+                    output_text=full,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[orchestrator.stream.siri_fast] audit 失败: {e}")
         except Exception as e:  # noqa: BLE001
-            logger.debug(f"[orchestrator.stream.siri_fast] audit 失败: {e}")
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"[orchestrator.stream.siri_fast] 失败: {e}")
-        yield _sse("error", {"message": "分析服务暂时不可用，请稍后再试"})
+            logger.exception(f"[orchestrator.stream.siri_fast] bg 失败: {e}")
+            try:
+                await chunk_queue.put(_sse("error", {"message": "分析服务暂时不可用，请稍后再试"}))
+            except Exception:
+                pass
+        finally:
+            await chunk_queue.put(None)
+            try:
+                bg_db.close()
+            except Exception:
+                pass
+
+    bg_task = asyncio.create_task(_background_task())
+    _BACKGROUND_STREAM_TASKS.add(bg_task)
+    bg_task.add_done_callback(_BACKGROUND_STREAM_TASKS.discard)
+
+    try:
+        while True:
+            event = await chunk_queue.get()
+            if event is None:
+                break
+            yield event
+    except (asyncio.CancelledError, GeneratorExit):
+        logger.info(
+            f"[orchestrator.stream.siri_fast] client disconnected, "
+            f"bg task continues to finish audit"
+        )
+        raise
 
 
 async def stream_orchestrator(
@@ -1059,6 +1099,10 @@ async def stream_orchestrator(
     source=siri: 走 fast 流式路径 (Twin + 直接 LLM stream chunk),
     跳过 specialist/cross-review/arbitration/journal/cards, 目标 1-2s 内
     第一个 chunk 出来, 让 voice-chat 流式 TTS 立刻有内容念。
+
+    G-W9: bg task + asyncio.Queue 模式. 客户端断开后 specialist /
+    persist_cards / SOAP / memory_extract / LLM synthesis / audit 继续
+    跑完, 不丢数据. 外层 generator 只从 queue 转发 SSE event.
     """
     if req.source == "siri":
         async for chunk in _stream_orchestrator_fast(db, user_id, req):
@@ -1074,127 +1118,154 @@ async def stream_orchestrator(
         payload = data if isinstance(data, str) else json.dumps(data, default=str, ensure_ascii=False)
         return f"event: {event}\ndata: {payload}\n\n"
 
+    chunk_queue: asyncio.Queue = asyncio.Queue()
+
+    async def _background_task():
+        from app.database import SessionLocal as _SessionLocal
+        bg_db = _SessionLocal()
+        try:
+            try:
+                twin = build_twin(bg_db, user_id)
+                intent = classify_intent(req.query)
+                specialists = _select_specialists(intent, twin, req.specialists)
+                try:
+                    from app.services.clinical_journal_service import get_active_case_briefs
+                    recent_cases = get_active_case_briefs(bg_db, user_id, limit=5)
+                except Exception:
+                    recent_cases = []
+
+                await chunk_queue.put(_sse(
+                    "intent",
+                    {
+                        "categories": intent.categories,
+                        "keywords": intent.keywords,
+                        "used_specialists": [s.name for s in specialists],
+                        "twin_build_ms": twin.meta.build_ms,
+                    },
+                ))
+
+                findings = _run_specialists(
+                    twin, specialists,
+                    {"query": req.query, "db": bg_db, "recent_cases": recent_cases},
+                )
+                for f in findings:
+                    await chunk_queue.put(_sse("specialist", f.model_dump(mode="json")))
+
+                persisted_ids = _persist_proposed_cards(bg_db, user_id, findings)
+                if persisted_ids:
+                    await chunk_queue.put(_sse("action_cards_created", {"ids": persisted_ids}))
+
+                try:
+                    from app.services.clinical_journal_service import write_soap_entry
+                    write_soap_entry(
+                        bg_db, user_id=user_id, query=req.query, twin=twin,
+                        findings=findings, persisted_card_ids=persisted_ids,
+                        created_by="orchestrator",
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[orchestrator.stream] write_soap_entry 失败: {e}")
+
+                try:
+                    from app.services.memory_extractor import extract_from_specialist_finding
+                    for f in findings:
+                        extract_from_specialist_finding(bg_db, user_id, f, f.specialist_name)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
+
+                conflict_arb_block = await _run_cross_review_and_arbitration(
+                    findings, twin, bg_db, user_id
+                )
+
+                try:
+                    from app.agents.audit import log_specialist_findings
+                    findings_snapshot = [
+                        {
+                            "specialist": f.specialist_name,
+                            "kind": f.category,
+                            "summary": f.summary,
+                            "data": f.model_dump(mode="json").get("raw"),
+                            "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
+                        }
+                        for f in findings
+                    ]
+                    log_specialist_findings(bg_db, user_id=user_id, findings=findings_snapshot)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
+
+                system_prompt, user_prompt = _build_synthesis_prompt(
+                    req.query, twin, findings, db=bg_db, user_id=user_id,
+                    conflict_arb_block=conflict_arb_block,
+                    source=req.source,
+                )
+                user_prompt, memory_trace = _inject_memory(
+                    bg_db, user_id, user_prompt, findings=findings
+                )
+
+                full = ""
+                try:
+                    async for chunk in _stream_llm(system_prompt, user_prompt):
+                        full += chunk
+                        await chunk_queue.put(_sse("chunk", chunk))
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[orchestrator.stream] LLM stream 失败: {e}")
+
+                safety = _safety_wrap(full, source="orchestrator.stream")
+                total_ms = int((time.monotonic() - t_start) * 1000)
+
+                try:
+                    from app.agents.audit import log_orchestrator_run
+                    log_orchestrator_run(
+                        db=bg_db,
+                        user_id=user_id,
+                        query=req.query,
+                        intent_categories=intent.categories,
+                        used_specialists=[s.name for s in specialists],
+                        findings_count=sum(len(f.findings) for f in findings),
+                        twin_build_ms=twin.meta.build_ms,
+                        total_ms=total_ms,
+                        result_summary=full[:200],
+                        source=req.source,
+                        memory_trace=memory_trace,
+                        output_text=full,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[orchestrator.stream] orchestrator_run audit bypass 失败: {e}")
+
+                await chunk_queue.put(_sse("done", {
+                    "total_ms": total_ms,
+                    "persisted_card_ids": persisted_ids,
+                    "safety_action": safety.action,
+                }))
+                if safety.action == "replace":
+                    await chunk_queue.put(_sse("safety_override", {"safe_text": safety.safe_text}))
+                elif safety.action == "append_disclaimer":
+                    await chunk_queue.put(_sse("safety_disclaimer", {"disclaimer": safety.disclaimer}))
+            except Exception as e:  # noqa: BLE001
+                logger.exception("[orchestrator.stream] 未捕获异常")
+                try:
+                    await chunk_queue.put(_sse("error", {"detail": str(e)}))
+                except Exception:
+                    pass
+        finally:
+            await chunk_queue.put(None)
+            try:
+                bg_db.close()
+            except Exception:
+                pass
+
+    bg_task = asyncio.create_task(_background_task())
+    _BACKGROUND_STREAM_TASKS.add(bg_task)
+    bg_task.add_done_callback(_BACKGROUND_STREAM_TASKS.discard)
+
     try:
-        twin = build_twin(db, user_id)
-        intent = classify_intent(req.query)
-        specialists = _select_specialists(intent, twin, req.specialists)
-        try:
-            from app.services.clinical_journal_service import get_active_case_briefs
-            recent_cases = get_active_case_briefs(db, user_id, limit=5)
-        except Exception:
-            recent_cases = []
-
-        yield _sse(
-            "intent",
-            {
-                "categories": intent.categories,
-                "keywords": intent.keywords,
-                "used_specialists": [s.name for s in specialists],
-                "twin_build_ms": twin.meta.build_ms,
-            },
+        while True:
+            event = await chunk_queue.get()
+            if event is None:
+                break
+            yield event
+    except (asyncio.CancelledError, GeneratorExit):
+        logger.info(
+            f"[orchestrator.stream] client disconnected, "
+            f"bg task continues to finish audit / journal / memory"
         )
-
-        findings = _run_specialists(
-            twin, specialists,
-            {"query": req.query, "db": db, "recent_cases": recent_cases},
-        )
-        for f in findings:
-            yield _sse("specialist", f.model_dump(mode="json"))
-
-        # 信任循环: 落地 proposed_cards
-        persisted_ids = _persist_proposed_cards(db, user_id, findings)
-        if persisted_ids:
-            yield _sse("action_cards_created", {"ids": persisted_ids})
-
-        # Clinical Journal: 异步写 SOAP (旁路, 失败只 log)
-        try:
-            from app.services.clinical_journal_service import write_soap_entry
-            write_soap_entry(
-                db, user_id=user_id, query=req.query, twin=twin,
-                findings=findings, persisted_card_ids=persisted_ids,
-                created_by="orchestrator",
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[orchestrator.stream] write_soap_entry 失败: {e}")
-
-        # Memory Extractor: specialist findings → 个人知识库 facts (旁路)
-        try:
-            from app.services.memory_extractor import extract_from_specialist_finding
-            for f in findings:
-                extract_from_specialist_finding(db, user_id, f, f.specialist_name)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
-
-        # Cross-review + (可选) LLM 仲裁 (流式路径也走同样逻辑)
-        conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
-
-        # 旁路审计: 与 run_orchestrator 对齐, 在 cross-review 后, 保证两条路径存同样状态的 findings
-        try:
-            from app.agents.audit import log_specialist_findings
-            findings_snapshot = [
-                {
-                    "specialist": f.specialist_name,
-                    "kind": f.category,
-                    "summary": f.summary,
-                    # f.model_dump(mode="json") coerces datetime/Decimal/UUID/Path to str, PG JSONB safe.
-                    # 只存 'raw' 作为结构化 data; 不重复存 'findings' (和 raw 重叠 80%).
-                    "data": f.model_dump(mode="json").get("raw"),
-                    "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
-                }
-                for f in findings
-            ]
-            log_specialist_findings(db, user_id=user_id, findings=findings_snapshot)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
-
-        system_prompt, user_prompt = _build_synthesis_prompt(
-            req.query, twin, findings, db=db, user_id=user_id,
-            conflict_arb_block=conflict_arb_block,
-            source=req.source,
-        )
-        user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=findings)
-
-        # 流式 LLM (累积 full 用于 audit memory_referenced 检测)
-        full = ""
-        async for chunk in _stream_llm(system_prompt, user_prompt):
-            full += chunk
-            yield _sse("chunk", chunk)
-
-        # v3 cross-cutting safety: 对累积文本做最终校验
-        safety = _safety_wrap(full, source="orchestrator.stream")
-
-        total_ms = int((time.monotonic() - t_start) * 1000)
-
-        # 旁路审计: stream 路径也记录一次 orchestrator.run, 与非流式对齐.
-        # 同时带上 source tag (siri/chat/widget/None), 后续分析入口分布.
-        try:
-            from app.agents.audit import log_orchestrator_run
-            log_orchestrator_run(
-                db=db,
-                user_id=user_id,
-                query=req.query,
-                intent_categories=intent.categories,
-                used_specialists=[s.name for s in specialists],
-                findings_count=sum(len(f.findings) for f in findings),
-                twin_build_ms=twin.meta.build_ms,
-                total_ms=total_ms,
-                result_summary=full[:200],
-                source=req.source,
-                memory_trace=memory_trace,
-                output_text=full,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[orchestrator.stream] orchestrator_run audit bypass 失败: {e}")
-
-        yield _sse("done", {
-            "total_ms": total_ms,
-            "persisted_card_ids": persisted_ids,
-            "safety_action": safety.action,
-        })
-        if safety.action == "replace":
-            yield _sse("safety_override", {"safe_text": safety.safe_text})
-        elif safety.action == "append_disclaimer":
-            yield _sse("safety_disclaimer", {"disclaimer": safety.disclaimer})
-    except Exception as e:  # noqa: BLE001
-        logger.exception("[orchestrator.stream] 未捕获异常")
-        yield _sse("error", {"detail": str(e)})
+        raise
