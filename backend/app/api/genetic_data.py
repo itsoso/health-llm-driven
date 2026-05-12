@@ -1385,3 +1385,39 @@ def _build_fallback_sections(variants: List[GeneticVariant]) -> Dict[str, str]:
         sections["general"] = "您的基因数据已记录，建议结合体检指标进行综合分析。"
 
     return sections
+
+
+# ─── G-W1 Mobile 基因报告页 endpoint ──────────────────────────────────────
+
+
+@router.get("/report/me", summary="基因报告聚合 (命中+未命中, Mobile 报告页用)")
+def get_my_genetic_report(
+    include_summary: bool = Query(True, description="是否调 LLM 生成 Agent 总结"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """聚合用户基因报告: KNOWN_SNPS 全集 (命中+未命中) + LLM Agent 总结.
+
+    返回结构:
+      {
+        profile: {id, test_provider, test_date, notes},
+        agent_summary: "你的代谢偏向... → 优先做的事: ..." (1h 缓存, 失败 None),
+        items: [{rsid, gene, variant_name, category, hit, genotype?, result_label?,
+                 risk_level?, variant_nature?, description}],
+        stats: {total_known, hits, miss},
+      }
+
+    排序: 命中优先, 命中内 risk 高→低, 未命中按 category.
+    """
+    from app.services.genetic_report import build_report, get_agent_summary
+
+    report = build_report(db, current_user.id)
+
+    summary = None
+    if include_summary and report.get("profile") is not None:
+        summary = get_agent_summary(db, current_user.id)
+
+    return {
+        **report,
+        "agent_summary": summary,
+    }
