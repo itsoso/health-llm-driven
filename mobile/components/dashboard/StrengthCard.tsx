@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -53,14 +53,43 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   const [recording, setRecording] = useState<string | null>(null);
   // 同步锁: 比 React state 快, 阻挡同 type 的并发调用 (双击 race fix)
   const inFlightRef = useRef<Set<string>>(new Set());
+  // 上一次 server 端总数 — 用来检测 server 涨了多少, 同步释放 localAdd
+  // (修 bug: 不释放则用户点 +10, server 收到后 fromServer+localAdd 会变 20)
+  const prevServerTotalRef = useRef<Record<string, number>>({});
+
+  // 计算 server 端各 type 当前总数
+  const serverTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const cfg of EXERCISES) {
+      const rows = (exerciseToday || []).filter((e: any) => e.exercise_type === cfg.type);
+      totals[cfg.type] = rows.reduce((s: number, e: any) => {
+        if (cfg.mode === 'reps') return s + (e.reps || 0);
+        return s + (e.duration_seconds || 0);
+      }, 0);
+    }
+    return totals;
+  }, [exerciseToday, EXERCISES]);
+
+  // 当 server 总数增长 → 把对应 amount 从 localAdd 里扣掉, 避免重复计数
+  useEffect(() => {
+    setLocalAdd(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const type of Object.keys(serverTotals)) {
+        const prevTotal = prevServerTotalRef.current[type] || 0;
+        const delta = serverTotals[type] - prevTotal;
+        if (delta > 0 && (next[type] || 0) > 0) {
+          next[type] = Math.max(0, (next[type] || 0) - delta);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    prevServerTotalRef.current = serverTotals;
+  }, [serverTotals]);
 
   const getCount = (cfg: ExerciseConfig): number => {
-    const rows = (exerciseToday || []).filter((e: any) => e.exercise_type === cfg.type);
-    const fromServer = rows.reduce((s: number, e: any) => {
-      if (cfg.mode === 'reps') return s + (e.reps || 0);
-      return s + (e.duration_seconds || 0);
-    }, 0);
-    return fromServer + (localAdd[cfg.type] || 0);
+    return (serverTotals[cfg.type] || 0) + (localAdd[cfg.type] || 0);
   };
 
   const doRecord = useCallback(async (cfg: ExerciseConfig, amount: number) => {
