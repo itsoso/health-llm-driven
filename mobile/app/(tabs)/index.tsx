@@ -68,7 +68,6 @@ export default function TodayScreen() {
   const router = useRouter();
   const { c } = useTheme();
   const qc = useQueryClient();
-  const [twinExpanded, setTwinExpanded] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const safetyQuery = useQuery({
@@ -88,6 +87,36 @@ export default function TodayScreen() {
     queryFn: async () => {
       const { data } = await api.get('/twin/me');
       return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Hero 数据 — 给 quickEntry tile 显示数字而不是干口号
+  const geneticStatsQuery = useQuery({
+    queryKey: ['genetic-stats'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get('/genetic/report/me?include_summary=false');
+        return { hits: data?.stats?.hits ?? null, total: data?.stats?.total_known ?? null };
+      } catch {
+        return { hits: null, total: null };
+      }
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const progressStatsQuery = useQuery({
+    queryKey: ['progress-stats', 30],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get('/my-progress?days=30');
+        return {
+          improved: data?.stats?.improved_and_closed ?? data?.stats?.improved ?? null,
+          total: data?.stats?.total_surfaced ?? null,
+        };
+      } catch {
+        return { improved: null, total: null };
+      }
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -136,57 +165,47 @@ export default function TodayScreen() {
         {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
         <EnvironmentCard />
 
-        {/* 我的基因快捷入口 — G-W2 (2026-05-12) */}
-        <TouchableOpacity
-          onPress={() => router.push('/genetic-report' as any)}
-          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-        >
-          <Text style={styles.quickEntryEmoji}>🧬</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的基因</Text>
-            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>52 关键位点 · AI 解读 + 当前生效建议</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-        </TouchableOpacity>
-
-        {/* 我的进度快捷入口 — G-W5 (2026-05-12) */}
-        <TouchableOpacity
-          onPress={() => router.push('/my-progress' as any)}
-          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-        >
-          <Text style={styles.quickEntryEmoji}>📈</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的进度</Text>
-            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>AI 建议接受 / 完成 / 验证 / 改善 闭环</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-        </TouchableOpacity>
-
-        {/* 我的运动方案 — G-W6 (2026-05-12) */}
-        <TouchableOpacity
-          onPress={() => router.push('/movement-plan' as any)}
-          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-        >
-          <Text style={styles.quickEntryEmoji}>🏃</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的运动方案</Text>
-            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>训练状态 · 今日处方 · 基因偏好 · 闭环</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-        </TouchableOpacity>
-
-        {/* 我的饮食方案 — G-W7 (2026-05-12) */}
-        <TouchableOpacity
-          onPress={() => router.push('/diet-plan' as any)}
-          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-        >
-          <Text style={styles.quickEntryEmoji}>🥗</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的饮食方案</Text>
-            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>TDEE · 蛋白缺口 · 基因驱动 · 化验关联</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-        </TouchableOpacity>
+        {/* 4 入口 — 2x2 grid 学健康记录 VitalsGrid 风格 (2026-05-12 重做) */}
+        <View style={styles.gridRow}>
+          <HeroTile
+            label="我的基因"
+            emoji="🧬"
+            value={geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—'}
+            unit={geneticStatsQuery.data?.total != null ? ` / ${geneticStatsQuery.data.total}` : ''}
+            sub="关键位点 · AI 解读"
+            color={c.purple}
+            bg={c.tintPurple}
+            onPress={() => router.push('/genetic-report' as any)}
+          />
+          <HeroTile
+            label="我的进度"
+            emoji="📈"
+            value={progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—'}
+            unit={progressStatsQuery.data?.total != null ? ` / ${progressStatsQuery.data.total}` : ''}
+            sub="改善闭环 · 30 天"
+            color={c.blue}
+            bg={c.tintBlue}
+            onPress={() => router.push('/my-progress' as any)}
+          />
+          <HeroTile
+            label="我的运动"
+            emoji="🏃"
+            value="处方"
+            sub="ACWR · 基因偏好"
+            color={c.pink}
+            bg={c.tintPink}
+            onPress={() => router.push('/movement-plan' as any)}
+          />
+          <HeroTile
+            label="我的饮食"
+            emoji="🥗"
+            value="方案"
+            sub="TDEE · 蛋白 · 化验"
+            color={c.orange}
+            bg={c.tintOrange}
+            onPress={() => router.push('/diet-plan' as any)}
+          />
+        </View>
 
         {isLoading && (
           <View style={styles.loading}>
@@ -233,35 +252,55 @@ export default function TodayScreen() {
           )}
         </View>
 
-        {/* 3. Twin 摘要 */}
+        {/* 3. 身体快照 — 2x2 grid, 默认展开学 VitalsGrid 风格 */}
         <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.collapseHeader}
-            onPress={() => setTwinExpanded(v => !v)}
-          >
-            <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>身体快照</Text>
-            <Ionicons
-              name={twinExpanded ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={c.labelTertiary}
+          <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>身体快照</Text>
+          <View style={styles.gridRow}>
+            <HeroTile
+              label="HRV"
+              ionIcon="pulse"
+              value={fmt(twinSnap.hrv)}
+              unit={twinSnap.hrv != null ? ' ms' : ''}
+              sub="压力 & 恢复"
+              color={c.teal}
+              bg={c.tintTeal}
+              onPress={() => router.push('/indicator-history?type=hrv' as any)}
             />
-          </TouchableOpacity>
-          {twinExpanded && (
-            <View style={styles.twinGrid}>
-              <TwinCell label="HRV" value={fmt(twinSnap.hrv)} unit="ms" />
-              <TwinCell label="睡眠" value={fmt(twinSnap.sleep_score)} unit="分" />
-              <TwinCell
-                label="血压"
-                value={
-                  twinSnap.systolic_bp && twinSnap.diastolic_bp
-                    ? `${twinSnap.systolic_bp}/${twinSnap.diastolic_bp}`
-                    : '—'
-                }
-                unit=""
-              />
-              <TwinCell label="SpO2" value={fmt(twinSnap.spo2_avg)} unit="%" />
-            </View>
-          )}
+            <HeroTile
+              label="睡眠"
+              ionIcon="moon"
+              value={fmt(twinSnap.sleep_score)}
+              unit={twinSnap.sleep_score != null ? ' 分' : ''}
+              sub="昨夜评分"
+              color={c.purple}
+              bg={c.tintPurple}
+              onPress={() => router.push('/sleep' as any)}
+            />
+            <HeroTile
+              label="血压"
+              ionIcon="heart"
+              value={
+                twinSnap.systolic_bp && twinSnap.diastolic_bp
+                  ? `${twinSnap.systolic_bp}/${twinSnap.diastolic_bp}`
+                  : '—'
+              }
+              unit=""
+              sub="收缩 / 舒张"
+              color={c.pink}
+              bg={c.tintPink}
+              onPress={() => router.push('/indicator-history?type=blood_pressure' as any)}
+            />
+            <HeroTile
+              label="血氧"
+              ionIcon="water"
+              value={fmt(twinSnap.spo2_avg)}
+              unit={twinSnap.spo2_avg != null ? ' %' : ''}
+              sub="夜间均值"
+              color={c.blue}
+              bg={c.tintBlue}
+              onPress={() => router.push('/sleep-spo2-analysis' as any)}
+            />
+          </View>
         </View>
 
         {/* 4. AI 会诊入口 */}
@@ -315,16 +354,44 @@ function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => voi
   );
 }
 
-function TwinCell({ label, value, unit }: { label: string; value: string; unit: string }) {
+function HeroTile({
+  label, value, unit, sub, emoji, ionIcon, color, bg, onPress,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  sub?: string;
+  emoji?: string;
+  ionIcon?: keyof typeof Ionicons.glyphMap;
+  color: string;
+  bg: string;
+  onPress: () => void;
+}) {
   const { c } = useTheme();
   return (
-    <View style={[styles.twinCell, { backgroundColor: c.bgCard }]}>
-      <Text style={[styles.twinLabel, { color: c.labelTertiary }]}>{label}</Text>
-      <Text style={[styles.twinValue, { color: c.labelPrimary }]}>
-        {value}
-        {value !== '—' && unit ? <Text style={styles.twinUnit}> {unit}</Text> : null}
-      </Text>
-    </View>
+    <TouchableOpacity
+      style={[styles.tile, { backgroundColor: c.bgCard, borderColor: c.separator }]}
+      onPress={onPress}
+      activeOpacity={0.75}
+      accessibilityLabel={`${label} ${value}${unit ?? ''}`}
+    >
+      <View style={styles.tileHeader}>
+        <View style={[styles.iconDot, { backgroundColor: bg }]}>
+          {emoji ? (
+            <Text style={{ fontSize: 13 }}>{emoji}</Text>
+          ) : ionIcon ? (
+            <Ionicons name={ionIcon} size={14} color={color} />
+          ) : null}
+        </View>
+        <Text style={[styles.tileLabel, { color: c.labelSecondary }]}>{label}</Text>
+        <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} style={{ marginLeft: 'auto' }} />
+      </View>
+      <View style={styles.tileValueRow}>
+        <Text style={[styles.tileValue, { color }]} numberOfLines={1}>{value}</Text>
+        {unit ? <Text style={[styles.tileUnit, { color }]}>{unit}</Text> : null}
+      </View>
+      {sub ? <Text style={[styles.tileSub, { color: c.labelTertiary }]} numberOfLines={1}>{sub}</Text> : null}
+    </TouchableOpacity>
   );
 }
 
@@ -339,7 +406,6 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
   section: { gap: spacing.sm },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
-  collapseHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
@@ -370,17 +436,27 @@ const styles = StyleSheet.create({
   decidedText: { fontSize: 11, color: '#475569', fontWeight: '600' },
   moreLink: { paddingVertical: spacing.xs, alignItems: 'center' },
   moreText: { fontSize: 13, fontWeight: '500' },
-  twinGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  twinCell: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    gap: 4,
+  // 2x2 grid 学健康记录 VitalsGrid 风格
+  gridRow: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    gap: spacing.md,
   },
-  twinLabel: { fontSize: 11, fontWeight: '500' },
-  twinValue: { fontSize: 22, fontWeight: '700' },
-  twinUnit: { fontSize: 12, fontWeight: '400' },
+  tile: {
+    width: '47.5%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: 14,
+  },
+  tileHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  iconDot: {
+    width: 24, height: 24, borderRadius: 7,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tileLabel: { fontSize: 13, fontWeight: '500' },
+  tileValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
+  tileValue: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.6 },
+  tileUnit: { fontSize: 13, fontWeight: '500' },
+  tileSub: { fontSize: 11, marginTop: 4 },
   chatEntry: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -391,15 +467,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   chatEntryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  quickEntry: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-  },
-  quickEntryEmoji: { fontSize: 22 },
-  quickEntryTitle: { fontSize: 15, fontWeight: '600' },
-  quickEntrySub: { fontSize: 12, marginTop: 2 },
 });
