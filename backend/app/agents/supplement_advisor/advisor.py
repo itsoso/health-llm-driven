@@ -393,15 +393,54 @@ class SupplementAdvisorSpecialist:
             else:
                 summary = "暂无明确补剂建议。" + DISCLAIMER
 
-            # ── ProposedCard: N-of-1 12 周试验 ──
+            # ── ProposedCard: N-of-1 12 周试验 (P2 严格化 2026-05-12) ──
             proposed_cards: List[ProposedCard] = []
             if recommendations and not blocks:
-                # 找主打 pathway 对应的可测指标
                 top = recommendations[0]
                 monitor_labs = top.get("monitor_labs") or []
-                metric_key = "hcy" if "Hcy" in " ".join(monitor_labs) else (
-                    "apob" if "ApoB" in " ".join(monitor_labs) else "hrv"
-                )
+                # metric_key 严格映射 monitor_labs → 微营养 fetcher 白名单
+                # (hcy/vitamin_d/b12/ferritin/ldl/apob 等都已在 metrics 里实现)
+                lab_text = " ".join(monitor_labs).lower()
+                if "hcy" in lab_text or "homocy" in lab_text or "同型半胱" in lab_text:
+                    metric_key = "hcy"
+                elif "ldl" in lab_text:
+                    metric_key = "ldl"
+                elif "vitamin d" in lab_text or "维生素 d" in lab_text or "25-oh" in lab_text:
+                    metric_key = "vitamin_d"
+                elif "b12" in lab_text or "钴胺" in lab_text:
+                    metric_key = "b12"
+                elif "ferritin" in lab_text or "铁蛋白" in lab_text:
+                    metric_key = "ferritin"
+                elif "apob" in lab_text:
+                    metric_key = "ldl"  # apob 暂用 ldl fetcher
+                else:
+                    metric_key = "custom"
+
+                # 拉用户当前 baseline (如有 — 没的话 verify 会标 inconclusive 而非错评)
+                baseline_str: Optional[str] = None
+                target_str: str = "改善 ≥ 15%"
+                try:
+                    from app.tasks.metrics import fetch_metric, HIGHER_IS_BETTER
+                    from datetime import date as _date
+                    if context and context.get("db") and metric_key != "custom":
+                        actual = fetch_metric(
+                            context["db"], context.get("user_id") or 0,
+                            metric_key, _date.today(),
+                        )
+                        if actual is not None:
+                            baseline_str = f"{actual:.2f}".rstrip("0").rstrip(".")
+                            higher_better = HIGHER_IS_BETTER.get(metric_key, False)
+                            # 朝目标方向算 ±15% 数值, verify_outcomes 能直接 grade
+                            target_num = actual * (1.15 if higher_better else 0.85)
+                            target_str = f"{target_num:.2f}".rstrip("0").rstrip(".")
+                except Exception as e:
+                    logger.debug(f"[supplement_advisor] baseline fetch 失败: {e}")
+
+                # 强证据 SNP (CPIC pharmacogenomics 级) 用 high; 其它 medium
+                strong_pathways = {"mthfr_methylfolate", "mthfr_b12", "apoe_omega3"}
+                top_id = top.get("id") or top.get("rule_id")
+                evidence = "high" if top_id in strong_pathways else "medium"
+
                 proposed_cards.append(ProposedCard(
                     title=f"12 周补剂试验：{top['supplement']}",
                     content=(
@@ -410,15 +449,17 @@ class SupplementAdvisorSpecialist:
                         f"**科学依据**：{top['reason']}\n\n"
                         f"### 验证指标\n"
                         f"- 第 0 / 12 周各查 1 次：{', '.join(monitor_labs) if monitor_labs else '相关指标'}\n"
-                        f"- 目标：该指标进入参考范围或下降 ≥ 15%\n\n"
+                        f"- 当前 baseline: {baseline_str or '未测 (建议先做基线化验)'}\n"
+                        f"- 目标: {target_str}\n\n"
                         f"### 免责\n{DISCLAIMER}"
                     ),
                     metric_key=metric_key,
-                    baseline_value="待测",
-                    target_value="改善 ≥ 15%",
+                    baseline_value=baseline_str or "0",  # 0 让 verify 标 inconclusive 而非异常
+                    target_value=target_str,
                     verification_days=84,  # 12 周
                     card_type="plan",
                     priority=30,
+                    evidence_level=evidence,
                 ))
 
             return SpecialistFinding(

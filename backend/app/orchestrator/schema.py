@@ -62,6 +62,10 @@ class ProposedCard(BaseModel):
     verification_days: int = Field(..., ge=1, le=90, description="多少天后评分")
     card_type: str = Field("plan", description="plan/insight/recommendation/note")
     priority: int = Field(10, ge=0, le=100)
+    evidence_level: str = Field(
+        "medium",
+        description="证据等级: high / medium / low / medical_grade. 默认 medium.",
+    )
 
 
 class OrchestratorResponse(BaseModel):
