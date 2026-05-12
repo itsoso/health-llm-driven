@@ -37,6 +37,7 @@ import {
 } from '../services/geneticReport';
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
+import MarkdownText from '../components/shared/MarkdownText';
 
 export default function GeneticReportScreen() {
   const { c } = useTheme();
@@ -136,7 +137,7 @@ export default function GeneticReportScreen() {
                 <Ionicons name="sparkles" size={16} color={c.brand} />
                 <Text style={[styles.agentTitle, { color: c.brand }]}>基因 Agent 对你说</Text>
               </View>
-              <Text style={[styles.agentBody, { color: c.labelPrimary }]}>{data.agent_summary}</Text>
+              <MarkdownText>{data.agent_summary}</MarkdownText>
             </View>
           )}
 

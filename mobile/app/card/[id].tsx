@@ -39,6 +39,7 @@ import {
 } from '@/services/actionCards';
 import { spacing, radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
+import MarkdownText from '@/components/shared/MarkdownText';
 
 const SEVERITY_CONF: Record<string, { bg: string; text: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   critical: { bg: '#FEE2E2', text: '#991B1B', label: '紧急', icon: 'alert-circle' },
@@ -185,10 +186,10 @@ export default function ActionCardDetailScreen() {
             )}
           </View>
 
-          {/* 正文 */}
+          {/* 正文 — markdown 渲染 (用户报多页 markdown 显示原文) */}
           {card.content && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.bodyText, { color: c.labelPrimary }]}>{card.content}</Text>
+              <MarkdownText>{card.content}</MarkdownText>
             </View>
           )}
 
@@ -270,9 +271,7 @@ export default function ActionCardDetailScreen() {
                 </Text>
               )}
               {card.grading_notes && (
-                <Text style={[styles.bodyText, { color: outcomeConf.color, marginTop: 6 }]}>
-                  {card.grading_notes}
-                </Text>
+                <MarkdownText>{card.grading_notes}</MarkdownText>
               )}
             </View>
           )}
@@ -290,9 +289,7 @@ export default function ActionCardDetailScreen() {
                 )}
               </View>
               {card.latest_assessment.summary && (
-                <Text style={[styles.bodyText, { color: c.labelSecondary }]}>
-                  {card.latest_assessment.summary}
-                </Text>
+                <MarkdownText>{card.latest_assessment.summary}</MarkdownText>
               )}
               {card.latest_assessment.evidence && card.latest_assessment.evidence.length > 0 && (
                 <View style={{ gap: 4, marginTop: 6 }}>

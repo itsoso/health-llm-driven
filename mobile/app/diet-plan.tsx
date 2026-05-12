@@ -24,6 +24,7 @@ import { fetchDietPlan, type DietPlan, type DietCard } from '../services/dietPla
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
+import MarkdownText from '../components/shared/MarkdownText';
 
 const HYDRATION_COLOR: Record<string, string> = {
   low: '#EF4444',
@@ -79,7 +80,7 @@ export default function DietPlanScreen() {
                 <Ionicons name="nutrition" size={16} color={c.brand} />
                 <Text style={[styles.summaryTitle, { color: c.brand }]}>今日营养</Text>
               </View>
-              <Text style={[styles.summaryBody, { color: c.labelPrimary }]}>{data.summary}</Text>
+              <MarkdownText>{data.summary}</MarkdownText>
             </View>
           )}
 
@@ -143,7 +144,7 @@ export default function DietPlanScreen() {
                   下一餐 · {SLOT_LABEL[data.next_meal.slot] ?? data.next_meal.slot}
                 </Text>
               </View>
-              <Text style={[styles.bodyText, { color: c.labelSecondary }]}>{data.next_meal.guidance}</Text>
+              <MarkdownText>{data.next_meal.guidance}</MarkdownText>
             </View>
           )}
 

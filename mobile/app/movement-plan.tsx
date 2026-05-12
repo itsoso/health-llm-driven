@@ -24,6 +24,7 @@ import { fetchMovementPlan, type MovementPlan, type MovementCard } from '../serv
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
+import MarkdownText from '../components/shared/MarkdownText';
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   optimal: { bg: '#D1FAE5', text: '#065F46' },
@@ -92,7 +93,7 @@ export default function MovementPlanScreen() {
                 <Ionicons name="fitness" size={16} color={c.brand} />
                 <Text style={[styles.summaryTitle, { color: c.brand }]}>本周综合</Text>
               </View>
-              <Text style={[styles.summaryBody, { color: c.labelPrimary }]}>{data.summary}</Text>
+              <MarkdownText>{data.summary}</MarkdownText>
             </View>
           )}
 
@@ -179,7 +180,7 @@ export default function MovementPlanScreen() {
                 <Ionicons name="repeat" size={14} color={c.brand} />
                 <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>本周调整</Text>
               </View>
-              <Text style={[styles.bodyText, { color: c.labelSecondary }]}>{data.week_adjustment}</Text>
+              <MarkdownText>{data.week_adjustment}</MarkdownText>
             </View>
           )}
 
