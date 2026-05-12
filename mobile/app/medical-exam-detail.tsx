@@ -141,6 +141,19 @@ export default function MedicalExamDetailScreen() {
           <Text style={txt.subtitle}>{exam.hospital_name}</Text>
         ) : null}
 
+        {/* review #2: AI 完整解读包入口 (基因关联 + 行动 + 复查 + 找医生) */}
+        <Pressable
+          style={styles.explainEntry}
+          onPress={() => router.push({ pathname: '/exam-explain/[id]' as any, params: { id: String(examId) } })}
+        >
+          <Ionicons name="sparkles" size={16} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.explainEntryTitle}>看 AI 完整解读</Text>
+            <Text style={styles.explainEntrySub}>结合基因 / 历史 / 给出可执行行动</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#fff" />
+        </Pressable>
+
         {/* AI overall assessment */}
         {exam.overall_assessment ? (
           <View style={styles.assessmentCard}>
@@ -471,6 +484,16 @@ function createStyles(c: ColorPalette, _isDark: boolean) {
       paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
       borderRadius: radii.full, marginTop: spacing.md,
     },
+    // review #2 入口
+    explainEntry: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      backgroundColor: c.brand,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    explainEntryTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
+    explainEntrySub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
     assessmentCard: {
       backgroundColor: c.brandLight,
       borderRadius: radii.md,
