@@ -28,7 +28,7 @@ class GoalResponse(BaseModel):
     user_id: int
     goal_type: GoalType
     goal_period: GoalPeriod
-    title: str
+    title: Optional[str] = None
     description: Optional[str]
     target_value: Optional[float]
     target_unit: Optional[str]
