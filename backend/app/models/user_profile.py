@@ -85,6 +85,8 @@ class UserProfile(Base):
     detected_city = Column(String(100), nullable=True)  # 基于IP检测的城市
     detected_region = Column(String(100), nullable=True)  # 基于IP检测的省份/地区
     detected_country = Column(String(100), nullable=True)  # 基于IP检测的国家
+    detected_lat = Column(Float, nullable=True)  # 2026-05-12 GPS 精确坐标 (绕开 city dict fallback)
+    detected_lon = Column(Float, nullable=True)
     location_updated_at = Column(DateTime, nullable=True)  # IP定位最后更新时间
     last_ip = Column(String(45), nullable=True)  # 最后检测的IP地址
 

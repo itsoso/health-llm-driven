@@ -362,6 +362,11 @@ async def update_gps_location(
     profile.detected_city = city
     profile.detected_region = region
     profile.detected_country = country
+    # 2026-05-12: 同时存用户实际 GPS 坐标. environment.py 直接透传给 weather/AQ
+    # service, 跳过 _city_to_coords() / _city_to_location_id() 字典 (这俩只有市级名,
+    # detected_city="海淀" 命中不了 → fallback 杭州坐标的老坑).
+    profile.detected_lat = lat
+    profile.detected_lon = lon
     profile.location_updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(profile)
