@@ -1,7 +1,9 @@
 """OpenClaw Channel 对话服务 — 代理连接 OpenClaw Gateway"""
+import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import AsyncGenerator, Dict, List, Optional
@@ -15,6 +17,10 @@ from app.services.openclaw_skills_service import openclaw_skills_service
 from app.services.skills_hub_client import skills_hub_client
 
 logger = logging.getLogger(__name__)
+
+# G-W8 (2026-05-12): 全局持有 background stream tasks 的 ref, 防 GC.
+# 客户端断开后, SSE generator 关, 但此 task 继续跑直到 save_message 落库.
+_BACKGROUND_STREAM_TASKS: set = set()
 
 
 class OpenClawService:
@@ -727,69 +733,112 @@ AI: {ai_reply}
                         "content": f"{last_msg['content']}\n\n[图片内容识别结果]\n{image_desc}",
                     }
 
-        # 5. 流式调用 Gateway
-        full_reply = ""
-        try:
-            async for token in self._call_gateway_stream(messages, conv.session_key):
-                full_reply += token
-                yield {"event": "token", "data": {"content": token}}
-        except Exception as e:
-            logger.error(f"OpenClaw Gateway 调用失败: {type(e).__name__}: {e}")
-            full_reply = "抱歉，OpenClaw 暂时无法响应，请稍后再试。"
-            yield {"event": "token", "data": {"content": full_reply}}
+        # 5. Background task 跑 LLM + 落库 (G-W8 2026-05-12: 客户端断开不影响 task).
+        #
+        # 之前: SSE generator 直接 await LLM. 客户端断开 → generator 关 →
+        #       LLM 也被 cancel → save_message 不跑 → DB 无 AI 回复.
+        #
+        # 现在: background task 用新 db session 跑完整逻辑, SSE 从 asyncio.Queue
+        #       拉 chunks 转客户端. 客户端断开 generator 关, task 不受影响, 完成
+        #       时仍 save_message → 用户切回 App reload 看完整答案.
+        chunk_queue: asyncio.Queue = asyncio.Queue()
 
-        # 6. 保存 AI 回复
-        ai_msg = self.save_message(conv.id, "assistant", full_reply)
-
-        # 6.5 检测提醒意图并创建真实提醒
-        try:
-            await self._try_create_reminder(user_id, message, full_reply)
-        except Exception as e:
-            logger.warning(f"OpenClaw 提醒检测失败: {e}")
-
-        # 6.6 食物图片自动保存
-        diet_auto_saved = None
-        if image_base64:
+        async def _background_task():
+            from app.database import SessionLocal as _SessionLocal
+            bg_db = _SessionLocal()
             try:
-                diet_auto_saved = self._try_auto_save_diet(user_id, message, full_reply)
+                bg_service = OpenClawService(bg_db)
+                full_reply = ""
+                try:
+                    async for token in bg_service._call_gateway_stream(messages, conv.session_key):
+                        full_reply += token
+                        await chunk_queue.put({"event": "token", "data": {"content": token}})
+                except Exception as e:
+                    logger.error(f"OpenClaw Gateway 调用失败: {type(e).__name__}: {e}")
+                    full_reply = "抱歉，OpenClaw 暂时无法响应，请稍后再试。"
+                    await chunk_queue.put({"event": "token", "data": {"content": full_reply}})
+
+                # 6. 保存 AI 回复 (用 bg_db, 不依赖 request 的 db session)
+                ai_msg = bg_service.save_message(conv.id, "assistant", full_reply)
+
+                # 6.5 检测提醒意图
+                try:
+                    await bg_service._try_create_reminder(user_id, message, full_reply)
+                except Exception as e:
+                    logger.warning(f"OpenClaw 提醒检测失败: {e}")
+
+                # 6.6 食物图片自动保存
+                diet_auto_saved = None
+                if image_base64:
+                    try:
+                        diet_auto_saved = bg_service._try_auto_save_diet(user_id, message, full_reply)
+                    except Exception as e:
+                        logger.warning(f"食物图片自动保存异常: {e}")
+
+                # 6.7 提取对话记忆
+                try:
+                    from app.services.conversation_memory_service import extract_memories
+                    extract_memories(message, full_reply, user_id, conv.id, bg_db)
+                except Exception as e:
+                    logger.debug(f"记忆提取跳过: {e}")
+
+                # 7. 更新会话时间
+                fresh_conv = bg_db.query(type(conv)).filter_by(id=conv.id).first()
+                if fresh_conv:
+                    fresh_conv.updated_at = datetime.now(UTC)
+                    bg_db.commit()
+
+                # 8. 隐式反馈
+                try:
+                    from app.services.feedback_service import feedback_service
+                    elapsed_ms = int((time.time() - _stream_start) * 1000)
+                    feedback_service.record_implicit(
+                        db=bg_db,
+                        user_id=user_id,
+                        conversation_type="openclaw",
+                        conversation_id=conv.id,
+                        message_id=ai_msg.id,
+                        success=bool(full_reply and not full_reply.startswith("抱歉")),
+                        response_time_ms=elapsed_ms,
+                    )
+                except Exception as e:
+                    logger.warning(f"记录隐式反馈失败: {e}")
+
+                # 9. done event
+                done_data = {
+                    "conversation_id": conv.id,
+                    "message_id": ai_msg.id,
+                }
+                if diet_auto_saved:
+                    done_data["diet_saved"] = True
+                    done_data["diet_data"] = diet_auto_saved
+                await chunk_queue.put({"event": "done", "data": done_data})
             except Exception as e:
-                logger.warning(f"食物图片自动保存异常: {e}")
+                logger.error(f"[stream-bg] task 异常 conv={conv.id}: {e}", exc_info=True)
+                await chunk_queue.put({"event": "error", "data": {"message": str(e)}})
+            finally:
+                # 终止信号
+                await chunk_queue.put(None)
+                try:
+                    bg_db.close()
+                except Exception:
+                    pass
 
-        # 6.7 提取对话记忆（用户偏好、医嘱、过敏等持久性事实）
+        # 全局持有 task ref, 防 GC; 完成后自动从 set 移除
+        bg_task = asyncio.create_task(_background_task())
+        _BACKGROUND_STREAM_TASKS.add(bg_task)
+        bg_task.add_done_callback(_BACKGROUND_STREAM_TASKS.discard)
+
+        # SSE 转发循环 — 客户端断开 generator 关, bg_task 继续跑直到 save_message
         try:
-            from app.services.conversation_memory_service import extract_memories
-            extract_memories(message, full_reply, user_id, conv.id, self.db)
-        except Exception as e:
-            logger.debug(f"记忆提取跳过: {e}")
-
-        # 7. 更新会话时间
-        conv.updated_at = datetime.now(UTC)
-        self.db.commit()
-
-        # 8. 记录隐式反馈（skill 调用、成功/失败、响应时间）
-        try:
-            from app.services.feedback_service import feedback_service
-            elapsed_ms = int((time.time() - _stream_start) * 1000)
-            feedback_service.record_implicit(
-                db=self.db,
-                user_id=user_id,
-                conversation_type="openclaw",
-                conversation_id=conv.id,
-                message_id=ai_msg.id,
-                success=bool(full_reply and not full_reply.startswith("抱歉")),
-                response_time_ms=elapsed_ms,
+            while True:
+                event = await chunk_queue.get()
+                if event is None:
+                    break
+                yield event
+        except (asyncio.CancelledError, GeneratorExit):
+            logger.info(
+                f"[stream] client disconnected conv={conv.id} msg='{message[:30]}...', "
+                f"background task continues"
             )
-        except Exception as e:
-            logger.warning(f"记录隐式反馈失败: {e}")
-
-        # 9. done 事件
-        done_data = {
-            "conversation_id": conv.id,
-            "message_id": ai_msg.id,
-        }
-        if diet_auto_saved:
-            done_data["diet_auto_saved"] = diet_auto_saved
-        yield {
-            "event": "done",
-            "data": done_data,
-        }
+            raise
