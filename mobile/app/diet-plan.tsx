@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchDietPlan, type DietPlan, type DietCard } from '../services/dietPlan';
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
+import HeroTile from '../components/dashboard/HeroTile';
 
 const HYDRATION_COLOR: Record<string, string> = {
   low: '#EF4444',
@@ -82,55 +83,58 @@ export default function DietPlanScreen() {
             </View>
           )}
 
-          {/* 三大宏量 二并排 */}
-          <View style={styles.row}>
+          {/* 4 块 hero — 学健康记录 VitalsGrid 2x2 (2026-05-12). 替代旧 2 RingCell
+              + 单独 hydration 进度条 + 单独 supplement 行, 视觉一致 */}
+          <View style={styles.heroGrid}>
             {data.energy && (
-              <RingCell
+              <HeroTile
                 label="热量"
-                primary={`${Math.round(data.energy.intake_kcal)}`}
-                secondary={`/ ${Math.round(data.energy.tdee_kcal)} kcal`}
-                pct={data.energy.progress_pct}
-                color="#FF6723"
-                c={c}
+                ionIcon="flame"
+                value={`${Math.round(data.energy.intake_kcal)}`}
+                unit={` / ${Math.round(data.energy.tdee_kcal)}`}
+                sub={`kcal · ${Math.round(data.energy.progress_pct)}%`}
+                color={c.orange}
+                bg={c.tintOrange}
               />
             )}
             {data.protein && (
-              <RingCell
+              <HeroTile
                 label="蛋白质"
-                primary={`${Math.round(data.protein.today_g)}`}
-                secondary={`/ ${Math.round(data.protein.target_g)} g`}
-                pct={data.protein.progress_pct}
-                color="#FF375F"
-                c={c}
+                ionIcon="fitness"
+                value={`${Math.round(data.protein.today_g)}`}
+                unit={` / ${Math.round(data.protein.target_g)}`}
+                sub={`g · ${Math.round(data.protein.progress_pct)}%`}
+                color={c.pink}
+                bg={c.tintPink}
+              />
+            )}
+            {data.hydration && (
+              <HeroTile
+                label="饮水"
+                ionIcon="water"
+                value={`${data.hydration.ml_today}`}
+                unit={` / ${data.hydration.goal_ml}`}
+                sub={`ml · ${Math.round(data.hydration.progress_pct)}%`}
+                color={HYDRATION_COLOR[data.hydration.status] ?? c.blue}
+                bg={c.tintBlue}
+              />
+            )}
+            {data.supplement && data.supplement.total > 0 && (
+              <HeroTile
+                label="补剂"
+                ionIcon="medkit"
+                value={`${data.supplement.taken_today}`}
+                unit={` / ${data.supplement.total}`}
+                sub={
+                  data.supplement.pending && data.supplement.pending.length > 0
+                    ? `待服 ${data.supplement.pending.length}`
+                    : '今日完成'
+                }
+                color={c.purple}
+                bg={c.tintPurple}
               />
             )}
           </View>
-
-          {/* 饮水 */}
-          {data.hydration && (
-            <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <View style={styles.hydHead}>
-                <Ionicons name="water" size={18} color={HYDRATION_COLOR[data.hydration.status]} />
-                <Text style={[styles.hydTitle, { color: c.labelPrimary }]}>饮水</Text>
-                <Text style={[styles.hydValue, { color: HYDRATION_COLOR[data.hydration.status] }]}>
-                  {data.hydration.ml_today} / {data.hydration.goal_ml} ml
-                </Text>
-              </View>
-              <View style={styles.barBg}>
-                <View
-                  style={[
-                    styles.barFill,
-                    {
-                      width: `${Math.min(100, data.hydration.progress_pct)}%`,
-                      backgroundColor: HYDRATION_COLOR[data.hydration.status],
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* 下一餐 */}
           {data.next_meal && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
               <View style={styles.mealHead}>
@@ -140,20 +144,6 @@ export default function DietPlanScreen() {
                 </Text>
               </View>
               <Text style={[styles.bodyText, { color: c.labelSecondary }]}>{data.next_meal.guidance}</Text>
-            </View>
-          )}
-
-          {/* 补剂完成度 */}
-          {data.supplement && data.supplement.total > 0 && (
-            <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>
-                补剂 · {data.supplement.taken_today} / {data.supplement.total}
-              </Text>
-              {data.supplement.pending && data.supplement.pending.length > 0 && (
-                <Text style={[styles.cardMeta, { color: c.labelTertiary }]}>
-                  待服: {data.supplement.pending.join(' / ')}
-                </Text>
-              )}
             </View>
           )}
 
@@ -231,20 +221,6 @@ export default function DietPlanScreen() {
   );
 }
 
-function RingCell({ label, primary, secondary, pct, color, c }: any) {
-  return (
-    <View style={[styles.ringCell, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <Text style={[styles.ringLabel, { color: c.labelTertiary }]}>{label}</Text>
-      <Text style={[styles.ringPrimary, { color }]}>{primary}</Text>
-      <Text style={[styles.ringSecondary, { color: c.labelSecondary }]}>{secondary}</Text>
-      <View style={styles.barBg}>
-        <View style={[styles.barFill, { width: `${Math.min(100, pct)}%`, backgroundColor: color }]} />
-      </View>
-      <Text style={[styles.ringPct, { color: c.labelTertiary }]}>{Math.round(pct)}%</Text>
-    </View>
-  );
-}
-
 function RelatedCardRow({ card, onPress, c }: { card: DietCard; onPress: () => void; c: any }) {
   const ocColor = card.outcome === 'improved' ? '#10B981'
     : card.outcome === 'worsened' ? '#EF4444'
@@ -280,20 +256,7 @@ const styles = StyleSheet.create({
   summaryHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   summaryTitle: { fontSize: 13, fontWeight: '600' },
   summaryBody: { fontSize: 14, lineHeight: 22 },
-  row: { flexDirection: 'row', gap: spacing.sm },
-  ringCell: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: 4,
-  },
-  ringLabel: { fontSize: 11, fontWeight: '500' },
-  ringPrimary: { fontSize: 26, fontWeight: '700' },
-  ringSecondary: { fontSize: 11 },
-  ringPct: { fontSize: 10, textAlign: 'right' },
-  barBg: { height: 6, borderRadius: 3, backgroundColor: '#F1F5F9', marginTop: 4 },
-  barFill: { height: '100%', borderRadius: 3 },
+  heroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   card: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, gap: 8 },
   cardTitle: { fontSize: 14, fontWeight: '600' },
   cardMeta: { fontSize: 12 },
@@ -301,6 +264,7 @@ const styles = StyleSheet.create({
   hydHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   hydTitle: { flex: 1, fontSize: 14, fontWeight: '600' },
   hydValue: { fontSize: 14, fontWeight: '600' },
+
   mealHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   geneRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 4 },
   geneTitle: { fontSize: 13, fontWeight: '600' },

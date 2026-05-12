@@ -24,6 +24,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchMyProgress, type ProgressDashboard, type ProgressCard } from '../services/myProgress';
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
+import HeroTile from '../components/dashboard/HeroTile';
 
 const WINDOW_OPTIONS = [
   { label: '7 天', days: 7 },
@@ -132,12 +133,40 @@ export default function MyProgressScreen() {
                 </Text>
               </View>
 
-              {/* 核心 4 数 */}
+              {/* 核心 4 数 — 学健康记录 VitalsGrid 2x2 tile 风格 (2026-05-12) */}
               <View style={styles.statGrid}>
-                <StatCell label="接受率" value={pct(s.acceptance_rate)} hint={`${s.accepted}/${s.accepted + s.declined}`} c={c} />
-                <StatCell label="完成率" value={pct(s.completed && s.accepted ? s.completed / s.accepted : null)} hint={`${s.completed}/${s.accepted}`} c={c} />
-                <StatCell label="验证率" value={pct(s.verification_rate)} hint={`${s.graded}/${s.completed}`} c={c} />
-                <StatCell label="改善率" value={pct(s.improvement_rate)} hint={`${s.improved}/${s.graded}`} c={c} />
+                <HeroTile
+                  label="接受率"
+                  ionIcon="checkmark-circle"
+                  value={pct(s.acceptance_rate)}
+                  sub={`${s.accepted}/${s.accepted + s.declined}`}
+                  color={c.blue}
+                  bg={c.tintBlue}
+                />
+                <HeroTile
+                  label="完成率"
+                  ionIcon="hourglass"
+                  value={pct(s.completed && s.accepted ? s.completed / s.accepted : null)}
+                  sub={`${s.completed}/${s.accepted}`}
+                  color={c.purple}
+                  bg={c.tintPurple}
+                />
+                <HeroTile
+                  label="验证率"
+                  ionIcon="search"
+                  value={pct(s.verification_rate)}
+                  sub={`${s.graded}/${s.completed}`}
+                  color={c.orange}
+                  bg={c.tintOrange}
+                />
+                <HeroTile
+                  label="改善率"
+                  ionIcon="trending-up"
+                  value={pct(s.improvement_rate)}
+                  sub={`${s.improved}/${s.graded}`}
+                  color={c.green}
+                  bg={c.tintGreen}
+                />
               </View>
 
               {/* outcome 分布 */}
@@ -196,16 +225,6 @@ export default function MyProgressScreen() {
 }
 
 // ─── 子组件 ─────────────────────────────────────────────────────────────
-
-function StatCell({ label, value, hint, c }: any) {
-  return (
-    <View style={[styles.statCell, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <Text style={[styles.statLabel, { color: c.labelTertiary }]}>{label}</Text>
-      <Text style={[styles.statValue, { color: c.labelPrimary }]}>{value}</Text>
-      <Text style={[styles.statHint, { color: c.labelTertiary }]}>{hint}</Text>
-    </View>
-  );
-}
 
 function OutcomePill({ label, count, color, total }: { label: string; count: number; color: string; total: number }) {
   const pctVal = total > 0 ? (count / total) * 100 : 0;
@@ -293,18 +312,7 @@ const styles = StyleSheet.create({
   heroNum: { fontSize: 36, fontWeight: '700' },
   heroDenom: { fontSize: 18, fontWeight: '500' },
   heroSub: { fontSize: 12, lineHeight: 18, opacity: 0.85 },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  statCell: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: 4,
-  },
-  statLabel: { fontSize: 11, fontWeight: '500' },
-  statValue: { fontSize: 22, fontWeight: '700' },
-  statHint: { fontSize: 11 },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   outcomeRow: {
     flexDirection: 'row',
     borderWidth: 1,
