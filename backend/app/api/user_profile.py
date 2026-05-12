@@ -367,6 +367,10 @@ async def update_gps_location(
     # detected_city="海淀" 命中不了 → fallback 杭州坐标的老坑).
     profile.detected_lat = lat
     profile.detected_lon = lon
+    # GPS 按钮的语义是"用 GPS 自动定位", 触发时顺手关掉 manual mode, 否则
+    # detected_* 写入了但 environment 路由先读 manual_city, GPS 等于无效
+    # (用户感受: "GPS 设置之后, 位置仍然没自动改")
+    profile.use_manual_location = False
     profile.location_updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(profile)
