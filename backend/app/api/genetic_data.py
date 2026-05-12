@@ -1527,7 +1527,24 @@ def reconcile_profile_by_dict(
         new_gene = known["gene"]
         new_variant = known["variant"]
         new_category = known["category"]
-        if (v.gene_name, v.variant_name, v.category) != (new_gene, new_variant, new_category):
+
+        # 再查 genotype map 重写 result_label + risk_level (修 label 也串字段的问题)
+        new_label = v.result_label
+        new_risk = v.risk_level
+        gt = (v.genotype or "").strip().upper()
+        map_entry = known["map"].get(gt)
+        if map_entry is None and len(gt) == 2:
+            # 尝试反转 (AG ↔ GA)
+            map_entry = known["map"].get(gt[::-1])
+        if map_entry is not None:
+            _geno_label, new_label, new_risk = map_entry
+
+        changed = (
+            (v.gene_name, v.variant_name, v.category) != (new_gene, new_variant, new_category)
+            or v.result_label != new_label
+            or v.risk_level != new_risk
+        )
+        if changed:
             rewritten.append({
                 "id": v.id,
                 "rsid": rsid,
@@ -1535,17 +1552,23 @@ def reconcile_profile_by_dict(
                     "gene_name": v.gene_name,
                     "variant_name": v.variant_name,
                     "category": v.category,
+                    "result_label": v.result_label,
+                    "risk_level": v.risk_level,
                 },
                 "after": {
                     "gene_name": new_gene,
                     "variant_name": new_variant,
                     "category": new_category,
+                    "result_label": new_label,
+                    "risk_level": new_risk,
                 },
             })
             if not dry_run:
                 v.gene_name = new_gene
                 v.variant_name = new_variant
                 v.category = new_category
+                v.result_label = new_label
+                v.risk_level = new_risk
 
     if not dry_run:
         db.commit()
