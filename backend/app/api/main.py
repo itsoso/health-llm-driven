@@ -7,6 +7,7 @@ from app.api import (
     admin_llm,
     admin_wscla,
     admin_slo,
+    movement_plan,
     users,
     basic_health,
     medical_exams,
@@ -141,6 +142,7 @@ api_router.include_router(admin_observability.router, prefix="/admin/observabili
 api_router.include_router(admin_llm.router)
 api_router.include_router(admin_wscla.router, prefix="/admin/wscla", tags=["admin-wscla"])
 api_router.include_router(admin_slo.router, prefix="/admin/slo", tags=["admin-slo"])
+api_router.include_router(movement_plan.router)
 api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
 api_router.include_router(performance.router)
 api_router.include_router(data_health.router, prefix="/data-health", tags=["data-health"])

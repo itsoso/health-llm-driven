@@ -163,6 +163,19 @@ export default function TodayScreen() {
           <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
         </TouchableOpacity>
 
+        {/* 我的运动方案 — G-W6 (2026-05-12) */}
+        <TouchableOpacity
+          onPress={() => router.push('/movement-plan' as any)}
+          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
+        >
+          <Text style={styles.quickEntryEmoji}>🏃</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的运动方案</Text>
+            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>训练状态 · 今日处方 · 基因偏好 · 闭环</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+        </TouchableOpacity>
+
         {isLoading && (
           <View style={styles.loading}>
             <ActivityIndicator />
