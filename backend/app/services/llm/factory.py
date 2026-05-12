@@ -195,6 +195,8 @@ def get_llm_provider() -> LLMProvider:
     获取 LLM Provider 单例
 
     首次调用时创建实例并缓存，后续调用返回同一实例。
+    包装顺序 (从内到外): real → usage_tracker → pii_scrub
+    确保 usage_tracker 记录的是脱敏后 prompt, 真实调用前 PII 已 redact.
 
     Returns:
         LLMProvider 实例
@@ -202,7 +204,10 @@ def get_llm_provider() -> LLMProvider:
     global _provider_instance
     if _provider_instance is None:
         from app.services.llm.usage_tracker import wrap_provider
-        _provider_instance = wrap_provider(create_llm_provider())
+        from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+        _provider_instance = wrap_provider_pii_scrub(
+            wrap_provider(create_llm_provider())
+        )
     return _provider_instance
 
 
