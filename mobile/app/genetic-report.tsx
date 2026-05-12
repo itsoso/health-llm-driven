@@ -38,6 +38,7 @@ import {
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import MarkdownText from '../components/shared/MarkdownText';
+import EvidenceChip from '../components/shared/EvidenceChip';
 
 export default function GeneticReportScreen() {
   const { c } = useTheme();
@@ -369,9 +370,12 @@ function RelatedCardRow({ card, c }: { card: RelatedCard; c: any }) {
   const stageColor = STAGE_COLORS[stage];
   return (
     <View style={[styles.relatedRow, { backgroundColor: c.bgPrimary }]}>
-      <Text style={[styles.relatedCardTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-        {card.title}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text style={[styles.relatedCardTitle, { color: c.labelPrimary, flex: 1 }]} numberOfLines={2}>
+          {card.title}
+        </Text>
+        <EvidenceChip level={card.evidence_level} />
+      </View>
       <View style={styles.relatedMetaRow}>
         <View style={[styles.stageChip, { backgroundColor: stageColor.bg }]}>
           <Text style={[styles.stageText, { color: stageColor.text }]}>{stageColor.label}</Text>

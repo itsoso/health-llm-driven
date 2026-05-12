@@ -10,6 +10,7 @@ export interface DietCard {
   metric_key: string | null;
   baseline_value: string | null;
   actual_value: string | null;
+  evidence_level: 'high' | 'medium' | 'low' | 'medical_grade' | null;
   created_at: string | null;
   graded_at: string | null;
 }

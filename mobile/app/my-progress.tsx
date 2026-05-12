@@ -25,6 +25,7 @@ import { fetchMyProgress, type ProgressDashboard, type ProgressCard } from '../s
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
+import EvidenceChip from '../components/shared/EvidenceChip';
 
 const WINDOW_OPTIONS = [
   { label: '7 天', days: 7 },
@@ -247,9 +248,12 @@ function CardRow({ card, onPress, c }: { card: ProgressCard; onPress: () => void
       style={[styles.cardRow, { backgroundColor: c.bgCard, borderColor: c.separator }]}
     >
       <View style={{ flex: 1, gap: 4 }}>
-        <Text style={[styles.cardTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-          {card.title}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={[styles.cardTitle, { color: c.labelPrimary, flex: 1 }]} numberOfLines={2}>
+            {card.title}
+          </Text>
+          <EvidenceChip level={card.evidence_level} />
+        </View>
         {card.metric_key && card.baseline_value && card.actual_value && (
           <Text style={[styles.cardMetric, { color: c.labelTertiary }]}>
             {card.metric_key} {card.baseline_value} → {card.actual_value}

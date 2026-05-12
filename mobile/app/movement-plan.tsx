@@ -25,6 +25,7 @@ import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
 import MarkdownText from '../components/shared/MarkdownText';
+import EvidenceChip from '../components/shared/EvidenceChip';
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   optimal: { bg: '#D1FAE5', text: '#065F46' },
@@ -315,7 +316,10 @@ function RelatedCardRow({ card, onPress, c }: { card: MovementCard; onPress: () 
   return (
     <TouchableOpacity onPress={onPress} style={[styles.relatedRow, { backgroundColor: c.bgPrimary }]}>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.relatedTitle, { color: c.labelPrimary }]} numberOfLines={2}>{card.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={[styles.relatedTitle, { color: c.labelPrimary, flex: 1 }]} numberOfLines={2}>{card.title}</Text>
+          <EvidenceChip level={card.evidence_level} />
+        </View>
         {card.metric_key && card.baseline_value && card.actual_value && (
           <Text style={[styles.relatedMeta, { color: c.labelTertiary }]}>
             {card.metric_key} {card.baseline_value} → {card.actual_value}

@@ -180,6 +180,7 @@ def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
         "metric_key": card.metric_key,
         "baseline_value": card.baseline_value,
         "actual_value": card.actual_value,
+        "evidence_level": card.evidence_level,
         "created_at": card.created_at.isoformat() if card.created_at else None,
         "completed_at": card.completed_at.isoformat() if card.completed_at else None,
         "graded_at": card.graded_at.isoformat() if card.graded_at else None,

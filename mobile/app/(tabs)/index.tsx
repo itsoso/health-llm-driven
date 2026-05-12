@@ -32,6 +32,7 @@ import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
+import EvidenceChip from '../../components/shared/EvidenceChip';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -340,7 +341,10 @@ function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => voi
   return (
     <TouchableOpacity style={[styles.row, { borderColor: c.separator }]} onPress={onPress}>
       <View style={styles.rowMain}>
-        <Text style={[styles.rowTitle, { color: c.labelPrimary }]}>{card.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={[styles.rowTitle, { color: c.labelPrimary, flex: 1 }]}>{card.title}</Text>
+          <EvidenceChip level={card.evidence_level} />
+        </View>
         <Text style={[styles.rowSub, { color: c.labelSecondary }]} numberOfLines={2}>
           {card.content}
         </Text>
