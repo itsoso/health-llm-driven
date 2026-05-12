@@ -93,6 +93,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/admin-llm' as any)} />
           <SettingRow icon="person-outline" label="AI 教练风格"
             onPress={() => router.push('/coach-persona' as any)} />
+          <SettingRow icon="cellular-outline" label="我的基因"
+            onPress={() => router.push('/genetic-report' as any)} />
         </View>
 
         {/* Settings items */}

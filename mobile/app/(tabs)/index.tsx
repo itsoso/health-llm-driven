@@ -137,6 +137,19 @@ export default function TodayScreen() {
         {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
         <EnvironmentCard />
 
+        {/* 我的基因快捷入口 — G-W2 (2026-05-12) */}
+        <TouchableOpacity
+          onPress={() => router.push('/genetic-report' as any)}
+          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
+        >
+          <Text style={styles.quickEntryEmoji}>🧬</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的基因</Text>
+            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>52 关键位点 · AI 解读 + 当前生效建议</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+        </TouchableOpacity>
+
         {isLoading && (
           <View style={styles.loading}>
             <ActivityIndicator />
@@ -350,4 +363,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   chatEntryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  quickEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+  },
+  quickEntryEmoji: { fontSize: 22 },
+  quickEntryTitle: { fontSize: 15, fontWeight: '600' },
+  quickEntrySub: { fontSize: 12, marginTop: 2 },
 });
