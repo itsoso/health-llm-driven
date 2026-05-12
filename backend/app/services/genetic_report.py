@@ -50,6 +50,9 @@ _CATEGORY_ZH = {
     "drug_sensitivity": "药物敏感",
     "disease_risk": "疾病风险",
     "sleep": "睡眠节律",
+    "recovery": "恢复能力",
+    "cognition": "认知功能",
+    "personality": "人格特质",
 }
 
 
