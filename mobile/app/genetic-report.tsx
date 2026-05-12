@@ -30,6 +30,7 @@ import {
   fetchGeneticReport,
   type GeneticReport,
   type GeneticReportItem,
+  type RelatedCard,
   CATEGORY_LABELS,
   RISK_COLORS,
 } from '../services/geneticReport';
@@ -263,11 +264,85 @@ function SnpCard({
           <Text style={[styles.snpMeta, { color: c.labelTertiary }]}>
             {item.rsid} · {CATEGORY_LABELS[item.category] ?? item.category}
           </Text>
-          {/* G-W3 此处加: Why 面板 + 当前生效建议 link + outcome chip */}
+
+          {/* G-W3 Why 面板: related_cards 当前生效建议 + outcome chip */}
+          {!isMiss && item.related_cards.length > 0 && (
+            <View style={styles.relatedSection}>
+              <Text style={[styles.relatedTitle, { color: c.labelTertiary }]}>
+                基于这条基因, 当前已生效的建议:
+              </Text>
+              {item.related_cards.map(rc => (
+                <RelatedCardRow key={rc.id} card={rc} c={c} />
+              ))}
+            </View>
+          )}
+          {!isMiss && item.related_cards.length === 0 && (
+            <Text style={[styles.relatedNone, { color: c.labelTertiary }]}>
+              暂无基于这条基因的活跃建议
+            </Text>
+          )}
         </View>
       )}
     </TouchableOpacity>
   );
+}
+
+// G-W3 Why 面板里单条建议行 — 显示 title + outcome chip + effect_size
+function RelatedCardRow({ card, c }: { card: RelatedCard; c: any }) {
+  const stage = stageOf(card);
+  const stageColor = STAGE_COLORS[stage];
+  return (
+    <View style={[styles.relatedRow, { backgroundColor: c.bgPrimary }]}>
+      <Text style={[styles.relatedCardTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+        {card.title}
+      </Text>
+      <View style={styles.relatedMetaRow}>
+        <View style={[styles.stageChip, { backgroundColor: stageColor.bg }]}>
+          <Text style={[styles.stageText, { color: stageColor.text }]}>{stageColor.label}</Text>
+        </View>
+        {card.outcome === 'improved' && card.effect_size != null && (
+          <Text style={[styles.effectText, { color: '#15803D' }]}>
+            ↑ {(Math.abs(card.effect_size) * 100).toFixed(0)}%
+          </Text>
+        )}
+        {card.outcome === 'worsened' && card.effect_size != null && (
+          <Text style={[styles.effectText, { color: '#B91C1C' }]}>
+            ↓ {(Math.abs(card.effect_size) * 100).toFixed(0)}%
+          </Text>
+        )}
+        {card.metric_key && card.actual_value && card.baseline_value && (
+          <Text style={[styles.effectMeta, { color: c.labelTertiary }]}>
+            {card.metric_key} {card.baseline_value} → {card.actual_value}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+type CardStage = 'pending' | 'accepted' | 'verifying' | 'closed_safe' | 'closed_worsened' | 'closed_inconclusive' | 'declined';
+
+const STAGE_COLORS: Record<CardStage, { bg: string; text: string; label: string }> = {
+  pending: { bg: '#F1F5F9', text: '#475569', label: '未决策' },
+  accepted: { bg: '#DBEAFE', text: '#1E40AF', label: '已接受' },
+  verifying: { bg: '#FEF3C7', text: '#92400E', label: '验证中' },
+  closed_safe: { bg: '#D1FAE5', text: '#065F46', label: '✓ 已闭环' },
+  closed_worsened: { bg: '#FEE2E2', text: '#991B1B', label: '⚠ 反向' },
+  closed_inconclusive: { bg: '#F1F5F9', text: '#475569', label: '数据不足' },
+  declined: { bg: '#F1F5F9', text: '#94A3B8', label: '已拒绝' },
+};
+
+function stageOf(card: RelatedCard): CardStage {
+  if (card.user_decision === 'declined' || card.user_decision === 'dismissed' ||
+      card.user_decision === 'false_positive') {
+    return 'declined';
+  }
+  if (card.outcome === 'improved' || card.outcome === 'unchanged') return 'closed_safe';
+  if (card.outcome === 'worsened') return 'closed_worsened';
+  if (card.outcome === 'inconclusive' && card.graded_at) return 'closed_inconclusive';
+  if (card.user_decision === 'accepted' && card.completed_at && !card.graded_at) return 'verifying';
+  if (card.user_decision === 'accepted') return 'accepted';
+  return 'pending';
 }
 
 // ─── styles ─────────────────────────────────────────────────────────────
@@ -324,5 +399,20 @@ const styles = StyleSheet.create({
   snpExpand: { gap: 6, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E2E8F0' },
   snpDesc: { fontSize: 13, lineHeight: 18 },
   snpMeta: { fontSize: 11, fontFamily: 'Courier' },
+  // G-W3 Why 面板
+  relatedSection: { gap: 6, marginTop: 6 },
+  relatedTitle: { fontSize: 11, fontWeight: '600' },
+  relatedNone: { fontSize: 11, fontStyle: 'italic', marginTop: 4 },
+  relatedRow: {
+    borderRadius: 8,
+    padding: 8,
+    gap: 6,
+  },
+  relatedCardTitle: { fontSize: 13, fontWeight: '500', lineHeight: 18 },
+  relatedMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  stageChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  stageText: { fontSize: 10, fontWeight: '600' },
+  effectText: { fontSize: 12, fontWeight: '700' },
+  effectMeta: { fontSize: 10 },
   empty: { textAlign: 'center', padding: spacing.xl, fontSize: 13 },
 });

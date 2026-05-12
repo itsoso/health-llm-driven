@@ -4,6 +4,8 @@
   - GeneticProfile + GeneticVariant (实测命中)
   - KNOWN_SNPS 字典 (52 SNP 全集) - 命中 = 用户测过, 未命中 = 用户没测/数据缺失
   - LLM 生成顶部 "基因 Agent 对你说" 一段总结 (缓存 1h)
+  - G-W3 (2026-05-12): 每个命中 item 关联 active action_cards (按 gene_name 模糊
+    匹配 content/title), 返回前 3 条 + outcome chip 数据 → Mobile 端 Why 面板用
 
 返回结构 (mobile 报告页直接渲染):
   {
@@ -12,7 +14,11 @@
     items: [
       {rsid, gene, variant_name, category, hit: bool,
        genotype?, result_label?, risk_level?, variant_nature?,
-       description}
+       description,
+       related_cards: [  # G-W3
+         {id, title, status, user_decision, outcome, effect_size,
+          accuracy_score, completed_at, graded_at}
+       ]}
     ]
   }
 """
@@ -23,15 +29,19 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
 
+from app.models.action_card import ActionCard
 from app.models.genetic_data import GeneticProfile, GeneticVariant
 
 logger = logging.getLogger(__name__)
 
 # Risk 排序权重 — 报告页按 risk 优先, 同 risk 内按 category 字母序
 _RISK_WEIGHT = {"high": 0, "medium": 1, "low": 2, "info": 3}
+
+# 每个 SNP 关联建议数量上限 (避免长卡膨胀)
+_RELATED_CARDS_LIMIT = 3
 
 
 def _get_known_snps() -> Dict[str, Dict[str, Any]]:
@@ -58,6 +68,74 @@ def _resolve_active_profile(db: Session, user_id: int) -> Optional[GeneticProfil
     return profiles[0]
 
 
+def _fetch_related_cards(db: Session, user_id: int) -> List[ActionCard]:
+    """G-W3: 拉用户活跃 + 已闭环的 action_cards (近 90 天), 用于按 gene 模糊关联.
+
+    一次性拉, 之后每个 SNP 在 Python 侧 filter (避免 N+1 查询).
+    """
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    return (
+        db.query(ActionCard)
+        .filter(
+            ActionCard.user_id == user_id,
+            ActionCard.created_at >= cutoff,
+        )
+        .order_by(desc(ActionCard.created_at))
+        .limit(200)
+        .all()
+    )
+
+
+def _gene_to_card_match_keys(gene: str, variant_name: str) -> List[str]:
+    """生成模糊匹配的关键词列表 (基因符号 + 别名). 简化版, 避免误匹配过广."""
+    keys = [gene]
+    # 部分基因有中文别名
+    aliases = {
+        "MTHFR": ["MTHFR", "叶酸代谢", "5-MTHF"],
+        "APOE": ["APOE", "脂代谢"],
+        "FADS1": ["FADS1", "Omega-3", "EPA", "DHA"],
+        "ALDH2": ["ALDH2", "酒精代谢", "饮酒"],
+        "CYP2D6": ["CYP2D6", "药物代谢"],
+        "VDR": ["VDR", "维生素D", "维D"],
+        "LCT": ["LCT", "乳糖", "乳制品"],
+        "ACTN3": ["ACTN3", "爆发力", "耐力"],
+        "PPARGC1A": ["PPARGC1A", "有氧"],
+        "TCF7L2": ["TCF7L2", "血糖", "胰岛素"],
+        "HFE": ["HFE", "铁", "血色素"],
+        "CYP1A2": ["CYP1A2", "咖啡因", "咖啡"],
+        "COMT": ["COMT", "压力", "应激", "多巴胺"],
+        "BDNF": ["BDNF", "情绪", "焦虑"],
+        "CLOCK": ["CLOCK", "生物钟", "睡眠节律"],
+    }
+    return aliases.get(gene, keys)
+
+
+def _card_matches_gene(card: ActionCard, keys: List[str]) -> bool:
+    """卡片 content/title 是否含任一 key."""
+    haystack = (card.title or "") + " " + (card.content or "")
+    return any(k in haystack for k in keys)
+
+
+def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
+    """精简 card 序列化, 只取 Mobile Why 面板需要的字段."""
+    return {
+        "id": card.id,
+        "title": card.title,
+        "status": card.status,
+        "user_decision": card.user_decision,
+        "outcome": card.outcome,
+        "effect_size": card.effect_size,
+        "accuracy_score": card.accuracy_score,
+        "metric_key": card.metric_key,
+        "baseline_value": card.baseline_value,
+        "actual_value": card.actual_value,
+        "created_at": card.created_at.isoformat() if card.created_at else None,
+        "completed_at": card.completed_at.isoformat() if card.completed_at else None,
+        "graded_at": card.graded_at.isoformat() if card.graded_at else None,
+    }
+
+
 def build_report(db: Session, user_id: int) -> Dict[str, Any]:
     """主入口: 返回报告页所需全部数据 (除 LLM 总结, 它独立 cache)."""
     profile = _resolve_active_profile(db, user_id)
@@ -75,25 +153,22 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
         .filter(GeneticVariant.profile_id == profile.id)
         .all()
     )
-    # 用户实测的 rsid 集合 (genetic_variants 没存 rsid, 但用 gene+variant 反查 KNOWN_SNPS)
-    # 实际更可靠的反查: gene_name 在 KNOWN_SNPS 任一项里
     hit_by_gene_variant = {}
     for v in variants:
         key = (v.gene_name, v.variant_name or "")
         hit_by_gene_variant[key] = v
 
+    # G-W3: 一次性拉 user 近 90 天卡, Python filter 模糊匹配
+    user_cards = _fetch_related_cards(db, user_id)
+
     items: List[Dict[str, Any]] = []
     hits = 0
 
     for rsid, snp in known.items():
-        # 尝试匹配 (gene, variant) — variant_name 可能不完全一致, fallback 到 gene only
-        v = None
         gene = snp["gene"]
         variant_label = snp["variant"]
-        # 严格匹配
         v = hit_by_gene_variant.get((gene, variant_label))
         if v is None:
-            # 宽松: 同 gene 的任一 variant
             for (g, _vn), gv in hit_by_gene_variant.items():
                 if g == gene:
                     v = gv
@@ -101,6 +176,9 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
 
         if v is not None:
             hits += 1
+            # G-W3: 关联建议
+            keys = _gene_to_card_match_keys(gene, variant_label)
+            related = [c for c in user_cards if _card_matches_gene(c, keys)][:_RELATED_CARDS_LIMIT]
             items.append({
                 "rsid": rsid,
                 "gene": gene,
@@ -112,6 +190,7 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
                 "result_label": v.result_label,
                 "risk_level": v.risk_level or "info",
                 "variant_nature": v.variant_nature or "neutral",
+                "related_cards": [_card_to_dict(c) for c in related],
             })
         else:
             items.append({
@@ -125,9 +204,9 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
                 "result_label": None,
                 "risk_level": None,
                 "variant_nature": None,
+                "related_cards": [],
             })
 
-    # 排序: 命中优先 (hit=True 先), 命中内按 risk 高→低, 未命中按 category 字母
     items.sort(key=lambda it: (
         0 if it["hit"] else 1,
         _RISK_WEIGHT.get(it.get("risk_level") or "info", 3),

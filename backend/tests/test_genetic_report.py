@@ -165,3 +165,69 @@ def test_endpoint_returns_summary_when_requested(client, db):
 def test_endpoint_requires_auth(client):
     resp = client.get("/api/v1/genetic/report/me")
     assert resp.status_code in (401, 403)
+
+
+# ── G-W3 Why 面板: related_cards 关联 ──────────────────────────────────
+
+
+def test_related_cards_match_by_gene_alias(db):
+    from app.models.action_card import ActionCard
+    user = _make_user(db, "related_cards")[0]
+    p = _make_profile(db, user.id)
+    _make_variant(db, p, gene="FADS1", variant_name="Omega-3代谢", risk_level="medium")
+
+    db.add(ActionCard(
+        user_id=user.id,
+        title="补 EPA + DHA",
+        content="基于 FADS1 杂合, Omega-3 转化能力中等, 建议每日 EPA 1g + DHA 0.5g",
+        card_type="recommendation",
+        source_type="weekly_advisor",
+        user_decision="accepted",
+        outcome="improved",
+        effect_size=0.12,
+    ))
+    db.add(ActionCard(
+        user_id=user.id, title="多喝水", content="每天 2L",
+        card_type="recommendation", source_type="weekly_advisor",
+    ))
+    db.commit()
+
+    r = genetic_report.build_report(db, user.id)
+    fads1 = next(it for it in r["items"] if it["gene"] == "FADS1")
+    assert len(fads1["related_cards"]) == 1
+    assert fads1["related_cards"][0]["title"] == "补 EPA + DHA"
+    assert fads1["related_cards"][0]["outcome"] == "improved"
+    assert fads1["related_cards"][0]["effect_size"] == 0.12
+
+
+def test_related_cards_limit_3(db):
+    from app.models.action_card import ActionCard
+    user = _make_user(db, "limit_3")[0]
+    p = _make_profile(db, user.id)
+    _make_variant(db, p, gene="MTHFR", variant_name="C677T", risk_level="medium")
+    for i in range(5):
+        db.add(ActionCard(
+            user_id=user.id,
+            title=f"MTHFR 建议 {i}",
+            content="叶酸代谢相关",
+            card_type="recommendation", source_type="weekly_advisor",
+        ))
+    db.commit()
+    r = genetic_report.build_report(db, user.id)
+    mthfr = next(it for it in r["items"] if it["gene"] == "MTHFR")
+    assert len(mthfr["related_cards"]) == 3
+
+
+def test_miss_items_have_empty_related_cards(db):
+    from app.models.action_card import ActionCard
+    user = _make_user(db, "miss_no_relate")[0]
+    p = _make_profile(db, user.id)
+    db.add(ActionCard(
+        user_id=user.id, title="ALDH2 警告", content="酒精代谢",
+        card_type="alert", source_type="safety_alert",
+    ))
+    db.commit()
+    r = genetic_report.build_report(db, user.id)
+    aldh2 = next(it for it in r["items"] if it["gene"] == "ALDH2")
+    assert aldh2["hit"] is False
+    assert aldh2["related_cards"] == []

@@ -1,5 +1,21 @@
 import api from './api';
 
+export interface RelatedCard {
+  id: number;
+  title: string;
+  status: string | null;
+  user_decision: string | null;
+  outcome: 'improved' | 'unchanged' | 'worsened' | 'inconclusive' | null;
+  effect_size: number | null;
+  accuracy_score: number | null;
+  metric_key: string | null;
+  baseline_value: string | null;
+  actual_value: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  graded_at: string | null;
+}
+
 export interface GeneticReportItem {
   rsid: string;
   gene: string;
@@ -11,6 +27,7 @@ export interface GeneticReportItem {
   result_label: string | null;
   risk_level: 'high' | 'medium' | 'low' | 'info' | null;
   variant_nature: 'protective' | 'risk' | 'neutral' | null;
+  related_cards: RelatedCard[];
 }
 
 export interface GeneticReport {
