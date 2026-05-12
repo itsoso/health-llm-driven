@@ -143,70 +143,124 @@ export default function MovementPlanScreen() {
             )}
           </View>
 
-          {/* 基因偏好 */}
+          {/* 基因偏好 — chip 化 (2026-05-12) */}
           {data.gene_biases && data.gene_biases.length > 0 && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>基因偏好</Text>
-              {data.gene_biases.map((g, i) => (
-                <View key={i} style={styles.geneRow}>
-                  <Ionicons name="flash-outline" size={14} color={c.brand} />
-                  <Text style={[styles.geneText, { color: c.labelSecondary }]}>
-                    {Object.entries(g).filter(([k]) => k !== 'type').map(([k, v]) => `${k}: ${v}`).join(' · ')}
-                  </Text>
-                </View>
-              ))}
+              <View style={styles.cardHead}>
+                <Ionicons name="flash" size={14} color={c.brand} />
+                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>基因偏好</Text>
+              </View>
+              {data.gene_biases.map((g: any, i: number) => {
+                const tip = g.tip;
+                const others = Object.entries(g).filter(([k]) => k !== 'type' && k !== 'tip');
+                return (
+                  <View key={i} style={styles.geneItem}>
+                    <View style={styles.geneChipRow}>
+                      {others.map(([k, v]) => (
+                        <View key={k} style={[styles.geneChip, { backgroundColor: c.tintTeal, borderColor: c.teal }]}>
+                          <Text style={[styles.geneChipKey, { color: c.labelTertiary }]}>{k}</Text>
+                          <Text style={[styles.geneChipVal, { color: c.teal }]}>{String(v)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    {tip && (
+                      <Text style={[styles.geneTip, { color: c.labelSecondary }]}>{String(tip)}</Text>
+                    )}
+                  </View>
+                );
+              })}
             </View>
           )}
 
           {/* 本周调整 */}
           {data.week_adjustment && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>本周调整</Text>
+              <View style={styles.cardHead}>
+                <Ionicons name="repeat" size={14} color={c.brand} />
+                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>本周调整</Text>
+              </View>
               <Text style={[styles.bodyText, { color: c.labelSecondary }]}>{data.week_adjustment}</Text>
             </View>
           )}
 
-          {/* 近 7 天训练 */}
+          {/* 近 7 天训练 — 加 HR zone 色点 (2026-05-12) */}
           {data.recent_workouts && data.recent_workouts.count > 0 && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>
-                近 7 天训练 · {data.recent_workouts.count} 次
-              </Text>
-              {data.recent_workouts.avg_perceived_exertion != null && (
-                <Text style={[styles.cardMeta, { color: c.labelTertiary }]}>
-                  主观疲劳均值 RPE {data.recent_workouts.avg_perceived_exertion}/10
+              <View style={styles.cardHead}>
+                <Ionicons name="trail-sign" size={14} color={c.brand} />
+                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>
+                  近 7 天训练
                 </Text>
-              )}
-              {data.recent_workouts.high_intensity_minutes_7d != null && (
                 <Text style={[styles.cardMeta, { color: c.labelTertiary }]}>
-                  高强度 (Z4-Z5) {data.recent_workouts.high_intensity_minutes_7d.toFixed(0)} 分钟
+                  {data.recent_workouts.count} 次
                 </Text>
-              )}
-              {data.recent_workouts.workouts.slice(0, 5).map((w: any, i: number) => (
-                <View key={i} style={styles.workoutRow}>
-                  <Text style={[styles.workoutDate, { color: c.labelTertiary }]}>{w.date}</Text>
-                  <Text style={[styles.workoutType, { color: c.labelPrimary }]}>{w.type}</Text>
-                  <Text style={[styles.workoutMeta, { color: c.labelSecondary }]}>
-                    {w.duration_min}min
-                    {w.distance_km ? ` · ${w.distance_km}km` : ''}
-                    {w.avg_hr ? ` · 心率${w.avg_hr}` : ''}
-                  </Text>
+              </View>
+              {(data.recent_workouts.high_intensity_minutes_7d != null || data.recent_workouts.avg_perceived_exertion != null) && (
+                <View style={styles.workoutSummaryRow}>
+                  {data.recent_workouts.high_intensity_minutes_7d != null && (
+                    <View style={[styles.summaryPill, { backgroundColor: c.tintOrange }]}>
+                      <Text style={[styles.summaryPillText, { color: c.orange }]}>
+                        Z4-Z5 · {data.recent_workouts.high_intensity_minutes_7d.toFixed(0)}min
+                      </Text>
+                    </View>
+                  )}
+                  {data.recent_workouts.avg_perceived_exertion != null && (
+                    <View style={[styles.summaryPill, { backgroundColor: c.tintPurple }]}>
+                      <Text style={[styles.summaryPillText, { color: c.purple }]}>
+                        RPE {data.recent_workouts.avg_perceived_exertion}/10
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              ))}
+              )}
+              {data.recent_workouts.workouts.slice(0, 5).map((w: any, i: number) => {
+                const zone = hrToZone(w.avg_hr);
+                return (
+                  <View key={i} style={styles.workoutRow}>
+                    <View style={[styles.zoneDot, { backgroundColor: zone.color }]} />
+                    <Text style={[styles.workoutDate, { color: c.labelTertiary }]}>{w.date?.slice(5) ?? ''}</Text>
+                    <Text style={[styles.workoutType, { color: c.labelPrimary }]} numberOfLines={1}>{w.type}</Text>
+                    <View style={styles.workoutMetaCol}>
+                      <Text style={[styles.workoutMetaPrimary, { color: c.labelSecondary }]}>
+                        {w.duration_min}min
+                        {w.distance_km ? ` · ${w.distance_km}km` : ''}
+                      </Text>
+                      {w.avg_hr && (
+                        <Text style={[styles.workoutMetaSec, { color: c.labelTertiary }]}>
+                          {zone.label} · {w.avg_hr}bpm
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
 
-          {/* 实验建议 */}
+          {/* Agent 实验建议 — metric badge (2026-05-12) */}
           {data.proposed_experiments && data.proposed_experiments.length > 0 && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>Agent 实验建议</Text>
+              <View style={styles.cardHead}>
+                <Ionicons name="flask" size={14} color={c.brand} />
+                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>Agent 实验建议</Text>
+              </View>
               {data.proposed_experiments.map((e: any, i: number) => (
-                <View key={i} style={styles.experimentRow}>
+                <View key={i} style={[styles.experimentRow, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
                   <Text style={[styles.experimentTitle, { color: c.labelPrimary }]}>{e.title}</Text>
                   {e.metric_key && (
-                    <Text style={[styles.experimentMeta, { color: c.labelTertiary }]}>
-                      {e.metric_key}: {e.baseline_value} → {e.target_value} · {e.verification_days}天
-                    </Text>
+                    <View style={styles.experimentMetricRow}>
+                      <View style={[styles.metricBadge, { backgroundColor: c.brandLight }]}>
+                        <Text style={[styles.metricBadgeText, { color: c.brand }]}>{e.metric_key}</Text>
+                      </View>
+                      <Text style={[styles.experimentArrow, { color: c.labelSecondary }]}>
+                        {e.baseline_value} → {e.target_value}
+                      </Text>
+                      {e.verification_days != null && (
+                        <Text style={[styles.experimentDays, { color: c.labelTertiary }]}>
+                          · {e.verification_days} 天
+                        </Text>
+                      )}
+                    </View>
                   )}
                 </View>
               ))}
@@ -241,6 +295,16 @@ export default function MovementPlanScreen() {
       </SafeAreaView>
     </>
   );
+}
+
+// HR avg → 5-zone 色 + 标签 (粗略阈值, 按一般跑者最大心率 ~180 估)
+function hrToZone(avg?: number | null): { color: string; label: string } {
+  if (avg == null) return { color: '#94A3B8', label: '—' };
+  if (avg < 130) return { color: '#10B981', label: 'Z1' };  // 热身/恢复
+  if (avg < 150) return { color: '#3B82F6', label: 'Z2' };  // 有氧基础
+  if (avg < 165) return { color: '#F59E0B', label: 'Z3' };  // 节奏
+  if (avg < 180) return { color: '#FB923C', label: 'Z4' };  // 阈值
+  return { color: '#EF4444', label: 'Z5' };                  // VO2max
 }
 
 function RelatedCardRow({ card, onPress, c }: { card: MovementCard; onPress: () => void; c: any }) {
@@ -290,18 +354,48 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 8,
   },
-  cardTitle: { fontSize: 14, fontWeight: '600' },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardTitle: { fontSize: 14, fontWeight: '600', flex: 1 },
   cardMeta: { fontSize: 12 },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  geneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  geneText: { fontSize: 12, flex: 1 },
-  workoutRow: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 4 },
-  workoutDate: { fontSize: 11, width: 80 },
-  workoutType: { fontSize: 13, fontWeight: '500' },
-  workoutMeta: { fontSize: 11, flex: 1, textAlign: 'right' },
-  experimentRow: { gap: 4, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E2E8F0' },
+  // 基因偏好 chip
+  geneItem: { gap: 6 },
+  geneChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  geneChip: {
+    flexDirection: 'row', alignItems: 'baseline', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 8, borderWidth: StyleSheet.hairlineWidth,
+  },
+  geneChipKey: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase' },
+  geneChipVal: { fontSize: 12, fontWeight: '600' },
+  geneTip: { fontSize: 12, lineHeight: 18 },
+  // 训练 row
+  workoutSummaryRow: { flexDirection: 'row', gap: 6, marginVertical: 2 },
+  summaryPill: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+  },
+  summaryPillText: { fontSize: 11, fontWeight: '600' },
+  zoneDot: { width: 6, height: 6, borderRadius: 3 },
+  workoutRow: {
+    flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 6,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E2E8F0',
+  },
+  workoutDate: { fontSize: 11, width: 36, fontFamily: 'Courier' },
+  workoutType: { fontSize: 13, fontWeight: '500', flex: 1 },
+  workoutMetaCol: { alignItems: 'flex-end', gap: 1 },
+  workoutMetaPrimary: { fontSize: 12 },
+  workoutMetaSec: { fontSize: 10 },
+  // experiment
+  experimentRow: {
+    gap: 6, padding: 10,
+    borderRadius: 10, borderWidth: StyleSheet.hairlineWidth,
+  },
   experimentTitle: { fontSize: 13, fontWeight: '600' },
-  experimentMeta: { fontSize: 11 },
+  experimentMetricRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  metricBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  metricBadgeText: { fontSize: 10, fontWeight: '700', fontFamily: 'Courier' },
+  experimentArrow: { fontSize: 12, fontVariant: ['tabular-nums'] as const },
+  experimentDays: { fontSize: 11 },
   relatedRow: {
     flexDirection: 'row',
     alignItems: 'center',
