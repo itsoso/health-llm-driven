@@ -91,6 +91,12 @@ def _build_advisor_prompt(twin_blob: str, safety_summary: str, findings_summary:
     crp | esr | wbc | rbc | hgb | plt | lp_a | apo_b |
     hydration_ml | calories_intake | supplement_adherence_pct |
     custom (没匹配的 metric 一律填这个, 不要硬塞)
+- evidence_level — **必填**, 从下面四级选:
+    high           — 强证据: CPIC pharmacogenomics 标准 / Garmin 实测异常 / MTHFR 叶酸代谢这类 >100 RCT 共识
+    medium         — 中等证据: 单项 RCT / 小样本 / 关联性
+    low            — 弱证据: 理论假设 / 单一研究 / 跨族群外推
+    medical_grade  — **必须医生介入**: 用药调整 / 遗传病 / 急性血压/血糖/肝肾异常
+  默认 medium. 涉及降压/降糖/抗凝/抗精神病药调整 → 必须 medical_grade
 - baseline_value (当前数值, **纯数字字符串**, 例 "62" 不是 "62 bpm" 不是 "60ms, ACWR 2.38")
 - target_value (目标数值, **纯数字字符串**, 例 "70" 不是 ">70ms")
 - verification_days (整数, 默认 7)
@@ -162,6 +168,17 @@ def _normalize_metric_key(raw: Any) -> str:
     return k if k in _METRIC_KEY_WHITELIST else "custom"
 
 
+_EVIDENCE_LEVELS = {"high", "medium", "low", "medical_grade"}
+
+
+def _normalize_evidence_level(raw: Any) -> str:
+    """LLM 返回的 evidence_level 不在 4 级之内 → 默认 medium."""
+    if not raw or not isinstance(raw, str):
+        return "medium"
+    k = raw.strip().lower()
+    return k if k in _EVIDENCE_LEVELS else "medium"
+
+
 def _validate_suggestion(s: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """校验单条建议. 必填: title/content. 其余有默认值."""
     title = s.get("title")
@@ -172,6 +189,7 @@ def _validate_suggestion(s: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "title": str(title).strip()[:200],
         "content": str(content).strip(),
         "metric_key": _normalize_metric_key(s.get("metric_key")),
+        "evidence_level": _normalize_evidence_level(s.get("evidence_level")),
         "baseline_value": (
             str(s["baseline_value"]) if s.get("baseline_value") is not None else None
         ),
@@ -235,6 +253,7 @@ def _persist_suggestions(
             baseline_value=s.get("baseline_value"),
             target_value=s.get("target_value"),
             verification_days=s.get("verification_days") or DEFAULT_VERIFICATION_DAYS,
+            evidence_level=s.get("evidence_level") or "medium",
             creator_specialist=s.get("_creator_specialist") or "weekly_advisor",
             check_back_date=now + timedelta(days=s.get("verification_days") or DEFAULT_VERIFICATION_DAYS),
         )

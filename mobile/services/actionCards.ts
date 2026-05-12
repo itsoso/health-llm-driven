@@ -45,6 +45,8 @@ export interface ActionCard {
   grading_notes?: string | null;
   // WSCLA 生命周期 (Phase 0/1)
   severity?: 'critical' | 'high' | 'medium' | 'low' | 'info' | null;
+  // 2026-05-12: 证据等级
+  evidence_level?: 'high' | 'medium' | 'low' | 'medical_grade' | null;
   user_decision?: 'accepted' | 'adjusted' | 'declined' | 'dismissed' | 'false_positive' | null;
   decided_at?: string | null;
   decision_reason?: string | null;

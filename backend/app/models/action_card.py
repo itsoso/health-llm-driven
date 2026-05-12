@@ -89,6 +89,13 @@ class ActionCard(Base):
     # safety alert 分级 (critical / high / medium / low / info), 普通建议 NULL
     severity = Column(String(20))
 
+    # 2026-05-12: 证据等级 (high / medium / low / medical_grade), 历史卡 NULL
+    # high = CPIC/Garmin 实测/MTHFR 叶酸这类强共识
+    # medium = 单临床/关联性
+    # low = 理论假设/弱证据
+    # medical_grade = 高风险, 必须医生介入 (用药调整/遗传病/急性指标)
+    evidence_level = Column(String(20))
+
     # outcome 分类 (improved / unchanged / worsened / inconclusive), 与 accuracy_score 数字配合
     outcome = Column(String(20))
     effect_size = Column(Float)  # 标准化效应值, 可空

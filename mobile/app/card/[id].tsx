@@ -59,6 +59,13 @@ const SOURCE_LABEL: Record<string, string> = {
   sleep_spo2: '夜间血氧',
 };
 
+const EVIDENCE_CONF: Record<string, { bg: string; text: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  high: { bg: '#D1FAE5', text: '#065F46', label: '强证据', icon: 'shield-checkmark' },
+  medium: { bg: '#FEF3C7', text: '#92400E', label: '中等证据', icon: 'shield-half' },
+  low: { bg: '#F1F5F9', text: '#475569', label: '弱证据', icon: 'help-circle' },
+  medical_grade: { bg: '#FEE2E2', text: '#991B1B', label: '需医生介入', icon: 'medkit' },
+};
+
 const OUTCOME_CONF: Record<string, { color: string; bg: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   improved: { color: '#10B981', bg: '#D1FAE5', label: '改善', icon: 'trending-up' },
   unchanged: { color: '#64748B', bg: '#F1F5F9', label: '稳定', icon: 'remove' },
@@ -151,6 +158,7 @@ export default function ActionCardDetailScreen() {
   const isSafetyAlert = card.source_type === 'safety_alert';
   const alreadyDecided = !!card.user_decision;
   const sourceLabel = card.source_type ? SOURCE_LABEL[card.source_type] ?? card.source_type : null;
+  const evidenceConf = card.evidence_level ? EVIDENCE_CONF[card.evidence_level] : null;
   const outcomeConf = card.outcome ? OUTCOME_CONF[card.outcome] : null;
   const isClosed = !!card.outcome || !!card.graded_at;
   const hasMetric = !!card.metric_key && (card.baseline_value || card.target_value || card.actual_value);
@@ -170,6 +178,12 @@ export default function ActionCardDetailScreen() {
                 <Ionicons name={sev.icon} size={12} color={sev.text} />
                 <Text style={[styles.sevText, { color: sev.text }]}>{sev.label}</Text>
               </View>
+              {evidenceConf && (
+                <View style={[styles.sevChip, { backgroundColor: evidenceConf.bg }]}>
+                  <Ionicons name={evidenceConf.icon} size={12} color={evidenceConf.text} />
+                  <Text style={[styles.sevText, { color: evidenceConf.text }]}>{evidenceConf.label}</Text>
+                </View>
+              )}
               {sourceLabel && (
                 <View style={[styles.sourceChip, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
                   <Text style={[styles.sourceText, { color: c.labelTertiary }]}>{sourceLabel}</Text>
@@ -183,6 +197,14 @@ export default function ActionCardDetailScreen() {
                 {card.creator_specialist && card.source_id ? ' · ' : ''}
                 {card.source_id ?? ''}
               </Text>
+            )}
+            {card.evidence_level === 'medical_grade' && (
+              <View style={[styles.medicalWarn, { backgroundColor: '#FEE2E2', borderColor: '#991B1B' }]}>
+                <Ionicons name="warning" size={14} color="#991B1B" />
+                <Text style={[styles.medicalWarnText, { color: '#991B1B' }]}>
+                  此建议涉及医疗决策, 请咨询持证医生后再执行
+                </Text>
+              </View>
             )}
           </View>
 
@@ -450,7 +472,14 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   scroll: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl * 2 },
   hero: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radii.lg, padding: spacing.md, gap: 6 },
-  heroChips: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  heroChips: { flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' },
+  medicalWarn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6,
+    marginTop: 6,
+  },
+  medicalWarnText: { fontSize: 12, fontWeight: '500', flex: 1 },
   sevChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,

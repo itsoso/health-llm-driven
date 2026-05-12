@@ -532,6 +532,7 @@ def _card_to_dict(card: ActionCard) -> dict:
         "adherence_confidence": card.adherence_confidence,
         # WSCLA 生命周期 (Phase 0/1)
         "severity": card.severity,
+        "evidence_level": card.evidence_level,
         "user_decision": card.user_decision,
         "decided_at": card.decided_at.isoformat() if card.decided_at else None,
         "decision_reason": card.decision_reason,
