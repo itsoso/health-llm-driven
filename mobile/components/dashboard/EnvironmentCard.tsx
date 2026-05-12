@@ -30,6 +30,8 @@ interface AirQuality {
   aqi_level?: string;
   aqi_description?: string;
   primary_pollutant?: string;
+  pm25?: number;
+  pm10?: number;
 }
 
 interface ForecastDay {
@@ -145,16 +147,28 @@ export default function EnvironmentCard() {
 
   return (
     <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      {/* 地区头: tap 进 location 设置. region 含 "市/省" 时省略避免冗余 */}
-      {loc?.city && (
-        <TouchableOpacity style={styles.locRow} onPress={() => router.push('/location' as any)}>
-          <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
-          <Text style={[styles.locText, { color: c.labelSecondary }]} numberOfLines={1}>
-            {loc.region && !loc.region.includes(loc.city) ? `${loc.region} · ${loc.city}` : loc.city}
-          </Text>
-          <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
+      {/* 顶部: 地区 + 设置齿轮 (从原首页 header 搬过来, 2026-05-12) */}
+      <View style={styles.topRow}>
+        {loc?.city ? (
+          <TouchableOpacity style={styles.locTouch} onPress={() => router.push('/location' as any)}>
+            <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
+            <Text style={[styles.locText, { color: c.labelSecondary }]} numberOfLines={1}>
+              {loc.region && !loc.region.includes(loc.city) ? `${loc.region} · ${loc.city}` : loc.city}
+            </Text>
+            <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
+        <TouchableOpacity
+          onPress={() => router.push('/settings' as any)}
+          accessibilityLabel="设置"
+          style={styles.settingsBtn}
+          hitSlop={8}
+        >
+          <Ionicons name="settings-outline" size={20} color={c.labelTertiary} />
         </TouchableOpacity>
-      )}
+      </View>
 
       <View style={styles.row}>
         {/* 左: 天气 */}
@@ -168,7 +182,7 @@ export default function EnvironmentCard() {
           </Text>
         </View>
 
-        {/* 右: AQI */}
+        {/* 右: AQI + PM2.5 */}
         <View style={styles.right}>
           <View style={[styles.aqiBadge, { backgroundColor: aqiColor(aqi) + '22', borderColor: aqiColor(aqi) }]}>
             <Text style={[styles.aqiNum, { color: aqiColor(aqi) }]}>{aqi != null ? aqi : '—'}</Text>
@@ -176,6 +190,11 @@ export default function EnvironmentCard() {
           <Text style={[styles.aqiLabel, { color: c.labelTertiary }]}>
             空气 {aqiLabel(aqi)}
           </Text>
+          {a?.pm25 != null && (
+            <Text style={[styles.pm25Label, { color: c.labelTertiary }]}>
+              PM2.5 {Math.round(a.pm25)}
+            </Text>
+          )}
         </View>
       </View>
 
@@ -219,7 +238,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     marginBottom: -spacing.xs,  // 紧贴下面温度
   },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: -spacing.xs,
+  },
+  locTouch: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1,
+  },
+  settingsBtn: { paddingLeft: 8, paddingVertical: 2 },
   locText: { fontSize: 12, fontWeight: '500', flex: 1 },
+  pm25Label: { fontSize: 10, fontWeight: '500', marginTop: 2 },
   row: { flexDirection: 'row', alignItems: 'center' },
   left: { flex: 1, gap: 2 },
   right: { alignItems: 'center', gap: 4 },

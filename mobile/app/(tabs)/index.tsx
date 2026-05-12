@@ -133,22 +133,6 @@ export default function TodayScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
       >
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.headerTitle, { color: c.labelPrimary }]}>今日</Text>
-            <Text style={[styles.headerSub, { color: c.labelTertiary }]}>
-              Agent 替你看,只在该看时打扰你
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => router.push('/settings' as any)}
-            accessibilityLabel="设置"
-            style={styles.headerSettings}
-          >
-            <Ionicons name="settings-outline" size={22} color={c.labelTertiary} />
-          </TouchableOpacity>
-        </View>
-
         {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
         <EnvironmentCard />
 
@@ -352,16 +336,6 @@ function fmt(v?: number | null): string {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.lg },  // 110 = tab bar 83 + 缓冲, 否则 AI 会诊被遮
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: spacing.sm },
-  headerSettings: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 20,
-  },
-  headerTitle: { fontSize: 28, fontWeight: '700' },
-  headerSub: { fontSize: 13 },
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
   section: { gap: spacing.sm },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
