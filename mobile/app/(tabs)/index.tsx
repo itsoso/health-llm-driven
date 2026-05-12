@@ -176,6 +176,19 @@ export default function TodayScreen() {
           <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
         </TouchableOpacity>
 
+        {/* 我的饮食方案 — G-W7 (2026-05-12) */}
+        <TouchableOpacity
+          onPress={() => router.push('/diet-plan' as any)}
+          style={[styles.quickEntry, { backgroundColor: c.bgCard, borderColor: c.separator }]}
+        >
+          <Text style={styles.quickEntryEmoji}>🥗</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.quickEntryTitle, { color: c.labelPrimary }]}>我的饮食方案</Text>
+            <Text style={[styles.quickEntrySub, { color: c.labelTertiary }]}>TDEE · 蛋白缺口 · 基因驱动 · 化验关联</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+        </TouchableOpacity>
+
         {isLoading && (
           <View style={styles.loading}>
             <ActivityIndicator />
