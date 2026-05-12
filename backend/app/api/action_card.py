@@ -254,6 +254,23 @@ def create_from_message(
     return _card_to_dict(card)
 
 
+@router.get("/{card_id}")
+def get_card(
+    card_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """单卡详情 — mobile /card/[id] 用. 比走 list filter 可靠 (closed/verifying
+    等所有 status 都能拿)."""
+    card = db.query(ActionCard).filter(
+        ActionCard.id == card_id,
+        ActionCard.user_id == current_user.id,
+    ).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    return _card_to_dict(card)
+
+
 @router.patch("/{card_id}")
 def update_card(
     card_id: int,

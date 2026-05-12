@@ -49,17 +49,10 @@ export default function ActionCardDetailScreen() {
   const { data: card, isLoading, error } = useQuery<ActionCard>({
     queryKey: ['action-card', cardId],
     queryFn: async () => {
-      const { data } = await api.get<ActionCard>(`/action-cards/me?status=active&limit=50`);
-      // 后端没有单卡 GET 接口, 从列表里找; 找不到再试 archived
-      const list = Array.isArray(data) ? data : [];
-      const found = list.find(c => c.id === cardId);
-      if (found) return found;
-      const { data: archived } = await api.get<ActionCard[]>(
-        `/action-cards/me?status=archived&limit=50`,
-      );
-      const f2 = (Array.isArray(archived) ? archived : []).find(c => c.id === cardId);
-      if (!f2) throw new Error(`找不到 card #${cardId}`);
-      return f2;
+      // 2026-05-12: 用单卡 GET, closed/verifying 状态都能拿到
+      // (历史上只查 active+archived 列表, 已闭环卡命中不到 → 页面为空)
+      const { data } = await api.get<ActionCard>(`/action-cards/${cardId}`);
+      return data;
     },
     enabled: Number.isFinite(cardId),
   });
