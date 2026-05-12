@@ -397,7 +397,14 @@ def upload_genetic_pdf(
 
 
 def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
-    """后台线程：PDF → 图片 → LLM 提取基因位点 → 保存"""
+    """后台线程：PDF → 图片 → LLM 提取基因位点 → 保存
+
+    2026-05-12 修: 旧 prompt 让 LLM 自由填 gene_name, 大量字段串错
+    (例 PDF 写"RS1801131 ACTN3 对爆发力无显著帮助", LLM 把 gene_name
+    填成 MTHFR — 因为 RS1801131 在别的语境下常跟 MTHFR 一起出现).
+    新 prompt: 强制给出 rsid (必填), 让后处理按 rsid 查字典重写 gene/variant,
+    LLM 自由填的 gene_name 只作为 fallback. KNOWN_SNPS 是真理来源.
+    """
     import asyncio
     import json
     import base64
@@ -420,32 +427,41 @@ def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
         from app.services.llm.factory import get_vision_provider
         import time
 
-        prompt = """请从这份基因检测报告页面中提取所有基因位点信息。
+        prompt = """请从这份基因检测报告页面中提取所有基因位点信息.
 
-对每个基因位点，返回 JSON 数组：
+**关键规则**:
+1. **rsid 必填** — 从页面找形如 "rs1801133" / "RS1801133" 的编号, 去掉 RS 前缀后填入 rsid.
+   找不到 rsid 的条目 **不要提取**, 宁缺勿滥.
+2. gene_name 和 variant_name 必须来自**同一行/同一段落**的上下文,
+   **不要**从别的行/章节借用. 如果某行只有 rsid 没有清晰的基因名, gene_name 留空字符串.
+3. 一条位点里的 gene_name 应该是**最接近 rsid 的基因符号**, 不要用后文其他基因名填.
+4. 看不清 / 部分遮挡 → skip 这条, 不要猜.
+
+对每个基因位点, 返回 JSON 数组:
 ```json
 [
   {
+    "rsid": "rs1801133",
     "category": "nutrition/exercise/drug_sensitivity/disease_risk/sleep/other",
-    "gene_name": "基因名称（如 MTHFR）",
-    "variant_name": "变异位点（如 C677T）",
-    "genotype": "检测结果（如 CT）",
-    "result_label": "中文结果描述（如 叶酸代谢轻度减弱）",
+    "gene_name": "MTHFR",
+    "variant_name": "C677T",
+    "genotype": "CT",
+    "result_label": "叶酸代谢轻度减弱",
     "risk_level": "low/medium/high/info",
     "description": "简短说明"
   }
 ]
 ```
 
-category 分类规则：
-- nutrition: 营养代谢相关（叶酸、咖啡因、乳糖、酒精、维生素等）
-- exercise: 运动能力相关（肌肉类型、耐力、有氧能力等）
-- drug_sensitivity: 药物敏感性（药物代谢酶、过敏风险等）
-- disease_risk: 疾病风险（心血管、糖尿病、肿瘤等）
-- sleep: 睡眠相关（昼夜节律、深度睡眠等）
+category 分类规则:
+- nutrition: 营养代谢 (叶酸/咖啡因/乳糖/酒精/维生素等)
+- exercise: 运动能力 (肌肉类型/耐力/有氧能力等)
+- drug_sensitivity: 药物敏感性 (药物代谢酶/过敏风险等)
+- disease_risk: 疾病风险 (心血管/糖尿病/肿瘤等)
+- sleep: 睡眠相关 (昼夜节律/深度睡眠等)
 - other: 其他
 
-如果页面中没有基因位点信息，返回空数组 []。只返回 JSON，不要其他文字。"""
+如果页面中没有含 rsid 的基因位点, 返回 []. 只返回 JSON, 不要其他文字."""
 
         provider = get_vision_provider()
 
@@ -474,18 +490,56 @@ category 分类规则：
                 logger.warning(f"[基因PDF] 第{i+1}页提取失败: {e}")
                 continue
 
-        # 保存提取的位点
+        # 后处理: rsid 白名单校验 + 用 KNOWN_SNPS 重写 gene_name/variant_name
+        # 根治 2026-05-12 串字段 bug — KNOWN_SNPS 是唯一真理来源
         saved = 0
+        rewrote = 0
+        dropped_no_rsid = 0
+        dropped_bad_rsid = 0
+        seen_rsid = set()  # 去重同一 PDF 内重复的 rsid
+
         for v in all_variants:
             try:
+                raw_rsid = (v.get("rsid") or "").strip().lower()
+                # 规范 rsid: "rs1801133" / "RS1801133" / "1801133" → "rs1801133"
+                if raw_rsid and not raw_rsid.startswith("rs"):
+                    if raw_rsid.isdigit():
+                        raw_rsid = "rs" + raw_rsid
+                    else:
+                        raw_rsid = ""
+
+                # 没 rsid → 丢弃 (新规则: 宁缺勿滥)
+                if not raw_rsid or not re.match(r'^rs\d+$', raw_rsid):
+                    dropped_no_rsid += 1
+                    continue
+
+                # 同一 PDF 内去重
+                if raw_rsid in seen_rsid:
+                    continue
+                seen_rsid.add(raw_rsid)
+
+                # 字典查 — 命中则用字典的 gene/variant/category 覆盖 LLM 填的
+                gene_name = (v.get("gene_name") or "").strip()
+                variant_name = (v.get("variant_name") or "").strip()
+                category = v.get("category", "other")
+
+                known_entry = KNOWN_SNPS.get(raw_rsid)
+                if known_entry is not None:
+                    # 字典命中 — 用字典的为准 (避免 LLM 串错)
+                    if gene_name != known_entry["gene"] or variant_name != known_entry["variant"]:
+                        rewrote += 1
+                    gene_name = known_entry["gene"]
+                    variant_name = known_entry["variant"]
+                    category = known_entry["category"]
+
                 variant = GeneticVariant(
                     user_id=user_id,
                     profile_id=profile_id,
-                    category=v.get("category", "other"),
-                    gene_name=v.get("gene_name", ""),
-                    variant_name=v.get("variant_name", ""),
-                    genotype=v.get("genotype", ""),
-                    result_label=v.get("result_label", ""),
+                    category=category,
+                    gene_name=gene_name,
+                    variant_name=variant_name,
+                    genotype=(v.get("genotype") or "").strip(),
+                    result_label=(v.get("result_label") or "").strip(),
                     risk_level=v.get("risk_level", "info"),
                     description=v.get("description", ""),
                 )
@@ -497,9 +551,15 @@ category 分类规则：
         # 更新档案备注
         profile = db.query(GeneticProfile).get(profile_id)
         if profile:
-            profile.notes = f"PDF 自动提取完成，共 {saved} 个位点"
+            profile.notes = (
+                f"PDF 自动提取完成, 共 {saved} 个位点 "
+                f"(字典重写 {rewrote}, 丢弃无 rsid {dropped_no_rsid})"
+            )
         db.commit()
-        logger.info(f"[基因PDF] profile={profile_id} 完成，提取 {saved} 个位点")
+        logger.info(
+            f"[基因PDF] profile={profile_id} 完成: saved={saved} "
+            f"rewrote_by_dict={rewrote} dropped_no_rsid={dropped_no_rsid}"
+        )
 
         # Memory KG: 基因位点 → entity + 'self_user has_genotype variant' (旁路)
         try:
@@ -1420,4 +1480,82 @@ def get_my_genetic_report(
     return {
         **report,
         "agent_summary": summary,
+    }
+
+
+@router.post("/profiles/{profile_id}/reconcile", summary="管理员: 按 KNOWN_SNPS 字典校对脏 profile")
+def reconcile_profile_by_dict(
+    profile_id: int,
+    dry_run: bool = Query(True, description="True=只返回预览, False=真删改"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """修复 2026-05-12 串字段 bug: 按 variant_name 反查 KNOWN_SNPS, 重写 gene/category.
+
+    机制: variant_name 在 PDF 提取时常含 rsid (如 RS1801133), 用这个找字典.
+    找到 → 重写 gene/variant/category; 找不到 → 标 note 不删 (保留原始记录).
+
+    仅允许 profile owner 自己用.
+    """
+    import re as _re
+
+    profile = db.query(GeneticProfile).filter(GeneticProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="profile 不存在")
+    if profile.user_id != current_user.id and not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="无权操作他人 profile")
+
+    variants = db.query(GeneticVariant).filter(GeneticVariant.profile_id == profile_id).all()
+
+    rewritten = []
+    unmatched = []
+    for v in variants:
+        # 尝试从 variant_name 抽 rsid
+        vn = (v.variant_name or "").upper().strip()
+        m = _re.search(r'RS(\d+)', vn)
+        rsid = f"rs{m.group(1)}" if m else None
+        known = KNOWN_SNPS.get(rsid) if rsid else None
+        if known is None:
+            unmatched.append({
+                "id": v.id,
+                "gene_name": v.gene_name,
+                "variant_name": v.variant_name,
+                "result_label": v.result_label,
+                "reason": "no_rsid" if rsid is None else "rsid_not_in_dict",
+            })
+            continue
+        new_gene = known["gene"]
+        new_variant = known["variant"]
+        new_category = known["category"]
+        if (v.gene_name, v.variant_name, v.category) != (new_gene, new_variant, new_category):
+            rewritten.append({
+                "id": v.id,
+                "rsid": rsid,
+                "before": {
+                    "gene_name": v.gene_name,
+                    "variant_name": v.variant_name,
+                    "category": v.category,
+                },
+                "after": {
+                    "gene_name": new_gene,
+                    "variant_name": new_variant,
+                    "category": new_category,
+                },
+            })
+            if not dry_run:
+                v.gene_name = new_gene
+                v.variant_name = new_variant
+                v.category = new_category
+
+    if not dry_run:
+        db.commit()
+
+    return {
+        "profile_id": profile_id,
+        "total_variants": len(variants),
+        "rewritten_count": len(rewritten),
+        "unmatched_count": len(unmatched),
+        "rewritten": rewritten[:50],  # 限返 50 条避免 response 膨胀
+        "unmatched_sample": unmatched[:20],
+        "dry_run": dry_run,
     }
