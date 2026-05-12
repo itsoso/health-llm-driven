@@ -82,9 +82,16 @@ def _build_advisor_prompt(twin_blob: str, safety_summary: str, findings_summary:
 返回严格 JSON 数组, 字段:
 - title (≤ 20 字, 一句话标题)
 - content (1-2 段, 解释为什么 + 怎么做 + 验证标准)
-- metric_key (sleep_score | hrv | rhr | weight | bp | spo2_odi | ldl | hba1c | ...)
-- baseline_value (当前值, 字符串)
-- target_value (目标值, 字符串)
+- metric_key — **必须**从下列白名单选, 选不到就填 "custom"; 不要瞎猜:
+    sleep_score | hrv | rhr | weight | bp | systolic_bp | diastolic_bp |
+    spo2 | spo2_odi | bmi | body_fat |
+    ldl | hdl | tc | tg | hba1c | fasting_glucose | blood_glucose |
+    alt | ast | ggt | alp | creatinine | uric_acid | urea |
+    tsh | ft3 | ft4 | vitamin_d | b12 | ferritin |
+    crp | esr | wbc | rbc | hgb | plt | lp_a | apo_b |
+    custom (没匹配的 metric 一律填这个, 不要硬塞)
+- baseline_value (当前数值, **纯数字字符串**, 例 "62" 不是 "62 bpm" 不是 "60ms, ACWR 2.38")
+- target_value (目标数值, **纯数字字符串**, 例 "70" 不是 ">70ms")
 - verification_days (整数, 默认 7)
 
 ## 用户健康快照 (Twin)
@@ -131,6 +138,26 @@ def _parse_llm_suggestions(text: str) -> List[Dict[str, Any]]:
     return []
 
 
+_METRIC_KEY_WHITELIST = {
+    "sleep_score", "hrv", "rhr", "weight", "bp", "systolic_bp", "diastolic_bp",
+    "spo2", "spo2_odi", "bmi", "body_fat",
+    "ldl", "hdl", "tc", "tg", "hba1c", "fasting_glucose", "blood_glucose",
+    "alt", "ast", "ggt", "alp", "creatinine", "uric_acid", "urea",
+    "tsh", "ft3", "ft4", "vitamin_d", "b12", "ferritin",
+    "crp", "esr", "wbc", "rbc", "hgb", "plt", "lp_a", "apo_b",
+    "custom",
+}
+
+
+def _normalize_metric_key(raw: Any) -> str:
+    """LLM 返回的 metric_key 不在白名单 → 强制 'custom', 不让脏数据进库
+    (verify_outcomes 会把 custom 标 inconclusive, 不会错误 grade)."""
+    if not raw or not isinstance(raw, str):
+        return "custom"
+    k = raw.strip().lower()
+    return k if k in _METRIC_KEY_WHITELIST else "custom"
+
+
 def _validate_suggestion(s: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """校验单条建议. 必填: title/content. 其余有默认值."""
     title = s.get("title")
@@ -140,7 +167,7 @@ def _validate_suggestion(s: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {
         "title": str(title).strip()[:200],
         "content": str(content).strip(),
-        "metric_key": s.get("metric_key"),
+        "metric_key": _normalize_metric_key(s.get("metric_key")),
         "baseline_value": (
             str(s["baseline_value"]) if s.get("baseline_value") is not None else None
         ),
