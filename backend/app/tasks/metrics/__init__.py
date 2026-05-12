@@ -142,29 +142,148 @@ def fetch_bp_composite(db: Session, user_id: int, end_date: date) -> Optional[fl
 
 def fetch_fasting_glucose(db: Session, user_id: int, end_date: date) -> Optional[float]:
     """空腹血糖 — 从 medical_exam_items 拉, 找最近的 fasting_glucose 项."""
+    return _fetch_lab_item(db, user_id, end_date, ["fasting%glucose", "空腹血糖"])
+
+
+def _fetch_lab_item(
+    db: Session, user_id: int, end_date: date, name_patterns: list,
+    days_window: int = 30,
+) -> Optional[float]:
+    """通用化验项取数. days_window 默认 30 天 (微营养窗口宽)."""
     try:
         from app.models.medical_exam import MedicalExamItem, MedicalExamRecord
     except ImportError:
         return None
-    start = end_date - timedelta(days=14)  # 化验窗口宽一些, 14 天内任一 fasting_glucose
-    item = (
-        db.query(MedicalExamItem)
-        .join(MedicalExamRecord, MedicalExamRecord.id == MedicalExamItem.exam_record_id)
-        .filter(
-            MedicalExamRecord.user_id == user_id,
-            MedicalExamRecord.exam_date >= start,
-            MedicalExamRecord.exam_date <= end_date,
-            MedicalExamItem.item_name.ilike("%fasting%glucose%"),
+    start = end_date - timedelta(days=days_window)
+    for pat in name_patterns:
+        item = (
+            db.query(MedicalExamItem)
+            .join(MedicalExamRecord, MedicalExamRecord.id == MedicalExamItem.exam_record_id)
+            .filter(
+                MedicalExamRecord.user_id == user_id,
+                MedicalExamRecord.exam_date >= start,
+                MedicalExamRecord.exam_date <= end_date,
+                MedicalExamItem.item_name.ilike(f"%{pat}%"),
+            )
+            .order_by(desc(MedicalExamRecord.exam_date))
+            .first()
         )
-        .order_by(desc(MedicalExamRecord.exam_date))
-        .first()
-    )
-    if item is None or item.value is None:
-        return None
+        if item is not None and item.value is not None:
+            try:
+                return float(item.value)
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+# ── 饮食 / 饮水 / 补剂依从 (2026-05-12 P1.2 加, 闭环 weekly_advisor 这类卡) ──
+
+
+def fetch_hydration_ml(db: Session, user_id: int, end_date: date) -> Optional[float]:
+    """当日饮水总量 (ml). 用 end_date 当天数据, 不取均值 (饮水按日目标判断)."""
     try:
-        return float(item.value)
-    except (ValueError, TypeError):
+        from app.models.daily_health import WaterIntake
+    except ImportError:
         return None
+    rows = (
+        db.query(WaterIntake)
+        .filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date == end_date,
+        )
+        .all()
+    )
+    if not rows:
+        return None
+    return float(sum(r.amount_ml or 0 for r in rows))
+
+
+def fetch_calories_intake(db: Session, user_id: int, end_date: date) -> Optional[float]:
+    """当日总摄入卡路里 (kcal). 取 end_date 当天 DietRecord 求和."""
+    try:
+        from app.models.daily_health import DietRecord
+    except ImportError:
+        return None
+    rows = (
+        db.query(DietRecord)
+        .filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date == end_date,
+        )
+        .all()
+    )
+    if not rows:
+        return None
+    total = sum((r.calories or 0) for r in rows)
+    return float(total) if total > 0 else None
+
+
+def fetch_supplement_adherence_pct(
+    db: Session, user_id: int, end_date: date,
+) -> Optional[float]:
+    """近 7 天补剂依从率 (%). 取 SupplementIntake 实际服用记录数 / (active_supplements×7).
+
+    无法精确知道 active_supplements 数量, 用 medications 表里 category='保健品' 的
+    active 行数估算; 兜底 8 (常见用户配置).
+    """
+    try:
+        from app.models.daily_health import SupplementIntake
+        from app.models.medication import Medication
+    except ImportError:
+        return None
+
+    start = end_date - timedelta(days=6)
+    intake_count = (
+        db.query(SupplementIntake)
+        .filter(
+            SupplementIntake.user_id == user_id,
+            SupplementIntake.record_date >= start,
+            SupplementIntake.record_date <= end_date,
+        )
+        .count()
+    )
+    if intake_count == 0:
+        return 0.0
+
+    active_supps = (
+        db.query(Medication)
+        .filter(
+            Medication.user_id == user_id,
+            Medication.is_active.is_(True) if hasattr(Medication, "is_active") else True,
+        )
+        .count()
+    ) or 8
+    expected = active_supps * 7
+    pct = min(100.0, (intake_count / expected) * 100)
+    return round(pct, 1)
+
+
+# ── 微营养化验项 (P2 SupplementAdvisor 12 周试验主用) ──
+
+
+def fetch_hcy(db, user_id, end_date):
+    """同型半胱氨酸 (μmol/L) — MTHFR 试验主指标."""
+    return _fetch_lab_item(db, user_id, end_date, ["homocysteine", "同型半胱氨酸", "Hcy"])
+
+
+def fetch_vitamin_d(db, user_id, end_date):
+    return _fetch_lab_item(db, user_id, end_date, ["vitamin d", "25-OH", "维生素D", "维D"])
+
+
+def fetch_b12(db, user_id, end_date):
+    return _fetch_lab_item(db, user_id, end_date, ["B12", "vitamin B12", "维生素B12", "钴胺"])
+
+
+def fetch_ferritin(db, user_id, end_date):
+    return _fetch_lab_item(db, user_id, end_date, ["ferritin", "铁蛋白"])
+
+
+def fetch_ldl(db, user_id, end_date):
+    return _fetch_lab_item(db, user_id, end_date, ["LDL", "低密度脂蛋白"])
+
+
+def fetch_hba1c(db, user_id, end_date):
+    return _fetch_lab_item(db, user_id, end_date, ["HbA1c", "糖化血红蛋白"])
 
 
 # ── 注册表: metric_key → fetcher ───────────────────────────────────────
@@ -179,9 +298,23 @@ FETCHERS = {
     "diastolic_bp": fetch_diastolic_bp,
     "bp": fetch_bp_composite,
     "spo2_avg": fetch_spo2_avg,
-    "spo2_odi": fetch_spo2_avg,  # 同源, 复用
+    "spo2": fetch_spo2_avg,  # alias
+    "spo2_odi": fetch_spo2_avg,
     "fasting_glucose": fetch_fasting_glucose,
     "blood_glucose": fetch_fasting_glucose,
+    # 2026-05-12 P1.2 — 饮食/饮水/补剂依从 闭环
+    "hydration_ml": fetch_hydration_ml,
+    "calories_intake": fetch_calories_intake,
+    "supplement_adherence_pct": fetch_supplement_adherence_pct,
+    # 微营养化验 (SupplementAdvisor 12 周试验)
+    "hcy": fetch_hcy,
+    "homocysteine": fetch_hcy,
+    "vitamin_d": fetch_vitamin_d,
+    "vd": fetch_vitamin_d,
+    "b12": fetch_b12,
+    "ferritin": fetch_ferritin,
+    "ldl": fetch_ldl,
+    "hba1c": fetch_hba1c,
 }
 
 
@@ -207,6 +340,7 @@ HIGHER_IS_BETTER = {
     "hrv_7d_avg": True,
     "sleep_score": True,
     "spo2_avg": True,
+    "spo2": True,
     "spo2_odi": False,  # ODI 是低氧指数, 反向
     "rhr": False,
     "resting_hr": False,
@@ -216,6 +350,19 @@ HIGHER_IS_BETTER = {
     "bp": False,
     "fasting_glucose": False,
     "blood_glucose": False,
+    # P1.2 新加
+    "hydration_ml": True,             # 喝够水 = 好
+    "calories_intake": True,          # 默认假设朝目标摄入 (减脂场景在 grade 时按用户目标重写)
+    "supplement_adherence_pct": True,
+    # 微营养
+    "hcy": False,                     # 同型半胱氨酸越低越好
+    "homocysteine": False,
+    "vitamin_d": True,
+    "vd": True,
+    "b12": True,
+    "ferritin": True,                 # 在正常范围内越高越好 (女性贫血避免)
+    "ldl": False,
+    "hba1c": False,
 }
 
 # 变化阈值: ≥5% 朝目标方向 = improved, ≥5% 反方向 = worsened

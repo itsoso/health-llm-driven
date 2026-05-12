@@ -87,8 +87,9 @@ def _build_advisor_prompt(twin_blob: str, safety_summary: str, findings_summary:
     spo2 | spo2_odi | bmi | body_fat |
     ldl | hdl | tc | tg | hba1c | fasting_glucose | blood_glucose |
     alt | ast | ggt | alp | creatinine | uric_acid | urea |
-    tsh | ft3 | ft4 | vitamin_d | b12 | ferritin |
+    tsh | ft3 | ft4 | vitamin_d | vd | b12 | ferritin | hcy | homocysteine |
     crp | esr | wbc | rbc | hgb | plt | lp_a | apo_b |
+    hydration_ml | calories_intake | supplement_adherence_pct |
     custom (没匹配的 metric 一律填这个, 不要硬塞)
 - baseline_value (当前数值, **纯数字字符串**, 例 "62" 不是 "62 bpm" 不是 "60ms, ACWR 2.38")
 - target_value (目标数值, **纯数字字符串**, 例 "70" 不是 ">70ms")
@@ -143,8 +144,11 @@ _METRIC_KEY_WHITELIST = {
     "spo2", "spo2_odi", "bmi", "body_fat",
     "ldl", "hdl", "tc", "tg", "hba1c", "fasting_glucose", "blood_glucose",
     "alt", "ast", "ggt", "alp", "creatinine", "uric_acid", "urea",
-    "tsh", "ft3", "ft4", "vitamin_d", "b12", "ferritin",
+    "tsh", "ft3", "ft4", "vitamin_d", "vd", "b12", "ferritin",
+    "hcy", "homocysteine",
     "crp", "esr", "wbc", "rbc", "hgb", "plt", "lp_a", "apo_b",
+    # 2026-05-12 P1.2
+    "hydration_ml", "calories_intake", "supplement_adherence_pct",
     "custom",
 }
 
