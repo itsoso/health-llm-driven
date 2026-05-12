@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchMovementPlan, type MovementPlan, type MovementCard } from '../services/movementPlan';
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
+import HeroTile from '../components/dashboard/HeroTile';
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   optimal: { bg: '#D1FAE5', text: '#065F46' },
@@ -95,61 +96,52 @@ export default function MovementPlanScreen() {
             </View>
           )}
 
-          {/* 训练状态 + 今日处方 二并排 */}
-          {(ts || today) && (
-            <View style={styles.row}>
-              {ts && (
-                <View style={[styles.cardHalf, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-                  <Text style={[styles.cardHalfLabel, { color: c.labelTertiary }]}>训练状态</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: sc.bg, alignSelf: 'flex-start' }]}>
-                    <Text style={[styles.statusText, { color: sc.text }]}>{ts.status_zh}</Text>
-                  </View>
-                  {ts.acwr != null && (
-                    <Text style={[styles.cardHalfMeta, { color: c.labelSecondary }]}>
-                      ACWR {ts.acwr.toFixed(2)}
-                    </Text>
-                  )}
-                  {ts.workouts_this_week != null && (
-                    <Text style={[styles.cardHalfMeta, { color: c.labelSecondary }]}>
-                      本周 {ts.workouts_this_week} 次
-                    </Text>
-                  )}
-                  {ts.source && (
-                    <Text style={[styles.cardHalfHint, { color: c.labelTertiary }]}>
-                      {ts.source === 'garmin' ? 'Garmin 官方' : '自算'}
-                    </Text>
-                  )}
-                </View>
-              )}
-              {today && (
-                <View style={[styles.cardHalf, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-                  <Text style={[styles.cardHalfLabel, { color: c.labelTertiary }]}>今日建议</Text>
-                  <Text style={[styles.intensityValue, { color: ic }]}>{today.intensity_zh}</Text>
-                  <Text style={[styles.cardHalfMeta, { color: c.labelSecondary }]} numberOfLines={3}>
-                    {today.guidance}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Fitness snapshot */}
-          {data.fitness && (data.fitness.vo2max_running || data.fitness.resting_hr) && (
-            <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>体能快照</Text>
-              <View style={styles.fitnessRow}>
-                {data.fitness.vo2max_running != null && (
-                  <FitnessCell label="VO2max 跑" value={`${data.fitness.vo2max_running}`} unit="ml/kg/min" c={c} />
-                )}
-                {data.fitness.vo2max_cycling != null && (
-                  <FitnessCell label="VO2max 骑" value={`${data.fitness.vo2max_cycling}`} unit="ml/kg/min" c={c} />
-                )}
-                {data.fitness.resting_hr != null && (
-                  <FitnessCell label="静息心率" value={`${data.fitness.resting_hr}`} unit="bpm" c={c} />
-                )}
-              </View>
-            </View>
-          )}
+          {/* 训练状态 / 今日建议 / VO2max / 静息心率 — 2x2 grid (2026-05-12 redesign,
+              同 home + my-progress + diet-plan 风格) */}
+          <View style={styles.heroGrid}>
+            {ts && (
+              <HeroTile
+                label="训练状态"
+                ionIcon="speedometer"
+                value={ts.status_zh ?? '—'}
+                sub={ts.acwr != null ? `ACWR ${ts.acwr.toFixed(2)} · 本周 ${ts.workouts_this_week ?? 0} 次` : (ts.workouts_this_week != null ? `本周 ${ts.workouts_this_week} 次` : undefined)}
+                color={sc.text}
+                bg={sc.bg}
+              />
+            )}
+            {today && (
+              <HeroTile
+                label="今日建议"
+                ionIcon="flame"
+                value={today.intensity_zh ?? '—'}
+                sub={today.guidance ? today.guidance.slice(0, 24) : undefined}
+                color={ic}
+                bg={c.tintOrange}
+              />
+            )}
+            {data.fitness?.vo2max_running != null && (
+              <HeroTile
+                label="VO2max 跑"
+                ionIcon="walk"
+                value={`${data.fitness.vo2max_running}`}
+                unit=" ml/kg"
+                sub="有氧上限"
+                color={c.teal}
+                bg={c.tintTeal}
+              />
+            )}
+            {data.fitness?.resting_hr != null && (
+              <HeroTile
+                label="静息心率"
+                ionIcon="heart"
+                value={`${data.fitness.resting_hr}`}
+                unit=" bpm"
+                sub="恢复指征"
+                color={c.pink}
+                bg={c.tintPink}
+              />
+            )}
+          </View>
 
           {/* 基因偏好 */}
           {data.gene_biases && data.gene_biases.length > 0 && (
@@ -251,18 +243,6 @@ export default function MovementPlanScreen() {
   );
 }
 
-function FitnessCell({ label, value, unit, c }: any) {
-  return (
-    <View style={styles.fitnessCell}>
-      <Text style={[styles.fitnessLabel, { color: c.labelTertiary }]}>{label}</Text>
-      <Text style={[styles.fitnessValue, { color: c.labelPrimary }]}>
-        {value}
-        <Text style={[styles.fitnessUnit, { color: c.labelTertiary }]}> {unit}</Text>
-      </Text>
-    </View>
-  );
-}
-
 function RelatedCardRow({ card, onPress, c }: { card: MovementCard; onPress: () => void; c: any }) {
   const ocColor = card.outcome === 'improved' ? '#10B981'
     : card.outcome === 'worsened' ? '#EF4444'
@@ -303,20 +283,7 @@ const styles = StyleSheet.create({
   summaryHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   summaryTitle: { fontSize: 13, fontWeight: '600' },
   summaryBody: { fontSize: 14, lineHeight: 22 },
-  row: { flexDirection: 'row', gap: spacing.sm },
-  cardHalf: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: 6,
-  },
-  cardHalfLabel: { fontSize: 11, fontWeight: '500' },
-  cardHalfMeta: { fontSize: 12 },
-  cardHalfHint: { fontSize: 10, fontStyle: 'italic' },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  statusText: { fontSize: 14, fontWeight: '700' },
-  intensityValue: { fontSize: 22, fontWeight: '700' },
+  heroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   card: {
     borderWidth: 1,
     borderRadius: radii.md,
@@ -326,11 +293,6 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 14, fontWeight: '600' },
   cardMeta: { fontSize: 12 },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  fitnessRow: { flexDirection: 'row', gap: spacing.lg, flexWrap: 'wrap' },
-  fitnessCell: { gap: 2 },
-  fitnessLabel: { fontSize: 10 },
-  fitnessValue: { fontSize: 18, fontWeight: '700' },
-  fitnessUnit: { fontSize: 10, fontWeight: '400' },
   geneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   geneText: { fontSize: 12, flex: 1 },
   workoutRow: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 4 },
