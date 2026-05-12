@@ -69,6 +69,7 @@ export default function TodayScreen() {
   const { c } = useTheme();
   const qc = useQueryClient();
   const [twinExpanded, setTwinExpanded] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const safetyQuery = useQuery({
     queryKey: ['safety', 'me'],
@@ -92,15 +93,29 @@ export default function TodayScreen() {
   });
 
   const onRefresh = useCallback(async () => {
-    await Promise.all([
-      qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
-      qc.invalidateQueries({ queryKey: ['action-cards', 'active'] }),
-      qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
-    ]);
+    setManualRefreshing(true);
+    try {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['action-cards', 'active'] }),
+        qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
+        // EnvironmentCard 数据 — 不加这几条用户下拉时天气/AQI/明日预报不动
+        qc.invalidateQueries({ queryKey: ['env', 'weather'] }),
+        qc.invalidateQueries({ queryKey: ['env', 'aqi'] }),
+        qc.invalidateQueries({ queryKey: ['env', 'forecast'] }),
+        qc.invalidateQueries({ queryKey: ['env', 'location'] }),
+      ]);
+    } finally {
+      setManualRefreshing(false);
+    }
   }, [qc]);
 
   const isLoading = safetyQuery.isLoading || cardsQuery.isLoading || twinQuery.isLoading;
-  const isRefreshing = safetyQuery.isRefetching || cardsQuery.isRefetching || twinQuery.isRefetching;
+  // RefreshControl spinner: 用户主动下拉时立刻显示, 直到所有 invalidate 完成 (含 env)
+  const isRefreshing = manualRefreshing
+    || safetyQuery.isRefetching
+    || cardsQuery.isRefetching
+    || twinQuery.isRefetching;
 
   const alerts: SafetyAlert[] = safetyQuery.data?.alerts ?? [];
   const criticalAlerts = alerts.filter(a =>

@@ -32,6 +32,23 @@ interface AirQuality {
   primary_pollutant?: string;
 }
 
+interface ForecastDay {
+  date: string;
+  weather: string;
+  temp_max: number;
+  temp_min: number;
+}
+interface ForecastResponse {
+  available?: boolean;
+  forecasts?: ForecastDay[];
+}
+
+interface ProfileLocation {
+  use_manual_location?: boolean;
+  manual_location?: { city: string | null; region: string | null } | null;
+  detected_location?: { city: string | null; region: string | null } | null;
+}
+
 function aqiColor(aqi: number | undefined): string {
   if (aqi == null) return '#999';
   if (aqi <= 50) return '#30D158';
@@ -80,17 +97,65 @@ export default function EnvironmentCard() {
     staleTime: 30 * 60 * 1000,
   });
 
+  const forecastQ = useQuery<ForecastDay[] | null>({
+    queryKey: ['env', 'forecast'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get<ForecastResponse>('/environment/weather/forecast', {
+          params: { days: 3 },
+        });
+        return data?.forecasts ?? null;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 60 * 60 * 1000,  // 预报变得慢, 1h
+  });
+
+  // 用户当前生效的地区显示 — manual > detected
+  const locationQ = useQuery<{ city: string | null; region: string | null }>({
+    queryKey: ['env', 'location'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get<ProfileLocation>('/profile/me');
+        if (data?.use_manual_location && data?.manual_location?.city) {
+          return { city: data.manual_location.city, region: data.manual_location.region };
+        }
+        return {
+          city: data?.detected_location?.city ?? null,
+          region: data?.detected_location?.region ?? null,
+        };
+      } catch {
+        return { city: null, region: null };
+      }
+    },
+    staleTime: 60 * 60 * 1000,
+  });
+
   const w = weatherQ.data;
   const a = aqiQ.data;
+  const tomorrow = forecastQ.data?.[1] ?? null;  // 索引 1 = 明日 (0 = 今日)
+  const loc = locationQ.data;
 
   // 整卡都没数据 → 不显示
-  if (!w && !a) return null;
+  if (!w && !a && !tomorrow && !loc?.city) return null;
 
   const weatherDesc = w?.weather || '';
   const aqi = a?.aqi;
 
   return (
     <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      {/* 地区头: tap 进 location 设置. region 含 "市/省" 时省略避免冗余 */}
+      {loc?.city && (
+        <TouchableOpacity style={styles.locRow} onPress={() => router.push('/location' as any)}>
+          <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
+          <Text style={[styles.locText, { color: c.labelSecondary }]} numberOfLines={1}>
+            {loc.region && !loc.region.includes(loc.city) ? `${loc.region} · ${loc.city}` : loc.city}
+          </Text>
+          <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
+        </TouchableOpacity>
+      )}
+
       <View style={styles.row}>
         {/* 左: 天气 */}
         <View style={styles.left}>
@@ -113,6 +178,19 @@ export default function EnvironmentCard() {
           </Text>
         </View>
       </View>
+
+      {/* 明日预报 — 让用户提前知道是不是要带伞/穿厚一点 */}
+      {tomorrow && (
+        <View style={[styles.forecastRow, { borderTopColor: c.separator }]}>
+          <Text style={[styles.forecastLabel, { color: c.labelTertiary }]}>明日</Text>
+          <Text style={[styles.forecastTemp, { color: c.labelPrimary }]}>
+            {Math.round(tomorrow.temp_max)}° / {Math.round(tomorrow.temp_min)}°
+          </Text>
+          <Text style={[styles.forecastWeather, { color: c.labelSecondary }]} numberOfLines={1}>
+            {tomorrow.weather}
+          </Text>
+        </View>
+      )}
 
       {/* 跑步入口 — 用户报缺, 2026-05-11 加 */}
       <TouchableOpacity
@@ -137,6 +215,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
+  locRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginBottom: -spacing.xs,  // 紧贴下面温度
+  },
+  locText: { fontSize: 12, fontWeight: '500', flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
   left: { flex: 1, gap: 2 },
   right: { alignItems: 'center', gap: 4 },
@@ -152,6 +235,14 @@ const styles = StyleSheet.create({
   },
   aqiNum: { fontSize: 20, fontWeight: '700' },
   aqiLabel: { fontSize: 11, fontWeight: '500' },
+  forecastRow: {
+    flexDirection: 'row', alignItems: 'baseline', gap: 8,
+    paddingTop: spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  forecastLabel: { fontSize: 12, fontWeight: '600' },
+  forecastTemp: { fontSize: 14, fontWeight: '600' },
+  forecastWeather: { fontSize: 12, flex: 1 },
   runBtn: {
     flexDirection: 'row',
     alignItems: 'center',
