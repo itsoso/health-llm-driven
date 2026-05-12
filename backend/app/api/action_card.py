@@ -525,3 +525,106 @@ def _card_to_dict(card: ActionCard) -> dict:
         "push_delivered_at": card.push_delivered_at.isoformat() if card.push_delivered_at else None,
         "push_clicked_at": card.push_clicked_at.isoformat() if card.push_clicked_at else None,
     }
+
+
+# ─────────────────────── G-W5 用户进度看板 ────────────────────────
+
+
+@router.get("/me/progress", summary="我的执行监测进度 (用户视角 WSCLA)")
+def get_my_progress(
+    days: int = Query(30, ge=7, le=180, description="时间窗口天数"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """用户视角的执行监测看板 — Mobile /my-progress 用.
+
+    返回:
+      window: {since, until, days}
+      stats:
+        - total_surfaced: 窗口内 AI 给出的建议总数
+        - accepted: 用户接受数
+        - declined: 用户拒绝数
+        - pending: 还没决策数
+        - completed: accepted 且执行完成 (completed_at)
+        - graded: 已自动评估 (graded_at)
+        - improved / unchanged / worsened / inconclusive: outcome 分布
+        - acceptance_rate / verification_rate / improvement_rate
+      closed_cards: [近 N 条已闭环的卡, 带 metric 旅程]
+      verifying_cards: [accepted 但未 graded 的卡, 显示等待中的 metric]
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    base = db.query(ActionCard).filter(
+        ActionCard.user_id == current_user.id,
+        ActionCard.created_at >= cutoff,
+    )
+
+    total_surfaced = base.count()
+    accepted = base.filter(ActionCard.user_decision == "accepted").count()
+    declined = base.filter(
+        ActionCard.user_decision.in_(["declined", "dismissed", "false_positive"])
+    ).count()
+    pending = base.filter(ActionCard.user_decision.is_(None)).count()
+    completed = base.filter(
+        ActionCard.user_decision == "accepted",
+        ActionCard.completed_at.isnot(None),
+    ).count()
+    graded = base.filter(ActionCard.graded_at.isnot(None)).count()
+    improved = base.filter(ActionCard.outcome == "improved").count()
+    unchanged = base.filter(ActionCard.outcome == "unchanged").count()
+    worsened = base.filter(ActionCard.outcome == "worsened").count()
+    inconclusive = base.filter(ActionCard.outcome == "inconclusive").count()
+
+    decided = accepted + declined
+    accept_rate = round(accepted / decided, 4) if decided > 0 else None
+    verify_rate = round(graded / completed, 4) if completed > 0 else None
+    safe_closed = improved + unchanged
+    improvement_rate = round(improved / graded, 4) if graded > 0 else None
+
+    # 已闭环列表 (按 graded_at 倒序)
+    closed = (
+        base.filter(ActionCard.graded_at.isnot(None))
+        .order_by(desc(ActionCard.graded_at))
+        .limit(20)
+        .all()
+    )
+    closed_dicts = [_card_to_dict(c) for c in closed]
+
+    # 验证中: accepted, completed_at 已写, graded_at 未写
+    verifying = (
+        base.filter(
+            ActionCard.user_decision == "accepted",
+            ActionCard.completed_at.isnot(None),
+            ActionCard.graded_at.is_(None),
+        )
+        .order_by(desc(ActionCard.completed_at))
+        .limit(10)
+        .all()
+    )
+    verifying_dicts = [_card_to_dict(c) for c in verifying]
+
+    return {
+        "window": {
+            "since": cutoff.isoformat(),
+            "until": datetime.now(timezone.utc).isoformat(),
+            "days": days,
+        },
+        "stats": {
+            "total_surfaced": total_surfaced,
+            "accepted": accepted,
+            "declined": declined,
+            "pending": pending,
+            "completed": completed,
+            "graded": graded,
+            "improved": improved,
+            "unchanged": unchanged,
+            "worsened": worsened,
+            "inconclusive": inconclusive,
+            "safe_closed": safe_closed,
+            "acceptance_rate": accept_rate,
+            "verification_rate": verify_rate,
+            "improvement_rate": improvement_rate,
+        },
+        "closed_cards": closed_dicts,
+        "verifying_cards": verifying_dicts,
+    }
