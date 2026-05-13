@@ -88,6 +88,29 @@ class HypertensionSpecialist:
             stage = _bp_stage(sys_bp, dia_bp)
             antihyper = _has_antihypertensive(twin)
 
+            # 2026-05-13: 数据缺口 short-circuit — 没 BP 数据 + 没在服降压药
+            # 不让 LLM 合成"血压可能..." 这种没事实根据的话.
+            if stage == "unknown" and not antihyper:
+                return SpecialistFinding(
+                    specialist_name=self.name,
+                    category=self.category,
+                    summary="需补充: 暂无血压数据, 也未识别在服降压药",
+                    findings=[
+                        {
+                            "type": "data_gap",
+                            "missing": ["blood_pressure_systolic", "blood_pressure_diastolic"],
+                            "hint": "请测一次血压并记录, 我才能给出针对性建议",
+                        },
+                        {
+                            "type": "action",
+                            "order": 1,
+                            "text": "请测一次血压 (静息 5 分钟后, 早晨较好), 在 App 里记录或上传体检单. 数据齐了我再来分析.",
+                        },
+                    ],
+                    raw={"stage": "unknown", "data_gap": True},
+                    ms_elapsed=int((time.monotonic() - t0) * 1000),
+                )
+
             findings: List[Dict[str, Any]] = []
             summary_parts: List[str] = []
 

@@ -123,14 +123,15 @@ export default function AIAssistantPage() {
         <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-sm font-semibold text-slate-300 shrink-0">智能助理</h2>
-            {/* 2026-05-13: 当前模型 chip — 显示用户偏好或默认 */}
-            <span
-              className="hidden sm:inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-800/40 px-2 py-0.5 text-[11px] text-slate-400 truncate max-w-[14rem]"
-              title="当前 AI 模型 (在 mobile 设置页 → AI 模型 切换偏好)"
+            {/* 2026-05-13: 当前模型 chip — 点开跳到 /llm-preference 切换 */}
+            <a
+              href="/llm-preference"
+              className="hidden sm:inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-800/40 px-2 py-0.5 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-500/40 truncate max-w-[14rem]"
+              title="点击切换 AI 模型偏好"
             >
               <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" /></svg>
               <span className="truncate">{llmPref.label || '默认模型'}</span>
-            </span>
+            </a>
           </div>
           <button
             onClick={startNewConversation}

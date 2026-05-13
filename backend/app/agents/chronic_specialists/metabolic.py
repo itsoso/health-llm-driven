@@ -77,9 +77,45 @@ class MetabolicSpecialist:
         try:
             findings: List[Dict[str, Any]] = []
             summary_parts: List[str] = []
+            labs = twin.labs
+            body = twin.body_composition
+
+            # 2026-05-13: 数据缺口 short-circuit — 关键代谢指标全空时不让 LLM 编"代谢平稳"
+            # 触发条件: 化验三联 (HbA1c/血糖/LDL/HDL/TG) 全无 + 没 CGM + 没 BMI
+            has_any_metabolic = (
+                labs.hba1c is not None
+                or labs.blood_glucose is not None
+                or labs.ldl is not None
+                or labs.hdl is not None
+                or labs.triglycerides is not None
+                or twin.cgm.has_cgm
+                or body.bmi is not None
+            )
+            if not has_any_metabolic:
+                missing = [
+                    "hba1c", "blood_glucose", "ldl", "hdl", "triglycerides", "bmi",
+                ]
+                return SpecialistFinding(
+                    specialist_name=self.name,
+                    category=self.category,
+                    summary="需补充: 没有任何代谢相关数据 (化验/CGM/体重)",
+                    findings=[
+                        {
+                            "type": "data_gap",
+                            "missing": missing,
+                            "hint": "上传一次体检单 (HbA1c / 血脂四项), 或记录体重, 我才能评估代谢健康",
+                        },
+                        {
+                            "type": "action",
+                            "order": 1,
+                            "text": "上传最近 1 年内化验单 (含血糖 / 糖化 / 血脂), 或在 App 记录体重. 数据齐了我再分析代谢综合征风险.",
+                        },
+                    ],
+                    raw={"data_gap": True, "missing": missing},
+                    ms_elapsed=int((time.monotonic() - t0) * 1000),
+                )
 
             # 1. 血糖
-            labs = twin.labs
             if labs.hba1c is not None:
                 findings.append({
                     "type": "hba1c",
@@ -123,8 +159,7 @@ class MetabolicSpecialist:
                 })
                 summary_parts.append(" / ".join(lipid_parts))
 
-            # 4. 体重 / BMI
-            body = twin.body_composition
+            # 4. 体重 / BMI (body 已在函数顶提取)
             if body.bmi is not None:
                 findings.append({
                     "type": "body_composition",
@@ -298,6 +333,7 @@ def _metabolic_actions(twin: HealthTwin, ms: Dict[str, Any]) -> List[str]:
         actions.append("CGM TIR 未达标：识别餐后高峰时段，调整餐前运动 / 低 GI 饮食。")
 
     if not actions:
-        actions.append("代谢指标目前平稳，继续当前饮食运动节奏。")
+        # 2026-05-13: 数据齐但全部正常 — 才说"平稳"; data_gap 走 run() 的 short-circuit, 不会到这.
+        actions.append("代谢指标目前在正常区间, 继续当前饮食运动节奏.")
 
     return actions[:5]
