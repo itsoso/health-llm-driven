@@ -57,7 +57,34 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
           )}
           <div className={`${msg.role === 'user' ? 'max-w-[min(85%,28rem)] rounded-2xl px-4 py-2.5' : 'max-w-[min(100%,48rem)] rounded-2xl px-5 py-3.5'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.bubbleClass}`}>
             {msg.role === 'assistant' ? (
-              <div className="text-[14.5px] leading-7"><MarkdownRenderer content={msg.content} variant="dark" /></div>
+              <div>
+                <div className="text-[14.5px] leading-7"><MarkdownRenderer content={msg.content} variant="dark" /></div>
+                {/* 2026-05-13 性能 footer: 耗时 + 模型 + 每轮 ms */}
+                {doneMessageIds.has(msg.id) && (msg.elapsed_ms != null || msg.model) && (
+                  <div className="mt-2 pt-2 border-t border-slate-700/30 text-[11px] text-slate-500 tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    {msg.elapsed_ms != null && (
+                      <span className="inline-flex items-center gap-1" title="总耗时">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        {(msg.elapsed_ms / 1000).toFixed(1)}s
+                      </span>
+                    )}
+                    {msg.llm_ms != null && msg.elapsed_ms != null && msg.llm_ms !== msg.elapsed_ms && (
+                      <span title="LLM 推理耗时">LLM {(msg.llm_ms / 1000).toFixed(1)}s</span>
+                    )}
+                    {msg.llm_rounds != null && msg.llm_rounds > 1 && (
+                      <span title="LLM 工具调用轮数">{msg.llm_rounds} 轮</span>
+                    )}
+                    {msg.llm_rounds_ms && msg.llm_rounds_ms.length > 1 && (
+                      <span title="每轮耗时" className="text-slate-600">
+                        ({msg.llm_rounds_ms.map(ms => `${ms}ms`).join(' / ')})
+                      </span>
+                    )}
+                    {msg.model && (
+                      <span className="ml-auto text-emerald-500/70" title="本次回答的模型">· {msg.model}</span>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <div>
                 {msg.image_preview && <img src={msg.image_preview} alt="上传图片" className="mb-2 max-h-56 max-w-xs rounded-xl object-cover" />}

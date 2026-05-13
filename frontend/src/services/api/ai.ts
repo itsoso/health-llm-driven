@@ -44,6 +44,12 @@ export interface ChatMessage {
   card_type?: string;
   /** 卡片数据 payload (跟 card_type 匹配) */
   card_data?: any;
+  /** 2026-05-13 性能可观测性: assistant 消息完成后填. 显示在气泡 footer */
+  elapsed_ms?: number;
+  llm_ms?: number;
+  llm_rounds?: number;
+  llm_rounds_ms?: number[];
+  model?: string;
 }
 
 export interface ChatSendResponse {

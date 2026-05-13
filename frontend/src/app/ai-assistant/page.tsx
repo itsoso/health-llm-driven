@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChatMessage, agentApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
+import { api } from '@/services/api/client';
 
 export default function AIAssistantPage() {
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
@@ -20,12 +21,28 @@ export default function AIAssistantPage() {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
+  // 2026-05-13: 当前用户偏好的 LLM 模型 (顶部 chip 用)
+  const [llmPref, setLlmPref] = useState<{ label: string | null; model_id: string | null }>({
+    label: null, model_id: null,
+  });
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 自动滚到底
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, streaming]);
+
+  // 拉当前 LLM 偏好显示在顶部
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/me/llm-preference').then(r => {
+      if (cancelled) return;
+      const id = r.data?.model_id as string | null;
+      const opt = id ? r.data?.options?.find((o: any) => o.id === id) : null;
+      setLlmPref({ label: opt?.label || (id ? id : null), model_id: id });
+    }).catch(() => { /* 401/403 静默 */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -61,6 +78,17 @@ export default function AIAssistantPage() {
           // 用户感知: 显示"调用工具中"提示一行 (灰色 italic), 不污染主回答
         } else if (type === 'done') {
           if (data.conversation_id) realConvId = data.conversation_id;
+          // 2026-05-13: 写性能字段, ChatView footer 显示
+          const perf = {
+            elapsed_ms: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
+            llm_ms: typeof data.llm_ms === 'number' ? data.llm_ms : undefined,
+            llm_rounds: typeof data.llm_rounds === 'number' ? data.llm_rounds : undefined,
+            llm_rounds_ms: Array.isArray(data.llm_rounds_ms) ? data.llm_rounds_ms : undefined,
+            model: typeof data.model === 'string' ? data.model : undefined,
+          };
+          setMessages(prev =>
+            prev.map(m => (m.id === tempAssistantId ? { ...m, ...perf } : m)),
+          );
           setDoneIds(prev => new Set(prev).add(tempAssistantId));
         } else if (type === 'error') {
           const errMsg = data.message || data.content || evt.message || '未知错误';
@@ -92,11 +120,21 @@ export default function AIAssistantPage() {
     <main className="flex h-screen bg-slate-950 text-slate-100">
       {/* 主区: 消息流 + 输入 */}
       <section className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">智能助理</h2>
+        <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-semibold text-slate-300 shrink-0">智能助理</h2>
+            {/* 2026-05-13: 当前模型 chip — 显示用户偏好或默认 */}
+            <span
+              className="hidden sm:inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-800/40 px-2 py-0.5 text-[11px] text-slate-400 truncate max-w-[14rem]"
+              title="当前 AI 模型 (在 mobile 设置页 → AI 模型 切换偏好)"
+            >
+              <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" /></svg>
+              <span className="truncate">{llmPref.label || '默认模型'}</span>
+            </span>
+          </div>
           <button
             onClick={startNewConversation}
-            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-2.5 py-1.5"
+            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-2.5 py-1.5 shrink-0"
           >
             + 新对话
           </button>
