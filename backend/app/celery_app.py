@@ -39,6 +39,7 @@ celery_app = Celery(
         "app.tasks.live_run_narrative",
         "app.tasks.live_run_hr_replay",
         "app.tasks.verify_outcomes",
+        "app.tasks.snp_prewarm",
     ]
 )
 
@@ -121,6 +122,14 @@ celery_app.conf.beat_schedule = {
     "verify-action-card-outcomes": {
         "task": "app.tasks.verify_outcomes.verify_action_card_outcomes",
         "schedule": crontab(hour=2, minute=0),
+    },
+
+    # 每天 02:30 SNP 详情 LLM 缓存预热 (A 优化, 2026-05-13)
+    # 给活跃用户 top 10 高/中风险命中 SNP 调 LLM, 写入 Redis 24h 缓存.
+    # 之后用户首次点开 /snp/{rsid} 从 ~15s → ~50ms.
+    "snp-detail-prewarm": {
+        "task": "app.tasks.snp_prewarm.prewarm_snp_details_for_active_users",
+        "schedule": crontab(hour=2, minute=30),
     },
 
     # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)

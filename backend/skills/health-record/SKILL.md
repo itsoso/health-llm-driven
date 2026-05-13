@@ -71,6 +71,34 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 
 **重要：当用户说"记录运动"时，必须调用此打卡接口，不要只是口头确认。**
 
+### 力量训练详细记录（带 sets/reps）
+当用户描述带"组数"的力量训练（例：俯卧撑两组每组 15 个 / 深蹲三组每组 10 个）时，
+**必须**用此端点而非上面的 quick 打卡，因为它能保留 sets/reps 结构：
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/daily-health/exercise" \
+  -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","exercise_type":"俯卧撑","sets":2,"reps":15,"intensity":"high"}'
+```
+
+**关键：sets 字段一次表达多组**
+- 用户说"两组俯卧撑 一组15个" → 一次 POST `{exercise_type:"俯卧撑", sets:2, reps:15}`
+- 用户说"做了 3 组深蹲" → 一次 POST `{exercise_type:"深蹲", sets:3, reps:10}` (问用户每组多少, 不知则估10)
+- ❌ **不要** 同一动作连续 POST 两次 (会被 1s dedup 视为双击吃掉)
+
+**duration 类训练 (倒立/平板支撑等)** 用 duration_seconds 字段:
+```bash
+-d '{"record_date":"...","exercise_type":"平板支撑","sets":1,"duration_seconds":60,"intensity":"high"}'
+```
+
+**多动作组合** (例: "俯卧撑两组 + 深蹲两组") → **多次 POST**, 每个 exercise_type 一次:
+```bash
+# 第 1 次: 俯卧撑
+curl ... -d '{"exercise_type":"俯卧撑","sets":2,"reps":15,...}'
+# 第 2 次: 深蹲 (不同 exercise_type, 不会被 dedup)
+curl ... -d '{"exercise_type":"深蹲","sets":2,"reps":10,...}'
+```
+
 ### 记录饮食（文字描述）
 端点：`POST $HEALTH_API_URL/diet/records`
 ```bash

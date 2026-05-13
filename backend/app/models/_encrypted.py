@@ -1,0 +1,71 @@
+"""EncryptedString —— SQLAlchemy TypeDecorator 透明 Fernet 加密列 (C 优化, 2026-05-13).
+
+用法:
+  from app.models._encrypted import EncryptedString
+  class Foo(Base):
+      genotype = Column(EncryptedString(200))   # 写入时自动加密, 读取时自动解密
+
+设计:
+- 用 GARMIN_ENCRYPTION_KEY (复用现有 Fernet key, 不再新建 .env 项目)
+- 旧明文行 graceful fallback: decrypt 失败时返回原值, 让一段过渡期共存
+- WHERE filter 不能直接用 (== 'CT' 等会比对加密后字符串). 调用方只能 attribute access
+- Fernet 输出 base64, ~140 字符. EncryptedString(N) 的 N 应 ≥ 原值长度 × 3 才稳
+
+迁移流程:
+1. 改 model 列类型为 EncryptedString
+2. 跑 ORM-load + re-save 脚本把旧明文 → 加密
+3. 之后所有写入自动加密
+"""
+
+import base64
+import hashlib
+import logging
+from typing import Optional
+
+from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import String
+from sqlalchemy.types import TypeDecorator
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_key() -> bytes:
+    """复用 GARMIN_ENCRYPTION_KEY, 没配走 SECRET_KEY 派生 (跟 device_credential 一致)."""
+    key = getattr(settings, "device_encryption_key", None) or getattr(settings, "garmin_encryption_key", None)
+    if key:
+        return key.encode() if isinstance(key, str) else key
+    digest = hashlib.sha256(settings.secret_key.encode()).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+_fernet = Fernet(_resolve_key())
+
+
+class EncryptedString(TypeDecorator):
+    """透明加解密 String 列. 旧明文行 (decrypt 失败) graceful fallback."""
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[str], dialect) -> Optional[str]:
+        if value is None or value == "":
+            return value
+        try:
+            return _fernet.encrypt(value.encode()).decode()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[encrypted] encrypt 失败, 落回明文: {e}")
+            return value
+
+    def process_result_value(self, value: Optional[str], dialect) -> Optional[str]:
+        if value is None or value == "":
+            return value
+        try:
+            return _fernet.decrypt(value.encode()).decode()
+        except InvalidToken:
+            # 旧明文行 — 没加密过, 直接返回 (过渡期共存)
+            return value
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[encrypted] decrypt 失败, 返回原值: {e}")
+            return value

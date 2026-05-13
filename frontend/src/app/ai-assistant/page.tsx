@@ -1,50 +1,26 @@
 'use client';
 
 /**
- * /ai-assistant —— Web 智能助理对话页 (2026-05-12 重建).
+ * /ai-assistant —— Web 智能助理对话页 (2026-05-12 重建, 2026-05-13 切 agentApi).
+ *
+ * 之前用 openclawApi (独立 LLM key, 双倍成本). 改用 agentApi → /agent/stream
+ * 跟 mobile chat tab 同管道, 共享 LLM_PROVIDER (默认 TokenPlan).
  *
  * 历史: 该路由从 nav / dashboard / footer / 测试里被引, 但 page.tsx 一直缺,
- * 用户访问就 404. 此页用 OpenClaw stream + ChatView 渲染, 行为对齐 mobile "会诊" Tab.
+ * 用户访问就 404. 此页用 Agent stream + ChatView 渲染.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { ChatMessage, Conversation, openclawApi } from '@/services/api/ai';
+import { ChatMessage, agentApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
 
 export default function AIAssistantPage() {
-  const [convos, setConvos] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
   const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  // 拉历史会话, 选最新一个
-  useEffect(() => {
-    let cancelled = false;
-    openclawApi.getConversations(20).then(({ data }) => {
-      if (cancelled) return;
-      const list = Array.isArray(data) ? data : [];
-      setConvos(list);
-      if (list.length > 0) setActiveConvId(list[0].id);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  // 切换会话时拉消息
-  useEffect(() => {
-    if (!activeConvId) {
-      setMessages([]);
-      return;
-    }
-    let cancelled = false;
-    openclawApi.getConversation(activeConvId).then(({ data }) => {
-      if (cancelled) return;
-      setMessages(data?.messages ?? []);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [activeConvId]);
 
   // 自动滚到底
   useEffect(() => {
@@ -71,9 +47,9 @@ export default function AIAssistantPage() {
     let realConvId = activeConvId;
 
     try {
-      for await (const evt of openclawApi.streamMessage(text, activeConvId)) {
+      for await (const evt of agentApi.streamMessage(text, activeConvId)) {
         if (!evt) continue;
-        // 后端事件格式 (parseSimpleSSE 直接 yield 整个 dict): { event, data: {...} }
+        // /agent/stream event shape: { event, data: {content, conversation_id, ...} }
         const type = evt.event ?? evt.type;
         const data = evt.data ?? {};
         if (type === 'token' && typeof data.content === 'string') {
@@ -81,8 +57,8 @@ export default function AIAssistantPage() {
           setMessages(prev =>
             prev.map(m => (m.id === tempAssistantId ? { ...m, content: assistantBuf } : m)),
           );
-        } else if (type === 'conversation' && data.conversation_id) {
-          realConvId = data.conversation_id;
+        } else if (type === 'tool_call') {
+          // 用户感知: 显示"调用工具中"提示一行 (灰色 italic), 不污染主回答
         } else if (type === 'done') {
           if (data.conversation_id) realConvId = data.conversation_id;
           setDoneIds(prev => new Set(prev).add(tempAssistantId));
@@ -101,12 +77,8 @@ export default function AIAssistantPage() {
       );
     } finally {
       setStreaming(false);
-      // 如果是新建的会话, 拿到 id 后绑定 + 刷一遍列表
       if (!activeConvId && realConvId) {
         setActiveConvId(realConvId);
-        openclawApi.getConversations(20).then(({ data }) => {
-          setConvos(Array.isArray(data) ? data : []);
-        }).catch(() => {});
       }
     }
   };
@@ -118,47 +90,17 @@ export default function AIAssistantPage() {
 
   return (
     <main className="flex h-screen bg-slate-950 text-slate-100">
-      {/* 侧栏: 会话列表 */}
-      <aside className="hidden md:flex w-64 flex-col border-r border-slate-800/60 bg-slate-900/40">
-        <div className="px-4 py-4 border-b border-slate-800/60 flex items-center justify-between">
+      {/* 主区: 消息流 + 输入 */}
+      <section className="flex-1 flex flex-col min-w-0">
+        <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-300">智能助理</h2>
           <button
             onClick={startNewConversation}
             className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-2.5 py-1.5"
-            title="新对话"
           >
-            + 新建
+            + 新对话
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
-          {convos.length === 0 && (
-            <div className="px-3 py-6 text-center text-xs text-slate-500">
-              还没有对话, 直接在右侧发消息开始
-            </div>
-          )}
-          {convos.map(c => (
-            <button
-              key={c.id}
-              onClick={() => setActiveConvId(c.id)}
-              className={`w-full rounded-lg px-3 py-2 text-left transition-colors ${
-                activeConvId === c.id
-                  ? 'bg-slate-800 text-slate-100'
-                  : 'text-slate-400 hover:bg-slate-800/60'
-              }`}
-            >
-              <div className="text-sm font-medium truncate">{c.title || '未命名对话'}</div>
-              {c.last_message && (
-                <div className="mt-0.5 text-[11px] text-slate-500 truncate">
-                  {c.last_message}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      {/* 主区: 消息流 + 输入 */}
-      <section className="flex-1 flex flex-col min-w-0">
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
           {messages.length === 0 && !streaming ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500">

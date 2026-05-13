@@ -2,6 +2,7 @@
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, JSON, Index
 from sqlalchemy.sql import func
 from app.database import Base
+from app.models._encrypted import EncryptedString
 
 
 class GeneticProfile(Base):
@@ -28,7 +29,9 @@ class GeneticVariant(Base):
     category = Column(String(50), nullable=False, index=True)  # nutrition/exercise/drug_sensitivity/disease_risk/sleep
     gene_name = Column(String(50), nullable=False)
     variant_name = Column(String(100))
-    genotype = Column(String(50))
+    # 2026-05-13 C 优化: genotype 是用户最敏感"独一无二"字段, 列加密
+    # (Fernet 输出 ~140 char, 旧明文行 decrypt fallback 共存)
+    genotype = Column(EncryptedString(200))
     result_label = Column(String(100))
     risk_level = Column(String(20), default="info")  # low/medium/high/info
     variant_nature = Column(String(20), default="neutral")  # protective/risk/neutral — 区分优势基因vs风险基因
