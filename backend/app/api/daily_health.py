@@ -132,15 +132,17 @@ def create_exercise_record(
 ):
     """创建锻炼记录.
 
-    幂等保护 (2026-05-11): 5 秒窗口内, 同 user + 同 exercise_type + 同 reps + 同 sets
-    + 同 duration_seconds 视为重复请求, 直接返回已有记录, 不重复写.
-    根因: 移动端 button 防双击锁基于 React state (异步), 16ms 渲染窗口前
-    用户双击都能挤进 doRecord. 前端有 useRef 锁兜底, 后端这层是 belt-and-suspenders.
+    幂等保护 (2026-05-11, 2026-05-13 调整): 1 秒窗口内, 同 user + 同 exercise_type
+    + 同 reps + 同 sets + 同 duration_seconds 视为双击重复, 直接返回已有记录, 不重复写.
+
+    历史 5s 窗口太长, 用户做"俯卧撑两组 1 组 15 个" 时 OpenClaw 连续 POST 两次
+    完全相同字段, 第 2 组被 dedup 吃掉. 移动端有 useRef 锁兜底防双击, 后端 1s
+    够拦防真双击, 而 OpenClaw / 用户连续打卡两组通常 ≥ 1.5s 间隔不会被误吃.
     """
     from datetime import datetime, timedelta, timezone
 
     payload = exercise.model_dump()
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=1)
 
     dedup_q = db.query(ExerciseRecord).filter(
         ExerciseRecord.user_id == current_user.id,

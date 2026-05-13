@@ -73,19 +73,22 @@ export default function AIAssistantPage() {
     try {
       for await (const evt of openclawApi.streamMessage(text, activeConvId)) {
         if (!evt) continue;
-        // 后端事件格式 (parseSimpleSSE): { event, content?, conversation_id?, message_id? }
+        // 后端事件格式 (parseSimpleSSE 直接 yield 整个 dict): { event, data: {...} }
         const type = evt.event ?? evt.type;
-        if (type === 'token' && typeof evt.content === 'string') {
-          assistantBuf += evt.content;
+        const data = evt.data ?? {};
+        if (type === 'token' && typeof data.content === 'string') {
+          assistantBuf += data.content;
           setMessages(prev =>
             prev.map(m => (m.id === tempAssistantId ? { ...m, content: assistantBuf } : m)),
           );
-        } else if (type === 'conversation' && evt.conversation_id) {
-          realConvId = evt.conversation_id;
+        } else if (type === 'conversation' && data.conversation_id) {
+          realConvId = data.conversation_id;
         } else if (type === 'done') {
+          if (data.conversation_id) realConvId = data.conversation_id;
           setDoneIds(prev => new Set(prev).add(tempAssistantId));
         } else if (type === 'error') {
-          assistantBuf += `\n\n_出错: ${evt.content || evt.message || '未知'}_`;
+          const errMsg = data.message || data.content || evt.message || '未知错误';
+          assistantBuf += `\n\n_出错: ${errMsg}_`;
           setMessages(prev =>
             prev.map(m => (m.id === tempAssistantId ? { ...m, content: assistantBuf } : m)),
           );
