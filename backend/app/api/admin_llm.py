@@ -32,6 +32,100 @@ class LLMStatusResponse(BaseModel):
     has_api_key: bool
 
 
+@router.get("/performance-stats", summary="LLM 性能聚合 (p50/p95 + 成功率 + 成本)")
+def performance_stats(
+    days: int = 7,
+    group_by: str = "model",
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """按 model/provider/caller 聚合 llm_usage_log, 返回 p50/p95/p99/avg/
+    success_rate/total_tokens/cost. 来自 2026-05-13 用户诉求 (积累性能优化).
+
+    group_by: model / provider / caller (默认 model)
+    days: 时间窗口 (默认 7 天)
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import text
+
+    if group_by not in ("model", "provider", "caller"):
+        raise HTTPException(400, detail="group_by 必须是 model / provider / caller")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    sql = text(f"""
+        SELECT
+            {group_by} AS label,
+            COUNT(*) AS n,
+            ROUND(AVG(latency_ms)::numeric, 0) AS avg_ms,
+            ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::numeric, 0) AS p50_ms,
+            ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::numeric, 0) AS p95_ms,
+            ROUND(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::numeric, 0) AS p99_ms,
+            ROUND(AVG(CASE WHEN success = 1 THEN 1.0 ELSE 0.0 END)::numeric, 4) AS success_rate,
+            SUM(total_tokens) AS total_tokens,
+            ROUND(SUM(cost_usd)::numeric, 4) AS cost_usd
+        FROM llm_usage_log
+        WHERE created_at >= :cutoff AND latency_ms IS NOT NULL
+        GROUP BY {group_by}
+        ORDER BY n DESC
+    """)
+    rows = db.execute(sql, {"cutoff": cutoff}).fetchall()
+
+    return {
+        "window": {"days": days, "since": cutoff.isoformat()},
+        "group_by": group_by,
+        "stats": [
+            {
+                "label": r.label,
+                "n": r.n,
+                "avg_ms": int(r.avg_ms) if r.avg_ms is not None else None,
+                "p50_ms": int(r.p50_ms) if r.p50_ms is not None else None,
+                "p95_ms": int(r.p95_ms) if r.p95_ms is not None else None,
+                "p99_ms": int(r.p99_ms) if r.p99_ms is not None else None,
+                "success_rate": float(r.success_rate) if r.success_rate is not None else None,
+                "total_tokens": int(r.total_tokens) if r.total_tokens is not None else 0,
+                "cost_usd": float(r.cost_usd) if r.cost_usd is not None else 0.0,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/performance-failures", summary="最近 LLM 失败样本")
+def performance_failures(
+    days: int = 7,
+    limit: int = 30,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime, timedelta, timezone
+    from app.models.llm_usage import LlmUsageLog
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(LlmUsageLog)
+        .filter(LlmUsageLog.success == 0, LlmUsageLog.created_at >= cutoff)
+        .order_by(LlmUsageLog.created_at.desc())
+        .limit(min(limit, 100))
+        .all()
+    )
+    return {
+        "window": {"days": days, "since": cutoff.isoformat()},
+        "failures": [
+            {
+                "id": r.id,
+                "provider": r.provider,
+                "model": r.model,
+                "caller": r.caller,
+                "user_id": r.user_id,
+                "latency_ms": r.latency_ms,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/status", response_model=LLMStatusResponse)
 def llm_status(
     admin: User = Depends(get_admin_user),
