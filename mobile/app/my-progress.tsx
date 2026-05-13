@@ -122,6 +122,9 @@ export default function MyProgressScreen() {
             </View>
           ) : (
             <>
+              {/* 改善叙事 — "AI 让你变好的指标" (2026-05-13) */}
+              <NarrativeBlock cards={data.closed_cards} c={c} />
+
               {/* 顶部核心数 */}
               <View style={[styles.heroCard, { backgroundColor: c.brandLight, borderColor: c.brand }]}>
                 <Text style={[styles.heroLabel, { color: c.brand }]}>已闭环且改善的建议</Text>
@@ -280,6 +283,64 @@ function CardRow({ card, onPress, c }: { card: ProgressCard; onPress: () => void
   );
 }
 
+// ─── 改善叙事 (2026-05-13) ─────────────────────────────────────────
+// 把 closed_cards.improved 按 metric 聚合成 "LDL 4.1→3.6, SBP 138→128" 形式.
+// 让用户一眼看到 "AI 让我变好了多少" 的具体数值证据.
+
+const METRIC_LABEL_SHORT: Record<string, string> = {
+  ldl: 'LDL', hdl: 'HDL', hba1c: '糖化', tg: 'TG',
+  systolic_bp: '收缩压', sbp: '收缩压', dbp: '舒张压',
+  weight_kg: '体重', bmi: 'BMI', hrv: 'HRV', rhr: '静息心率',
+  sleep_score: '睡眠', spo2_odi: 'ODI',
+  hcy: '同型半胱氨酸', vitamin_d: '维 D', b12: 'B12', ferritin: '铁蛋白',
+};
+
+function NarrativeBlock({ cards, c }: { cards: ProgressCard[]; c: any }) {
+  const rows = React.useMemo(() => {
+    const map = new Map<string, { baseline: string; actual: string; effect: number | null }>();
+    for (const card of cards) {
+      if (card.outcome !== 'improved') continue;
+      if (!card.metric_key || !card.baseline_value || !card.actual_value) continue;
+      if (!map.has(card.metric_key)) {
+        map.set(card.metric_key, {
+          baseline: card.baseline_value,
+          actual: card.actual_value,
+          effect: card.effect_size,
+        });
+      }
+    }
+    return Array.from(map.entries()).map(([metric, v]) => ({
+      metric, label: METRIC_LABEL_SHORT[metric] || metric, ...v,
+    }));
+  }, [cards]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <View style={[styles.narrativeCard, { backgroundColor: c.tintGreen, borderColor: c.green + '60' }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <Ionicons name="trending-up" size={16} color={c.green} />
+        <Text style={{ fontSize: 13, color: c.green, fontWeight: '600' }}>AI 让你变好的指标</Text>
+      </View>
+      <View style={{ gap: 6 }}>
+        {rows.map(r => (
+          <View key={r.metric} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 12, color: c.labelSecondary, minWidth: 70 }}>{r.label}</Text>
+            <Text style={{ fontSize: 14, color: c.labelTertiary, fontVariant: ['tabular-nums'] }}>{r.baseline}</Text>
+            <Text style={{ fontSize: 12, color: c.labelTertiary }}>→</Text>
+            <Text style={{ fontSize: 14, color: c.green, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{r.actual}</Text>
+            {r.effect != null && (
+              <Text style={{ fontSize: 11, color: c.green, opacity: 0.7, marginLeft: 'auto' }}>
+                {(Math.abs(r.effect) * 100).toFixed(0)}%
+              </Text>
+            )}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─── styles ─────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -310,6 +371,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.lg,
     gap: 6,
+  },
+  narrativeCard: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   heroLabel: { fontSize: 13, fontWeight: '600' },
   heroNumRow: { flexDirection: 'row', alignItems: 'baseline' },
