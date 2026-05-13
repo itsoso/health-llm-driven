@@ -18,6 +18,11 @@ export interface UIMessage extends ChatMessage {
   cardData?: any;
   createdAt?: string;
   fromSiri?: boolean;
+  // 2026-05-13: 性能可观测 — done 事件的耗时 + 模型名, 渲染在 assistant 气泡底部
+  elapsedMs?: number;
+  llmMs?: number;
+  llmRounds?: number;
+  model?: string;
 }
 
 let msgCounter = 0;
@@ -227,6 +232,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
+          // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)
+          setMessages(prev => prev.map(m => m.id === aId ? {
+            ...m,
+            elapsedMs: evt.elapsedMs,
+            llmMs: evt.llmMs,
+            llmRounds: evt.llmRounds,
+            model: evt.model,
+          } : m));
           const serverCards = renderServerCards((evt as any).cards);
           if (serverCards.length > 0) {
             const single = serverCards.length === 1 ? serverCards[0] : { type: 'cards_group', data: { cards: serverCards } };

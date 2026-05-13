@@ -163,6 +163,17 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
               </View>
             ) : null}
             {item.streaming && <ActivityIndicator size="small" color={c.brand} style={{ marginTop: 4 }} />}
+            {/* 2026-05-13: 耗时 + 模型名 footer (有 elapsedMs 才显示, 用户可观测性能) */}
+            {!item.streaming && item.elapsedMs != null ? (
+              <View style={styles.metaRow}>
+                <Ionicons name="time-outline" size={10} color={c.labelTertiary} />
+                <Text style={txt.meta}>
+                  {(item.elapsedMs / 1000).toFixed(1)}s
+                  {item.llmRounds && item.llmRounds > 1 ? ` · ${item.llmRounds} 轮` : ''}
+                  {item.model ? ` · ${item.model}` : ''}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         )}
       </View>
@@ -253,6 +264,10 @@ function createStyles(c: ColorPalette, isDark: boolean) {
       paddingVertical: 6,
     },
     actionBtnPressed: { opacity: 0.82 },
+    metaRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 3,
+      marginTop: 6, opacity: 0.6,
+    },
   });
 }
 
@@ -261,5 +276,6 @@ function createTxt(c: ColorPalette) {
     bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
     actionBtn: { fontSize: 12, fontWeight: '700', color: c.brand } as TextStyle,
     fallback: { fontSize: 14, lineHeight: 20, color: c.labelSecondary, fontStyle: 'italic' } as TextStyle,
+    meta: { fontSize: 10, color: c.labelTertiary, fontFamily: 'Courier' } as TextStyle,
   };
 }

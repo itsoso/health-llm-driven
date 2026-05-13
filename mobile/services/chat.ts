@@ -22,6 +22,11 @@ export interface StreamEvent {
   // I Phase 2: health_record 时附 record_type + record_data 让前端能 sniff 录入摘要
   recordType?: string;
   recordData?: Record<string, any>;
+  // 2026-05-13: 每轮对话耗时 + 模型名 (性能可观测)
+  elapsedMs?: number;
+  llmMs?: number;
+  llmRounds?: number;
+  model?: string;
 }
 
 /**
@@ -156,7 +161,15 @@ export async function* streamChat(
             recordData: parsed.data?.record_data,
           };
         } else if (parsed.event === 'done') {
-          yield { type: 'done', conversationId: parsed.data?.conversation_id, messageId: parsed.data?.message_id };
+          yield {
+            type: 'done',
+            conversationId: parsed.data?.conversation_id,
+            messageId: parsed.data?.message_id,
+            elapsedMs: parsed.data?.elapsed_ms,
+            llmMs: parsed.data?.llm_ms,
+            llmRounds: parsed.data?.llm_rounds,
+            model: parsed.data?.model,
+          };
         } else if (parsed.event === 'error') {
           yield { type: 'error', content: parsed.data?.message || '请求失败' };
         }

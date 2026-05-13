@@ -158,12 +158,25 @@ class AgentExecutor:
         full_reply = ""
         yield {"event": "agent_start", "data": {"message": "Agent 正在分析..."}}
 
+        # 2026-05-13: 计时 + 模型名可观测性 — 每轮 LLM 耗时积累到 done 事件
+        llm_rounds_ms: list = []
+        model_name: Optional[str] = None
+
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
                 # 调用 LLM（非流式，需要完整解析 tool_call）
+                _round_start = time.time()
                 response = await self._call_llm(messages, tools)
+                llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
+                if model_name is None:
+                    try:
+                        from app.services.llm.factory import get_llm_provider
+                        p = get_llm_provider()
+                        model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
+                    except Exception:
+                        pass
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
 
                 # 检查是否有 tool_call
@@ -286,12 +299,17 @@ class AgentExecutor:
         self.db.commit()
 
         elapsed_ms = int((time.time() - start_time) * 1000)
+        llm_ms_total = sum(llm_rounds_ms)
         yield {
             "event": "done",
             "data": {
                 "conversation_id": conv.id,
                 "message_id": ai_msg.id,
                 "elapsed_ms": elapsed_ms,
+                "llm_ms": llm_ms_total,
+                "llm_rounds": len(llm_rounds_ms),
+                "llm_rounds_ms": llm_rounds_ms,
+                "model": model_name,
                 "mode": "agent",
             },
         }
