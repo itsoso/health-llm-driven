@@ -468,9 +468,16 @@ class AgentExecutor:
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
         # 回退到默认 provider — 不传 model, 让 provider 用 init 时的默认
-        from app.services.llm.factory import get_llm_provider
-        provider = get_llm_provider()
-        pass_tools = tools if settings.llm_provider != "openclaw" else None
+        # 2026-05-13: 用户级 LLM 偏好 — 优先读 user_profile.llm_model_id
+        if self._current_user_id:
+            from app.services.llm.factory import create_provider_for_user
+            provider = create_provider_for_user(self._current_user_id, self.db)
+        else:
+            from app.services.llm.factory import get_llm_provider
+            provider = get_llm_provider()
+        # OpenClaw 不吃 tools 字段; wrap_provider 是 in-place patch, isinstance 仍可识别
+        from app.services.llm.providers.openclaw_provider import OpenClawProvider
+        pass_tools = None if isinstance(provider, OpenClawProvider) else tools
         return await provider.chat(
             messages=messages, model=None,
             temperature=0.3, max_tokens=4000, stream=False, tools=pass_tools,

@@ -218,3 +218,39 @@ def reset_llm_provider() -> None:
     global _provider_instance
     _provider_instance = None
     logger.info("[LLM Factory] Provider 单例已重置")
+
+
+def create_provider_for_user(user_id: int, db) -> LLMProvider:
+    """用户级 LLM 偏好 (2026-05-13).
+
+    优先级: user_profile.llm_model_id > admin global (set_active_model_id) > settings 默认.
+    每次都新建 (不缓存), 确保用户切换立刻生效. 包了 usage_tracker + pii_scrub.
+
+    Args:
+        user_id: 用户 ID
+        db: SQLAlchemy session
+    """
+    from app.services.llm.usage_tracker import wrap_provider
+    from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+
+    # 1. 用户偏好
+    try:
+        from app.models.user_profile import UserProfile
+        from app.services.llm.model_registry import get_model
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        model_id = getattr(profile, "llm_model_id", None) if profile else None
+        if model_id:
+            entry = get_model(model_id)
+            if entry:
+                try:
+                    raw = _create_from_entry(entry)
+                    logger.info(f"[LLM Factory] user={user_id} 用偏好 model={model_id}")
+                    return wrap_provider_pii_scrub(wrap_provider(raw))
+                except ValueError as e:
+                    # env 缺 (例如选了 kimi 但 MOONSHOT_API_KEY 没配) → 降级
+                    logger.warning(f"[LLM Factory] user={user_id} 偏好 {model_id} env 缺, 降级: {e}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[LLM Factory] 读 user={user_id} 偏好失败, 降级: {e}")
+
+    # 2. 降级到全局 (admin 切换 / settings 默认)
+    return get_llm_provider()

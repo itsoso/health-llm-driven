@@ -96,6 +96,13 @@ class UserProfile(Base):
     manual_country = Column(String(100), nullable=True)  # 手工输入的国家
     use_manual_location = Column(Boolean, default=False)  # 是否使用手工输入的位置
 
+    # === 用户级 LLM 偏好 (2026-05-13) ===
+    # 个人选择 chat 用哪个 LLM 模型 (model_id from app/services/llm/model_registry.py).
+    # NULL = 走 admin 全局或 settings.llm_provider 默认; 例如 'qwen3.6-plus' / 'gpt-4o' 等.
+    # 优先级: user > admin global (set_active_model_id) > settings 默认.
+    # 只在前端可见的 chat 入口生效 (agent_executor / orchestrator), 后台任务/specialist 仍走全局.
+    llm_model_id = Column(String(50), nullable=True)
+
     # === 时间戳 ===
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))

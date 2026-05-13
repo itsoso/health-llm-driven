@@ -11,8 +11,9 @@ import asyncio
 import json
 import logging
 import time
+from contextvars import ContextVar
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,12 @@ from app.twin.formatter import twin_to_prompt_blob
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
+
+# 2026-05-13: 用户级 LLM 偏好 — run_orchestrator / stream_orchestrator 入口 set,
+# _call_llm / _stream_llm 读取后调 create_provider_for_user. 避免 _call_llm 签名扩散.
+_user_pref_ctx: ContextVar[Optional[Tuple[int, Session]]] = ContextVar(
+    "orch_user_pref", default=None
+)
 
 
 # G-W9: 客户端断开后 bg task 继续跑完 audit / memory / journal.
@@ -654,9 +661,17 @@ async def _call_llm(system_prompt: str, user_prompt: str) -> str:
     async def _try(provider_type: Optional[str]) -> Optional[str]:
         try:
             from app.services.llm import get_llm_provider
-            from app.services.llm.factory import create_llm_provider
+            from app.services.llm.factory import create_llm_provider, create_provider_for_user
 
-            provider = create_llm_provider(provider_type) if provider_type else get_llm_provider()
+            if provider_type:
+                provider = create_llm_provider(provider_type)
+            else:
+                pref = _user_pref_ctx.get()
+                if pref is not None:
+                    uid, _db = pref
+                    provider = create_provider_for_user(uid, _db)
+                else:
+                    provider = get_llm_provider()
             result = await provider.chat(
                 messages=messages, temperature=0.3, max_tokens=900
             )
@@ -754,9 +769,17 @@ async def _stream_llm(
     async def _try_stream(provider_type: Optional[str]):
         try:
             from app.services.llm import get_llm_provider
-            from app.services.llm.factory import create_llm_provider
+            from app.services.llm.factory import create_llm_provider, create_provider_for_user
 
-            provider = create_llm_provider(provider_type) if provider_type else get_llm_provider()
+            if provider_type:
+                provider = create_llm_provider(provider_type)
+            else:
+                pref = _user_pref_ctx.get()
+                if pref is not None:
+                    uid, _db = pref
+                    provider = create_provider_for_user(uid, _db)
+                else:
+                    provider = get_llm_provider()
             result = await provider.chat(
                 messages=messages, temperature=0.3, max_tokens=900, stream=True
             )
@@ -808,6 +831,8 @@ async def run_orchestrator(
 
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.synthesis", user_id=user_id)
+    # 2026-05-13: set 用户偏好 ctx, _call_llm 内部读取.
+    _user_pref_ctx.set((user_id, db))
     t_start = time.monotonic()
 
     twin = build_twin(db, user_id)
@@ -1119,6 +1144,8 @@ async def stream_orchestrator(
 
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.stream", user_id=user_id)
+    # 2026-05-13: 用户偏好 ctx
+    _user_pref_ctx.set((user_id, db))
 
     t_start = time.monotonic()
 

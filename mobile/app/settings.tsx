@@ -90,7 +90,7 @@ export default function SettingsScreen() {
         {/* AI 模型 — 置顶 */}
         <View style={styles.card}>
           <SettingRow icon="sparkles-outline" label="AI 模型"
-            onPress={() => router.push('/admin-llm' as any)} />
+            onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="person-outline" label="AI 教练风格"
             onPress={() => router.push('/coach-persona' as any)} />
           <SettingRow icon="cellular-outline" label="我的基因"
