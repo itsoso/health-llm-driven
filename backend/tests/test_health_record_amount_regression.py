@@ -97,3 +97,41 @@ async def test_garmin_sync_does_not_throw_on_missing_amount(db):
         )
 
     assert "Error" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_run_stream_with_extra_context_does_not_crash_before_first_event(db):
+    """Regression: sources_used must be initialized before data-source inspection.
+
+    The bug surfaced only on the streaming path before the first SSE event, so this
+    exercises run_stream rather than private helpers.
+    """
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+
+    class FakeOpenClawService:
+        def __init__(self, db):
+            self.db = db
+
+        def get_or_create_conversation(self, user_id, conversation_id=None, title=None):
+            return type("Conversation", (), {"id": 123})()
+
+        def save_message(self, *args, **kwargs):
+            return None
+
+        def build_messages(self, conv_id, limit=15):
+            return [{"role": "user", "content": "今天怎么安排"}]
+
+    with patch("app.services.openclaw_service.OpenClawService", FakeOpenClawService), \
+         patch.object(executor, "_build_system_prompt", return_value="system"), \
+         patch("app.services.agent_executor._inspect_user_data_sources", return_value=["twin"]):
+        stream = executor.run_stream(
+            user_id=1,
+            message="今天怎么安排",
+            extra_context='{"from":"today"}',
+        )
+        first = await anext(stream)
+        await stream.aclose()
+
+    assert first["event"] == "agent_start"

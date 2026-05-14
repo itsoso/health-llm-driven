@@ -10,6 +10,7 @@ from app.api import (
     admin_slo,
     movement_plan,
     diet_plan,
+    daily_plan,
     users,
     basic_health,
     medical_exams,
@@ -29,6 +30,7 @@ from app.api import (
     supplement_audits,
     health_consultations,
     weight,
+    waist,
     blood_pressure,
     diet,
     water,
@@ -149,6 +151,7 @@ api_router.include_router(admin_wscla.router, prefix="/admin/wscla", tags=["admi
 api_router.include_router(admin_slo.router, prefix="/admin/slo", tags=["admin-slo"])
 api_router.include_router(movement_plan.router)
 api_router.include_router(diet_plan.router)
+api_router.include_router(daily_plan.router)
 api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
 api_router.include_router(performance.router)
 api_router.include_router(data_health.router, prefix="/data-health", tags=["data-health"])
@@ -170,6 +173,7 @@ api_router.include_router(daily_health.router, prefix="/daily-health", tags=["da
 api_router.include_router(health_checkin.router, prefix="/checkin", tags=["checkin"])
 api_router.include_router(checkin.router, tags=["checkin-v2"])
 api_router.include_router(weight.router, prefix="/weight", tags=["weight"])
+api_router.include_router(waist.router, prefix="/waist", tags=["waist"])
 api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=["blood-pressure"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
 api_router.include_router(spo2.router, prefix="/spo2", tags=["spo2"])

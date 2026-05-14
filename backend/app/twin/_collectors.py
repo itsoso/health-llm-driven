@@ -155,6 +155,54 @@ def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
 # ─────────────────────────── blood pressure ───────────────────────────
 
 
+def fetch_waist_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
+    """最近一次腰围."""
+    try:
+        from app.models.user import User
+        from app.models.user_profile import UserProfile
+        from app.models.basic_health import BasicHealthData
+        from app.models.waist import WaistRecord
+
+        record = (
+            db.query(WaistRecord)
+            .filter(WaistRecord.user_id == user_id)
+            .order_by(desc(WaistRecord.record_date))
+            .first()
+        )
+        if not record:
+            return None
+
+        user = db.query(User).filter(User.id == user_id).first()
+        gender = (getattr(user, "gender", None) or "").lower()
+        is_male = gender in {"男", "male", "m", "man"} or gender.startswith("男")
+        threshold = 90 if is_male else 80
+
+        height_cm = None
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if profile and profile.height_cm:
+            height_cm = float(profile.height_cm)
+        if height_cm is None:
+            basic = (
+                db.query(BasicHealthData.height)
+                .filter(BasicHealthData.user_id == user_id, BasicHealthData.height.isnot(None))
+                .order_by(desc(BasicHealthData.record_date))
+                .first()
+            )
+            if basic:
+                height_cm = float(basic[0])
+
+        return {
+            "waist_cm": record.waist_cm,
+            "record_date": record.record_date,
+            "waist_to_height_ratio": round(record.waist_cm / height_cm, 3) if height_cm else None,
+            "central_obesity_flag": record.waist_cm >= threshold,
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] waist 失败: {e}")
+        _safe_rollback(db)
+        return None
+
+
 def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
     """最近一次血压。"""
     try:

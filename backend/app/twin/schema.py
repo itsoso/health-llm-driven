@@ -84,12 +84,16 @@ class PhysiologicalState(BaseModel):
 
 class BodyCompositionState(BaseModel):
     weight_kg: Optional[float] = None
+    waist_cm: Optional[float] = None
+    waist_to_height_ratio: Optional[float] = None
+    central_obesity_flag: Optional[bool] = None
     bmi: Optional[float] = None
     bmi_category: Optional[str] = None  # 体重过低 / 正常 / 超重 / 肥胖
     body_fat_pct: Optional[float] = None
     bmr_kcal: Optional[float] = None
     tdee_kcal: Optional[float] = None
     last_weighed: Optional[date] = None
+    last_waist_measured: Optional[date] = None
 
 
 # ─────────────────────────── Labs / Biomarkers ─────────────────────────

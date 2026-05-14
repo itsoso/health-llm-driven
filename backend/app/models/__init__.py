@@ -29,6 +29,8 @@ from app.models.supplement import SupplementProduct, SupplementDefinition, Suppl
 # HabitDefinition/HabitRecord — DEPRECATED: router disabled, models retained for DB compat only
 # from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
+from app.models.waist import WaistRecord
+from app.models.daily_operating_plan import DailyOperatingPlan
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.device_credential import DeviceCredential
 # executor-v2: 新增模型
@@ -124,6 +126,8 @@ __all__ = [
     # "HabitDefinition",  # DEPRECATED
     # "HabitRecord",      # DEPRECATED
     "WeightRecord",
+    "WaistRecord",
+    "DailyOperatingPlan",
     "BloodPressureRecord",
     "DeviceCredential",
     # executor-v2: 新增模型

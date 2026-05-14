@@ -808,6 +808,15 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
             twin.labs.blood_pressure_date = bp.get("record_date")
             sources.add("blood_pressure")
 
+    # — Waist circumference (metabolic syndrome should not rely on BMI only)
+    waist = _collectors.fetch_waist_latest(db, user_id)
+    if waist:
+        twin.body_composition.waist_cm = waist.get("waist_cm")
+        twin.body_composition.last_waist_measured = waist.get("record_date")
+        twin.body_composition.waist_to_height_ratio = waist.get("waist_to_height_ratio")
+        twin.body_composition.central_obesity_flag = waist.get("central_obesity_flag")
+        sources.add("waist")
+
     # — Medical exam abnormal + latest meta (单次 joinedload 查询)
     abnormal, latest_exam = _collectors.fetch_medical_exam_abnormal(db, user_id)
     if abnormal:

@@ -32,8 +32,10 @@ import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
+import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { createTodayAgentContext, pushChatWithContext } from '../../utils/agentContext';
+import { getDailyOperatingPlan, type DailyPlanAction } from '../../services/dailyPlan';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -94,6 +96,12 @@ export default function TodayScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const dailyPlanQuery = useQuery({
+    queryKey: ['daily-plan', 'me'],
+    queryFn: getDailyOperatingPlan,
+    staleTime: 60 * 1000,
+  });
+
   // Hero 数据 — 给 quickEntry tile 显示数字而不是干口号
   const geneticStatsQuery = useQuery({
     queryKey: ['genetic-stats'],
@@ -131,6 +139,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
         qc.invalidateQueries({ queryKey: ['action-cards', 'active'] }),
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         // EnvironmentCard 数据 — 不加这几条用户下拉时天气/AQI/明日预报不动
         qc.invalidateQueries({ queryKey: ['env', 'weather'] }),
         qc.invalidateQueries({ queryKey: ['env', 'aqi'] }),
@@ -142,12 +151,13 @@ export default function TodayScreen() {
     }
   }, [qc]);
 
-  const isLoading = safetyQuery.isLoading || cardsQuery.isLoading || twinQuery.isLoading;
+  const isLoading = safetyQuery.isLoading || cardsQuery.isLoading || twinQuery.isLoading || dailyPlanQuery.isLoading;
   // RefreshControl spinner: 用户主动下拉时立刻显示, 直到所有 invalidate 完成 (含 env)
   const isRefreshing = manualRefreshing
     || safetyQuery.isRefetching
     || cardsQuery.isRefetching
-    || twinQuery.isRefetching;
+    || twinQuery.isRefetching
+    || dailyPlanQuery.isRefetching;
 
   const alerts: SafetyAlert[] = safetyQuery.data?.alerts ?? [];
   const criticalAlerts = alerts.filter(a =>
@@ -167,6 +177,18 @@ export default function TodayScreen() {
     spo2_avg: twinSnap.spo2_avg ?? null,
   };
 
+  const openPlanAction = useCallback((action: DailyPlanAction) => {
+    if (action.source_card_id) {
+      router.push({ pathname: '/card/[id]' as any, params: { id: String(action.source_card_id) } });
+      return;
+    }
+    if (action.domain === 'nutrition') router.push('/diet-plan' as any);
+    else if (action.domain === 'movement') router.push('/movement-plan' as any);
+    else if (action.domain === 'sleep') router.push('/sleep' as any);
+    else if (action.domain === 'measurement') router.push('/record' as any);
+    else router.push('/(tabs)/chat' as any);
+  }, [router]);
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
       <ScrollView
@@ -175,6 +197,12 @@ export default function TodayScreen() {
       >
         {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
         <EnvironmentCard />
+
+        <TodayPlanPanel
+          plan={dailyPlanQuery.data}
+          loading={dailyPlanQuery.isLoading}
+          onPressAction={openPlanAction}
+        />
 
         {/* 4 入口 — 2x2 grid 学健康记录 VitalsGrid 风格 (2026-05-12 重做) */}
         <View style={styles.gridRow}>

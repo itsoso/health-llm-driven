@@ -190,6 +190,8 @@ class AgentExecutor:
 
         start_time = time.time()
         self._current_user_id = user_id
+        # 可解释性: 记录本次回答用到的数据源. 必须在 system prompt / inspection 前初始化.
+        sources_used: list = []
 
         # 1. 获取或创建会话（复用 OpenClaw 的对话管理）
         from app.services.openclaw_service import OpenClawService
@@ -265,11 +267,6 @@ class AgentExecutor:
         # 2026-05-13: 计时 + 模型名可观测性 — 每轮 LLM 耗时积累到 done 事件
         llm_rounds_ms: list = []
         model_name: Optional[str] = None
-
-        # 2026-05-14 #4: 可解释性 — 记录本次回答用到的数据源
-        # _build_system_prompt 收集 (Twin + health_ctx + memory),
-        # tool_call 处加, done 事件 emit.
-        sources_used: list = []
 
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
