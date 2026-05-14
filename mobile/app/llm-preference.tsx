@@ -69,13 +69,31 @@ export default function LlmPreferenceScreen() {
   const updateMut = useMutation({
     mutationFn: (model_id: string | null) =>
       api.put<PreferenceResponse>('/me/llm-preference', { model_id }),
-    onSuccess: (resp, model_id) => {
+    onSuccess: async (resp, model_id) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       qc.setQueryData(['llm-preference'], resp.data);
-      const lbl = model_id
-        ? data?.options.find(m => m.id === model_id)?.label || model_id
-        : '系统默认';
-      Alert.alert('已切换', `当前模型: ${lbl}`);
+      // 2026-05-14 FIX-6: 切换后做自检, 让用户眼见为实
+      try {
+        const test = await api.post<{
+          ok: boolean;
+          actual_model?: string | null;
+          actual_provider?: string | null;
+          latency_ms?: number | null;
+          sample_reply?: string | null;
+          error?: string | null;
+        }>('/me/llm-preference/selftest');
+        const t = test.data;
+        if (t.ok) {
+          Alert.alert(
+            '已切换并自检通过',
+            `实际模型: ${t.actual_model || '?'}\n通道: ${t.actual_provider || '?'}\n延迟: ${t.latency_ms || '?'}ms\n\n样本: ${t.sample_reply || '(空)'}`,
+          );
+        } else {
+          Alert.alert('已切换, 但自检失败', t.error || '未知错误');
+        }
+      } catch (e: any) {
+        Alert.alert('已切换, 自检请求失败', e?.response?.data?.detail || e?.message || '');
+      }
     },
     onError: (e: any) => {
       Alert.alert('切换失败', e?.response?.data?.detail || e?.message || '请稍后再试');

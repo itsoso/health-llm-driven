@@ -62,8 +62,27 @@ function LlmPreferenceInner() {
       const lbl = model_id
         ? r.data.options.find(o => o.id === model_id)?.label || model_id
         : '系统默认';
-      setToast(`已切换到 ${lbl}`);
-      setTimeout(() => setToast(null), 2500);
+      // 2026-05-14 FIX-6: 切换后做自检
+      try {
+        const t = await api.post<{
+          ok: boolean;
+          actual_model?: string | null;
+          actual_provider?: string | null;
+          latency_ms?: number | null;
+          sample_reply?: string | null;
+          error?: string | null;
+        }>('/me/llm-preference/selftest');
+        if (t.data.ok) {
+          setToast(
+            `已切换到 ${lbl}\n实测: ${t.data.actual_model} · ${t.data.latency_ms}ms · "${(t.data.sample_reply || '').slice(0, 60)}"`,
+          );
+        } else {
+          setToast(`已切换, 但自检失败: ${t.data.error || '?'}`);
+        }
+      } catch {
+        setToast(`已切换到 ${lbl}, 自检请求失败`);
+      }
+      setTimeout(() => setToast(null), 5000);
     } catch (e: any) {
       setErr(e?.response?.data?.detail || e?.message || '切换失败');
     } finally {
@@ -99,7 +118,7 @@ function LlmPreferenceInner() {
         </div>
 
         {toast && (
-          <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+          <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 whitespace-pre-line">
             {toast}
           </div>
         )}

@@ -109,3 +109,71 @@ def update_preference(
     db.commit()
     db.refresh(profile)
     return PreferenceResponse(model_id=profile.llm_model_id, options=_list_options())
+
+
+class SelfTestResponse(BaseModel):
+    """切换 LLM 偏好后的自检结果 (2026-05-14)."""
+    model_config = ConfigDict(protected_namespaces=())
+
+    ok: bool
+    model_id: Optional[str]    # user 偏好里的 id (None = 系统默认)
+    actual_model: Optional[str]  # provider 实际 init 时的 model name (e.g. 'qwen3.6-plus')
+    actual_provider: Optional[str]  # 'tokenplan' / 'openai-proxy' / 'openclaw' 等
+    base_url: Optional[str]
+    latency_ms: Optional[int]
+    sample_reply: Optional[str]
+    error: Optional[str] = None
+
+
+@router.post("/selftest", response_model=SelfTestResponse)
+async def selftest(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """自检 — 用当前用户偏好 ping 一次 LLM, 返回实际命中的 model + 延迟 + 样本回复.
+
+    给设置页"切换完成"后立刻调用, 让用户**眼见为实**自己选的模型确实生效.
+    """
+    import time
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    model_id = getattr(profile, "llm_model_id", None) if profile else None
+
+    try:
+        from app.services.llm.factory import create_provider_for_user
+        provider = create_provider_for_user(current_user.id, db)
+
+        actual_model = getattr(provider, "model", None) or getattr(provider, "default_model", None)
+        actual_provider = getattr(provider, "provider_name", None) or type(provider).__name__
+        base_url = getattr(provider, "base_url", None)
+
+        t0 = time.monotonic()
+        result = await provider.chat(
+            messages=[{"role": "user", "content": "请用一句话告诉我你是哪个模型"}],
+            temperature=0.1,
+            max_tokens=80,
+        )
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        sample = result if isinstance(result, str) else (
+            (result or {}).get("content") if isinstance(result, dict) else str(result)
+        )
+
+        return SelfTestResponse(
+            ok=True,
+            model_id=model_id,
+            actual_model=actual_model,
+            actual_provider=actual_provider,
+            base_url=base_url,
+            latency_ms=latency_ms,
+            sample_reply=(sample or "")[:200],
+        )
+    except Exception as e:  # noqa: BLE001
+        return SelfTestResponse(
+            ok=False,
+            model_id=model_id,
+            actual_model=None,
+            actual_provider=None,
+            base_url=None,
+            latency_ms=None,
+            sample_reply=None,
+            error=str(e)[:200],
+        )

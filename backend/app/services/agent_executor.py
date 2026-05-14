@@ -271,8 +271,14 @@ class AgentExecutor:
                 llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
                 if model_name is None:
                     try:
-                        from app.services.llm.factory import get_llm_provider
-                        p = get_llm_provider()
+                        # 2026-05-14: 显示给前端看的 model name 也走用户偏好
+                        # (之前 bug: get_llm_provider() 是全局, 用户切了仍显示 MiniMax)
+                        if self._current_user_id:
+                            from app.services.llm.factory import create_provider_for_user
+                            p = create_provider_for_user(self._current_user_id, self.db)
+                        else:
+                            from app.services.llm.factory import get_llm_provider
+                            p = get_llm_provider()
                         model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
                     except Exception:
                         pass
