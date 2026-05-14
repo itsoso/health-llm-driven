@@ -426,7 +426,8 @@ _SNP_DETAIL_TTL_SECONDS = 86400
 
 
 def _snp_cache_key(user_id: int, rsid: str, genotype: Optional[str]) -> str:
-    return f"genetic_snp_detail:v1:user={user_id}:rsid={rsid}:gt={genotype or 'none'}"
+    # v2 (2026-05-14): prompt 改造 - 详细可执行行动. v1 cache 自动失效.
+    return f"genetic_snp_detail:v2:user={user_id}:rsid={rsid}:gt={genotype or 'none'}"
 
 
 def _build_snp_detail_prompt(
@@ -460,7 +461,8 @@ def _build_snp_detail_prompt(
         ctx_lines.append(f"慢病: {', '.join(chronic[:5])}")
     ctx_block = "\n".join(ctx_lines) or "(暂无化验/补剂/慢病数据)"
 
-    return f"""你是基因解读 Agent. 用户在看 {gene} ({variant}) 这一个 SNP 的详情. 你要在结合用户**这条**位点 + **他的差异化数据**之后, 给出可执行建议.
+    return f"""你是基因解读 Agent. 用户在看 {gene} ({variant}) 这一个 SNP 的详情.
+你必须给出**详细可执行**的行动, 不只是泛泛科普 — 这是 Agent 跟"基因解读网站"的差别.
 
 【SNP 静态描述】
 {desc}
@@ -471,19 +473,40 @@ def _build_snp_detail_prompt(
 【用户其它差异化数据】
 {ctx_block}
 
-输出严格按以下 JSON shape, 中文, 不要 markdown, 不要解释:
+输出严格按以下 JSON shape, 中文, 不要 markdown, 不要解释.
+
+每条 action 要满足"详细可执行"标准:
+- 写**具体**: 食材名 + 克数 + 频率/时段 (例: "三文鱼 150g/餐, 每周 3 次, 替代红肉")
+- 写**为什么**: 1 短句解释机理 (例: "OMEGA-3 抗炎, 9p21 携带者血管炎症阈值低")
+- **关联**用户已有数据时显式说明 (例: "你 LDL 4.1 偏高, 这条要从 14 天起每天做"); 没相关数据就不强加
+- 给**复盘**: 行动结束后看哪个指标 (例: "30 天后复查 LDL 看是否 ≤3.6")
+- **避免**已经在服补剂里的成分, 或已在 chat 中给过的方向
+
 {{
-  "headline": "1 句话给用户讲清这个 SNP 对他意味着什么 (≤30 字)",
-  "nutrition_actions": ["饮食上具体做什么 1", "..."],   // 0-3 条, 每条≤25字, 涉及食材/克数/频率
-  "supplement_actions": ["补剂上具体做什么 1", "..."],  // 0-3 条, 含成分/剂量/时段; 用户已在服的不重复
-  "exercise_actions": ["运动上具体做什么 1", "..."],    // 0-2 条, 跟用户基因型相关时才给; 不相关留空
-  "lab_to_check": ["建议复查指标 1", "..."],            // 0-3 条, 写化验项名 + 频率, 例 '同型半胱氨酸 / 6 月一次'
-  "drug_caution": ["药物注意 1", "..."],                // 0-3 条, drug_sensitivity 类才给, 否则空
-  "confidence": "high|medium|low"  // 该 SNP 证据等级 (MTHFR/APOE/SLCO1B1 这类强证据=high, 单一研究=low)
+  "headline": "1 句话给用户讲清这个 SNP 对他意味着什么 + 当前优先级 (≤40 字)",
+  "nutrition_actions": [
+    "饮食行动 1 (50-80字): 食材+克数/频率+机理+用户关联+复盘指标",
+    "..."
+  ],   // 0-3 条
+  "supplement_actions": [
+    "补剂行动 1 (50-80字): 成分+剂量+时段+机理+用户关联; 跟在服重复就跳过",
+    "..."
+  ],  // 0-3 条
+  "exercise_actions": [
+    "运动行动 1 (50-80字): 强度+频次+时长+跟 SNP 的关联",
+    "..."
+  ],    // 0-2 条, 不相关留空
+  "lab_to_check": [
+    "建议复查指标 1: 化验项名 + 频率 + 该 SNP 下的目标范围",
+    "..."
+  ],            // 0-3 条
+  "drug_caution": ["药物注意 1", "..."],  // drug_sensitivity 类才给
+  "confidence": "high|medium|low"  // MTHFR/APOE/SLCO1B1 等强证据=high
 }}
 
-如果用户未命中, nutrition/supplement/exercise/lab/drug 全部留空 (不强行给), headline 说明"未在你的报告中测到".
-不要捏造用户没在化验中显示的数据."""
+如果用户未命中 (报告中无该 SNP), 全部 action 留空, headline 写"未在你的报告中测到".
+不要捏造用户没在数据中显示的化验/补剂.
+不要写"建议咨询医生" 这种空话 - 给具体可做的事."""
 
 
 def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, Any]]:

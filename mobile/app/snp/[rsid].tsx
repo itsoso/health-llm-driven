@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -82,8 +82,16 @@ export default function SnpDetailScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: headerTitle, headerBackTitle: '返回' }} />
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['bottom']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top', 'bottom']}>
+        {/* 自定义返回按钮 — _layout 全局 headerShown:false, 不靠 Stack header */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
+            <Text style={[styles.backText, { color: c.labelPrimary }]}>返回</Text>
+          </TouchableOpacity>
+          <Text style={[styles.topTitle, { color: c.labelPrimary }]} numberOfLines={1}>{headerTitle}</Text>
+          <View style={{ width: 60 }} />
+        </View>
         <ScrollView contentContainerStyle={styles.content}>
           {/* Header card: gene · variant · category */}
           <View style={[styles.headerCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -172,6 +180,8 @@ export default function SnpDetailScreen() {
               {ACTION_SECTIONS.map(sec => {
                 const list = data.actions?.[sec.key] ?? [];
                 if (list.length === 0) return null;
+                // 跟 Agent 详细聊本类 — 跳 chat tab 预填问题
+                const chatPrompt = `针对我的 ${data.gene} 基因 (${data.user.genotype || data.variant_name}), 在${sec.title}方面, 结合我现在的化验/补剂/运动数据, 能否给我一个未来 30 天的具体执行方案?`;
                 return (
                   <View
                     key={sec.key}
@@ -187,6 +197,19 @@ export default function SnpDetailScreen() {
                         <Text style={[styles.actionLine, { color: c.labelSecondary }]}>{line}</Text>
                       </View>
                     ))}
+                    {/* 2026-05-14: 跟 Agent 详细聊本类 — 让"详细行动"延伸进 chat */}
+                    {(sec.key === 'nutrition_actions' || sec.key === 'supplement_actions' || sec.key === 'exercise_actions') && (
+                      <TouchableOpacity
+                        style={[styles.agentLink, { borderTopColor: c.separator }]}
+                        onPress={() => router.push({ pathname: '/(tabs)/chat' as any, params: { prompt: chatPrompt } })}
+                      >
+                        <Ionicons name="chatbubble-ellipses-outline" size={14} color={c.brand} />
+                        <Text style={[styles.agentLinkText, { color: c.brand }]}>
+                          跟 Agent 详细聊「{sec.title}」方案
+                        </Text>
+                        <Ionicons name="chevron-forward" size={14} color={c.brand} style={{ marginLeft: 'auto' }} />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 );
               })}
@@ -250,6 +273,13 @@ export default function SnpDetailScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.md, paddingVertical: 8,
+  },
+  backBtn: { flexDirection: 'row', alignItems: 'center', minWidth: 60 },
+  backText: { fontSize: 16, marginLeft: -2 },
+  topTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   loadingText: { fontSize: 13 },
   errorText: { fontSize: 16, fontWeight: '600' },
@@ -284,9 +314,14 @@ const styles = StyleSheet.create({
   actionCard: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, gap: 6 },
   actionHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionTitle: { fontSize: 13, fontWeight: '600' },
-  actionRow: { flexDirection: 'row', gap: 6 },
-  bullet: { fontSize: 16, lineHeight: 18, fontWeight: '700' },
-  actionLine: { fontSize: 13, lineHeight: 19, flex: 1 },
+  actionRow: { flexDirection: 'row', gap: 8, marginVertical: 2 },
+  bullet: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  actionLine: { fontSize: 14, lineHeight: 22, flex: 1 },
+  agentLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  agentLinkText: { fontSize: 13, fontWeight: '500' },
   fallbackCard: {
     borderWidth: 1, borderRadius: radii.md, padding: spacing.md,
     flexDirection: 'row', alignItems: 'center', gap: 8,

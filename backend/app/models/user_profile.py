@@ -103,6 +103,12 @@ class UserProfile(Base):
     # 只在前端可见的 chat 入口生效 (agent_executor / orchestrator), 后台任务/specialist 仍走全局.
     llm_model_id = Column(String(50), nullable=True)
 
+    # === 主健康目标 (Onboarding step 5, 2026-05-14) ===
+    # 用户最想改善的 1 件事, 给 ActionCard / WeeklyAdvisor 推荐用作偏好信号.
+    # 取值: weight_loss / glucose / blood_pressure / sleep / hrv / rhinitis / general
+    # NULL = 没填 (允许 onboarding 跳过).
+    primary_goal = Column(String(40), nullable=True)
+
     # === 时间戳 ===
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
