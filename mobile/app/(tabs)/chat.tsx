@@ -109,7 +109,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Ionicons name="sparkles" size={18} color={c.brand} />
-        <Text style={txt.headerTitle}>AI 健康助理</Text>
+        <Text style={txt.headerTitle}>健康 Agent</Text>
         <View style={{ flex: 1 }} />
         {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
             尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
@@ -173,7 +173,7 @@ export default function ChatScreen() {
                 <BrandCircle size={72} style={{ marginBottom: 16 }}>
                   <Ionicons name="sparkles" size={32} color="#fff" />
                 </BrandCircle>
-                <Text style={txt.welcomeTitle}>AI 健康助理</Text>
+                <Text style={txt.welcomeTitle}>健康 Agent</Text>
                 <Text style={txt.welcomeSub}>
                   {opener
                     ? '或者问我别的'

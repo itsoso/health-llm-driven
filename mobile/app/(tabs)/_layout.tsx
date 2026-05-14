@@ -4,9 +4,11 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Platform } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
-import QuickRecordFab from '../../components/fab/QuickRecordFab';
 
 /**
+ * Phase 3 (2026-05-14): Tab 2 → 3. "+" FAB 推进为第三 Tab "记录", 底部 3 个 tab
+ * (今日 / 会诊 / 记录), 移除右下悬浮 "+" 按钮.
+ *
  * Phase 2 (2026-05-11): Tab 收敛 4 → 2 (今日 + 会诊).
  *
  * 隐藏 (href:null, 仍可程序化导航):
@@ -51,20 +53,27 @@ export default function TabLayout() {
         <Tabs.Screen
           name="chat"
           options={{
-            title: '会诊',
-            tabBarAccessibilityLabel: '会诊，与 AI 健康助理对话',
+            title: '私教',
+            tabBarAccessibilityLabel: '私教，与健康 Agent 对话',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
             ),
           }}
         />
+        <Tabs.Screen
+          name="record"
+          options={{
+            title: '记录',
+            tabBarAccessibilityLabel: '记录，快速记录饮水、体重、血压、打卡',
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={26} color={color} />
+            ),
+          }}
+        />
         {/* 隐藏路由 — 文件保留, 仍可程序化导航 (router.push('/alerts') 等). */}
         <Tabs.Screen name="alerts" options={{ href: null }} />
-        <Tabs.Screen name="record" options={{ href: null }} />
         <Tabs.Screen name="journal" options={{ href: null }} />
       </Tabs>
-      {/* P2-4: 全局悬浮 FAB — 短按 sheet (4 项高频), 长按语音 */}
-      <QuickRecordFab />
     </View>
   );
 }
