@@ -54,6 +54,7 @@ from app.api import (
     performance,
     user_api_key,
     user_llm_preference,
+    weekly_briefing,
     speech,
     ai_insights,
     mood,
@@ -158,6 +159,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(user_profile.router, tags=["user-profile"])
 api_router.include_router(user_api_key.router, tags=["user-api-key"])
 api_router.include_router(user_llm_preference.router)
+api_router.include_router(weekly_briefing.router, tags=["weekly-briefing"])
 
 # ── Health Data (Vitals & Records) ─────────────────────────────────
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])

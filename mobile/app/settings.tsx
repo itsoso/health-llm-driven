@@ -91,6 +91,10 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/llm-preference' as any)} />
+          <SettingRow icon="calendar-outline" label="本周建议"
+            onPress={() => router.push('/weekly-briefing' as any)} />
+          <SettingRow icon="trending-up" label="我的进度"
+            onPress={() => router.push('/my-progress' as any)} />
           <SettingRow icon="person-outline" label="AI 教练风格"
             onPress={() => router.push('/coach-persona' as any)} />
           <SettingRow icon="cellular-outline" label="我的基因"
