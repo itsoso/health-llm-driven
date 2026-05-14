@@ -342,12 +342,15 @@ def get_my_diet_stats(
 def update_diet_record(
     record_id: int,
     update_data: DietRecordUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
 ):
-    """更新饮食记录"""
+    """更新饮食记录（需登录，且只能更新自己的记录）"""
     record = db.query(DietRecordModel).filter(DietRecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
+    if record.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权更新他人的饮食记录")
 
     update_dict = update_data.model_dump(exclude_unset=True)
     if 'meal_type' in update_dict and update_dict['meal_type']:

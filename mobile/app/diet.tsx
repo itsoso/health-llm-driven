@@ -5,8 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
-import { createDietRecord, estimateNutrition, recognizeFood, type DietRecordCreate } from '../services/diet';
+import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, type DietRecord, type DietRecordCreate } from '../services/diet';
 import * as ImagePicker from 'expo-image-picker';
 import HealthCard from '../components/design-system/HealthCard';
 import MealForm from '../components/diet/MealForm';
@@ -44,16 +45,55 @@ export default function DietScreen() {
   const [showForm, setShowForm] = useState(false);
   const [estimating, setEstimating] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
+  const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
     try {
-      await createDietRecord(record);
+      if (editingRecord) {
+        await updateDietRecord(editingRecord.id, record);
+      } else {
+        await createDietRecord(record);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowForm(false);
+      setEditingRecord(null);
+      setFormDefaults({});
       qc.invalidateQueries({ queryKey: ['diet'] });
     } catch {
-      Alert.alert('保存失败', '请稍后再试');
+      Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
+  }, [qc, editingRecord]);
+
+  const handleEdit = useCallback((r: DietRecord) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setEditingRecord(r);
+    setFormDefaults({});
+    setShowForm(true);
+  }, []);
+
+  const handleDelete = useCallback((r: DietRecord) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const preview = (r.food_items || '').slice(0, 30);
+    Alert.alert(
+      '删除饮食记录',
+      `确定删除 ${MEAL_LABEL[r.meal_type] || r.meal_type}: ${preview} 吗?`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDietRecord(r.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              qc.invalidateQueries({ queryKey: ['diet'] });
+            } catch {
+              Alert.alert('删除失败', '请稍后再试');
+            }
+          },
+        },
+      ],
+    );
   }, [qc]);
 
   const handleText = useCallback(async () => {
@@ -162,7 +202,10 @@ export default function DietScreen() {
 
         {/* Meal form */}
         {showForm && (
-          <MealForm date={date} onSubmit={handleSave} onCancel={() => { setShowForm(false); setFormDefaults({}); }}
+          <MealForm date={date}
+            initialRecord={editingRecord || undefined}
+            onSubmit={handleSave}
+            onCancel={() => { setShowForm(false); setEditingRecord(null); setFormDefaults({}); }}
             initialDescription={formDefaults.food_items}
             initialCalories={formDefaults.calories}
             initialProtein={formDefaults.protein}
@@ -170,17 +213,45 @@ export default function DietScreen() {
             initialFat={formDefaults.fat} />
         )}
 
-        {/* Meal records */}
+        {/* Meal records — 左滑暴露 编辑 + 删除 */}
         {daily?.meals && daily.meals.length > 0 ? (
           daily.meals.map((r) => (
-            <View key={r.id} style={styles.mealRow}>
-              <View style={styles.mealDot} />
-              <View style={{ flex: 1 }}>
-                <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
-                <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
+            <ReanimatedSwipeable
+              key={r.id}
+              friction={2}
+              rightThreshold={40}
+              renderRightActions={() => (
+                <View style={styles.swipeActions}>
+                  <TouchableOpacity
+                    style={[styles.swipeBtn, { backgroundColor: c.brand }]}
+                    onPress={() => handleEdit(r)}
+                    activeOpacity={0.85}
+                    accessibilityLabel="编辑"
+                  >
+                    <Ionicons name="pencil" size={18} color="#fff" />
+                    <Text style={txt.swipeText}>编辑</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.swipeBtn, { backgroundColor: c.red }]}
+                    onPress={() => handleDelete(r)}
+                    activeOpacity={0.85}
+                    accessibilityLabel="删除"
+                  >
+                    <Ionicons name="trash" size={18} color="#fff" />
+                    <Text style={txt.swipeText}>删除</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            >
+              <View style={styles.mealRow}>
+                <View style={styles.mealDot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
+                  <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
+                </View>
+                <Text style={txt.mealCal}>{r.calories ? `${r.calories}kcal` : ''}</Text>
               </View>
-              <Text style={txt.mealCal}>{r.calories ? `${r.calories}kcal` : ''}</Text>
-            </View>
+            </ReanimatedSwipeable>
           ))
         ) : (
           <Text style={txt.empty}>{date === todayStr() ? '今天还没有饮食记录' : '当日无记录'}</Text>
@@ -225,6 +296,17 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     padding: spacing.lg, marginBottom: spacing.sm, ...shadows.subtle,
   },
   mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.brand },
+  swipeActions: {
+    flexDirection: 'row', alignItems: 'stretch',
+    marginBottom: spacing.sm,
+  },
+  swipeBtn: {
+    width: 76,
+    alignItems: 'center', justifyContent: 'center',
+    gap: 4,
+    marginLeft: 6,
+    borderRadius: radii.md,
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -236,5 +318,6 @@ const createTxt = (c: ColorPalette) => ({
   mealType: { fontSize: 13, fontWeight: '600', color: c.labelPrimary } as TextStyle,
   mealFood: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723' } as TextStyle,
+  swipeText: { fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
   empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', paddingVertical: 30 } as TextStyle,
 });

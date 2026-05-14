@@ -88,6 +88,11 @@ export async function createDietRecord(record: DietRecordCreate): Promise<DietRe
   return data;
 }
 
+export async function updateDietRecord(id: number, patch: Partial<DietRecordCreate>): Promise<DietRecord> {
+  const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch);
+  return data;
+}
+
 export async function deleteDietRecord(id: number): Promise<void> {
   await api.delete(`/diet/records/${id}`);
 }

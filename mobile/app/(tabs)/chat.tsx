@@ -114,7 +114,10 @@ export default function ChatScreen() {
         {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
             尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
         <TouchableOpacity
-          onPress={() => router.push('/voice-chat' as any)}
+          onPress={() => router.push({
+            pathname: '/voice-chat',
+            params: chat.conversationId ? { conversation_id: String(chat.conversationId) } : {},
+          } as any)}
           hitSlop={8}
           style={{ marginRight: 12 }}
           accessibilityLabel="语音对话"
@@ -204,7 +207,7 @@ export default function ChatScreen() {
           </View>
         )}
 
-        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} initialText={initialInput} />
+        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} initialText={initialInput} conversationId={chat.conversationId} />
         {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
 

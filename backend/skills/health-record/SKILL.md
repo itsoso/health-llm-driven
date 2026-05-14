@@ -145,6 +145,36 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/recor
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/stats?days=30"
 ```
 
+### 更新饮食记录
+端点：`PUT $HEALTH_API_URL/diet/records/{record_id}`
+
+**操作规范（防误改）**：
+1. 先 GET 当日记录拿到 `record_id` 和当前内容（`/diet/records/me/date/<日期>`）
+2. 若用户描述能匹配多条（例如说"昨天的午餐"但当天有两条午餐），**列出候选让用户确认是哪一条**，不要自行猜测
+3. 确认后 PUT，body 只传要改的字段（exclude_unset）
+
+```bash
+curl -s -X PUT -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/diet/records/123" \
+  -d '{"food_items":"鸡胸肉200g + 糙米饭一碗","calories":520}'
+```
+
+### 删除饮食记录
+端点：`DELETE $HEALTH_API_URL/diet/records/{record_id}`
+
+**操作规范（删除不可逆，必须严格执行）**：
+1. 先 GET 当日记录列出所有项及其 `record_id`（`/diet/records/me/date/<日期>`）
+2. 用户描述匹配到多条时，**先把候选列出来让用户确认**，禁止直接删除
+3. 单条匹配时，仍要在回复里**明确告诉用户即将删除什么**（如"将删除：午餐 鸡胸肉200g"），用户确认后再 DELETE
+4. 删除成功后回复用户已删除哪一条，方便用户复核
+
+```bash
+# 先查记录拿 record_id
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/date/$(date +%Y-%m-%d)"
+# 拿到 record_id 后删除
+curl -s -X DELETE -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/123"
+```
+
 ### 补剂记录
 
 #### 1. 查询用户补剂列表（含今日打卡状态）

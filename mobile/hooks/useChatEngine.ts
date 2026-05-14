@@ -88,11 +88,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     return () => sub.remove();
   }, [conversationId]);
 
-  // 2026-05-14 FIX-4: chat tab 重获 focus 时 (用户从 SNP 详情/其它 tab 返回),
-  // 如果之前在 stream, 后端 G-W9 bg task 应已写完 message, 拉最新.
+  // 2026-05-14 FIX-4: chat tab 重获 focus 时 (用户从 SNP 详情/其它 tab/voice-chat 返回),
+  // 只要有 conversationId 就拉一次最新 — 覆盖三个场景:
+  //   1. streaming 中切走 → bg task 写完, 回来补齐 AI 回复
+  //   2. voice-chat modal 关闭 → 语音模式新增的 user/assistant 消息
+  //   3. 任何后台任务可能改了这条 conversation 的消息
   useFocusEffect(
     useCallback(() => {
-      if (streamingRef.current && conversationId) {
+      if (conversationId) {
         reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
       }
       return () => { /* unfocus 时不动 */ };

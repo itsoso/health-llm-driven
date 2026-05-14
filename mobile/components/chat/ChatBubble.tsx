@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
   Alert, ActivityIndicator, Pressable,
@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as Speech from 'expo-speech';
 import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { renderCard } from './cards';
@@ -36,6 +37,14 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   const [draft, setDraft] = useState<InterventionDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
+  const [speaking, setSpeaking] = useState(false);
+
+  // unmount 时停止播报, 避免气泡消失后还在念
+  useEffect(() => {
+    return () => {
+      if (speaking) { try { Speech.stop(); } catch {} }
+    };
+  }, [speaking]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard({ type: item.cardType, data: item.cardData });
@@ -84,6 +93,27 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
     } finally {
       setSavingDraft(false);
     }
+  };
+
+  // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
+  const handleSpeak = () => {
+    if (speaking) {
+      try { Speech.stop(); } catch {}
+      setSpeaking(false);
+      return;
+    }
+    const text = stripMarkdownForSpeech(displayText);
+    if (!text) return;
+    Haptics.selectionAsync();
+    setSpeaking(true);
+    Speech.speak(text, {
+      language: 'zh-CN',
+      rate: 1.0,
+      pitch: 1.0,
+      onDone: () => setSpeaking(false),
+      onStopped: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
   };
 
   return (
@@ -163,15 +193,33 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
               </View>
             ) : null}
             {item.streaming && <ActivityIndicator size="small" color={c.brand} style={{ marginTop: 4 }} />}
-            {/* 2026-05-13: 耗时 + 模型名 footer (有 elapsedMs 才显示, 用户可观测性能) */}
-            {!item.streaming && item.elapsedMs != null ? (
+            {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
+            {!item.streaming && displayText ? (
               <View style={styles.metaRow}>
-                <Ionicons name="time-outline" size={10} color={c.labelTertiary} />
-                <Text style={txt.meta}>
-                  {(item.elapsedMs / 1000).toFixed(1)}s
-                  {item.llmRounds && item.llmRounds > 1 ? ` · ${item.llmRounds} 轮` : ''}
-                  {item.model ? ` · ${item.model}` : ''}
-                </Text>
+                {item.elapsedMs != null ? (
+                  <>
+                    <Ionicons name="time-outline" size={10} color={c.labelTertiary} />
+                    <Text style={txt.meta}>
+                      {(item.elapsedMs / 1000).toFixed(1)}s
+                      {item.llmRounds && item.llmRounds > 1 ? ` · ${item.llmRounds} 轮` : ''}
+                      {item.model ? ` · ${item.model}` : ''}
+                    </Text>
+                  </>
+                ) : null}
+                <View style={{ flex: 1 }} />
+                <Pressable
+                  onPress={handleSpeak}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={speaking ? '停止播报' : '语音播报'}
+                  style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
+                >
+                  <Ionicons
+                    name={speaking ? 'stop-circle' : 'volume-high-outline'}
+                    size={14}
+                    color={speaking ? c.brand : c.labelSecondary}
+                  />
+                </Pressable>
               </View>
             ) : null}
             {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 (默认折叠) */}
@@ -215,6 +263,26 @@ function sanitizeAiContent(raw: string): string {
   // 孤零 ❌ 行: "\n❌" 或 "\n❌ " 行尾, 无实际错误信息
   s = s.replace(/\n+❌\s*(?=\n|$)/g, '');
   return s.trim();
+}
+
+/** 把 markdown 文本剥成"能给 TTS 念"的纯文本 — 去标题/粗斜/列表标记/链接/表格管道. */
+function stripMarkdownForSpeech(s: string): string {
+  return s
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\|/g, ' ')
+    .replace(/^[\s|:\-]+$/gm, '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 const ChatBubble = React.memo(ChatBubbleInner);
@@ -268,9 +336,16 @@ function createStyles(c: ColorPalette, isDark: boolean) {
       paddingVertical: 6,
     },
     actionBtnPressed: { opacity: 0.82 },
+    speakBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 999,
+    },
     metaRow: {
       flexDirection: 'row', alignItems: 'center', gap: 3,
-      marginTop: 6, opacity: 0.6,
+      marginTop: 6,
     },
   });
 }

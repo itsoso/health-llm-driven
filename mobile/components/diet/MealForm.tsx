@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, TextStyle, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radii } from '../../constants/theme';
-import type { DietRecordCreate } from '../../services/diet';
+import type { DietRecord, DietRecordCreate } from '../../services/diet';
 
 interface Props {
   date: string;
   onSubmit: (record: DietRecordCreate) => void;
   onCancel: () => void;
+  /** 编辑模式: 传入 record 预填全部字段; 不传则是新建. */
+  initialRecord?: DietRecord;
   initialDescription?: string;
   initialCalories?: number;
   initialProtein?: number;
@@ -22,14 +24,25 @@ const MEAL_TYPES = [
   { key: 'snack' as const, label: '加餐' },
 ];
 
-export default function MealForm({ date, onSubmit, onCancel, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat }: Props) {
-  const [mealType, setMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('lunch');
-  const [desc, setDesc] = useState(initialDescription || '');
-  const [cal, setCal] = useState(initialCalories?.toString() || '');
-  const [protein, setProtein] = useState(initialProtein?.toString() || '');
-  const [carbs, setCarbs] = useState(initialCarbs?.toString() || '');
-  const [fat, setFat] = useState(initialFat?.toString() || '');
-  const [alcohol, setAlcohol] = useState('');
+export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat }: Props) {
+  const isEdit = !!initialRecord;
+  const [mealType, setMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>(
+    (initialRecord?.meal_type as any) || 'lunch'
+  );
+  const [desc, setDesc] = useState(initialRecord?.food_items ?? initialDescription ?? '');
+  const [cal, setCal] = useState(
+    initialRecord?.calories?.toString() ?? initialCalories?.toString() ?? ''
+  );
+  const [protein, setProtein] = useState(
+    initialRecord?.protein?.toString() ?? initialProtein?.toString() ?? ''
+  );
+  const [carbs, setCarbs] = useState(
+    initialRecord?.carbs?.toString() ?? initialCarbs?.toString() ?? ''
+  );
+  const [fat, setFat] = useState(
+    initialRecord?.fat?.toString() ?? initialFat?.toString() ?? ''
+  );
+  const [alcohol, setAlcohol] = useState(initialRecord?.alcohol_units?.toString() ?? '');
 
   const handleSubmit = () => {
     if (!desc.trim()) { Alert.alert('请输入食物描述'); return; }
@@ -86,7 +99,7 @@ export default function MealForm({ date, onSubmit, onCancel, initialDescription,
           <Text style={txt.cancelText}>取消</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit} activeOpacity={0.7}>
-          <Text style={txt.saveText}>保存</Text>
+          <Text style={txt.saveText}>{isEdit ? '更新' : '保存'}</Text>
         </TouchableOpacity>
       </View>
     </View>

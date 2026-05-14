@@ -36,9 +36,11 @@ interface Props {
   isStreaming: boolean;
   /** Populated once on first mount; subsequent changes are ignored. */
   initialText?: string;
+  /** 当前会话 id — 进语音模式时带过去, 让 voice-chat 写到同一个 conversation. */
+  conversationId?: number;
 }
 
-export default function ChatInputBar({ onSend, isStreaming, initialText }: Props) {
+export default function ChatInputBar({ onSend, isStreaming, initialText, conversationId }: Props) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const [input, setInput] = useState(initialText ?? '');
@@ -99,10 +101,14 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
 
   // 麦克风按钮 → 跳语音对话页 (连续语音对话, 替代旧的 whisper-into-text 模式)。
   // 旧 voiceMode 状态保留但不再被这个按钮触发 —— 防止意外破坏 useVoiceRecording 的 hooks 依赖。
+  // 带上 conversationId, voice-chat 会写到同一个 conversation, 退出后 chat tab focus 时拉新消息.
   const goToVoiceChat = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/voice-chat' as any);
-  }, []);
+    router.push({
+      pathname: '/voice-chat',
+      params: conversationId ? { conversation_id: String(conversationId) } : {},
+    } as any);
+  }, [conversationId]);
 
   const toggleVoiceMode = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
