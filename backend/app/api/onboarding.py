@@ -12,6 +12,7 @@ from app.schemas.onboarding import (
     OnboardingStatusResponse,
     OnboardingStep1Request,
     OnboardingStep2Request,
+    OnboardingStep5Request,
     OnboardingCompleteRequest,
     ProfileData,
 )
@@ -53,6 +54,7 @@ async def get_onboarding_status(
             target_sleep_hours=profile.target_sleep_hours or 7.5,
             target_water_ml=profile.target_water_ml or 2000,
             target_exercise_minutes=profile.target_exercise_minutes or 30,
+            primary_goal=getattr(profile, "primary_goal", None),
         )
 
     return OnboardingStatusResponse(
@@ -110,6 +112,27 @@ async def save_step2(
     db.commit()
     db.refresh(profile)
     return {"message": "健康目标已保存", "profile_id": profile.id}
+
+
+@router.post("/step5")
+async def save_step5(
+    data: OnboardingStep5Request,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """保存主目标 (2026-05-14): 用户最想改善的 1 件事.
+
+    primary_goal 是 ActionCard / WeeklyAdvisor / proactive briefing 的偏好信号.
+    """
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    if not profile:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+
+    profile.primary_goal = data.primary_goal
+    db.commit()
+    db.refresh(profile)
+    return {"message": "主目标已保存", "primary_goal": profile.primary_goal}
 
 
 @router.post("/complete")

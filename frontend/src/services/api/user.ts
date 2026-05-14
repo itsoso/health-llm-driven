@@ -23,12 +23,15 @@ export const onboardingApi = {
         target_sleep_hours: number;
         target_water_ml: number;
         target_exercise_minutes: number;
+        primary_goal?: string;
       };
     }>('/onboarding/status'),
   saveStep1: (data: { height_cm?: number; current_weight_kg?: number; gender?: string; birth_date?: string }) =>
     api.post('/onboarding/step1', data),
   saveStep2: (data: { target_steps?: number; target_sleep_hours?: number; target_water_ml?: number; target_exercise_minutes?: number }) =>
     api.post('/onboarding/step2', data),
+  saveStep5: (data: { primary_goal: string }) =>
+    api.post('/onboarding/step5', data),
   complete: (data: { init_default_templates: boolean; selected_template_names?: string[] }) =>
     api.post('/onboarding/complete', data),
   skip: () =>

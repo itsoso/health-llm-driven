@@ -42,6 +42,8 @@ export default function OnboardingPage() {
   const [targetSleepHours, setTargetSleepHours] = useState(7.5);
   const [targetWaterMl, setTargetWaterMl] = useState(2000);
   const [targetExerciseMinutes, setTargetExerciseMinutes] = useState(30);
+  // 2026-05-14: 主目标 (primary_goal) — 给 ActionCard / WeeklyAdvisor / proactive 推荐用作偏好信号
+  const [primaryGoal, setPrimaryGoal] = useState<string>('');
 
   // Step 3 fields
   const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(
@@ -65,6 +67,7 @@ export default function OnboardingPage() {
       setTargetSleepHours(p.target_sleep_hours);
       setTargetWaterMl(p.target_water_ml);
       setTargetExerciseMinutes(p.target_exercise_minutes);
+      if (p.primary_goal) setPrimaryGoal(p.primary_goal);
     }).catch(() => {});
   }, [user, router]);
 
@@ -94,6 +97,14 @@ export default function OnboardingPage() {
         target_water_ml: targetWaterMl,
         target_exercise_minutes: targetExerciseMinutes,
       });
+      // 主目标如果有选, 同步保存 (允许跳过)
+      if (primaryGoal) {
+        try {
+          await onboardingApi.saveStep5({ primary_goal: primaryGoal });
+        } catch {
+          // 不阻断主流程
+        }
+      }
       setStep(3);
     } catch {
       showToast('保存失败，请重试', 'error');
@@ -244,6 +255,37 @@ export default function OnboardingPage() {
           <div>
             <h2 className="text-xl font-bold text-center mb-2">健康目标</h2>
             <p className="text-gray-500 text-center text-sm mb-6">设置你的每日健康目标</p>
+
+            {/* 2026-05-14: 主目标 — AI 推荐方向的偏好信号 */}
+            <div className="mb-6 rounded-xl bg-indigo-50/60 border border-indigo-100 p-4">
+              <div className="text-sm font-medium text-gray-800 mb-1">这段时间, 你最想改善什么?</div>
+              <div className="text-xs text-gray-500 mb-3">单选 (可跳过). AI 会优先针对它推 ActionCard 和每周建议.</div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'weight_loss', label: '减肥/控重', emoji: '⚖️' },
+                  { id: 'glucose', label: '降血糖', emoji: '🩸' },
+                  { id: 'blood_pressure', label: '降血压', emoji: '🫀' },
+                  { id: 'sleep', label: '改善睡眠', emoji: '🌙' },
+                  { id: 'hrv', label: '提升 HRV / 恢复', emoji: '💪' },
+                  { id: 'rhinitis', label: '管理鼻炎', emoji: '👃' },
+                  { id: 'general', label: '总体健康', emoji: '✨' },
+                ].map(g => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setPrimaryGoal(primaryGoal === g.id ? '' : g.id)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition ${
+                      primaryGoal === g.id
+                        ? 'border-indigo-500 bg-white shadow-sm'
+                        : 'border-gray-200 bg-white/50 hover:border-indigo-200'
+                    }`}
+                  >
+                    <span className="text-base">{g.emoji}</span>
+                    <span className="text-sm font-medium text-gray-700">{g.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="space-y-5">
               <div>
