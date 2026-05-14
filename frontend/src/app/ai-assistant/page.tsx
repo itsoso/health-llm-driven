@@ -85,6 +85,8 @@ export default function AIAssistantPage() {
             llm_rounds: typeof data.llm_rounds === 'number' ? data.llm_rounds : undefined,
             llm_rounds_ms: Array.isArray(data.llm_rounds_ms) ? data.llm_rounds_ms : undefined,
             model: typeof data.model === 'string' ? data.model : undefined,
+            // 2026-05-14 #4: 可解释性 sources
+            sources_used: Array.isArray(data.sources_used) ? data.sources_used : undefined,
           };
           setMessages(prev =>
             prev.map(m => (m.id === tempAssistantId ? { ...m, ...perf } : m)),

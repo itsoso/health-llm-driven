@@ -174,6 +174,10 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
                 </Text>
               </View>
             ) : null}
+            {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 (默认折叠) */}
+            {!item.streaming && item.sourcesUsed && item.sourcesUsed.length > 0 ? (
+              <SourcesChip sources={item.sourcesUsed} c={c} />
+            ) : null}
           </TouchableOpacity>
         )}
       </View>
@@ -278,4 +282,43 @@ function createTxt(c: ColorPalette) {
     fallback: { fontSize: 14, lineHeight: 20, color: c.labelSecondary, fontStyle: 'italic' } as TextStyle,
     meta: { fontSize: 10, color: c.labelTertiary, fontFamily: 'Courier' } as TextStyle,
   };
+}
+
+/** 2026-05-14 #4: 默认折叠 "AI 用了 N 项数据", 点开列出来. */
+function SourcesChip({ sources, c }: { sources: string[]; c: ColorPalette }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <View style={{ marginTop: 6 }}>
+      <TouchableOpacity
+        onPress={() => setOpen(o => !o)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 4,
+          alignSelf: 'flex-start',
+          paddingHorizontal: 8, paddingVertical: 3,
+          borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
+          backgroundColor: c.fill,
+        }}
+      >
+        <Ionicons name="search-outline" size={11} color={c.labelTertiary} />
+        <Text style={{ fontSize: 11, color: c.labelTertiary }}>
+          AI 用了 {sources.length} 项数据
+        </Text>
+        <Ionicons
+          name={open ? 'chevron-up' : 'chevron-down'}
+          size={11}
+          color={c.labelTertiary}
+        />
+      </TouchableOpacity>
+      {open && (
+        <View style={{ marginTop: 4, marginLeft: 4, gap: 2 }}>
+          {sources.map((s, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: 4 }}>
+              <Text style={{ fontSize: 11, color: c.brand, opacity: 0.6 }}>·</Text>
+              <Text style={{ fontSize: 11, color: c.labelTertiary, flex: 1 }}>{s}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }

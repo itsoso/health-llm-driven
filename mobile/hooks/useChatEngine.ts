@@ -24,6 +24,8 @@ export interface UIMessage extends ChatMessage {
   llmMs?: number;
   llmRounds?: number;
   model?: string;
+  // 2026-05-14 #4: 可解释性 — AI 用了什么数据
+  sourcesUsed?: string[];
 }
 
 let msgCounter = 0;
@@ -257,6 +259,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             llmMs: evt.llmMs,
             llmRounds: evt.llmRounds,
             model: evt.model,
+            sourcesUsed: evt.sourcesUsed,
           } : m));
           const serverCards = renderServerCards((evt as any).cards);
           if (serverCards.length > 0) {

@@ -27,6 +27,94 @@ MAX_TOOL_ROUNDS = 6
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 
+
+# 2026-05-14 #4 可解释性 — tool 名 → 中文标签
+# 用户在 chat bubble 看到 "AI 用了什么数据" 时, 能看懂 (不是 raw tool name).
+_TOOL_TO_SOURCE_LABEL = {
+    "health_query": "健康数据查询 (Garmin/化验/补剂)",
+    "health_record": "今天打卡记录",
+    "exam_query": "化验单详情",
+    "indicator_history": "指标历史趋势",
+    "knowledge_search": "得到 wiki 知识库",
+    "garmin_sync": "Garmin 实时同步",
+}
+
+
+def _inspect_user_data_sources(db, user_id: int) -> list:
+    """快速 SQL count 用户哪些数据可用. 用于 chat done event 的 sources_used.
+
+    返回中文标签列表, 顺序按重要性. 出错全部 swallow (旁路).
+    """
+    sources: list = []
+    try:
+        from app.models.daily_health import GarminData
+        cutoff = datetime.now(UTC).date() - timedelta(days=14)
+        if db.query(GarminData.id).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= cutoff,
+        ).first():
+            sources.append("Garmin 数据 (14 天 HRV/睡眠/RHR)")
+    except Exception:
+        pass
+
+    try:
+        from app.models.medical_exam import MedicalExam
+        cnt = db.query(MedicalExam.id).filter(MedicalExam.user_id == user_id).count()
+        if cnt:
+            sources.append(f"化验报告 ({cnt} 次)")
+    except Exception:
+        pass
+
+    try:
+        from app.models.genetic_data import GeneticVariant
+        gv = db.query(GeneticVariant.gene_name).filter(
+            GeneticVariant.user_id == user_id
+        ).limit(3).all()
+        if gv:
+            names = ', '.join(set(r[0] for r in gv if r[0]))
+            sources.append(f"基因 ({names}{'...' if len(gv) >= 3 else ''})")
+    except Exception:
+        pass
+
+    try:
+        from app.models.medication import Medication
+        med = db.query(Medication.name).filter(
+            Medication.user_id == user_id,
+            Medication.is_active == True,  # noqa: E712
+        ).limit(2).all()
+        if med:
+            names = ', '.join(r[0] for r in med if r[0])
+            sources.append(f"在服药物 ({names})")
+    except Exception:
+        pass
+
+    try:
+        from app.models.supplement import SupplementDefinition
+        sup = db.query(SupplementDefinition.id).filter(
+            SupplementDefinition.user_id == user_id,
+            SupplementDefinition.is_active == True,  # noqa: E712
+        ).count()
+        if sup:
+            sources.append(f"当前补剂 ({sup} 种)")
+    except Exception:
+        pass
+
+    try:
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if profile and getattr(profile, "primary_goal", None):
+            goal_label = {
+                "weight_loss": "减肥", "glucose": "降糖", "blood_pressure": "降压",
+                "sleep": "改善睡眠", "hrv": "提升 HRV", "rhinitis": "管理鼻炎",
+                "general": "总体健康",
+            }.get(profile.primary_goal, profile.primary_goal)
+            sources.append(f"主目标: {goal_label}")
+    except Exception:
+        pass
+
+    return sources
+
+
 import re
 _NEEDS_SKILL_RE = re.compile(
     r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|"
@@ -123,6 +211,12 @@ class AgentExecutor:
 
         # 2. 构建 system prompt（复用健康上下文）
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
+        # 直接 SQL count 用户哪些表有数据, 给"AI 用了什么数据"chip 用.
+        try:
+            sources_used.extend(_inspect_user_data_sources(self.db, user_id))
+        except Exception as e:
+            logger.warning(f"[sources_used] inspect failed: {e}")
 
         # 3. 构建对话历史
         messages = svc.build_messages(conv.id, limit=15)
@@ -161,6 +255,11 @@ class AgentExecutor:
         # 2026-05-13: 计时 + 模型名可观测性 — 每轮 LLM 耗时积累到 done 事件
         llm_rounds_ms: list = []
         model_name: Optional[str] = None
+
+        # 2026-05-14 #4: 可解释性 — 记录本次回答用到的数据源
+        # _build_system_prompt 收集 (Twin + health_ctx + memory),
+        # tool_call 处加, done 事件 emit.
+        sources_used: list = []
 
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
@@ -211,6 +310,10 @@ class AgentExecutor:
                                 "round": round_idx + 1,
                             },
                         }
+                        # 2026-05-14: tool_call 加进 sources_used
+                        _tool_label = _TOOL_TO_SOURCE_LABEL.get(func_name)
+                        if _tool_label and _tool_label not in sources_used:
+                            sources_used.append(_tool_label)
 
                         # 执行工具
                         result = await self._execute_tool(
@@ -310,6 +413,7 @@ class AgentExecutor:
                 "llm_rounds": len(llm_rounds_ms),
                 "llm_rounds_ms": llm_rounds_ms,
                 "model": model_name,
+                "sources_used": sources_used,
                 "mode": "agent",
             },
         }

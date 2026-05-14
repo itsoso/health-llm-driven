@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import { renderCard } from '@/components/assistant/inlineCards';
@@ -60,7 +61,7 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
               <div>
                 <div className="text-[14.5px] leading-7"><MarkdownRenderer content={msg.content} variant="dark" /></div>
                 {/* 2026-05-13 性能 footer: 耗时 + 模型 + 每轮 ms */}
-                {doneMessageIds.has(msg.id) && (msg.elapsed_ms != null || msg.model) && (
+                {doneMessageIds.has(msg.id) && (msg.elapsed_ms != null || msg.model || (msg.sources_used && msg.sources_used.length > 0)) && (
                   <div className="mt-2 pt-2 border-t border-slate-700/30 text-[11px] text-slate-500 tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     {msg.elapsed_ms != null && (
                       <span className="inline-flex items-center gap-1" title="总耗时">
@@ -83,6 +84,10 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
                       <span className="ml-auto text-emerald-500/70" title="本次回答的模型">· {msg.model}</span>
                     )}
                   </div>
+                )}
+                {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 */}
+                {doneMessageIds.has(msg.id) && msg.sources_used && msg.sources_used.length > 0 && (
+                  <SourcesChip sources={msg.sources_used} />
                 )}
               </div>
             ) : (
@@ -134,6 +139,38 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** 2026-05-14 #4 可解释性 chip — 默认折叠 "🔍 AI 用了什么数据 (N)", 点开列出来. */
+function SourcesChip({ sources }: { sources: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 rounded-full border border-slate-700/50 bg-slate-800/40 px-2 py-0.5 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-500/40 transition-colors"
+        title="点击展开 / 折叠"
+      >
+        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        AI 用了 {sources.length} 项数据
+        <svg className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="mt-1.5 ml-3 space-y-0.5 text-[11px] text-slate-500">
+          {sources.map((s, i) => (
+            <li key={i} className="flex items-start gap-1.5">
+              <span className="text-emerald-500/60 shrink-0">·</span>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

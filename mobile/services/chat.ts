@@ -27,6 +27,8 @@ export interface StreamEvent {
   llmMs?: number;
   llmRounds?: number;
   model?: string;
+  // 2026-05-14 #4: 可解释性 — AI 用了什么数据
+  sourcesUsed?: string[];
 }
 
 /**
@@ -169,6 +171,7 @@ export async function* streamChat(
             llmMs: parsed.data?.llm_ms,
             llmRounds: parsed.data?.llm_rounds,
             model: parsed.data?.model,
+            sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           };
         } else if (parsed.event === 'error') {
           yield { type: 'error', content: parsed.data?.message || '请求失败' };
