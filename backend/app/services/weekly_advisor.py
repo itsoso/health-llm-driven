@@ -69,8 +69,31 @@ def _has_weekly_card_this_week(db: Session, user_id: int, now: datetime) -> bool
     )
 
 
-def _build_advisor_prompt(twin_blob: str, safety_summary: str, findings_summary: str) -> str:
+def _build_advisor_prompt(
+    twin_blob: str,
+    safety_summary: str,
+    findings_summary: str,
+    primary_goal: Optional[str] = None,
+    gene_highlights: Optional[str] = None,
+) -> str:
     """构造 LLM 提示, 让它产出 3-5 条结构化建议 JSON."""
+    goal_block = ""
+    if primary_goal:
+        goal_label = {
+            "weight_loss": "减肥/控重",
+            "glucose": "降血糖",
+            "blood_pressure": "降血压",
+            "sleep": "改善睡眠",
+            "hrv": "提升 HRV / 恢复",
+            "rhinitis": "管理鼻炎",
+            "general": "总体健康",
+        }.get(primary_goal, primary_goal)
+        goal_block = f"\n## 用户主目标 (优先针对它给建议)\n{goal_label}\n"
+
+    gene_block = ""
+    if gene_highlights:
+        gene_block = f"\n## 用户基因关键变体 (这周建议要跟它产生关联)\n{gene_highlights}\n"
+
     return f"""你是一位资深健康教练. 基于下面的用户健康数据快照, 产出 {MIN_SUGGESTIONS}-{MAX_SUGGESTIONS} 条本周可执行的建议.
 
 每条建议必须满足:
@@ -78,6 +101,8 @@ def _build_advisor_prompt(twin_blob: str, safety_summary: str, findings_summary:
 2. 必须有可量化的验证指标 (HRV / RHR / 体重 / BP / SpO2 / 睡眠分 / 化验项 等)
 3. 一周可观察出变化 ({DEFAULT_VERIFICATION_DAYS} 天)
 4. 不超出用户当前状态 (例如 readiness < 50 不要让他冲刺训练)
+5. **如有用户主目标, 至少 2 条建议要直接服务该目标** (用户最想改善什么 = 优先级最高)
+6. **如有基因关键变体, 至少 1 条建议要显式关联** (例: "你的 MTHFR C677T → 这周补 5-MTHF 800μg")
 
 返回严格 JSON 数组, 字段:
 - title (≤ 20 字, 一句话标题)
@@ -103,7 +128,7 @@ def _build_advisor_prompt(twin_blob: str, safety_summary: str, findings_summary:
 
 ## 用户健康快照 (Twin)
 {twin_blob}
-
+{goal_block}{gene_block}
 ## 本周 Safety Guardian 告警
 {safety_summary or '(无)'}
 
@@ -310,12 +335,48 @@ async def generate_weekly_advice(db: Session, user_id: int) -> Dict[str, Any]:
         for f in findings[:8]
     )
 
+    # 2026-05-14: 拉 primary_goal + gene highlights, 让 LLM 围绕用户最关心的目标和基因给建议
+    primary_goal: Optional[str] = None
+    try:
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        primary_goal = getattr(profile, "primary_goal", None) if profile else None
+    except Exception:
+        pass
+
+    gene_highlights: Optional[str] = None
+    try:
+        from app.models.genetic_data import GeneticVariant
+        # 取 high/medium 风险 + 优势变体, 最多 5 条
+        v_rows = (
+            db.query(GeneticVariant)
+            .filter(
+                GeneticVariant.user_id == user_id,
+                GeneticVariant.risk_level.in_(["high", "medium"]),
+            )
+            .order_by(GeneticVariant.risk_level.desc())
+            .limit(5)
+            .all()
+        )
+        if v_rows:
+            gene_highlights = "\n".join(
+                f"- {v.gene_name} {v.variant_name or ''} 基因型 {v.genotype or '?'}"
+                f" → {v.result_label or v.risk_level} ({v.category})"
+                for v in v_rows
+            )
+    except Exception:
+        pass
+
     # 让 LLM 产建议
     suggestions: List[Dict[str, Any]] = []
     fallback_used = False
     try:
         twin_blob = twin_to_prompt_blob(twin)
-        prompt = _build_advisor_prompt(twin_blob, safety_summary, findings_summary)
+        prompt = _build_advisor_prompt(
+            twin_blob, safety_summary, findings_summary,
+            primary_goal=primary_goal,
+            gene_highlights=gene_highlights,
+        )
         from app.services.llm import get_llm_provider
 
         provider = get_llm_provider()

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AppState } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '../services/chat';
@@ -43,12 +44,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
+  // 客户端已经被切走 (但后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
+  const streamingRef = useRef(false);
 
-  // Clean up abort controller on unmount only — don't abort on background
-  // iOS gives ~30s background execution, enough for most LLM responses
-  useEffect(() => {
-    return () => { abortRef.current?.abort(); };
-  }, []);
+  // 2026-05-14 FIX-4: 不在 unmount 时 abort.
+  // 用户切 tab / 进 SNP 详情时, useChatEngine 的 host (chat tab) 可能 unmount,
+  // 之前 cleanup 会 abort SSE, 后端 G-W9 bg task 也跟着断 (HTTPClient 已断流).
+  // 改为: 让 fetch promise 自然完成, 依靠 navigation focus 回来时 reloadCurrentFromServer
+  // 把后端写入的最终消息拉回前端显示.
+  useEffect(() => () => { /* no-op: 不在 unmount 时 abort */ }, []);
 
   // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
   // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 stream 到 OpenClaw 后端
@@ -66,6 +71,18 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     });
     return () => sub.remove();
   }, [conversationId]);
+
+  // 2026-05-14 FIX-4: chat tab 重获 focus 时 (用户从 SNP 详情/其它 tab 返回),
+  // 如果之前在 stream, 后端 G-W9 bg task 应已写完 message, 拉最新.
+  useFocusEffect(
+    useCallback(() => {
+      if (streamingRef.current && conversationId) {
+        reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
+      }
+      return () => { /* unfocus 时不动 */ };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [conversationId])
+  );
 
   const reloadCurrentFromServer = useCallback(async () => {
     if (!conversationId) return;
@@ -212,6 +229,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     setMessages(prev => [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
+    streamingRef.current = true;
 
     const ac = new AbortController();
     abortRef.current = ac;
@@ -272,6 +290,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } finally {
       clearTimeout(slowTimer);
       abortRef.current = null;
+      streamingRef.current = false;
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }
