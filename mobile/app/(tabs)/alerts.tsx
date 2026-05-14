@@ -15,6 +15,7 @@ import { queryKeys } from '../../applib/queryKeys';
 import { spacing, radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
+import { createSafetyAlertAgentContext, pushChatWithContext } from '../../utils/agentContext';
 
 function getSeverityKey(s: any): string { return typeof s === 'string' ? s : s?.label ?? 'info'; }
 
@@ -208,10 +209,11 @@ function AlertRow({ alert, auditId }: { alert: SafetyAlert; auditId: number | nu
               accessibilityRole="button"
               onPress={() => {
                 const prompt = buildAskPrompt(alert.title, alert.message, alert.action);
-                router.push({
-                  pathname: '/(tabs)/chat',
-                  params: { prompt, badge: alert.title },
-                } as any);
+                pushChatWithContext(router, {
+                  prompt,
+                  context: createSafetyAlertAgentContext(alert),
+                  badge: alert.title,
+                });
               }}
             >
               <Ionicons name="chatbubble-ellipses-outline" size={13} color={c.brand} />

@@ -880,6 +880,13 @@ class ExampleModel(Base):
 
 > **记住**: 安全不是可选项，而是必选项。每一行代码都可能是攻击入口。
 
+## 10. Codex 工作流偏好
+
+- 后续开发默认直接在 `main` 分支进行，除非用户明确要求隔离分支或 worktree。
+- 完成代码修改后，默认执行必要验证、`git commit`、`git push`。
+- 需要上线的改动，按项目规范通过根目录 `deploy.sh` 部署并验证。
+- Mobile 端纯 JS/TS/UI 改动优先使用 `scripts/mobile-ota.sh production "<message>"` 热更新；涉及 native 配置、依赖、EAS profile、SDK 或 TestFlight 新包时再使用 EAS build / submit。
+
 <skills_system priority="1">
 
 ## Available Skills

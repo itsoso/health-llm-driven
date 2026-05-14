@@ -33,6 +33,7 @@ import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import EvidenceChip from '../../components/shared/EvidenceChip';
+import { createTodayAgentContext, pushChatWithContext } from '../../utils/agentContext';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -157,6 +158,14 @@ export default function TodayScreen() {
   const weeklyAdvice = cards.filter(c => c.source_type === 'weekly_advisor');
 
   const twinSnap = pickTwinSnapshot(twinQuery.data);
+  const todayMetricsContext = {
+    hrv: twinSnap.hrv ?? null,
+    sleep_score: twinSnap.sleep_score ?? null,
+    resting_hr: twinSnap.resting_hr ?? null,
+    systolic_bp: twinSnap.systolic_bp ?? null,
+    diastolic_bp: twinSnap.diastolic_bp ?? null,
+    spo2_avg: twinSnap.spo2_avg ?? null,
+  };
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
@@ -308,7 +317,14 @@ export default function TodayScreen() {
         {/* 4. AI 会诊入口 */}
         <TouchableOpacity
           style={[styles.chatEntry, { backgroundColor: c.brand }]}
-          onPress={() => router.push('/(tabs)/chat')}
+          onPress={() => pushChatWithContext(router, {
+            prompt: '请基于我今天的身体快照和当前告警, 帮我做一次整体健康会诊, 按优先级给出今天该做的事。',
+            context: createTodayAgentContext({
+              alerts,
+              twinSnapshot: todayMetricsContext,
+            }),
+            badge: `基于今日快照${alerts.length > 0 ? ` · ${alerts.length} 条告警` : ''}`,
+          })}
         >
           <Ionicons name="chatbubbles" size={20} color="#fff" />
           <Text style={styles.chatEntryText}>AI 会诊</Text>

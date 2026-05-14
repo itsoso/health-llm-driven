@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, Modal } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -9,24 +9,18 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { useDailyDiet } from '../hooks/useDiet';
 import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, type DietRecord, type DietRecordCreate } from '../services/diet';
 import * as ImagePicker from 'expo-image-picker';
-import HealthCard from '../components/design-system/HealthCard';
 import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 function todayStr() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function offsetDate(base: string, offset: number) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const d = new Date(base);
   d.setDate(d.getDate() + offset);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -43,7 +37,7 @@ export default function DietScreen() {
   const [date, setDate] = useState(todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
   const [showForm, setShowForm] = useState(false);
-  const [estimating, setEstimating] = useState(false);
+  const [, setEstimating] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
 
@@ -165,6 +159,15 @@ export default function DietScreen() {
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });
 
+  const handleChatDiet = useCallback(() => {
+    if (!daily) return;
+    pushChatWithContext(router, {
+      prompt: `${dateLabel}饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。`,
+      context: createDietAgentContext(daily),
+      badge: `基于${dateLabel}饮食 ${daily.meals_count ?? daily.meals?.length ?? 0} 餐`,
+    });
+  }, [daily, dateLabel, router]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -198,6 +201,19 @@ export default function DietScreen() {
             <NutriPill label="碳水" value={`${(daily.total_carbs ?? 0).toFixed(1)}`} unit="g" color="#FF9F0A" />
             <NutriPill label="脂肪" value={`${(daily.total_fat ?? 0).toFixed(1)}`} unit="g" color="#BF5AF2" />
           </View>
+        )}
+        {daily && (
+          <TouchableOpacity
+            style={[styles.agentLink, { borderColor: c.separator }]}
+            onPress={handleChatDiet}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="跟 Agent 详细聊今日饮食"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+            <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊{dateLabel}饮食</Text>
+            <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+          </TouchableOpacity>
         )}
 
         {/* Meal form */}
@@ -307,6 +323,16 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     marginLeft: 6,
     borderRadius: radii.md,
   },
+  agentLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: c.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.lg,
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -319,5 +345,6 @@ const createTxt = (c: ColorPalette) => ({
   mealFood: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723' } as TextStyle,
   swipeText: { fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
+  agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
   empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', paddingVertical: 30 } as TextStyle,
 });

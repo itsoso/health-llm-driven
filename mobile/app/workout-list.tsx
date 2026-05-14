@@ -9,6 +9,7 @@ import { useWorkoutList, useWorkoutStats } from '../hooks/useWorkouts';
 import { syncGarminWorkouts, type WorkoutSummary } from '../services/workouts';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { createWorkoutAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   running: 'walk-outline',
@@ -29,6 +30,17 @@ export default function WorkoutListScreen() {
   const { data: workouts, isLoading, refetch, isRefetching } = useWorkoutList();
   const { data: stats } = useWorkoutStats();
   const [syncing, setSyncing] = React.useState(false);
+
+  const handleChatWorkouts = React.useCallback(() => {
+    pushChatWithContext(router, {
+      prompt: '请基于我最近的运动记录, 分析训练负荷、恢复风险和下一次训练怎么安排。',
+      context: createWorkoutAgentContext({
+        workouts,
+        stats,
+      }),
+      badge: `基于最近 ${workouts?.length ?? 0} 次运动`,
+    });
+  }, [router, stats, workouts]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -86,6 +98,19 @@ export default function WorkoutListScreen() {
           <StatBadge label="总距离" value={`${(stats.total_distance_km ?? 0).toFixed(1)}km`} />
         </View>
       )}
+      {(workouts?.length ?? 0) > 0 && (
+        <TouchableOpacity
+          style={[styles.agentLink, { borderColor: c.separator }]}
+          onPress={handleChatWorkouts}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="跟 Agent 详细聊运动记录"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+          <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊运动安排</Text>
+          <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+      )}
 
       {isLoading ? (
         <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
@@ -122,6 +147,16 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   statsRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: spacing.lg, marginBottom: spacing.md,
   },
+  agentLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: c.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
   statBadge: {
     flex: 1, backgroundColor: c.bgCard, borderRadius: radii.md,
     padding: spacing.sm, alignItems: 'center', ...shadows.subtle,
@@ -146,6 +181,7 @@ const createTxt = (c: ColorPalette) => ({
   duration: { fontSize: 14, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   cal: { fontSize: 11, color: c.labelSecondary, marginTop: 1 } as TextStyle,
   empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', marginTop: 40 } as TextStyle,
+  agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
   statVal: { fontSize: 16, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   statLabel: { fontSize: 10, color: c.labelSecondary, marginTop: 2 } as TextStyle,
 });

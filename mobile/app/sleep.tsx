@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { useSpO2LatestNight } from '../hooks/useSpO2Data';
 import { getDeepAnalysis } from '../services/sleep';
 import { spacing, radii, scoreColor, scoreGrade, metricColors } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { createSleepAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 export default function SleepScreen() {
   const { c } = useTheme();
@@ -40,6 +41,18 @@ export default function SleepScreen() {
 
   const avgDuration = stats?.avg_duration_hours ?? 0;
   const avgScore = stats?.avg_sleep_score ?? 0;
+  const handleChatSleep = useCallback(() => {
+    if (!stats) return;
+    pushChatWithContext(router, {
+      prompt: `请基于我近 ${period} 天睡眠数据, 分析睡眠质量、睡眠债务和今晚最该调整的 3 件事。`,
+      context: createSleepAgentContext({
+        periodDays: period,
+        stats,
+        debt,
+      }),
+      badge: `基于近 ${period} 天睡眠`,
+    });
+  }, [debt, period, router, stats]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -77,6 +90,19 @@ export default function SleepScreen() {
                 subtitle={avgScore > 0 ? scoreGrade(avgScore) : undefined}
                 icon="star" color={scoreColor(avgScore)} tintColor={`${scoreColor(avgScore)}20`} />
             </View>
+            {stats && (
+              <TouchableOpacity
+                style={[styles.agentLink, { borderColor: c.separator }]}
+                onPress={handleChatSleep}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="跟 Agent 详细聊睡眠"
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+                <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊睡眠</Text>
+                <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+            )}
 
             {/* Sleep debt */}
             {debt && debt.status === 'success' && (
@@ -159,6 +185,15 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   periodBtnActive: { backgroundColor: c.brand },
   metricsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   osaBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF5E6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  agentLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: c.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -169,4 +204,5 @@ const createTxt = (c: ColorPalette) => ({
   analysisText: { fontSize: 14, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
   placeholder: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
   osaBadgeText: { fontSize: 11, fontWeight: '600', color: '#FF9F0A' } as TextStyle,
+  agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
 });

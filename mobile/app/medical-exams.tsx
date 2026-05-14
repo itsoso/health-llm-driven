@@ -28,6 +28,7 @@ import {
 } from '../services/medicalExams';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
+import { createMedicalExamAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 export default function MedicalExamsScreen() {
   const router = useRouter();
@@ -42,6 +43,7 @@ export default function MedicalExamsScreen() {
   });
 
   const exams = examsQuery.data ?? [];
+  const latestExam = exams[0] ?? null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -77,6 +79,23 @@ export default function MedicalExamsScreen() {
               在 AI 助理里发送化验单照片或 PDF，AI 会自动识别录入
             </Text>
           </View>
+        ) : null}
+
+        {latestExam ? (
+          <Pressable
+            style={({ pressed }) => [styles.agentLink, { borderColor: c.separator }, pressed && { opacity: 0.75 }]}
+            onPress={() => pushChatWithContext(router, {
+              prompt: '请基于我最新这份体检/化验报告, 解释异常项、风险优先级和未来 30 天该做什么。',
+              context: createMedicalExamAgentContext(latestExam),
+              badge: `基于 ${latestExam.exam_date} 体检报告`,
+            })}
+            accessibilityRole="button"
+            accessibilityLabel="跟 Agent 详细聊最新体检报告"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+            <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊最新报告</Text>
+            <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+          </Pressable>
         ) : null}
 
         {exams.map((exam, idx) => {
@@ -203,6 +222,14 @@ function createStyles(c: ColorPalette, _isDark: boolean) {
       borderRadius: radii.full,
       backgroundColor: c.bgPrimary,
     },
+    agentLink: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      backgroundColor: c.bgCard,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+    },
   });
 }
 
@@ -217,6 +244,7 @@ function createTxt(c: ColorPalette) {
       fontSize: 13, color: c.labelSecondary, lineHeight: 19,
       paddingTop: 4,
     } as TextStyle,
+    agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
     empty: {
       fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 19,
     } as TextStyle,
