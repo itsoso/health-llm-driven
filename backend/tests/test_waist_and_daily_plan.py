@@ -142,4 +142,10 @@ def test_daily_operating_plan_me_returns_metabolic_actions(client, db, auth_user
     assert len(body["actions"]) >= 3
     assert any(action["domain"] == "measurement" and "腰围" in action["title"] for action in body["actions"])
     assert any(action["domain"] == "nutrition" for action in body["actions"])
+    assert all(action["evidence_tier"] for action in body["actions"])
+    assert all(action["confidence"] in {"high", "medium", "low"} for action in body["actions"])
+    assert all("不替代" in action["claim_boundary"] for action in body["actions"])
+    measurement = next(action for action in body["actions"] if action["domain"] == "measurement")
+    assert measurement["evidence_tier"] == "clinical_guideline"
+    assert measurement["confidence"] == "high"
     assert body["verification"]["metrics"]

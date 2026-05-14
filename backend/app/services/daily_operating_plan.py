@@ -21,9 +21,27 @@ def _bp_text(twin) -> str | None:
     return None
 
 
-def _action(domain: str, title: str, why: str, *, when: str = "today",
-            metric_key: str | None = None, target_value: str | None = None,
-            evidence_level: str = "medium") -> Dict[str, Any]:
+def _normalize_confidence(evidence_level: str | None) -> str:
+    if evidence_level in {"high", "medium", "low"}:
+        return evidence_level
+    if evidence_level == "medical_grade":
+        return "high"
+    return "medium"
+
+
+def _action(
+    domain: str,
+    title: str,
+    why: str,
+    *,
+    when: str = "today",
+    metric_key: str | None = None,
+    target_value: str | None = None,
+    evidence_level: str = "medium",
+    evidence_tier: str = "strong_behavioral",
+    confidence: str | None = None,
+    claim_boundary: str | None = None,
+) -> Dict[str, Any]:
     return {
         "domain": domain,
         "title": title,
@@ -32,6 +50,9 @@ def _action(domain: str, title: str, why: str, *, when: str = "today",
         "metric_key": metric_key,
         "target_value": target_value,
         "evidence_level": evidence_level,
+        "evidence_tier": evidence_tier,
+        "confidence": confidence or _normalize_confidence(evidence_level),
+        "claim_boundary": claim_boundary or "这是健康管理行动建议, 不替代医生诊断、处方或治疗。",
     }
 
 
@@ -56,6 +77,9 @@ def _active_interventions(db: Session, user_id: int) -> List[Dict[str, Any]]:
             metric_key=c.metric_key,
             target_value=c.target_value,
             evidence_level=c.evidence_level or "medium",
+            evidence_tier="strong_behavioral",
+            confidence=_normalize_confidence(c.evidence_level),
+            claim_boundary="这是已接受的行为干预, 不替代医生诊断、处方或治疗。",
         ) | {"source_card_id": c.id, "check_back_date": c.check_back_date.isoformat() if c.check_back_date else None}
         for c in cards
     ]
@@ -82,6 +106,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         metric_key="waist_cm",
         target_value="trend_down",
         evidence_level="high",
+        evidence_tier="clinical_guideline",
+        confidence="high",
+        claim_boundary="体重和腰围用于代谢趋势追踪, 不替代医生诊断或影像/实验室检查。",
     ))
     actions.append(_action(
         "nutrition",
@@ -90,6 +117,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         when="meals",
         metric_key="calories_intake",
         target_value=str(protein_target),
+        evidence_tier="strong_behavioral",
+        confidence="medium",
+        claim_boundary="蛋白目标按体重估算, 不替代医生或营养师针对肾病、孕产等特殊情况的建议。",
     ))
 
     readiness = twin.physiological.training_readiness_score
@@ -101,6 +131,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             when="afternoon",
             metric_key="rhr",
             target_value="stable",
+            evidence_tier="wearable_proxy",
+            confidence="medium",
+            claim_boundary="训练准备度是可穿戴代理指标, 不替代医生对疲劳、感染或损伤的诊断。",
         ))
     else:
         actions.append(_action(
@@ -111,6 +144,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             metric_key="custom",
             target_value="150min_weekly",
             evidence_level="high",
+            evidence_tier="strong_behavioral",
+            confidence="high",
+            claim_boundary="活动目标用于健康管理, 不替代医生对运动禁忌或心血管风险的评估。",
         ))
 
     actions.append(_action(
@@ -120,6 +156,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         when="evening",
         metric_key="sleep_score",
         target_value="trend_up",
+        evidence_tier="strong_behavioral",
+        confidence="medium",
+        claim_boundary="睡眠行为建议用于恢复管理, 不替代睡眠障碍诊断或治疗。",
     ))
 
     actions.extend(_active_interventions(db, user_id))

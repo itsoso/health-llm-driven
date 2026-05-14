@@ -1,6 +1,15 @@
 import api from './api';
 
 export type TrajectoryRiskLevel = 'high' | 'attention' | 'unknown' | 'ok' | string;
+export type EvidenceTier =
+  | 'clinical_guideline'
+  | 'strong_behavioral'
+  | 'wearable_proxy'
+  | 'genetic_association'
+  | 'experimental'
+  | string;
+
+export type EvidenceConfidence = 'high' | 'medium' | 'low' | string;
 
 export interface TrajectoryRisk {
   domain: string;
@@ -9,6 +18,9 @@ export interface TrajectoryRisk {
   why?: string | null;
   signals?: string[];
   primary_action?: string | null;
+  evidence_tier?: EvidenceTier | null;
+  confidence?: EvidenceConfidence | null;
+  claim_boundary?: string | null;
 }
 
 export interface TrajectoryDataGap {

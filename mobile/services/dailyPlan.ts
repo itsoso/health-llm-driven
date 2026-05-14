@@ -8,6 +8,14 @@ export type DailyPlanDomain =
   | 'intervention'
   | 'doctor'
   | string;
+export type DailyPlanEvidenceTier =
+  | 'clinical_guideline'
+  | 'strong_behavioral'
+  | 'wearable_proxy'
+  | 'genetic_association'
+  | 'experimental'
+  | string;
+export type DailyPlanConfidence = 'high' | 'medium' | 'low' | string;
 
 export interface DailyPlanAction {
   domain: DailyPlanDomain;
@@ -17,6 +25,9 @@ export interface DailyPlanAction {
   metric_key?: string | null;
   target_value?: string | null;
   evidence_level?: 'high' | 'medium' | 'low' | 'medical_grade' | string | null;
+  evidence_tier?: DailyPlanEvidenceTier | null;
+  confidence?: DailyPlanConfidence | null;
+  claim_boundary?: string | null;
   source_card_id?: number | null;
   check_back_date?: string | null;
 }

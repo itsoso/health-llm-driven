@@ -18,6 +18,8 @@ from app.twin import build_twin
 
 FOCUS_DOMAINS = ["metabolic_health", "recovery_capacity", "aging_pace"]
 
+BOUNDARY_TEXT = "本条用于疾病上游健康管理和复查排序, 不替代医生诊断、处方或治疗。"
+
 
 def _bp_text(twin) -> str | None:
     s = twin.labs.blood_pressure_systolic
@@ -29,6 +31,14 @@ def _bp_text(twin) -> str | None:
 
 def _level_rank(level: str) -> int:
     return {"high": 0, "attention": 1, "unknown": 2, "ok": 3}.get(level, 9)
+
+
+def _evidence_contract(evidence_tier: str, confidence: str, claim_boundary: str = BOUNDARY_TEXT) -> Dict[str, str]:
+    return {
+        "evidence_tier": evidence_tier,
+        "confidence": confidence,
+        "claim_boundary": claim_boundary,
+    }
 
 
 def _genetic_baseline(db: Session, user_id: int) -> Dict[str, Any]:
@@ -64,10 +74,13 @@ def _epigenetic_feedback() -> Dict[str, Any]:
     return {
         "has_methylation_report": False,
         "status": "missing",
+        "evidence_tier": "experimental",
+        "confidence": "low",
+        "claim_boundary": "甲基化时钟只作为长期代理指标和研究性反馈, 不能证明个体短期干预成效或真实衰老速度改变。",
         "latest_test_date": None,
         "biological_age_delta_years": None,
         "pace_of_aging": None,
-        "next_step": "接入甲基化报告后, 用它校验 8-12 周生活方式干预是否真正改变长期健康轨迹。",
+        "next_step": "接入甲基化报告后, 仅作为长期趋势参考, 不能把短期变化包装成确定性抗衰结果。",
     }
 
 
@@ -88,27 +101,37 @@ def _data_gaps(twin, genetic: Dict[str, Any], epigenetic: Dict[str, Any]) -> Lis
 
 def _metabolic_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
     signals: List[str] = []
+    clinical_signals: List[str] = []
     body = twin.body_composition
     labs = twin.labs
     if body.central_obesity_flag:
         signals.append("waist_central_obesity")
+        clinical_signals.append("waist_central_obesity")
     if body.bmi is not None and body.bmi >= 24:
         signals.append("bmi_overweight")
+        clinical_signals.append("bmi_overweight")
     if labs.blood_pressure_systolic is not None and labs.blood_pressure_systolic >= 130:
         signals.append("bp_elevated")
+        clinical_signals.append("bp_elevated")
     if labs.blood_pressure_diastolic is not None and labs.blood_pressure_diastolic >= 85:
         signals.append("bp_elevated")
+        clinical_signals.append("bp_elevated")
     if labs.hba1c is not None and labs.hba1c >= 5.7:
         signals.append("hba1c_elevated")
+        clinical_signals.append("hba1c_elevated")
     if labs.triglycerides is not None and labs.triglycerides >= 1.7:
         signals.append("triglycerides_elevated")
+        clinical_signals.append("triglycerides_elevated")
     if labs.ldl is not None and labs.ldl >= 3.4:
         signals.append("ldl_elevated")
+        clinical_signals.append("ldl_elevated")
     if any(s["category"] == "disease_risk" and s["risk_level"] == "high" for s in genetic["signals"]):
         signals.append("genetic_disease_risk")
 
     high = labs.blood_pressure_systolic is not None and labs.blood_pressure_systolic >= 160
     level = "high" if high else "attention" if signals else "unknown"
+    evidence_tier = "clinical_guideline" if clinical_signals else "genetic_association" if signals else "clinical_guideline"
+    confidence = "high" if clinical_signals else "low"
     return {
         "domain": "metabolic_health",
         "level": level,
@@ -116,23 +139,31 @@ def _metabolic_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
         "why": "腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。" if signals else "缺少足够临床锚点判断代谢轨迹。",
         "signals": sorted(set(signals)),
         "primary_action": "围绕腰围、蛋白、每周 150 分钟中等强度活动和睡眠节律执行 7 天计划。",
+        **_evidence_contract(evidence_tier, confidence),
     }
 
 
 def _recovery_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
     phys = twin.physiological
     signals: List[str] = []
+    wearable_signals: List[str] = []
     if phys.training_readiness_score is not None and phys.training_readiness_score < 50:
         signals.append("training_readiness_low")
+        wearable_signals.append("training_readiness_low")
     if phys.sleep_duration_h_latest is not None and phys.sleep_duration_h_latest < 6.5:
         signals.append("sleep_duration_low")
+        wearable_signals.append("sleep_duration_low")
     if phys.sleep_score_latest is not None and phys.sleep_score_latest < 70:
         signals.append("sleep_score_low")
+        wearable_signals.append("sleep_score_low")
     if (phys.hrv_status or "").lower() in {"low", "偏低", "unbalanced"}:
         signals.append("hrv_low")
+        wearable_signals.append("hrv_low")
     if any(s["category"] == "recovery" and s["risk_level"] in ("high", "medium") for s in genetic["signals"]):
         signals.append("genetic_recovery_sensitivity")
 
+    evidence_tier = "wearable_proxy" if wearable_signals or not signals else "genetic_association"
+    confidence = "medium" if wearable_signals else "low"
     return {
         "domain": "recovery_capacity",
         "level": "attention" if signals else "unknown",
@@ -140,6 +171,11 @@ def _recovery_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
         "why": "睡眠、HRV、训练准备度或恢复相关基因提示今天应优先稳恢复。" if signals else "缺少睡眠/HRV/训练准备度数据。",
         "signals": sorted(set(signals)),
         "primary_action": "今天避免堆高强度, 用 Zone 2、提前晚餐和固定睡眠窗口恢复。",
+        **_evidence_contract(
+            evidence_tier,
+            confidence,
+            "可穿戴恢复指标和恢复相关基因只用于训练/睡眠管理排序, 不替代医生诊断、处方或治疗。",
+        ),
     }
 
 
@@ -152,6 +188,11 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
             "why": "当前没有甲基化报告, 只能用体检、恢复和行为数据做间接追踪。",
             "signals": ["methylation_missing"],
             "primary_action": "先用 8-12 周代谢和恢复闭环建立基线, 再接入甲基化长期反馈。",
+            **_evidence_contract(
+                "experimental",
+                "low",
+                "甲基化时钟是长期代理指标, 不能证明个体短期干预成效, 不替代医生诊断、处方或治疗。",
+            ),
         }
     return {
         "domain": "aging_pace",
@@ -160,6 +201,11 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
         "why": "甲基化报告已接入。",
         "signals": [],
         "primary_action": "按甲基化反馈调整长期干预。",
+        **_evidence_contract(
+            "experimental",
+            "low",
+            "甲基化时钟是长期代理指标, 不能证明个体短期干预成效, 不替代医生诊断、处方或治疗。",
+        ),
     }
 
 

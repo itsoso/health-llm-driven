@@ -64,6 +64,14 @@ def test_trajectory_me_combines_baseline_anchors_realtime_and_actions(client, db
     assert "training_readiness_score" in body["realtime_state"]
     assert any(r["domain"] == "metabolic_health" and r["level"] == "attention" for r in body["trajectory_risks"])
     assert any(r["domain"] == "recovery_capacity" and r["level"] == "attention" for r in body["trajectory_risks"])
+    assert all(r["evidence_tier"] for r in body["trajectory_risks"])
+    assert all(r["confidence"] in {"high", "medium", "low"} for r in body["trajectory_risks"])
+    assert all("不替代医生诊断" in r["claim_boundary"] for r in body["trajectory_risks"])
+    metabolic = next(r for r in body["trajectory_risks"] if r["domain"] == "metabolic_health")
+    assert metabolic["evidence_tier"] == "clinical_guideline"
+    assert metabolic["confidence"] == "high"
+    assert body["epigenetic_feedback"]["evidence_tier"] == "experimental"
+    assert "短期干预成效" in body["epigenetic_feedback"]["claim_boundary"]
     assert any(a["domain"] == "measurement" for a in body["next_actions"])
 
 
@@ -79,3 +87,5 @@ def test_trajectory_me_returns_missing_data_gaps_for_new_user(client, auth_user_
     assert "methylation_report_missing" in gap_codes
     assert "clinical_anchor_missing" in gap_codes
     assert body["trajectory_risks"][0]["level"] == "unknown"
+    assert all(r["confidence"] == "low" for r in body["trajectory_risks"])
+    assert all(r["claim_boundary"] for r in body["trajectory_risks"])

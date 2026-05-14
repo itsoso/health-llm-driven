@@ -320,8 +320,8 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 | **Devices** | `/data-collection/garmin/me/*` `/cgm` | Garmin 同步 `/sync?days=N`, CGM batch |
 | **Environment** | `/environment` | `/weather` `/air-quality` `/advice` `/exercise-suitability` |
 | **Analytics** | `/garmin-analysis` `/daily-health` `/spo2` `/health-analysis` `/personal-outcome` `/monthly-reports` | 聚合 + 趋势 |
-| **Trajectory** | `/trajectory` | `/trajectory/me` 疾病上游健康轨迹快照: 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量 |
-| **Operating Plan** | `/daily-plan` | `/daily-plan/me` 当前用户每日代谢健康操作计划 |
+| **Trajectory** | `/trajectory` | `/trajectory/me` 疾病上游健康轨迹快照: 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量; risk 携带 `evidence_tier/confidence/claim_boundary` |
+| **Operating Plan** | `/daily-plan` | `/daily-plan/me` 当前用户每日代谢健康操作计划; action 携带 `evidence_tier/confidence/claim_boundary` |
 | **Reminders/Notifications** | `/notification` `/smart-reminder` | `/bind/ios` `/bind/wechat` `/logs` |
 | **Voice/Briefing** | `/tts` `/briefing` `/pre-workout` `/clarification` | `/tts/synthesize` (CosyVoice 代理), briefing voice script |
 | **Admin** | `/admin` `/admin/llm` `/admin/observability` | `/admin/llm/models` `/admin/llm/select-model` `/admin/llm/benchmark/{id}` |
@@ -714,6 +714,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 | 2026-05-09 | Claude Opus 4.6 | feat: Agent-Native v3 Increment 4 §1 — Episode Reflection Worker. Celery beat 每天 09:43 北京 (Garmin 同步后) 对 48h 内关闭的 Episode 拉次日 HRV/Sleep, 写 EpisodeOutcome.metrics_delta + 中文模板 summary (无 LLM 成本). API GET /episodes/{id} 现回 outcome 字段 (mobile 可渲染反馈). 5 单测覆盖正路径/数据缺失/幂等/48h 边界/baseline fallback. Celery 42→43 |
 | 2026-05-15 | Codex GPT-5 | feat: Agent Native Health OS Phase 0 — 腰围记录、Twin 腰围/腰高比/中心性肥胖标记、每日操作计划 `/daily-plan/me`、Mobile 首页 TodayPlanPanel、架构记录 `docs/AGENT_NATIVE_HEALTH_OS_ARCHITECTURE.md` 和移动端功能地图同步。 |
 | 2026-05-15 | Codex GPT-5 | feat: Personal Health Trajectory Agent 骨架 — 新增 `/trajectory/me` 和 Mobile `TrajectorySnapshotPanel`, 将基因底图、甲基化长期反馈缺口、临床锚点、可穿戴状态、可干预变量和 next actions 统一成疾病上游轨迹快照。 |
+| 2026-05-15 | Codex GPT-5 | feat: Evidence boundary contract — `/trajectory/me` risks 和 `/daily-plan/me` actions 增加 `evidence_tier/confidence/claim_boundary`, 将甲基化限制为 `experimental/low` 长期代理指标。 |
 
 ---
 

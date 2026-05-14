@@ -31,10 +31,10 @@
 | 腰围记录 | `backend/app/models/waist.py` | `WaistRecord` 存储用户腰围、日期、来源、备注 |
 | 腰围 API | `backend/app/api/waist.py` | `/api/v1/waist/records*` 当前用户 CRUD + latest + stats |
 | Daily Operating Plan | `backend/app/models/daily_operating_plan.py` | 保存每日操作计划快照 |
-| 计划生成服务 | `backend/app/services/daily_operating_plan.py` | 从 Twin 生成代谢健康行动清单 |
+| 计划生成服务 | `backend/app/services/daily_operating_plan.py` | 从 Twin 生成代谢健康行动清单; 每条 action 带证据等级、置信度和科学边界 |
 | 计划 API | `backend/app/api/daily_plan.py` | `GET /api/v1/daily-plan/me` |
 | Trajectory API | `backend/app/api/trajectory.py` | `GET /api/v1/trajectory/me` |
-| Trajectory service | `backend/app/services/health_trajectory.py` | 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量、next actions |
+| Trajectory service | `backend/app/services/health_trajectory.py` | 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量、next actions; 每条 risk 带证据等级、置信度和科学边界 |
 | Twin 扩展 | `backend/app/twin/schema.py`, `_collectors.py`, `builder.py` | `body_composition` 加腰围、腰高比、中心性肥胖标记 |
 | Agent bugfix | `backend/app/services/agent_executor.py` | `extra_context` 流程前置初始化 `sources_used` |
 | 迁移 | `backend/migrations/create_waist_and_daily_operating_plans.sql` | PostgreSQL 建表和索引 |
@@ -173,6 +173,23 @@ sequenceDiagram
 - `build_daily_operating_plan` 每次请求都会 fresh build Twin, 避免首页显示旧状态。
 - 腰围属于代谢健康的核心客观指标, 写入后会调用 `invalidate_twin_cache(user_id)`。
 - 所有 API 均使用 `get_current_user_required`, 查询必须带 `user_id`。
+
+## 4.2 证据等级与科学边界契约
+
+从 2026-05-15 起, Agent 面向用户的风险和行动必须显式标注科学边界:
+
+| 字段 | 值域 | 用途 |
+|---|---|---|
+| `evidence_tier` | `clinical_guideline` / `strong_behavioral` / `wearable_proxy` / `genetic_association` / `experimental` | 说明依据类型, 避免把代理指标包装成确定性结论 |
+| `confidence` | `high` / `medium` / `low` | 说明当前个体数据下的置信度 |
+| `claim_boundary` | 文本 | 明确“不替代医生诊断、处方或治疗”, 并说明不能推断什么 |
+
+当前映射:
+
+- 代谢风险: 有腰围、BMI、血压、血糖、血脂等临床锚点时为 `clinical_guideline/high`; 只有基因信号时降为 `genetic_association/low`。
+- 恢复风险: 有 HRV、睡眠、readiness 等设备数据时为 `wearable_proxy/medium`; 只有恢复相关基因时为 `genetic_association/low`。
+- 衰老速度: 甲基化当前为 `experimental/low`, 只作为长期代理指标和 data gap, 不能证明个体短期干预成效。
+- Daily Plan: 腰围/体重测量为 `clinical_guideline/high`; 活动、蛋白、睡眠行为为 `strong_behavioral`; 基于可穿戴恢复状态调节训练为 `wearable_proxy/medium`。
 
 ---
 

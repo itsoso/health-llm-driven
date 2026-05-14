@@ -121,6 +121,26 @@ backend/app/
 ### §1.1 Today Plan / Daily Operating Plan 流
 
 ```
+mobile/app/(tabs)/index.tsx
+  ↓ React Query ['daily-plan','me']
+mobile/services/dailyPlan.ts
+  ↓ GET /api/v1/daily-plan/me
+backend/app/api/daily_plan.py
+  ↓
+backend/app/services/daily_operating_plan.py
+  ↓ build_twin(force_refresh=True)
+backend/app/twin/builder.py + _collectors.fetch_waist_latest
+  ↓
+Postgres: daily_operating_plans / waist_records / weight / blood_pressure / Garmin
+```
+
+Daily Plan action 契约:
+
+| field | 含义 |
+|---|---|
+| `evidence_tier` | `clinical_guideline` / `strong_behavioral` / `wearable_proxy` / `genetic_association` / `experimental` |
+| `confidence` | `high` / `medium` / `low` |
+| `claim_boundary` | 显式声明不替代医生诊断、处方或治疗, 并说明该行动不能推断什么 |
 
 ### §1.2 Trajectory Snapshot 流
 
@@ -143,18 +163,8 @@ Trajectory Snapshot 只做疾病上游轨迹识别和优先级排序, 不做诊�
 | `metabolic_health` | 代谢健康轨迹 | 腰围/BMI/BP/血糖血脂/疾病风险基因 |
 | `recovery_capacity` | 恢复能力轨迹 | 睡眠/HRV/readiness/恢复敏感基因 |
 | `aging_pace` | 衰老速度轨迹 | 甲基化暂为 data gap, 后续接入长期反馈 |
-mobile/app/(tabs)/index.tsx
-  ↓ React Query ['daily-plan','me']
-mobile/services/dailyPlan.ts
-  ↓ GET /api/v1/daily-plan/me
-backend/app/api/daily_plan.py
-  ↓
-backend/app/services/daily_operating_plan.py
-  ↓ build_twin(force_refresh=True)
-backend/app/twin/builder.py + _collectors.fetch_waist_latest
-  ↓
-Postgres: waist_records / weight / blood_pressure / sleep / Garmin
-```
+
+每条 `trajectory_risks[]` 必须带 `evidence_tier/confidence/claim_boundary`。甲基化相关字段当前固定为 `experimental/low`, 只作为长期代理指标和 data gap, 不能作为“个体短期抗衰有效”的承诺。
 
 UI 路由规则在 `openPlanAction`:
 
@@ -327,6 +337,7 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 | J | Daily Operating Plan | api/daily_plan.py + services/daily_operating_plan.py + TodayPlanPanel | ✅ Phase 0 |
 | J-Waist | 腰围代谢指标 | api/waist.py + twin/_collectors.fetch_waist_latest | ✅ Phase 0 |
 | K | Personal Health Trajectory Snapshot | api/trajectory.py + services/health_trajectory.py + TrajectorySnapshotPanel | ✅ Phase 0 |
+| K-Guardrail | 科学边界契约 | trajectory risks + daily actions 的 evidence_tier/confidence/claim_boundary | ✅ Phase 1 |
 
 ---
 
