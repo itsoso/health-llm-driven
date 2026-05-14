@@ -41,10 +41,12 @@ export async function* streamChat(
   conversationId?: number,
   images?: { base64?: string; type?: string }[],
   signal?: AbortSignal,
+  extraContext?: string,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const token = await getToken();
   const body: Record<string, any> = { message };
   if (conversationId) body.conversation_id = conversationId;
+  if (extraContext && extraContext.trim()) body.extra_context = extraContext.trim();
   if (images && images.length > 0) {
     // Backward compatible: single image uses legacy fields, multi uses images array
     if (images.length === 1) {

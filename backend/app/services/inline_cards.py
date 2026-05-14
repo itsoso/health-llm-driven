@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -235,4 +236,95 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
                     break
         except Exception as e:
             logger.debug("[inline_cards] builder %s raised: %s", card_type, e)
+    return out
+
+
+# ── LLM-emitted card extraction ────────────────────────────────────
+# LLM 在回复里主动输出 fenced ```menu_share JSON 块 → 提取成结构化卡片下发前端
+
+_FENCED_CARD_RE = re.compile(
+    r"```(menu_share)\s*\n(\{[\s\S]*?\})\s*\n```",
+    re.MULTILINE,
+)
+
+# 允许 LLM 主动输出的 card 类型白名单
+_LLM_CARD_TYPES = {"menu_share"}
+
+
+def _validate_menu_share(d: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """校验 + 清洗 menu_share schema. 防止 LLM 漏字段崩前端."""
+    if not isinstance(d, dict):
+        return None
+    title = (d.get("title") or "").strip()
+    items_raw = d.get("items")
+    if not title or not isinstance(items_raw, list) or not items_raw:
+        return None
+    norm_items: List[Dict[str, Any]] = []
+    for it in items_raw:
+        if not isinstance(it, dict):
+            continue
+        name = it.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        entry: Dict[str, Any] = {"name": name.strip()}
+        if isinstance(it.get("qty"), str):
+            entry["qty"] = it["qty"]
+        for k in ("kcal", "protein", "carbs", "fat", "fiber"):
+            v = it.get(k)
+            if isinstance(v, (int, float)):
+                entry[k] = v
+        norm_items.append(entry)
+    if not norm_items:
+        return None
+    out: Dict[str, Any] = {"title": title, "items": norm_items}
+    if isinstance(d.get("reason"), str):
+        out["reason"] = d["reason"]
+    totals = d.get("totals")
+    if isinstance(totals, dict):
+        norm_totals: Dict[str, Any] = {}
+        for k in ("kcal", "protein", "carbs", "fat", "fiber"):
+            v = totals.get(k)
+            if isinstance(v, (int, float)):
+                norm_totals[k] = v
+        if norm_totals:
+            out["totals"] = norm_totals
+    sl = d.get("shopping_list")
+    if isinstance(sl, list):
+        norm_sl = [s for s in sl if isinstance(s, str) and s.strip()]
+        if norm_sl:
+            out["shopping_list"] = norm_sl
+    return out
+
+
+_VALIDATORS = {
+    "menu_share": _validate_menu_share,
+}
+
+
+def extract_inline_card_blocks(text: str) -> List[Dict[str, Any]]:
+    """从 LLM 完整回复里提取 fenced ```menu_share 之类 JSON 卡片.
+
+    返回 list[{type, data}], 校验失败的块跳过 (静默, 不抛).
+    """
+    if not text or not isinstance(text, str):
+        return []
+    out: List[Dict[str, Any]] = []
+    try:
+        for m in _FENCED_CARD_RE.finditer(text):
+            ctype = m.group(1)
+            if ctype not in _LLM_CARD_TYPES:
+                continue
+            raw_json = m.group(2)
+            try:
+                parsed = json.loads(raw_json)
+            except Exception:
+                continue
+            validator = _VALIDATORS.get(ctype)
+            if not validator:
+                continue
+            data = validator(parsed)
+            if data:
+                out.append({"type": ctype, "data": data})
+    except Exception as e:
+        logger.debug("[inline_cards] extract_inline_card_blocks failed: %s", e)
     return out

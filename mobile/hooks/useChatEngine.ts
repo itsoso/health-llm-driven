@@ -220,7 +220,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const sendMessage = useCallback(async (
     text: string,
     pendingImages?: { uri: string; base64?: string; type?: string }[] | null,
-    sendOpts?: { fromSiri?: boolean },
+    sendOpts?: { fromSiri?: boolean; extraContext?: string },
   ) => {
     const msg = text.trim();
     const hasImages = pendingImages && pendingImages.length > 0;
@@ -266,7 +266,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     try {
       const toolsUsed: Set<string> = new Set();
-      for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal)) {
+      for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));

@@ -7,7 +7,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
@@ -38,7 +38,8 @@ export default function ChatScreen() {
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
-  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string }>();
+  // context (JSON string) → 注入到 LLM system prompt 作为深化基础, 不展示在 user 消息里
+  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const contextConsumed = useRef(false);
@@ -66,21 +67,36 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (contextConsumed.current) return;
-    if (params.prompt || params.badge) {
+    if (params.prompt || params.badge || params.context) {
       contextConsumed.current = true;
       if (params.badge) setContextBadge(params.badge);
       if (params.prompt) {
         if (params.autoSend === '1') {
-          chat.sendMessage(params.prompt, null, { fromSiri: true });
+          chat.sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context });
+        } else if (params.context) {
+          // 有 context 但不 autoSend: 用户点了"详细聊"入口, prompt 是预填问题, 跟 context 一起发
+          chat.sendMessage(params.prompt, null, { extraContext: params.context });
         } else {
           setInitialInput(params.prompt);
         }
       }
-      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined } as any); } catch {}
+      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined } as any); } catch {}
     }
-  }, [params.prompt, params.badge, params.autoSend]);
+  }, [params.prompt, params.badge, params.autoSend, params.context]);
 
   useEffect(() => { chat.loadLatestConversation(); }, []);
+
+  // 点"私教" tab 进来时滚到对话最后, 方便看最新消息.
+  // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
+  // 用 setTimeout 推迟一帧, 等 FlatList 排版完才能滚到正确位置.
+  useFocusEffect(
+    useCallback(() => {
+      const t = setTimeout(() => {
+        try { flatListRef.current?.scrollToEnd({ animated: false }); } catch {}
+      }, 120);
+      return () => clearTimeout(t);
+    }, [])
+  );
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => {

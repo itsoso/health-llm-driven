@@ -182,6 +182,16 @@ export default function SnpDetailScreen() {
                 if (list.length === 0) return null;
                 // 跟 Agent 详细聊本类 — 跳 chat tab 预填问题
                 const chatPrompt = `针对我的 ${data.gene} 基因 (${data.user.genotype || data.variant_name}), 在${sec.title}方面, 结合我现在的化验/补剂/运动数据, 能否给我一个未来 30 天的具体执行方案?`;
+                // 把用户当前正在看的方案条目结构化打包透传给 LLM, 避免重新猜
+                const chatContext = JSON.stringify({
+                  from: `snp/${data.gene}`,
+                  gene: data.gene,
+                  genotype: data.user.genotype || data.variant_name || null,
+                  section: sec.title,
+                  section_key: sec.key,
+                  items: list,
+                  confidence: data.actions?.confidence || null,
+                });
                 return (
                   <View
                     key={sec.key}
@@ -201,7 +211,14 @@ export default function SnpDetailScreen() {
                     {(sec.key === 'nutrition_actions' || sec.key === 'supplement_actions' || sec.key === 'exercise_actions') && (
                       <TouchableOpacity
                         style={[styles.agentLink, { borderTopColor: c.separator }]}
-                        onPress={() => router.push({ pathname: '/(tabs)/chat' as any, params: { prompt: chatPrompt } })}
+                        onPress={() => router.push({
+                          pathname: '/(tabs)/chat' as any,
+                          params: {
+                            prompt: chatPrompt,
+                            context: chatContext,
+                            badge: `${data.gene} · ${sec.title}方案 ${list.length} 条`,
+                          },
+                        })}
                       >
                         <Ionicons name="chatbubble-ellipses-outline" size={14} color={c.brand} />
                         <Text style={[styles.agentLinkText, { color: c.brand }]}>

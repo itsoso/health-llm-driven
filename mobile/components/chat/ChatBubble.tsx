@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
-  Alert, ActivityIndicator, Pressable,
+  Alert, ActivityIndicator, Pressable, Share,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -116,6 +116,20 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
     });
   };
 
+  // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.
+  // 不引 native WeChat SDK (破坏 OTA 反馈环), 复用 RN Share 已够用.
+  const handleShare = async () => {
+    const text = stripMarkdownForSpeech(displayText);
+    if (!text) return;
+    Haptics.selectionAsync();
+    try {
+      await Share.share({
+        title: '健康 Agent · 建议',
+        message: `${text}\n\n— 健康 Agent`,
+      });
+    } catch { /* 用户取消分享也会走这里, 不打扰 */ }
+  };
+
   return (
     <>
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
@@ -208,6 +222,15 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
                 ) : null}
                 <View style={{ flex: 1 }} />
                 <Pressable
+                  onPress={handleShare}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="分享"
+                  style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
+                >
+                  <Ionicons name="share-outline" size={14} color={c.labelSecondary} />
+                </Pressable>
+                <Pressable
                   onPress={handleSpeak}
                   hitSlop={6}
                   accessibilityRole="button"
@@ -262,6 +285,9 @@ function sanitizeAiContent(raw: string): string {
   s = s.replace(/(^|\n)\|[^\n]*\|\n\|[\s|:\-]+\|(?=\n(?!\s*\|)|\n?$)/g, '');
   // 孤零 ❌ 行: "\n❌" 或 "\n❌ " 行尾, 无实际错误信息
   s = s.replace(/\n+❌\s*(?=\n|$)/g, '');
+  // LLM 主动输出的 fenced ```menu_share/```card_xxx JSON 块 — 后端会解析成结构化卡片,
+  // 文本里要剥掉, 不然用户看到一坨 JSON 源码
+  s = s.replace(/```(?:menu_share|card_[a-z_]+)\s*\n[\s\S]*?\n```\s*/g, '');
   return s.trim();
 }
 

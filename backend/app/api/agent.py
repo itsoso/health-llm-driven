@@ -73,6 +73,9 @@ class AgentRequest(BaseModel):
     images: Optional[List[ImageItem]] = None
     file_base64: Optional[str] = None
     file_name: Optional[str] = None
+    # 入口 deeplink 携带的结构化上下文 (JSON string), 注入到 LLM prompt 不展示给用户.
+    # 例: SNP 详情页点"详细聊饮食方案" → context 带当前页正展示的食材条目.
+    extra_context: Optional[str] = Field(default=None, max_length=4000)
 
     @field_validator("image_base64")
     @classmethod
@@ -148,6 +151,7 @@ async def agent_stream(
     images_local = all_images or None
     file_b64 = req.file_base64
     file_nm = req.file_name
+    extra_ctx = req.extra_context
 
     async def generate():
         """G-W9 同模式 (FIX-5, 2026-05-14): bg task + asyncio.Queue.
@@ -164,6 +168,8 @@ async def agent_stream(
             bg_db = _SessionLocal()
             try:
                 executor_bg = AgentExecutor(bg_db)
+                # 累积 LLM 流式输出, done 时扫描 fenced ```menu_share 块 (L1 分享菜单)
+                full_text_buf: list = []
                 async for event in executor_bg.run_stream(
                     user_id=user_id,
                     message=msg_text,
@@ -172,14 +178,21 @@ async def agent_stream(
                     images=images_local,
                     file_base64=file_b64,
                     file_name=file_nm,
+                    extra_context=extra_ctx,
                 ):
+                    if event.get("event") == "token":
+                        tc = event.get("data", {}).get("content")
+                        if isinstance(tc, str):
+                            full_text_buf.append(tc)
                     # 在 done 事件里附加动态卡片, 失败静默
                     if event.get("event") == "done":
                         try:
-                            from app.services.inline_cards import build_cards
+                            from app.services.inline_cards import build_cards, extract_inline_card_blocks
                             cards = build_cards(bg_db, user_id, msg_text)
-                            if cards:
-                                event.setdefault("data", {})["cards"] = cards
+                            inline = extract_inline_card_blocks("".join(full_text_buf))
+                            merged = list(inline) + list(cards or [])  # LLM 主动输出的优先
+                            if merged:
+                                event.setdefault("data", {})["cards"] = merged
                         except Exception as e:
                             logger.debug(f"inline_cards 失败: {e}")
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")

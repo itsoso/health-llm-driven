@@ -24,6 +24,7 @@ import { RecordCardSpec } from './RecordCard';
 import { DietCardSpec } from './DietCard';
 import { WorkoutCardSpec } from './WorkoutCard';
 import { MedicalReportCardSpec } from './MedicalReportCard';
+import { MenuShareCardSpec } from './MenuShareCard';
 
 /** 全量卡片注册表. 数组前面的优先级越高时越靠前 (便于可读), 实际按 match() 返回值排序 */
 export const CARD_REGISTRY: CardSpec[] = [
@@ -35,6 +36,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   DietCardSpec,
   WorkoutCardSpec,
   MedicalReportCardSpec,
+  MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,      // 最通用的兜底

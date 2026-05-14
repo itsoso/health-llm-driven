@@ -176,6 +176,7 @@ class AgentExecutor:
         images: Optional[List[dict]] = None,
         file_base64: Optional[str] = None,
         file_name: Optional[str] = None,
+        extra_context: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
@@ -211,6 +212,15 @@ class AgentExecutor:
 
         # 2. 构建 system prompt（复用健康上下文）
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
+        # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
+        if extra_context and extra_context.strip():
+            system_content += (
+                "\n\n## 入口上下文 (用户正在看的具体方案)\n"
+                "用户从下面这个上下文点过来跟你详细聊, 请在**这些已展示的具体条目**上深化, "
+                "不要重新生成方案; 引用条目名称时跟用户已看见的一致.\n"
+                f"```\n{extra_context.strip()[:4000]}\n```"
+            )
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
         # 直接 SQL count 用户哪些表有数据, 给"AI 用了什么数据"chip 用.
         try:
@@ -514,6 +524,32 @@ class AgentExecutor:
             "- 补剂推荐必须交叉参考体检历史（肾结石→维D/钙谨慎、肝功异常→某些补剂禁忌）",
             "- 补剂剂量不能简单按mg数比较不同剂型（如MitoQ 5mg ≈ 线粒体内CoQ10 200-500mg）",
             "- 补剂受法规限制剂量时（如钾99mg/粒），优先推荐饮食策略而非加量",
+            "",
+            "## 菜单输出 (可分享卡片)",
+            "用户问'今晚吃啥/明天早餐/给我个晚餐建议/三餐怎么吃'类问题时,",
+            "在正常文字回复**之外**, 额外附一段 fenced JSON 代码块, 标识为 menu_share,",
+            "前端会自动渲染成可分享给家人的卡片 (微信/朋友圈分享):",
+            "",
+            "```menu_share",
+            "{",
+            '  "title": "今晚晚餐建议",',
+            '  "reason": "晚上控碳, 蛋白 50g+ 帮助 HRV 恢复",',
+            '  "items": [',
+            '    {"name": "鸡胸肉", "qty": "200g", "kcal": 220, "protein": 46},',
+            '    {"name": "糙米饭", "qty": "150g", "kcal": 175, "carbs": 38},',
+            '    {"name": "西兰花", "qty": "200g", "kcal": 70, "fiber": 5}',
+            "  ],",
+            '  "totals": {"kcal": 465, "protein": 52, "carbs": 48, "fat": 12},',
+            '  "shopping_list": ["鸡胸肉 200g", "糙米 1 杯", "西兰花 1 颗"]',
+            "}",
+            "```",
+            "",
+            "约束:",
+            "- title 必填 8 字以内 (如'今晚晚餐建议'/'明天早餐')",
+            "- items 必填 3-6 个食材, 每项 name 必填, qty/kcal 尽量给",
+            "- totals 给当餐总和, shopping_list 是给家人买菜的清单",
+            "- 只在用户明确要餐食/菜单建议时输出, 普通营养咨询不要输出",
+            "- JSON 必须 valid, 不要 trailing comma, 不要注释",
         ]
 
         # 注入健康上下文
