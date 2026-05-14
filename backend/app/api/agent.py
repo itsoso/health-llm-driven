@@ -3,6 +3,7 @@
 所有对话（记录、查询、分析、图片识别）统一走此入口。
 OpenClaw 降级为 fallback 渠道。
 """
+import asyncio
 import json
 import logging
 from typing import Optional, List
@@ -18,6 +19,10 @@ from app.models.user import User
 from app.api.deps import get_current_user_required
 
 logger = logging.getLogger(__name__)
+
+# 2026-05-14 FIX-5 (G-W9 同模式): 客户端断开后 bg task 继续跑完 LLM/tool/写库.
+# set 持 task 引用防 GC; done_callback 自动清理.
+_BACKGROUND_AGENT_TASKS: set = set()
 router = APIRouter()
 
 
@@ -134,36 +139,85 @@ async def agent_stream(
         all_images = [{"base64": req.image_base64, "type": req.image_type or "jpeg"}]
 
     from app.services.agent_executor import AgentExecutor
-    executor = AgentExecutor(db)
 
     auth_header = request.headers.get("authorization", "")
     user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+    user_id = current_user.id
+    msg_text = req.message.strip()
+    conv_id = req.conversation_id
+    images_local = all_images or None
+    file_b64 = req.file_base64
+    file_nm = req.file_name
 
     async def generate():
+        """G-W9 同模式 (FIX-5, 2026-05-14): bg task + asyncio.Queue.
+
+        客户端断开 (App 后台 30s+ / 切走页面) → 这个 generator 抛 CancelledError /
+        GeneratorExit 退出, 但 bg_task 继续跑到 LLM 完成 + 把 message 写库 + audit.
+        用户回到 App 后, useFocusEffect/AppState 重新拉 conversation, 看到完整回复.
+        """
+        chunk_queue: asyncio.Queue = asyncio.Queue()
+
+        async def _bg():
+            # 独立 db session — 主 request 的 db 在客户端断开时会被 close
+            from app.database import SessionLocal as _SessionLocal
+            bg_db = _SessionLocal()
+            try:
+                executor_bg = AgentExecutor(bg_db)
+                async for event in executor_bg.run_stream(
+                    user_id=user_id,
+                    message=msg_text,
+                    conversation_id=conv_id,
+                    user_auth_token=user_token,
+                    images=images_local,
+                    file_base64=file_b64,
+                    file_name=file_nm,
+                ):
+                    # 在 done 事件里附加动态卡片, 失败静默
+                    if event.get("event") == "done":
+                        try:
+                            from app.services.inline_cards import build_cards
+                            cards = build_cards(bg_db, user_id, msg_text)
+                            if cards:
+                                event.setdefault("data", {})["cards"] = cards
+                        except Exception as e:
+                            logger.debug(f"inline_cards 失败: {e}")
+                    await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
+            except Exception as e:
+                logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
+                err = {"event": "error", "data": {"message": str(e)}}
+                try:
+                    await chunk_queue.put(f"data: {json.dumps(err, ensure_ascii=False)}\n\n")
+                except Exception:
+                    pass
+            finally:
+                # sentinel: 通知 generator 结束
+                try:
+                    await chunk_queue.put(None)
+                except Exception:
+                    pass
+                try:
+                    bg_db.close()
+                except Exception:
+                    pass
+
+        bg_task = asyncio.create_task(_bg())
+        _BACKGROUND_AGENT_TASKS.add(bg_task)
+        bg_task.add_done_callback(_BACKGROUND_AGENT_TASKS.discard)
+
         try:
-            async for event in executor.run_stream(
-                user_id=current_user.id,
-                message=req.message.strip(),
-                conversation_id=req.conversation_id,
-                user_auth_token=user_token,
-                images=all_images or None,
-                file_base64=req.file_base64,
-                file_name=req.file_name,
-            ):
-                # 在 done 事件里附加动态卡片, 失败静默
-                if event.get("event") == "done":
-                    try:
-                        from app.services.inline_cards import build_cards
-                        cards = build_cards(db, current_user.id, req.message.strip())
-                        if cards:
-                            event.setdefault("data", {})["cards"] = cards
-                    except Exception as e:
-                        logger.debug(f"inline_cards 失败: {e}")
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            logger.error(f"Agent 流式异常: {e}", exc_info=True)
-            error_event = {"event": "error", "data": {"message": str(e)}}
-            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+            while True:
+                item = await chunk_queue.get()
+                if item is None:
+                    break
+                yield item
+        except (asyncio.CancelledError, GeneratorExit):
+            # 客户端断开 — bg_task 不取消, 让它跑完写完消息.
+            logger.info(
+                f"[agent.stream] client disconnected user={user_id}, "
+                f"bg task continues to finish LLM + write message"
+            )
+            raise
 
     return StreamingResponse(
         generate(),
