@@ -10,7 +10,7 @@
 | 加一个 voice-chat 触发场景 | §2 voice-chat intent SOP |
 | 加一种推送类型 | §3 push registry |
 | 改 push 点击跳转 | `mobile/hooks/useNotifications.ts` `handleNotificationResponse` |
-| 加 dashboard 卡片 | `mobile/components/dashboard/HomeHeader.tsx`, `components/dashboard/TodayPlanPanel.tsx` 或 `app/(tabs)/index.tsx` |
+| 加 dashboard 卡片 | `mobile/components/dashboard/HomeHeader.tsx`, `components/dashboard/TodayPlanPanel.tsx`, `components/dashboard/TrajectorySnapshotPanel.tsx` 或 `app/(tabs)/index.tsx` |
 | 改 LLM tool 行为 | `backend/app/services/agent_executor.py` + `tool_schema_registry.py` |
 | 加 settings 开关 | `app/notification-settings.tsx` + `services/notifications.ts` types + `backend/app/api/notification.py` |
 | 改私享女声 | `services/voiceStyle.ts` (Voice 配置) + `backend/app/services/tts/cosyvoice.py` (云端) |
@@ -60,6 +60,7 @@ mobile/services/
   api.ts                      axios baseURL + auth interceptor
   chat.ts                     streamChat SSE 处理 (token/tool/done/error)
   dailyPlan.ts                ⭐ Daily Operating Plan 首页行动计划
+  trajectory.ts               ⭐ Personal Health Trajectory Snapshot
   briefing.ts                 ⭐ 所有 voice-chat intent 拉稿函数集中在这
   cloudTts.ts                 私享女声 cosyvoice 调用
   voiceStyle.ts               voice id 映射 + STORAGE_KEY 迁移
@@ -76,6 +77,7 @@ mobile/hooks/
 mobile/components/
   dashboard/HomeHeader.tsx    主页 hero 卡片
   dashboard/TodayPlanPanel.tsx ⭐ 今日操作计划, 代谢健康 action 入口
+  dashboard/TrajectorySnapshotPanel.tsx ⭐ 疾病上游健康轨迹入口
   workout/HrChart.tsx / PaceBars.tsx / HrZoneBar.tsx / HeroMetrics.tsx
   design-system/HealthCard.tsx
   chat/OpenerCard.tsx
@@ -87,6 +89,7 @@ backend/app/
   api/workout.py              workout/me/{id}/voice-coach (听一下)
   api/family.py               家庭 CRUD + dashboard
   api/daily_plan.py           ⭐ GET /daily-plan/me 每日操作计划
+  api/trajectory.py           ⭐ GET /trajectory/me 健康轨迹快照
   api/waist.py                ⭐ 腰围记录 CRUD + latest + stats
   api/notification.py         settings GET/PUT
   api/tts.py                  POST /tts/synthesize
@@ -98,6 +101,7 @@ backend/app/
   services/memory_service.py            write_fact (去重/reinforce)
   services/agent_executor.py            ⭐ tool 执行 + L8 weight 确认
   services/daily_operating_plan.py      ⭐ Twin → 今日可执行计划
+  services/health_trajectory.py         ⭐ Twin + genes + methylation gap → 轨迹快照
   services/tool_schema_registry.py      ⭐ L7 tool description (LLM 选对靠这)
   services/anomaly_detection_service.py ⭐ alert 推送 + L9 mode dispatch + clarify deep_link
   services/exercise_recovery_service.py readiness score (F 用)
@@ -117,6 +121,28 @@ backend/app/
 ### §1.1 Today Plan / Daily Operating Plan 流
 
 ```
+
+### §1.2 Trajectory Snapshot 流
+
+```
+mobile/app/(tabs)/index.tsx
+  ↓ React Query ['trajectory','me']
+mobile/services/trajectory.ts
+  ↓ GET /api/v1/trajectory/me
+backend/app/api/trajectory.py
+  ↓
+backend/app/services/health_trajectory.py
+  ↓ build_twin + build_daily_operating_plan
+Postgres: genetic_variants / waist_records / weight / blood_pressure / labs / Garmin
+```
+
+Trajectory Snapshot 只做疾病上游轨迹识别和优先级排序, 不做诊断。三个首期 domain:
+
+| domain | 含义 | 当前数据 |
+|---|---|---|
+| `metabolic_health` | 代谢健康轨迹 | 腰围/BMI/BP/血糖血脂/疾病风险基因 |
+| `recovery_capacity` | 恢复能力轨迹 | 睡眠/HRV/readiness/恢复敏感基因 |
+| `aging_pace` | 衰老速度轨迹 | 甲基化暂为 data gap, 后续接入长期反馈 |
 mobile/app/(tabs)/index.tsx
   ↓ React Query ['daily-plan','me']
 mobile/services/dailyPlan.ts
@@ -300,6 +326,7 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 | W3 | 跑后教练推送 | tasks/garmin_sync.py auto_analyze_workout | ✅ |
 | J | Daily Operating Plan | api/daily_plan.py + services/daily_operating_plan.py + TodayPlanPanel | ✅ Phase 0 |
 | J-Waist | 腰围代谢指标 | api/waist.py + twin/_collectors.fetch_waist_latest | ✅ Phase 0 |
+| K | Personal Health Trajectory Snapshot | api/trajectory.py + services/health_trajectory.py + TrajectorySnapshotPanel | ✅ Phase 0 |
 
 ---
 
@@ -311,6 +338,7 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 - **F Phase 2**: Garmin RHR 飙升自动检测 → 主动推 preworkout
 - **L8 扩展**: 把"先确认"模式扩到 blood_pressure / illness / reminder
 - **J Phase 1**: record tab 加腰围快捷录入, Today Plan action completion 写回 outcome
+- **K Phase 1**: methylation report model/import/parser, 将甲基化年龄/衰老速度写入 trajectory `epigenetic_feedback`
 - **proximity 自动听筒**: 写 native module 实现贴脸切听筒 (expo-audio 当前不支持)
 - **medication 高级**: 手动添加药物 UI (目前只能对话添加)
 

@@ -1,0 +1,81 @@
+"""Personal Health Trajectory Agent snapshot tests."""
+
+from datetime import date
+
+
+def test_trajectory_me_combines_baseline_anchors_realtime_and_actions(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    from app.models.blood_pressure import BloodPressureRecord
+    from app.models.genetic_data import GeneticProfile, GeneticVariant
+    from app.models.waist import WaistRecord
+    from app.models.weight import WeightRecord
+
+    profile = GeneticProfile(
+        user_id=user.id,
+        test_provider="test",
+        test_date=date.today(),
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    db.add_all([
+        GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            category="disease_risk",
+            gene_name="FTO",
+            genotype="AA",
+            result_label="肥胖倾向",
+            risk_level="high",
+            variant_nature="risk",
+        ),
+        GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            category="recovery",
+            gene_name="IL6",
+            genotype="GG",
+            result_label="炎症恢复敏感",
+            risk_level="medium",
+            variant_nature="risk",
+        ),
+    ])
+    db.add(WeightRecord(user_id=user.id, record_date=date.today(), weight=82.0, bmi=27.2))
+    db.add(WaistRecord(user_id=user.id, record_date=date.today(), waist_cm=92.0))
+    db.add(BloodPressureRecord(
+        user_id=user.id,
+        record_date=date.today(),
+        systolic=138,
+        diastolic=88,
+    ))
+    db.commit()
+
+    resp = client.get("/api/v1/trajectory/me", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["focus_domains"] == ["metabolic_health", "recovery_capacity", "aging_pace"]
+    assert body["congenital_baseline"]["has_genetic_profile"] is True
+    assert body["congenital_baseline"]["high_risk_count"] == 1
+    assert body["epigenetic_feedback"]["status"] == "missing"
+    assert any(gap["code"] == "methylation_report_missing" for gap in body["data_gaps"])
+    assert body["clinical_anchors"]["waist_cm"] == 92.0
+    assert body["clinical_anchors"]["blood_pressure"] == "138/88"
+    assert "training_readiness_score" in body["realtime_state"]
+    assert any(r["domain"] == "metabolic_health" and r["level"] == "attention" for r in body["trajectory_risks"])
+    assert any(r["domain"] == "recovery_capacity" and r["level"] == "attention" for r in body["trajectory_risks"])
+    assert any(a["domain"] == "measurement" for a in body["next_actions"])
+
+
+def test_trajectory_me_returns_missing_data_gaps_for_new_user(client, auth_user_and_headers):
+    _, headers = auth_user_and_headers
+
+    resp = client.get("/api/v1/trajectory/me", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    gap_codes = {gap["code"] for gap in body["data_gaps"]}
+    assert "genetic_profile_missing" in gap_codes
+    assert "methylation_report_missing" in gap_codes
+    assert "clinical_anchor_missing" in gap_codes
+    assert body["trajectory_risks"][0]["level"] == "unknown"

@@ -26,6 +26,8 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
 @pytest.fixture(scope="function")
 def db():
     """创建测试数据库 - 每个测试使用独立的内存数据库"""
+    import app.models  # noqa: F401 - ensure all model tables/columns are registered before create_all
+
     # 使用 StaticPool 确保所有连接使用同一个内存数据库
     # 使用 check_same_thread=False 允许多线程访问
     engine = create_engine(

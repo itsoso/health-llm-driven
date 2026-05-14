@@ -11,6 +11,7 @@ from app.api import (
     movement_plan,
     diet_plan,
     daily_plan,
+    trajectory,
     users,
     basic_health,
     medical_exams,
@@ -238,6 +239,7 @@ api_router.include_router(ai_insights.router, prefix="/ai-insights", tags=["ai-i
 api_router.include_router(health_report.router)
 api_router.include_router(health_score.router)
 api_router.include_router(health_trend.router)
+api_router.include_router(trajectory.router)
 api_router.include_router(health_event.router)
 api_router.include_router(health_context.router)
 api_router.include_router(anomaly_alert.router)

@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 129 API 路由 · 155 services              │
+│                  health-api.executor.life · 130 API 路由 · 156 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (11 specialist) │  │ (tool-calling LLM) │            │
@@ -62,7 +62,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 129 API 路由, 155 services, 74 models, 50 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 130 API 路由, 156 services, 74 models, 50 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
@@ -111,8 +111,8 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 129 条 API 路由 |
-| `backend/app/services/*.py` | 155 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
+| `backend/app/api/*.py` | 130 条 API 路由 |
+| `backend/app/services/*.py` | 156 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
 | `backend/app/tasks/*.py` | 50 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
@@ -309,7 +309,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 
 ## 六、API 路由(按域分组)
 
-129 条, 主要分 10 域:
+130 条, 主要分 10 域:
 
 | 域 | 路由前缀 | 关键端点 |
 |---|---|---|
@@ -320,6 +320,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 | **Devices** | `/data-collection/garmin/me/*` `/cgm` | Garmin 同步 `/sync?days=N`, CGM batch |
 | **Environment** | `/environment` | `/weather` `/air-quality` `/advice` `/exercise-suitability` |
 | **Analytics** | `/garmin-analysis` `/daily-health` `/spo2` `/health-analysis` `/personal-outcome` `/monthly-reports` | 聚合 + 趋势 |
+| **Trajectory** | `/trajectory` | `/trajectory/me` 疾病上游健康轨迹快照: 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量 |
 | **Operating Plan** | `/daily-plan` | `/daily-plan/me` 当前用户每日代谢健康操作计划 |
 | **Reminders/Notifications** | `/notification` `/smart-reminder` | `/bind/ios` `/bind/wechat` `/logs` |
 | **Voice/Briefing** | `/tts` `/briefing` `/pre-workout` `/clarification` | `/tts/synthesize` (CosyVoice 代理), briefing voice script |
@@ -363,7 +364,9 @@ app/_layout.tsx (root)
 - `services/cloudTts.ts` — CosyVoice HTTP 代理
 - `services/chat.ts` — `streamChat` SSE + `getConversations`/`getConversationMessages`
 - `services/dailyPlan.ts` — 首页 Daily Operating Plan 拉取与 action 归一化
+- `services/trajectory.ts` — 首页 Personal Health Trajectory Snapshot 拉取与 risk 排序
 - `components/dashboard/TodayPlanPanel.tsx` — Mobile First 的今日操作计划入口, 显示代谢健康优先动作
+- `components/dashboard/TrajectorySnapshotPanel.tsx` — 疾病上游轨迹摘要, 连接基因/甲基化/临床锚点/可穿戴/行动缺口
 
 ### Native modules
 
@@ -710,6 +713,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 | 2026-05-09 | Claude Opus 4.6 | feat: Agent-Native v3 Episode 闭环 — Run Recovery Coach 落地 (Increment 1-3): backend/protocols/ YAML registry, services/episode/ planner+lifecycle, ActionGraph + 详情页 + Home OpenEpisodeCard, Garmin sync hook 推 episode_created 推送, Celery beat episode_scheduler 每分钟扫 due reminder + auto-expire + auto-close, 11 单测 + 4 scheduler 单测全绿. 数字: API 117→118, mobile 44→45, Celery 41→42, services 140→147 |
 | 2026-05-09 | Claude Opus 4.6 | feat: Agent-Native v3 Increment 4 §1 — Episode Reflection Worker. Celery beat 每天 09:43 北京 (Garmin 同步后) 对 48h 内关闭的 Episode 拉次日 HRV/Sleep, 写 EpisodeOutcome.metrics_delta + 中文模板 summary (无 LLM 成本). API GET /episodes/{id} 现回 outcome 字段 (mobile 可渲染反馈). 5 单测覆盖正路径/数据缺失/幂等/48h 边界/baseline fallback. Celery 42→43 |
 | 2026-05-15 | Codex GPT-5 | feat: Agent Native Health OS Phase 0 — 腰围记录、Twin 腰围/腰高比/中心性肥胖标记、每日操作计划 `/daily-plan/me`、Mobile 首页 TodayPlanPanel、架构记录 `docs/AGENT_NATIVE_HEALTH_OS_ARCHITECTURE.md` 和移动端功能地图同步。 |
+| 2026-05-15 | Codex GPT-5 | feat: Personal Health Trajectory Agent 骨架 — 新增 `/trajectory/me` 和 Mobile `TrajectorySnapshotPanel`, 将基因底图、甲基化长期反馈缺口、临床锚点、可穿戴状态、可干预变量和 next actions 统一成疾病上游轨迹快照。 |
 
 ---
 

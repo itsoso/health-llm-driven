@@ -33,9 +33,11 @@ import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
+import TrajectorySnapshotPanel from '../../components/dashboard/TrajectorySnapshotPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { createTodayAgentContext, pushChatWithContext } from '../../utils/agentContext';
 import { getDailyOperatingPlan, type DailyPlanAction } from '../../services/dailyPlan';
+import { getHealthTrajectory } from '../../services/trajectory';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -102,6 +104,12 @@ export default function TodayScreen() {
     staleTime: 60 * 1000,
   });
 
+  const trajectoryQuery = useQuery({
+    queryKey: ['trajectory', 'me'],
+    queryFn: getHealthTrajectory,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Hero 数据 — 给 quickEntry tile 显示数字而不是干口号
   const geneticStatsQuery = useQuery({
     queryKey: ['genetic-stats'],
@@ -140,6 +148,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['action-cards', 'active'] }),
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['trajectory', 'me'] }),
         // EnvironmentCard 数据 — 不加这几条用户下拉时天气/AQI/明日预报不动
         qc.invalidateQueries({ queryKey: ['env', 'weather'] }),
         qc.invalidateQueries({ queryKey: ['env', 'aqi'] }),
@@ -157,7 +166,8 @@ export default function TodayScreen() {
     || safetyQuery.isRefetching
     || cardsQuery.isRefetching
     || twinQuery.isRefetching
-    || dailyPlanQuery.isRefetching;
+    || dailyPlanQuery.isRefetching
+    || trajectoryQuery.isRefetching;
 
   const alerts: SafetyAlert[] = safetyQuery.data?.alerts ?? [];
   const criticalAlerts = alerts.filter(a =>
@@ -189,6 +199,36 @@ export default function TodayScreen() {
     else router.push('/(tabs)/chat' as any);
   }, [router]);
 
+  const openTrajectoryChat = useCallback(() => {
+    const snapshot = trajectoryQuery.data;
+    const contextObject = (value?: Record<string, unknown> | null) => (
+      value ? JSON.parse(JSON.stringify(value)) : null
+    );
+    pushChatWithContext(router, {
+      prompt: '从疾病上游轨迹看, 我接下来 7 天最应该优先做什么?',
+      badge: '基于健康轨迹',
+      context: {
+        from: 'trajectory/home',
+        focus_domains: snapshot?.focus_domains ?? [],
+        trajectory_risks: (snapshot?.trajectory_risks ?? []).map(risk => ({
+          domain: risk.domain,
+          level: risk.level,
+          title: risk.title,
+          why: risk.why ?? null,
+          signals: risk.signals ?? [],
+          primary_action: risk.primary_action ?? null,
+        })),
+        clinical_anchors: contextObject(snapshot?.clinical_anchors),
+        realtime_state: contextObject(snapshot?.realtime_state),
+        data_gaps: (snapshot?.data_gaps ?? []).map(gap => ({
+          code: gap.code,
+          label: gap.label,
+          next_step: gap.next_step ?? null,
+        })),
+      },
+    });
+  }, [router, trajectoryQuery.data]);
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
       <ScrollView
@@ -202,6 +242,12 @@ export default function TodayScreen() {
           plan={dailyPlanQuery.data}
           loading={dailyPlanQuery.isLoading}
           onPressAction={openPlanAction}
+        />
+
+        <TrajectorySnapshotPanel
+          snapshot={trajectoryQuery.data}
+          loading={trajectoryQuery.isLoading}
+          onPress={openTrajectoryChat}
         />
 
         {/* 4 入口 — 2x2 grid 学健康记录 VitalsGrid 风格 (2026-05-12 重做) */}
