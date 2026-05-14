@@ -288,6 +288,8 @@ async def get_conversation(
                 "image_url": m.image_url,
                 "rating": m.rating,
                 "created_at": str(m.created_at),
+                # 2026-05-14 FIX-7: 能 + 可解释性 meta — 用户离开页面回来 reload 时, 前端能恢复 chat bubble footer
+                "meta": getattr(m, "meta", None),
             }
             for m in msgs
         ],

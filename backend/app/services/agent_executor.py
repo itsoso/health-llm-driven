@@ -405,10 +405,23 @@ class AgentExecutor:
         # 6. 保存回复
         ai_msg = svc.save_message(conv.id, "assistant", full_reply)
         conv.updated_at = datetime.now(UTC)
-        self.db.commit()
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         llm_ms_total = sum(llm_rounds_ms)
+        # 2026-05-14 FIX-7: 把性能 + 可解释性写到 message.meta, 用户回来 reload 能恢复 footer
+        try:
+            ai_msg.meta = {
+                "elapsed_ms": elapsed_ms,
+                "llm_ms": llm_ms_total,
+                "llm_rounds": len(llm_rounds_ms),
+                "llm_rounds_ms": llm_rounds_ms,
+                "model": model_name,
+                "sources_used": sources_used,
+            }
+        except Exception as e:
+            logger.warning(f"[agent_executor] write meta 失败: {e}")
+        self.db.commit()
+
         yield {
             "event": "done",
             "data": {

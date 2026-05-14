@@ -1,6 +1,7 @@
 """OpenClaw Channel 对话模型"""
 from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -43,6 +44,10 @@ class OpenClawMessage(Base):
     content = Column(Text, nullable=False)
     image_url = Column(Text, nullable=True)
     rating = Column(Integer, nullable=True)  # 1=thumbs up, -1=thumbs down, NULL=unrated
+    # 2026-05-14: 性能 + 可解释性 meta (assistant 消息才有).
+    # {elapsed_ms, llm_ms, llm_rounds, llm_rounds_ms, model, sources_used}
+    # 用户离开页面回来 reload conversation 时, 前端能恢复 chat bubble footer.
+    meta = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     conversation = relationship("OpenClawConversation", back_populates="messages")

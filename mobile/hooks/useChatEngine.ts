@@ -31,6 +31,20 @@ export interface UIMessage extends ChatMessage {
 let msgCounter = 0;
 function nextId(): string { return `msg-${++msgCounter}-${Date.now()}`; }
 
+/** 2026-05-14 FIX-7: 把 message.meta (后端持久化的性能/可解释性 JSON)
+ * 映射到 UIMessage 字段, 让 reload 也能恢复 chat bubble footer. */
+function applyMeta(msg: any): Partial<UIMessage> {
+  const meta = msg?.meta;
+  if (!meta || typeof meta !== 'object') return {};
+  return {
+    elapsedMs: typeof meta.elapsed_ms === 'number' ? meta.elapsed_ms : undefined,
+    llmMs: typeof meta.llm_ms === 'number' ? meta.llm_ms : undefined,
+    llmRounds: typeof meta.llm_rounds === 'number' ? meta.llm_rounds : undefined,
+    model: typeof meta.model === 'string' ? meta.model : undefined,
+    sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
+  };
+}
+
 interface UseChatEngineOptions {
   contextData?: Record<string, any>;
 }
@@ -100,6 +114,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         content: m.content,
         createdAt: m.created_at,
         imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+        ...applyMeta(m),
       }));
       setMessages(restored);
       setIsStreaming(false);  // 清掉 streaming 残留态
@@ -134,6 +149,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           content: m.content,
           createdAt: m.created_at,
           imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+          ...applyMeta(m),
         }));
         setMessages(restored);
         restoreCards(restored);
@@ -150,6 +166,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
         id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
         imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+        ...applyMeta(m),
       }));
       setMessages(restored);
       restoreCards(restored);
@@ -166,6 +183,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
         id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
         imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+        ...applyMeta(m),
       }));
       setMessages(restored);
       restoreCards(restored);
