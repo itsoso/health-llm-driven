@@ -187,6 +187,31 @@ def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
     }
 
 
+def _match_variant_for_snp(
+    variants: List[GeneticVariant],
+    snp: Dict[str, Any],
+) -> Optional[GeneticVariant]:
+    """按 KNOWN_SNPS 条目匹配用户实测 variant.
+
+    先用 (gene, variant) 精确匹配; 没有精确命中时才退回同 gene。列表页和详情页
+    必须共用这个逻辑, 否则同一 SNP 会出现列表高风险、详情低风险的分歧。
+    """
+    gene = snp["gene"]
+    variant_label = snp["variant"]
+    exact: Optional[GeneticVariant] = None
+    fallback: Optional[GeneticVariant] = None
+
+    for v in variants:
+        if v.gene_name != gene:
+            continue
+        if fallback is None:
+            fallback = v
+        if (v.variant_name or "") == variant_label:
+            exact = v
+
+    return exact or fallback
+
+
 def build_report(db: Session, user_id: int) -> Dict[str, Any]:
     """主入口: 返回报告页所需全部数据 (除 LLM 总结, 它独立 cache)."""
     profile = _resolve_active_profile(db, user_id)
@@ -205,10 +230,6 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
         .filter(GeneticVariant.profile_id == profile.id)
         .all()
     )
-    hit_by_gene_variant = {}
-    for v in variants:
-        key = (v.gene_name, v.variant_name or "")
-        hit_by_gene_variant[key] = v
 
     # G-W3: 一次性拉 user 近 90 天卡, Python filter 模糊匹配
     user_cards = _fetch_related_cards(db, user_id)
@@ -219,12 +240,7 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
     for rsid, snp in known.items():
         gene = snp["gene"]
         variant_label = snp["variant"]
-        v = hit_by_gene_variant.get((gene, variant_label))
-        if v is None:
-            for (g, _vn), gv in hit_by_gene_variant.items():
-                if g == gene:
-                    v = gv
-                    break
+        v = _match_variant_for_snp(variants, snp)
 
         if v is not None:
             hits += 1
@@ -529,15 +545,14 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
     }
     related_cards: List[Dict[str, Any]] = []
     if profile is not None:
-        from app.models.genetic_data import GeneticVariant
-        v = (
+        variants = (
             db.query(GeneticVariant)
             .filter(
                 GeneticVariant.profile_id == profile.id,
-                GeneticVariant.gene_name == snp_static["gene"],
             )
-            .first()
+            .all()
         )
+        v = _match_variant_for_snp(variants, snp_static)
         if v is not None:
             user_item = {
                 "hit": True,

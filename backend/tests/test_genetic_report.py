@@ -360,6 +360,33 @@ def test_get_snp_detail_user_hit_llm_failure_falls_back_to_static(db):
     assert d["actions"] is None
 
 
+def test_get_snp_detail_uses_same_variant_match_as_report(db):
+    """详情页必须和列表页使用同一个 SNP 命中, 避免列表高风险详情低风险."""
+    user = _make_user(db, "snp_match_consistency")[0]
+    p = _make_profile(db, user.id)
+    _make_variant(
+        db, p, gene="CYP2D6", variant_name="其他药物代谢",
+        category="drug_sensitivity", genotype="DD", result_label="正常代谢", risk_level="low",
+    )
+    _make_variant(
+        db, p, gene="CYP2D6", variant_name="止痛药代谢",
+        category="drug_sensitivity", genotype="II", result_label="慢代谢(需调整剂量)", risk_level="high",
+    )
+
+    report = genetic_report.build_report(db, user.id)
+    cyp2d6 = next(it for it in report["items"] if it["rsid"] == "rs5030655")
+
+    with patch("app.services.llm.get_llm_provider") as mock_llm:
+        mock_llm.side_effect = RuntimeError("skip llm")
+        detail = genetic_report.get_snp_detail(db, user.id, "rs5030655")
+
+    assert cyp2d6["risk_level"] == "high"
+    assert detail is not None
+    assert detail["user"]["hit"] is True
+    assert detail["user"]["risk_level"] == cyp2d6["risk_level"]
+    assert detail["user"]["genotype"] == cyp2d6["genotype"]
+
+
 def test_get_snp_detail_returns_siblings_in_same_category(db):
     """siblings 不含本 rsid, 且都在同 category."""
     user = _make_user(db, "snp_sibs")[0]
