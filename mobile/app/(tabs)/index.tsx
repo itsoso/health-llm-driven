@@ -195,7 +195,9 @@ export default function TodayScreen() {
     if (action.domain === 'nutrition') router.push('/diet-plan' as any);
     else if (action.domain === 'movement') router.push('/movement-plan' as any);
     else if (action.domain === 'sleep') router.push('/sleep' as any);
-    else if (action.domain === 'measurement') router.push('/record' as any);
+    else if (isBodyMeasurementAction(action)) {
+      router.push('/body-measurements?focus=morning' as any);
+    } else if (action.domain === 'measurement') router.push('/record' as any);
     else router.push('/(tabs)/chat' as any);
   }, [router]);
 
@@ -406,6 +408,12 @@ export default function TodayScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function isBodyMeasurementAction(action: DailyPlanAction): boolean {
+  if (action.domain !== 'measurement') return false;
+  const haystack = `${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
+  return /体重|腰围|weight|waist|bmi/.test(haystack);
 }
 
 function AlertRow({ alert, onPress }: { alert: SafetyAlert; onPress: () => void }) {

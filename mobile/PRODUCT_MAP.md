@@ -341,6 +341,7 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 | W3 | 跑后教练推送 | tasks/garmin_sync.py auto_analyze_workout | ✅ |
 | J | Daily Operating Plan | api/daily_plan.py + services/daily_operating_plan.py + TodayPlanPanel | ✅ Phase 0 |
 | J-Waist | 腰围代谢指标 | api/waist.py + twin/_collectors.fetch_waist_latest | ✅ Phase 0 |
+| J-BodyEntry | 体重腰围一屏录入 | mobile/app/body-measurements.tsx + services/bodyMeasurements.ts | ✅ Phase 1 |
 | K | Personal Health Trajectory Snapshot | api/trajectory.py + services/health_trajectory.py + TrajectorySnapshotPanel | ✅ Phase 0 |
 | K-Guardrail | 科学边界契约 | trajectory risks + daily actions 的 evidence_tier/confidence/claim_boundary | ✅ Phase 1 |
 
@@ -353,7 +354,7 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 - **I Phase 2**: 声音笔记结束后 show "已记录" summary card (review 用户接受度)
 - **F Phase 2**: Garmin RHR 飙升自动检测 → 主动推 preworkout
 - **L8 扩展**: 把"先确认"模式扩到 blood_pressure / illness / reminder
-- **J Phase 1**: record tab 加腰围快捷录入, Today Plan action completion 写回 outcome
+- **J Phase 2**: Today Plan action completion 写回 outcome; native build 接 HealthKit / Health Connect 自动同步 body measurements
 - **K Phase 1**: methylation report model/import/parser, 将甲基化年龄/衰老速度写入 trajectory `epigenetic_feedback`
 - **proximity 自动听筒**: 写 native module 实现贴脸切听筒 (expo-audio 当前不支持)
 - **medication 高级**: 手动添加药物 UI (目前只能对话添加)

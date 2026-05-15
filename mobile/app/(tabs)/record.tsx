@@ -83,6 +83,7 @@ export default function RecordScreen() {
           <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.brand} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
           {/* I 产品改进: 声音笔记 — AI 开口邀请, 自动归类录入 */}
           <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
+          <QuickNavBtn icon="body-outline" label="体重腰围" color={c.teal} onPress={() => router.push('/body-measurements' as any)} />
           <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
           <QuickNavBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
         </View>
@@ -377,8 +378,8 @@ function createStyles(c: ColorPalette) {
   promptStack: { marginBottom: spacing.md },
 
   // Quick navigation
-  quickNav: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  quickNavBtn: { flex: 1, alignItems: 'center', gap: 6, backgroundColor: c.bgCard, borderRadius: radii.md, paddingVertical: 12, ...shadows.subtle },
+  quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  quickNavBtn: { width: '30.8%', alignItems: 'center', gap: 6, backgroundColor: c.bgCard, borderRadius: radii.md, paddingVertical: 12, ...shadows.subtle },
   quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
 
   // Tabbed card (body + diet)

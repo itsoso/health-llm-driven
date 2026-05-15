@@ -236,7 +236,7 @@ flowchart LR
 |---|---|---|
 | Phase 1 | 饮食/睡眠/运动/体检/Twin 页面进入 Agent 时仍有入口缺少结构化 context | 抽 `mobile/utils/agentContext.ts`, 每个入口序列化当前页态并传 `extra_context` |
 | Phase 1 | Daily Plan 只读, 用户尚不能确认、调整、完成行动 | 加 action outcome 写回, 复用 ActionCard outcome 或新增 plan action event |
-| Phase 1 | 腰围移动端录入入口还未显式上首页/record tab | 在 record tab 加 waist quick input, 对接 `/waist/records` |
+| Phase 1 | Daily Plan 体重/腰围 action 已有承接页, 但仍是手动兜底 | native build 接 HealthKit / Health Connect, 设备同步优先, `/body-measurements` 保留兜底 |
 | Phase 1 | 甲基化只是 data gap, 尚无报告模型 | 新增 methylation report model/import/parser, 接入 `epigenetic_feedback` |
 | Phase 2 | L2 一键下单尚未接入 | `MenuShareCard` 增 order_suggestions + OTA-friendly URL scheme |
 | Phase 3 | WSCLA 闭环缺分享/下单/执行漏斗 | 统一 `intervention_event`, Celery 回看 diet/exercise/checkin 命中 |

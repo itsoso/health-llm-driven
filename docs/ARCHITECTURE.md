@@ -10,7 +10,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (57 路由)              │      │
+                        │   mobile/app/*.tsx (59 路由)              │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -116,7 +116,7 @@
 | `backend/app/tasks/*.py` | 50 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 57 RN 路由 + Tab 导航 |
+| `mobile/app/` | 59 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -351,6 +351,7 @@ app/_layout.tsx (root)
 └── modal / stack pages — 40+
     ├── voice-chat.tsx (带 ?conversation_id=X 历史恢复)
     ├── workout-detail.tsx · sleep.tsx · sleep-spo2-analysis.tsx
+    ├── body-measurements.tsx  — 体重 + 腰围一屏录入; Daily Plan measurement action 直达
     ├── trace/index.tsx · trace/[id].tsx  — 推理回放
     ├── medical-exams.tsx · consultations.tsx · consultations/[id].tsx
     ├── settings.tsx · location.tsx · notification-settings.tsx
@@ -370,6 +371,7 @@ app/_layout.tsx (root)
 - `services/cloudTts.ts` — CosyVoice HTTP 代理
 - `services/chat.ts` — `streamChat` SSE + `getConversations`/`getConversationMessages`
 - `services/dailyPlan.ts` — 首页 Daily Operating Plan 拉取与 action 归一化
+- `services/bodyMeasurements.ts` — `/weight/records` + `/waist/records` 一屏录入封装; 后续承接 HealthKit / Health Connect 同步
 - `services/trajectory.ts` — 首页 Personal Health Trajectory Snapshot 拉取与 risk 排序
 - `components/dashboard/TodayPlanPanel.tsx` — Mobile First 的今日操作计划入口, 显示代谢健康优先动作
 - `components/dashboard/TrajectorySnapshotPanel.tsx` — 疾病上游轨迹摘要, 连接基因/甲基化/临床锚点/可穿戴/行动缺口
@@ -723,6 +725,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 | 2026-05-15 | Codex GPT-5 | feat: Agent Native Health OS Phase 0 — 腰围记录、Twin 腰围/腰高比/中心性肥胖标记、每日操作计划 `/daily-plan/me`、Mobile 首页 TodayPlanPanel、架构记录 `docs/AGENT_NATIVE_HEALTH_OS_ARCHITECTURE.md` 和移动端功能地图同步。 |
 | 2026-05-15 | Codex GPT-5 | feat: Personal Health Trajectory Agent 骨架 — 新增 `/trajectory/me` 和 Mobile `TrajectorySnapshotPanel`, 将基因底图、甲基化长期反馈缺口、临床锚点、可穿戴状态、可干预变量和 next actions 统一成疾病上游轨迹快照。 |
 | 2026-05-15 | Codex GPT-5 | feat: Evidence boundary contract — `/trajectory/me` risks 和 `/daily-plan/me` actions 增加 `evidence_tier/confidence/claim_boundary`, 将甲基化限制为 `experimental/low` 长期代理指标。 |
+| 2026-05-15 | Codex GPT-5 | feat: Body measurement intake — Daily Plan 中体重/腰围 action 直达 Mobile `/body-measurements`, 一屏保存体重与腰围, 并记录 HealthKit / Health Connect 优先的自动化路线。 |
 
 ---
 
