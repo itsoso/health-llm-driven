@@ -27,6 +27,109 @@ PLAN_CATEGORY_TIMES = {
     "mindfulness": ["08:00"],
 }
 
+_EXERCISE_UNDERTRAINING_KEYWORDS = (
+    "运动不足",
+    "活动不足",
+    "体能下降",
+    "强度太低",
+    "运动强度太低",
+    "长期运动",
+)
+
+
+def _is_exercise_undertraining_risk(text: str) -> bool:
+    return any(keyword in (text or "") for keyword in _EXERCISE_UNDERTRAINING_KEYWORDS)
+
+
+def _has_active_recovery_directive(db, user_id: int) -> bool:
+    """是否存在仍在执行的恢复/减量类 Agent 行动卡."""
+    try:
+        from app.models.action_card import ActionCard
+
+        rows = (
+            db.query(ActionCard.title, ActionCard.content)
+            .filter(
+                ActionCard.user_id == user_id,
+                ActionCard.status == "active",
+                ActionCard.user_decision.in_(["accepted", "adjusted"]),
+            )
+            .limit(10)
+            .all()
+        )
+    except Exception:
+        return False
+
+    keywords = ("恢复", "减量", "降强度", "降低强度", "不跑", "休息", "deload")
+    for title, content in rows:
+        text = f"{title or ''} {content or ''}"
+        if any(k in text for k in keywords):
+            return True
+    return False
+
+
+def _recovery_gate_active(db, user_id: int, today: date) -> bool:
+    """判断当前是否应让恢复建议压过"运动不足"类趋势 push."""
+    if _has_active_recovery_directive(db, user_id):
+        return True
+
+    try:
+        from app.models.daily_health import GarminData
+
+        latest = (
+            db.query(GarminData)
+            .filter(
+                GarminData.user_id == user_id,
+                GarminData.record_date <= today,
+            )
+            .order_by(GarminData.record_date.desc())
+            .first()
+        )
+    except Exception:
+        return False
+
+    if latest is None:
+        return False
+
+    readiness = latest.training_readiness_score
+    if readiness is not None and readiness < 50:
+        return True
+    if (latest.hrv_status or "").lower() in {"low", "unbalanced", "poor", "偏低"}:
+        return True
+    if latest.sleep_score is not None and latest.sleep_score < 60:
+        return True
+    if latest.body_battery_most_charged is not None and latest.body_battery_most_charged < 35:
+        return True
+    return False
+
+
+def _trend_push_body_for_user(db, user_id: int, reports: list, today: date | None = None) -> str:
+    """生成趋势 push 文案, 并用恢复状态仲裁运动不足类风险.
+
+    规则: exercise 维度若只是在催"运动不足/体能下降", 但当前 readiness/HRV/
+    睡眠/Body Battery 或行动卡显示恢复优先, 则不再催强度, 改为恢复一致文案。
+    """
+    today = today or date.today()
+    risk_items = [r for r in reports if r.risk_alerts]
+    if risk_items:
+        first_risk = risk_items[0].risk_alerts[0]
+        if (
+            getattr(risk_items[0], "dimension", None) == "exercise"
+            and _is_exercise_undertraining_risk(first_risk)
+            and _recovery_gate_active(db, user_id, today)
+        ):
+            return "⚠️ 恢复优先：近期恢复信号偏低，今天先按 Agent 建议降强度或休息，不把运动不足作为今日目标。"
+        return f"⚠️ {first_risk}"
+
+    improving = [r for r in reports if r.trend_direction == "improving"]
+    declining = [r for r in reports if r.trend_direction == "declining"]
+    dim_labels = {"weight": "体重", "sleep": "睡眠", "exercise": "运动", "overall": "综合"}
+    parts = []
+    if improving:
+        parts.append("↑ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in improving))
+    if declining:
+        parts.append("↓ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in declining))
+    return " | ".join(parts) if parts else "各项指标平稳"
+
 
 # ---- 天气前缀清洗 (修 "雨天力量维护日" 但今天没下雨 的 badcase) ----------
 # 计划项 title 在生成时根据 7 天预报固化, 比如周一生成的计划写 "周四:雨天力量维护日";
@@ -657,19 +760,7 @@ def send_trend_morning_push():
 
         for user_id, user_rpts in user_reports.items():
             try:
-                risk_items = [r for r in user_rpts if r.risk_alerts]
-                if risk_items:
-                    body = f"⚠️ {risk_items[0].risk_alerts[0]}"
-                else:
-                    improving = [r for r in user_rpts if r.trend_direction == "improving"]
-                    declining = [r for r in user_rpts if r.trend_direction == "declining"]
-                    dim_labels = {"weight": "体重", "sleep": "睡眠", "exercise": "运动", "overall": "综合"}
-                    parts = []
-                    if improving:
-                        parts.append("↑ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in improving))
-                    if declining:
-                        parts.append("↓ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in declining))
-                    body = " | ".join(parts) if parts else "各项指标平稳"
+                body = _trend_push_body_for_user(db, user_id, user_rpts, today=today)
 
                 run_async(push_service.send_notification(
                     user_id=user_id,

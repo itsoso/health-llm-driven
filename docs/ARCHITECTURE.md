@@ -486,11 +486,13 @@ Mobile `useVoiceConversation`: LLM stream token → 累到真标点 → `stripMa
 
 `push_service.send_notification(...)`:
 1. 读 `UserNotificationSetting` → 决定启用哪些 channel
-2. quiet_hours 窗口检查 (默认 22:00-08:30, 可 per-user 配)
-3. rule_id dedup (JSONB `data::jsonb ->> 'rule_id' = :rid`)
+2. dedup 先于 quiet_hours: 同一 `rule_id` 或 title 在窗口内已 sent/failed/delayed/pending 时不再排队
+3. quiet_hours 窗口检查 (默认 22:00-08:30, 可 per-user 配); delayed flush 会再次折叠历史重复队列
 4. 并行发 3 channel, 收集每个状态
 5. 最后写 **1 条** NotificationLog, `channels` JSON 列存各 channel 状态
 6. 任一 channel sent → 整条 status=sent
+
+趋势类 push 必须过 Agent 一致性 gate: exercise 维度的“运动不足/体能下降”风险, 如果最新 readiness/HRV/sleep/Body Battery 或 active ActionCard 显示恢复优先, 文案改为“恢复优先”, 不催用户增加跑步强度。
 
 Mobile `notification-history.tsx` 直读 `channels` 字段, 每条显示 emoji 行 (📱 ✈️ 💬) + 状态。
 

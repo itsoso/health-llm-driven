@@ -96,6 +96,42 @@ async def test_quiet_hours_delays_all_severities_including_critical(db, severity
     assert log.scheduled_at.day == fake_now.day
 
 
+@pytest.mark.asyncio
+async def test_quiet_hours_dedups_existing_delayed_reminder(db):
+    """同一睡眠提醒在静默时段重复触发时, 只能排队 1 条 08:30 delayed。"""
+    user = _make_user(db, username="quiet_dedup_sleep")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 3, 0, 0)
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now):
+        first = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="💤 睡眠提醒",
+            content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
+        )
+        second = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="💤 睡眠提醒",
+            content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
+        )
+
+    assert first["reason"] == "delayed_for_quiet_hours"
+    assert second["reason"] == "dedup"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.notification_type == "reminder",
+            NotificationLog.title == "💤 睡眠提醒",
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .all()
+    )
+    assert len(delayed) == 1
+
+
 @pytest.mark.parametrize("severity", ["info", "low"])
 @pytest.mark.asyncio
 async def test_low_severity_blocked_by_threshold_not_delayed(db, severity):
@@ -232,12 +268,58 @@ async def test_flush_delayed_pushes_processes_due(db):
 
 
 @pytest.mark.asyncio
+async def test_flush_delayed_pushes_dedups_same_title(db):
+    """历史上已经排队的重复 delayed, flush 时也只真正发第一条。"""
+    user = _make_user(db, username="flush_dedup_sleep")
+    svc = PushService(db)
+    now = get_china_now()
+
+    logs = [
+        NotificationLog(
+            user_id=user.id,
+            notification_type="reminder",
+            channel="multi",
+            title="💤 睡眠提醒",
+            content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
+            data={},
+            status=NotificationStatus.DELAYED.value,
+            scheduled_at=now - timedelta(minutes=10),
+        ),
+        NotificationLog(
+            user_id=user.id,
+            notification_type="reminder",
+            channel="multi",
+            title="💤 睡眠提醒",
+            content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
+            data={},
+            status=NotificationStatus.DELAYED.value,
+            scheduled_at=now - timedelta(minutes=9),
+        ),
+    ]
+    db.add_all(logs)
+    db.commit()
+
+    send_mock = AsyncMock(return_value={"success": True})
+    with patch.object(PushService, "_send_ios", new=send_mock):
+        result = await svc.flush_delayed_pushes()
+
+    assert result["flushed"] == 2
+    assert result["succeeded"] == 1
+    assert result["deduped"] == 1
+    assert send_mock.await_count == 1
+    for log in logs:
+        db.refresh(log)
+    assert [log.status for log in logs].count(NotificationStatus.SENT.value) == 1
+    assert [log.error_message for log in logs].count("dedup") == 1
+
+
+@pytest.mark.asyncio
 async def test_flush_does_not_re_delay(db):
     """flush 时已经过了静默时段, 但若被 mock 到静默时段, respect_quiet_hours=False 应不再延迟."""
     user = _make_user(db, username="flush_no_redelay")
     svc = PushService(db)
 
-    now = get_china_now()
+    fake_now = datetime(2026, 5, 12, 3, 0, 0)  # 静默时段
 
     log = NotificationLog(
         user_id=user.id,
@@ -247,12 +329,11 @@ async def test_flush_does_not_re_delay(db):
         content="c",
         data={"rule_id": "x.r", "severity": "critical"},
         status=NotificationStatus.DELAYED.value,
-        scheduled_at=now - timedelta(minutes=5),
+        scheduled_at=fake_now - timedelta(minutes=5),
     )
     db.add(log)
     db.commit()
 
-    fake_now = datetime(2026, 5, 12, 3, 0, 0)  # 静默时段
     with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
          patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
         # 这里 get_china_now 返回静默, 但 flush 内部传 respect_quiet_hours=False, 应该 sent

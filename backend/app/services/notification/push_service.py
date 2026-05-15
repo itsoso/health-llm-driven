@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.notification import (
@@ -249,6 +250,30 @@ class PushService:
                 "reason": "通知已禁用/低于阈值/规则已静音",
             }
 
+        # 去重检查必须先于 quiet-hours 延迟队列。
+        # 否则夜间同一提醒会被重复写成多条 delayed, 到 08:30 一起 flush 出去。
+        if dedup_window_hours and dedup_window_hours > 0:
+            existing = self._find_dedup_log(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                rule_id=rule_id,
+                window_start=get_china_now() - timedelta(hours=dedup_window_hours),
+                statuses=[
+                    NotificationStatus.SENT.value,
+                    NotificationStatus.FAILED.value,
+                    NotificationStatus.DELAYED.value,
+                    NotificationStatus.PENDING.value,
+                ],
+            )
+            if existing:
+                key = f"rule_id={rule_id}" if rule_id else f"title={title!r}"
+                logger.info(
+                    f"用户 {user_id} 相同推送 {notification_type}/{key} "
+                    f"在 {dedup_window_hours}h 窗口内已有记录 (log_id={existing.id})，跳过"
+                )
+                return {"success": False, "reason": "dedup"}
+
         # 严格不打扰睡眠 (2026-05-11 决定): 静默时段对所有 severity (含 critical)
         # 都不立刻推, 写 status='delayed' log + scheduled_at, 由 Celery 任务
         # flush_delayed_pushes 在 quiet_hours_end 后再 fire.
@@ -272,43 +297,6 @@ class PushService:
                 "reason": "delayed_for_quiet_hours",
                 "scheduled_at": scheduled_at.isoformat(),
             }
-
-        # 去重检查: 有 rule_id 时按 rule_id 去重 (同一规则窗口内只推一次),
-        # 否则退化到按 title 去重 (老路径).
-        # 注: 同时认 SENT 和 FAILED — 窗口内尝试过就不重试. 避免同一 alert 因
-        # 多 channel (ios/telegram/wechat) 并发写 log, 每条都独立走 dedup 漏掉.
-        if dedup_window_hours and dedup_window_hours > 0:
-            window_start = get_china_now() - timedelta(hours=dedup_window_hours)
-            dedup_q = self.db.query(NotificationLog).filter(
-                NotificationLog.user_id == user_id,
-                NotificationLog.notification_type == notification_type,
-                NotificationLog.status.in_([
-                    NotificationStatus.SENT.value,
-                    NotificationStatus.FAILED.value,
-                ]),
-                NotificationLog.created_at >= window_start,
-            )
-            if rule_id:
-                # PG JSONB ->> 提取 rule_id; SQLite 用字符串 LIKE 作为降级
-                from sqlalchemy import text
-                try:
-                    existing = dedup_q.filter(
-                        text("data::jsonb ->> 'rule_id' = :rid").bindparams(rid=rule_id)
-                    ).first()
-                except Exception:
-                    # SQLite fallback
-                    existing = dedup_q.filter(
-                        NotificationLog.data.like(f'%"rule_id": "{rule_id}"%')
-                    ).first()
-            else:
-                existing = dedup_q.filter(NotificationLog.title == title).first()
-            if existing:
-                key = f"rule_id={rule_id}" if rule_id else f"title={title!r}"
-                logger.info(
-                    f"用户 {user_id} 相同推送 {notification_type}/{key} "
-                    f"在 {dedup_window_hours}h 窗口内已发送过 (log_id={existing.id})，跳过"
-                )
-                return {"success": False, "reason": "dedup"}
 
         settings = self.get_user_settings(user_id)
         results = {"success": False, "channels": {}}
@@ -395,6 +383,51 @@ class PushService:
         )
 
         return results
+
+    def _find_dedup_log(
+        self,
+        *,
+        user_id: int,
+        notification_type: str,
+        title: str,
+        rule_id: Optional[str],
+        window_start: datetime,
+        statuses: list[str],
+        exclude_log_id: int | None = None,
+    ) -> NotificationLog | None:
+        """查找同一窗口内是否已有同 key 推送记录.
+
+        rule_id 优先; 没有 rule_id 时按 title 退化。生产 PostgreSQL 走 JSONB 提取,
+        本机 SQLite 测试用 LIKE 降级。
+        """
+        dedup_time = func.coalesce(
+            NotificationLog.sent_at,
+            NotificationLog.scheduled_at,
+            NotificationLog.created_at,
+        )
+        dedup_q = self.db.query(NotificationLog).filter(
+            NotificationLog.user_id == user_id,
+            NotificationLog.notification_type == notification_type,
+            NotificationLog.status.in_(statuses),
+            dedup_time >= window_start,
+        )
+        if exclude_log_id is not None:
+            dedup_q = dedup_q.filter(NotificationLog.id != exclude_log_id)
+
+        if rule_id:
+            bind = self.db.get_bind()
+            dialect_name = bind.dialect.name if bind is not None else ""
+            if dialect_name == "postgresql":
+                from sqlalchemy import text
+                return dedup_q.filter(
+                    text("data::jsonb ->> 'rule_id' = :rid").bindparams(rid=rule_id)
+                ).first()
+
+            return dedup_q.filter(
+                NotificationLog.data.like(f'%"rule_id": "{rule_id}"%')
+            ).first()
+
+        return dedup_q.filter(NotificationLog.title == title).first()
 
     async def _send_wechat(
         self,
@@ -615,10 +648,30 @@ class PushService:
         flushed = 0
         succeeded = 0
         failed = 0
+        deduped = 0
         for log in delayed_logs:
             flushed += 1
             severity = (log.data or {}).get("severity", "info")
             try:
+                existing = self._find_dedup_log(
+                    user_id=log.user_id,
+                    notification_type=log.notification_type,
+                    title=log.title,
+                    rule_id=(log.data or {}).get("rule_id"),
+                    window_start=now - timedelta(hours=24),
+                    statuses=[
+                        NotificationStatus.SENT.value,
+                        NotificationStatus.FAILED.value,
+                    ],
+                    exclude_log_id=log.id,
+                )
+                if existing:
+                    log.status = NotificationStatus.FAILED.value
+                    log.error_message = "dedup"
+                    self.db.commit()
+                    deduped += 1
+                    continue
+
                 # 标记为 pending 再发, 防止 flush 任务重叠
                 log.status = NotificationStatus.PENDING.value
                 self.db.commit()
@@ -655,9 +708,10 @@ class PushService:
 
         if flushed > 0:
             logger.info(
-                f"[flush_delayed_pushes] flushed={flushed} ok={succeeded} fail={failed}"
+                f"[flush_delayed_pushes] flushed={flushed} ok={succeeded} "
+                f"fail={failed} deduped={deduped}"
             )
-        return {"flushed": flushed, "succeeded": succeeded, "failed": failed}
+        return {"flushed": flushed, "succeeded": succeeded, "failed": failed, "deduped": deduped}
 
     def get_notification_logs(
         self,

@@ -173,6 +173,8 @@ sequenceDiagram
 - `build_daily_operating_plan` 每次请求都会 fresh build Twin, 避免首页显示旧状态。
 - 腰围属于代谢健康的核心客观指标, 写入后会调用 `invalidate_twin_cache(user_id)`。
 - 所有 API 均使用 `get_current_user_required`, 查询必须带 `user_id`。
+- Push 不能绕过 Agent 的当日恢复判断: 如果趋势分析说“运动不足”, 但 readiness/HRV/睡眠/Body Battery 或已接受行动卡显示恢复优先, push 必须改写为恢复一致文案。
+- quiet-hours delayed 队列必须先去重再排队, flush 历史队列时也要折叠同 key 重复项, 避免 08:30 同一提醒连发。
 
 ## 4.2 证据等级与科学边界契约
 

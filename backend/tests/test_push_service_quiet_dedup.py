@@ -190,7 +190,7 @@ class TestDedup:
         user_id = _make_user(db)
         _make_settings(db, user_id)
 
-        # 10 小时前发送过 — 窗口默认 6h，已过期
+        # 10 小时前发送过 — 显式使用 6h 窗口, 应已过期
         db.add(NotificationLog(
             user_id=user_id,
             notification_type="health_alert",
@@ -211,6 +211,7 @@ class TestDedup:
                 title="⚠️ BP Spike",
                 content="later",
                 severity="high",
+                dedup_window_hours=6,
                 channels=["ios_apns"],
             ))
         assert result.get("reason") != "dedup"
