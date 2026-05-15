@@ -343,11 +343,10 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 
 ```
 app/_layout.tsx (root)
-├── (tabs)/  — 4 tab
-│   ├── index.tsx     — 首页 (对话 + dashboard)
+├── (tabs)/  — 3 tab
+│   ├── index.tsx     — 今日 dashboard
 │   ├── record.tsx    — 健康记录 (VitalsGrid + ActivityRings + Sparklines + ...)
-│   ├── alerts.tsx    — 安全告警 + 推理回放
-│   └── chat.tsx      — (deprecated, merged into index)
+│   └── chat.tsx      — 私教文字对话; header 提供历史 ConversationSheet / 语音 / 新建 / 删除
 │
 └── modal / stack pages — 40+
     ├── voice-chat.tsx (带 ?conversation_id=X 历史恢复)

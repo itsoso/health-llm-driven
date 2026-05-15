@@ -4,7 +4,6 @@ import {
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getConversations, deleteConversation } from '../../services/chat';
 import { spacing, radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 

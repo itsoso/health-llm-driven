@@ -5,14 +5,15 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { deleteConversation } from '../../services/chat';
+import { deleteConversation, getConversations } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
+import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
 import { fetchConversationOpener, type ConversationOpener } from '../../services/conversationOpener';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
@@ -31,10 +32,23 @@ export default function ChatScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const chat = useChatEngine();
+  const {
+    messages,
+    isStreaming,
+    conversationId,
+    sendMessage,
+    newChat,
+    loadLatestConversation,
+    loadConversation,
+  } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -72,19 +86,19 @@ export default function ChatScreen() {
       if (params.badge) setContextBadge(params.badge);
       if (params.prompt) {
         if (params.autoSend === '1') {
-          chat.sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context });
+          sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context });
         } else if (params.context) {
           // 有 context 但不 autoSend: 用户点了"详细聊"入口, prompt 是预填问题, 跟 context 一起发
-          chat.sendMessage(params.prompt, null, { extraContext: params.context });
+          sendMessage(params.prompt, null, { extraContext: params.context });
         } else {
           setInitialInput(params.prompt);
         }
       }
       try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined } as any); } catch {}
     }
-  }, [params.prompt, params.badge, params.autoSend, params.context]);
+  }, [params.prompt, params.badge, params.autoSend, params.context, sendMessage]);
 
-  useEffect(() => { chat.loadLatestConversation(); }, []);
+  useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
 
   // 点"私教" tab 进来时滚到对话最后, 方便看最新消息.
   // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
@@ -109,16 +123,49 @@ export default function ChatScreen() {
 
   const handleSend = useCallback((text: string, images?: any) => {
     isNearBottom.current = true;
-    chat.sendMessage(text, images);
+    sendMessage(text, images);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [chat.sendMessage]);
+  }, [sendMessage]);
+
+  const loadConversationHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const items = await getConversations();
+      setConversations(items);
+    } catch {
+      setHistoryError('加载历史对话失败');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const openHistory = useCallback(() => {
+    setHistoryVisible(true);
+    loadConversationHistory();
+  }, [loadConversationHistory]);
+
+  const handleSelectConversation = useCallback(async (id: number) => {
+    await loadConversation(id);
+    isNearBottom.current = true;
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 120);
+  }, [loadConversation]);
+
+  const handleDeleteConversation = useCallback(async (id: number) => {
+    const ok = await deleteConversation(id);
+    if (!ok) {
+      setHistoryError('删除失败，请稍后重试');
+      return;
+    }
+    setConversations(prev => prev.filter(item => item.id !== id));
+    if (conversationId === id) newChat();
+  }, [conversationId, newChat]);
 
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => (
     <ChatBubble item={item} onViewImage={setViewingImage} />
   ), []);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const kbOffset = 0;
 
   return (
@@ -127,30 +174,39 @@ export default function ChatScreen() {
         <Ionicons name="sparkles" size={18} color={c.brand} />
         <Text style={txt.headerTitle}>健康 Agent</Text>
         <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          onPress={openHistory}
+          hitSlop={8}
+          style={styles.headerAction}
+          accessibilityLabel="对话历史"
+          accessibilityRole="button"
+        >
+          <Ionicons name="time-outline" size={21} color={c.labelSecondary} />
+        </TouchableOpacity>
         {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
             尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
         <TouchableOpacity
           onPress={() => router.push({
             pathname: '/voice-chat',
-            params: chat.conversationId ? { conversation_id: String(chat.conversationId) } : {},
+            params: conversationId ? { conversation_id: String(conversationId) } : {},
           } as any)}
           hitSlop={8}
-          style={{ marginRight: 12 }}
+          style={styles.headerAction}
           accessibilityLabel="语音对话"
           accessibilityRole="button"
         >
           <Ionicons name="mic-circle" size={26} color={c.brand} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={chat.newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
+        <TouchableOpacity onPress={newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
           <Ionicons name="create-outline" size={20} color={c.labelSecondary} />
         </TouchableOpacity>
-        {chat.conversationId && chat.messages.length > 0 && (
+        {conversationId && messages.length > 0 && (
           <TouchableOpacity onPress={() => {
             Alert.alert('删除对话', '确定删除当前对话？', [
               { text: '取消', style: 'cancel' },
               { text: '删除', style: 'destructive', onPress: async () => {
-                await deleteConversation(chat.conversationId!);
-                chat.newChat();
+                await deleteConversation(conversationId);
+                newChat();
               }},
             ]);
           }} hitSlop={8} style={{ marginLeft: 12 }} accessibilityLabel="删除当前对话" accessibilityRole="button">
@@ -162,7 +218,7 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={kbOffset}>
         <FlatList
           ref={flatListRef}
-          data={chat.messages}
+          data={messages}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
@@ -223,7 +279,7 @@ export default function ChatScreen() {
           </View>
         )}
 
-        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} initialText={initialInput} conversationId={chat.conversationId} />
+        <ChatInputBar onSend={handleSend} isStreaming={isStreaming} initialText={initialInput} conversationId={conversationId} />
         {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
 
@@ -237,6 +293,18 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </Pressable>
       </Modal>
+      <ConversationSheet
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        conversations={conversations}
+        setConversations={setConversations}
+        currentConversationId={conversationId}
+        onSelectConversation={handleSelectConversation}
+        onDeleteConversation={handleDeleteConversation}
+        loading={historyLoading}
+        error={historyError}
+        onRetry={loadConversationHistory}
+      />
     </SafeAreaView>
   );
 }
@@ -245,6 +313,7 @@ function createStyles(c: ColorPalette) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
+  headerAction: { marginRight: 12 },
   messageList: { padding: spacing.lg, paddingBottom: 8 },
   // P3-3: 会诊页 opener "我记得你 X" banner
   memoryOpener: {

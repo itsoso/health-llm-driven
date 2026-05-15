@@ -25,7 +25,7 @@
 mobile/app/
   (tabs)/_layout.tsx          5 个一级 tab 的注册 (index/chat/record/journal/alerts)
   (tabs)/index.tsx            主页 dashboard, Today Plan, 内嵌 chat 流
-  (tabs)/chat.tsx             AI 文字对话
+  (tabs)/chat.tsx             私教 AI 文字对话; header 含历史、语音、新建、删除入口
   (tabs)/record.tsx           快捷录入 + QuickNavBtn (加跑前准备入口)
   (tabs)/alerts.tsx           anomaly_alert 列表
   (tabs)/journal/             健康日志/事件
@@ -73,6 +73,9 @@ mobile/hooks/
   useVoiceConversation.ts     ⭐ 语音状态机 (listening/thinking/speaking)
                               speakDirect / silenceTimer (1.2s 自动发) / playback↔record session
   useNotifications.ts         ⭐ APNs 收到推送的路由分发 (handleNotificationResponse)
+
+mobile/components/chat/
+  ConversationSheet.tsx       私教对话历史 bottom sheet; 按简报/周报置顶, 选择后 loadConversation
 
 mobile/components/
   dashboard/HomeHeader.tsx    主页 hero 卡片
