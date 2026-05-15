@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
 from app.models.daily_operating_plan import DailyOperatingPlan
+from app.services.advice_guard import AdviceCandidate, AdviceGuardError, guard_and_record_advice
 from app.twin import build_twin
+
+logger = logging.getLogger(__name__)
 
 
 def _bp_text(twin) -> str | None:
@@ -83,6 +88,52 @@ def _active_interventions(db: Session, user_id: int) -> List[Dict[str, Any]]:
         ) | {"source_card_id": c.id, "check_back_date": c.check_back_date.isoformat() if c.check_back_date else None}
         for c in cards
     ]
+
+
+def _guard_plan_actions(
+    db: Session,
+    *,
+    user_id: int,
+    plan_date: date,
+    actions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    guarded: List[Dict[str, Any]] = []
+    for index, action in enumerate(actions):
+        candidate = AdviceCandidate(
+            user_id=user_id,
+            source="daily_plan",
+            source_id=f"daily_plan:{plan_date.isoformat()}:{index}:{action.get('domain', 'unknown')}",
+            domain=str(action.get("domain") or ""),
+            title=str(action.get("title") or ""),
+            body=str(action.get("why") or action.get("title") or ""),
+            metric_key=action.get("metric_key"),
+            target_value=action.get("target_value"),
+            evidence_tier=action.get("evidence_tier"),
+            confidence=action.get("confidence"),
+            claim_boundary=action.get("claim_boundary"),
+            valid_for_date=plan_date,
+        )
+        try:
+            decision = guard_and_record_advice(db, candidate)
+        except AdviceGuardError as exc:
+            logger.warning("[daily_plan] action blocked by missing advice contract: %s", exc)
+            continue
+        except SQLAlchemyError as exc:
+            db.rollback()
+            logger.warning("[daily_plan] advice ledger unavailable, keeping action: %s", exc)
+            guarded.append(action)
+            continue
+
+        if decision.allowed:
+            guarded.append(action)
+        else:
+            logger.info(
+                "[daily_plan] action blocked by AdviceGuard user=%s reason=%s title=%s",
+                user_id,
+                decision.reason,
+                action.get("title"),
+            )
+    return guarded
 
 
 def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None) -> Dict[str, Any]:
@@ -162,7 +213,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     ))
 
     actions.extend(_active_interventions(db, user_id))
-    actions = actions[:5]
+    actions = _guard_plan_actions(db, user_id=user_id, plan_date=plan_date, actions=actions)[:5]
 
     state_summary = {
         "weight_kg": body.weight_kg,

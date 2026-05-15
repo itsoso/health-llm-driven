@@ -272,6 +272,8 @@ deploy_backend() {
         set -a && source .env && set +a && \
         echo '安装依赖...' && \
         pip install -r requirements.txt -q && \
+        echo '执行受控数据库迁移...' && \
+        python scripts/apply_managed_migrations.py && \
         echo '重启后端服务...' && \
         systemctl restart health-backend && \
         echo '重启 Celery worker & beat...' && \

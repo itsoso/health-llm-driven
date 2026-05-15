@@ -13,7 +13,7 @@ from app.models.notification import (
     NotificationChannel,
     NotificationStatus
 )
-from app.models.user import User
+from app.services.advice_guard import AdviceCandidate, guard_and_record_advice
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,55 @@ _SEVERITY_ORDER = {
 
 def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
+
+
+def _advice_candidate_from_push(
+    *,
+    user_id: int,
+    notification_type: str,
+    title: str,
+    content: str,
+    data: Optional[Dict[str, Any]],
+    severity: str,
+) -> AdviceCandidate | None:
+    """Map user-visible advice pushes into the shared advice ledger contract."""
+
+    ntype = notification_type.value if hasattr(notification_type, "value") else str(notification_type)
+    if ntype not in {NotificationType.HEALTH_ALERT.value, NotificationType.AI_ADVICE.value}:
+        return None
+    if _severity_rank(severity) >= _severity_rank("critical"):
+        return None
+
+    text_blob = f"{title}\n{content}".lower()
+    is_movement = any(word in text_blob for word in ["运动", "跑步", "训练", "activity", "run", "workout"])
+    if not is_movement:
+        return None
+
+    if any(word in text_blob for word in ["降低", "暂停跑", "休跑", "恢复", "reduce", "rest"]):
+        target_value = "reduce_intensity"
+    elif any(word in text_blob for word in ["运动不足", "提高运动", "中等强度", "increase", "low_activity"]):
+        target_value = "increase_activity"
+    else:
+        target_value = (data or {}).get("target_value") or "movement_advice"
+
+    rule_id = (data or {}).get("rule_id")
+    metric_key = (data or {}).get("metric_key") or rule_id or "movement"
+    source_id = (data or {}).get("advice_source_id") or f"push:{ntype}:{rule_id or title}:{get_china_now().date().isoformat()}"
+
+    return AdviceCandidate(
+        user_id=user_id,
+        source="push",
+        source_id=source_id,
+        domain="movement",
+        title=title,
+        body=content or title,
+        metric_key=metric_key,
+        target_value=target_value,
+        evidence_tier=(data or {}).get("evidence_tier") or "wearable_proxy",
+        confidence=(data or {}).get("confidence") or "medium",
+        claim_boundary=(data or {}).get("claim_boundary") or "这是健康管理提醒, 不替代医生诊断、处方或治疗。",
+        valid_for_date=get_china_now().date(),
+    )
 
 
 class PushService:
@@ -249,6 +298,25 @@ class PushService:
                 "success": False,
                 "reason": "通知已禁用/低于阈值/规则已静音",
             }
+
+        advice_candidate = _advice_candidate_from_push(
+            user_id=user_id,
+            notification_type=notification_type,
+            title=title,
+            content=content,
+            data=data,
+            severity=severity,
+        )
+        if advice_candidate is not None:
+            decision = guard_and_record_advice(self.db, advice_candidate)
+            if not decision.allowed:
+                logger.info(
+                    "[push] 用户 %s 建议被 AdviceGuard 拦截: reason=%s source=%s",
+                    user_id,
+                    decision.reason,
+                    decision.conflicts_with_source_id,
+                )
+                return {"success": False, "reason": f"advice_guard_{decision.reason}"}
 
         # 去重检查必须先于 quiet-hours 延迟队列。
         # 否则夜间同一提醒会被重复写成多条 delayed, 到 08:30 一起 flush 出去。
@@ -735,7 +803,7 @@ class PushService:
         """获取用户的提醒配置"""
         return self.db.query(ReminderConfig).filter(
             ReminderConfig.user_id == user_id,
-            ReminderConfig.enabled == True
+            ReminderConfig.enabled.is_(True)
         ).all()
 
     def create_reminder(
@@ -808,7 +876,7 @@ class PushService:
 
         # 获取所有启用的提醒
         all_reminders = self.db.query(ReminderConfig).filter(
-            ReminderConfig.enabled == True
+            ReminderConfig.enabled.is_(True)
         ).all()
 
         due_reminders = []
@@ -838,7 +906,7 @@ class PushService:
             target_minutes = target_parts[0] * 60 + target_parts[1]
 
             return abs(current_minutes - target_minutes) <= tolerance_minutes
-        except:
+        except Exception:
             return False
 
 

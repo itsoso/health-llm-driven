@@ -102,6 +102,7 @@ from app.models.health_consultation import HealthConsultation, ConsultationItem
 from app.models.episode import (
     HealthEpisode, EpisodeAction, EpisodeFeedback, EpisodeOutcome,
 )
+from app.models.advice_ledger import AdviceLedger
 
 __all__ = [
     "User",
@@ -216,4 +217,5 @@ __all__ = [
     "EpisodeAction",
     "EpisodeFeedback",
     "EpisodeOutcome",
+    "AdviceLedger",
 ]

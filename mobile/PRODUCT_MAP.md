@@ -340,6 +340,7 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 | I | 声音笔记 Voice Journal | voice-chat ?intent=journal + record tab 按钮 | ✅ MVP |
 | W3 | 跑后教练推送 | tasks/garmin_sync.py auto_analyze_workout | ✅ |
 | J | Daily Operating Plan | api/daily_plan.py + services/daily_operating_plan.py + TodayPlanPanel | ✅ Phase 0 |
+| J-AdviceLedger | 建议一致性账本 | models/advice_ledger.py + services/advice_guard.py + daily_plan/push_service 接入 | ✅ Phase 1 |
 | J-Waist | 腰围代谢指标 | api/waist.py + twin/_collectors.fetch_waist_latest | ✅ Phase 0 |
 | J-BodyEntry | 体重腰围一屏录入 | mobile/app/body-measurements.tsx + services/bodyMeasurements.ts | ✅ Phase 1 |
 | K | Personal Health Trajectory Snapshot | api/trajectory.py + services/health_trajectory.py + TrajectorySnapshotPanel | ✅ Phase 0 |
