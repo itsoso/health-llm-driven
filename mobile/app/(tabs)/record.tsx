@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { emitClientEvent } from '../../services/clientEvents';
 import { useLatestGarmin } from '../../hooks/useDashboardData';
 import { recordWater, deleteWater } from '../../services/records';
+import { filterMedicationRecordItems } from '../../services/medicationFilters';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
@@ -45,9 +46,7 @@ export default function RecordScreen() {
   const activeMin = garmin?.active_minutes ?? 0;
   const calories = garmin?.active_calories ?? 0;
   const exerciseToday = Array.isArray(data?.exerciseToday) ? data.exerciseToday : [];
-  const medications = Array.isArray(data?.medicationToday)
-    ? data.medicationToday.filter((m: any) => m.category !== '保健品' && !/益生菌|AKK/i.test(m.name))
-    : data?.medicationToday;
+  const medications = filterMedicationRecordItems(data?.medicationToday);
   const weightStats = data?.weightStats;
   const bpStats = data?.bloodPressureStats;
 
