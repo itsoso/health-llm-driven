@@ -45,12 +45,16 @@ class ProfileResponse(BaseModel):
 
 class VariantCreateRequest(BaseModel):
     profile_id: int = Field(..., description="所属基因档案 ID")
+    rsid: Optional[str] = Field(None, max_length=30, description="rsID")
     category: str = Field(..., max_length=50, description="分类: nutrition/exercise/drug_sensitivity/disease_risk/sleep")
     gene_name: str = Field(..., max_length=50, description="基因名称")
     variant_name: Optional[str] = Field(None, max_length=100, description="变异名称")
     genotype: Optional[str] = Field(None, max_length=50, description="基因型")
+    raw_genotype: Optional[str] = Field(None, max_length=200, description="原始基因型")
     result_label: Optional[str] = Field(None, max_length=100, description="结果标签")
     risk_level: str = Field("info", description="风险等级: low/medium/high/info")
+    mapping_source: Optional[str] = Field("manual", max_length=50)
+    evidence_level: Optional[str] = Field("manual", max_length=50)
     description: Optional[str] = Field(None, description="描述")
     health_implications: Optional[Dict[str, Any]] = Field(None, description="健康影响 JSON")
 
@@ -60,12 +64,16 @@ class VariantBatchCreateRequest(BaseModel):
 
 
 class VariantUpdateRequest(BaseModel):
+    rsid: Optional[str] = Field(None, max_length=30)
     category: Optional[str] = Field(None, max_length=50)
     gene_name: Optional[str] = Field(None, max_length=50)
     variant_name: Optional[str] = Field(None, max_length=100)
     genotype: Optional[str] = Field(None, max_length=50)
+    raw_genotype: Optional[str] = Field(None, max_length=200)
     result_label: Optional[str] = Field(None, max_length=100)
     risk_level: Optional[str] = Field(None, max_length=20)
+    mapping_source: Optional[str] = Field(None, max_length=50)
+    evidence_level: Optional[str] = Field(None, max_length=50)
     description: Optional[str] = None
     health_implications: Optional[Dict[str, Any]] = None
 
@@ -74,12 +82,16 @@ class VariantResponse(BaseModel):
     id: int
     user_id: int
     profile_id: int
+    rsid: Optional[str] = None
     category: str
     gene_name: str
     variant_name: Optional[str] = None
     genotype: Optional[str] = None
+    raw_genotype: Optional[str] = None
     result_label: Optional[str] = None
     risk_level: str = "info"
+    mapping_source: Optional[str] = None
+    evidence_level: Optional[str] = None
     description: Optional[str] = None
     health_implications: Optional[Dict[str, Any]] = None
     created_at: Optional[str] = None
@@ -115,6 +127,177 @@ def _resolve_snp_mapping(genotype: str, snp_map: Dict[str, Any]):
         if mapping:
             return mapping
     return None
+
+
+def _normalize_rsid(value: Optional[str]) -> Optional[str]:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return None
+    if raw.startswith("rs") and raw[2:].isdigit():
+        return raw
+    if raw.isdigit():
+        return f"rs{raw}"
+    return None
+
+
+def _canonical_genotype(genotype: str, allowed: set[str]) -> Optional[str]:
+    for candidate in _genotype_candidates(genotype):
+        if candidate in allowed:
+            return candidate
+    return None
+
+
+def _derive_apoe_epsilon(raw_by_rsid: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """Infer APOE epsilon from rs429358 + rs7412 when phase is unambiguous."""
+    gt_429358 = _canonical_genotype(raw_by_rsid.get("rs429358", ""), {"TT", "CT", "CC"})
+    gt_7412 = _canonical_genotype(raw_by_rsid.get("rs7412", ""), {"CC", "CT", "TT"})
+    if not gt_429358:
+        return None
+
+    raw_pair = f"rs429358={raw_by_rsid.get('rs429358', '')}"
+    if raw_by_rsid.get("rs7412"):
+        raw_pair += f";rs7412={raw_by_rsid.get('rs7412', '')}"
+
+    if not gt_7412:
+        return {
+            "genotype": "APOE 未完整分型",
+            "result_label": "APOE rs429358 已检测，但缺少 rs7412，不能判定 ε2/ε3/ε4",
+            "risk_level": "info",
+            "raw_genotype": raw_pair,
+            "evidence_level": "requires_confirmation",
+            "health_implications": {
+                "requires_rsids": ["rs429358", "rs7412"],
+                "confirmation_required": True,
+                "reason": "APOE ε 型需要 rs429358 与 rs7412 双位点共同判定。",
+            },
+        }
+
+    # APOE allele definitions: e2=T/T, e3=T/C, e4=C/C for rs429358/rs7412.
+    resolved = {
+        ("TT", "CC"): ("ε3/ε3", "APOE 双位点分型 ε3/ε3，标准脂质/AD遗传风险", "low"),
+        ("TT", "CT"): ("ε2/ε3", "APOE 双位点分型 ε2/ε3，通常不是 ε4 风险型", "low"),
+        ("TT", "TT"): ("ε2/ε2", "APOE 双位点分型 ε2/ε2，注意结合血脂表型解读", "low"),
+        ("CT", "CC"): ("ε3/ε4", "APOE 双位点分型 ε3/ε4，心血管/AD风险轻度增高", "medium"),
+        ("CC", "CC"): ("ε4/ε4", "APOE 双位点分型 ε4/ε4，心血管/AD风险显著增高", "high"),
+    }.get((gt_429358, gt_7412))
+
+    if resolved is None:
+        genotype = "APOE 分型不确定"
+        result_label = "rs429358/rs7412 组合存在相位歧义或罕见组合，需实验室确认"
+        risk_level = "info"
+        evidence_level = "requires_confirmation"
+        confirmation_required = True
+    else:
+        genotype, result_label, risk_level = resolved
+        evidence_level = "screening"
+        confirmation_required = False
+
+    return {
+        "genotype": genotype,
+        "result_label": result_label,
+        "risk_level": risk_level,
+        "raw_genotype": raw_pair,
+        "evidence_level": evidence_level,
+        "health_implications": {
+            "requires_rsids": ["rs429358", "rs7412"],
+            "confirmation_required": confirmation_required,
+            "method": "APOE epsilon inferred from rs429358 and rs7412.",
+        },
+    }
+
+
+def _known_variant_payload(rsid: str, raw_genotype: str, snp: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if rsid == "rs429358":
+        apoe = _derive_apoe_epsilon({"rs429358": raw_genotype})
+        if apoe is None:
+            return None
+        return {
+            "rsid": rsid,
+            "category": snp["category"],
+            "gene_name": snp["gene"],
+            "variant_name": "APOE ε2/ε3/ε4 双位点分型",
+            "description": "APOE ε 型需要 rs429358 + rs7412 共同判定；单个位点不作最终风险结论。",
+            "mapping_source": "apoe_pair",
+            **apoe,
+        }
+
+    mapping = _resolve_snp_mapping(raw_genotype, snp["map"])
+    if not mapping:
+        return None
+
+    geno_label, result_label, risk = mapping
+    evidence_level = "screening"
+    health_implications = None
+    if rsid == "rs1265181":
+        is_risk_marker = risk == "high"
+        result_label = (
+            "HLA-B*58:01 风险标记，需临床 HLA 分型确认后再决定别嘌醇"
+            if is_risk_marker
+            else "未见 rs1265181 风险标记；不能替代临床 HLA-B*58:01 分型"
+        )
+        evidence_level = "requires_confirmation" if is_risk_marker else "screening"
+        health_implications = {
+            "confirmation_required": is_risk_marker,
+            "confirmatory_test": "HLA-B*58:01 clinical genotyping",
+            "reason": "消费级芯片位点只能作为筛查提示，不能替代临床 HLA 分型。",
+        }
+
+    return {
+        "rsid": rsid,
+        "category": snp["category"],
+        "gene_name": snp["gene"],
+        "variant_name": snp["variant"],
+        "genotype": geno_label,
+        "raw_genotype": raw_genotype,
+        "result_label": result_label,
+        "risk_level": risk,
+        "description": snp["desc"],
+        "mapping_source": "known_snp",
+        "evidence_level": evidence_level,
+        "health_implications": health_implications,
+    }
+
+
+def _postprocess_pdf_variant_payloads(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
+    processed: List[Dict[str, Any]] = []
+    stats = {
+        "saved": 0,
+        "rewrote": 0,
+        "dropped_no_rsid": 0,
+        "dropped_unknown_rsid": 0,
+        "dropped_unmapped_genotype": 0,
+        "deduped": 0,
+    }
+    seen_rsid = set()
+
+    for row in rows:
+        rsid = _normalize_rsid(row.get("rsid"))
+        if not rsid:
+            stats["dropped_no_rsid"] += 1
+            continue
+        if rsid in seen_rsid:
+            stats["deduped"] += 1
+            continue
+        seen_rsid.add(rsid)
+
+        known_entry = KNOWN_SNPS.get(rsid)
+        if known_entry is None:
+            stats["dropped_unknown_rsid"] += 1
+            continue
+
+        payload = _known_variant_payload(rsid, (row.get("genotype") or "").strip(), known_entry)
+        if payload is None:
+            stats["dropped_unmapped_genotype"] += 1
+            continue
+        if (
+            (row.get("gene_name") or "").strip() != payload["gene_name"]
+            or (row.get("variant_name") or "").strip() != payload["variant_name"]
+        ):
+            stats["rewrote"] += 1
+        processed.append(payload)
+        stats["saved"] += 1
+
+    return processed, stats
 
 
 def _active_profile_variant_query(db: Session, user_id: int):
@@ -353,8 +536,8 @@ def upload_genetic_txt(
     db.commit()
     db.refresh(profile)
 
-    # 解析 TXT
-    matched = []
+    # 解析 TXT: 先收集原始 rsid/genotype, 再按白名单生成正式解释.
+    raw_by_rsid: Dict[str, str] = {}
     for line in req.txt_content.split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
@@ -362,26 +545,57 @@ def upload_genetic_txt(
         parts = line.split("\t")
         if len(parts) < 4:
             continue
-        rsid = parts[0]
+        rsid = _normalize_rsid(parts[0])
         genotype = parts[3].strip()
-        if rsid in KNOWN_SNPS and genotype != "--":
-            snp = KNOWN_SNPS[rsid]
-            mapping = _resolve_snp_mapping(genotype, snp["map"])
-            if mapping:
-                geno_label, result_label, risk = mapping
-                variant = GeneticVariant(
-                    user_id=current_user.id,
-                    profile_id=profile.id,
-                    category=snp["category"],
-                    gene_name=snp["gene"],
-                    variant_name=snp["variant"],
-                    genotype=geno_label,
-                    result_label=result_label,
-                    risk_level=risk,
-                    description=snp["desc"],
-                )
-                db.add(variant)
-                matched.append({"gene": snp["gene"], "genotype": geno_label, "result": result_label, "risk": risk})
+        if rsid and genotype != "--":
+            raw_by_rsid[rsid] = genotype
+
+    matched = []
+    for rsid, genotype in raw_by_rsid.items():
+        if rsid not in KNOWN_SNPS:
+            continue
+        snp = KNOWN_SNPS[rsid]
+        if rsid == "rs429358":
+            apoe = _derive_apoe_epsilon(raw_by_rsid)
+            if apoe is None:
+                continue
+            payload = {
+                "rsid": rsid,
+                "category": snp["category"],
+                "gene_name": snp["gene"],
+                "variant_name": "APOE ε2/ε3/ε4 双位点分型",
+                "description": "APOE ε 型需要 rs429358 + rs7412 共同判定；单个位点不作最终风险结论。",
+                "mapping_source": "apoe_pair",
+                **apoe,
+            }
+        else:
+            payload = _known_variant_payload(rsid, genotype, snp)
+            if payload is None:
+                continue
+
+        variant = GeneticVariant(
+            user_id=current_user.id,
+            profile_id=profile.id,
+            rsid=payload["rsid"],
+            category=payload["category"],
+            gene_name=payload["gene_name"],
+            variant_name=payload["variant_name"],
+            genotype=payload["genotype"],
+            raw_genotype=payload["raw_genotype"],
+            result_label=payload["result_label"],
+            risk_level=payload["risk_level"],
+            description=payload["description"],
+            health_implications=payload.get("health_implications"),
+            mapping_source=payload.get("mapping_source", "known_snp"),
+            evidence_level=payload.get("evidence_level", "screening"),
+        )
+        db.add(variant)
+        matched.append({
+            "gene": payload["gene_name"],
+            "genotype": payload["genotype"],
+            "result": payload["result_label"],
+            "risk": payload["risk_level"],
+        })
 
     profile.notes = f"TXT 解析完成，匹配 {len(matched)} 个健康位点"
     db.commit()
@@ -540,59 +754,27 @@ category 分类规则:
 
         # 后处理: rsid 白名单校验 + 用 KNOWN_SNPS 重写 gene_name/variant_name
         # 根治 2026-05-12 串字段 bug — KNOWN_SNPS 是唯一真理来源
-        saved = 0
-        rewrote = 0
-        dropped_no_rsid = 0
-        dropped_bad_rsid = 0
-        seen_rsid = set()  # 去重同一 PDF 内重复的 rsid
+        processed_variants, stats = _postprocess_pdf_variant_payloads(all_variants)
 
-        for v in all_variants:
+        for payload in processed_variants:
             try:
-                raw_rsid = (v.get("rsid") or "").strip().lower()
-                # 规范 rsid: "rs1801133" / "RS1801133" / "1801133" → "rs1801133"
-                if raw_rsid and not raw_rsid.startswith("rs"):
-                    if raw_rsid.isdigit():
-                        raw_rsid = "rs" + raw_rsid
-                    else:
-                        raw_rsid = ""
-
-                # 没 rsid → 丢弃 (新规则: 宁缺勿滥)
-                if not raw_rsid or not re.match(r'^rs\d+$', raw_rsid):
-                    dropped_no_rsid += 1
-                    continue
-
-                # 同一 PDF 内去重
-                if raw_rsid in seen_rsid:
-                    continue
-                seen_rsid.add(raw_rsid)
-
-                # 字典查 — 命中则用字典的 gene/variant/category 覆盖 LLM 填的
-                gene_name = (v.get("gene_name") or "").strip()
-                variant_name = (v.get("variant_name") or "").strip()
-                category = v.get("category", "other")
-
-                known_entry = KNOWN_SNPS.get(raw_rsid)
-                if known_entry is not None:
-                    # 字典命中 — 用字典的为准 (避免 LLM 串错)
-                    if gene_name != known_entry["gene"] or variant_name != known_entry["variant"]:
-                        rewrote += 1
-                    gene_name = known_entry["gene"]
-                    variant_name = known_entry["variant"]
-                    category = known_entry["category"]
-
                 variant = GeneticVariant(
                     user_id=user_id,
                     profile_id=profile_id,
-                    category=category,
-                    gene_name=gene_name,
-                    variant_name=variant_name,
-                    genotype=(v.get("genotype") or "").strip(),
-                    result_label=(v.get("result_label") or "").strip(),
-                    risk_level=v.get("risk_level", "info"),
-                    description=v.get("description", ""),
+                    rsid=payload["rsid"],
+                    category=payload["category"],
+                    gene_name=payload["gene_name"],
+                    variant_name=payload["variant_name"],
+                    genotype=payload["genotype"],
+                    raw_genotype=payload["raw_genotype"],
+                    result_label=payload["result_label"],
+                    risk_level=payload["risk_level"],
+                    description=payload["description"],
+                    health_implications=payload.get("health_implications"),
+                    mapping_source=payload.get("mapping_source", "known_snp"),
+                    evidence_level=payload.get("evidence_level", "screening"),
                 )
                 db.add(variant)
-                saved += 1
             except Exception as e:
                 logger.warning(f"[基因PDF] 保存位点失败: {e}")
 
@@ -600,13 +782,15 @@ category 分类规则:
         profile = db.query(GeneticProfile).get(profile_id)
         if profile:
             profile.notes = (
-                f"PDF 自动提取完成, 共 {saved} 个位点 "
-                f"(字典重写 {rewrote}, 丢弃无 rsid {dropped_no_rsid})"
+                f"PDF 自动提取完成, 共 {stats['saved']} 个位点 "
+                f"(字典重写 {stats['rewrote']}, 丢弃无 rsid {stats['dropped_no_rsid']}, "
+                f"丢弃未知 rsid {stats['dropped_unknown_rsid']})"
             )
         db.commit()
         logger.info(
-            f"[基因PDF] profile={profile_id} 完成: saved={saved} "
-            f"rewrote_by_dict={rewrote} dropped_no_rsid={dropped_no_rsid}"
+            f"[基因PDF] profile={profile_id} 完成: saved={stats['saved']} "
+            f"rewrote_by_dict={stats['rewrote']} dropped_no_rsid={stats['dropped_no_rsid']} "
+            f"dropped_unknown_rsid={stats['dropped_unknown_rsid']}"
         )
 
         # Memory KG: 基因位点 → entity + 'self_user has_genotype variant' (旁路)
@@ -769,12 +953,16 @@ def get_profile_detail(
         "variants": [
             {
                 "id": v.id,
+                "rsid": v.rsid,
                 "category": v.category,
                 "gene_name": v.gene_name,
                 "variant_name": v.variant_name,
                 "genotype": v.genotype,
+                "raw_genotype": v.raw_genotype,
                 "result_label": v.result_label,
                 "risk_level": v.risk_level,
+                "mapping_source": v.mapping_source,
+                "evidence_level": v.evidence_level,
                 "description": v.description,
                 "health_implications": v.health_implications,
             }
@@ -831,12 +1019,16 @@ def batch_create_variants(
         variant = GeneticVariant(
             user_id=current_user.id,
             profile_id=v.profile_id,
+            rsid=_normalize_rsid(v.rsid),
             category=v.category,
             gene_name=v.gene_name,
             variant_name=v.variant_name,
             genotype=v.genotype,
+            raw_genotype=v.raw_genotype,
             result_label=v.result_label,
             risk_level=v.risk_level,
+            mapping_source=v.mapping_source,
+            evidence_level=v.evidence_level,
             description=v.description,
             health_implications=v.health_implications,
         )
@@ -886,12 +1078,16 @@ def update_variant(
     db.refresh(variant)
     return {
         "id": variant.id,
+        "rsid": variant.rsid,
         "category": variant.category,
         "gene_name": variant.gene_name,
         "variant_name": variant.variant_name,
         "genotype": variant.genotype,
+        "raw_genotype": variant.raw_genotype,
         "result_label": variant.result_label,
         "risk_level": variant.risk_level,
+        "mapping_source": variant.mapping_source,
+        "evidence_level": variant.evidence_level,
         "description": variant.description,
         "health_implications": variant.health_implications,
     }
@@ -934,12 +1130,16 @@ def list_variants(
         {
             "id": v.id,
             "profile_id": v.profile_id,
+            "rsid": v.rsid,
             "category": v.category,
             "gene_name": v.gene_name,
             "variant_name": v.variant_name,
             "genotype": v.genotype,
+            "raw_genotype": v.raw_genotype,
             "result_label": v.result_label,
             "risk_level": v.risk_level,
+            "mapping_source": v.mapping_source,
+            "evidence_level": v.evidence_level,
             "description": v.description,
             "health_implications": v.health_implications,
         }
@@ -1551,9 +1751,10 @@ def reconcile_profile_by_dict(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """修复 2026-05-12 串字段 bug: 按 variant_name 反查 KNOWN_SNPS, 重写 gene/category.
+    """修复 2026-05-12 串字段 bug: 按 rsid/variant_name 反查 KNOWN_SNPS, 重写 gene/category.
 
-    机制: variant_name 在 PDF 提取时常含 rsid (如 RS1801133), 用这个找字典.
+    机制: 新数据优先使用结构化 rsid; 老数据若 variant_name 含 rsid (如 RS1801133)
+    则继续用它找字典.
     找到 → 重写 gene/variant/category; 找不到 → 标 note 不删 (保留原始记录).
 
     仅允许 profile owner 自己用.
@@ -1571,10 +1772,12 @@ def reconcile_profile_by_dict(
     rewritten = []
     unmatched = []
     for v in variants:
-        # 尝试从 variant_name 抽 rsid
-        vn = (v.variant_name or "").upper().strip()
-        m = _re.search(r'RS(\d+)', vn)
-        rsid = f"rs{m.group(1)}" if m else None
+        # 新数据优先用结构化 rsid; 老 PDF 数据从 variant_name 抽 rsid.
+        rsid = _normalize_rsid(v.rsid)
+        if rsid is None:
+            vn = (v.variant_name or "").upper().strip()
+            m = _re.search(r'RS(\d+)', vn)
+            rsid = f"rs{m.group(1)}" if m else None
         known = KNOWN_SNPS.get(rsid) if rsid else None
         if known is None:
             unmatched.append({
@@ -1589,21 +1792,34 @@ def reconcile_profile_by_dict(
         new_variant = known["variant"]
         new_category = known["category"]
 
-        # 再查 genotype map 重写 result_label + risk_level (修 label 也串字段的问题)
+        # 再查 genotype map 重写 genotype/result_label/risk_level (修 label 也串字段的问题)
+        new_genotype = v.genotype
         new_label = v.result_label
         new_risk = v.risk_level
-        gt = (v.genotype or "").strip().upper()
-        map_entry = known["map"].get(gt)
-        if map_entry is None and len(gt) == 2:
-            # 尝试反转 (AG ↔ GA)
-            map_entry = known["map"].get(gt[::-1])
-        if map_entry is not None:
-            _geno_label, new_label, new_risk = map_entry
+        new_raw_genotype = v.raw_genotype
+        new_mapping_source = v.mapping_source or "known_snp"
+        new_evidence_level = v.evidence_level or "screening"
+        new_health_implications = v.health_implications
+        payload = _known_variant_payload(rsid, v.raw_genotype or v.genotype or "", known)
+        if payload is not None:
+            new_genotype = payload["genotype"]
+            new_raw_genotype = payload["raw_genotype"]
+            new_label = payload["result_label"]
+            new_risk = payload["risk_level"]
+            new_mapping_source = payload.get("mapping_source", new_mapping_source)
+            new_evidence_level = payload.get("evidence_level", new_evidence_level)
+            new_health_implications = payload.get("health_implications")
 
         changed = (
             (v.gene_name, v.variant_name, v.category) != (new_gene, new_variant, new_category)
+            or v.rsid != rsid
+            or v.genotype != new_genotype
+            or v.raw_genotype != new_raw_genotype
             or v.result_label != new_label
             or v.risk_level != new_risk
+            or v.mapping_source != new_mapping_source
+            or v.evidence_level != new_evidence_level
+            or v.health_implications != new_health_implications
         )
         if changed:
             rewritten.append({
@@ -1613,23 +1829,38 @@ def reconcile_profile_by_dict(
                     "gene_name": v.gene_name,
                     "variant_name": v.variant_name,
                     "category": v.category,
+                    "genotype": v.genotype,
+                    "raw_genotype": v.raw_genotype,
                     "result_label": v.result_label,
                     "risk_level": v.risk_level,
+                    "mapping_source": v.mapping_source,
+                    "evidence_level": v.evidence_level,
                 },
                 "after": {
+                    "rsid": rsid,
                     "gene_name": new_gene,
                     "variant_name": new_variant,
                     "category": new_category,
+                    "genotype": new_genotype,
+                    "raw_genotype": new_raw_genotype,
                     "result_label": new_label,
                     "risk_level": new_risk,
+                    "mapping_source": new_mapping_source,
+                    "evidence_level": new_evidence_level,
                 },
             })
             if not dry_run:
+                v.rsid = rsid
                 v.gene_name = new_gene
                 v.variant_name = new_variant
                 v.category = new_category
+                v.genotype = new_genotype
+                v.raw_genotype = new_raw_genotype
                 v.result_label = new_label
                 v.risk_level = new_risk
+                v.mapping_source = new_mapping_source
+                v.evidence_level = new_evidence_level
+                v.health_implications = new_health_implications
 
     if not dry_run:
         db.commit()

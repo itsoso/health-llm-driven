@@ -96,6 +96,7 @@ def _resolve_active_profile(db: Session, user_id: int) -> Optional[GeneticProfil
         return None
 
     known = _get_known_snps()
+    known_rsids = set(known.keys())
     known_genes = {snp["gene"] for snp in known.values()}
     known_gene_variant = {(snp["gene"], snp["variant"]) for snp in known.values()}
 
@@ -105,10 +106,11 @@ def _resolve_active_profile(db: Session, user_id: int) -> Optional[GeneticProfil
             .filter(GeneticVariant.profile_id == p.id)
             .all()
         )
-        # 严格命中: (gene, variant) 完全匹配字典
+        # 严格命中: 新数据优先用 rsid, 旧数据兼容 (gene, variant) 完全匹配字典.
         strict_hits = sum(
             1 for v in variants
-            if (v.gene_name, v.variant_name or "") in known_gene_variant
+            if (getattr(v, "rsid", None) in known_rsids)
+            or (v.gene_name, v.variant_name or "") in known_gene_variant
         )
         # 宽松命中: gene 匹配字典任一条
         loose_hits = sum(1 for v in variants if v.gene_name in known_genes)
@@ -193,15 +195,31 @@ def _match_variant_for_snp(
 ) -> Optional[GeneticVariant]:
     """按 KNOWN_SNPS 条目匹配用户实测 variant.
 
-    先用 (gene, variant) 精确匹配; 没有精确命中时才退回同 gene。列表页和详情页
-    必须共用这个逻辑, 否则同一 SNP 会出现列表高风险、详情低风险的分歧。
+    新导入数据先用 rsid 精确匹配; 老数据再用 (gene, variant) 精确匹配;
+    没有精确命中时才退回同 gene。列表页和详情页必须共用这个逻辑, 否则同一
+    SNP 会出现列表高风险、详情低风险的分歧。
     """
+    known = _get_known_snps()
+    expected_rsid = None
+    for candidate_rsid, candidate in known.items():
+        if candidate is snp or (
+            candidate["gene"] == snp["gene"]
+            and candidate["variant"] == snp["variant"]
+            and candidate["category"] == snp["category"]
+        ):
+            expected_rsid = candidate_rsid
+            break
+
     gene = snp["gene"]
     variant_label = snp["variant"]
+    rsid_exact: Optional[GeneticVariant] = None
     exact: Optional[GeneticVariant] = None
     fallback: Optional[GeneticVariant] = None
 
     for v in variants:
+        if expected_rsid and getattr(v, "rsid", None) == expected_rsid:
+            rsid_exact = v
+            continue
         if v.gene_name != gene:
             continue
         if fallback is None:
@@ -209,7 +227,7 @@ def _match_variant_for_snp(
         if (v.variant_name or "") == variant_label:
             exact = v
 
-    return exact or fallback
+    return rsid_exact or exact or fallback
 
 
 def build_report(db: Session, user_id: int) -> Dict[str, Any]:
@@ -255,9 +273,13 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
                 "description": snp["desc"],
                 "hit": True,
                 "genotype": v.genotype,
+                "raw_genotype": getattr(v, "raw_genotype", None),
                 "result_label": v.result_label,
                 "risk_level": v.risk_level or "info",
                 "variant_nature": v.variant_nature or "neutral",
+                "mapping_source": getattr(v, "mapping_source", None),
+                "evidence_level": getattr(v, "evidence_level", None),
+                "health_implications": v.health_implications,
                 "related_cards": [_card_to_dict(c) for c in related],
             })
         else:
@@ -269,9 +291,13 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
                 "description": snp["desc"],
                 "hit": False,
                 "genotype": None,
+                "raw_genotype": None,
                 "result_label": None,
                 "risk_level": None,
                 "variant_nature": None,
+                "mapping_source": None,
+                "evidence_level": None,
+                "health_implications": None,
                 "related_cards": [],
             })
 
@@ -540,8 +566,12 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
     user_item: Dict[str, Any] = {
         "hit": False,
         "genotype": None,
+        "raw_genotype": None,
         "result_label": None,
         "risk_level": None,
+        "mapping_source": None,
+        "evidence_level": None,
+        "health_implications": None,
     }
     related_cards: List[Dict[str, Any]] = []
     if profile is not None:
@@ -557,8 +587,12 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
             user_item = {
                 "hit": True,
                 "genotype": v.genotype,
+                "raw_genotype": getattr(v, "raw_genotype", None),
                 "result_label": v.result_label,
                 "risk_level": v.risk_level or "info",
+                "mapping_source": getattr(v, "mapping_source", None),
+                "evidence_level": getattr(v, "evidence_level", None),
+                "health_implications": v.health_implications,
             }
             user_cards = _fetch_related_cards(db, user_id)
             keys = _gene_to_card_match_keys(snp_static["gene"], snp_static["variant"])

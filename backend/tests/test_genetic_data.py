@@ -722,3 +722,146 @@ class TestSampleIntegration:
         assert by_gene["GPX1"]["risk"] == "medium"
         assert by_gene["CHRNA4"]["risk"] == "medium"
         assert by_gene["SLC6A4"]["risk"] == "low"
+
+    def test_upload_txt_stores_rsid_and_raw_genotype(self, client, db, auth_user_and_headers):
+        """导入后的位点必须保留 rsid 和原始基因型, 便于后续审计/重解释."""
+        user, headers = auth_user_and_headers
+        sample = "# rsid\tchromosome\tposition\tgenotype\nrs1801133\t1\t11856378\tAA\n"
+
+        res = client.post(
+            "/api/v1/genetic/profiles/upload-txt",
+            json={
+                "test_provider": "WeGene",
+                "test_date": "2026-03-29",
+                "txt_content": sample,
+            },
+            headers=headers,
+        )
+
+        assert res.status_code == 200, res.text
+        variant = (
+            db.query(GeneticVariant)
+            .filter(GeneticVariant.user_id == user.id, GeneticVariant.gene_name == "MTHFR")
+            .one()
+        )
+        assert variant.rsid == "rs1801133"
+        assert variant.raw_genotype == "AA"
+        assert variant.mapping_source == "known_snp"
+        assert variant.evidence_level == "screening"
+
+    def test_upload_txt_derives_apoe_from_rs429358_and_rs7412(self, client, db, auth_user_and_headers):
+        """APOE 不能只靠 rs429358; rs429358+rs7412 可无歧义时才给 epsilon 分型."""
+        user, headers = auth_user_and_headers
+        sample = (
+            "# rsid\tchromosome\tposition\tgenotype\n"
+            "rs429358\t19\t45411941\tCT\n"
+            "rs7412\t19\t45412079\tCC\n"
+        )
+
+        res = client.post(
+            "/api/v1/genetic/profiles/upload-txt",
+            json={
+                "test_provider": "WeGene",
+                "test_date": "2026-03-29",
+                "txt_content": sample,
+            },
+            headers=headers,
+        )
+
+        assert res.status_code == 200, res.text
+        apoe = (
+            db.query(GeneticVariant)
+            .filter(GeneticVariant.user_id == user.id, GeneticVariant.gene_name == "APOE")
+            .one()
+        )
+        assert apoe.rsid == "rs429358"
+        assert apoe.raw_genotype == "rs429358=CT;rs7412=CC"
+        assert apoe.genotype == "ε3/ε4"
+        assert apoe.risk_level == "medium"
+        assert "双位点" in apoe.result_label
+
+    def test_upload_txt_treats_hla_b5801_proxy_as_confirmation_needed(self, client, db, auth_user_and_headers):
+        """消费级 tag SNP 不能直接写成 HLA-B*58:01 阳性/禁用, 只能作为确认检测提示."""
+        user, headers = auth_user_and_headers
+        sample = "# rsid\tchromosome\tposition\tgenotype\nrs1265181\t6\t31314470\tAA\n"
+
+        res = client.post(
+            "/api/v1/genetic/profiles/upload-txt",
+            json={
+                "test_provider": "WeGene",
+                "test_date": "2026-03-29",
+                "txt_content": sample,
+            },
+            headers=headers,
+        )
+
+        assert res.status_code == 200, res.text
+        hla = (
+            db.query(GeneticVariant)
+            .filter(GeneticVariant.user_id == user.id, GeneticVariant.rsid == "rs1265181")
+            .one()
+        )
+        assert hla.gene_name == "HLA-B*5801"
+        assert "禁用" not in hla.result_label
+        assert "确认" in hla.result_label
+        assert hla.health_implications["confirmation_required"] is True
+        assert hla.evidence_level == "requires_confirmation"
+
+    def test_upload_txt_keeps_hla_b5801_negative_proxy_low_risk(self, client, db, auth_user_and_headers):
+        """rs1265181 阴性只是 tag SNP 筛查阴性, 不应被保守提示误标成高风险."""
+        user, headers = auth_user_and_headers
+        sample = "# rsid\tchromosome\tposition\tgenotype\nrs1265181\t6\t31314470\tGG\n"
+
+        res = client.post(
+            "/api/v1/genetic/profiles/upload-txt",
+            json={
+                "test_provider": "WeGene",
+                "test_date": "2026-03-29",
+                "txt_content": sample,
+            },
+            headers=headers,
+        )
+
+        assert res.status_code == 200, res.text
+        hla = (
+            db.query(GeneticVariant)
+            .filter(GeneticVariant.user_id == user.id, GeneticVariant.rsid == "rs1265181")
+            .one()
+        )
+        assert hla.raw_genotype == "GG"
+        assert hla.genotype == "阴性"
+        assert hla.risk_level == "low"
+        assert "不能替代临床" in hla.result_label
+        assert hla.health_implications["confirmation_required"] is False
+        assert hla.evidence_level == "screening"
+
+
+class TestGeneticPdfPostprocess:
+    """PDF 视觉抽取后处理必须把未知/幻觉 rsid 隔离在正式解读之外."""
+
+    def test_pdf_postprocess_drops_unknown_rsids_from_formal_variants(self):
+        from app.api.genetic_data import _postprocess_pdf_variant_payloads
+
+        rows = [
+            {
+                "rsid": "rs1801133",
+                "gene_name": "WRONG",
+                "variant_name": "wrong",
+                "genotype": "AA",
+                "risk_level": "low",
+            },
+            {
+                "rsid": "rs999999999",
+                "gene_name": "FAKE",
+                "variant_name": "幻觉位点",
+                "genotype": "TT",
+                "risk_level": "high",
+            },
+        ]
+
+        variants, stats = _postprocess_pdf_variant_payloads(rows)
+
+        assert stats["saved"] == 1
+        assert stats["dropped_unknown_rsid"] == 1
+        assert variants[0]["rsid"] == "rs1801133"
+        assert variants[0]["gene_name"] == "MTHFR"

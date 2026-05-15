@@ -26,15 +26,19 @@ class GeneticVariant(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     profile_id = Column(Integer, ForeignKey("genetic_profiles.id", ondelete="CASCADE"), nullable=False)
+    rsid = Column(String(30), index=True)
     category = Column(String(50), nullable=False, index=True)  # nutrition/exercise/drug_sensitivity/disease_risk/sleep
     gene_name = Column(String(50), nullable=False)
     variant_name = Column(String(100))
     # 2026-05-13 C 优化: genotype 是用户最敏感"独一无二"字段, 列加密
     # (Fernet 输出 ~140 char, 旧明文行 decrypt fallback 共存)
     genotype = Column(EncryptedString(200))
+    raw_genotype = Column(EncryptedString(200))
     result_label = Column(String(100))
     risk_level = Column(String(20), default="info")  # low/medium/high/info
     variant_nature = Column(String(20), default="neutral")  # protective/risk/neutral — 区分优势基因vs风险基因
+    mapping_source = Column(String(50), default="known_snp")
+    evidence_level = Column(String(50), default="screening")
     description = Column(Text)
     health_implications = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

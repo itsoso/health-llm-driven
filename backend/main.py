@@ -160,6 +160,10 @@ async def startup_event():
                  "VARCHAR(20) DEFAULT 'warning'")
         _add_col("user_notification_settings", "alert_rule_opt_outs",
                  "JSONB DEFAULT '[]'::jsonb")
+        _add_col("genetic_variants", "rsid", "VARCHAR(30) DEFAULT NULL")
+        _add_col("genetic_variants", "raw_genotype", "VARCHAR(200) DEFAULT NULL")
+        _add_col("genetic_variants", "mapping_source", "VARCHAR(50) DEFAULT 'known_snp'")
+        _add_col("genetic_variants", "evidence_level", "VARCHAR(50) DEFAULT 'screening'")
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")
