@@ -363,6 +363,57 @@ class TestListVariantsByCategory:
         assert len(data) == 2
         assert all(v["category"] == "nutrition" for v in data)
 
+    def test_list_variants_uses_active_profile_only(self, client, db, auth_user_and_headers):
+        """多份 profile 并存时, variants/me 只返回当前 active profile."""
+        user, headers = auth_user_and_headers
+        old_profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="旧微基因",
+            test_date=date(2021, 5, 15),
+        )
+        new_profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="WeGene",
+            test_date=date(2026, 3, 29),
+        )
+        db.add_all([old_profile, new_profile])
+        db.commit()
+        db.refresh(old_profile)
+        db.refresh(new_profile)
+
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=old_profile.id,
+            category="nutrition",
+            gene_name="MTHFR",
+            genotype="CT",
+            risk_level="medium",
+        ))
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=new_profile.id,
+            category="nutrition",
+            gene_name="MTHFR",
+            genotype="TT",
+            risk_level="high",
+        ))
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=new_profile.id,
+            category="nutrition",
+            gene_name="ALDH2",
+            genotype="GA",
+            risk_level="medium",
+        ))
+        db.commit()
+
+        res = client.get("/api/v1/genetic/variants/me", headers=headers)
+
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 2
+        assert {item["profile_id"] for item in data} == {new_profile.id}
+
 
 class TestSummary:
     """GET /genetic/summary/me"""
@@ -400,6 +451,121 @@ class TestSummary:
         assert data["categories"]["nutrition"]["count"] == 2
         assert len(data["categories"]["nutrition"]["high_risk"]) == 1
         assert data["categories"]["nutrition"]["high_risk"][0]["gene_name"] == "MTHFR"
+
+    def test_summary_uses_active_profile_only(self, client, db, auth_user_and_headers):
+        """多份 profile 并存时, summary 不应把历史 profile 重复计入."""
+        user, headers = auth_user_and_headers
+        old_profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="旧微基因",
+            test_date=date(2021, 5, 15),
+        )
+        new_profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="WeGene",
+            test_date=date(2026, 3, 29),
+        )
+        db.add_all([old_profile, new_profile])
+        db.commit()
+        db.refresh(old_profile)
+        db.refresh(new_profile)
+
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=old_profile.id,
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="C677T",
+            genotype="CT",
+            risk_level="medium",
+        ))
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=new_profile.id,
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="C677T",
+            genotype="TT",
+            risk_level="high",
+        ))
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=new_profile.id,
+            category="nutrition",
+            gene_name="ALDH2",
+            variant_name="酒精代谢",
+            genotype="GA",
+            risk_level="medium",
+        ))
+        db.commit()
+
+        res = client.get("/api/v1/genetic/summary/me", headers=headers)
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["total_variants"] == 2
+        assert data["categories"]["nutrition"]["count"] == 2
+        assert len(data["categories"]["nutrition"]["high_risk"]) == 1
+
+
+class TestComprehensiveProfile:
+    """GET /genetic/profile/me/comprehensive"""
+
+    def test_comprehensive_uses_active_profile_only(self, client, db, auth_user_and_headers):
+        """全景档案和 PRS 应基于 active profile, 避免新旧报告重复计数."""
+        user, headers = auth_user_and_headers
+        old_profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="旧微基因",
+            test_date=date(2021, 5, 15),
+        )
+        new_profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="WeGene",
+            test_date=date(2026, 3, 29),
+        )
+        db.add_all([old_profile, new_profile])
+        db.commit()
+        db.refresh(old_profile)
+        db.refresh(new_profile)
+
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=old_profile.id,
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="C677T",
+            genotype="CT",
+            risk_level="medium",
+        ))
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=new_profile.id,
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="C677T",
+            genotype="TT",
+            risk_level="high",
+        ))
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=new_profile.id,
+            category="nutrition",
+            gene_name="ALDH2",
+            variant_name="酒精代谢",
+            genotype="GA",
+            risk_level="medium",
+        ))
+        db.commit()
+
+        res = client.get("/api/v1/genetic/profile/me/comprehensive", headers=headers)
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["genes_tested"] == 2
+        folate_genes = data["profile"]["nutrition"]["folate"]["genes"]
+        assert len(folate_genes) == 1
+        assert folate_genes[0]["genotype"] == "TT"
 
 
 class TestOtherUserCannotAccess:

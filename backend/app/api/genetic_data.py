@@ -117,6 +117,26 @@ def _resolve_snp_mapping(genotype: str, snp_map: Dict[str, Any]):
     return None
 
 
+def _active_profile_variant_query(db: Session, user_id: int):
+    from app.services.genetic_report import _resolve_active_profile
+
+    profile = _resolve_active_profile(db, user_id)
+    if profile is None:
+        return None, None
+    query = db.query(GeneticVariant).filter(
+        GeneticVariant.user_id == user_id,
+        GeneticVariant.profile_id == profile.id,
+    )
+    return profile, query
+
+
+def _active_profile_variants(db: Session, user_id: int):
+    profile, query = _active_profile_variant_query(db, user_id)
+    if query is None:
+        return profile, []
+    return profile, query.all()
+
+
 # ══════════════════════════════════════════════════════════
 # PDF 上传 + AI 自动提取
 # ══════════════════════════════════════════════════════════
@@ -902,10 +922,13 @@ def list_variants(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    query = db.query(GeneticVariant).filter(GeneticVariant.user_id == current_user.id)
-    if category:
-        query = query.filter(GeneticVariant.category == category)
-    variants = query.order_by(GeneticVariant.category, GeneticVariant.gene_name).all()
+    _, query = _active_profile_variant_query(db, current_user.id)
+    if query is None:
+        variants = []
+    else:
+        if category:
+            query = query.filter(GeneticVariant.category == category)
+        variants = query.order_by(GeneticVariant.category, GeneticVariant.gene_name).all()
 
     return [
         {
@@ -934,11 +957,7 @@ def get_summary(
     db: Session = Depends(get_db),
 ):
     """按分类统计变异位点数量，并列出高风险项"""
-    variants = (
-        db.query(GeneticVariant)
-        .filter(GeneticVariant.user_id == current_user.id)
-        .all()
-    )
+    _, variants = _active_profile_variants(db, current_user.id)
 
     categories: Dict[str, Any] = {}
     for v in variants:
@@ -988,7 +1007,7 @@ def get_cognitive_profile(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    variants = db.query(GeneticVariant).filter(GeneticVariant.user_id == current_user.id).all()
+    _, variants = _active_profile_variants(db, current_user.id)
     by_gene = {}
     for v in variants:
         by_gene.setdefault(v.gene_name.upper(), v)
@@ -1064,7 +1083,7 @@ def get_personality_profile(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    variants = db.query(GeneticVariant).filter(GeneticVariant.user_id == current_user.id).all()
+    _, variants = _active_profile_variants(db, current_user.id)
     by_gene = {}
     for v in variants:
         by_gene.setdefault(v.gene_name.upper(), v)
@@ -1155,7 +1174,7 @@ def get_comprehensive_profile(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    variants = db.query(GeneticVariant).filter(GeneticVariant.user_id == current_user.id).all()
+    _, variants = _active_profile_variants(db, current_user.id)
     if not variants:
         return {"status": "no_data", "message": "暂无基因数据"}
 
@@ -1252,11 +1271,7 @@ def get_cross_analysis(
     通过 LLM 生成个性化交叉分析。
     """
     # 1. 获取基因变异
-    variants = (
-        db.query(GeneticVariant)
-        .filter(GeneticVariant.user_id == current_user.id)
-        .all()
-    )
+    _, variants = _active_profile_variants(db, current_user.id)
     if not variants:
         return {
             "status": "no_data",
