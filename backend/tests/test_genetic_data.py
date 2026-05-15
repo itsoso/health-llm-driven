@@ -526,3 +526,33 @@ class TestSampleIntegration:
         assert res.status_code == 200, res.text
         # 仅 rs1801133 + rs671 应命中, rs762551 因 -- 跳过
         assert res.json()["matched_count"] == 2
+
+    def test_upload_txt_maps_complement_strand_genotypes(self, client, db, auth_user_and_headers):
+        """WeGene 原始数据可能给出与规则字典互补的等位基因, 不应漏解析."""
+        _, headers = auth_user_and_headers
+        complement_sample = (
+            "# rsid\tchromosome\tposition\tgenotype\n"
+            "rs4880\t6\t160113872\tAA\n"      # SOD2: complement -> TT
+            "rs1050450\t3\t49394747\tGG\n"    # GPX1: complement -> CC
+            "rs1044396\t20\t61981120\tAA\n"   # CHRNA4: complement -> TT
+            "rs25531\t17\t28562759\tTT\n"     # SLC6A4: complement -> AA
+        )
+
+        res = client.post(
+            "/api/v1/genetic/profiles/upload-txt",
+            json={
+                "test_provider": "WeGene",
+                "test_date": "2026-03-29",
+                "txt_content": complement_sample,
+            },
+            headers=headers,
+        )
+
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert data["matched_count"] == 4
+        by_gene = {v["gene"]: v for v in data["variants"]}
+        assert by_gene["SOD2"]["genotype"] == "Ala/Ala"
+        assert by_gene["GPX1"]["risk"] == "medium"
+        assert by_gene["CHRNA4"]["risk"] == "medium"
+        assert by_gene["SLC6A4"]["risk"] == "low"

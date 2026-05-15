@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_BASE_COMPLEMENT = str.maketrans("ACGTacgt", "TGCAtgca")
+
 
 # ══════════════════════════════════════════════════════════
 # Pydantic Schemas
@@ -83,6 +85,36 @@ class VariantResponse(BaseModel):
     created_at: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+def _genotype_candidates(genotype: str) -> List[str]:
+    """Return same-strand, reversed, and complement candidates for SNP mapping."""
+    raw = (genotype or "").strip().upper()
+    if not raw:
+        return []
+
+    candidates: List[str] = []
+
+    def add(value: str):
+        if value and value not in candidates:
+            candidates.append(value)
+
+    add(raw)
+    if len(raw) == 2:
+        add(raw[::-1])
+        if all(base in "ACGT" for base in raw):
+            comp = raw.translate(_BASE_COMPLEMENT).upper()
+            add(comp)
+            add(comp[::-1])
+    return candidates
+
+
+def _resolve_snp_mapping(genotype: str, snp_map: Dict[str, Any]):
+    for candidate in _genotype_candidates(genotype):
+        mapping = snp_map.get(candidate)
+        if mapping:
+            return mapping
+    return None
 
 
 # ══════════════════════════════════════════════════════════
@@ -314,11 +346,7 @@ def upload_genetic_txt(
         genotype = parts[3].strip()
         if rsid in KNOWN_SNPS and genotype != "--":
             snp = KNOWN_SNPS[rsid]
-            mapping = snp["map"].get(genotype)
-            if not mapping:
-                # 尝试反转基因型 (AG→GA)
-                rev = genotype[::-1] if len(genotype) == 2 else genotype
-                mapping = snp["map"].get(rev)
+            mapping = _resolve_snp_mapping(genotype, snp["map"])
             if mapping:
                 geno_label, result_label, risk = mapping
                 variant = GeneticVariant(
