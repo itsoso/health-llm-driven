@@ -237,6 +237,13 @@ api/agent.py::agent_stream
     │
     │ AgentExecutor.run_stream(user_id, message, conv_id)
     ▼
+保存 user message + 创建/复用 conversation
+    │
+    │ SSE agent_start: {conversation_id}
+    │ - 新会话在 done 前切走时, mobile 也已持有 conversationId
+    │ - 回到 chat tab/App active 时按 conversationId 拉 `/openclaw/conversations/{id}`
+    │ - 若极早切走还没收到 start, fallback 按真实最近对话拉取, 不优先旧"每日健康简报"
+    ▼
 _build_system_prompt
     │ - 注入 lite health context (昨夜 readiness / 睡眠 / AQI)
     │ - 注入 user memory (relevant facts)

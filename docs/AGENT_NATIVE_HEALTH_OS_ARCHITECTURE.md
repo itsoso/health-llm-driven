@@ -57,8 +57,10 @@
 | `backend/tests/test_waist_and_daily_plan.py` | 腰围 create/list/upsert、Twin 腰围字段、Daily Plan API |
 | `backend/tests/test_health_trajectory.py` | `/trajectory/me` 聚合基因/甲基化缺口/临床锚点/next actions |
 | `backend/tests/test_health_record_amount_regression.py` | `extra_context` 入口不会在首个 SSE event 前崩溃 |
+| `backend/tests/test_agent_stream_resume.py` | Agent SSE `agent_start` 在 `done` 前返回 `conversation_id`, 支持用户切走后恢复 |
 | `mobile/services/__tests__/dailyPlan.test.ts` | Daily Plan mobile service |
 | `mobile/services/__tests__/trajectory.test.ts` | Trajectory mobile service + risk 排序 |
+| `mobile/services/__tests__/chatStream.test.ts` | mobile SSE 解析 `agent_start` → `start` 事件并保留 `conversationId` |
 
 ---
 

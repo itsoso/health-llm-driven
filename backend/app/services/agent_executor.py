@@ -262,7 +262,15 @@ class AgentExecutor:
 
         # 5. Agent 循环
         full_reply = ""
-        yield {"event": "agent_start", "data": {"message": "Agent 正在分析..."}}
+        yield {
+            "event": "agent_start",
+            "data": {
+                "message": "Agent 正在分析...",
+                # 让客户端在 done 之前就知道本轮会话 ID。
+                # 新会话首次发送后如果用户切走页面，回来可以按这个 ID 拉取后端后台任务落库的最终回复。
+                "conversation_id": conv.id,
+            },
+        }
 
         # 2026-05-13: 计时 + 模型名可观测性 — 每轮 LLM 耗时积累到 done 事件
         llm_rounds_ms: list = []

@@ -13,7 +13,7 @@ export interface Conversation {
 }
 
 export interface StreamEvent {
-  type: 'token' | 'tool' | 'done' | 'error';
+  type: 'start' | 'token' | 'tool' | 'done' | 'error';
   content?: string;
   conversationId?: number;
   messageId?: number;
@@ -143,7 +143,12 @@ export async function* streamChat(
       try {
         const parsed = JSON.parse(payload);
 
-        if (parsed.event === 'token') {
+        if (parsed.event === 'agent_start') {
+          yield {
+            type: 'start',
+            conversationId: parsed.data?.conversation_id,
+          };
+        } else if (parsed.event === 'token') {
           const text = parsed.data?.content || '';
           if (text) yield { type: 'token', content: text };
         } else if (parsed.event === 'tool_call') {

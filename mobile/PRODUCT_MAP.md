@@ -58,7 +58,7 @@ mobile/app/
 
 mobile/services/
   api.ts                      axios baseURL + auth interceptor
-  chat.ts                     streamChat SSE 处理 (token/tool/done/error)
+  chat.ts                     streamChat SSE 处理 (start/token/tool/done/error); start 提前携带 conversationId 供切页恢复
   dailyPlan.ts                ⭐ Daily Operating Plan 首页行动计划
   trajectory.ts               ⭐ Personal Health Trajectory Snapshot
   briefing.ts                 ⭐ 所有 voice-chat intent 拉稿函数集中在这

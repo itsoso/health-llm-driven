@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
-import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '../services/chat';
+import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
@@ -71,38 +71,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   // 把后端写入的最终消息拉回前端显示.
   useEffect(() => () => { /* no-op: 不在 unmount 时 abort */ }, []);
 
-  // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
-  // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 stream 到 OpenClaw 后端
-  // 会持续跑并把最终 message 写 conversation. 这里 active 时重新拉服务端最新消息
-  // 把断掉的 AI 回复补齐.
-  const appStateRef = useRef(AppState.currentState);
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      const prev = appStateRef.current;
-      appStateRef.current = next;
-      // 从 background/inactive 回到 active, 且有当前对话 → 重新拉消息
-      if ((prev === 'background' || prev === 'inactive') && next === 'active' && conversationId) {
-        reloadCurrentFromServer();
-      }
-    });
-    return () => sub.remove();
-  }, [conversationId]);
-
-  // 2026-05-14 FIX-4: chat tab 重获 focus 时 (用户从 SNP 详情/其它 tab/voice-chat 返回),
-  // 只要有 conversationId 就拉一次最新 — 覆盖三个场景:
-  //   1. streaming 中切走 → bg task 写完, 回来补齐 AI 回复
-  //   2. voice-chat modal 关闭 → 语音模式新增的 user/assistant 消息
-  //   3. 任何后台任务可能改了这条 conversation 的消息
-  useFocusEffect(
-    useCallback(() => {
-      if (conversationId) {
-        reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
-      }
-      return () => { /* unfocus 时不动 */ };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [conversationId])
-  );
-
   const reloadCurrentFromServer = useCallback(async () => {
     if (!conversationId) return;
     try {
@@ -125,73 +93,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       // 网络失败不影响现有 UI
     }
   }, [conversationId, windowDays]);
-
-  const loadLatestConversation = useCallback(async () => {
-    try {
-      // 1. 优先找"每日健康简报"对话
-      let convs = await getConversations(BRIEFING_CONVERSATION_TITLE);
-      // 按 updated_at 倒序，确保选到最近一次刷新的简报
-      convs = [...convs].sort((a: any, b: any) =>
-        ((b as any).updated_at || b.created_at || '').localeCompare(
-          ((a as any).updated_at || a.created_at || '') as string
-        )
-      );
-      // 2. fallback：任意最近对话
-      if (convs.length === 0) convs = await getConversations();
-      if (convs.length === 0) return;
-
-      const latestId = convs[0].id;
-      setConversationId(latestId);
-      const { messages: msgs, total_messages } = await getConversationMessages(latestId, { days: DEFAULT_WINDOW_DAYS });
-      setWindowDays(DEFAULT_WINDOW_DAYS);
-      setHasMoreHistory(total_messages > msgs.length);
-      if (msgs.length > 0) {
-        const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-          id: `hist-${m.id || i}`,
-          role: m.role,
-          content: m.content,
-          createdAt: m.created_at,
-          imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-          ...applyMeta(m),
-        }));
-        setMessages(restored);
-        restoreCards(restored);
-      }
-    } catch { console.warn('Failed to load latest conversation'); }
-  }, []);
-
-  const loadConversation = useCallback(async (id: number) => {
-    setConversationId(id);
-    try {
-      const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
-      setWindowDays(DEFAULT_WINDOW_DAYS);
-      setHasMoreHistory(total_messages > msgs.length);
-      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
-        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-        ...applyMeta(m),
-      }));
-      setMessages(restored);
-      restoreCards(restored);
-    } catch { throw new Error('加载对话失败'); }
-  }, []);
-
-  const loadMoreHistory = useCallback(async () => {
-    if (!conversationId || !hasMoreHistory) return;
-    const nextDays = (windowDays || DEFAULT_WINDOW_DAYS) + 14;
-    try {
-      const { messages: msgs, total_messages } = await getConversationMessages(conversationId, { days: nextDays });
-      setWindowDays(nextDays);
-      setHasMoreHistory(total_messages > msgs.length);
-      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
-        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-        ...applyMeta(m),
-      }));
-      setMessages(restored);
-      restoreCards(restored);
-    } catch { console.warn('loadMoreHistory failed'); }
-  }, [conversationId, hasMoreHistory, windowDays]);
 
   const restoreCards = useCallback(async (restored: UIMessage[]) => {
     const userMsgs = restored.filter(m => m.role === 'user' && m.content);
@@ -216,6 +117,107 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       } catch { console.warn('Card dispatch failed for restored message'); }
     }
   }, []);
+
+  const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
+    try {
+      const preferBriefing = options?.preferBriefing ?? true;
+      // 默认进入 chat tab 时优先打开"每日健康简报"；但从后台/其它 tab 恢复未完成新会话时,
+      // 必须按真实最近对话找，否则会被旧简报抢走，导致用户看不到刚才那次 Agent 回复。
+      let convs = preferBriefing ? await getConversations(BRIEFING_CONVERSATION_TITLE) : [];
+      if (convs.length === 0) convs = await getConversations();
+      convs = [...convs].sort((a: any, b: any) =>
+        ((b as any).updated_at || b.created_at || '').localeCompare(
+          ((a as any).updated_at || a.created_at || '') as string
+        )
+      );
+      if (convs.length === 0) return;
+
+      const latestId = convs[0].id;
+      setConversationId(latestId);
+      const { messages: msgs, total_messages } = await getConversationMessages(latestId, { days: DEFAULT_WINDOW_DAYS });
+      setWindowDays(DEFAULT_WINDOW_DAYS);
+      setHasMoreHistory(total_messages > msgs.length);
+      if (msgs.length > 0) {
+        const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
+          id: `hist-${m.id || i}`,
+          role: m.role,
+          content: m.content,
+          createdAt: m.created_at,
+          imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+          ...applyMeta(m),
+        }));
+        setMessages(restored);
+        restoreCards(restored);
+      }
+    } catch { console.warn('Failed to load latest conversation'); }
+  }, [restoreCards]);
+
+  // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
+  // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 stream 到 OpenClaw 后端
+  // 会持续跑并把最终 message 写 conversation. 这里 active 时重新拉服务端最新消息
+  // 把断掉的 AI 回复补齐.
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const prev = appStateRef.current;
+      appStateRef.current = next;
+      if ((prev === 'background' || prev === 'inactive') && next === 'active') {
+        if (conversationId) {
+          reloadCurrentFromServer();
+        } else if (streamingRef.current || messages.length > 0) {
+          loadLatestConversation({ preferBriefing: false });
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [conversationId, loadLatestConversation, messages.length, reloadCurrentFromServer]);
+
+  // 2026-05-14 FIX-4 / 2026-05-15 resume: chat tab 重获 focus 时拉最新.
+  // 新会话首次发送时 conversationId 可能在 done 前尚未回填；这种情况下按"最近对话"
+  // 拉取, 避免用户切走后后台 task 已落库但 UI 永远停在本地 streaming placeholder。
+  useFocusEffect(
+    useCallback(() => {
+      if (conversationId) {
+        reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
+      } else if (streamingRef.current || messages.length > 0) {
+        loadLatestConversation({ preferBriefing: false }).finally(() => { streamingRef.current = false; });
+      }
+      return () => { /* unfocus 时不动 */ };
+    }, [conversationId, loadLatestConversation, messages.length, reloadCurrentFromServer])
+  );
+
+  const loadConversation = useCallback(async (id: number) => {
+    setConversationId(id);
+    try {
+      const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
+      setWindowDays(DEFAULT_WINDOW_DAYS);
+      setHasMoreHistory(total_messages > msgs.length);
+      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
+        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
+        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+        ...applyMeta(m),
+      }));
+      setMessages(restored);
+      restoreCards(restored);
+    } catch { throw new Error('加载对话失败'); }
+  }, [restoreCards]);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (!conversationId || !hasMoreHistory) return;
+    const nextDays = (windowDays || DEFAULT_WINDOW_DAYS) + 14;
+    try {
+      const { messages: msgs, total_messages } = await getConversationMessages(conversationId, { days: nextDays });
+      setWindowDays(nextDays);
+      setHasMoreHistory(total_messages > msgs.length);
+      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
+        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
+        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+        ...applyMeta(m),
+      }));
+      setMessages(restored);
+      restoreCards(restored);
+    } catch { console.warn('loadMoreHistory failed'); }
+  }, [conversationId, hasMoreHistory, restoreCards, windowDays]);
 
   const sendMessage = useCallback(async (
     text: string,
@@ -267,7 +269,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     try {
       const toolsUsed: Set<string> = new Set();
       for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
-        if (evt.type === 'token' || evt.type === 'tool') {
+        if (evt.type === 'start') {
+          if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
+        } else if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
           if (evt.toolName) toolsUsed.add(evt.toolName);
