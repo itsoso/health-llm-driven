@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert, StatusBar, Platform, Share } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -16,6 +16,7 @@ import HrZoneBar from '../components/workout/HrZoneBar';
 import { synthesize as cloudSynthesize } from '../services/cloudTts';
 import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { sharePlainText } from '../utils/share';
 import { colors, spacing, radii } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
@@ -322,7 +323,7 @@ export default function WorkoutDetailScreen() {
         script ? `\n${script}` : '',
         '\n— 健康助理',
       ].filter(Boolean).join('');
-      await Share.share({ message: text });
+      await sharePlainText({ title: '运动记录', message: text });
     } catch (e: any) {
       Alert.alert('分享失败', e?.message || '请稍后重试');
     }

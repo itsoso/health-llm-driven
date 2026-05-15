@@ -8,7 +8,7 @@
  * 入口: settings → 家庭健康
  */
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl, Alert, Modal, TextInput, Share } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -20,6 +20,7 @@ import {
 } from '../services/family';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
+import { sharePlainText } from '../utils/share';
 
 const RELATIONSHIP_ZH: Record<string, string> = {
   self: '我',
@@ -54,7 +55,7 @@ export default function FamilyScreen() {
       const minutes = Math.floor(resp.expires_in_seconds / 60);
       const text = `加入我的家庭健康"${resp.group_name}"。打开 健康助理 → 设置 → 家庭健康 → 输入邀请码：${resp.code}（${minutes} 分钟内有效）`;
       try {
-        await Share.share({ message: text });
+        await sharePlainText({ title: '家庭健康邀请', message: text });
       } catch {
         // 分享失败仍弹码让用户手动复制
         Alert.alert(

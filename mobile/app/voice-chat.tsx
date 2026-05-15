@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert, Share } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -11,6 +11,7 @@ import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { createMdStylesChat } from '../constants/markdownStyles';
 import { fetchBriefingVoiceScript, fetchWeeklyVoiceScript, fetchPreWorkoutVoiceScript, fetchClarificationOpener, extractMemoryFromDialog } from '../services/briefing';
+import { sharePlainText } from '../utils/share';
 
 /**
  * 语音连续对话页. MVP 版:
@@ -223,7 +224,7 @@ export default function VoiceChatScreen() {
               })
               .join('\n\n');
             const header = `健康助理 · 语音对话 · ${dateStr}\n${'─'.repeat(20)}\n`;
-            Share.share({
+            sharePlainText({
               title: '语音对话记录',
               message: header + lines,
             }).catch(() => {});

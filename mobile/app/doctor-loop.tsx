@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextStyle, ScrollView,
-  ActivityIndicator, RefreshControl, Alert, Share, TextInput,
+  ActivityIndicator, RefreshControl, Alert, TextInput,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import {
   exportDoctorReport, submitDoctorFeedback, listDoctorFeedback,
   type DoctorExport, type DoctorFeedback,
 } from '../services/doctorReport';
+import { sharePlainText } from '../utils/share';
 
 const EXPORT_QK = (days: number) => ['doctorExport', days];
 const FEEDBACK_QK = ['doctorFeedback'];
@@ -64,7 +65,7 @@ export default function DoctorLoopScreen() {
     if (!expQ.data?.markdown) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await Share.share({ message: expQ.data.markdown });
+      await sharePlainText({ title: '医生沟通摘要', message: expQ.data.markdown });
     } catch {}
   };
 

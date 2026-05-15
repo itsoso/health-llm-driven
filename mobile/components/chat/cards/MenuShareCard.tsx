@@ -11,12 +11,13 @@
  * - shopping_list 不在卡里渲染, 出现在分享文本末尾, 方便对方直接照单买
  */
 import React from 'react';
-import { View, Text, StyleSheet, TextStyle, Pressable, Share } from 'react-native';
+import { View, Text, StyleSheet, TextStyle, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { colors, radii } from '../../../constants/theme';
 import type { CardSpec } from './types';
+import { sharePlainText } from '../../../utils/share';
 
 interface MenuItem {
   name: string;
@@ -67,7 +68,7 @@ export function MenuShareCardView(d: MenuShareData) {
   const handleShare = async () => {
     Haptics.selectionAsync();
     try {
-      await Share.share({
+      await sharePlainText({
         title: d.title || '菜单分享',
         message: buildShareText(d),
       });

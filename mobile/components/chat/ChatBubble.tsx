@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
-  Alert, ActivityIndicator, Pressable, Share,
+  Alert, ActivityIndicator, Pressable,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,7 @@ import { buildInterventionDraft, type InterventionDraft } from '../../services/i
 import AttributionChips from './AttributionChips';
 import { radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { sharePlainText } from '../../utils/share';
 
 interface Props {
   item: UIMessage;
@@ -158,7 +159,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
     if (!text) return;
     Haptics.selectionAsync();
     try {
-      await Share.share({
+      await sharePlainText({
         title: '健康 Agent · 建议',
         message: `${text}\n\n— 健康 Agent`,
       });
