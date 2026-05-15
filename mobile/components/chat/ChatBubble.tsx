@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
   Alert, ActivityIndicator, Pressable, Share,
@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
+import { setAudioModeAsync } from 'expo-audio';
 import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { renderCard } from './cards';
@@ -38,21 +39,41 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [speaking, setSpeaking] = useState(false);
+  const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechActiveRef = useRef(false);
+  const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
+  const images = item.imageUris;
+
+  const clearSpeechTimeout = useCallback(() => {
+    if (speechTimeoutRef.current) {
+      clearTimeout(speechTimeoutRef.current);
+      speechTimeoutRef.current = null;
+    }
+  }, []);
+
+  const setSpeechActive = useCallback((active: boolean) => {
+    speechActiveRef.current = active;
+    setSpeaking(active);
+  }, []);
+
+  const finishSpeech = useCallback(() => {
+    clearSpeechTimeout();
+    setSpeechActive(false);
+  }, [clearSpeechTimeout, setSpeechActive]);
 
   // unmount 时停止播报, 避免气泡消失后还在念
   useEffect(() => {
     return () => {
-      if (speaking) { try { Speech.stop(); } catch {} }
+      clearSpeechTimeout();
+      if (speechActiveRef.current) { try { Speech.stop(); } catch {} }
     };
-  }, [speaking]);
+  }, [clearSpeechTimeout]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard({ type: item.cardType, data: item.cardData });
     if (rendered) return <View style={[styles.msgRow, styles.msgRowAI]}><View style={{ width: 36 }} />{rendered}</View>;
   }
 
-  const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
-  const images = item.imageUris;
   const hasTable = !isUser && /\n\s*\|.+\|\s*\n\s*\|[\s|:\-]+\|\s*\n\s*\|/.test(displayText);
 
   const handleCopy = () => {
@@ -96,24 +117,38 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
-  const handleSpeak = () => {
+  const handleSpeak = async () => {
     if (speaking) {
       try { Speech.stop(); } catch {}
-      setSpeaking(false);
+      finishSpeech();
       return;
     }
     const text = stripMarkdownForSpeech(displayText);
     if (!text) return;
-    Haptics.selectionAsync();
-    setSpeaking(true);
-    Speech.speak(text, {
-      language: 'zh-CN',
-      rate: 1.0,
-      pitch: 1.0,
-      onDone: () => setSpeaking(false),
-      onStopped: () => setSpeaking(false),
-      onError: () => setSpeaking(false),
-    });
+    try { Haptics.selectionAsync(); } catch {}
+    setSpeechActive(true);
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
+        interruptionMode: 'duckOthers',
+        allowsRecording: false,
+      }).catch(() => {});
+      try { Speech.stop(); } catch {}
+      const estMs = Math.max(5000, Math.min(45000, text.length * 260 + 5000));
+      speechTimeoutRef.current = setTimeout(finishSpeech, estMs);
+      Speech.speak(text, {
+        language: 'zh-CN',
+        rate: 1.0,
+        pitch: 1.0,
+        onDone: finishSpeech,
+        onStopped: finishSpeech,
+        onError: finishSpeech,
+      });
+    } catch (e) {
+      finishSpeech();
+      if (__DEV__) console.warn('[ChatBubble] speech start failed:', e);
+    }
   };
 
   // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.

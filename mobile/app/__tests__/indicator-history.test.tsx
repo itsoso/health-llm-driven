@@ -1,5 +1,6 @@
+/* eslint-disable import/first */
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
@@ -23,6 +24,12 @@ jest.mock('../../hooks/useTrendData', () => ({
     isLoading: false,
     refetch: jest.fn(),
   }),
+  useGarminMetricTrend: jest.fn().mockReturnValue({
+    data: [],
+    isLoading: false,
+    refetch: jest.fn(),
+  }),
+  isGarminMetric: jest.fn((name: string) => ['heart_rate', 'hrv', 'body_battery', 'sleep'].includes(name)),
 }));
 
 import { useLocalSearchParams } from 'expo-router';
