@@ -1,24 +1,32 @@
 import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-
-const DEFAULT_SHARE_URL = 'https://executor.life';
+import api from '../services/api';
 
 interface SharePlainTextOptions {
   title?: string;
   message: string;
-  url?: string;
 }
 
-export async function sharePlainText({ title, message, url = DEFAULT_SHARE_URL }: SharePlainTextOptions) {
-  if (Platform.OS !== 'ios') {
-    return Share.share({ title, message });
+async function createTextSharePage(title: string | undefined, message: string) {
+  const res = await api.post<{ share_url: string }>('/shared/create-text', {
+    title,
+    message,
+  });
+  return res.data.share_url;
+}
+
+export async function sharePlainText({ title, message }: SharePlainTextOptions) {
+  const shareUrl = await createTextSharePage(title, message);
+  await Clipboard.setStringAsync(message).catch(() => {});
+  const shareMessage = title ? `${title}\n${shareUrl}` : shareUrl;
+
+  if (Platform.OS === 'ios') {
+    return Share.share({
+      title,
+      message: shareMessage,
+      url: shareUrl,
+    });
   }
 
-  await Clipboard.setStringAsync(message).catch(() => {});
-  const messageWithUrl = message.includes(url) ? message : `${message}\n\n${url}`;
-  return Share.share({
-    title,
-    message: messageWithUrl,
-    url,
-  });
+  return Share.share({ title, message: shareMessage });
 }
