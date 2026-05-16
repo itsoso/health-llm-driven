@@ -61,8 +61,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
-  // 客户端已经被切走 (但后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
+  // 后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
   const streamingRef = useRef(false);
+
+  // 2026-05-16 FIX: messages.length 不能直接进 useFocusEffect/AppState 的 deps.
+  // 当 sendMessage 把 [userMsg, aiMsg] push 进 list, length 0→2 → callback 重建 →
+  // useFocusEffect 紧接着触发 reloadCurrentFromServer → 服务端那时还没写完 AI 响应,
+  // 只有 user 消息, 把本地的 streaming aiMsg 整个覆盖掉, UI 永远停在"只有用户气泡".
+  // 用 ref 读取最新 length, 让 effect 只在 focus / app-state 切换时触发.
+  const messagesLengthRef = useRef(0);
+  useEffect(() => { messagesLengthRef.current = messages.length; }, [messages.length]);
 
   // 2026-05-14 FIX-4: 不在 unmount 时 abort.
   // 用户切 tab / 进 SNP 详情时, useChatEngine 的 host (chat tab) 可能 unmount,
@@ -164,13 +172,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if ((prev === 'background' || prev === 'inactive') && next === 'active') {
         if (conversationId) {
           reloadCurrentFromServer();
-        } else if (streamingRef.current || messages.length > 0) {
+        } else if (streamingRef.current || messagesLengthRef.current > 0) {
           loadLatestConversation({ preferBriefing: false });
         }
       }
     });
     return () => sub.remove();
-  }, [conversationId, loadLatestConversation, messages.length, reloadCurrentFromServer]);
+  }, [conversationId, loadLatestConversation, reloadCurrentFromServer]);
 
   // 2026-05-14 FIX-4 / 2026-05-15 resume: chat tab 重获 focus 时拉最新.
   // 新会话首次发送时 conversationId 可能在 done 前尚未回填；这种情况下按"最近对话"
@@ -179,11 +187,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     useCallback(() => {
       if (conversationId) {
         reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
-      } else if (streamingRef.current || messages.length > 0) {
+      } else if (streamingRef.current || messagesLengthRef.current > 0) {
         loadLatestConversation({ preferBriefing: false }).finally(() => { streamingRef.current = false; });
       }
       return () => { /* unfocus 时不动 */ };
-    }, [conversationId, loadLatestConversation, messages.length, reloadCurrentFromServer])
+    }, [conversationId, loadLatestConversation, reloadCurrentFromServer])
   );
 
   const loadConversation = useCallback(async (id: number) => {
