@@ -363,13 +363,13 @@ class SupplementRecommendationServiceLLM:
 
 注意：
 - 推荐要基于用户的实际数据和需求
-- **必须结合用户的基因检测数据**（如有），基因变异直接影响补剂选择和剂量：
-  - MTHFR C677T TT/CT: 必须使用活性叶酸(5-MTHF)替代普通叶酸，且需要甲基化B族
-  - ALDH2 缺陷: 严格避免含酒精补剂，注意NAD+前体选择
-  - CYP1A2 慢代谢: 限制咖啡因摄入，影响绿茶提取物等含咖啡因补剂
-  - FADS1/FADS2: 影响omega-3转化效率，决定EPA/DHA补充剂量
-  - VDR 变异: 影响维生素D吸收，可能需要更高剂量
-  - COMT Met/Met: 影响儿茶酚胺代谢，避免高剂量甲基供体
+- 如有基因检测数据, 只能作为风险分层和追问线索, 不能直接替代化验、医生判断或形成确定性剂量指令：
+  - MTHFR C677T TT/CT: 提示叶酸代谢可能受影响；是否使用 5-MTHF 或甲基化 B 族, 需要结合同型半胱氨酸、B12、叶酸化验、饮食和医生或营养师意见
+  - ALDH2 缺陷: 避免主动推荐含酒精补剂；NAD+ 前体等建议需结合耐受性和用药情况
+  - CYP1A2 慢代谢: 对咖啡因和绿茶提取物等含咖啡因补剂保持保守
+  - FADS1/FADS2: 可提示 omega-3 转化效率差异, EPA/DHA 剂量仍需结合饮食摄入、血脂和出血风险
+  - VDR 变异: 可提示关注维生素 D 状态, 剂量应结合 25(OH)D 化验
+  - COMT Met/Met: 对高剂量甲基供体保持谨慎, 结合症状和专业意见
 - 优先推荐最需要的补剂（3-5个即可）
 - 考虑用户的过敏史和疾病史
 - 给出具体的剂量和服用时间
@@ -449,7 +449,7 @@ class SupplementRecommendationServiceLLM:
 
         # 基本信息
         if profile:
-            context_parts.append(f"### 基本信息")
+            context_parts.append("### 基本信息")
             context_parts.append(f"- 年龄：{profile.age}岁")
             context_parts.append(f"- 性别：{profile.gender}")
             if profile.current_weight_kg:
@@ -491,7 +491,7 @@ class SupplementRecommendationServiceLLM:
 
         # 健康数据
         if health_data:
-            context_parts.append(f"\n### 最近健康数据（7天平均）")
+            context_parts.append("\n### 最近健康数据（7天平均）")
             context_parts.append(f"- 睡眠时长：{health_data.get('avg_sleep_hours', 0):.1f}小时/天")
             if health_data.get('latest_sleep_score'):
                 context_parts.append(f"- 睡眠评分：{health_data.get('latest_sleep_score')}/100")
@@ -500,15 +500,15 @@ class SupplementRecommendationServiceLLM:
 
         # 运动数据
         if workout_data:
-            context_parts.append(f"\n### 运动情况（最近7天）")
+            context_parts.append("\n### 运动情况（最近7天）")
             context_parts.append(f"- 运动次数：{workout_data.get('workout_count', 0)}次")
             context_parts.append(f"- 总时长：{workout_data.get('total_duration_minutes', 0)}分钟")
             if workout_data.get('has_high_intensity'):
-                context_parts.append(f"- 包含高强度训练")
+                context_parts.append("- 包含高强度训练")
 
         # 饮食数据
         if diet_data:
-            context_parts.append(f"\n### 饮食情况（最近7天）")
+            context_parts.append("\n### 饮食情况（最近7天）")
             context_parts.append(f"- 平均蛋白质：{diet_data.get('avg_daily_protein', 0):.1f}g/天")
             if profile and profile.current_weight_kg:
                 protein_per_kg = diet_data.get('avg_daily_protein', 0) / profile.current_weight_kg

@@ -69,7 +69,10 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
         if gc.methylation != "normal":
             nudges.append({
                 "gene": "MTHFR",
-                "tip": f"甲基化{gc.methylation}，必须使用{gc.folate_form}（甲基叶酸），而非合成叶酸。深绿叶蔬（菠菜/芦笋/甘蓝）是天然来源。",
+                "tip": (
+                    f"甲基化{gc.methylation}，优先保证深绿叶蔬等天然叶酸来源；"
+                    f"是否使用{gc.folate_form}（甲基叶酸）建议结合同型半胱氨酸、B12、叶酸化验和医生/营养师意见。"
+                ),
             })
         if gc.saturated_fat_sensitivity == "high":
             nudges.append({
@@ -141,7 +144,10 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
         )
 
     if _has_risk("MTHFR"):
-        nudges.append({"gene": "MTHFR", "tip": "叶酸代谢效率下降，优先从深绿叶蔬 + 甲基叶酸补剂获取。"})
+        nudges.append({
+            "gene": "MTHFR",
+            "tip": "叶酸代谢效率可能下降，优先从深绿叶蔬获取天然叶酸；是否补充甲基叶酸建议结合同型半胱氨酸、B12、叶酸化验后决定。",
+        })
     v_apoe = by_gene.get("APOE")
     if v_apoe and "4" in (v_apoe.get("genotype") or ""):
         nudges.append({"gene": "APOE", "tip": "APOE4携带者对饱和脂肪敏感，增加橄榄油/鱼油替代红肉脂肪。"})
@@ -289,6 +295,14 @@ class FuelStrategistSpecialist:
                 findings.append({
                     "type": "labs_concern",
                     "items": abnormal_names,
+                })
+
+            knowledge_evidence = context.get("knowledge_evidence") or {}
+            if knowledge_evidence.get("sources"):
+                findings.append({
+                    "type": "knowledge_evidence",
+                    "sources": knowledge_evidence.get("sources", [])[:5],
+                    "claim_boundary": knowledge_evidence.get("claim_boundary"),
                 })
 
             summary = " · ".join(summary_parts) or "数据暂缺，无法评估营养状态"

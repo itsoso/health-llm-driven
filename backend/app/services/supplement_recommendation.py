@@ -4,14 +4,13 @@
 """
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta, date
+from datetime import timedelta, date
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.models.user_profile import UserProfile
 from app.models.daily_health import GarminData, WorkoutRecord, DietRecord
 from app.models.supplement import SupplementDefinition, SupplementRecord
-from app.services.digital_twin import DigitalTwinService
+from app.services.knowledge_evidence import build_advice_knowledge_context
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -39,12 +38,6 @@ class SupplementRecommendationService:
         Returns:
             补剂科学推荐结果
         """
-        debug_info = {
-            "steps": [],
-            "data_sources": {},
-            "reasoning": []
-        } if debug else None
-
         try:
             logger.info(f"[补剂推荐] 开始为用户 {user_id} 生成推荐 (debug={debug})")
 
@@ -75,6 +68,8 @@ class SupplementRecommendationService:
             recommendations = self._generate_recommendations(
                 profile, health_analysis, supplement_status
             )
+            knowledge_evidence = self._build_knowledge_evidence(health_analysis, recommendations)
+            self._attach_knowledge_evidence(recommendations, knowledge_evidence)
 
             # 8. 生成服用时间建议
             timing_suggestions = self._generate_timing_suggestions(
@@ -100,6 +95,7 @@ class SupplementRecommendationService:
                 "timing_suggestions": timing_suggestions,
                 "precautions": precautions,
                 "supplement_status": supplement_status,
+                "knowledge_evidence": knowledge_evidence,
                 "overall_rating": overall_rating,
                 # 兼容小程序字段
                 "overall_score": overall_rating.get("score", 0) * 10,
@@ -243,7 +239,7 @@ class SupplementRecommendationService:
             # 获取用户的所有补剂定义
             supplements = db.query(SupplementDefinition).filter(
                 SupplementDefinition.user_id == user_id,
-                SupplementDefinition.is_active == True
+                SupplementDefinition.is_active.is_(True),
             ).all()
 
             # 获取今天的打卡记录
@@ -343,7 +339,6 @@ class SupplementRecommendationService:
         # 3. 运动强度分析
         if workout_data:
             workout_count = workout_data.get("workout_count", 0)
-            total_duration = workout_data.get("total_duration_minutes", 0)
 
             if workout_count == 0:
                 analysis["exercise_intensity"] = "缺乏"
@@ -497,6 +492,35 @@ class SupplementRecommendationService:
         recommendations.sort(key=lambda x: priority_order.get(x["priority"], 3))
 
         return recommendations[:6]  # 最多返回6条推荐
+
+    def _build_knowledge_evidence(
+        self,
+        health_analysis: Dict[str, Any],
+        recommendations: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """用 LLM Wiki 为补剂推荐补证据, 仅作为健康管理依据."""
+        signals = []
+        signals.extend(health_analysis.get("risk_factors", []))
+        signals.extend(health_analysis.get("positive_factors", []))
+        signals.extend(rec.get("name", "") for rec in recommendations)
+        return build_advice_knowledge_context(
+            domains=["supplement", "nutrition"],
+            user_signals=[str(s) for s in signals if s],
+        )
+
+    def _attach_knowledge_evidence(
+        self,
+        recommendations: List[Dict[str, Any]],
+        knowledge_evidence: Dict[str, Any],
+    ) -> None:
+        """把可追溯证据挂到每条建议上, 避免裸推荐."""
+        sources = knowledge_evidence.get("sources") or []
+        boundary = knowledge_evidence.get("claim_boundary") or ""
+        if not sources and not boundary:
+            return
+        for recommendation in recommendations:
+            recommendation["knowledge_sources"] = sources[:3]
+            recommendation["claim_boundary"] = boundary
 
     def _generate_timing_suggestions(
         self,

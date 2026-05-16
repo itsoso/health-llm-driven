@@ -13,6 +13,7 @@ import {
   loadVoiceStyle, saveVoiceStyle, resolveIosSpeechOptions, getVoiceStyle,
 } from '../services/voiceStyle';
 import { synthesize as cloudSynthesize } from '../services/cloudTts';
+import { shouldFinishAudioPlayback } from '../utils/audioPlayback';
 
 const PREVIEW_TEXT = '你好，我是你的健康助理。今天血氧不错，建议继续保持。';
 
@@ -64,7 +65,7 @@ export default function VoiceStyleScreen() {
           },
         };
         const sub = player.addListener('playbackStatusUpdate', (s: any) => {
-          if (s?.didJustFinish || s?.finished) {
+          if (shouldFinishAudioPlayback(s)) {
             sub?.remove?.();
             done();
           }

@@ -30,12 +30,13 @@ def test_endpoint_returns_full_shape(client, db):
     for k in [
         "has_data", "summary", "energy", "protein", "hydration",
         "next_meal", "supplement", "gene_nudges", "labs_concern",
-        "proposed_experiments", "related_cards",
+        "proposed_experiments", "related_cards", "knowledge_evidence",
     ]:
         assert k in body, f"missing key {k}"
     assert isinstance(body["gene_nudges"], list)
     assert isinstance(body["proposed_experiments"], list)
     assert isinstance(body["related_cards"], list)
+    assert "claim_boundary" in body["knowledge_evidence"]
 
 
 def test_no_data_user_returns_has_data(client, db):

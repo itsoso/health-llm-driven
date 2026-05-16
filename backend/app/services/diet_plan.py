@@ -13,7 +13,6 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
-from app.orchestrator.schema import Intent
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +65,7 @@ def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
 
 def build_diet_plan(db: Session, user_id: int) -> Dict[str, Any]:
     from app.agents.fuel_strategist.strategist import FuelStrategistSpecialist
+    from app.services.knowledge_evidence import build_advice_knowledge_context
     from app.twin import build_twin
 
     try:
@@ -75,9 +75,23 @@ def build_diet_plan(db: Session, user_id: int) -> Dict[str, Any]:
         return {"has_data": False, "error": "twin_build_failed"}
 
     strategist = FuelStrategistSpecialist()
+    knowledge_evidence = build_advice_knowledge_context(
+        domains=["nutrition", "supplement"],
+        user_signals=[
+            "metabolic health",
+            "protein target",
+            "weight management",
+            "supplement safety",
+        ],
+    )
     try:
         finding = strategist.run(
-            twin, {"query": "本周饮食营养状态", "db": db}
+            twin,
+            {
+                "query": "本周饮食营养状态",
+                "db": db,
+                "knowledge_evidence": knowledge_evidence,
+            },
         )
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[diet_plan] strategist run 失败 user={user_id}: {e}")
@@ -110,6 +124,7 @@ def build_diet_plan(db: Session, user_id: int) -> Dict[str, Any]:
         "supplement": blocks_by_type.get("supplement"),
         "gene_nudges": blocks_by_type.get("gene_nudges", []),
         "labs_concern": blocks_by_type.get("labs_concern"),
+        "knowledge_evidence": knowledge_evidence,
         "proposed_experiments": experiments,
         "related_cards": [_card_to_dict(c) for c in related],
     }

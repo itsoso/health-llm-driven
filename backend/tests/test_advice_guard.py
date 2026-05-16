@@ -132,6 +132,63 @@ def test_push_movement_alert_is_mapped_to_advice_candidate():
     assert candidate.evidence_tier == "wearable_proxy"
 
 
+def test_trend_report_movement_alert_is_mapped_to_advice_candidate():
+    candidate = _advice_candidate_from_push(
+        user_id=3,
+        notification_type="trend_report",
+        title="健康趋势",
+        content="长期运动不足可能导致体能下降，建议关注并及时干预。",
+        data={"rule_id": "trend.low_activity"},
+        severity="warning",
+    )
+
+    assert candidate is not None
+    assert candidate.domain == "movement"
+    assert candidate.metric_key == "trend.low_activity"
+    assert candidate.target_value == "increase_activity"
+
+
+def test_trend_report_push_conflicts_with_active_recovery_advice(db):
+    from app.models.notification import UserNotificationSetting
+    from app.models.user import User
+    from app.services.notification.push_service import PushService
+
+    user = User(
+        username="trend_conflict",
+        email="trend_conflict@test.local",
+        name="trend_conflict",
+        hashed_password="x",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    db.add(UserNotificationSetting(
+        user_id=user.id,
+        enabled=True,
+        health_alert_enabled=True,
+        ios_push_enabled=True,
+        ios_device_token="fake-token",
+        wechat_enabled=False,
+    ))
+    db.commit()
+    guard_and_record_advice(db, _candidate(user_id=user.id, source="agent", source_id="chat:recovery"))
+
+    import asyncio
+
+    result = asyncio.run(PushService(db).send_notification(
+        user_id=user.id,
+        notification_type="trend_report",
+        title="📈 健康趋势",
+        content="长期运动不足可能导致体能下降，建议关注并及时干预。",
+        data={"rule_id": "trend.low_activity"},
+        severity="warning",
+        channels=["ios_apns"],
+    ))
+
+    assert result["success"] is False
+    assert result["reason"] == "advice_guard_conflict"
+
+
 def test_daily_plan_guard_filters_conflicting_movement_action():
     engine = create_engine("sqlite:///:memory:")
     AdviceLedger.__table__.create(bind=engine)

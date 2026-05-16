@@ -4,14 +4,13 @@
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from datetime import date, datetime, timedelta
+from unittest.mock import Mock
+from datetime import date
 from sqlalchemy.orm import Session
 
 from app.services.supplement_recommendation import SupplementRecommendationService
 from app.models.user_profile import UserProfile
-from app.models.daily_health import GarminData, WorkoutRecord, DietRecord
-from app.models.supplement import SupplementDefinition, SupplementRecord
+from app.models.daily_health import GarminData
 
 
 class TestSupplementRecommendationService:
@@ -99,10 +98,28 @@ class TestSupplementRecommendationService:
         self,
         service,
         mock_db,
-        mock_user_profile
+        mock_user_profile,
+        monkeypatch
     ):
         """测试：部分数据情况下成功生成推荐"""
         user_id = 1
+        fake_evidence = {
+            "available": True,
+            "sources": [{
+                "title": "补剂安全边界",
+                "category": "supplement",
+                "source": "llm_wiki",
+                "excerpt": "补剂应优先用于补足饮食缺口，并结合禁忌和相互作用。",
+                "relevance": 0.9,
+            }],
+            "prompt_context": "补剂安全边界",
+            "claim_boundary": "不能替代医生诊断、处方或药物调整。",
+        }
+
+        monkeypatch.setattr(
+            "app.services.supplement_recommendation.build_advice_knowledge_context",
+            lambda **kwargs: fake_evidence,
+        )
 
         mock_query = Mock()
         mock_db.query.return_value = mock_query
@@ -119,6 +136,9 @@ class TestSupplementRecommendationService:
         assert result is not None
         assert result["success"] is True
         assert "recommendations" in result
+        assert result["knowledge_evidence"] == fake_evidence
+        assert result["recommendations"][0]["knowledge_sources"] == fake_evidence["sources"]
+        assert "不能替代医生诊断" in result["recommendations"][0]["claim_boundary"]
 
     # ==================== 测试：边界条件 ====================
 
@@ -221,7 +241,6 @@ class TestSupplementRecommendationService:
 
         # Make the first query succeed but a later one fail
         call_count = [0]
-        original_query = Mock()
 
         def query_side_effect(*args):
             call_count[0] += 1
@@ -263,7 +282,7 @@ class TestSupplementRecommendationService:
         mock_query.filter.return_value.first.return_value = None
 
         start_time = time.time()
-        result = service.generate_supplement_recommendation(
+        service.generate_supplement_recommendation(
             db=mock_db,
             user_id=user_id
         )

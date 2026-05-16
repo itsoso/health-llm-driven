@@ -177,11 +177,12 @@ export default function ChatScreen() {
         <TouchableOpacity
           onPress={openHistory}
           hitSlop={8}
-          style={styles.headerAction}
+          style={styles.historyAction}
           accessibilityLabel="对话历史"
           accessibilityRole="button"
         >
           <Ionicons name="time-outline" size={21} color={c.labelSecondary} />
+          <Text style={txt.historyAction}>历史</Text>
         </TouchableOpacity>
         {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
             尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
@@ -314,6 +315,16 @@ function createStyles(c: ColorPalette) {
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   headerAction: { marginRight: 12 },
+  historyAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginRight: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: radii.sm,
+    backgroundColor: c.bgCard,
+  },
   messageList: { padding: spacing.lg, paddingBottom: 8 },
   // P3-3: 会诊页 opener "我记得你 X" banner
   memoryOpener: {
@@ -354,5 +365,6 @@ function createTxt(c: ColorPalette) {
   welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
   sugText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
   contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
+  historyAction: { fontSize: 12, color: c.labelSecondary, fontWeight: '600' } as TextStyle,
   };
 }

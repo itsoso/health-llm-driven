@@ -10,6 +10,7 @@ import {
   loadVoiceStyle, resolveIosSpeechOptions, getVoiceStyle, type VoiceStyle,
 } from '../services/voiceStyle';
 import { synthesize as cloudSynthesize, cleanupTmpTts } from '../services/cloudTts';
+import { estimateTtsFallbackMs, shouldFinishAudioPlayback } from '../utils/audioPlayback';
 
 /**
  * 语音连续对话状态机.
@@ -310,7 +311,7 @@ export function useVoiceConversation() {
       };
       // 监听播放完成; expo-audio 的 status 回调通过 addListener
       const sub = player.addListener('playbackStatusUpdate', (status: any) => {
-        if (status?.didJustFinish || status?.finished) {
+        if (shouldFinishAudioPlayback(status)) {
           sub?.remove?.();
           finish();
         }
@@ -319,7 +320,7 @@ export function useVoiceConversation() {
       // CosyVoice 实测约每字 200-250ms (中文), 取 280ms + 8s 安全余量,
       // 必须比真实播放时长长, 否则兜底先触发 finish → 下一句重叠播.
       // 80 字 → ~22s + 8s = 30s. 最大 60s.
-      const estMs = Math.max(8000, Math.min(60000, text.length * 280 + 8000));
+      const estMs = estimateTtsFallbackMs(text, (player as any).duration);
       setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, estMs);
       player.play();
     } catch (e) {
@@ -635,8 +636,10 @@ export function useVoiceConversation() {
       if (!text || !text.trim()) return;
       await refreshVoiceStyle();
       // 清当前播放队列, 防止冲撞
-      stopCurrentSpeech();
       ttsQueueRef.current = [];
+      pendingTextRef.current = '';
+      preSynthRef.current = null;
+      stopCurrentSpeech();
 
       setState('speaking');
       setTurns((prev) => [...prev, { role: 'assistant', text, at: Date.now() }]);

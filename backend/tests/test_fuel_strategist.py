@@ -203,6 +203,39 @@ def test_gene_nudge_empty_when_no_genetic():
     assert nudges == []
 
 
+def test_gene_nudge_mthfr_uses_conservative_language():
+    t = _empty_twin()
+    t.genetic = GeneticContext(
+        has_profile=True,
+        risk_variants=[
+            {"gene_name": "MTHFR", "genotype": "TT", "result_label": "reduced"},
+        ],
+    )
+
+    nudges = _gene_nudges(t)
+    mthfr = next(n for n in nudges if n["gene"] == "MTHFR")
+
+    assert "必须" not in mthfr["tip"]
+    assert "结合同型半胱氨酸" in mthfr["tip"]
+
+
+def test_run_includes_knowledge_evidence_from_context():
+    s = FuelStrategistSpecialist()
+    f = s.run(
+        _rich_twin(),
+        {
+            "knowledge_evidence": {
+                "sources": [{"title": "蛋白质与代谢健康", "excerpt": "优先从食物获取蛋白"}],
+                "claim_boundary": "wiki 不是诊断",
+            }
+        },
+    )
+
+    evidence = next(x for x in f.findings if x.get("type") == "knowledge_evidence")
+    assert evidence["sources"][0]["title"] == "蛋白质与代谢健康"
+    assert evidence["claim_boundary"] == "wiki 不是诊断"
+
+
 # ───────────── 失败兜底 ─────────────
 
 def test_run_catches_internal_exception():

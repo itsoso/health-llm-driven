@@ -319,11 +319,13 @@ def send_plan_morning_reminder():
                 body = f"今日 {len(today_items)} 项待完成：{', '.join(titles)}"
                 if len(today_items) > 3:
                     body += f" 等{len(today_items)}项"
-                push_service.send_notification(
+                run_async(push_service.send_notification(
                     user_id=plan.user_id,
+                    notification_type="reminder",
                     title="📋 今日计划",
-                    body=body
-                )
+                    content=body,
+                    data={"rule_id": "daily_plan.morning"},
+                ))
                 sent_count += 1
             except Exception as e:
                 logger.error(f"发送计划提醒失败 (user_id={plan.user_id}): {e}")
@@ -370,11 +372,13 @@ def send_plan_evening_summary():
                     body = f"今日完成 {done}/{total} 项"
                     if undone:
                         body += f"，未完成：{', '.join(undone[:3])}"
-                push_service.send_notification(
+                run_async(push_service.send_notification(
                     user_id=plan.user_id,
+                    notification_type="reminder",
                     title="📊 今日进度",
-                    body=body
-                )
+                    content=body,
+                    data={"rule_id": "daily_plan.evening_summary"},
+                ))
                 sent_count += 1
             except Exception as e:
                 logger.error(f"发送进度总结失败 (user_id={plan.user_id}): {e}")

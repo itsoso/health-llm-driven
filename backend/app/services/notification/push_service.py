@@ -29,6 +29,12 @@ _SEVERITY_ORDER = {
     "critical": 4,
 }
 
+_ADVICE_LEDGER_NOTIFICATION_TYPES = {
+    NotificationType.HEALTH_ALERT.value,
+    NotificationType.AI_ADVICE.value,
+    "trend_report",
+}
+
 
 def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
@@ -46,7 +52,7 @@ def _advice_candidate_from_push(
     """Map user-visible advice pushes into the shared advice ledger contract."""
 
     ntype = notification_type.value if hasattr(notification_type, "value") else str(notification_type)
-    if ntype not in {NotificationType.HEALTH_ALERT.value, NotificationType.AI_ADVICE.value}:
+    if ntype not in _ADVICE_LEDGER_NOTIFICATION_TYPES:
         return None
     if _severity_rank(severity) >= _severity_rank("critical"):
         return None
