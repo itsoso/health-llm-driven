@@ -59,7 +59,12 @@ System Wiki must be shared by all users. User Twin must remain private per user.
 - Diet and supplement advice using first-pass `knowledge_evidence`.
 - Agent architecture with Digital Health Twin, specialists, Safety Guardian, and advice ledger.
 
-The gap is that the current pipeline is closer to "original LLM Wiki + some sync" than true V2 production serving.
+Implementation status as of 2026-05-16:
+
+- Completed serving slice: `kb_documents`, `kb_edges`, `kb_audit`, entity/claim/search/lookup/admin APIs, deployment import, and mobile evidence-card plumbing.
+- Completed first deterministic ingest slice: `system_knowledge_ingest.py` + `ingest_dedao_system_kb.py` produce dry-run PR-style diffs, transformed claims, graph edges, duplicate detection, and supersession guardrails.
+- Completed first scaled Dedao corpus expansion: 13 course sources compiled into reviewed artifacts, expanding the serving corpus to 206 documents and 550 graph edges.
+- Remaining V2 work: governed LLM extraction for deeper per-lesson claims, PostgreSQL FTS/vector/RRF hybrid search, reviewer UI/workflow, and broader evidence promotion with PubMed/guidelines.
 
 ## 3. Target Architecture
 
@@ -1006,8 +1011,8 @@ Start here to avoid noise explosion:
 
 Target Phase 1A:
 
-- claims >= 300
-- entities >= 80
+- claims >= 300 after governed LLM extraction; deterministic topic-template pass currently provides 145 total claims across Phase 1A/1B sources.
+- entities >= 80 after broader entity extraction; deterministic topic-template pass currently provides 45 total entities.
 - SupplementAdvisor existing rule coverage >= 90%
 - every course enters via PR-style diff
 - one human review pass per course bundle
@@ -1033,11 +1038,20 @@ Then expand to:
 Target Phase 1B:
 
 - 13 courses
-- 150-300 pages
+- 150-300 pages after per-lesson page extraction; deterministic course-page pass currently provides 16 pages.
 - 1,500-3,000 chunks
-- 700-1,500 claims
-- 300-700 entities
-- 600-1,500 relations
+- 700-1,500 claims after governed LLM extraction; deterministic topic-template pass currently provides 145 claims.
+- 300-700 entities after full entity extraction; deterministic topic-template pass currently provides 45 entities.
+- 600-1,500 relations; deterministic topic-template pass currently provides 550 relations and is one template expansion below the target floor.
+
+Current Phase 1A/1B deterministic corpus cut:
+
+- Source root: `/Users/liqiuhua/work/personal/down-dedao`
+- Sources compiled: 13 courses
+- Artifact counts: 16 pages, 45 entities, 145 claims, 550 relations
+- New from ingest run: 4 pages, 9 entities, 129 claims, 503 relations
+- Superseded reviewed claims: 0
+- Design note: the first implementation deliberately mines claims through curated topic templates instead of unconstrained LLM extraction. This keeps paid-course text, medical overclaiming, and draft-over-review pollution controlled while establishing the reviewable pipeline.
 
 ## 15. Testing Strategy
 
@@ -1104,15 +1118,15 @@ Acceptance:
 
 ### Phase 1: Offline V2 Compiler
 
-- scanner
-- manifest
-- classifier
-- claim extractor
-- KG extractor
-- artifact writer
-- quality report
-- `pipeline/ingest_course.py` dry-run PR-diff workflow
-- run Phase 1A six high-signal course bundles first
+- scanner: done in `backend/app/services/system_knowledge_pipeline.py`
+- manifest: done in `backend/data/system_kb_v2_seed/manifest.json`
+- classifier: done in `system_knowledge_pipeline.py`
+- claim extractor: first deterministic topic-template pass done in `backend/app/services/system_knowledge_ingest.py`; governed LLM extraction remains a later pass
+- KG extractor: first deterministic entity/claim/page/relation graph done in `system_knowledge_ingest.py`
+- artifact writer: done in `write_reviewed_artifacts(...)`
+- quality report: lint/import smoke done through `lint_system_kb.py` and artifact tests; reviewer UI remains future work
+- dry-run PR-diff workflow: done in `backend/scripts/ingest_dedao_system_kb.py`
+- Phase 1A/1B high-signal course bundles: first scaled deterministic run completed for 13 sources
 
 ### Phase 2: Serving Plane
 

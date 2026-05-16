@@ -1,23 +1,25 @@
 # Dedao 系统知识库到 Health 系统同步说明
 
 日期：2026-05-16  
-状态：已上线 Phase 0 + Phase 1a reviewed artifact 纵切；Phase 1b 后端检索/治理接口已接入
+状态：已上线 Phase 0 + Phase 1a/1b serving slice；Phase 1c Dedao ingest pipeline + 首轮课程规模化 artifacts 已接入
 
 ## 结论
 
-基于 `/Users/liqiuhua/work/personal/down-dedao` 的系统级知识库已经搭起来了，但当前不是“把所有得到课程全文直接塞进线上 RAG”。当前上线的是更克制的 LLM Wiki V2 serving slice：
+基于 `/Users/liqiuhua/work/personal/down-dedao` 的系统级知识库已经搭起来了，但当前不是“把所有得到课程全文直接塞进线上 RAG”。当前上线的是更克制的 LLM Wiki V2 serving slice + deterministic ingest pipeline：
 
 - `down-dedao` 是离线资料与 wiki 编译工作区。
 - `health-llm-driven` 是线上 serving plane。
 - 线上只同步经过整理的实体、短 claim、课程页元信息和图谱边。
 - 不同步完整付费课程正文，不给用户展示大段课程内容。
 - Agent 使用结构化 `applies_when` 命中知识，而不是只靠 embedding 模糊召回。
+- Dedao 课程扩展先通过 dry-run PR-style diff，再写入 reviewed artifacts；draft 结果不会覆盖已经 reviewed 的 claim。
 
 当前线上已导入：
 
 - Phase 0：12 个文档、5 条图谱边，覆盖 `MTHFR/APOE/FTO/ACTN3/ALDH2` 等基因样板。
 - Phase 1a：49 个文档、25 条图谱边，覆盖代谢健康、营养、血压、血脂、血糖、尿酸、睡眠恢复、运动和用药安全。
 - Phase 1b：扩展到 64 个文档、47 条图谱边，新增 14 个衰老标志实体、1 条“衰老标志仅作轨迹分类框架”边界 claim，并上线 claim/search/admin lint/reindex/decay 能力。
+- Phase 1c：通过 `ingest_dedao_system_kb.py` 首轮编译 13 门 Dedao 健康课程，扩展到 206 个文档、550 条图谱边；包含 145 条系统 claim，覆盖冯雪、仇子龙、仝卿、王家伟、薄世宁、睡眠、糖尿病和微生物组等课程。
 
 ## 源端：down-dedao
 
@@ -31,7 +33,7 @@
 
 - 保存原始得到课程、书籍和 wiki。
 - 维护 `wiki/WIKI_SCHEMA.md`、`wiki/entities/`、`wiki/claims/`。
-- 后续大规模 ingest 应在这里先生成 PR-style diff，再人工 review。
+- 大规模 ingest 先由 `health-llm-driven` 的 deterministic pipeline 生成 PR-style diff，再人工 review 后写入 artifacts。
 - 当前 health 系统不会直接读取 raw 课程正文作为线上回答依据。
 
 优先健康课程范围由 `health-llm-driven` 中的扫描器识别：
@@ -48,6 +50,8 @@ backend/venv/bin/python backend/scripts/scan_system_kb_sources.py --limit 20
 
 - `backend/app/services/system_knowledge_pipeline.py`
 - `backend/scripts/scan_system_kb_sources.py`
+- `backend/app/services/system_knowledge_ingest.py`
+- `backend/scripts/ingest_dedao_system_kb.py`
 
 当前优先课程包括：
 
@@ -87,10 +91,18 @@ backend/data/system_kb_v2_seed/
 
 当前 artifact 计数：
 
-- `pages`: 12
-- `entities`: 36
-- `claims`: 16
-- `relations`: 47
+- `pages`: 16
+- `entities`: 45
+- `claims`: 145
+- `relations`: 550
+
+其中 Dedao ingest 首轮新增：
+
+- `pages_added`: 4
+- `entities_added`: 9
+- `claims_added`: 129
+- `relations_added`: 503
+- `claims_superseded`: 0
 
 新增 `aging_hallmark` 实体层覆盖：基因组不稳定性、端粒损耗、表观遗传改变、蛋白质稳态丧失、巨自噬失活、营养感知失调、线粒体功能障碍、细胞衰老、干细胞耗竭、细胞间通讯改变、慢性炎症、菌群失调、细胞外基质变化、心理社会压力与孤立。它们只作为长期健康轨迹和机制地图使用，不直接映射为补剂处方。
 
@@ -337,13 +349,13 @@ flowchart TD
 
 ## 当前缺口
 
-当前已经完成“系统知识库能同步、能被 Twin 命中、能进入 Agent prompt、能展示证据卡”的纵切，但还没有完成全部 V2 能力：
+当前已经完成“系统知识库能同步、能被 Twin 命中、能进入 Agent prompt、能展示证据卡”的纵切，也已经补上 Dedao deterministic ingest pipeline 和首轮课程规模化 artifacts。还没有完成全部 V2 能力：
 
-- 还没有自动 LLM ingest 课程全文生成 PR diff。
 - 还没有 Chroma/BM25/graph hybrid search 的完整 serving 路径。
 - Specialist 输出还没有全面强制 `evidence_refs`。
 - Mobile 证据卡主要覆盖显式基因问题；普通饮食/补剂/训练建议的证据 chip 还需要 Phase 2 深接入。
-- 当前 Dedao 扩展 corpus 是 reviewed seed，不是全量课程自动构建。
+- 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲覆盖率，换取版权边界、医学边界和 review 可控性。
+- 给忙碌者的营养健康公开课在本轮扫描中没有进入最终 source set，原因是本地目录未暴露可识别的受支持文件；后续补齐源文件后可用同一 pipeline 追加。
 
 ## 后续扩展流程
 
@@ -352,14 +364,34 @@ flowchart TD
 ```text
 1. scan_system_kb_sources.py 扫描 down-dedao
 2. 选择健康相关 priority 课程/书籍
-3. 在 down-dedao/wiki 中整理 entity / claim
-4. 生成 reviewed JSONL artifacts
-5. 人工 review，确认无版权/医学边界问题
+3. 运行 `ingest_dedao_system_kb.py` dry-run 生成 PR-style diff
+4. 人工 review diff，确认无版权/医学边界问题
+5. 使用 `--write` 写入 reviewed JSONL artifacts
 6. artifacts 进入 health-llm-driven repo
 7. 本地运行 import smoke test
 8. commit + push
 9. ./deploy.sh -b 同步到线上 PostgreSQL
 10. 验证 Agent prompt / API / Mobile evidence card
+```
+
+Dry-run 示例：
+
+```bash
+backend/venv/bin/python backend/scripts/ingest_dedao_system_kb.py \
+  --course '冯雪·科学减肥16讲' \
+  --course '冯雪·高血压医学课' \
+  --course '冯雪·高血糖医学课' \
+  --course '冯雪·高血脂医学课' \
+  --course '冯雪·高尿酸医学课' \
+  --course '冯雪·家庭健康管理100讲' \
+  --course '仝卿·营养科学20讲' \
+  --course '仇子龙·基因科学20讲' \
+  --course '王家伟·日常用药健康课' \
+  --course '前沿课·人体微生物组9讲' \
+  --course '薄世宁·医学通识50讲' \
+  --course '给忙碌者的糖尿病医学课' \
+  --course '怎样获得高质量睡眠' \
+  --max-lessons-per-course 40
 ```
 
 本地 smoke test：
@@ -386,5 +418,5 @@ backend/venv/bin/python backend/scripts/import_system_kb_v2_artifacts.py
 
 ```text
 seeded 12 kb_documents and 5 kb_edges
-imported system KB V2 artifacts: 49 documents, 25 edges
+imported system KB V2 artifacts: 206 documents, 550 edges
 ```
