@@ -26,6 +26,22 @@ SKIP_DIRS = {
     "wiki",
 }
 
+PRIVATE_DIR_NAMES = {
+    "personal",
+    "private",
+    "private-vault",
+    "user_episode_memory",
+}
+
+PRIVATE_NAME_KEYWORDS = (
+    "personal",
+    "private",
+    "私人",
+    "个人",
+    "用户",
+    "user-",
+)
+
 SUPPORTED_SUFFIXES = {".md", ".pdf", ".epub", ".txt"}
 
 PRIORITY_COURSES = {
@@ -139,7 +155,7 @@ def scan_health_sources(source_root: str | Path) -> list[HealthSource]:
     root = Path(source_root)
     sources: list[HealthSource] = []
     for course_dir in sorted((item for item in root.iterdir() if item.is_dir()), key=lambda p: p.name):
-        if course_dir.name in SKIP_DIRS or course_dir.name.startswith("."):
+        if course_dir.name in SKIP_DIRS or course_dir.name.startswith(".") or _is_private_name(course_dir.name):
             continue
         files = [
             path
@@ -147,6 +163,7 @@ def scan_health_sources(source_root: str | Path) -> list[HealthSource]:
             if path.is_file()
             and path.suffix.lower() in SUPPORTED_SUFFIXES
             and not any(part in SKIP_DIRS for part in path.relative_to(course_dir).parts)
+            and not any(_is_private_name(part) for part in path.relative_to(course_dir).parts)
         ]
         if not files:
             continue
@@ -174,6 +191,13 @@ def _lesson_count(files: list[Path]) -> int:
         if (match := re.match(r"^(\d{1,3}|第?\d+)[\s｜丨.-]", path.name))
     }
     return len(lesson_prefixes) or len(files)
+
+
+def _is_private_name(name: str) -> bool:
+    normalized = name.lower()
+    if normalized in PRIVATE_DIR_NAMES:
+        return True
+    return any(keyword in normalized for keyword in PRIVATE_NAME_KEYWORDS)
 
 
 def _source_key(course_name: str) -> str:

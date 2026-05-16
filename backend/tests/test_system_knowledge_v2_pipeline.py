@@ -55,6 +55,26 @@ def test_scan_health_sources_filters_relevant_courses(tmp_path):
     assert sources[0].source_key == "dedao:fengxue-gaoxuetang-yixueke"
 
 
+def test_scan_health_sources_excludes_private_material(tmp_path):
+    root = tmp_path / "down-dedao"
+    (root / "personal" / "user-3").mkdir(parents=True)
+    (root / "personal" / "user-3" / "personal-weight-management.md").write_text(
+        "体重 血糖 血脂 尿酸 腰围 睡眠 健康 医学 营养",
+        encoding="utf-8",
+    )
+    (root / "私人健康日志" / "notes").mkdir(parents=True)
+    (root / "私人健康日志" / "notes" / "01 - 血糖和体重.md").write_text(
+        "血糖 体重 腰围 健康 营养",
+        encoding="utf-8",
+    )
+    (root / "冯雪·高血糖医学课" / "PDF").mkdir(parents=True)
+    (root / "冯雪·高血糖医学课" / "PDF" / "01 - 血糖为什么升高？.pdf").write_text("x")
+
+    sources = scan_health_sources(root)
+
+    assert [source.course_name for source in sources] == ["冯雪·高血糖医学课"]
+
+
 def test_classify_health_source_returns_domain_priority():
     result = classify_health_source("冯雪·高血脂医学课", ["07 - 饮食：怎么吃才能降血脂？.pdf"])
 

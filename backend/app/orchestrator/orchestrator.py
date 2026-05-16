@@ -596,6 +596,39 @@ def _attach_kb_evidence_to_findings(
         logger.debug(f"[orchestrator] system KB evidence attach skipped: {e}")
 
 
+def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[str, Any]]:
+    """Build specialist audit payload with system-KB evidence coverage.
+
+    Missing `evidence_refs` is intentionally marked as unsupported for KB
+    coverage metrics. This does not block or downgrade the user-facing answer.
+    """
+
+    snapshot: List[Dict[str, Any]] = []
+    for f in findings:
+        refs = list(f.evidence_refs or [])
+        unsupported = len(refs) == 0
+        data = f.model_dump(mode="json").get("raw") or {}
+        if not isinstance(data, dict):
+            data = {"raw": data}
+        data = dict(data)
+        data["evidence_refs"] = refs
+        data["unsupported"] = unsupported
+        if unsupported:
+            data["unsupported_reason"] = "missing_system_kb_evidence_refs"
+        snapshot.append(
+            {
+                "specialist": f.specialist_name,
+                "kind": f.category,
+                "summary": f.summary,
+                "data": data,
+                "evidence_refs": refs,
+                "unsupported": unsupported,
+                "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
+            }
+        )
+    return snapshot
+
+
 def _inject_memory(db: Session, user_id: int, user_prompt: str,
                     findings: Optional[List[SpecialistFinding]] = None
                     ) -> tuple[str, Dict[str, Any]]:
@@ -962,19 +995,11 @@ async def run_orchestrator(
     # 旁路审计: 支持 /reasoning-trace/specialist/{audit_id} 反查单 finding
     try:
         from app.agents.audit import log_specialist_findings
-        findings_snapshot = [
-            {
-                "specialist": f.specialist_name,
-                "kind": f.category,
-                "summary": f.summary,
-                # f.model_dump(mode="json") coerces datetime/Decimal/UUID/Path to str, PG JSONB safe.
-                # 只存 'raw' 作为结构化 data; 不重复存 'findings' (和 raw 重叠 80%).
-                "data": f.model_dump(mode="json").get("raw"),
-                "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
-            }
-            for f in findings
-        ]
-        log_specialist_findings(db, user_id=user_id, findings=findings_snapshot)
+        log_specialist_findings(
+            db,
+            user_id=user_id,
+            findings=_specialist_audit_snapshot(findings),
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] specialist_findings audit bypass 失败: {e}")
 
@@ -1284,17 +1309,11 @@ async def stream_orchestrator(
 
                 try:
                     from app.agents.audit import log_specialist_findings
-                    findings_snapshot = [
-                        {
-                            "specialist": f.specialist_name,
-                            "kind": f.category,
-                            "summary": f.summary,
-                            "data": f.model_dump(mode="json").get("raw"),
-                            "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
-                        }
-                        for f in findings
-                    ]
-                    log_specialist_findings(bg_db, user_id=user_id, findings=findings_snapshot)
+                    log_specialist_findings(
+                        bg_db,
+                        user_id=user_id,
+                        findings=_specialist_audit_snapshot(findings),
+                    )
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
 
