@@ -88,31 +88,49 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
         + (g.sleep_variants or [])
     )
 
-    by_gene: Dict[str, Dict[str, Any]] = {}
+    by_gene: Dict[str, List[Dict[str, Any]]] = {}
     for v in all_variants:
         name = (v.get("gene_name") or "").upper()
         if name:
-            by_gene.setdefault(name, v)
+            by_gene.setdefault(name, []).append(v)
+
+    def _variants(name: str) -> List[Dict[str, Any]]:
+        return by_gene.get(name, [])
+
+    def _variant(name: str, variant_name: Optional[str] = None, rsid: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        items = _variants(name)
+        if rsid:
+            for item in items:
+                if (item.get("rsid") or "").lower() == rsid.lower():
+                    return item
+        if variant_name:
+            for item in items:
+                if (item.get("variant_name") or "") == variant_name:
+                    return item
+        return items[0] if items else None
 
     def _risk(name: str) -> bool:
-        v = by_gene.get(name)
-        if not v:
+        items = _variants(name)
+        if not items:
             return False
-        label = (v.get("result_label") or "").lower()
-        risk = (v.get("risk_level") or "").lower()
-        geno = (v.get("genotype") or "").upper()
-        return (
-            "risk" in risk or "高" in risk or "中" in risk
-            or "poor" in label or "reduced" in label
-            or "TT" in geno
-        )
+        for v in items:
+            label = (v.get("result_label") or "").lower()
+            risk = (v.get("risk_level") or "").lower()
+            if (
+                risk in {"medium", "high"}
+                or "高" in risk or "中" in risk
+                or "poor" in label or "reduced" in label
+                or "减弱" in label or "下降" in label or "风险" in label
+            ):
+                return True
+        return False
 
     def _geno(name: str) -> str:
-        v = by_gene.get(name)
+        v = _variant(name)
         return (v.get("genotype") or "").upper() if v else ""
 
     def _label(name: str) -> str:
-        v = by_gene.get(name)
+        v = _variant(name)
         return (v.get("result_label") or "").lower() if v else ""
 
     # ── MTHFR ──
@@ -120,14 +138,14 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
     if "TT" in mthfr_geno:
         cfg.methylation = "severely_impaired"
         cfg.folate_form = "methylfolate"
-        cfg.summary_lines.append("MTHFR 677TT: 甲基化严重受损，必须使用甲基叶酸")
+        cfg.summary_lines.append("MTHFR 677TT: 叶酸代谢显著减弱，优先评估同型半胱氨酸/B12后考虑甲基叶酸")
     elif "CT" in mthfr_geno or _risk("MTHFR"):
         cfg.methylation = "impaired"
         cfg.folate_form = "methylfolate"
         cfg.summary_lines.append("MTHFR 677CT: 甲基化能力下降，建议甲基叶酸")
 
     # ── APOE ──
-    apoe = by_gene.get("APOE")
+    apoe = _variant("APOE")
     if apoe:
         geno = _geno("APOE")
         cfg.apoe_type = geno if geno else None
@@ -146,7 +164,7 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
         cfg.summary_lines.append("FTO: 肥胖风险升高，需高蛋白饮食+规律运动")
 
     # ── LCT/MCM6 ──
-    lct = by_gene.get("LCT") or by_gene.get("MCM6")
+    lct = _variant("LCT") or _variant("MCM6")
     if lct and ("CC" in _geno("LCT") or "CC" in _geno("MCM6") or _risk("LCT")):
         cfg.lactose_tolerant = False
         cfg.summary_lines.append("LCT: 乳糖不耐受，避免直接饮用牛奶")
@@ -177,7 +195,7 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
         cfg.summary_lines.append("SOD2/GPX1: 抗氧化能力下降，补充CoQ10和抗氧化食物")
 
     # ── CYP1A2 (咖啡因) ──
-    cyp1a2 = by_gene.get("CYP1A2")
+    cyp1a2 = _variant("CYP1A2")
     if cyp1a2:
         label = _label("CYP1A2")
         if "slow" in label or "poor" in label:
@@ -187,13 +205,13 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
             cfg.caffeine_metabolism = "fast"
 
     # ── ALDH2 (酒精) ──
-    aldh2 = by_gene.get("ALDH2")
+    aldh2 = _variant("ALDH2")
     if aldh2 and ((aldh2.get("risk_level") or "").lower() in ("medium", "high") or _risk("ALDH2")):
         cfg.alcohol_metabolism = "deficient"
         cfg.summary_lines.append("ALDH2: 酒精代谢缺陷，严格限酒")
 
     # ── COMT (心理) ──
-    comt = by_gene.get("COMT")
+    comt = _variant("COMT")
     if comt:
         label = _label("COMT")
         geno = _geno("COMT")
@@ -205,7 +223,7 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
 
     # ── 药物代谢 ──
     for enzyme in ["CYP2D6", "CYP2C19", "CYP2C9", "SLCO1B1"]:
-        v = by_gene.get(enzyme)
+        v = _variant(enzyme)
         if v:
             label = _label(enzyme)
             if "poor" in label:

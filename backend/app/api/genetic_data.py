@@ -1,16 +1,17 @@
 """基因数据 API — 基因检测档案 + 变异位点管理 + 交叉分析"""
 import logging
+import hashlib
 from datetime import date
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc
 
 from app.database import get_db
 from app.models.user import User
-from app.models.genetic_data import GeneticProfile, GeneticVariant
+from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 from app.api.deps import get_current_user_required
 
 logger = logging.getLogger(__name__)
@@ -508,15 +509,65 @@ KNOWN_SNPS = {
 class GeneticPdfUploadRequest(BaseModel):
     test_provider: str = Field(..., description="检测机构")
     test_date: date = Field(..., description="检测日期")
-    pdf_base64: str = Field(..., description="PDF 文件 base64")
+    pdf_base64: str = Field(..., max_length=20_000_000, description="PDF 文件 base64")
     notes: Optional[str] = None
 
 
 class GeneticTxtUploadRequest(BaseModel):
     test_provider: str = Field(..., description="检测机构")
     test_date: date = Field(..., description="检测日期")
-    txt_content: str = Field(..., description="TXT 原始数据内容")
+    txt_content: str = Field(..., max_length=20_000_000, description="TXT 原始数据内容")
     notes: Optional[str] = None
+
+
+def _utcnow():
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc)
+
+
+def _build_import_coverage(
+    matched_rsids: set[str],
+    raw_seen_rsids: Optional[set[str]] = None,
+) -> Dict[str, Any]:
+    from app.services.genetic_registry import missing_reason_for_rsid
+
+    known_rsids = set(KNOWN_SNPS.keys())
+    missing_rsids = sorted(known_rsids - matched_rsids)
+    missing_by_reason: Dict[str, int] = {}
+    missing_by_rsids: Dict[str, str] = {}
+    for rsid in missing_rsids:
+        reason = missing_reason_for_rsid(rsid, raw_seen_rsids)
+        missing_by_reason[reason] = missing_by_reason.get(reason, 0) + 1
+        missing_by_rsids[rsid] = reason
+    return {
+        "known_total": len(known_rsids),
+        "present": len(matched_rsids),
+        "missing": len(missing_rsids),
+        "missing_by_reason": missing_by_reason,
+        "missing_by_rsids": missing_by_rsids,
+    }
+
+
+def _job_to_dict(job: Optional[GeneticImportJob]) -> Optional[Dict[str, Any]]:
+    if job is None:
+        return None
+    return {
+        "id": job.id,
+        "profile_id": job.profile_id,
+        "source_type": job.source_type,
+        "provider": job.provider,
+        "status": job.status,
+        "parser_version": job.parser_version,
+        "matched_count": job.matched_count or 0,
+        "duplicate_count": job.duplicate_count or 0,
+        "unknown_count": job.unknown_count or 0,
+        "unmapped_count": job.unmapped_count or 0,
+        "missing_count": job.missing_count or 0,
+        "error_message": job.error_message,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+    }
 
 
 @router.post("/profiles/upload-txt", summary="上传微基因/23andMe 原始 TXT 数据，自动解析健康位点")
@@ -535,9 +586,26 @@ def upload_genetic_txt(
     db.add(profile)
     db.commit()
     db.refresh(profile)
+    raw_hash = hashlib.sha256(req.txt_content.encode("utf-8", errors="ignore")).hexdigest()
+    import_job = GeneticImportJob(
+        user_id=current_user.id,
+        profile_id=profile.id,
+        source_type="txt",
+        provider=req.test_provider,
+        status="processing",
+        parser_version="genetic-import-v2",
+        raw_file_hash=raw_hash,
+        known_total=len(KNOWN_SNPS),
+        started_at=_utcnow(),
+    )
+    db.add(import_job)
+    db.commit()
+    db.refresh(import_job)
 
     # 解析 TXT: 先收集原始 rsid/genotype, 再按白名单生成正式解释.
     raw_by_rsid: Dict[str, str] = {}
+    raw_record_count = 0
+    duplicate_count = 0
     for line in req.txt_content.split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
@@ -548,9 +616,15 @@ def upload_genetic_txt(
         rsid = _normalize_rsid(parts[0])
         genotype = parts[3].strip()
         if rsid and genotype != "--":
+            raw_record_count += 1
+            if rsid in raw_by_rsid:
+                duplicate_count += 1
+                continue
             raw_by_rsid[rsid] = genotype
 
     matched = []
+    matched_rsids: set[str] = set()
+    unmapped_count = 0
     for rsid, genotype in raw_by_rsid.items():
         if rsid not in KNOWN_SNPS:
             continue
@@ -571,6 +645,7 @@ def upload_genetic_txt(
         else:
             payload = _known_variant_payload(rsid, genotype, snp)
             if payload is None:
+                unmapped_count += 1
                 continue
 
         variant = GeneticVariant(
@@ -590,6 +665,7 @@ def upload_genetic_txt(
             evidence_level=payload.get("evidence_level", "screening"),
         )
         db.add(variant)
+        matched_rsids.add(rsid)
         matched.append({
             "gene": payload["gene_name"],
             "genotype": payload["genotype"],
@@ -597,7 +673,17 @@ def upload_genetic_txt(
             "risk": payload["risk_level"],
         })
 
+    coverage = _build_import_coverage(matched_rsids, set(raw_by_rsid.keys()))
     profile.notes = f"TXT 解析完成，匹配 {len(matched)} 个健康位点"
+    import_job.status = "done"
+    import_job.raw_record_count = raw_record_count
+    import_job.matched_count = len(matched)
+    import_job.duplicate_count = duplicate_count
+    import_job.unknown_count = max(len(set(raw_by_rsid.keys()) - set(KNOWN_SNPS.keys())), 0)
+    import_job.unmapped_count = unmapped_count
+    import_job.missing_count = coverage["missing"]
+    import_job.coverage_summary = coverage
+    import_job.finished_at = _utcnow()
     db.commit()
 
     # Memory KG: 基因位点 → entity + 'self_user has_genotype variant' (旁路)
@@ -621,6 +707,8 @@ def upload_genetic_txt(
         "id": profile.id,
         "matched_count": len(matched),
         "variants": matched,
+        "import_job": _job_to_dict(import_job),
+        "coverage": coverage,
         "message": f"成功解析 {len(matched)} 个健康相关基因位点",
     }
 
@@ -628,6 +716,7 @@ def upload_genetic_txt(
 @router.post("/profiles/upload-pdf", summary="上传基因检测 PDF，AI 自动提取基因位点")
 def upload_genetic_pdf(
     req: GeneticPdfUploadRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
@@ -642,23 +731,33 @@ def upload_genetic_pdf(
     db.add(profile)
     db.commit()
     db.refresh(profile)
+    raw_hash = hashlib.sha256(req.pdf_base64.encode("utf-8", errors="ignore")).hexdigest()
+    import_job = GeneticImportJob(
+        user_id=current_user.id,
+        profile_id=profile.id,
+        source_type="pdf",
+        provider=req.test_provider,
+        status="queued",
+        parser_version="genetic-pdf-vision-v2",
+        raw_file_hash=raw_hash,
+        known_total=len(KNOWN_SNPS),
+    )
+    db.add(import_job)
+    db.commit()
+    db.refresh(import_job)
 
-    # 2. 后台提取
-    import threading
-    threading.Thread(
-        target=_extract_genetic_from_pdf,
-        args=(profile.id, current_user.id, req.pdf_base64),
-        daemon=True,
-    ).start()
+    # 2. 后台提取: 使用 FastAPI BackgroundTasks, 不再创建 daemon thread.
+    background_tasks.add_task(_extract_genetic_from_pdf, profile.id, current_user.id, req.pdf_base64, import_job.id)
 
     return {
         "id": profile.id,
-        "status": "processing",
+        "status": "queued",
+        "import_job": _job_to_dict(import_job),
         "message": "PDF 已上传，AI 正在后台提取基因位点...",
     }
 
 
-def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
+def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str, import_job_id: Optional[int] = None):
     """后台线程：PDF → 图片 → LLM 提取基因位点 → 保存
 
     2026-05-12 修: 旧 prompt 让 LLM 自由填 gene_name, 大量字段串错
@@ -669,13 +768,18 @@ def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
     """
     import asyncio
     import json
-    import base64
     import re
 
     from app.database import SessionLocal
 
     db = SessionLocal()
     try:
+        job = db.query(GeneticImportJob).get(import_job_id) if import_job_id else None
+        if job:
+            job.status = "processing"
+            job.started_at = _utcnow()
+            db.commit()
+
         # PDF 转图片
         from app.api.family_health import _pdf_to_images_base64
         from app.services.llm.usage_tracker import set_caller
@@ -755,6 +859,7 @@ category 分类规则:
         # 后处理: rsid 白名单校验 + 用 KNOWN_SNPS 重写 gene_name/variant_name
         # 根治 2026-05-12 串字段 bug — KNOWN_SNPS 是唯一真理来源
         processed_variants, stats = _postprocess_pdf_variant_payloads(all_variants)
+        matched_rsids: set[str] = set()
 
         for payload in processed_variants:
             try:
@@ -775,10 +880,12 @@ category 分类规则:
                     evidence_level=payload.get("evidence_level", "screening"),
                 )
                 db.add(variant)
+                matched_rsids.add(payload["rsid"])
             except Exception as e:
                 logger.warning(f"[基因PDF] 保存位点失败: {e}")
 
         # 更新档案备注
+        coverage = _build_import_coverage(matched_rsids)
         profile = db.query(GeneticProfile).get(profile_id)
         if profile:
             profile.notes = (
@@ -786,6 +893,16 @@ category 分类规则:
                 f"(字典重写 {stats['rewrote']}, 丢弃无 rsid {stats['dropped_no_rsid']}, "
                 f"丢弃未知 rsid {stats['dropped_unknown_rsid']})"
             )
+        if job:
+            job.status = "done"
+            job.raw_record_count = len(all_variants)
+            job.matched_count = stats["saved"]
+            job.duplicate_count = stats["deduped"]
+            job.unknown_count = stats["dropped_unknown_rsid"] + stats["dropped_no_rsid"]
+            job.unmapped_count = stats["dropped_unmapped_genotype"]
+            job.missing_count = coverage["missing"]
+            job.coverage_summary = coverage
+            job.finished_at = _utcnow()
         db.commit()
         logger.info(
             f"[基因PDF] profile={profile_id} 完成: saved={stats['saved']} "
@@ -816,6 +933,12 @@ category 分类规则:
             profile = db.query(GeneticProfile).get(profile_id)
             if profile:
                 profile.notes = f"PDF 提取失败: {str(e)[:100]}"
+            if import_job_id:
+                job = db.query(GeneticImportJob).get(import_job_id)
+                if job:
+                    job.status = "failed"
+                    job.error_message = str(e)[:500]
+                    job.finished_at = _utcnow()
             db.commit()
         except Exception:
             pass
@@ -905,8 +1028,16 @@ def get_profile_status(
         .filter(GeneticVariant.profile_id == profile.id)
         .count()
     )
+    import_job = (
+        db.query(GeneticImportJob)
+        .filter(GeneticImportJob.profile_id == profile.id, GeneticImportJob.user_id == current_user.id)
+        .order_by(desc(GeneticImportJob.created_at), desc(GeneticImportJob.id))
+        .first()
+    )
     notes = profile.notes or ""
-    if "失败" in notes:
+    if import_job is not None:
+        status = import_job.status or "processing"
+    elif "失败" in notes:
         status = "failed"
     elif "完成" in notes or variant_count > 0:
         status = "done"
@@ -918,7 +1049,24 @@ def get_profile_status(
         "status": status,
         "variant_count": variant_count,
         "notes": notes,
+        "import_job": _job_to_dict(import_job),
+        "coverage": import_job.coverage_summary if import_job else None,
     }
+
+
+@router.get("/predictions/me", summary="我的基因预测与安全边界")
+def get_my_genetic_predictions(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Conservative prediction surface.
+
+    Height requires an externally validated PRS model, education outcome prediction is
+    intentionally unsupported, and disease risk is screening-only.
+    """
+    from app.services.genetic_predictions import build_genetic_predictions
+
+    return build_genetic_predictions(db, current_user.id)
 
 
 @router.get("/profiles/{profile_id}", summary="基因档案详情（含变异位点）")
@@ -1567,7 +1715,7 @@ def _get_abnormal_indicators(db: Session, user_id: int) -> List[Dict[str, Any]]:
         from app.models.family_health import MedicalIndicator
         indicators = (
             db.query(MedicalIndicator)
-            .filter(MedicalIndicator.user_id == user_id, MedicalIndicator.is_abnormal == True)
+            .filter(MedicalIndicator.user_id == user_id, MedicalIndicator.is_abnormal.is_(True))
             .order_by(desc(MedicalIndicator.record_date))
             .limit(10)
             .all()

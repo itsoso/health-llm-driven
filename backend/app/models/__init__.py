@@ -103,6 +103,7 @@ from app.models.episode import (
     HealthEpisode, EpisodeAction, EpisodeFeedback, EpisodeOutcome,
 )
 from app.models.advice_ledger import AdviceLedger
+from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 
 __all__ = [
     "User",
@@ -218,4 +219,7 @@ __all__ = [
     "EpisodeFeedback",
     "EpisodeOutcome",
     "AdviceLedger",
+    "GeneticProfile",
+    "GeneticVariant",
+    "GeneticImportJob",
 ]

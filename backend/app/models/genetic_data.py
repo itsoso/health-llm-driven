@@ -47,4 +47,36 @@ class GeneticVariant(Base):
     __table_args__ = (
         Index("ix_genetic_variants_user_category", "user_id", "category"),
         Index("ix_genetic_variants_user_gene", "user_id", "gene_name"),
+        Index("ix_genetic_variants_profile_rsid", "profile_id", "rsid"),
+    )
+
+
+class GeneticImportJob(Base):
+    """Structured provenance for every genetic import attempt."""
+    __tablename__ = "genetic_import_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    profile_id = Column(Integer, ForeignKey("genetic_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_type = Column(String(20), nullable=False)  # txt/pdf/manual
+    provider = Column(String(100))
+    status = Column(String(20), default="queued", index=True)  # queued/processing/done/failed
+    parser_version = Column(String(50), nullable=False, default="genetic-import-v2")
+    raw_file_hash = Column(String(64))
+    raw_record_count = Column(Integer, default=0)
+    known_total = Column(Integer, default=0)
+    matched_count = Column(Integer, default=0)
+    duplicate_count = Column(Integer, default=0)
+    unknown_count = Column(Integer, default=0)
+    unmapped_count = Column(Integer, default=0)
+    missing_count = Column(Integer, default=0)
+    coverage_summary = Column(JSON)
+    error_message = Column(Text)
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_genetic_import_jobs_user_profile", "user_id", "profile_id"),
     )

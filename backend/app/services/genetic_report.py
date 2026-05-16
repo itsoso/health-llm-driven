@@ -29,7 +29,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import desc, or_
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
@@ -75,8 +75,8 @@ def _empty_clusters(known: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _get_known_snps() -> Dict[str, Dict[str, Any]]:
-    """惰性 import 避免循环依赖. KNOWN_SNPS 在 api/genetic_data.py."""
-    from app.api.genetic_data import KNOWN_SNPS
+    """Return the versioned SNP registry used by import/report surfaces."""
+    from app.services.genetic_registry import KNOWN_SNPS
     return KNOWN_SNPS
 
 
@@ -195,9 +195,9 @@ def _match_variant_for_snp(
 ) -> Optional[GeneticVariant]:
     """按 KNOWN_SNPS 条目匹配用户实测 variant.
 
-    新导入数据先用 rsid 精确匹配; 老数据再用 (gene, variant) 精确匹配;
-    没有精确命中时才退回同 gene。列表页和详情页必须共用这个逻辑, 否则同一
-    SNP 会出现列表高风险、详情低风险的分歧。
+    新导入数据先用 rsid 精确匹配; 老数据只兼容 (gene, variant) 完全匹配。
+    不再退回同 gene, 因为 MTHFR/APOE/CYP 等同一基因可能有多个位点, 同 gene
+    fallback 会造成列表和详情错配。
     """
     known = _get_known_snps()
     expected_rsid = None
@@ -214,7 +214,6 @@ def _match_variant_for_snp(
     variant_label = snp["variant"]
     rsid_exact: Optional[GeneticVariant] = None
     exact: Optional[GeneticVariant] = None
-    fallback: Optional[GeneticVariant] = None
 
     for v in variants:
         if expected_rsid and getattr(v, "rsid", None) == expected_rsid:
@@ -222,12 +221,10 @@ def _match_variant_for_snp(
             continue
         if v.gene_name != gene:
             continue
-        if fallback is None:
-            fallback = v
         if (v.variant_name or "") == variant_label:
             exact = v
 
-    return rsid_exact or exact or fallback
+    return rsid_exact or exact
 
 
 def build_report(db: Session, user_id: int) -> Dict[str, Any]:
@@ -482,6 +479,7 @@ def _build_snp_detail_prompt(
     gene = snp_static["gene"]
     variant = snp_static["variant"]
     desc = snp_static["desc"]
+    category = snp_static.get("category", "")
 
     if user_item.get("hit"):
         gt = user_item.get("genotype")
@@ -503,8 +501,31 @@ def _build_snp_detail_prompt(
         ctx_lines.append(f"慢病: {', '.join(chronic[:5])}")
     ctx_block = "\n".join(ctx_lines) or "(暂无化验/补剂/慢病数据)"
 
+    boundary_lines = [
+        "通用边界: 这是消费级基因筛查级解释, 不能替代诊断、治疗、处方或医生判断。",
+        "所有建议必须写成可讨论/可复盘的生活方式或复查行动, 不得把基因结果写成确定命运。",
+    ]
+    if category == "drug_sensitivity":
+        boundary_lines.extend([
+            "药物边界: 不得建议停药、换药或调整剂量。",
+            "drug_caution 只能写: 带着该基因结果、药名和既往反应去让医生或药师确认。",
+        ])
+    if category == "disease_risk":
+        boundary_lines.extend([
+            "疾病边界: 这是筛查级风险提示, 不是诊断。",
+            "不得输出癌症、阿尔茨海默病、糖尿病等疾病的确定预测; 必须要求结合体检、家族史和症状。",
+        ])
+    if category in {"cognition", "personality"}:
+        boundary_lines.extend([
+            "认知/人格边界: 只能作为低置信度相关性解释, 不能预测个人能力、人格标签或教育结果。",
+        ])
+    boundary_block = "\n".join(boundary_lines)
+
     return f"""你是基因解读 Agent. 用户在看 {gene} ({variant}) 这一个 SNP 的详情.
 你必须给出**详细可执行**的行动, 不只是泛泛科普 — 这是 Agent 跟"基因解读网站"的差别.
+
+【安全与科学边界】
+{boundary_block}
 
 【SNP 静态描述】
 {desc}
@@ -542,13 +563,14 @@ def _build_snp_detail_prompt(
     "建议复查指标 1: 化验项名 + 频率 + 该 SNP 下的目标范围",
     "..."
   ],            // 0-3 条
-  "drug_caution": ["药物注意 1", "..."],  // drug_sensitivity 类才给
+  "drug_caution": ["药物注意 1", "..."],  // drug_sensitivity 类才给; 必须要求医生或药师确认
   "confidence": "high|medium|low"  // MTHFR/APOE/SLCO1B1 等强证据=high
 }}
 
 如果用户未命中 (报告中无该 SNP), 全部 action 留空, headline 写"未在你的报告中测到".
 不要捏造用户没在数据中显示的化验/补剂.
-不要写"建议咨询医生" 这种空话 - 给具体可做的事."""
+不要捏造用户没在数据中显示的化验/补剂.
+如果是药物相关基因, 具体可做的事是"整理药名/剂量/不良反应并找医生或药师确认", 不是自行改药。"""
 
 
 def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, Any]]:
@@ -657,7 +679,8 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
         try:
             from app.services.llm import get_llm_provider
             provider = get_llm_provider()
-            import asyncio, json as _json
+            import asyncio
+            import json as _json
 
             async def _call():
                 result = await provider.chat(
