@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { CardShell } from './CardShell';
+import { EvidenceRefsRow } from './EvidenceRefsRow';
+import type { EvidenceRef } from './EvidenceRefsRow';
 import { colors } from '../../../constants/theme';
 import type { CardSpec } from './types';
 
@@ -12,6 +14,7 @@ interface DietData {
   fiber?: number;
   meals_count?: number;
   meals_by_type?: Record<string, number>; // meal_type -> total_cal
+  evidence_refs?: EvidenceRef[];
 }
 
 const MEAL_LABEL: Record<string, { label: string; icon: string; color: string }> = {
@@ -27,7 +30,7 @@ function today(): string {
 }
 
 export function DietCardView({
-  calories, protein, carbs, fat, fiber, meals_count, meals_by_type,
+  calories, protein, carbs, fat, fiber, meals_count, meals_by_type, evidence_refs,
 }: DietData) {
   const macros = [
     { label: '蛋白', value: protein, color: '#FF375F', unit: 'g' },
@@ -84,6 +87,8 @@ export function DietCardView({
       {!hasMeals && (!calories || calories === 0) && (
         <Text style={txt.emptyHint}>今日还没有饮食记录 · 说「我刚吃了…」就能记上</Text>
       )}
+
+      <EvidenceRefsRow refs={evidence_refs} />
     </CardShell>
   );
 }

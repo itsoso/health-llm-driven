@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
+import { EvidenceRefsRow } from './EvidenceRefsRow';
+import type { EvidenceRef } from './EvidenceRefsRow';
 import { colors } from '../../../constants/theme';
 import type { CardSpec } from './types';
 
@@ -9,9 +11,10 @@ interface SupplementData {
   checked: number;
   total: number;
   pending_names: string[];
+  evidence_refs?: EvidenceRef[];
 }
 
-export function SupplementCardView({ checked, total, pending_names }: SupplementData) {
+export function SupplementCardView({ checked, total, pending_names, evidence_refs }: SupplementData) {
   const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
   const barColor = pct >= 80 ? '#30D158' : pct >= 50 ? '#FF9F0A' : '#FF453A';
   return (
@@ -38,6 +41,7 @@ export function SupplementCardView({ checked, total, pending_names }: Supplement
       {pending_names.length === 0 && total > 0 && (
         <Text style={txt.allDone}>✅ 今日补剂已全部打卡</Text>
       )}
+      <EvidenceRefsRow refs={evidence_refs} />
     </CardShell>
   );
 }

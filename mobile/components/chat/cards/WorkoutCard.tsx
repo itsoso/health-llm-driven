@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
+import { EvidenceRefsRow } from './EvidenceRefsRow';
+import type { EvidenceRef } from './EvidenceRefsRow';
 import { colors } from '../../../constants/theme';
 import type { CardSpec } from './types';
 
@@ -15,6 +17,7 @@ interface WorkoutData {
   max_hr?: number;
   avg_pace?: string;
   steps?: number;
+  evidence_refs?: EvidenceRef[];
 }
 
 /**
@@ -85,6 +88,7 @@ export function WorkoutCardView(d: WorkoutData) {
         {d.avg_pace && <Stat icon="speedometer-outline" color="#BF5AF2" label="配速" value={d.avg_pace} />}
         {d.steps != null && <Stat icon="footsteps-outline" color="#FF9F0A" label="步数" value={d.steps.toLocaleString()} />}
       </View>
+      <EvidenceRefsRow refs={d.evidence_refs} />
     </CardShell>
   );
 }

@@ -60,4 +60,36 @@ describe('streamChat', () => {
     });
     await iter.return?.(undefined as any);
   });
+
+  it('preserves cards from done event for mobile card rendering', async () => {
+    const iter = streamChat('MTHFR 怎么办');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"cards":[{"type":"system_knowledge_evidence","data":{"entity":{"title":"MTHFR"},"claims":[]}}]}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'done',
+        conversationId: 42,
+        messageId: 99,
+        elapsedMs: undefined,
+        llmMs: undefined,
+        llmRounds: undefined,
+        model: undefined,
+        sourcesUsed: undefined,
+        cards: [
+          {
+            type: 'system_knowledge_evidence',
+            data: { entity: { title: 'MTHFR' }, claims: [] },
+          },
+        ],
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
 });
