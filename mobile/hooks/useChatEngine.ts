@@ -81,10 +81,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   const reloadCurrentFromServer = useCallback(async () => {
     if (!conversationId) return;
+    if (streamingRef.current) return;
     try {
       const { messages: msgs, total_messages } = await getConversationMessages(
         conversationId, { days: windowDays || DEFAULT_WINDOW_DAYS }
       );
+      if (streamingRef.current) return;
       setHasMoreHistory(total_messages > msgs.length);
       if (msgs.length === 0) return;
       const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
@@ -127,6 +129,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   }, []);
 
   const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
+    if (streamingRef.current) return;
     try {
       const preferBriefing = options?.preferBriefing ?? true;
       // 默认进入 chat tab 时优先打开"每日健康简报"；但从后台/其它 tab 恢复未完成新会话时,
@@ -139,10 +142,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         )
       );
       if (convs.length === 0) return;
+      if (streamingRef.current) return;
 
       const latestId = convs[0].id;
       setConversationId(latestId);
       const { messages: msgs, total_messages } = await getConversationMessages(latestId, { days: DEFAULT_WINDOW_DAYS });
+      if (streamingRef.current) return;
       setWindowDays(DEFAULT_WINDOW_DAYS);
       setHasMoreHistory(total_messages > msgs.length);
       if (msgs.length > 0) {
@@ -170,6 +175,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const prev = appStateRef.current;
       appStateRef.current = next;
       if ((prev === 'background' || prev === 'inactive') && next === 'active') {
+        if (streamingRef.current) return;
         if (conversationId) {
           reloadCurrentFromServer();
         } else if (streamingRef.current || messagesLengthRef.current > 0) {
@@ -185,6 +191,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   // 拉取, 避免用户切走后后台 task 已落库但 UI 永远停在本地 streaming placeholder。
   useFocusEffect(
     useCallback(() => {
+      if (streamingRef.current) {
+        return () => { /* active stream owns local state; avoid overwriting it with partial server history */ };
+      }
       if (conversationId) {
         reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
       } else if (streamingRef.current || messagesLengthRef.current > 0) {
