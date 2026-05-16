@@ -276,6 +276,8 @@ deploy_backend() {
         python scripts/apply_managed_migrations.py && \
         echo '写入系统知识库 Phase 0 种子...' && \
         python scripts/seed_system_kb_phase0.py && \
+        echo '导入系统知识库 V2 扩展 artifacts...' && \
+        python scripts/import_system_kb_v2_artifacts.py && \
         echo '重启后端服务...' && \
         systemctl restart health-backend && \
         echo '重启 Celery worker & beat...' && \

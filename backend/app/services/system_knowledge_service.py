@@ -147,6 +147,43 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def format_system_knowledge_for_prompt(
+    db: Session,
+    twin: dict[str, Any],
+    max_claims: int = 6,
+    max_chars: int = 1500,
+) -> str:
+    """Render a bounded system-KB block for Agent prompts."""
+
+    result = lookup_for_twin(db, twin)
+    claims = result["claims"][:max_claims]
+    if not claims:
+        return ""
+
+    lines = ["## 系统知识库相关条目"]
+    for claim in claims:
+        sources = ", ".join(claim.get("sources") or [])
+        confidence = claim.get("confidence")
+        confidence_text = f"{confidence:.2f}" if isinstance(confidence, float) else "n/a"
+        line = (
+            f"- {claim.get('title') or claim.get('doc_id')} "
+            f"[{claim.get('evidence_level') or '?'} conf={confidence_text}] "
+            f"({claim.get('doc_id')})"
+        )
+        summary = claim.get("summary")
+        if summary:
+            line += f": {summary}"
+        if sources:
+            line += f" 来源: {sources}"
+        lines.append(line)
+    lines.append(f"边界: {CLAIM_BOUNDARY}")
+
+    rendered = "\n".join(lines)
+    if len(rendered) <= max_chars:
+        return rendered
+    return rendered[: max_chars - 3].rstrip() + "..."
+
+
 def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any] | None:
     """Build a mobile evidence card for explicit gene questions.
 
@@ -218,6 +255,13 @@ def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
 
 
 def _parse_literal(raw: str) -> Any:
+    normalized = raw.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    if normalized in {"null", "none"}:
+        return None
     try:
         return ast.literal_eval(raw.strip())
     except (SyntaxError, ValueError):
@@ -230,9 +274,13 @@ def _value_at_path(twin: dict[str, Any], path: str) -> Any:
         parts = parts[1:]
     current: Any = twin
     for part in parts:
-        if not isinstance(current, dict):
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, list) and part.isdigit():
+            index = int(part)
+            current = current[index] if index < len(current) else None
+        else:
             return None
-        current = current.get(part)
         if current is None:
             return None
     return current
@@ -258,6 +306,24 @@ def _extract_entity_keys(twin: dict[str, Any]) -> set[tuple[str, str]]:
         keys.add(("biomarker", "Hcy"))
     if labs.get("ldl_c_mmol_l") is not None or labs.get("LDL-C") is not None:
         keys.add(("biomarker", "LDL-C"))
+    if labs.get("hba1c_percent") is not None or labs.get("HbA1c") is not None:
+        keys.add(("biomarker", "HbA1c"))
+    if labs.get("triglycerides_mmol_l") is not None or labs.get("TG") is not None:
+        keys.add(("biomarker", "TG"))
+    if labs.get("systolic_bp") is not None or labs.get("diastolic_bp") is not None:
+        keys.add(("biomarker", "BP"))
+    if labs.get("uric_acid_umol_l") is not None or labs.get("UA") is not None:
+        keys.add(("biomarker", "uric-acid"))
+
+    goals = twin.get("goals") if isinstance(twin.get("goals"), dict) else {}
+    if _value_at_path({"goals": goals}, "twin.goals.weight_loss.active") is True:
+        keys.add(("condition", "metabolic-health"))
+        keys.add(("intervention", "weight-waist-tracking"))
+    if _value_at_path({"goals": goals}, "twin.goals.metabolic_health.active") is True:
+        keys.add(("condition", "metabolic-health"))
+    if _value_at_path({"goals": goals}, "twin.goals.sleep.active") is True:
+        keys.add(("condition", "sleep-recovery"))
+
     return keys
 
 

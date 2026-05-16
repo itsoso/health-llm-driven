@@ -1,0 +1,28 @@
+{
+  "protocol": "akbp",
+  "version": "2.0",
+  "compiled_at": "2026-05-16T19:20:00+08:00",
+  "source_root": "/Users/liqiuhua/work/personal/down-dedao",
+  "license_scope": "internal_transformed_claims",
+  "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
+  "counts": {
+    "pages": 12,
+    "entities": 22,
+    "claims": 15,
+    "relations": 25
+  },
+  "priority_sources": [
+    "冯雪·科学减肥16讲",
+    "冯雪·高血压医学课",
+    "冯雪·高血糖医学课",
+    "冯雪·高血脂医学课",
+    "冯雪·高尿酸医学课",
+    "给忙碌者的糖尿病医学课",
+    "给忙碌者的营养健康公开课",
+    "仝卿·营养科学20讲",
+    "仇子龙·基因科学20讲",
+    "王家伟·日常用药健康课",
+    "怎样获得高质量睡眠",
+    "薄世宁·医学通识50讲"
+  ]
+}

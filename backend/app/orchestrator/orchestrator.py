@@ -12,7 +12,6 @@ import json
 import logging
 import time
 from contextvars import ContextVar
-from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -372,6 +371,18 @@ def _build_synthesis_prompt(
     """
 
     twin_blob = twin_to_prompt_blob(twin)
+    system_kb_text = ""
+    if db is not None:
+        try:
+            from app.services.system_knowledge_service import format_system_knowledge_for_prompt
+
+            system_kb_text = format_system_knowledge_for_prompt(
+                db,
+                _system_kb_twin_payload(twin),
+                max_claims=6,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[orchestrator] system KB prompt injection skipped: {e}")
 
     findings_text_parts: List[str] = []
     for f in findings:
@@ -517,6 +528,8 @@ def _build_synthesis_prompt(
         f"【用户原始问题】\n{query}",
         f"【用户当前健康快照】\n{twin_blob or '(数据暂缺)'}",
     ]
+    if system_kb_text:
+        user_prompt_parts.append(f"【系统知识库命中】\n{system_kb_text}")
     if credit_text:
         user_prompt_parts.append(f"【Specialist 历史命中率 (近 30 天)】\n{credit_text}")
     if track_text:
@@ -530,6 +543,43 @@ def _build_synthesis_prompt(
     user_prompt_parts.append("请基于以上信息写回答。")
 
     return system_prompt, "\n\n".join(user_prompt_parts)
+
+
+def _system_kb_twin_payload(twin: HealthTwin) -> Dict[str, Any]:
+    """Map HealthTwin fields into the compact KB condition namespace."""
+
+    goals_text = " ".join(
+        str(goal.get("name") or goal.get("title") or goal.get("goal_type") or goal)
+        for goal in twin.goals.active_goals
+        if isinstance(goal, dict)
+    )
+    goals = {
+        "weight_loss": {"active": any(token in goals_text for token in ("减重", "减肥", "体重", "腰围"))},
+        "metabolic_health": {
+            "active": any(token in goals_text for token in ("代谢", "血糖", "血脂", "血压", "尿酸", "健康"))
+        },
+        "sleep": {"active": any(token in goals_text for token in ("睡眠", "恢复", "精力"))},
+    }
+    return {
+        "labs": {
+            "hba1c_percent": twin.labs.hba1c,
+            "fasting_glucose_mmol_l": twin.labs.blood_glucose,
+            "ldl_c_mmol_l": twin.labs.ldl,
+            "triglycerides_mmol_l": twin.labs.triglycerides,
+            "systolic_bp": twin.labs.blood_pressure_systolic,
+            "diastolic_bp": twin.labs.blood_pressure_diastolic,
+            "uric_acid_umol_l": twin.labs.uric_acid,
+            "eGFR": twin.labs.egfr,
+        },
+        "wearable": {
+            "sleep_duration_hours": twin.physiological.sleep_duration_h_latest,
+            "hrv_latest": twin.physiological.hrv_latest,
+            "resting_hr": twin.physiological.resting_hr,
+        },
+        "medications": twin.medication.active_meds,
+        "supplements": twin.supplement.active_supplements,
+        "goals": goals,
+    }
 
 
 def _inject_memory(db: Session, user_id: int, user_prompt: str,
@@ -1116,8 +1166,8 @@ async def _stream_orchestrator_fast(
             yield event
     except (asyncio.CancelledError, GeneratorExit):
         logger.info(
-            f"[orchestrator.stream.siri_fast] client disconnected, "
-            f"bg task continues to finish audit"
+            "[orchestrator.stream.siri_fast] client disconnected, "
+            "bg task continues to finish audit"
         )
         raise
 
@@ -1305,7 +1355,7 @@ async def stream_orchestrator(
             yield event
     except (asyncio.CancelledError, GeneratorExit):
         logger.info(
-            f"[orchestrator.stream] client disconnected, "
-            f"bg task continues to finish audit / journal / memory"
+            "[orchestrator.stream] client disconnected, "
+            "bg task continues to finish audit / journal / memory"
         )
         raise
