@@ -23,7 +23,19 @@ export default function SettingsScreen() {
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
   const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
-  const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city || '未设置';
+  // 2026-05-16: 之前一直显示老 manual_city 是因为没看 use_manual_location flag —
+  // GPS 自动同步会把 flag 切 false 但不清旧 manual_city, 导致用户在杭州但显示"北京".
+  // 正确优先级: 手动模式开启 → manual; 否则用 detected (region 比 city 友好,
+  // qweather 给的 city 常是区/县名 "海淀"/"余杭", region 是"北京市"/"杭州市").
+  const city = useMemo(() => {
+    const useManual = profile?.use_manual_location === true;
+    if (useManual && profile?.manual_location?.city) return profile.manual_location.city;
+    const detected = profile?.detected_location;
+    if (detected?.region) return detected.region.replace(/[市省]$/, '');
+    if (detected?.city) return detected.city;
+    if (profile?.city) return profile.city;
+    return '未设置';
+  }, [profile]);
 
   const { data: garminStatus, refetch: refetchGarminStatus } = useQuery({
     queryKey: ['garminStatus'],
