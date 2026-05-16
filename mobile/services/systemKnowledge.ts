@@ -30,3 +30,15 @@ export async function getKnowledgeClaim(claimId: string): Promise<KnowledgeClaim
   const res = await api.get(`/knowledge/claim/${encoded}`);
   return res.data;
 }
+
+export async function submitKnowledgeClaimFeedback(
+  claimId: string,
+  reason?: string,
+): Promise<{ ok: boolean; claim_id?: string; op?: string }> {
+  const encoded = encodeURIComponent(claimId);
+  const res = await api.post(`/knowledge/claim/${encoded}/feedback`, {
+    feedback: 'disagree',
+    reason,
+  });
+  return res.data;
+}

@@ -49,4 +49,40 @@ describe('EvidenceRefsRow', () => {
     expect(screen.getByText('dedao:qiuzilong-genetics-07')).toBeTruthy();
     expect(screen.getByText(/不替代医生诊断/)).toBeTruthy();
   });
+
+  it('submits disagree feedback for a claim', async () => {
+    const loadClaim = jest.fn().mockResolvedValue({
+      claim: {
+        doc_id: 'claim:c_mthfr_c677t_hcy_folate_boundary',
+        title: 'MTHFR C677T 与叶酸转化边界',
+        evidence_level: 'B',
+        confidence: 0.82,
+      },
+    });
+    const submitFeedback = jest.fn().mockResolvedValue({ ok: true });
+
+    const screen = render(
+      <EvidenceRefsRow
+        refs={['claim:c_mthfr_c677t_hcy_folate_boundary']}
+        loadClaim={loadClaim}
+        submitFeedback={submitFeedback}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('system-kb-evidence-chip'));
+
+    await waitFor(() => {
+      expect(screen.getByText('这条证据不对')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByText('这条证据不对'));
+
+    await waitFor(() => {
+      expect(submitFeedback).toHaveBeenCalledWith(
+        'claim:c_mthfr_c677t_hcy_folate_boundary',
+        '用户在移动端反馈这条系统知识库证据不适用',
+      );
+      expect(screen.getByText('已记录反馈')).toBeTruthy();
+    });
+  });
 });

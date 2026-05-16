@@ -19,6 +19,7 @@ export type EvidenceRef = string | { claim_id?: string; doc_id?: string; id?: st
 interface EvidenceRefsRowProps {
   refs?: EvidenceRef[] | null;
   loadClaim?: (claimId: string) => Promise<KnowledgeClaimBundle>;
+  submitFeedback?: (claimId: string, reason?: string) => Promise<any>;
 }
 
 function normalizeRefs(refs?: EvidenceRef[] | null): string[] {
@@ -45,12 +46,22 @@ async function defaultLoadClaim(claimId: string): Promise<KnowledgeClaimBundle> 
   return getKnowledgeClaim(claimId);
 }
 
-export function EvidenceRefsRow({ refs, loadClaim = defaultLoadClaim }: EvidenceRefsRowProps) {
+async function defaultSubmitFeedback(claimId: string, reason?: string): Promise<any> {
+  const { submitKnowledgeClaimFeedback } = await import('../../../services/systemKnowledge');
+  return submitKnowledgeClaimFeedback(claimId, reason);
+}
+
+export function EvidenceRefsRow({
+  refs,
+  loadClaim = defaultLoadClaim,
+  submitFeedback = defaultSubmitFeedback,
+}: EvidenceRefsRowProps) {
   const claimIds = useMemo(() => normalizeRefs(refs), [refs]);
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [bundles, setBundles] = useState<KnowledgeClaimBundle[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   if (claimIds.length === 0) return null;
 
@@ -71,6 +82,18 @@ export function EvidenceRefsRow({ refs, loadClaim = defaultLoadClaim }: Evidence
       setError('暂时无法读取证据详情');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function sendDisagreeFeedback() {
+    const claimId = bundles[0]?.claim?.doc_id || claimIds[0];
+    if (!claimId || feedbackStatus === 'sending') return;
+    setFeedbackStatus('sending');
+    try {
+      await submitFeedback(claimId, '用户在移动端反馈这条系统知识库证据不适用');
+      setFeedbackStatus('sent');
+    } catch {
+      setFeedbackStatus('error');
     }
   }
 
@@ -152,6 +175,31 @@ export function EvidenceRefsRow({ refs, loadClaim = defaultLoadClaim }: Evidence
                 })}
                 {bundles[0]?.claim_boundary ? (
                   <Text style={txt.boundary}>{bundles[0].claim_boundary}</Text>
+                ) : null}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  disabled={feedbackStatus === 'sending' || feedbackStatus === 'sent'}
+                  style={[
+                    styles.feedbackButton,
+                    feedbackStatus === 'sent' ? styles.feedbackButtonDone : null,
+                  ]}
+                  onPress={sendDisagreeFeedback}
+                >
+                  <Ionicons
+                    name={feedbackStatus === 'sent' ? 'checkmark-circle-outline' : 'thumbs-down-outline'}
+                    size={13}
+                    color={feedbackStatus === 'sent' ? '#2C9B57' : colors.labelSecondary}
+                  />
+                  <Text style={feedbackStatus === 'sent' ? txt.feedbackDone : txt.feedbackText}>
+                    {feedbackStatus === 'sent'
+                      ? '已记录反馈'
+                      : feedbackStatus === 'sending'
+                        ? '记录中'
+                        : '这条证据不对'}
+                  </Text>
+                </TouchableOpacity>
+                {feedbackStatus === 'error' ? (
+                  <Text style={txt.error}>反馈暂时提交失败</Text>
                 ) : null}
               </ScrollView>
             ) : null}
@@ -245,6 +293,20 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#EAF1FB',
   },
+  feedbackButton: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 7,
+    backgroundColor: '#F2F3F5',
+  },
+  feedbackButtonDone: {
+    backgroundColor: '#EAF7EF',
+  },
 });
 
 const txt = {
@@ -256,5 +318,7 @@ const txt = {
   summary: { color: colors.labelSecondary, fontSize: 12, lineHeight: 17, marginTop: 6 } as TextStyle,
   source: { color: '#506174', fontSize: 10, maxWidth: 185 } as TextStyle,
   boundary: { color: colors.labelTertiary, fontSize: 10, lineHeight: 15, marginTop: 2 } as TextStyle,
+  feedbackText: { color: colors.labelSecondary, fontSize: 11, fontWeight: '700' } as TextStyle,
+  feedbackDone: { color: '#2C9B57', fontSize: 11, fontWeight: '800' } as TextStyle,
   error: { color: colors.red, fontSize: 12, paddingVertical: spacing.lg } as TextStyle,
 };

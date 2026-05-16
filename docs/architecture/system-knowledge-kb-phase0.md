@@ -38,7 +38,7 @@ flowchart TD
 - `app.models.system_knowledge.KBEdge`: typed graph edges between documents.
 - `app.models.system_knowledge.KBAudit`: query and lookup audit trail.
 - `app.services.system_knowledge_service`: deterministic entity bundle, claim detail, DB-backed search, Twin lookup, confidence decay, lint, reindex, and specialist evidence attachment.
-- `app.api.system_knowledge`: authenticated `/knowledge/entity/...`, `/knowledge/claim/...`, `/knowledge/search`, `/knowledge/lookup_for_twin`, plus admin `/admin/knowledge/lint_report` and `/admin/knowledge/reindex`.
+- `app.api.system_knowledge`: authenticated `/knowledge/entity/...`, `/knowledge/claim/...`, `/knowledge/claim/{claim_id}/feedback`, `/knowledge/search`, `/knowledge/lookup_for_twin`, plus admin `/admin/knowledge/lint_report` and `/admin/knowledge/reindex`.
 - `migrations/managed/20260516_200000_create_system_knowledge_tables.*.sql`: PostgreSQL production and SQLite test migrations.
 - `app.services.system_knowledge_pipeline`: deterministic source scanner and health-domain classifier for `/Users/liqiuhua/work/personal/down-dedao`.
 - `app.services.system_knowledge_ingest`: deterministic Dedao course ingest, transformed claim mining, duplicate/conflict handling, supersession guardrails, entity/claim/page/relation artifact generation, and PR-style diff rendering.
@@ -110,11 +110,13 @@ Current reviewed artifact counts:
 New behavior:
 
 - `GET /api/v1/knowledge/claim/{claim_id}` returns claim detail, graph neighbors, edges, and medical boundary.
+- `POST /api/v1/knowledge/claim/{claim_id}/feedback` records `feedback_disagree` in `kb_audit` so mobile evidence feedback becomes a lifecycle signal.
 - `GET /api/v1/knowledge/search` performs deterministic DB-only lexical scoring plus graph context. It is compatible with SQLite tests and production PostgreSQL; later FTS/vector/RRF can replace the scorer without changing response shape.
 - `GET /api/v1/admin/knowledge/lint_report` reports orphan entities, orphan claims, invalid `applies_when`, and stale claims.
 - `POST /api/v1/admin/knowledge/reindex` refreshes `kb_documents.tsv` and SHA-256 `content_hash`.
 - `apply_confidence_decay(...)` and `scripts/decay_system_kb_confidence.py` implement the first lifecycle hook for stale claim confidence decay.
 - Orchestrator attaches matched system KB claim IDs to specialist output as `evidence_refs`, so mobile can render evidence chips on non-gene cards in a later UI pass.
+- KnowledgeLibrarian now prefers system KB V2 when a DB session is present, returning `system_knowledge_reference` findings and claim-level `evidence_refs`; the old Chroma wiki search remains fallback.
 
 New taxonomy:
 
@@ -144,4 +146,4 @@ First scaled run:
 
 ## Next Interfaces
 
-Next work should keep widening the reviewed artifact corpus with more topic templates or a governed LLM extraction pass. The main remaining product work is mobile rendering for `evidence_refs`, deeper PostgreSQL FTS/vector hybrid search, and reviewer workflows for claim approval/supersession.
+Next work should keep widening the reviewed artifact corpus with more topic templates or a governed LLM extraction pass. The main remaining product work is stronger specialist evidence enforcement, deeper PostgreSQL FTS/vector hybrid search, private-vault cleanup for personal wiki pages, and reviewer workflows for claim approval/supersession.

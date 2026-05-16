@@ -209,6 +209,7 @@ python scripts/import_system_kb_v2_artifacts.py
 
 - `GET /api/v1/knowledge/entity/{entity_type}/{entity_id}`
 - `GET /api/v1/knowledge/claim/{claim_id}`
+- `POST /api/v1/knowledge/claim/{claim_id}/feedback`
 - `GET /api/v1/knowledge/search?q=...&limit=...`
 - `POST /api/v1/knowledge/lookup_for_twin`
 - `GET /api/v1/admin/knowledge/lint_report`
@@ -293,7 +294,7 @@ Specialist 结果现在支持 `evidence_refs`。Orchestrator 在 specialist 运�
 - `SpecialistFinding.raw.system_kb_evidence_refs`
 - `finding.findings[*].evidence_refs`
 
-这为 mobile 的证据 chip、审计和后续 unsupported 建议统计提供统一数据源。
+这为 mobile 的证据 chip、审计和后续 unsupported 建议统计提供统一数据源。Mobile 证据详情里的“这条证据不对”会调用 `/knowledge/claim/{claim_id}/feedback`，在 `kb_audit` 写入 `feedback_disagree`，作为后续 contradiction lint 和人工 review 的输入。
 
 ### Mobile 展示
 
@@ -353,7 +354,7 @@ flowchart TD
 
 - 还没有 Chroma/BM25/graph hybrid search 的完整 serving 路径。
 - Specialist 输出还没有全面强制 `evidence_refs`。
-- Mobile 证据卡主要覆盖显式基因问题；普通饮食/补剂/训练建议的证据 chip 还需要 Phase 2 深接入。
+- Mobile 已有普通饮食/补剂/训练卡的 evidence chip 和 claim feedback 入口；仍缺统一的完整 EntityCard/ClaimSheet 设计和更细的来源分组。
 - 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲覆盖率，换取版权边界、医学边界和 review 可控性。
 - 给忙碌者的营养健康公开课在本轮扫描中没有进入最终 source set，原因是本地目录未暴露可识别的受支持文件；后续补齐源文件后可用同一 pipeline 追加。
 

@@ -42,8 +42,6 @@ class KnowledgeLibrarianSpecialist:
     def run(self, twin: HealthTwin, context: Dict[str, Any]) -> SpecialistFinding:
         t0 = time.monotonic()
         try:
-            from app.agents.knowledge_librarian.indexer import search_knowledge
-
             query = context.get("query", "")
             if not query:
                 return SpecialistFinding(
@@ -55,9 +53,14 @@ class KnowledgeLibrarianSpecialist:
                     ms_elapsed=int((time.monotonic() - t0) * 1000),
                 )
 
-            # 搜索知识库
-            results = search_knowledge(query, n_results=5)
+            system_kb_finding = self._run_system_kb(query, context, t0)
+            if system_kb_finding is not None:
+                return system_kb_finding
 
+            from app.agents.knowledge_librarian.indexer import search_knowledge
+
+            # 旧 ChromaDB wiki 检索保留为 fallback。
+            results = search_knowledge(query, n_results=5)
             if not results:
                 return SpecialistFinding(
                     specialist_name=self.name,
@@ -103,3 +106,111 @@ class KnowledgeLibrarianSpecialist:
                 raw={"error": str(e)},
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
             )
+
+    def _run_system_kb(
+        self,
+        query: str,
+        context: Dict[str, Any],
+        started_at: float,
+    ) -> SpecialistFinding | None:
+        db = context.get("db")
+        if db is None:
+            return None
+
+        try:
+            from app.services.system_knowledge_service import (
+                build_evidence_card_for_message,
+                search_knowledge as search_system_knowledge,
+            )
+
+            card = build_evidence_card_for_message(db, query)
+            if card:
+                data = card.get("data") or {}
+                claims = data.get("claims") or []
+                entity = data.get("entity") or {}
+                refs = [
+                    claim.get("doc_id")
+                    for claim in claims
+                    if isinstance(claim, dict) and str(claim.get("doc_id") or "").startswith("claim:")
+                ]
+                findings = [
+                    {
+                        "type": "system_knowledge_reference",
+                        "title": claim.get("title") or claim.get("doc_id"),
+                        "summary": claim.get("summary"),
+                        "evidence_level": claim.get("evidence_level"),
+                        "confidence": claim.get("confidence"),
+                        "sources": claim.get("sources") or [],
+                        "entity": entity,
+                        "claim_id": claim.get("doc_id"),
+                        "evidence_refs": [claim.get("doc_id")],
+                    }
+                    for claim in claims
+                    if isinstance(claim, dict)
+                ]
+                return SpecialistFinding(
+                    specialist_name=self.name,
+                    category=self.category,
+                    summary=f"系统知识库命中 {len(claims)} 条结构化证据",
+                    findings=findings,
+                    raw={
+                        "source": "system_kb_v2",
+                        "mode": "explicit_entity_card",
+                        "query": query,
+                        "entity": entity,
+                        "claim_boundary": data.get("claim_boundary"),
+                    },
+                    evidence_refs=refs,
+                    ms_elapsed=int((time.monotonic() - started_at) * 1000),
+                )
+
+            result = search_system_knowledge(db, query, limit=5)
+            results = result.get("results") or []
+            claim_results = [
+                item for item in results
+                if isinstance(item, dict)
+                and (item.get("document") or {}).get("doc_type") == "claim"
+            ]
+            if not claim_results:
+                return None
+
+            refs = [
+                item["document"]["doc_id"]
+                for item in claim_results
+                if str(item["document"].get("doc_id") or "").startswith("claim:")
+            ]
+            findings = []
+            for item in claim_results:
+                document = item["document"]
+                findings.append(
+                    {
+                        "type": "system_knowledge_reference",
+                        "title": document.get("title") or document.get("doc_id"),
+                        "summary": document.get("summary"),
+                        "evidence_level": document.get("evidence_level"),
+                        "confidence": document.get("confidence"),
+                        "sources": document.get("sources") or [],
+                        "claim_id": document.get("doc_id"),
+                        "evidence_refs": [document.get("doc_id")],
+                        "score": item.get("score"),
+                    }
+                )
+
+            return SpecialistFinding(
+                specialist_name=self.name,
+                category=self.category,
+                summary=f"系统知识库找到 {len(claim_results)} 条 claim 证据",
+                findings=findings,
+                raw={
+                    "source": "system_kb_v2",
+                    "mode": "db_search",
+                    "query": query,
+                    "result_count": len(results),
+                    "claim_boundary": result.get("claim_boundary"),
+                },
+                evidence_refs=refs,
+                ms_elapsed=int((time.monotonic() - started_at) * 1000),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[knowledge_librarian] system KB fallback: {e}")
+            return None

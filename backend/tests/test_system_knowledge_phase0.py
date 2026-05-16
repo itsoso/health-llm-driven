@@ -159,6 +159,27 @@ def test_get_claim_returns_claim_detail_with_neighbors(client, db, auth_user_and
     assert payload["claim_boundary"] == "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
 
 
+def test_claim_feedback_disagree_writes_audit_log(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+
+    response = client.post(
+        "/api/v1/knowledge/claim/claim:c_mthfr_c677t_hcy_folate_boundary/feedback",
+        headers=headers,
+        json={"feedback": "disagree", "reason": "这条建议和医生意见不一致"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+    from app.models.system_knowledge import KBAudit
+
+    audit = db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").one()
+    assert audit.doc_id == "claim:c_mthfr_c677t_hcy_folate_boundary"
+    assert audit.actor == f"user:{user.id}"
+    assert audit.diff["reason"] == "这条建议和医生意见不一致"
+
+
 def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)

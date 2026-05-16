@@ -1,6 +1,6 @@
 """System knowledge API backed by the LLM Wiki v2 compiled store."""
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -33,6 +33,11 @@ class TwinLookupRequest(BaseModel):
     goals: dict[str, Any] = Field(default_factory=dict)
 
 
+class ClaimFeedbackRequest(BaseModel):
+    feedback: Literal["disagree"] = "disagree"
+    reason: str | None = Field(default=None, max_length=500)
+
+
 @router.get("/entity/{entity_type}/{entity_id}", summary="获取系统知识库实体与关联 claim")
 def get_knowledge_entity(
     entity_type: str,
@@ -60,6 +65,32 @@ def get_knowledge_claim(
 
     _record_audit(db, doc_id=bundle["claim"]["doc_id"], op="query_claim", actor=f"user:{current_user.id}")
     return bundle
+
+
+@router.post("/claim/{claim_id}/feedback", summary="反馈系统知识库 claim 不适用或不准确")
+def submit_knowledge_claim_feedback(
+    claim_id: str,
+    request: ClaimFeedbackRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    bundle = get_claim_bundle(db, claim_id=claim_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="知识库 claim 不存在")
+
+    op = "feedback_disagree" if request.feedback == "disagree" else f"feedback_{request.feedback}"
+    _record_audit(
+        db,
+        doc_id=bundle["claim"]["doc_id"],
+        op=op,
+        actor=f"user:{current_user.id}",
+        diff={
+            "feedback": request.feedback,
+            "reason": request.reason,
+            "claim_title": bundle["claim"].get("title"),
+        },
+    )
+    return {"ok": True, "claim_id": bundle["claim"]["doc_id"], "op": op}
 
 
 @router.get("/search", summary="搜索系统知识库")
