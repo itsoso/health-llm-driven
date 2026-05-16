@@ -11,6 +11,7 @@
 """
 import json
 import logging
+import re
 import time
 from datetime import UTC, datetime, timezone, timedelta
 from typing import AsyncGenerator, Dict, Any, List, Optional
@@ -115,7 +116,6 @@ def _inspect_user_data_sources(db, user_id: int) -> list:
     return sources
 
 
-import re
 _NEEDS_SKILL_RE = re.compile(
     r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|"
     r"早餐|午餐|晚餐|加餐|夜宵|早饭|午饭|晚饭|"
@@ -278,7 +278,6 @@ class AgentExecutor:
 
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
-            import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
                 # 调用 LLM（非流式，需要完整解析 tool_call）
                 _round_start = time.time()
@@ -423,6 +422,17 @@ class AgentExecutor:
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         llm_ms_total = sum(llm_rounds_ms)
+        evidence_cards = []
+        try:
+            from app.services.system_knowledge_service import build_evidence_card_for_message
+            evidence_card = build_evidence_card_for_message(self.db, message)
+            if evidence_card:
+                evidence_cards.append(evidence_card)
+                if "系统知识库" not in sources_used:
+                    sources_used.append("系统知识库")
+        except Exception as e:
+            logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
+
         # 2026-05-14 FIX-7: 把性能 + 可解释性写到 message.meta, 用户回来 reload 能恢复 footer
         try:
             ai_msg.meta = {
@@ -432,6 +442,7 @@ class AgentExecutor:
                 "llm_rounds_ms": llm_rounds_ms,
                 "model": model_name,
                 "sources_used": sources_used,
+                "cards": evidence_cards,
             }
         except Exception as e:
             logger.warning(f"[agent_executor] write meta 失败: {e}")
@@ -449,6 +460,7 @@ class AgentExecutor:
                 "model": model_name,
                 "sources_used": sources_used,
                 "mode": "agent",
+                "cards": evidence_cards,
             },
         }
 
@@ -1051,9 +1063,12 @@ class AgentExecutor:
             severity = (max(severity_vals) if severity_vals
                         else (min(8, max(3, sneezing // 3)) if sneezing else 2))
             parts = []
-            if sneezing: parts.append(f"喷嚏 {sneezing} 次")
-            if congestion: parts.append(f"鼻塞 {congestion}/10")
-            if runny_nose: parts.append(f"流涕 {runny_nose} 次")
+            if sneezing:
+                parts.append(f"喷嚏 {sneezing} 次")
+            if congestion:
+                parts.append(f"鼻塞 {congestion}/10")
+            if runny_nose:
+                parts.append(f"流涕 {runny_nose} 次")
             notes = data.get("notes") or "、".join(parts) or "鼻炎症状"
             payload = {
                 "illness_name": "鼻炎发作",

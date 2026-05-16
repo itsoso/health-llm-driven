@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { colors, radii } from '../../../constants/theme';
 import type { CardSpec } from './types';
-import { sharePlainText } from '../../../utils/share';
 
 interface MenuItem {
   name: string;
@@ -68,6 +67,7 @@ export function MenuShareCardView(d: MenuShareData) {
   const handleShare = async () => {
     Haptics.selectionAsync();
     try {
+      const { sharePlainText } = await import('../../../utils/share');
       await sharePlainText({
         title: d.title || '菜单分享',
         message: buildShareText(d),

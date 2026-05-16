@@ -38,3 +38,18 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     with engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM schema_migrations")).scalar_one()
     assert count == 1
+
+
+def test_managed_system_knowledge_migration_creates_phase0_tables():
+    engine = create_engine("sqlite:///:memory:")
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+
+    apply_managed_migrations(engine, migrations_dir)
+
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    assert "kb_documents" in tables
+    assert "kb_edges" in tables
+    assert "kb_audit" in tables
+    assert "ix_kb_documents_entity" in [i["name"] for i in inspector.get_indexes("kb_documents")]
+    assert "ix_kb_edges_src_relation" in [i["name"] for i in inspector.get_indexes("kb_edges")]

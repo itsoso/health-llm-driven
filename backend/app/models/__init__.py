@@ -104,6 +104,7 @@ from app.models.episode import (
 )
 from app.models.advice_ledger import AdviceLedger
 from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
+from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 
 __all__ = [
     "User",
@@ -222,4 +223,7 @@ __all__ = [
     "GeneticProfile",
     "GeneticVariant",
     "GeneticImportJob",
+    "KBDocument",
+    "KBEdge",
+    "KBAudit",
 ]

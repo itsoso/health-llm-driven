@@ -1,26 +1,28 @@
 """测试配置和fixtures"""
 import os
 import uuid
-import tempfile
 import pytest
 from datetime import date
-from sqlalchemy import create_engine, event, text
+
+os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
+os.environ.setdefault("GARMIN_ENCRYPTION_KEY", "mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=")
+
+from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
-os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
-os.environ.setdefault("GARMIN_ENCRYPTION_KEY", "mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=")
-
-from main import app
 
 
 @compiles(JSONB, "sqlite")
 def _compile_jsonb_sqlite(type_, compiler, **kw):
     """测试库使用 SQLite, 将 PostgreSQL JSONB 降级成 JSON."""
     return "JSON"
+
+
+from main import app  # noqa: E402 - env vars and JSONB SQLite compiler must be registered first
 
 
 @pytest.fixture(scope="function")
