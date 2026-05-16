@@ -19,11 +19,14 @@ import { getMyTwin, type TwinFreshness } from '../../services/twin';
 import { queryKeys } from '../../applib/queryKeys';
 import { ageTone, formatAge } from './dataBasisHelpers';
 
-export type FreshnessBucket = keyof TwinFreshness; // 'garmin' | 'weight' | 'labs' | 'diet' | 'genetic' | 'medication'
+export type FreshnessBucket = keyof TwinFreshness; // 'garmin' | 'weight' | 'waist' | 'blood_pressure' | 'sleep' | 'labs' | 'diet' | 'genetic' | 'medication'
 
 const BUCKET_LABEL: Record<FreshnessBucket, string> = {
   garmin: 'Garmin',
   weight: '体重',
+  waist: '腰围',
+  blood_pressure: '血压',
+  sleep: '睡眠',
   labs: '化验',
   diet: '饮食',
   genetic: '基因',

@@ -34,6 +34,7 @@ import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
 import TrajectorySnapshotPanel from '../../components/dashboard/TrajectorySnapshotPanel';
+import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { createTodayAgentContext, pushChatWithContext } from '../../utils/agentContext';
 import { getDailyOperatingPlan, type DailyPlanAction } from '../../services/dailyPlan';
@@ -245,6 +246,9 @@ export default function TodayScreen() {
           loading={dailyPlanQuery.isLoading}
           onPressAction={openPlanAction}
         />
+
+        {/* 数据完整度 — Agent 准确率的因, 缺数据时一目了然该补哪几项 */}
+        <DataFreshnessPanel />
 
         <TrajectorySnapshotPanel
           snapshot={trajectoryQuery.data}

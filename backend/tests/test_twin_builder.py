@@ -196,6 +196,77 @@ class TestBuilderWithPartialData:
         assert twin.chronic.rhinitis_today.get("daily_score") == 75
         assert "health_checkin" in twin.meta.data_sources
 
+    def test_metabolic_freshness_waist_bp_sleep(self, db):
+        """代谢健康 freshness 3 项 (waist / blood_pressure / sleep) 应填入 ISO 日期串.
+
+        Sleep 优先 Garmin, 缺则 SleepRecord, 取较新者.
+        """
+        from app.models.user import User
+        from app.models.waist import WaistRecord
+        from app.models.blood_pressure import BloodPressureRecord
+        from app.models.sleep_record import SleepRecord
+        from app.models.daily_health import GarminData
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="twin user",
+            birth_date=date(1990, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        three_days_ago = today - timedelta(days=3)
+
+        db.add(WaistRecord(user_id=user.id, record_date=yesterday, waist_cm=85.0))
+        db.add(BloodPressureRecord(
+            user_id=user.id, record_date=today, systolic=120, diastolic=80,
+        ))
+        # Garmin 3 天前; SleepRecord 昨天 → sleep 应取较新的昨天
+        db.add(GarminData(user_id=user.id, record_date=three_days_ago, sleep_score=82))
+        db.add(SleepRecord(
+            user_id=user.id, record_date=yesterday,
+            bedtime=datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc),
+            wake_time=datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc),
+            sleep_quality=4,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        assert twin.freshness.waist == yesterday.isoformat()
+        assert twin.freshness.blood_pressure == today.isoformat()
+        assert twin.freshness.sleep == yesterday.isoformat()  # SleepRecord 更新
+
+    def test_metabolic_freshness_missing_returns_none(self, db):
+        """3 项无任何记录 → freshness 字段保持 None, 不抛."""
+        from app.models.user import User
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="empty twin user",
+            birth_date=date(1990, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        assert twin.freshness.waist is None
+        assert twin.freshness.blood_pressure is None
+        assert twin.freshness.sleep is None
+
 
 # ─────────────────────── 端到端：API 端点 ─────────────────────
 

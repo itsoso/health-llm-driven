@@ -25,17 +25,20 @@ interface DataStatusItem {
 }
 
 const DATA_CONFIG: Array<{
-  key: 'garmin' | 'weight' | 'labs' | 'diet' | 'medication';
+  key: 'garmin' | 'weight' | 'waist' | 'blood_pressure' | 'sleep' | 'labs' | 'diet' | 'medication';
   label: string;
   staleDays: number;
   missingSeverity: number;
   route?: string;
 }> = [
-  { key: 'garmin',     label: 'Garmin',    staleDays: 2,   missingSeverity: 7, route: '/settings' },
-  { key: 'weight',     label: '体重',       staleDays: 7,   missingSeverity: 3, route: '/(tabs)/record' },
-  { key: 'labs',       label: '化验',       staleDays: 180, missingSeverity: 4, route: '/indicator-history' },
-  { key: 'diet',       label: '饮食',       staleDays: 1,   missingSeverity: 2, route: '/diet' },
-  { key: 'medication', label: '用药',       staleDays: 2,   missingSeverity: 5 },
+  { key: 'garmin',         label: 'Garmin',  staleDays: 2,   missingSeverity: 7, route: '/settings' },
+  { key: 'weight',         label: '体重',    staleDays: 7,   missingSeverity: 3, route: '/(tabs)/record' },
+  { key: 'waist',          label: '腰围',    staleDays: 14,  missingSeverity: 4, route: '/(tabs)/record' },
+  { key: 'blood_pressure', label: '血压',    staleDays: 7,   missingSeverity: 6, route: '/(tabs)/record' },
+  { key: 'sleep',          label: '睡眠',    staleDays: 2,   missingSeverity: 5, route: '/sleep' },
+  { key: 'labs',           label: '化验',    staleDays: 180, missingSeverity: 4, route: '/indicator-history' },
+  { key: 'diet',           label: '饮食',    staleDays: 1,   missingSeverity: 2, route: '/diet' },
+  { key: 'medication',     label: '用药',    staleDays: 2,   missingSeverity: 5 },
 ];
 
 function classify(ageDays: number | null, staleDays: number): Freshness {
@@ -85,11 +88,12 @@ export default function DataFreshnessPanel() {
   if (!twin) return null;
 
   const fresh = items.filter(i => i.freshness === 'fresh');
-  const needAttention = items.filter(i => i.freshness !== 'fresh').slice(0, 3);
+  const needAttention = items.filter(i => i.freshness !== 'fresh').slice(0, 5);
+  const total = items.length;
 
   const title = needAttention.length > 0
-    ? `已知 ${fresh.length} 项 · 待补 ${needAttention.length} 项`
-    : `数据齐全 · 已知 ${fresh.length} 项`;
+    ? `数据完整度 ${fresh.length}/${total} · 待补 ${items.length - fresh.length} 项`
+    : `数据齐全 ${fresh.length}/${total}`;
 
   return (
     <DashboardCard
@@ -99,7 +103,7 @@ export default function DataFreshnessPanel() {
       kicker="Agent 数据视野"
       title={title}
       collapsible
-      defaultCollapsed
+      defaultCollapsed={needAttention.length === 0}
       variant="flat"
       trailing={needAttention.length > 0 ? <CardCountBadge value={needAttention.length} /> : undefined}
       accessibilityLabel="Agent 数据状态"

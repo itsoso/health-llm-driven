@@ -3,6 +3,9 @@ import api from './api';
 export interface TwinFreshness {
   garmin?: string | null;
   weight?: string | null;
+  waist?: string | null;
+  blood_pressure?: string | null;
+  sleep?: string | null;
   labs?: string | null;
   diet?: string | null;
   genetic?: string | null;

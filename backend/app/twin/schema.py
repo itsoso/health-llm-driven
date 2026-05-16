@@ -299,6 +299,9 @@ class GoalsContext(BaseModel):
 class DataFreshness(BaseModel):
     garmin: Optional[str] = None
     weight: Optional[str] = None
+    waist: Optional[str] = None
+    blood_pressure: Optional[str] = None
+    sleep: Optional[str] = None
     labs: Optional[str] = None
     diet: Optional[str] = None
     genetic: Optional[str] = None

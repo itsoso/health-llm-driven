@@ -211,8 +211,44 @@ def _fill_integrated_profile(db: Session, user_id: int, twin: HealthTwin, source
         f.labs = freshness.get("labs")
         f.diet = freshness.get("diet")
         f.genetic = freshness.get("genetic")
+        # 代谢健康第一阶段补 3 项: waist / blood_pressure / sleep.
+        # 不进 MultiSourceIntegrationService 避免给那层加耦合, 直接 SQL latest record_date 即可.
+        _fill_metabolic_freshness(db, user_id, twin)
     except Exception as e:
         logger.warning(f"[twin] integrated_profile 失败: {e}")
+
+
+def _fill_metabolic_freshness(db: Session, user_id: int, twin: HealthTwin) -> None:
+    """补 waist / blood_pressure / sleep 三项 freshness (代谢健康核心 7 项的剩余 3 项).
+
+    Sleep 优先用 Garmin 自动采集 (覆盖率高), 缺失再 fallback SleepRecord 手动记录.
+    """
+    from sqlalchemy import func as _func
+    from app.models.waist import WaistRecord
+    from app.models.blood_pressure import BloodPressureRecord
+    from app.models.sleep_record import SleepRecord
+    from app.models.daily_health import GarminData
+
+    def _latest_date(model, date_col):
+        try:
+            d = (
+                db.query(_func.max(date_col))
+                .filter(model.user_id == user_id)
+                .scalar()
+            )
+            return d.isoformat() if d else None
+        except Exception as _e:  # noqa: BLE001
+            logger.debug(f"[twin] freshness {model.__tablename__} 失败: {_e}")
+            return None
+
+    twin.freshness.waist = _latest_date(WaistRecord, WaistRecord.record_date)
+    twin.freshness.blood_pressure = _latest_date(
+        BloodPressureRecord, BloodPressureRecord.record_date,
+    )
+    # Sleep: Garmin 先, SleepRecord 后, 取较新
+    g = _latest_date(GarminData, GarminData.record_date)
+    s = _latest_date(SleepRecord, SleepRecord.record_date)
+    twin.freshness.sleep = max(filter(None, [g, s]), default=None)
 
 
 # ───────────────────── 2. 生理派生量 BMR / TDEE ───────────────────────
