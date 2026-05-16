@@ -430,7 +430,7 @@ class SupplementAdvisorSpecialist:
                         if actual is not None:
                             baseline_str = f"{actual:.2f}".rstrip("0").rstrip(".")
                             higher_better = HIGHER_IS_BETTER.get(metric_key, False)
-                            # 朝目标方向算 ±15% 数值, verify_outcomes 能直接 grade
+                            # 朝目标方向算 ±15% 数值, outcome_grader 能直接 grade
                             target_num = actual * (1.15 if higher_better else 0.85)
                             target_str = f"{target_num:.2f}".rstrip("0").rstrip(".")
                 except Exception as e:

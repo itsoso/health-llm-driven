@@ -38,7 +38,6 @@ celery_app = Celery(
         "app.tasks.episode_reflection",
         "app.tasks.live_run_narrative",
         "app.tasks.live_run_hr_replay",
-        "app.tasks.verify_outcomes",
         "app.tasks.snp_prewarm",
     ]
 )
@@ -114,14 +113,6 @@ celery_app.conf.beat_schedule = {
     "weekly-advisor-run": {
         "task": "app.tasks.notifications.weekly_advisor_run",
         "schedule": crontab(hour=21, minute=7, day_of_week=0),  # 周日 21:07 北京时间
-    },
-
-    # 每天 02:00 跑 N-of-1 自动验证 (P5-1) — 扫到期未评的 accepted 卡,
-    # 拉 metric 对比 baseline → 写 outcome + effect_size + graded_at.
-    # WSCLA 闭环最后一公里, 没这个 outcome 永远 NULL → WSCLA = 0.
-    "verify-action-card-outcomes": {
-        "task": "app.tasks.verify_outcomes.verify_action_card_outcomes",
-        "schedule": crontab(hour=2, minute=0),
     },
 
     # 每天 02:30 SNP 详情 LLM 缓存预热 (A 优化, 2026-05-13)
@@ -258,7 +249,8 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=23, minute=55),
     },
 
-    # 每天 8:00 评分到期的 ActionCard (Specialist 信任循环)
+    # 每天 8:00 评分到期的 ActionCard (单一 outcome 评分路径, 写 accuracy_score + outcome + effect_size).
+    # 2026-05-16 起 verify_outcomes 已并入此任务, 不再有双路径.
     "grade-action-cards": {
         "task": "app.tasks.outcome_grader.grade_due_action_cards",
         "schedule": crontab(hour=8, minute=0),

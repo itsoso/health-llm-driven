@@ -186,7 +186,7 @@ _METRIC_KEY_WHITELIST = {
 
 def _normalize_metric_key(raw: Any) -> str:
     """LLM 返回的 metric_key 不在白名单 → 强制 'custom', 不让脏数据进库
-    (verify_outcomes 会把 custom 标 inconclusive, 不会错误 grade)."""
+    (outcome_grader 没有 custom 的 fetcher → 自动 skip, 不会错误 grade)."""
     if not raw or not isinstance(raw, str):
         return "custom"
     k = raw.strip().lower()

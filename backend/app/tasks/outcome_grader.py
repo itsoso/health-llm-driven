@@ -39,6 +39,7 @@ from zoneinfo import ZoneInfo
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.action_card import ActionCard
+from app.tasks.metrics import grade_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -392,6 +393,14 @@ def _grade_loop(db, now: datetime) -> dict:
             card.accuracy_score = final_score
             card.graded_at = now
             card.grading_notes = note + adh_note
+            # outcome / effect_size: 以 systolic 为基准 (BP 整体偏高=worse).
+            # 下游 admin_wscla / weekly_briefing / action_card stats 都依赖这两个字段.
+            sys_actual = _fetch_metric(db, card.user_id, "systolic_bp", now)
+            base_sys_num = _parse_numeric((card.baseline_value or "").split("/")[0])
+            if sys_actual is not None and base_sys_num is not None:
+                card.outcome, card.effect_size = grade_outcome(
+                    "systolic_bp", str(base_sys_num), sys_actual,
+                )
             graded += 1
             logger.info(
                 f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
@@ -422,6 +431,13 @@ def _grade_loop(db, now: datetime) -> dict:
         card.accuracy_score = final_score
         card.graded_at = now
         card.grading_notes = note + adh_note
+        # outcome / effect_size — 用统一的 grade_outcome (HIGHER_IS_BETTER 表驱动方向).
+        # 这两个字段是下游 (admin_wscla / weekly_briefing / action_card stats) 的真正读源,
+        # accuracy_score 只在 specialist hit-rate 看板里展示.
+        if baseline is not None:
+            card.outcome, card.effect_size = grade_outcome(
+                card.metric_key, str(baseline), actual,
+            )
         graded += 1
 
         logger.info(

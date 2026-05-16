@@ -551,3 +551,102 @@ class TestHitPush:
         db.refresh(card)
         assert card.accuracy_score is not None  # 评分不受影响
         assert card.graded_at is not None
+
+
+class TestOutcomeFieldsWritten:
+    """收敛 verify_outcomes → outcome_grader 后, 下游字段必须仍可读 (2026-05-16)."""
+
+    def test_weight_improved_writes_outcome_and_effect(self, db):
+        """体重下降 → outcome='improved' + effect_size > 0 (下游 admin_wscla 用)."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        # baseline 82kg, actual 76kg → -7.3% → 朝目标方向显著改善 → improved
+        db.add(WeightRecord(user_id=701, record_date=date.today(), weight=76.0))
+        card = ActionCard(
+            user_id=701, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="76",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+
+        assert card.outcome == "improved"
+        assert card.effect_size is not None and card.effect_size > 0
+
+    def test_weight_worsened_writes_outcome(self, db):
+        """体重上升 → outcome='worsened' (下游计数器要识别)."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        # baseline 80kg, actual 85kg → +6.25% 反方向 → worsened
+        db.add(WeightRecord(user_id=702, record_date=date.today(), weight=85.0))
+        card = ActionCard(
+            user_id=702, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="80", target_value="76",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+
+        assert card.outcome == "worsened"
+        assert card.effect_size is not None and card.effect_size < 0
+
+    def test_hrv_improved_higher_better(self, db):
+        """HRV 升高=好 → outcome='improved' (HIGHER_IS_BETTER 表方向正确)."""
+        from app.models.action_card import ActionCard
+        from app.models.daily_health import GarminData
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(GarminData(
+            user_id=703, record_date=date.today(), hrv=58.0,
+        ))
+        card = ActionCard(
+            user_id=703, title="提 HRV", content="...", card_type="plan",
+            metric_key="hrv", baseline_value="50", target_value="65",
+            creator_specialist="recovery_coach",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+
+        assert card.outcome == "improved"
+        assert card.effect_size is not None and card.effect_size > 0
+
+    def test_no_data_does_not_write_outcome(self, db):
+        """无数据 → 顺延复查, outcome 字段保持 NULL (不污染下游统计)."""
+        from app.models.action_card import ActionCard
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        card = ActionCard(
+            user_id=704, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="80", target_value="76",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+
+        assert card.graded_at is None
+        assert card.outcome is None
+        assert card.effect_size is None

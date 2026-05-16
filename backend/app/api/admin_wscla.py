@@ -229,38 +229,48 @@ async def trigger_verify_outcomes(
     admin_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """手动触发 N-of-1 验证 (P5-1) — 不等每天 02:00.
+    """手动触发 outcome 评分 — 不等每天 08:00.
 
     card_id 给定: 强制评单卡 (即使 check_back_date 未到), 用于联调.
     省略: 走 batch (但只评 check_back_date <= now 且 graded_at IS NULL 的).
+
+    2026-05-16: 已从 verify_outcomes 双路径收敛到 outcome_grader._grade_loop 单路径.
     """
-    from app.tasks.verify_outcomes import _verify_impl, _verify_one, _score_from_outcome
+    from app.tasks.outcome_grader import _grade_loop
     from datetime import datetime as _dt, timezone as _tz
 
+    now = _dt.now(_tz.utc)
+
     if card_id is None:
-        return _verify_impl(dry_run=False)
+        return _grade_loop(db, now)
 
     card = db.query(ActionCard).filter(ActionCard.id == card_id).first()
     if card is None:
         return {"error": f"card {card_id} not found"}
 
-    now = _dt.now(_tz.utc)
-    today = now.date()
-    outcome, effect, actual = _verify_one(db, card, today)
-    card.outcome = outcome
-    card.effect_size = effect
-    if actual is not None:
-        card.actual_value = str(actual)
-    card.graded_at = now
-    card.accuracy_score = _score_from_outcome(outcome)
+    # 单卡: 临时把 check_back_date 拉到现在, 强制让 _grade_loop 选中
+    original_check_back = card.check_back_date
+    original_graded_at = card.graded_at
+    card.check_back_date = now
+    card.graded_at = None
     db.commit()
+    try:
+        _grade_loop(db, now)
+    finally:
+        # _grade_loop 没选中 (没 metric/target) → 恢复原状, 不留副作用
+        db.refresh(card)
+        if card.graded_at is None:
+            card.check_back_date = original_check_back
+            card.graded_at = original_graded_at
+            db.commit()
     db.refresh(card)
     return {
         "card_id": card.id,
         "metric_key": card.metric_key,
         "baseline_value": card.baseline_value,
         "actual_value": card.actual_value,
-        "outcome": outcome,
-        "effect_size": effect,
+        "outcome": card.outcome,
+        "effect_size": card.effect_size,
         "accuracy_score": card.accuracy_score,
+        "grading_notes": card.grading_notes,
     }

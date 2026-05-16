@@ -22,7 +22,7 @@
 | 身体状态 | HealthTwin 13 分区, 包含生理、身体成分、化验、CGM、药物、补剂、基因、环境、行为、心理、慢病、目标、freshness | `backend/app/twin/schema.py`, `backend/app/twin/builder.py` |
 | Agent 裁决 | Orchestrator + specialists + Safety Guardian + cross review/arbitration | `backend/app/orchestrator/`, `backend/app/agents/` |
 | 第一阶段领域 | 饮食方案、运动方案、睡眠分析、代谢专科、慢病风险、体检解释、基因报告 | `backend/app/services/diet_plan.py`, `movement_plan.py`, `chronic_risk_service.py`, `exam_explain_service.py`, `genetic_report.py` |
-| 执行闭环 | ActionCard、WSCLA、outcome_grader、verify_outcomes、Open Loop、APNs/Telegram/doctor weekly | `backend/app/models/action_card.py`, `backend/app/tasks/outcome_grader.py`, `backend/app/api/admin_wscla.py` |
+| 执行闭环 | ActionCard、WSCLA、outcome_grader、Open Loop、APNs/Telegram/doctor weekly | `backend/app/models/action_card.py`, `backend/app/tasks/outcome_grader.py`, `backend/app/api/admin_wscla.py` |
 | Mobile First | Expo/RN 主入口, Today、饮食、运动、睡眠、体检、基因、目标、进度、doctor-loop、family 等路由 | `mobile/app/`, `mobile/services/` |
 
 最大缺口是产品对象还不是“每天的操作计划”。首页目前是告警、周建议、快照、入口的组合; 饮食/运动/睡眠各自能问 Agent, 但还没有一个统一的 **Daily Operating Plan** 告诉用户今天吃什么、练什么、睡眠怎么调、补什么、哪些指标要测、何时需要问医生。
@@ -89,7 +89,7 @@
 - 没有“体重与代谢 program”对象: 目标体重、目标腰围、目标周期、每周热量赤字、蛋白目标、训练目标、复查计划都散落在目标/卡片/方案里。
 - 缺血压家庭测量 protocol: 早晚/连续 7 天/平均值/测量姿势/设备来源/异常升级。
 - CGM schema 和 API 存在, 但缺面向真实第一阶段的“是否需要 CGM、何时接入、如何解释餐后峰值”的产品门槛。
-- outcome 评分有两套任务: `verify_outcomes.py` 和 `outcome_grader.py`, 语义重叠。应收敛到一条主评分路径, 否则 WSCLA 和 specialist hit-rate 口径会漂移。
+- outcome 评分已收敛到 `outcome_grader.py` 单路径 (2026-05-16): `verify_outcomes.py` 和 02:00 beat 已删, `outcome_grader._grade_loop` 在写 `accuracy_score` 时也写 `outcome` + `effect_size` 供 admin_wscla / weekly_briefing / action_card stats 读取。
 
 ### 2.3 移动端体验
 
@@ -221,7 +221,7 @@ linked_card_id, linked_plan_id, linked_metric
 | 项 | 任务 | 文件/模块 | 验收 |
 |---|---|---|---|
 | P0.1 | 修 `agent_executor` sources_used 初始化 bug, 加回归测试 | `backend/app/services/agent_executor.py`, `backend/tests/` | streaming done meta 正常含 sources_used |
-| P0.2 | 收敛 outcome 评分路径, 明确 `verify_outcomes` vs `outcome_grader` 谁是主路径 | `backend/app/tasks/` | WSCLA、specialist hit-rate、monthly report 口径一致 |
+| P0.2 | ✅ 已合并 (2026-05-16): `outcome_grader._grade_loop` 是唯一评分路径, 同时写 accuracy_score + outcome + effect_size; `verify_outcomes.py` 及 02:00 beat 已删 | `backend/app/tasks/outcome_grader.py`, `backend/app/celery_app.py`, `backend/app/api/admin_wscla.py` | WSCLA / specialist hit-rate / monthly report 口径一致 |
 | P0.3 | 加腰围模型/API/schema/Twin 字段 | `backend/app/models/`, `api/`, `twin/schema.py` | 代谢综合征不再只能 BMI 替代 |
 | P0.4 | DailyOperatingPlan schema + 只读 API v0 | `backend/app/models/daily_operating_plan.py`, `api/daily_plan.py` | 可返回今天 state/actions/verification |
 | P0.5 | Today tab 读取 Daily Plan, 先只展示 3 件事 | `mobile/app/(tabs)/index.tsx` | 首页从 dashboard 变成 action plan |
