@@ -19,6 +19,7 @@ import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
+import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import AttributionChips from './AttributionChips';
 import { radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
@@ -42,6 +43,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   const [speaking, setSpeaking] = useState(false);
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
+  const speechHandleRef = useRef<SpeakHandle | null>(null);
   const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
   const images = item.imageUris;
 
@@ -59,6 +61,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
 
   const finishSpeech = useCallback(() => {
     clearSpeechTimeout();
+    speechHandleRef.current = null;
     setSpeechActive(false);
   }, [clearSpeechTimeout, setSpeechActive]);
 
@@ -66,7 +69,10 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   useEffect(() => {
     return () => {
       clearSpeechTimeout();
-      if (speechActiveRef.current) { try { Speech.stop(); } catch {} }
+      if (speechActiveRef.current) {
+        try { speechHandleRef.current?.cancel(); } catch {}
+        try { Speech.stop(); } catch {}
+      }
     };
   }, [clearSpeechTimeout]);
 
@@ -118,8 +124,11 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
+  // 走 speakWithUserVoice → 按用户在"语音风格"页选的档位 (cloud / iOS) 播报,
+  // 而不是直接 Speech.speak 走 iOS 默认嗓音.
   const handleSpeak = async () => {
     if (speaking) {
+      try { speechHandleRef.current?.cancel(); } catch {}
       try { Speech.stop(); } catch {}
       finishSpeech();
       return;
@@ -135,13 +144,12 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
         interruptionMode: 'duckOthers',
         allowsRecording: false,
       }).catch(() => {});
+      try { speechHandleRef.current?.cancel(); } catch {}
       try { Speech.stop(); } catch {}
-      const estMs = Math.max(5000, Math.min(45000, text.length * 260 + 5000));
+      // 时长估算: cloud 路径合成需要 1-3s, 加大保底窗口
+      const estMs = Math.max(8000, Math.min(60000, text.length * 260 + 8000));
       speechTimeoutRef.current = setTimeout(finishSpeech, estMs);
-      Speech.speak(text, {
-        language: 'zh-CN',
-        rate: 1.0,
-        pitch: 1.0,
+      speechHandleRef.current = await speakWithUserVoice(text, {
         onDone: finishSpeech,
         onStopped: finishSpeech,
         onError: finishSpeech,
