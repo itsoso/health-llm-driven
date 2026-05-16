@@ -106,10 +106,17 @@ export async function speakWithUserVoice(
       },
     };
   } catch (e) {
-    // 云端不通 → 降级 iOS 默认, 不打断用户体验
+    // 云端不通 → 降级到 iOS, 但不要用裸 zh-CN (那会让 iOS 选系统默认嗓音,
+    // 听起来和 "没读用户偏好" 一样, 是真实用户报过的 bug).
+    // 用 resolveIosSpeechOptions 至少保留 language/rate/pitch; cloud 用户
+    // 没选 iOS voice → 仍是系统默认音色, 但 dev 日志能看到是因为云端挂了.
+    if (__DEV__) {
+      console.warn('[speakWithUserVoice] cloud failed, falling back to iOS:', e);
+    }
     try {
+      const fallbackOpts = await resolveIosSpeechOptions(style);
       Speech.speak(trimmed, {
-        language: 'zh-CN',
+        ...fallbackOpts,
         onDone: callbacks.onDone,
         onStopped: callbacks.onStopped,
         onError: callbacks.onError,

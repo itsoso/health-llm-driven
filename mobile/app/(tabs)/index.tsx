@@ -5,7 +5,6 @@
  *   1. Critical/High 告警卡片 (0 条不显示)
  *   2. 本周建议队列 (source_type='weekly_advisor', 3-5 条)
  *   3. Twin 摘要 (4 个数, 折叠)
- *   4. AI 会诊入口
  *
  * 旧 10+ 组件 (HomeHeader / AgentSurface / TodayCoachPanel / ...) 全部先沉默,
  * 备份在 index.legacy.tsx.bak. 数据观察 1-2 周后决定保留或删.
@@ -393,22 +392,6 @@ export default function TodayScreen() {
             />
           </View>
         </View>
-
-        {/* 4. AI 会诊入口 */}
-        <TouchableOpacity
-          style={[styles.chatEntry, { backgroundColor: c.brand }]}
-          onPress={() => pushChatWithContext(router, {
-            prompt: '请基于我今天的身体快照和当前告警, 帮我做一次整体健康会诊, 按优先级给出今天该做的事。',
-            context: createTodayAgentContext({
-              alerts,
-              twinSnapshot: todayMetricsContext,
-            }),
-            badge: `基于今日快照${alerts.length > 0 ? ` · ${alerts.length} 条告警` : ''}`,
-          })}
-        >
-          <Ionicons name="chatbubbles" size={20} color="#fff" />
-          <Text style={styles.chatEntryText}>AI 会诊</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -509,7 +492,7 @@ function fmt(v?: number | null): string {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.lg },  // 110 = tab bar 83 + 缓冲, 否则 AI 会诊被遮
+  content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.lg },  // 110 = tab bar 83 + 缓冲
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
   section: { gap: spacing.sm },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
@@ -564,14 +547,4 @@ const styles = StyleSheet.create({
   tileValue: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.6 },
   tileUnit: { fontSize: 13, fontWeight: '500' },
   tileSub: { fontSize: 11, marginTop: 4 },
-  chatEntry: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    padding: spacing.lg,
-    borderRadius: radii.md,
-    marginTop: spacing.sm,
-  },
-  chatEntryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
