@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
+import subprocess
+import sys
 
 from app.services.system_knowledge_ingest import (
     build_pr_style_diff,
     compile_dedao_ingest_artifacts,
+    promote_artifact_review_status,
     write_reviewed_artifacts,
 )
 
@@ -170,6 +174,46 @@ def test_write_reviewed_artifacts_merges_generated_docs_and_manifest(tmp_path):
     assert manifest["ingest"]["review_status"] == "draft"
 
 
+def test_promote_artifact_review_status_marks_draft_docs_reviewed_and_writes_manifest(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "仝卿·营养科学20讲" / "MD"
+    course.mkdir(parents=True)
+    (course / "07 膳食纤维：人体不需要，也算营养素.md").write_text(
+        "膳食纤维、饱腹感、血糖和血脂。",
+        encoding="utf-8",
+    )
+    output = tmp_path / "artifacts"
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=output,
+        course_names=["仝卿·营养科学20讲"],
+        now=datetime(2026, 5, 16, tzinfo=UTC),
+    )
+    write_reviewed_artifacts(result, output)
+
+    summary = promote_artifact_review_status(
+        output,
+        reviewer="medical-reviewer@example.com",
+        reviewed_at=datetime(2026, 5, 17, 8, 0, tzinfo=UTC),
+    )
+
+    claims = _jsonl(output / "claims.jsonl")
+    entities = _jsonl(output / "entities.jsonl")
+    pages = _jsonl(output / "pages.jsonl")
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    review_manifest = json.loads((output / "review_manifest.json").read_text(encoding="utf-8"))
+
+    reviewed_docs = [*claims, *entities, *pages]
+    assert reviewed_docs
+    assert all(doc["metadata"]["review_status"] == "reviewed" for doc in reviewed_docs)
+    assert all(doc["metadata"]["reviewed_by"] == "medical-reviewer@example.com" for doc in reviewed_docs)
+    assert manifest["ingest"]["review_status"] == "reviewed"
+    assert manifest["review"]["status"] == "reviewed"
+    assert manifest["review"]["reviewer"] == "medical-reviewer@example.com"
+    assert summary["documents_reviewed"] == len(reviewed_docs)
+    assert review_manifest["documents_reviewed"] == len(reviewed_docs)
+
+
 def test_compile_dedao_ingest_artifacts_is_idempotent_after_write(tmp_path):
     source_root = tmp_path / "down-dedao"
     course = source_root / "冯雪·高血压医学课" / "MD"
@@ -277,3 +321,74 @@ def test_build_pr_style_diff_reports_artifact_changes_without_mutating_output(tm
     assert "claims.jsonl" in diff
     assert "claim:c_dedao_tongqing_nutrition_20_fiber_intake" in diff
     assert not (output / "claims.jsonl").exists()
+
+
+def test_ingest_course_cli_supports_dry_run_write_and_review_promotion(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "仝卿·营养科学20讲" / "MD"
+    course.mkdir(parents=True)
+    (course / "07 膳食纤维：人体不需要，也算营养素.md").write_text(
+        "膳食纤维、饱腹感、血糖和血脂。",
+        encoding="utf-8",
+    )
+    output = tmp_path / "artifacts"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "ingest_course.py"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+
+    dry_run = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--source-root",
+            str(source_root),
+            "--artifact-dir",
+            str(output),
+            "--course",
+            "仝卿·营养科学20讲",
+            "--dry-run",
+            "--json-summary",
+            "--no-diff",
+        ],
+        check=False,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert dry_run.returncode == 0, dry_run.stderr
+    assert json.loads(dry_run.stdout)["mode"] == "dry_run"
+    assert not (output / "claims.jsonl").exists()
+
+    write = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--source-root",
+            str(source_root),
+            "--artifact-dir",
+            str(output),
+            "--course",
+            "仝卿·营养科学20讲",
+            "--write",
+            "--promote-reviewed",
+            "--reviewer",
+            "medical-reviewer@example.com",
+            "--json-summary",
+        ],
+        check=False,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert write.returncode == 0, write.stderr
+    write_summary = json.loads(write.stdout)
+    assert write_summary["mode"] == "write"
+    assert write_summary["review"]["reviewer"] == "medical-reviewer@example.com"
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["ingest"]["review_status"] == "reviewed"
+    assert (output / "review_manifest.json").exists()

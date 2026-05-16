@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from app.models.system_knowledge import KBDocument, KBEdge
+from app.models.agent_audit_log import AgentAuditLog
+from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 from app.services.system_knowledge_service import (
     apply_confidence_decay,
     build_evidence_card_for_message,
@@ -224,6 +225,149 @@ def test_admin_lint_report_flags_orphans_and_invalid_conditions(client, db, auth
     assert payload["summary"]["orphan_claims"] == 1
     assert payload["summary"]["invalid_conditions"] == 1
     assert payload["issues"]["invalid_conditions"][0]["doc_id"] == "claim:c_invalid_condition"
+
+
+def test_admin_lint_report_flags_contradictions_and_invalid_review_status(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_fiber_supports_tg",
+                doc_type="claim",
+                entity_type="nutrient",
+                entity_id="fiber",
+                title="膳食纤维支持甘油三酯管理",
+                summary="增加膳食纤维有助于代谢健康管理。",
+                confidence=0.72,
+                evidence_level="B",
+                applies_when=["twin.labs.triglycerides_mmol_l >= 1.7"],
+                sources=["dedao:nutrition"],
+                last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+                metadata_json={
+                    "claim_key": "fiber_tg_management",
+                    "stance": "supports",
+                    "review_status": "reviewed",
+                },
+            ),
+            KBDocument(
+                doc_id="claim:c_fiber_opposes_tg",
+                doc_type="claim",
+                entity_type="nutrient",
+                entity_id="fiber",
+                title="膳食纤维不应用于甘油三酯管理",
+                summary="膳食纤维不适合用于甘油三酯管理。",
+                confidence=0.61,
+                evidence_level="C",
+                applies_when=["twin.labs.triglycerides_mmol_l >= 1.7"],
+                sources=["dedao:nutrition-old"],
+                last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+                metadata_json={
+                    "claim_key": "fiber_tg_management",
+                    "stance": "opposes",
+                    "review_status": "reviewed",
+                },
+            ),
+            KBDocument(
+                doc_id="claim:c_bad_review_status",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Bad review status",
+                confidence=0.5,
+                evidence_level="C",
+                applies_when=["twin.goals.weight_loss.active == true"],
+                metadata_json={"review_status": "maybe"},
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/lint_report", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["contradictions"] == 1
+    assert payload["issues"]["contradictions"][0]["claim_key"] == "fiber_tg_management"
+    assert set(payload["issues"]["contradictions"][0]["doc_ids"]) == {
+        "claim:c_fiber_supports_tg",
+        "claim:c_fiber_opposes_tg",
+    }
+    assert payload["summary"]["invalid_review_status"] == 1
+    assert payload["issues"]["invalid_review_status"][0]["doc_id"] == "claim:c_bad_review_status"
+
+
+def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_reviewed",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Reviewed claim",
+                confidence=0.7,
+                evidence_level="B",
+                metadata_json={"review_status": "reviewed"},
+            ),
+            KBDocument(
+                doc_id="claim:c_draft",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Draft claim",
+                confidence=0.5,
+                evidence_level="C",
+                metadata_json={"review_status": "draft"},
+            ),
+            AgentAuditLog(
+                user_id=user.id,
+                agent_type="specialist_batch",
+                action="run",
+                findings_count=3,
+                result_detail={
+                    "findings": [
+                        {
+                            "summary": "supported",
+                            "evidence_refs": ["claim:c_reviewed"],
+                            "unsupported": False,
+                        },
+                        {
+                            "summary": "unsupported flag",
+                            "evidence_refs": [],
+                            "unsupported": True,
+                        },
+                        {
+                            "summary": "missing refs",
+                            "data": {"unsupported": True},
+                        },
+                    ]
+                },
+            ),
+            KBAudit(
+                doc_id="claim:c_reviewed",
+                op="feedback_disagree",
+                actor=f"user:{user.id}",
+                diff={"reason": "不适用"},
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/coverage_report", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["documents"]["total"] == 2
+    assert payload["documents"]["by_review_status"]["reviewed"] == 1
+    assert payload["documents"]["by_review_status"]["draft"] == 1
+    assert payload["specialist_findings"]["total"] == 3
+    assert payload["specialist_findings"]["with_evidence_refs"] == 1
+    assert payload["specialist_findings"]["unsupported"] == 2
+    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.3333
+    assert payload["feedback"]["disagree"] == 1
 
 
 def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_user_and_headers):

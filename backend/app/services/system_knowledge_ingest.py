@@ -744,6 +744,62 @@ def write_reviewed_artifacts(result: IngestResult, output_dir: str | Path) -> di
     return manifest["counts"]
 
 
+def promote_artifact_review_status(
+    artifact_dir: str | Path,
+    *,
+    reviewer: str,
+    reviewed_at: datetime | None = None,
+    from_status: str = "draft",
+    to_status: str = "reviewed",
+) -> dict[str, Any]:
+    """Promote generated artifacts after human review and write an audit manifest."""
+    root = Path(artifact_dir)
+    reviewed_at = reviewed_at or datetime.now(tz=UTC)
+    reviewed_at_text = reviewed_at.isoformat()
+
+    counts = {
+        "pages_reviewed": _promote_jsonl_file(root / "pages.jsonl", reviewer, reviewed_at_text, from_status, to_status),
+        "entities_reviewed": _promote_jsonl_file(
+            root / "entities.jsonl", reviewer, reviewed_at_text, from_status, to_status
+        ),
+        "claims_reviewed": _promote_jsonl_file(root / "claims.jsonl", reviewer, reviewed_at_text, from_status, to_status),
+        "relations_reviewed": _promote_jsonl_file(
+            root / "relations.jsonl", reviewer, reviewed_at_text, from_status, to_status
+        ),
+    }
+    counts["documents_reviewed"] = counts["pages_reviewed"] + counts["entities_reviewed"] + counts["claims_reviewed"]
+
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    manifest.setdefault("ingest", {})["review_status"] = to_status
+    manifest["review"] = {
+        "status": to_status,
+        "reviewer": reviewer,
+        "reviewed_at": reviewed_at_text,
+        "documents_reviewed": counts["documents_reviewed"],
+        "relations_reviewed": counts["relations_reviewed"],
+        "from_status": from_status,
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    review_manifest = {
+        "artifact_dir": str(root),
+        "reviewer": reviewer,
+        "reviewed_at": reviewed_at_text,
+        "from_status": from_status,
+        "to_status": to_status,
+        **counts,
+    }
+    (root / "review_manifest.json").write_text(
+        json.dumps(review_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return review_manifest
+
+
 def build_pr_style_diff(result: IngestResult, output_dir: str | Path) -> str:
     """Render a review-friendly diff without mutating output_dir."""
     output_dir = Path(output_dir)
@@ -998,6 +1054,23 @@ def _write_jsonl(path: Path, rows: Any) -> None:
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for row in ordered),
         encoding="utf-8",
     )
+
+
+def _promote_jsonl_file(path: Path, reviewer: str, reviewed_at: str, from_status: str, to_status: str) -> int:
+    if not path.exists():
+        return 0
+    rows = _read_jsonl(path)
+    promoted = 0
+    for row in rows:
+        metadata = row.setdefault("metadata", {})
+        if metadata.get("review_status", from_status) != from_status:
+            continue
+        metadata["review_status"] = to_status
+        metadata["reviewed_by"] = reviewer
+        metadata["reviewed_at"] = reviewed_at
+        promoted += 1
+    _write_jsonl(path, rows)
+    return promoted
 
 
 def _merge_by_doc_id(existing: dict[str, dict[str, Any]], generated: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

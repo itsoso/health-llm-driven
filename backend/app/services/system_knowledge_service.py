@@ -16,6 +16,9 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
+VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
+POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
+NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
 
 _IN_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+in\s+(?P<values>\[.*\])$")
 _EQ_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(==|=)\s*(?P<value>.+)$")
@@ -292,10 +295,17 @@ def lint_knowledge_base(db: Session) -> dict[str, Any]:
         if document.doc_type == "claim" and document.doc_id not in linked_doc_ids
     ]
     invalid_conditions = []
+    invalid_review_status = []
     stale_claims = []
     for document in documents:
         if document.doc_type != "claim":
             continue
+        metadata = document.metadata_json or {}
+        review_status = metadata.get("review_status")
+        if review_status is not None and review_status not in VALID_REVIEW_STATUSES:
+            invalid_review_status.append(
+                {**_compact_issue(document), "review_status": review_status}
+            )
         for condition in document.applies_when or []:
             if not is_supported_condition(condition):
                 invalid_conditions.append({**_compact_issue(document), "condition": condition})
@@ -306,12 +316,42 @@ def lint_knowledge_base(db: Session) -> dict[str, Any]:
         "orphan_entities": orphan_entities,
         "orphan_claims": orphan_claims,
         "invalid_conditions": invalid_conditions,
+        "invalid_review_status": invalid_review_status,
         "stale_claims": stale_claims,
+        "contradictions": _detect_claim_contradictions(documents),
     }
     return {
         "summary": {name: len(items) for name, items in issues.items()},
         "issues": issues,
         "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
+    """Aggregate system KB coverage signals for admin review dashboards."""
+    documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    by_type: dict[str, int] = {}
+    by_review_status: dict[str, int] = {}
+    by_evidence_level: dict[str, int] = {}
+    for document in documents:
+        by_type[document.doc_type] = by_type.get(document.doc_type, 0) + 1
+        if document.evidence_level:
+            by_evidence_level[document.evidence_level] = by_evidence_level.get(document.evidence_level, 0) + 1
+        metadata = document.metadata_json or {}
+        review_status = str(metadata.get("review_status") or "unreviewed")
+        by_review_status[review_status] = by_review_status.get(review_status, 0) + 1
+
+    return {
+        "documents": {
+            "total": len(documents),
+            "by_type": dict(sorted(by_type.items())),
+            "by_review_status": dict(sorted(by_review_status.items())),
+            "by_evidence_level": dict(sorted(by_evidence_level.items())),
+        },
+        "specialist_findings": _aggregate_specialist_evidence_coverage(db),
+        "feedback": {
+            "disagree": db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").count(),
+        },
     }
 
 
@@ -636,6 +676,101 @@ def _compact_issue(document: KBDocument) -> dict[str, Any]:
         "entity_id": document.entity_id,
         "title": document.title,
     }
+
+
+def _detect_claim_contradictions(documents: list[KBDocument]) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, list[KBDocument]]] = {}
+    for document in documents:
+        if document.doc_type != "claim":
+            continue
+        metadata = document.metadata_json or {}
+        claim_key = metadata.get("claim_key")
+        stance = _normalized_stance(metadata.get("stance"))
+        if not claim_key or stance not in {"positive", "negative"}:
+            continue
+        buckets.setdefault(str(claim_key), {"positive": [], "negative": []})[stance].append(document)
+
+    contradictions = []
+    for claim_key, grouped in sorted(buckets.items()):
+        if not grouped["positive"] or not grouped["negative"]:
+            continue
+        docs = grouped["positive"] + grouped["negative"]
+        contradictions.append(
+            {
+                "claim_key": claim_key,
+                "doc_ids": [document.doc_id for document in docs],
+                "positive_doc_ids": [document.doc_id for document in grouped["positive"]],
+                "negative_doc_ids": [document.doc_id for document in grouped["negative"]],
+                "titles": {document.doc_id: document.title for document in docs},
+            }
+        )
+    return contradictions
+
+
+def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
+    from app.models.agent_audit_log import AgentAuditLog
+
+    rows = (
+        db.query(AgentAuditLog)
+        .filter(AgentAuditLog.agent_type == "specialist_batch", AgentAuditLog.action == "run")
+        .all()
+    )
+    total = 0
+    with_refs = 0
+    unsupported = 0
+    by_specialist: dict[str, dict[str, int]] = {}
+    for row in rows:
+        detail = row.result_detail or {}
+        findings = detail.get("findings") if isinstance(detail, dict) else []
+        if not isinstance(findings, list):
+            continue
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            total += 1
+            refs = _extract_finding_evidence_refs(finding)
+            is_unsupported = _finding_is_unsupported(finding, refs)
+            if refs:
+                with_refs += 1
+            if is_unsupported:
+                unsupported += 1
+            specialist = str(finding.get("specialist") or finding.get("specialist_name") or "unknown")
+            bucket = by_specialist.setdefault(specialist, {"total": 0, "with_evidence_refs": 0, "unsupported": 0})
+            bucket["total"] += 1
+            bucket["with_evidence_refs"] += 1 if refs else 0
+            bucket["unsupported"] += 1 if is_unsupported else 0
+
+    return {
+        "total": total,
+        "with_evidence_refs": with_refs,
+        "unsupported": unsupported,
+        "evidence_ref_rate": round(with_refs / total, 4) if total else 0.0,
+        "unsupported_rate": round(unsupported / total, 4) if total else 0.0,
+        "by_specialist": by_specialist,
+    }
+
+
+def _extract_finding_evidence_refs(finding: dict[str, Any]) -> list[Any]:
+    refs = finding.get("evidence_refs")
+    if refs is None and isinstance(finding.get("data"), dict):
+        refs = finding["data"].get("evidence_refs")
+    return refs if isinstance(refs, list) else []
+
+
+def _finding_is_unsupported(finding: dict[str, Any], refs: list[Any]) -> bool:
+    data = finding.get("data") if isinstance(finding.get("data"), dict) else {}
+    return bool(finding.get("unsupported") or data.get("unsupported") or not refs)
+
+
+def _normalized_stance(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in POSITIVE_STANCES:
+        return "positive"
+    if normalized in NEGATIVE_STANCES:
+        return "negative"
+    return None
 
 
 def _ensure_aware(value: datetime) -> datetime:

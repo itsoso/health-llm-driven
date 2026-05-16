@@ -14,6 +14,7 @@ from app.models.user import User
 from app.services.system_knowledge_service import (
     get_claim_bundle,
     get_entity_bundle,
+    get_knowledge_coverage_report,
     lint_knowledge_base,
     lookup_for_twin,
     reindex_knowledge_documents,
@@ -152,6 +153,26 @@ def get_system_knowledge_lint_report(
         op="lint_report",
         actor=f"admin:{admin_user.id}",
         diff={"summary": result["summary"]},
+    )
+    return result
+
+
+@admin_router.get("/coverage_report", summary="系统知识库覆盖率与 unsupported 看板")
+def get_system_knowledge_coverage_report(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = get_knowledge_coverage_report(db)
+    _record_audit(
+        db,
+        doc_id=None,
+        op="coverage_report",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "documents": result["documents"]["total"],
+            "specialist_findings": result["specialist_findings"]["total"],
+            "unsupported": result["specialist_findings"]["unsupported"],
+        },
     )
     return result
 
