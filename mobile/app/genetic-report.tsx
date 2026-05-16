@@ -27,9 +27,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  fetchGeneticPredictions,
   fetchGeneticReport,
   type GeneticReport,
   type GeneticReportItem,
+  type GeneticPredictions,
   type RelatedCard,
   type Cluster,
   CATEGORY_LABELS,
@@ -52,6 +54,12 @@ export default function GeneticReportScreen() {
     queryKey: ['genetic-report'],
     queryFn: () => fetchGeneticReport(true),
     staleTime: 5 * 60 * 1000,
+  });
+  const { data: predictions } = useQuery<GeneticPredictions>({
+    queryKey: ['genetic-predictions'],
+    queryFn: fetchGeneticPredictions,
+    enabled: !!data?.profile,
+    staleTime: 10 * 60 * 1000,
   });
 
   const onRefresh = () => qc.invalidateQueries({ queryKey: ['genetic-report'] });
@@ -142,6 +150,8 @@ export default function GeneticReportScreen() {
             </View>
           )}
 
+          {predictions && <PredictionBoundaryCard predictions={predictions} c={c} />}
+
           {/* G-W4 Cluster 头部: 按 category 聚合, 高风险靠前. tap 切到对应 filter. */}
           {data.clusters && data.clusters.length > 0 && (
             <View style={styles.clusterRow}>
@@ -204,6 +214,54 @@ export default function GeneticReportScreen() {
         </ScrollView>
       </SafeAreaView>
     </>
+  );
+}
+
+function PredictionBoundaryCard({
+  predictions,
+  c,
+}: {
+  predictions: GeneticPredictions;
+  c: any;
+}) {
+  const topRisks = predictions.disease_risk.top_risks.slice(0, 3);
+  return (
+    <View style={[styles.predictionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.agentHead}>
+        <Ionicons name="shield-checkmark-outline" size={16} color={c.brand} />
+        <Text style={[styles.agentTitle, { color: c.brand }]}>基因预测边界</Text>
+      </View>
+      {topRisks.length > 0 ? (
+        <View style={styles.predictionRiskList}>
+          {topRisks.map(risk => {
+            const color = RISK_COLORS[risk.risk_level] ?? RISK_COLORS.info;
+            return (
+              <View key={`${risk.rsid}-${risk.gene}`} style={styles.predictionRiskRow}>
+                <Text style={[styles.predictionRiskGene, { color: c.labelPrimary }]}>
+                  {risk.gene}
+                </Text>
+                <Text style={[styles.predictionRiskLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                  {risk.result_label}
+                </Text>
+                <View style={[styles.riskBadge, { backgroundColor: color.bg }]}>
+                  <Text style={[styles.riskText, { color: color.text }]}>{color.label}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <Text style={[styles.predictionText, { color: c.labelSecondary }]}>
+          暂无命中的疾病风险位点；这不等于没有疾病风险。
+        </Text>
+      )}
+      <Text style={[styles.predictionText, { color: c.labelTertiary }]}>
+        身高: {predictions.height.message}
+      </Text>
+      <Text style={[styles.predictionText, { color: c.labelTertiary }]}>
+        教育: {predictions.education.message}
+      </Text>
+    </View>
   );
 }
 
@@ -452,6 +510,17 @@ const styles = StyleSheet.create({
   agentHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   agentTitle: { fontSize: 13, fontWeight: '600' },
   agentBody: { fontSize: 14, lineHeight: 22 },
+  predictionCard: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: 8,
+  },
+  predictionRiskList: { gap: 6 },
+  predictionRiskRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  predictionRiskGene: { fontSize: 13, fontWeight: '700', width: 68 },
+  predictionRiskLabel: { flex: 1, fontSize: 12 },
+  predictionText: { fontSize: 12, lineHeight: 18 },
   chipRow: { flexGrow: 0, marginVertical: spacing.xs },
   chip: {
     paddingHorizontal: 12,

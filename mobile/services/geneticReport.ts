@@ -58,6 +58,34 @@ export interface GeneticReport {
   agent_summary: string | null;
 }
 
+export interface GeneticPredictions {
+  profile: GeneticReport['profile'];
+  height: {
+    status: 'insufficient_model' | string;
+    message: string;
+    required_inputs?: string[];
+  };
+  education: {
+    status: 'unsupported' | string;
+    message: string;
+    allowed_use?: string;
+  };
+  disease_risk: {
+    status: 'screening' | 'no_data' | string;
+    message: string;
+    top_risks: Array<{
+      rsid: string | null;
+      gene: string;
+      variant_name: string | null;
+      genotype: string | null;
+      result_label: string | null;
+      risk_level: 'high' | 'medium' | 'low' | 'info';
+      evidence_level: string;
+      message: string;
+    }>;
+  };
+}
+
 export interface SnpActions {
   headline: string;
   nutrition_actions: string[];
@@ -112,6 +140,11 @@ export async function fetchGeneticReport(
  */
 export async function fetchSnpDetail(rsid: string): Promise<SnpDetail> {
   const { data } = await api.get<SnpDetail>(`/genetic/snp/${rsid}`);
+  return data;
+}
+
+export async function fetchGeneticPredictions(): Promise<GeneticPredictions> {
+  const { data } = await api.get<GeneticPredictions>('/genetic/predictions/me');
   return data;
 }
 
