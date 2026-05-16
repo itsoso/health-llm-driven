@@ -140,11 +140,19 @@ Every retrievable claim must carry:
   "scope": "system_shared",
   "domain": "metabolic_health",
   "claim_text": "Protein intake during weight loss should be sufficient to preserve lean mass.",
-  "evidence_level": "expert_opinion|guideline|rct|meta_analysis|course_synthesis",
+  "evidence_level": "A|B|C|D",
   "confidence_score": 0.72,
   "source_count": 2,
   "last_confirmed_at": "2026-05-16T00:00:00Z",
-  "decay_rate": 0.01,
+  "decay_rate": "slow|normal|fast",
+  "applies_when": [
+    "twin.genetics.MTHFR_C677T in ['CT', 'TT']",
+    "twin.labs.homocysteine_umol_l >= 15"
+  ],
+  "recommends_lookup": [
+    "entities/supplement/5-MTHF.md",
+    "entities/biomarker/Hcy.md"
+  ],
   "superseded_by": null,
   "contradicts": [],
   "claim_boundary": "Health management guidance only; not diagnosis, prescription, or treatment."
@@ -152,6 +160,59 @@ Every retrievable claim must carry:
 ```
 
 Health advice may cite claims. It must not cite raw paid course text as if it were a clinical guideline.
+
+`applies_when` is mandatory for Agent Native health usage. It lets the Twin retrieve deterministic matches without relying on embedding similarity. Embeddings can find background reading; `applies_when` decides whether a claim is allowed to influence a specific user.
+
+Evidence levels use a compact product-facing scale:
+
+| Level | Meaning | Initial Confidence |
+|---|---|---|
+| `A` | guideline, RCT, meta-analysis, or strong consensus | 0.90 |
+| `B` | cohort, strong mechanistic evidence, PubMed-backed review | 0.75 |
+| `C` | course synthesis, expert explanation, plausible but not definitive | 0.60 |
+| `D` | anecdote, weak association, early hypothesis | 0.40 |
+
+Course-only claims should usually start at `C`. Adding PubMed, guideline, or examine.com style second sources can promote them to `B` or `A`.
+
+### 4.4 Entity and Claim Wiki Skeleton
+
+The authoring workspace should add explicit pages under `wiki/entities/` and `wiki/claims/` before large-scale ingestion.
+
+```text
+/Users/liqiuhua/work/personal/down-dedao/wiki/
+├── WIKI_SCHEMA.md
+├── entities/
+│   ├── gene/        MTHFR.md APOE.md FTO.md ACTN3.md ALDH2.md
+│   ├── snp/         rs1801133.md rs429358.md rs7412.md
+│   ├── nutrient/    folate.md vitamin-d.md omega-3.md magnesium.md
+│   ├── supplement/  5-MTHF.md magnesium-glycinate.md creatine.md
+│   ├── biomarker/   Hcy.md LDL-C.md HbA1c.md ApoB.md eGFR.md
+│   ├── condition/   hyperhomocysteinemia.md MAFLD.md OSAHS.md gout.md
+│   └── drug/        statin.md metformin.md warfarin.md clopidogrel.md
+└── claims/
+    └── c_*.md
+```
+
+Phase 0 should hand-write five sample claims before running an LLM ingest pipeline:
+
+1. `MTHFR` + folate/Hcy boundary.
+2. `APOE` + LDL/ApoB dietary caution.
+3. `FTO` + weight-risk interpretation boundary.
+4. `ACTN3` + exercise phenotype limitation.
+5. `ALDH2` + alcohol avoidance and medication caution.
+
+Each sample claim must include `entity_id`, `claim_id`, `evidence_level`, `applies_when`, `recommends_lookup`, `sources`, `last_confirmed`, `decay_rate`, and `claim_boundary`.
+
+### 4.5 Write Policy
+
+System knowledge is review-gated.
+
+- Course ingest creates PR-style diffs only. It must not directly commit, sync, or publish by default.
+- LLM may draft entity pages, claims, and relation edges.
+- Human review is required before merging system-level content.
+- User conversations never write directly into system wiki.
+- User conversations go into `user_episode_memory` or user-private memory only.
+- A later `crystallize.py` job may draft system claims only from de-identified aggregate evidence, e.g. 100+ matching agent outcomes with consistent direction.
 
 ## 5. Governance and Copyright Policy
 
@@ -178,6 +239,72 @@ Rules:
 
 ## 6. Data Model in `health-llm-driven`
 
+Claude's plan usefully compresses the first backend slice into three tables: `kb_documents`, `kb_edges`, and `kb_audit`. Adopt that as the Phase 0 serving MVP because it can power entity lookup, claim lookup, FTS, graph traversal, and audit without over-normalizing too early. The richer `system_knowledge_*` model can evolve from these tables after the first evidence card works end to end.
+
+### Phase 0 MVP Tables
+
+```sql
+CREATE TABLE IF NOT EXISTS kb_documents (
+    doc_id TEXT PRIMARY KEY,
+    doc_type TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    title TEXT,
+    content_hash TEXT,
+    confidence REAL,
+    evidence_level CHAR(1),
+    applies_when JSONB DEFAULT '[]'::jsonb,
+    recommends_lookup TEXT[] DEFAULT '{}',
+    sources TEXT[] DEFAULT '{}',
+    tsv TSVECTOR,
+    last_confirmed TIMESTAMPTZ,
+    decay_rate TEXT DEFAULT 'normal',
+    is_archived BOOLEAN DEFAULT FALSE,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS kb_doc_entity ON kb_documents(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS kb_doc_tsv ON kb_documents USING GIN(tsv);
+CREATE INDEX IF NOT EXISTS kb_doc_apply ON kb_documents USING GIN(applies_when);
+CREATE INDEX IF NOT EXISTS kb_doc_type ON kb_documents(doc_type, is_archived);
+
+CREATE TABLE IF NOT EXISTS kb_edges (
+    edge_id BIGSERIAL PRIMARY KEY,
+    src_doc_id TEXT REFERENCES kb_documents(doc_id),
+    dst_doc_id TEXT REFERENCES kb_documents(doc_id),
+    relation TEXT NOT NULL,
+    confidence REAL,
+    source_claim_id TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS kb_edge_src ON kb_edges(src_doc_id, relation);
+CREATE INDEX IF NOT EXISTS kb_edge_dst ON kb_edges(dst_doc_id, relation);
+
+CREATE TABLE IF NOT EXISTS kb_audit (
+    id BIGSERIAL PRIMARY KEY,
+    doc_id TEXT,
+    op TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    diff JSONB DEFAULT '{}'::jsonb,
+    ts TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS kb_audit_doc ON kb_audit(doc_id, ts DESC);
+CREATE INDEX IF NOT EXISTS kb_audit_op ON kb_audit(op, ts DESC);
+```
+
+Chroma collections should be split by document role:
+
+- `kb_entities`
+- `kb_claims`
+- `kb_articles`
+
+The old collection can stay as fallback during rollout, but new Agent paths should use the three-role split.
+
 ### Task 1: Add System Knowledge Metadata Tables
 
 **Files:**
@@ -187,6 +314,8 @@ Rules:
 - Test: `backend/tests/test_system_knowledge_models.py`
 
 **Tables:**
+
+Use `kb_documents`, `kb_edges`, and `kb_audit` for Phase 0. If the corpus grows beyond the MVP, normalize into the following richer tables while preserving API compatibility:
 
 ```sql
 CREATE TABLE IF NOT EXISTS system_knowledge_sources (
@@ -353,13 +482,21 @@ Each line:
   "domain": "metabolic_health",
   "category": "nutrition",
   "claim_text": "Weight-loss plans should preserve protein intake to reduce lean-mass loss risk.",
-  "evidence_level": "course_synthesis",
+  "evidence_level": "C",
   "confidence_score": 0.65,
   "source_count": 1,
   "conditions": ["weight_loss", "metabolic_risk"],
   "genes": [],
   "labs": ["weight", "waist", "albumin", "eGFR"],
   "safety_tags": ["kidney_disease_check"],
+  "applies_when": [
+    "twin.goals.weight_loss.active == true",
+    "twin.kidney.eGFR is null or twin.kidney.eGFR >= 60"
+  ],
+  "recommends_lookup": [
+    "entities/nutrient/protein.md",
+    "entities/biomarker/eGFR.md"
+  ],
   "claim_boundary": "General health management; not individualized medical nutrition therapy.",
   "short_excerpt": "减重阶段应关注蛋白质和肌肉量...",
   "citation": {
@@ -368,6 +505,42 @@ Each line:
     "platform": "得到",
     "lesson": "蛋白质与减重"
   }
+}
+```
+
+### `entities.jsonl`
+
+Each line:
+
+```json
+{
+  "doc_id": "entity:gene:MTHFR",
+  "doc_type": "entity",
+  "entity_type": "gene",
+  "entity_id": "MTHFR",
+  "title": "MTHFR",
+  "aliases": ["methylenetetrahydrofolate reductase"],
+  "summary": "One-carbon metabolism gene relevant to folate conversion and homocysteine context.",
+  "linked_claims": ["claim:mthfr_c677t_hcy_folate_boundary"],
+  "metadata": {
+    "category": "genetics",
+    "review_status": "seed"
+  }
+}
+```
+
+### `relations.jsonl`
+
+Each line:
+
+```json
+{
+  "edge_key": "edge:mthfr:requires_monitoring:hcy",
+  "src_doc_id": "entity:gene:MTHFR",
+  "dst_doc_id": "entity:biomarker:Hcy",
+  "relation": "requires_monitoring",
+  "confidence": 0.75,
+  "source_claim_id": "claim:mthfr_c677t_hcy_folate_boundary"
 }
 ```
 
@@ -495,6 +668,45 @@ Expected:
 - writes rejected items with reasons
 - produces quality report
 
+### Task 8.5: PR-Diff Ingest Workflow
+
+**Files:**
+- Create: `/Users/liqiuhua/work/personal/down-dedao/pipeline/ingest_course.py`
+- Test: `/Users/liqiuhua/work/personal/down-dedao/tests/test_ingest_course.py`
+
+Command:
+
+```bash
+cd /Users/liqiuhua/work/personal/down-dedao
+python3 pipeline/ingest_course.py \
+  --course "仇子龙·基因科学20讲" \
+  --lesson "07" \
+  --dry-run \
+  --emit-diff
+```
+
+Rules:
+
+- Default mode is `--dry-run`; the tool prints a patch/diff and writes no committed state.
+- One course ingestion should create one PR-style diff.
+- Large course batches are not allowed in Phase 1.
+- Diff must show created/updated entity pages, claims, edges, `AK-INDEX.md`, and `ak-log.md`.
+- Each diff must include a quality report and conflict report.
+- Human review is mandatory before sync to the health system.
+
+Ingest steps:
+
+1. Discuss or summarize lesson key points.
+2. Extract entities with aliases and types.
+3. Mine atomic claims.
+4. Search existing claims by BM25 + vector for conflict candidates.
+5. Propose `supersedes` only when source authority, recency, and evidence support it.
+6. Assign confidence from evidence level.
+7. Update entity pages with claim backlinks.
+8. Update `AK-INDEX.md`.
+9. Append `ak-log.md`.
+10. Emit PR diff.
+
 ## 9. Sync Design
 
 ### Task 9: Add System Knowledge Publish API
@@ -581,6 +793,59 @@ Fusion:
   - matching abnormal lab
   - matching gene variant
 
+### Task 11.5: Add Entity-First Lookup APIs
+
+**Files:**
+- Modify: `backend/app/api/knowledge.py` or create `backend/app/api/system_knowledge.py`
+- Test: `backend/tests/test_entity_first_knowledge_api.py`
+
+Endpoints:
+
+```http
+GET  /api/v1/knowledge/entity/{entity_type}/{entity_id}
+GET  /api/v1/knowledge/claim/{claim_id}
+GET  /api/v1/knowledge/search
+POST /api/v1/knowledge/lookup_for_twin
+GET  /api/v1/admin/knowledge/lint_report
+POST /api/v1/admin/knowledge/reindex
+```
+
+`lookup_for_twin` is the Agent Native core. It receives a compact Twin summary and returns entity IDs plus matched claims via `applies_when`.
+
+Example request:
+
+```json
+{
+  "genetics": {"MTHFR_C677T": "TT", "APOE": "E3/E4"},
+  "labs": {"homocysteine_umol_l": 18, "ldl_c_mmol_l": 3.6},
+  "medications": ["rosuvastatin"],
+  "goals": ["weight_loss", "metabolic_health"]
+}
+```
+
+Example response:
+
+```json
+{
+  "entities": [
+    "entity:gene:MTHFR",
+    "entity:biomarker:Hcy",
+    "entity:gene:APOE",
+    "entity:biomarker:LDL-C",
+    "entity:drug:statin"
+  ],
+  "claims": [
+    {
+      "claim_id": "claim:mthfr_c677t_hcy_folate_boundary",
+      "match_reason": "MTHFR_C677T=TT and homocysteine>=15",
+      "confidence": 0.75
+    }
+  ]
+}
+```
+
+This endpoint should not ask an LLM to infer matches. It should evaluate structured `applies_when` predicates deterministically, then use hybrid retrieval only for surrounding context.
+
 ### Task 12: Add Retrieval Policy for Health Agent
 
 **Files:**
@@ -634,6 +899,7 @@ Tap behavior:
 - shows confidence
 - shows "为什么这条适用于我"
 - does not show full source text
+- includes "反馈这条建议不对" action, writing a `kb_audit` event that later informs lint and contradiction review
 
 ### Task 14: Add "Why This Advice" Agent Trace
 
@@ -710,9 +976,45 @@ Every user-facing answer that uses system knowledge must include:
 - what is uncertain
 - what requires clinician confirmation
 
+Specialist outputs should carry `evidence_refs: [claim_id]` at the recommendation/action level. If a recommendation has no matched claim:
+
+- lower its confidence by one level
+- do not show the "evidence" chip in mobile
+- show "model inference" or "needs evidence" internally
+- write `unsupported=true` into audit logs
+- count it against knowledge coverage metrics
+
+Target coverage:
+
+- SupplementAdvisor recommendations: >= 80% with `evidence_refs` in Phase 2, >= 90% after Phase 1A corpus.
+- FuelStrategist key actions: >= 70% with `evidence_refs` in Phase 2, >= 85% after Phase 1B corpus.
+
 ## 14. First Health Corpus Cut
 
-Do not compile all 14k files first. Build a focused health corpus:
+Do not compile all 14k files first. Use two cuts.
+
+### Phase 1A: Six High-Signal Bundles
+
+Start here to avoid noise explosion:
+
+1. `仇子龙·基因科学20讲`
+2. `仝卿·营养科学20讲`
+3. `给忙碌者的营养健康公开课`
+4. `王家伟·日常用药健康课`
+5. `冯雪·高血脂医学课` / `冯雪·高血压医学课` / `冯雪·高血糖医学课` / `冯雪·高尿酸医学课` as one cardiometabolic bundle
+6. `给忙碌者的糖尿病医学课`
+
+Target Phase 1A:
+
+- claims >= 300
+- entities >= 80
+- SupplementAdvisor existing rule coverage >= 90%
+- every course enters via PR-style diff
+- one human review pass per course bundle
+
+### Phase 1B: Broader Health Corpus
+
+Then expand to:
 
 1. `冯雪·科学减肥16讲`
 2. `冯雪·家庭健康管理100讲`
@@ -728,7 +1030,7 @@ Do not compile all 14k files first. Build a focused health corpus:
 12. `怎样成为精力管理的高手`
 13. `前沿课·人体微生物组9讲`
 
-Target first batch:
+Target Phase 1B:
 
 - 13 courses
 - 150-300 pages
@@ -783,12 +1085,22 @@ Expected:
 
 ## 16. Rollout Plan
 
-### Phase 0: Design and Governance
+### Phase 0: Skeleton and Vertical Slice
 
-- Write this plan.
-- Review paid-content policy.
-- Define health domains and claim schema.
-- Decide first 13-course corpus.
+- Write `wiki/WIKI_SCHEMA.md` in `down-dedao`.
+- Move or exclude `wiki/articles/personal-*` from system sync. User-specific pages must live in a private vault, not system wiki.
+- Create `wiki/entities/` skeleton with 1-2 example pages per type.
+- Hand-write five sample claims: `MTHFR`, `APOE`, `FTO`, `ACTN3`, `ALDH2`.
+- Add Phase 0 `kb_documents`, `kb_edges`, `kb_audit` backend tables.
+- Add a one-time sync script for seed entities and claims.
+- Add `GET /api/v1/knowledge/entity/{type}/{id}` and `POST /api/v1/knowledge/lookup_for_twin`.
+- Add minimal Mobile evidence card.
+
+Acceptance:
+
+- In mobile chat, ask "我 MTHFR-TT 该注意什么？"
+- Backend returns `entity:gene:MTHFR` plus at least one matched claim.
+- Mobile shows evidence card with source, evidence level, and boundary.
 
 ### Phase 1: Offline V2 Compiler
 
@@ -799,10 +1111,12 @@ Expected:
 - KG extractor
 - artifact writer
 - quality report
+- `pipeline/ingest_course.py` dry-run PR-diff workflow
+- run Phase 1A six high-signal course bundles first
 
 ### Phase 2: Serving Plane
 
-- Postgres tables
+- Postgres `kb_*` tables first, normalized `system_knowledge_*` tables later if needed
 - import APIs
 - vector/BM25/KG storage
 - audit logs
@@ -831,6 +1145,13 @@ Expected:
 - quality sampling
 - feedback crystallization
 
+Acceptance:
+
+- three months after launch, average claim level improves from mostly `C` toward `B`
+- orphan claim/entity rate < 5%
+- user feedback on evidence cards appears in `kb_audit`
+- crystallization drafts claims only from de-identified aggregate patterns
+
 ## 17. Definition of Done
 
 The V2 system is done when:
@@ -853,4 +1174,3 @@ Start with Phase 1 and Phase 2 in parallel only if using separate work scopes:
 - Worker B: `health-llm-driven/backend/app/models/system_knowledge.py` plus migration and import API.
 
 If done sequentially, build backend data model first, then compiler output can target the exact schema.
-
