@@ -559,6 +559,7 @@ def _system_kb_twin_payload(twin: HealthTwin) -> Dict[str, Any]:
             "active": any(token in goals_text for token in ("代谢", "血糖", "血脂", "血压", "尿酸", "健康"))
         },
         "sleep": {"active": any(token in goals_text for token in ("睡眠", "恢复", "精力"))},
+        "longevity": {"active": any(token in goals_text for token in ("长寿", "衰老", "抗衰", "老化"))},
     }
     return {
         "labs": {
@@ -580,6 +581,19 @@ def _system_kb_twin_payload(twin: HealthTwin) -> Dict[str, Any]:
         "supplements": twin.supplement.active_supplements,
         "goals": goals,
     }
+
+
+def _attach_kb_evidence_to_findings(
+    db: Session,
+    twin: HealthTwin,
+    findings: List[SpecialistFinding],
+) -> None:
+    try:
+        from app.services.system_knowledge_service import attach_system_knowledge_evidence
+
+        attach_system_knowledge_evidence(db, _system_kb_twin_payload(twin), findings)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] system KB evidence attach skipped: {e}")
 
 
 def _inject_memory(db: Session, user_id: int, user_prompt: str,
@@ -903,6 +917,7 @@ async def run_orchestrator(
     findings = _run_specialists(
         twin, specialists, {"query": req.query, "db": db, "recent_cases": recent_cases}
     )
+    _attach_kb_evidence_to_findings(db, twin, findings)
 
     # Cross-review + (可选) LLM 仲裁, 结果注入 synthesis prompt
     conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
@@ -1238,6 +1253,7 @@ async def stream_orchestrator(
                     twin, specialists,
                     {"query": req.query, "db": bg_db, "recent_cases": recent_cases},
                 )
+                _attach_kb_evidence_to_findings(bg_db, twin, findings)
                 for f in findings:
                     await chunk_queue.put(_sse("specialist", f.model_dump(mode="json")))
 

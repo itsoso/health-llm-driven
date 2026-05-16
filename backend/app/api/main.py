@@ -66,7 +66,6 @@ from app.api import (
     live_run,
     episodes,
     health_report,
-    health_report,
     body_composition,
     health_score,
     medication,
@@ -254,6 +253,7 @@ api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])
 api_router.include_router(cgm.router, tags=["cgm"])
 api_router.include_router(body_composition.router)
 api_router.include_router(system_knowledge.router, tags=["system-knowledge"])
+api_router.include_router(system_knowledge.admin_router, tags=["admin-system-knowledge"])
 api_router.include_router(knowledge.router, tags=["knowledge-base"])
 api_router.include_router(llm_usage.router)
 api_router.include_router(specialist_hit_rate.router)

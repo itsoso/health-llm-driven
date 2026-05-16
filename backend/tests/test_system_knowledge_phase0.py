@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
 
 from app.models.system_knowledge import KBDocument, KBEdge
-from app.services.system_knowledge_service import build_evidence_card_for_message
+from app.services.system_knowledge_service import (
+    apply_confidence_decay,
+    build_evidence_card_for_message,
+)
 
 
 def _seed_phase0_knowledge(db):
@@ -137,3 +140,109 @@ def test_build_evidence_card_for_message_detects_mthfr_tt_question(db):
     assert card["type"] == "system_knowledge_evidence"
     assert card["data"]["entity"]["doc_id"] == "entity:gene:MTHFR"
     assert card["data"]["claims"][0]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"
+
+
+def test_get_claim_returns_claim_detail_with_neighbors(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+
+    response = client.get(
+        "/api/v1/knowledge/claim/claim:c_mthfr_c677t_hcy_folate_boundary",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["claim"]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"
+    assert payload["claim"]["entity_id"] == "MTHFR"
+    assert payload["neighbors"][0]["doc_id"] == "entity:gene:MTHFR"
+    assert payload["claim_boundary"] == "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
+
+
+def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+
+    response = client.get(
+        "/api/v1/knowledge/search",
+        headers=headers,
+        params={"q": "叶酸 MTHFR", "limit": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    result_ids = [item["document"]["doc_id"] for item in payload["results"]]
+    assert "entity:gene:MTHFR" in result_ids
+    assert "claim:c_mthfr_c677t_hcy_folate_boundary" in result_ids
+    assert payload["graph_context"]["edges"][0]["relation"] == "has_claim"
+
+
+def test_admin_lint_report_flags_orphans_and_invalid_conditions(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    _seed_phase0_knowledge(db)
+    db.add(
+        KBDocument(
+            doc_id="claim:c_invalid_condition",
+            doc_type="claim",
+            entity_type="gene",
+            entity_id="MTHFR",
+            title="Invalid condition",
+            confidence=0.4,
+            evidence_level="C",
+            applies_when=["twin.genetics.MTHFR_C677T ~= 'TT'"],
+            last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/lint_report", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["orphan_claims"] == 1
+    assert payload["summary"]["invalid_conditions"] == 1
+    assert payload["issues"]["invalid_conditions"][0]["doc_id"] == "claim:c_invalid_condition"
+
+
+def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    _seed_phase0_knowledge(db)
+
+    response = client.post("/api/v1/admin/knowledge/reindex", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["documents"] == 2
+    refreshed = db.get(KBDocument, "entity:gene:MTHFR")
+    assert refreshed.tsv is not None
+    assert "MTHFR" in refreshed.tsv
+    assert refreshed.content_hash is not None
+
+
+def test_apply_confidence_decay_reduces_stale_fast_claims(db):
+    stale_time = datetime(2026, 1, 1, tzinfo=UTC)
+    db.add(
+        KBDocument(
+            doc_id="claim:c_fast_stale",
+            doc_type="claim",
+            title="Fast stale claim",
+            confidence=0.8,
+            evidence_level="C",
+            last_confirmed=stale_time,
+            decay_rate="fast",
+        )
+    )
+    db.commit()
+
+    result = apply_confidence_decay(
+        db,
+        now=datetime(2026, 5, 16, tzinfo=UTC),
+        actor="test",
+    )
+
+    assert result["updated"] == 1
+    refreshed = db.get(KBDocument, "claim:c_fast_stale")
+    assert refreshed.confidence == 0.72
+    assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_fast_stale").count() == 1

@@ -1,7 +1,7 @@
 # Dedao 系统知识库到 Health 系统同步说明
 
 日期：2026-05-16  
-状态：已上线 Phase 0 + Phase 1a reviewed artifact 纵切
+状态：已上线 Phase 0 + Phase 1a reviewed artifact 纵切；Phase 1b 后端检索/治理接口已接入
 
 ## 结论
 
@@ -17,6 +17,7 @@
 
 - Phase 0：12 个文档、5 条图谱边，覆盖 `MTHFR/APOE/FTO/ACTN3/ALDH2` 等基因样板。
 - Phase 1a：49 个文档、25 条图谱边，覆盖代谢健康、营养、血压、血脂、血糖、尿酸、睡眠恢复、运动和用药安全。
+- Phase 1b：扩展到 64 个文档、47 条图谱边，新增 14 个衰老标志实体、1 条“衰老标志仅作轨迹分类框架”边界 claim，并上线 claim/search/admin lint/reindex/decay 能力。
 
 ## 源端：down-dedao
 
@@ -83,6 +84,15 @@ backend/data/system_kb_v2_seed/
 - `claims.jsonl`：可被 Agent 使用的原子事实/行动规则，每条必须有边界、证据等级、置信度和 `applies_when`。
 - `pages.jsonl`：课程页元信息，不是课程全文。
 - `relations.jsonl`：知识图谱边，例如 `entity -> claim`、`page -> claim`、`requires_boundary`。
+
+当前 artifact 计数：
+
+- `pages`: 12
+- `entities`: 36
+- `claims`: 16
+- `relations`: 47
+
+新增 `aging_hallmark` 实体层覆盖：基因组不稳定性、端粒损耗、表观遗传改变、蛋白质稳态丧失、巨自噬失活、营养感知失调、线粒体功能障碍、细胞衰老、干细胞耗竭、细胞间通讯改变、慢性炎症、菌群失调、细胞外基质变化、心理社会压力与孤立。它们只作为长期健康轨迹和机制地图使用，不直接映射为补剂处方。
 
 Claim 样例：
 
@@ -186,12 +196,31 @@ python scripts/import_system_kb_v2_artifacts.py
 系统知识库 API：
 
 - `GET /api/v1/knowledge/entity/{entity_type}/{entity_id}`
+- `GET /api/v1/knowledge/claim/{claim_id}`
+- `GET /api/v1/knowledge/search?q=...&limit=...`
 - `POST /api/v1/knowledge/lookup_for_twin`
+- `GET /api/v1/admin/knowledge/lint_report`
+- `POST /api/v1/admin/knowledge/reindex`
 
 代码：
 
 - `backend/app/api/system_knowledge.py`
 - `backend/app/services/system_knowledge_service.py`
+
+运维脚本：
+
+```bash
+cd /Users/liqiuhua/work/personal/health-llm-driven/backend
+python scripts/lint_system_kb.py
+python scripts/reindex_system_kb.py
+python scripts/decay_system_kb_confidence.py
+```
+
+说明：
+
+- `lint_system_kb.py` 输出 orphan entity/claim、无效 `applies_when`、过期 claim。
+- `reindex_system_kb.py` 刷新 `kb_documents.tsv` 和 `content_hash`，为后续 PostgreSQL FTS/向量混合检索保留一致接口。
+- `decay_system_kb_confidence.py` 对长期未确认的 claim 做 confidence decay，并写入 `kb_audit`。
 
 ### Twin 命中逻辑
 
@@ -213,7 +242,8 @@ Agent 不直接把用户问题拿去搜课程全文，而是把 Health Twin 映�
   "goals": {
     "weight_loss": { "active": true },
     "metabolic_health": { "active": true },
-    "sleep": { "active": false }
+    "sleep": { "active": false },
+    "longevity": { "active": false }
   }
 }
 ```
@@ -241,8 +271,17 @@ Orchestrator 合成回答时会注入一个受控长度的知识库段落：
 
 - `backend/app/orchestrator/orchestrator.py`
 - `format_system_knowledge_for_prompt(...)`
+- `attach_system_knowledge_evidence(...)`
 - `_system_kb_twin_payload(...)`
 - `lookup_for_twin(...)`
+
+Specialist 结果现在支持 `evidence_refs`。Orchestrator 在 specialist 运行后，会用结构化 Twin payload 命中系统 KB claim，并把 claim_id 附着到：
+
+- `SpecialistFinding.evidence_refs`
+- `SpecialistFinding.raw.system_kb_evidence_refs`
+- `finding.findings[*].evidence_refs`
+
+这为 mobile 的证据 chip、审计和后续 unsupported 建议统计提供统一数据源。
 
 ### Mobile 展示
 
@@ -258,6 +297,8 @@ Phase 0 已支持用户明确问基因问题时返回证据卡，例如：
 ```
 
 后端会生成 `system_knowledge_evidence` card，移动端展示证据等级、置信度、来源和医学边界。
+
+后续移动端还需要把普通饮食、补剂、运动、恢复卡片中的 `evidence_refs` 渲染成可点击 evidence chip，并跳转到 `/knowledge/claim/{claim_id}` 或 `/knowledge/entity/{type}/{id}`。
 
 ## 系统架构图
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+from datetime import UTC, datetime, timedelta
+import hashlib
 import operator
 import re
 from typing import Any
@@ -10,7 +12,7 @@ from typing import Any
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.models.system_knowledge import KBDocument, KBEdge
+from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
@@ -108,6 +110,113 @@ def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str
     }
 
 
+def get_claim_bundle(db: Session, claim_id: str) -> dict[str, Any] | None:
+    claim = (
+        db.query(KBDocument)
+        .filter(
+            KBDocument.doc_id == claim_id,
+            KBDocument.doc_type == "claim",
+            KBDocument.is_archived.is_(False),
+        )
+        .first()
+    )
+    if claim is None:
+        return None
+
+    edges = (
+        db.query(KBEdge)
+        .filter(or_(KBEdge.src_doc_id == claim.doc_id, KBEdge.dst_doc_id == claim.doc_id))
+        .all()
+    )
+    neighbor_ids = {
+        edge.dst_doc_id if edge.src_doc_id == claim.doc_id else edge.src_doc_id
+        for edge in edges
+    }
+    neighbors = []
+    if neighbor_ids:
+        neighbors = (
+            db.query(KBDocument)
+            .filter(KBDocument.doc_id.in_(neighbor_ids), KBDocument.is_archived.is_(False))
+            .order_by(KBDocument.doc_type.asc(), KBDocument.doc_id.asc())
+            .all()
+        )
+
+    return {
+        "claim": serialize_document(claim),
+        "neighbors": [serialize_document(neighbor) for neighbor in neighbors],
+        "edges": [_serialize_edge(edge) for edge in edges],
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def search_knowledge(
+    db: Session,
+    query: str,
+    *,
+    limit: int = 10,
+    doc_type: str | None = None,
+    entity_type: str | None = None,
+) -> dict[str, Any]:
+    """Small deterministic hybrid-search placeholder for the serving KB.
+
+    Phase 1b keeps this DB-only so it works with both local SQLite tests and
+    production PostgreSQL. The next phase can replace the scorer with
+    Postgres FTS + vector retrieval while keeping this response shape.
+    """
+
+    normalized_query = (query or "").strip()
+    terms = [term.lower() for term in re.split(r"\s+", normalized_query) if term.strip()]
+
+    docs_query = db.query(KBDocument).filter(KBDocument.is_archived.is_(False))
+    if doc_type:
+        docs_query = docs_query.filter(KBDocument.doc_type == doc_type)
+    if entity_type:
+        docs_query = docs_query.filter(KBDocument.entity_type == entity_type)
+
+    scored: list[tuple[float, KBDocument]] = []
+    for document in docs_query.all():
+        score = _score_document(document, terms)
+        if score > 0 or not terms:
+            scored.append((score, document))
+
+    scored.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
+    selected = scored[: max(1, min(limit, 50))]
+    selected_ids = {document.doc_id for _score, document in selected}
+    edges = []
+    neighbors = []
+    if selected_ids:
+        edges = (
+            db.query(KBEdge)
+            .filter(or_(KBEdge.src_doc_id.in_(selected_ids), KBEdge.dst_doc_id.in_(selected_ids)))
+            .all()
+        )
+        neighbor_ids = {
+            edge.dst_doc_id if edge.src_doc_id in selected_ids else edge.src_doc_id
+            for edge in edges
+            if edge.src_doc_id not in selected_ids or edge.dst_doc_id not in selected_ids
+        }
+        if neighbor_ids:
+            neighbors = (
+                db.query(KBDocument)
+                .filter(KBDocument.doc_id.in_(neighbor_ids), KBDocument.is_archived.is_(False))
+                .order_by(KBDocument.doc_type.asc(), KBDocument.doc_id.asc())
+                .all()
+            )
+
+    return {
+        "query": normalized_query,
+        "results": [
+            {"score": round(score, 4), "document": serialize_document(document)}
+            for score, document in selected
+        ],
+        "graph_context": {
+            "edges": [_serialize_edge(edge) for edge in edges],
+            "neighbors": [serialize_document(neighbor) for neighbor in neighbors],
+        },
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
 def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
     entity_keys = _extract_entity_keys(twin)
     entities = []
@@ -147,6 +256,116 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str, int]:
+    documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    for document in documents:
+        searchable = _document_search_text(document)
+        document.tsv = searchable
+        document.content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+
+    db.add(
+        KBAudit(
+            doc_id=None,
+            op="reindex",
+            actor=actor,
+            diff={"documents": len(documents)},
+        )
+    )
+    db.commit()
+    return {"documents": len(documents)}
+
+
+def lint_knowledge_base(db: Session) -> dict[str, Any]:
+    documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    edges = db.query(KBEdge).all()
+    linked_doc_ids = {edge.src_doc_id for edge in edges} | {edge.dst_doc_id for edge in edges}
+    now = datetime.now(UTC)
+
+    orphan_entities = [
+        _compact_issue(document)
+        for document in documents
+        if document.doc_type == "entity" and document.doc_id not in linked_doc_ids
+    ]
+    orphan_claims = [
+        _compact_issue(document)
+        for document in documents
+        if document.doc_type == "claim" and document.doc_id not in linked_doc_ids
+    ]
+    invalid_conditions = []
+    stale_claims = []
+    for document in documents:
+        if document.doc_type != "claim":
+            continue
+        for condition in document.applies_when or []:
+            if not is_supported_condition(condition):
+                invalid_conditions.append({**_compact_issue(document), "condition": condition})
+        if document.last_confirmed and _ensure_aware(document.last_confirmed) < now - timedelta(days=365):
+            stale_claims.append(_compact_issue(document))
+
+    issues = {
+        "orphan_entities": orphan_entities,
+        "orphan_claims": orphan_claims,
+        "invalid_conditions": invalid_conditions,
+        "stale_claims": stale_claims,
+    }
+    return {
+        "summary": {name: len(items) for name, items in issues.items()},
+        "issues": issues,
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def apply_confidence_decay(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    actor: str = "system",
+) -> dict[str, int]:
+    current_time = _ensure_aware(now or datetime.now(UTC))
+    windows = {
+        "fast": timedelta(days=30),
+        "normal": timedelta(days=120),
+        "slow": timedelta(days=365),
+    }
+    multiplier = {
+        "fast": 0.90,
+        "normal": 0.96,
+        "slow": 0.99,
+    }
+    updated = 0
+    claims = (
+        db.query(KBDocument)
+        .filter(
+            KBDocument.doc_type == "claim",
+            KBDocument.is_archived.is_(False),
+            KBDocument.confidence.isnot(None),
+            KBDocument.last_confirmed.isnot(None),
+        )
+        .all()
+    )
+    for claim in claims:
+        decay_rate = claim.decay_rate or "normal"
+        window = windows.get(decay_rate, windows["normal"])
+        last_confirmed = _ensure_aware(claim.last_confirmed)
+        if last_confirmed > current_time - window:
+            continue
+        factor = multiplier.get(decay_rate, multiplier["normal"])
+        claim.confidence = round(max(0.1, float(claim.confidence) * factor), 4)
+        updated += 1
+
+    if updated:
+        db.add(
+            KBAudit(
+                doc_id=None,
+                op="confidence_decay",
+                actor=actor,
+                diff={"updated": updated, "now": current_time.isoformat()},
+            )
+        )
+    db.commit()
+    return {"updated": updated}
+
+
 def format_system_knowledge_for_prompt(
     db: Session,
     twin: dict[str, Any],
@@ -182,6 +401,103 @@ def format_system_knowledge_for_prompt(
     if len(rendered) <= max_chars:
         return rendered
     return rendered[: max_chars - 3].rstrip() + "..."
+
+
+def attach_system_knowledge_evidence(
+    db: Session,
+    twin: dict[str, Any],
+    findings: list[Any],
+    *,
+    max_refs_per_finding: int = 3,
+) -> dict[str, int]:
+    """Attach matched system-KB claim IDs to specialist findings.
+
+    This is deliberately conservative: it only attaches claims whose
+    `applies_when` conditions match the structured Twin payload. It does not
+    invent evidence from semantic similarity.
+    """
+
+    result = lookup_for_twin(db, twin)
+    claims = result.get("claims") or []
+    if not claims:
+        return {"findings_updated": 0, "claim_refs": 0}
+
+    updated = 0
+    for finding in findings:
+        refs = _select_claim_refs_for_specialist(finding, claims, max_refs_per_finding)
+        if not refs:
+            continue
+        existing_refs = list(getattr(finding, "evidence_refs", []) or [])
+        merged_refs = _dedupe_preserve_order(existing_refs + refs)
+        try:
+            finding.evidence_refs = merged_refs
+        except Exception:  # noqa: BLE001
+            pass
+        if isinstance(getattr(finding, "raw", None), dict):
+            finding.raw["system_kb_evidence_refs"] = merged_refs
+        for item in getattr(finding, "findings", []) or []:
+            if isinstance(item, dict) and not item.get("evidence_refs"):
+                item["evidence_refs"] = refs
+        updated += 1
+
+    return {"findings_updated": updated, "claim_refs": len(claims)}
+
+
+def _select_claim_refs_for_specialist(
+    finding: Any,
+    claims: list[dict[str, Any]],
+    max_refs: int,
+) -> list[str]:
+    specialist = (getattr(finding, "specialist_name", "") or "").lower()
+    category = (getattr(finding, "category", "") or "").lower()
+    domain_keywords = _specialist_domain_keywords(specialist, category)
+    selected: list[str] = []
+
+    for claim in claims:
+        metadata = claim.get("metadata") or {}
+        domain = str(metadata.get("domain") or "")
+        entity_type = str(claim.get("entity_type") or "")
+        entity_id = str(claim.get("entity_id") or "")
+        haystack = f"{domain} {entity_type} {entity_id}".lower()
+        if domain_keywords and not any(keyword in haystack for keyword in domain_keywords):
+            continue
+        doc_id = claim.get("doc_id")
+        if doc_id:
+            selected.append(doc_id)
+        if len(selected) >= max_refs:
+            break
+
+    if not selected:
+        selected = [claim["doc_id"] for claim in claims[:max_refs] if claim.get("doc_id")]
+    return _dedupe_preserve_order(selected)
+
+
+def _specialist_domain_keywords(specialist: str, category: str) -> list[str]:
+    text = f"{specialist} {category}"
+    if "fuel" in text or "nutrition" in text:
+        return ["nutrition", "metabolic", "fiber", "protein"]
+    if "supplement" in text:
+        return ["supplement", "genetic", "biomarker", "metabolic"]
+    if "movement" in text:
+        return ["movement", "training", "recovery", "metabolic"]
+    if "recovery" in text:
+        return ["sleep", "recovery"]
+    if "safety" in text:
+        return ["safety", "medication", "gene", "biomarker"]
+    if "metabolic" in text:
+        return ["metabolic", "glycemic", "lipid"]
+    return []
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any] | None:
@@ -254,6 +570,80 @@ def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
     return False
 
 
+def is_supported_condition(condition: str) -> bool:
+    expression = (condition or "").strip()
+    return any(
+        pattern.match(expression)
+        for pattern in (_NULL_RE, _IN_RE, _EQ_RE, _COMPARE_RE)
+    )
+
+
+def _serialize_edge(edge: KBEdge) -> dict[str, Any]:
+    return {
+        "edge_id": edge.edge_id,
+        "src_doc_id": edge.src_doc_id,
+        "dst_doc_id": edge.dst_doc_id,
+        "relation": edge.relation,
+        "confidence": edge.confidence,
+        "source_claim_id": edge.source_claim_id,
+    }
+
+
+def _score_document(document: KBDocument, terms: list[str]) -> float:
+    if not terms:
+        return 1.0
+    text = _document_search_text(document).lower()
+    score = 0.0
+    title = (document.title or "").lower()
+    entity = f"{document.entity_type or ''} {document.entity_id or ''}".lower()
+    for term in terms:
+        if term in title:
+            score += 4.0
+        if term in entity:
+            score += 3.0
+        if term in text:
+            score += 1.0 + min(text.count(term), 5) * 0.1
+    if document.doc_type == "claim":
+        score += 0.2
+    if document.confidence:
+        score += float(document.confidence) * 0.1
+    return score
+
+
+def _document_search_text(document: KBDocument) -> str:
+    chunks = [
+        document.doc_id,
+        document.doc_type,
+        document.entity_type,
+        document.entity_id,
+        document.title,
+        document.summary,
+        document.body,
+        document.evidence_level,
+        document.decay_rate,
+        " ".join(document.sources or []),
+        " ".join(document.applies_when or []),
+        " ".join(document.recommends_lookup or []),
+    ]
+    return "\n".join(str(chunk) for chunk in chunks if chunk)
+
+
+def _compact_issue(document: KBDocument) -> dict[str, Any]:
+    return {
+        "doc_id": document.doc_id,
+        "doc_type": document.doc_type,
+        "entity_type": document.entity_type,
+        "entity_id": document.entity_id,
+        "title": document.title,
+    }
+
+
+def _ensure_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 def _parse_literal(raw: str) -> Any:
     normalized = raw.strip().lower()
     if normalized == "true":
@@ -323,6 +713,8 @@ def _extract_entity_keys(twin: dict[str, Any]) -> set[tuple[str, str]]:
         keys.add(("condition", "metabolic-health"))
     if _value_at_path({"goals": goals}, "twin.goals.sleep.active") is True:
         keys.add(("condition", "sleep-recovery"))
+    if _value_at_path({"goals": goals}, "twin.goals.longevity.active") is True:
+        keys.add(("aging_hallmark", "mitochondrial_dysfunction"))
 
     return keys
 

@@ -7,9 +7,9 @@
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "counts": {
     "pages": 12,
-    "entities": 22,
-    "claims": 15,
-    "relations": 25
+    "entities": 36,
+    "claims": 16,
+    "relations": 47
   },
   "priority_sources": [
     "冯雪·科学减肥16讲",

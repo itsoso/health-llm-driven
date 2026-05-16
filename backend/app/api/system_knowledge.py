@@ -2,17 +2,26 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.admin import get_admin_user
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.system_knowledge import KBAudit
 from app.models.user import User
-from app.services.system_knowledge_service import get_entity_bundle, lookup_for_twin
+from app.services.system_knowledge_service import (
+    get_claim_bundle,
+    get_entity_bundle,
+    lint_knowledge_base,
+    lookup_for_twin,
+    reindex_knowledge_documents,
+    search_knowledge,
+)
 
 router = APIRouter(prefix="/knowledge", tags=["system-knowledge"])
+admin_router = APIRouter(prefix="/admin/knowledge", tags=["admin-system-knowledge"])
 
 
 class TwinLookupRequest(BaseModel):
@@ -39,6 +48,46 @@ def get_knowledge_entity(
     return bundle
 
 
+@router.get("/claim/{claim_id}", summary="获取系统知识库 claim 详情")
+def get_knowledge_claim(
+    claim_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    bundle = get_claim_bundle(db, claim_id=claim_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="知识库 claim 不存在")
+
+    _record_audit(db, doc_id=bundle["claim"]["doc_id"], op="query_claim", actor=f"user:{current_user.id}")
+    return bundle
+
+
+@router.get("/search", summary="搜索系统知识库")
+def search_system_knowledge(
+    q: str = Query("", max_length=200),
+    limit: int = Query(10, ge=1, le=50),
+    doc_type: str | None = Query(None),
+    entity_type: str | None = Query(None),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    result = search_knowledge(
+        db,
+        q,
+        limit=limit,
+        doc_type=doc_type,
+        entity_type=entity_type,
+    )
+    _record_audit(
+        db,
+        doc_id=None,
+        op="search",
+        actor=f"user:{current_user.id}",
+        diff={"q": q, "limit": limit, "result_count": len(result["results"])},
+    )
+    return result
+
+
 @router.post("/lookup_for_twin", summary="基于 Twin 摘要查找系统知识库条目")
 def lookup_knowledge_for_twin(
     request: TwinLookupRequest,
@@ -58,6 +107,30 @@ def lookup_knowledge_for_twin(
         },
     )
     return result
+
+
+@admin_router.get("/lint_report", summary="系统知识库 lint 报告")
+def get_system_knowledge_lint_report(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = lint_knowledge_base(db)
+    _record_audit(
+        db,
+        doc_id=None,
+        op="lint_report",
+        actor=f"admin:{admin_user.id}",
+        diff={"summary": result["summary"]},
+    )
+    return result
+
+
+@admin_router.post("/reindex", summary="重建系统知识库检索字段")
+def reindex_system_knowledge(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    return reindex_knowledge_documents(db, actor=f"admin:{admin_user.id}")
 
 
 def _record_audit(

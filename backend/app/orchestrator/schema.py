@@ -49,6 +49,10 @@ class SpecialistFinding(BaseModel):
         default_factory=list,
         description="可选: specialist 提出的可验证假设, orchestrator 自动落地为 ActionCard",
     )
+    evidence_refs: List[str] = Field(
+        default_factory=list,
+        description="系统知识库 claim_id 引用，供 mobile evidence chip 和审计使用",
+    )
 
 
 class ProposedCard(BaseModel):
