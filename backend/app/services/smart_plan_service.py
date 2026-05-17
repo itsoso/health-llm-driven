@@ -198,16 +198,9 @@ class SmartPlanService:
         return result
 
     def _get_user_city(self, user_id: int) -> Optional[str]:
-        """获取用户所在城市"""
-        from app.models.user_profile import UserProfile
-        profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        if not profile:
-            return None
-        if profile.use_manual_location and profile.manual_city:
-            return profile.manual_city
-        if profile.detected_city:
-            return profile.detected_city
-        return profile.city
+        # 走 get_fresh_city: Celery 跑 weekly plan 时, stale IP 同步刷新一次.
+        from app.services.location_resolver import get_fresh_city
+        return get_fresh_city(self.db, user_id)
 
     async def _get_week_weather(self, user_id: int, week_start: date) -> dict:
         """获取目标周的天气预报 + 空气质量"""

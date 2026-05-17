@@ -157,6 +157,21 @@ async def update_my_profile(
     return build_profile_response(profile)
 
 
+@router.get("/me/effective-location")
+async def get_effective_location(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """位置字段单一事实之主 — 所有 mobile / 后端 reader 应该走这里, 不再各自实现优先级.
+
+    返回: {city, lat, lon, source, updated_at, stale_minutes}
+    详细语义见 app/services/location_resolver.py docstring.
+    """
+    from app.services.location_resolver import resolve_effective_location
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    return resolve_effective_location(profile)
+
+
 @router.post("/me/refresh-location")
 async def refresh_my_location(
     request: Request,
@@ -197,6 +212,7 @@ async def refresh_my_location(
         profile.detected_city = location.city
         profile.detected_region = location.region
         profile.detected_country = location.country
+        profile.detected_source = "ip"
         profile.location_updated_at = datetime.now(UTC)
         profile.last_ip = client_ip
         db.commit()
@@ -294,14 +310,26 @@ async def update_gps_location(
     db: Session = Depends(get_db),
 ):
     """
-    GPS 定位: 客户端拿到经纬度后反查城市,写入 detected_city (auto 模式下立即生效).
+    GPS 定位: 客户端拿到经纬度后写入 profile (auto 模式下立即生效).
 
-    payload: { lat: float, lon: float }
-    用和风天气 GeoAPI /v2/city/lookup?location={lon},{lat} 反查 (精度到区/县).
+    payload: { lat: float, lon: float, city?: str, region?: str, country?: str }
+
+    城市名解析两条路径 (mobile 端优先客户端反查, 去 qweather 依赖):
+    1. 客户端用 expo-location `reverseGeocodeAsync` (iOS CLGeocoder 离线可用) 反查 city,
+       backend 直接信任 — 跳过 qweather 调用.
+    2. 客户端没传 city, 走 qweather GeoAPI 反查 (premium host 必需).
+
+    可靠性: qweather 未配 / 失败 时不再 502 — 仍 200 返回, 但 city=null, lat/lon 仍写入.
+    resolver 标记 source='gps', environment.py 优先读 lat/lon, 天气/AQ 仍能正常出.
+
+    Garbage 防御: 客户端送的 city 含非中文且 country=中国 → 视为 CLGeocoder 英文化误差
+    (iOS 在 PRC 偶尔返 'Beijing'), 丢弃后兜底 qweather.
+
     成功后清旧/新 city 的天气/AQI 缓存.
     """
     import httpx
     import logging
+    import re
     from datetime import UTC, datetime
     from app.config import settings
 
@@ -316,40 +344,53 @@ async def update_gps_location(
     if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="经纬度超出范围")
 
-    if not settings.qweather_api_key:
-        raise HTTPException(status_code=503, detail="后端未配置和风天气 API,GPS 反查不可用")
+    # ── 步骤 1: 客户端 hint 优先 ────────────────────────────────────────────
+    client_city = (payload.get("city") or "").strip() or None
+    client_region = (payload.get("region") or "").strip() or None
+    client_country = (payload.get("country") or "").strip() or None
 
-    qweather_host = settings.qweather_api_host
-    # qweather premium 付费版: 所有 API (含 GeoAPI) 都走客户 host,
-    # 但 GeoAPI 路径要加 /geo/ 前缀 → /geo/v2/city/lookup
-    # 免费版本不支持 reverse lookup, 所以没 host 就直接报错.
-    if not qweather_host:
-        raise HTTPException(status_code=503, detail="后端 qweather premium 未配置,GPS 反查不可用")
-    geo_base = f"https://{qweather_host}/geo/v2"
+    # garbage 防御: PRC 用户但拿到英文 city → CLGeocoder 失误, 丢弃走 qweather 兜底
+    def _is_pure_non_cjk(s: Optional[str]) -> bool:
+        return bool(s) and not re.search(r"[一-鿿]", s)
+    is_china = bool(client_country and ("中国" in client_country or "China" in client_country))
+    if is_china and (_is_pure_non_cjk(client_city) or _is_pure_non_cjk(client_region)):
+        log.info(f"[gps-location] 丢弃 CLGeocoder 英文 city/region: city={client_city!r} region={client_region!r}")
+        client_city = client_region = None
 
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{geo_base}/city/lookup",
-                params={
-                    "location": f"{lon:.4f},{lat:.4f}",
-                    "key": settings.qweather_api_key,
-                    "number": 1,
-                },
-            )
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        log.warning(f"[gps-location] qweather 反查失败: {e}")
-        raise HTTPException(status_code=502, detail="反查城市失败,请稍后再试")
+    city = region = country = ""
+    used_qweather = False
 
-    if data.get("code") != "200" or not data.get("location"):
-        raise HTTPException(status_code=404, detail=f"反查无结果 (code={data.get('code')})")
-
-    loc = data["location"][0]
-    city = loc.get("name") or ""
-    region = loc.get("adm1") or ""
-    country = loc.get("country") or "中国"
+    if client_city:
+        city = client_city
+        region = client_region or ""
+        country = client_country or "中国"
+    elif settings.qweather_api_key and settings.qweather_api_host:
+        # ── 步骤 2: qweather 兜底反查 ─────────────────────────────────────
+        geo_base = f"https://{settings.qweather_api_host}/geo/v2"
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    f"{geo_base}/city/lookup",
+                    params={
+                        "location": f"{lon:.4f},{lat:.4f}",
+                        "key": settings.qweather_api_key,
+                        "number": 1,
+                    },
+                )
+                r.raise_for_status()
+                data = r.json()
+            if data.get("code") == "200" and data.get("location"):
+                loc = data["location"][0]
+                city = loc.get("name") or ""
+                region = loc.get("adm1") or ""
+                country = loc.get("country") or "中国"
+                used_qweather = True
+            else:
+                log.warning(f"[gps-location] qweather 反查无结果: code={data.get('code')}")
+        except Exception as e:
+            log.warning(f"[gps-location] qweather 反查失败 (回退到只存 lat/lon): {e}")
+    else:
+        log.info("[gps-location] qweather 未配置 + 客户端无 city hint, 只存 lat/lon")
 
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
     if not profile:
@@ -359,17 +400,18 @@ async def update_gps_location(
         db.refresh(profile)
 
     old_city = profile.detected_city
-    profile.detected_city = city
-    profile.detected_region = region
-    profile.detected_country = country
-    # 2026-05-12: 同时存用户实际 GPS 坐标. environment.py 直接透传给 weather/AQ
-    # service, 跳过 _city_to_coords() / _city_to_location_id() 字典 (这俩只有市级名,
-    # detected_city="海淀" 命中不了 → fallback 杭州坐标的老坑).
+    # 即使 city/region 都没反查到, lat/lon 仍写入 — environment.py 优先读坐标.
+    if city:
+        profile.detected_city = city
+    if region:
+        profile.detected_region = region
+    if country:
+        profile.detected_country = country
+    # 2026-05-12: 同时存用户实际 GPS 坐标. environment.py 直接透传给 weather/AQ service.
     profile.detected_lat = lat
     profile.detected_lon = lon
-    # GPS 按钮的语义是"用 GPS 自动定位", 触发时顺手关掉 manual mode, 否则
-    # detected_* 写入了但 environment 路由先读 manual_city, GPS 等于无效
-    # (用户感受: "GPS 设置之后, 位置仍然没自动改")
+    profile.detected_source = "gps"
+    # GPS 按钮的语义是"用 GPS 自动定位", 触发时顺手关掉 manual mode
     profile.use_manual_location = False
     profile.location_updated_at = datetime.now(UTC)
     db.commit()
@@ -381,20 +423,25 @@ async def update_gps_location(
             weather_service.invalidate_cache_for(city=c)
             if hasattr(air_quality_service, "invalidate_cache_for"):
                 air_quality_service.invalidate_cache_for(city=c, lat=lat, lon=lon)
-        # 经纬度键的 cache 也清 (有些 forecast key 是 'forecast_<lat>,<lon>_<days>')
         weather_service.invalidate_cache_for(lat=lat, lon=lon)
     except Exception as e:
         log.warning(f"[gps-location] 清缓存失败 (不致命): {e}")
 
     return {
         "success": True,
-        "location": {"city": city, "region": region, "country": country, "lat": lat, "lon": lon},
+        "location": {
+            "city": city or None,
+            "region": region or None,
+            "country": country or None,
+            "lat": lat, "lon": lon,
+        },
         "detected_location": {
             "city": profile.detected_city,
             "region": profile.detected_region,
             "country": profile.detected_country,
         },
         "use_manual_location": profile.use_manual_location,
+        "geocode_source": "client" if client_city else ("qweather" if used_qweather else "none"),
     }
 
 

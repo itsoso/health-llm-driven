@@ -36,6 +36,7 @@ def test_profile(db, test_user):
         chronic_conditions=["鼻炎", "咽炎"],
         current_medications=[{"name": "维生素D"}, {"name": "鱼油"}],
         manual_city="北京",
+        use_manual_location=True,
     )
     db.add(profile)
     db.commit()

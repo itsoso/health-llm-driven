@@ -119,7 +119,8 @@ def _build_context(db: Session, user_id: int) -> str:
 
     city = ""
     if profile:
-        city = profile.manual_city or getattr(profile, "detected_city", "") or ""
+        from app.services.location_resolver import resolve_effective_location
+        city = resolve_effective_location(profile)["city"] or ""
     location_str = f" | 位置: {city}" if city else ""
     parts.append(f"时间: {time_str} ({period}){location_str}")
 

@@ -221,6 +221,7 @@ async def update_user_location(
         user_profile.detected_city = location.city
         user_profile.detected_region = location.region
         user_profile.detected_country = location.country
+        user_profile.detected_source = "ip"
         user_profile.location_updated_at = datetime.now(UTC)
         user_profile.last_ip = client_ip
 

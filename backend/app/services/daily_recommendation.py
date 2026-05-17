@@ -58,7 +58,9 @@ class DailyRecommendationService:
         try:
             # 获取用户画像中的城市
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-            city = profile.city if profile and profile.city else "北京"
+            # 走单一 location_resolver, 不再硬编 "北京" — 没数据 LLM 应该知道是 None.
+            from app.services.location_resolver import resolve_effective_location
+            city = resolve_effective_location(profile)["city"]
             user_conditions = profile.chronic_conditions if profile else []
 
             # 获取综合环境建议
@@ -86,7 +88,9 @@ class DailyRecommendationService:
         try:
             # 获取用户画像中的城市
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-            city = profile.city if profile and profile.city else "北京"
+            # 走单一 location_resolver, 不再硬编 "北京" — 没数据 LLM 应该知道是 None.
+            from app.services.location_resolver import resolve_effective_location
+            city = resolve_effective_location(profile)["city"]
             user_conditions = profile.chronic_conditions if profile else []
 
             # 使用新的事件循环运行异步函数

@@ -20,7 +20,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import api from '../services/api';
-import { updateManualLocation, refreshDetectedLocation, updateGPSLocation } from '../services/location';
+import { updateManualLocation, refreshDetectedLocation, updateGPSLocation, reverseGeocodeOnDevice } from '../services/location';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 
@@ -29,6 +29,22 @@ const COMMON_CITIES = [
   '北京', '上海', '广州', '深圳', '杭州', '成都', '南京', '武汉', '西安',
   '天津', '苏州', '重庆', '青岛', '厦门', '长沙', '郑州', '昆明', '香港',
 ];
+
+function formatProvenance(source: string, staleMin: number | null): string {
+  const ageStr = staleMin == null
+    ? '时间未知'
+    : staleMin < 1 ? '刚刚'
+    : staleMin < 60 ? `${staleMin} 分钟前`
+    : staleMin < 60 * 24 ? `${Math.round(staleMin / 60)} 小时前`
+    : `${Math.round(staleMin / (60 * 24))} 天前`;
+  const sourceStr = source === 'gps' ? 'GPS'
+    : source === 'ip' ? 'IP 检测'
+    : source === 'manual' ? '手动'
+    : '未知';
+  if (source === 'manual') return `数据源: 手动`;
+  if (source === 'unknown') return `数据源: 未知 — 还没拿到位置`;
+  return `数据源: ${sourceStr} · ${ageStr}`;
+}
 
 interface ProfileLocation {
   use_manual_location: boolean;
@@ -56,6 +72,19 @@ export default function LocationScreen() {
     staleTime: 30_000,
   });
 
+  // Provenance — resolver 算出来的 source + 新鲜度. 用于"数据源" 副标.
+  const { data: effective } = useQuery<{
+    source: 'manual' | 'gps' | 'ip' | 'unknown';
+    stale_minutes: number | null;
+  }>({
+    queryKey: ['effectiveLocation'],
+    queryFn: async () => {
+      const resp = await api.get('/v1/profile/me/effective-location');
+      return resp.data;
+    },
+    staleTime: 30_000,
+  });
+
   const [useManual, setUseManual] = useState(false);
   const [cityInput, setCityInput] = useState('');
 
@@ -79,6 +108,7 @@ export default function LocationScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // 让其它地方 (主页天气卡 / dashboard 等) 拿新数据
       qc.invalidateQueries({ queryKey: ['profileLocation'] });
+      qc.invalidateQueries({ queryKey: ['effectiveLocation'] });
       qc.invalidateQueries({ queryKey: ['weather'] });
       qc.invalidateQueries({ queryKey: ['weatherForecast'] });
       qc.invalidateQueries({ queryKey: ['airQuality'] });
@@ -96,6 +126,7 @@ export default function LocationScreen() {
     onSuccess: (loc) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       qc.invalidateQueries({ queryKey: ['profileLocation'] });
+      qc.invalidateQueries({ queryKey: ['effectiveLocation'] });
       Alert.alert('已重新检测', loc.city ? `检测到: ${loc.city}` : '未检测到城市, 请手动设置');
     },
     onError: () => Alert.alert('检测失败', '请稍后再试'),
@@ -110,12 +141,15 @@ export default function LocationScreen() {
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      const loc = await updateGPSLocation(pos.coords.latitude, pos.coords.longitude);
+      // 客户端先反查给 backend hint, 跳过 qweather 调用 (离线/qweather 故障也能跑)
+      const hint = await reverseGeocodeOnDevice(pos.coords.latitude, pos.coords.longitude);
+      const loc = await updateGPSLocation(pos.coords.latitude, pos.coords.longitude, hint);
       return { loc, coords: pos.coords };
     },
     onSuccess: ({ loc, coords }) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       qc.invalidateQueries({ queryKey: ['profileLocation'] });
+      qc.invalidateQueries({ queryKey: ['effectiveLocation'] });
       qc.invalidateQueries({ queryKey: ['weather'] });
       qc.invalidateQueries({ queryKey: ['weatherForecast'] });
       qc.invalidateQueries({ queryKey: ['airQuality'] });
@@ -166,6 +200,11 @@ export default function LocationScreen() {
                   ? `${data.detected_location.city} (自动)`
                   : '未知'}
             </Text>
+            {effective ? (
+              <Text style={[txt.subLabel, { marginTop: 4 }]}>
+                {formatProvenance(effective.source, effective.stale_minutes)}
+              </Text>
+            ) : null}
             <Text style={txt.hint}>
               天气、空气质量都基于此位置. 改了位置会立即清缓存重新拉.
             </Text>

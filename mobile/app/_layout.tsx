@@ -18,6 +18,8 @@ import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
+// Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
+import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   View,
@@ -61,6 +63,14 @@ function AppContent() {
 
   useNotifications(isAuthenticated);
   useGPSAutoRefresh(isAuthenticated);
+
+  // iOS BackgroundFetch — best-effort 后台位置刷新. 已授权才注册.
+  // 这里跑 effect 是因为权限授予 (通过 onboarding modal) 后才能注册.
+  useEffect(() => {
+    if (isAuthenticated) {
+      registerBackgroundLocationTask();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && isLocked) {

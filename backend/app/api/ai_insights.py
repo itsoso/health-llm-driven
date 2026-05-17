@@ -18,20 +18,10 @@ router = APIRouter()
 
 
 def _resolve_user_city(db: Session, user_id: int) -> Optional[str]:
-    """按优先级推断用户所在城市：手动设置 > IP检测 > profile城市"""
     from app.models.user_profile import UserProfile
-
-    # 用户画像：手动 > IP检测 > city字段
+    from app.services.location_resolver import resolve_effective_location
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    if profile:
-        if profile.use_manual_location and profile.manual_city:
-            return profile.manual_city
-        if profile.detected_city:
-            return profile.detected_city
-        if profile.city:
-            return profile.city
-
-    return None
+    return resolve_effective_location(profile)["city"]
 
 
 @router.get("/insights/daily", response_model=AIInsightListResponse)

@@ -156,16 +156,11 @@ _WEATHER_PREFIX_RULES = [
 
 
 def _get_user_city(db, user_id: int) -> Optional[str]:
-    """与 smart_plan_service._get_user_city 等价 — 优先 manual, 其次 detected, 最后 legacy city."""
-    from app.models.user_profile import UserProfile
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    if not profile:
-        return None
-    if profile.use_manual_location and profile.manual_city:
-        return profile.manual_city
-    if profile.detected_city:
-        return profile.detected_city
-    return profile.city
+    # 走 get_fresh_city: stale 且非 manual 时, Celery 在后台同步重跑 IP geo 一次
+    # (单用户单日限速). 早晨任务发推送前能拿到当前 IP 对应的城市, 防"飞机落地第二天
+    # 早上还推昨天的城市天气".
+    from app.services.location_resolver import get_fresh_city
+    return get_fresh_city(db, user_id)
 
 
 def _today_weather_text(city: Optional[str]) -> str:

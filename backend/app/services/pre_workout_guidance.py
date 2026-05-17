@@ -266,8 +266,8 @@ class PreWorkoutGuidanceService:
             environment_data = None
             environment_warnings = []
             try:
-                # 获取用户城市（从 profile 或默认杭州）
-                user_city = profile.city if hasattr(profile, 'city') and profile.city else "杭州"
+                from app.services.location_resolver import resolve_effective_location
+                user_city = resolve_effective_location(profile)["city"]
 
                 # 获取用户慢性病列表
                 chronic_conditions = profile.chronic_conditions if profile.chronic_conditions else []

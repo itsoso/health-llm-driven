@@ -153,11 +153,12 @@ class LLMHealthAnalyzer:
             }
 
             # 工作环境
+            from app.services.location_resolver import resolve_effective_location
             context["work_environment"] = {
                 "work_type": user_profile.work_type,
                 "work_hours_per_day": user_profile.work_hours_per_day,
                 "sitting_hours_per_day": user_profile.sitting_hours_per_day,
-                "city": user_profile.city
+                "city": resolve_effective_location(user_profile)["city"]
             }
 
         return context

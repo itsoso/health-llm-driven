@@ -28,7 +28,7 @@
         "NSSpeechRecognitionUsageDescription": "识别你的语音,和健康助理连续对话",
         "NSLocationWhenInUseUsageDescription": "用你当前位置查天气、空气质量,给出更贴合的建议",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "跑步过程中需要后台定位才能持续记录路线和配速,息屏 / 切换到其他 App 时不中断",
-        "UIBackgroundModes": ["location", "audio"],
+        "UIBackgroundModes": ["location", "audio", "fetch"],
         "ITSAppUsesNonExemptEncryption": false
       }
     },

@@ -16,65 +16,21 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.api.deps import get_current_user_required
 from app.services.environment import weather_service, air_quality_service, environment_advisor
+from app.services.location_resolver import resolve_effective_location
 
 router = APIRouter(prefix="/environment", tags=["environment"])
 logger = logging.getLogger(__name__)
 
 
-def _resolve_city(db: Session, user_id: int) -> str:
-    """解析用户当前城市：手动设置 > IP检测 > 静态城市 > 杭州
+def _resolve_location(db: Session, user_id: int) -> tuple[Optional[float], Optional[float], Optional[str]]:
+    """位置统一入口 — 用 location_resolver 单一事实之主.
 
-    用于**显示**和 AQI 查询. AQI 一般能支持区级.
-    """
-    # 用户画像：手动 > IP检测 > city字段
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    if profile:
-        if profile.use_manual_location and profile.manual_city:
-            return profile.manual_city
-        if profile.detected_city:
-            return profile.detected_city
-        if profile.city:
-            return profile.city
-
-    return "杭州"
-
-
-def _resolve_weather_city(db: Session, user_id: int) -> str:
-    """天气/天气预报用的城市 — 始终解析到**市级** (qweather 区级查不到天气).
-
-    策略:
-    - 手动模式: 用 manual_city (用户显式选的, 一般就是市级)
-    - 自动模式: 优先 detected_region (e.g. "北京市" → "北京"), 避免 detected_city="海淀" 这种区级
-    - fallback: detected_city / city / 杭州
+    返回 (lat, lon, city). 调用方先用 lat/lon (区/县精度), 没有再 fallback city.
+    manual 模式只返回 city, lat/lon=None — 因 manual_city 是字符串无对应坐标.
     """
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    if profile:
-        if profile.use_manual_location and profile.manual_city:
-            return profile.manual_city
-        if profile.detected_region:
-            # "北京市" / "浙江省" → "北京" / "浙江"
-            return profile.detected_region.rstrip("市省").strip() or profile.detected_region
-        if profile.detected_city:
-            return profile.detected_city
-        if profile.city:
-            return profile.city
-
-    return "杭州"
-
-
-def _resolve_user_coords(db: Session, user_id: int) -> tuple[Optional[float], Optional[float]]:
-    """2026-05-12: 拉用户存的 GPS 坐标 (auto 模式且有过 GPS 反查).
-
-    手动模式不返回 lat/lon (用户没指定坐标, 走 city 字典 fallback).
-    auto 模式且 detected_lat/lon 有值时返回, 用于绕开 _city_to_coords() 字典 (那个
-    fallback 默认杭州 30.27,120.16, 把北京海淀的用户错指到杭州).
-    """
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    if not profile:
-        return None, None
-    if profile.use_manual_location:
-        return None, None
-    return profile.detected_lat, profile.detected_lon
+    loc = resolve_effective_location(profile)
+    return loc["lat"], loc["lon"], loc["city"]
 
 
 class EnvironmentQuery(BaseModel):
@@ -99,9 +55,10 @@ async def get_weather(
     """
     # 如果没有提供位置，智能解析用户当前城市 — 天气要市级, 不是区级
     if not city and (lat is None or lon is None):
-        lat, lon = _resolve_user_coords(db, current_user.id)
-        if lat is None or lon is None:
-            city = _resolve_weather_city(db, current_user.id)
+        lat, lon, city = _resolve_location(db, current_user.id)
+        # lat/lon 优先 (区/县精度); 没有走 city; 还是 None 让 service 自己 fallback
+        if lat is not None and lon is not None:
+            city = None  # 有坐标就清掉 city, 避免 service 再做 city→coord 反查
 
     weather = await weather_service.get_current_weather(city, lat, lon)
     exercise_advice = weather_service.get_exercise_advice(weather)
@@ -125,9 +82,9 @@ async def get_weather_forecast(
     获取未来几天的天气预报
     """
     if not city and (lat is None or lon is None):
-        lat, lon = _resolve_user_coords(db, current_user.id)
-        if lat is None or lon is None:
-            city = _resolve_weather_city(db, current_user.id)
+        lat, lon, city = _resolve_location(db, current_user.id)
+        if lat is not None and lon is not None:
+            city = None
 
     forecast = await weather_service.get_weather_forecast(city, lat, lon, days)
     return forecast
@@ -148,9 +105,9 @@ async def get_air_quality(
     """
     if not city and (lat is None or lon is None):
         # 优先用 profile 里 GPS 实测坐标 (区/县精度); 没有再 fallback 城市字典
-        lat, lon = _resolve_user_coords(db, current_user.id)
-        if lat is None or lon is None:
-            city = _resolve_weather_city(db, current_user.id)
+        lat, lon, city = _resolve_location(db, current_user.id)
+        if lat is not None and lon is not None:
+            city = None
 
     # 优先使用和风天气空气质量API
     aqi = await weather_service.get_air_quality(city, lat, lon)
@@ -177,9 +134,9 @@ async def get_environment_advice(
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
 
     if not city and (lat is None or lon is None):
-        lat, lon = _resolve_user_coords(db, current_user.id)
-        if lat is None or lon is None:
-            city = _resolve_city(db, current_user.id)
+        lat, lon, city = _resolve_location(db, current_user.id)
+        if lat is not None and lon is not None:
+            city = None
 
     # 获取用户的慢性病列表
     user_conditions = []
@@ -210,7 +167,7 @@ async def get_morning_briefing(
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
 
     if not city:
-        city = _resolve_city(db, current_user.id)
+        _, _, city = _resolve_location(db, current_user.id)
 
     user_conditions = []
     if profile:
@@ -240,9 +197,9 @@ async def get_exercise_suitability(
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
 
     if not city and (lat is None or lon is None):
-        lat, lon = _resolve_user_coords(db, current_user.id)
-        if lat is None or lon is None:
-            city = _resolve_city(db, current_user.id)
+        lat, lon, city = _resolve_location(db, current_user.id)
+        if lat is not None and lon is not None:
+            city = None
 
     user_conditions = profile.chronic_conditions if profile else []
 

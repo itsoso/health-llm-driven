@@ -19,7 +19,7 @@ import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
-import { updateGPSLocation } from '../services/location';
+import { updateGPSLocation, reverseGeocodeOnDevice } from '../services/location';
 
 const MIN_INTERVAL_MS = 30 * 60 * 1000;  // 30min 节流
 const FORCE_REFRESH_KM = 50;             // 坐标漂移 >50km 直接破节流
@@ -89,10 +89,14 @@ export function useGPSAutoRefresh(enabled: boolean) {
         }
       } catch {}
 
-      // 4. 真去后端反查 + 更新 detected_city
+      // 4. 客户端先反查 city (CLGeocoder 离线可用), 给 backend hint 让它跳过 qweather.
+      //    失败不阻断 — backend 会自己用 qweather 兜底, 或没 city 也能正常存 lat/lon.
+      const hint = await reverseGeocodeOnDevice(pos.coords.latitude, pos.coords.longitude);
+
+      // 5. 真去后端反查 + 更新 detected_city
       inFlightRef.current = true;
       try {
-        const loc = await updateGPSLocation(pos.coords.latitude, pos.coords.longitude);
+        const loc = await updateGPSLocation(pos.coords.latitude, pos.coords.longitude, hint);
         await AsyncStorage.multiSet([
           [LAST_TS_KEY, String(Date.now())],
           [LAST_LAT_KEY, String(pos.coords.latitude)],
@@ -104,6 +108,7 @@ export function useGPSAutoRefresh(enabled: boolean) {
         // 不依赖 city 变化判断 — 即使 city 字符串没变 (北京→朝阳→北京), 经纬度
         // 也已变, 后端 forecast 数据可能更新.
         qc.invalidateQueries({ queryKey: ['profileLocation'] });
+        qc.invalidateQueries({ queryKey: ['effectiveLocation'] });
         qc.invalidateQueries({ queryKey: ['weather'] });
         qc.invalidateQueries({ queryKey: ['weatherForecast'] });
         qc.invalidateQueries({ queryKey: ['airQuality'] });

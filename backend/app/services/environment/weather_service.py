@@ -142,7 +142,11 @@ class WeatherService:
             else:
                 # 使用 Open-Meteo (免费，需要经纬度)
                 if lat is None or lon is None:
-                    lat, lon = self._city_to_coords(city)
+                    coords = self._city_to_coords(city)
+                    if coords is None:
+                        logger.info(f"无法解析城市 '{city}' 坐标, 返回 unavailable")
+                        return self._get_default_weather()
+                    lat, lon = coords
                 result = await self._get_openmeteo_current(lat, lon)
 
             self._set_cache(cache_key, result)
@@ -182,7 +186,11 @@ class WeatherService:
             else:
                 # 使用Open-Meteo作为备用
                 if lat is None or lon is None:
-                    lat, lon = self._city_to_coords(city)
+                    coords = self._city_to_coords(city)
+                    if coords is None:
+                        logger.info(f"无法解析城市 '{city}' 坐标, 返回空预报")
+                        return {"available": False, "forecasts": [], "source": "unknown"}
+                    lat, lon = coords
                 result = await self._get_openmeteo_forecast(lat, lon, days)
 
             self._set_cache(cache_key, result)
@@ -503,13 +511,17 @@ class WeatherService:
         """城市名转和风天气Location ID（同步版，兼容旧调用）"""
         return self._CITY_LOCATION_IDS.get(city, self._CITY_LOCATION_IDS.get("杭州", "101210101"))
 
-    def _city_to_coords(self, city: str) -> tuple:
-        """城市名转经纬度"""
+    def _city_to_coords(self, city: str) -> Optional[tuple]:
+        """城市名转经纬度. 未知 city → None (而非硬编杭州坐标).
+
+        2026-05-17 改: 老的默认杭州 (30.27, 120.16) 把北京海淀的用户错指到杭州.
+        现在统一返 None, callers 决定 fallback 行为 (跳过 weather 比静默错位更安全).
+        正确路径: GPS 流写 detected_lat/lon, environment.py 优先用坐标透传, 根本不走这里.
+        """
         if city in self._CITY_COORDS:
             return self._CITY_COORDS[city]
-        # 默认杭州而非北京
-        logger.warning(f"城市 '{city}' 不在坐标映射中，默认使用杭州坐标")
-        return (30.2741, 120.1551)
+        logger.warning(f"城市 '{city}' 不在坐标映射中, 跳过 (不再默认杭州)")
+        return None
 
     def _weather_code_to_text(self, code: int) -> str:
         """WMO 天气代码转文本"""
