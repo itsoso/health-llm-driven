@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { EntityCard } from '../EntityCard';
 import type { KnowledgeDocument } from '../../../services/systemKnowledge';
 
@@ -57,5 +57,14 @@ describe('EntityCard', () => {
       />,
     );
     expect(sup.getByText('补剂')).toBeTruthy();
+  });
+
+  it('can act as a deep-link entry when onPress is provided', () => {
+    const onPress = jest.fn();
+    const screen = render(<EntityCard entity={makeEntity()} onPress={onPress} />);
+
+    fireEvent.press(screen.getByTestId('knowledge-entity-card-entity:gene/MTHFR'));
+
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

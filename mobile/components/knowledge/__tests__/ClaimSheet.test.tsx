@@ -8,6 +8,12 @@ jest.mock('../../../services/systemKnowledge', () => ({
   submitKnowledgeClaimFeedback: jest.fn(),
 }));
 
+const mockPush = jest.fn();
+
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
+
 const { getKnowledgeClaim, submitKnowledgeClaimFeedback } = jest.requireMock(
   '../../../services/systemKnowledge',
 );
@@ -69,6 +75,7 @@ function makeBundle(claimId: string) {
 describe('ClaimSheet', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockClear();
   });
 
   it('returns null when hidden', () => {
@@ -131,6 +138,31 @@ describe('ClaimSheet', () => {
         expect.stringContaining('用户'),
       );
       expect(screen.getByText('已记录反馈')).toBeTruthy();
+    });
+  });
+
+  it('opens the entity deep-link page from a related entity', async () => {
+    getKnowledgeClaim.mockResolvedValue(makeBundle('claim:c_mthfr_folate'));
+    const onClose = jest.fn();
+
+    const screen = renderWithQuery(
+      <ClaimSheet
+        visible
+        onClose={onClose}
+        claimIds={['claim:c_mthfr_folate']}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('MTHFR')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId('knowledge-entity-card-entity:gene/MTHFR'));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/knowledge/entity',
+      params: { type: 'gene', id: 'MTHFR' },
     });
   });
 });

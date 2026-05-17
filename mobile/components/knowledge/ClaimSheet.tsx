@@ -22,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useKnowledgeClaims } from '../../hooks/useKnowledgeClaim';
 import {
   submitKnowledgeClaimFeedback,
@@ -51,6 +52,7 @@ export function ClaimSheet({
   claimIds: string[];
 }) {
   const { c } = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => createStyles(c), [c]);
   const ids = useMemo(() => {
     const seen = new Set<string>();
@@ -150,6 +152,8 @@ export function ClaimSheet({
                   styles={styles}
                   c={c}
                   isLast={i === bundles.length - 1}
+                  onClose={onClose}
+                  router={router}
                 />
               ))}
             </ScrollView>
@@ -192,11 +196,15 @@ function ClaimBlock({
   styles,
   c,
   isLast,
+  onClose,
+  router,
 }: {
   bundle: KnowledgeClaimBundle;
   styles: ReturnType<typeof createStyles>;
   c: ColorPalette;
   isLast: boolean;
+  onClose: () => void;
+  router: ReturnType<typeof useRouter>;
 }) {
   const claim = bundle.claim;
   const evidenceText =
@@ -264,7 +272,18 @@ function ClaimBlock({
         <View style={styles.entitiesWrap}>
           <Text style={styles.entitiesLabel}>相关条目</Text>
           {entityNeighbors.map((n) => (
-            <EntityCard key={n.doc_id} entity={n} />
+            <EntityCard
+              key={n.doc_id}
+              entity={n}
+              onPress={() => {
+                if (!n.entity_type || !n.entity_id) return;
+                onClose();
+                router.push({
+                  pathname: '/knowledge/entity' as any,
+                  params: { type: n.entity_type, id: n.entity_id },
+                });
+              }}
+            />
           ))}
         </View>
       ) : null}

@@ -15,7 +15,7 @@
 - Admin lint: contradiction + invalid review status included.
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists; not scheduled.
-- Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback.
+- Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback and entity deep-link pages.
 - Search serving: `/knowledge/search` now fuses lexical DB matches with one-hop graph expansion via deterministic reciprocal-rank fusion; vector retrieval and PostgreSQL FTS remain later upgrades.
 
 ---
@@ -477,7 +477,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，旧 Chroma fallback | 本轮补齐 |
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着，specialist schema 未强制 | 部分完成 |
-| Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口和来源可信度解释 | 部分完成，缺 entity 深链页面 |
+| Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
 | Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status | 部分完成，缺 scheduled self-healing/crystallize |
 | Privacy isolation | `down-dedao/wiki/articles/personal-*.md` 仍存在 | 未完成 |
 

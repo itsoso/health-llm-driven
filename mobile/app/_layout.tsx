@@ -135,6 +135,7 @@ function AppContent() {
         <Stack.Screen name="live-run/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="episode/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="import" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="knowledge/entity" options={{ headerShown: false }} />
       </Stack>
       <NotificationBanner />
       <NetworkBanner />

@@ -6,7 +6,7 @@
  * standalone surfaces (e.g. an entity deep-link route).
  */
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { KnowledgeDocument } from '../../services/systemKnowledge';
 import { useTheme, type ColorPalette } from '../../hooks/useTheme';
@@ -38,7 +38,13 @@ const EVIDENCE_LABEL: Record<string, string> = {
   D: 'D级',
 };
 
-export function EntityCard({ entity }: { entity: KnowledgeDocument }) {
+export function EntityCard({
+  entity,
+  onPress,
+}: {
+  entity: KnowledgeDocument;
+  onPress?: () => void;
+}) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
 
@@ -47,8 +53,8 @@ export function EntityCard({ entity }: { entity: KnowledgeDocument }) {
   const typeLabel = ENTITY_LABEL[type] || type;
   const evidenceText = entity.evidence_level ? EVIDENCE_LABEL[entity.evidence_level] : null;
 
-  return (
-    <View style={styles.card}>
+  const content = (
+    <>
       <View style={styles.iconWrap}>
         <Ionicons name={iconName} size={14} color={c.brand} />
       </View>
@@ -70,6 +76,33 @@ export function EntityCard({ entity }: { entity: KnowledgeDocument }) {
           </Text>
         ) : null}
       </View>
+      {onPress ? (
+        <Ionicons
+          name="chevron-forward"
+          size={14}
+          color={c.labelTertiary}
+          style={styles.chevron}
+        />
+      ) : null}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        testID={`knowledge-entity-card-${entity.doc_id}`}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={({ pressed }) => [styles.card, pressed && { opacity: 0.72 }]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View testID={`knowledge-entity-card-${entity.doc_id}`} style={styles.card}>
+      {content}
     </View>
   );
 }
@@ -97,6 +130,9 @@ function createStyles(c: ColorPalette) {
     },
     body: {
       flex: 1,
+    },
+    chevron: {
+      alignSelf: 'center',
     },
     headRow: {
       flexDirection: 'row',
