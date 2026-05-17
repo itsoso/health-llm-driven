@@ -17,6 +17,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
 - Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 303 newly generated claims, 83 entities, 46 pages, and 2362 relations were promoted to reviewed status in this pass while preserving previous reviewed artifacts.
 - Admin operations dashboard: `/api/v1/admin/knowledge/operations_dashboard` aggregates coverage, external-evidence metrics, lint, latest lifecycle report, and action items.
+- Planner evidence policy: Orchestrator blocks unsupported actionable findings from final synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are kept.
 
 ## Scope
 
@@ -162,4 +163,4 @@ Current reviewed artifact run:
 
 ## Next Interfaces
 
-The Phase 2 corpus breadth target is met and the backend admin operations dashboard is available. Next work should focus on governed LLM extraction for higher recall, stronger Planner-level evidence enforcement, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.
+The Phase 2 corpus breadth target is met, the backend admin operations dashboard is available, and Planner-level evidence filtering is active for Orchestrator synthesis. Next work should focus on applying the same evidence policy to push scheduler/action cards, governed LLM extraction for higher recall, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.

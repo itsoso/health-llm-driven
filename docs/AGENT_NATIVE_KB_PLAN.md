@@ -21,6 +21,7 @@
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline references in `metadata.external_sources`.
 - Phase 2 corpus expansion: deterministic compiler scanned 46 health-relevant source directories and promoted 303 generated claims / 83 entities / 46 pages / 2362 relations to reviewed status, exceeding the 300 claim / 80 entity target.
 - Admin operations: `/api/v1/admin/knowledge/operations_dashboard` summarizes coverage, external evidence, lint, latest lifecycle report, and action items.
+- Planner enforcement: Orchestrator applies a deterministic evidence policy before synthesis; unsupported actionable findings are blocked when the same evidence domain already has KB-supported findings, while safety alerts and data gaps are preserved.
 
 ---
 
@@ -480,7 +481,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | Corpus coverage | 52 pages / 98 entities / 345 claims / 2510 relations | Phase 2 breadth 达标 |
 | KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，旧 Chroma fallback | 本轮补齐 |
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
-| Specialist evidence_refs | Orchestrator 可自动附着，specialist schema 未强制 | 部分完成 |
+| Specialist evidence_refs | Orchestrator 可自动附着；Planner synthesis 前会过滤同域无证据 actionable 建议，安全告警和 data_gap 例外 | 基本完成，后续扩展到 push scheduler |
 | Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
 | Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft；admin operations dashboard 可看治理状态 | 基本完成，后续是可视化页面 |
 | Privacy isolation | scanner 排除 private/personal/user-*，并提供 violation report | 完成最小治理闭环 |

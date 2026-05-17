@@ -1,6 +1,10 @@
 from datetime import datetime
 
-from app.orchestrator.orchestrator import _build_synthesis_prompt, _specialist_audit_snapshot
+from app.orchestrator.orchestrator import (
+    _apply_planner_evidence_policy,
+    _build_synthesis_prompt,
+    _specialist_audit_snapshot,
+)
 from app.orchestrator.schema import SpecialistFinding
 from app.twin.schema import HealthTwin, TwinMeta
 
@@ -64,3 +68,77 @@ def test_synthesis_prompt_exposes_evidence_contract_to_final_llm():
     assert "系统知识库证据优先" in system_prompt
     assert "support_status=supported" in user_prompt
     assert "evidence_refs=claim:c_recovery_low_reduce_intensity" in user_prompt
+
+
+def test_planner_evidence_policy_blocks_unsupported_same_category_action():
+    supported = SpecialistFinding(
+        specialist_name="movement_coach",
+        category="movement",
+        summary="恢复不足，今天暂停跑步",
+        findings=[{"title": "今天暂停跑步", "action": "改为散步 20 分钟"}],
+        evidence_refs=["claim:c_recovery_low_reduce_intensity"],
+    )
+    unsupported = SpecialistFinding(
+        specialist_name="movement_coach",
+        category="movement",
+        summary="今天可以轻松跑 30 分钟",
+        findings=[{"title": "轻松跑 30 分钟", "action": "Z1 慢跑"}],
+    )
+
+    filtered, trace = _apply_planner_evidence_policy([unsupported, supported])
+
+    assert filtered == [supported]
+    assert trace["blocked_count"] == 1
+    assert trace["blocked"][0]["specialist"] == "movement_coach"
+    assert trace["blocked"][0]["reason"] == "unsupported_actionable_same_category_has_supported_kb"
+    assert unsupported.raw["planner_evidence_policy"]["blocked"] is True
+
+
+def test_planner_evidence_policy_blocks_unsupported_same_evidence_domain_action():
+    supported_recovery = SpecialistFinding(
+        specialist_name="recovery_coach",
+        category="recovery",
+        summary="恢复不足，今天不跑",
+        findings=[{"title": "暂停跑步", "action": "只做轻量活动"}],
+        evidence_refs=["claim:c_recovery_low_reduce_intensity"],
+    )
+    unsupported_movement = SpecialistFinding(
+        specialist_name="movement_coach",
+        category="movement",
+        summary="可以安排 30 分钟跑步",
+        findings=[{"title": "跑步 30 分钟", "action": "Z1 慢跑"}],
+    )
+
+    filtered, trace = _apply_planner_evidence_policy([unsupported_movement, supported_recovery])
+
+    assert filtered == [supported_recovery]
+    assert trace["blocked_count"] == 1
+    assert trace["blocked"][0]["evidence_domain"] == "training_recovery"
+
+
+def test_planner_evidence_policy_keeps_unsupported_safety_alerts():
+    supported = SpecialistFinding(
+        specialist_name="movement_coach",
+        category="movement",
+        summary="恢复不足，今天暂停跑步",
+        findings=[{"title": "今天暂停跑步"}],
+        evidence_refs=["claim:c_recovery_low_reduce_intensity"],
+    )
+    safety = SpecialistFinding(
+        specialist_name="safety_guardian",
+        category="safety",
+        summary="夜间血氧过低，需要就医确认",
+        findings=[
+            {
+                "title": "夜间血氧过低",
+                "severity_label": "red",
+                "action": "尽快咨询医生",
+            }
+        ],
+    )
+
+    filtered, trace = _apply_planner_evidence_policy([safety, supported])
+
+    assert filtered == [safety, supported]
+    assert trace["blocked_count"] == 0
+    assert safety.raw.get("planner_evidence_policy", {}).get("kept_reason") == "safety_or_data_gap"

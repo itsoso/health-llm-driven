@@ -31,9 +31,11 @@ Already done:
 Main remaining gaps:
 
 - Specialist evidence is attached and measured as a product contract through `evidence_refs`, `unsupported`, and coverage-rate metrics.
+- Orchestrator Planner now filters unsupported actionable findings before synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are preserved.
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
 - External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count and source kind.
+- Remaining evidence-enforcement gap is push scheduler/action-card generation, which can still emit unsupported suggestions outside Orchestrator synthesis.
 
 ---
 

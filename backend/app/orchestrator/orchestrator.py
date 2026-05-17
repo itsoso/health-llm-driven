@@ -579,6 +579,134 @@ def _attach_kb_evidence_to_findings(
         logger.debug(f"[orchestrator] system KB evidence attach skipped: {e}")
 
 
+def _apply_planner_evidence_policy(
+    findings: List[SpecialistFinding],
+) -> tuple[List[SpecialistFinding], Dict[str, Any]]:
+    """Deterministically keep unsupported advice out of planner synthesis.
+
+    The final LLM is still useful for wording, but it should not decide whether
+    unsupported actionable advice can overrule KB-backed advice. Safety alerts
+    and data gaps are exempt because absence of a KB claim must not hide risk or
+    missing-data instructions.
+    """
+
+    supported_categories = {
+        (finding.category or "").lower()
+        for finding in findings
+        if getattr(finding, "evidence_refs", None)
+    }
+    supported_domains = {
+        _planner_evidence_domain(finding)
+        for finding in findings
+        if getattr(finding, "evidence_refs", None)
+    }
+    kept: List[SpecialistFinding] = []
+    blocked: List[Dict[str, Any]] = []
+
+    for finding in findings:
+        refs = list(finding.evidence_refs or [])
+        category = (finding.category or "").lower()
+        if refs:
+            _mark_planner_policy(finding, blocked=False, kept_reason="supported")
+            kept.append(finding)
+            continue
+
+        if _finding_is_safety_or_data_gap(finding):
+            _mark_planner_policy(finding, blocked=False, kept_reason="safety_or_data_gap")
+            kept.append(finding)
+            continue
+
+        evidence_domain = _planner_evidence_domain(finding)
+        has_supported_peer = (
+            category in supported_categories
+            or (evidence_domain != "general" and evidence_domain in supported_domains)
+        )
+        if has_supported_peer and _finding_is_actionable(finding):
+            reason = "unsupported_actionable_same_category_has_supported_kb"
+            _mark_planner_policy(finding, blocked=True, reason=reason)
+            blocked.append(
+                {
+                    "specialist": finding.specialist_name,
+                    "category": finding.category,
+                    "evidence_domain": evidence_domain,
+                    "summary": finding.summary,
+                    "reason": reason,
+                }
+            )
+            continue
+
+        _mark_planner_policy(finding, blocked=False, kept_reason="no_supported_same_category")
+        kept.append(finding)
+
+    return kept, {
+        "input_count": len(findings),
+        "kept_count": len(kept),
+        "blocked_count": len(blocked),
+        "blocked": blocked,
+    }
+
+
+def _mark_planner_policy(
+    finding: SpecialistFinding,
+    *,
+    blocked: bool,
+    reason: str | None = None,
+    kept_reason: str | None = None,
+) -> None:
+    if not isinstance(finding.raw, dict):
+        finding.raw = {}
+    payload: Dict[str, Any] = {"blocked": blocked}
+    if reason:
+        payload["reason"] = reason
+    if kept_reason:
+        payload["kept_reason"] = kept_reason
+    finding.raw["planner_evidence_policy"] = payload
+
+
+def _planner_evidence_domain(finding: SpecialistFinding) -> str:
+    text = f"{finding.specialist_name} {finding.category}".lower()
+    if any(token in text for token in ("movement", "recovery", "training", "exercise")):
+        return "training_recovery"
+    if any(token in text for token in ("fuel", "nutrition", "diet", "metabolic")):
+        return "metabolic_nutrition"
+    if any(token in text for token in ("supplement", "medication", "drug", "safety")):
+        return "medication_supplement_safety"
+    if "sleep" in text:
+        return "sleep_recovery"
+    return (finding.category or "general").lower() or "general"
+
+
+def _finding_is_actionable(finding: SpecialistFinding) -> bool:
+    for item in finding.findings or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type") or "").lower() == "data_gap":
+            continue
+        if item.get("action") or item.get("recommendation") or item.get("title"):
+            return True
+    return bool((finding.summary or "").strip())
+
+
+def _finding_is_safety_or_data_gap(finding: SpecialistFinding) -> bool:
+    name = (finding.specialist_name or "").lower()
+    category = (finding.category or "").lower()
+    if "safety" in name or category == "safety":
+        return True
+    raw = finding.raw or {}
+    if isinstance(raw, dict) and raw.get("data_gap"):
+        return True
+    for item in finding.findings or []:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "").lower()
+        severity = str(item.get("severity_label") or item.get("severity") or "").lower()
+        if item_type == "data_gap":
+            return True
+        if severity in {"red", "critical", "emergency", "high", "severe"}:
+            return True
+    return False
+
+
 def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[str, Any]]:
     """Build specialist audit payload with system-KB evidence coverage.
 
@@ -942,6 +1070,7 @@ async def run_orchestrator(
         twin, specialists, {"query": req.query, "db": db, "recent_cases": recent_cases}
     )
     _attach_kb_evidence_to_findings(db, twin, findings)
+    findings, evidence_policy_trace = _apply_planner_evidence_policy(findings)
 
     # Cross-review + (可选) LLM 仲裁, 结果注入 synthesis prompt
     conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
@@ -1014,6 +1143,12 @@ async def run_orchestrator(
         )
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] orchestrator_run audit bypass 失败: {e}")
+
+    if evidence_policy_trace.get("blocked_count"):
+        logger.info(
+            "[orchestrator] planner evidence policy blocked %s unsupported findings",
+            evidence_policy_trace["blocked_count"],
+        )
 
     return OrchestratorResponse(
         query=req.query,
@@ -1270,6 +1405,12 @@ async def stream_orchestrator(
                     {"query": req.query, "db": bg_db, "recent_cases": recent_cases},
                 )
                 _attach_kb_evidence_to_findings(bg_db, twin, findings)
+                findings, evidence_policy_trace = _apply_planner_evidence_policy(findings)
+                if evidence_policy_trace.get("blocked_count"):
+                    await chunk_queue.put(_sse(
+                        "planner_evidence_policy",
+                        evidence_policy_trace,
+                    ))
                 for f in findings:
                     await chunk_queue.put(_sse("specialist", f.model_dump(mode="json")))
 
