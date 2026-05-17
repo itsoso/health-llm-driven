@@ -64,6 +64,7 @@ class ActionCardCreate(BaseModel):
     target_value: Optional[str] = Field(None, max_length=100)
     verification_days: Optional[int] = Field(None, ge=1, le=90)
     checklist: list[ChecklistItem] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
     # 信任循环字段
     creator_specialist: Optional[str] = Field(None, max_length=64)
     check_back_date: Optional[datetime] = None
@@ -74,6 +75,19 @@ class ActionCardCreate(BaseModel):
         if v is not None and v not in ALLOWED_METRIC_KEYS:
             raise ValueError(f"未知 metric_key: {v}. 支持: {sorted(ALLOWED_METRIC_KEYS)}")
         return v
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def _validate_evidence_refs(cls, refs):
+        out = []
+        seen = set()
+        for ref in refs or []:
+            value = str(ref).strip()
+            if not value.startswith("claim:") or value in seen:
+                continue
+            seen.add(value)
+            out.append(value)
+        return out
 
 
 class ActionCardFromMessage(BaseModel):
@@ -186,6 +200,7 @@ def create_card(
         target_value=body.target_value,
         verification_days=body.verification_days,
         checklist=[item.model_dump() for item in body.checklist],
+        evidence_refs=body.evidence_refs,
         creator_specialist=body.creator_specialist,
         check_back_date=check_back,
     )
@@ -533,6 +548,7 @@ def _card_to_dict(card: ActionCard) -> dict:
         # WSCLA 生命周期 (Phase 0/1)
         "severity": card.severity,
         "evidence_level": card.evidence_level,
+        "evidence_refs": card.evidence_refs or [],
         "user_decision": card.user_decision,
         "decided_at": card.decided_at.isoformat() if card.decided_at else None,
         "decision_reason": card.decision_reason,

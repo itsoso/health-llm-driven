@@ -22,6 +22,7 @@ import { emitClientEvent } from '../../services/clientEvents';
 import { radii, spacing } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import DataBasisLine, { type FreshnessBucket } from '../common/DataBasisLine';
+import { EvidenceRefsRow } from '../knowledge';
 import ActionEvidenceRow from './ActionEvidenceRow';
 import OutcomeVerificationSheet from './OutcomeVerificationSheet';
 
@@ -198,6 +199,8 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
           <View style={styles.markdownWrap}>
             <Markdown style={mdStyles}>{card.content || ''}</Markdown>
           </View>
+
+          <EvidenceRefsRow refs={card.evidence_refs} />
 
           {dataBasisBucket && <DataBasisLine bucket={dataBasisBucket} />}
 

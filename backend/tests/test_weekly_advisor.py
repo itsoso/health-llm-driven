@@ -181,6 +181,7 @@ async def test_fallback_filters_unsupported_same_domain_findings(db):
     assert len(cards) == 1
     assert "恢复" in cards[0].title or "降强度" in cards[0].title
     assert "慢跑" not in cards[0].title
+    assert cards[0].evidence_refs == ["claim:c_recovery_low_reduce_intensity"]
 
 
 def test_parse_llm_suggestions_handles_markdown_wrapping(db):

@@ -40,6 +40,7 @@ import {
 import { spacing, radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import MarkdownText from '@/components/shared/MarkdownText';
+import { EvidenceRefsRow } from '@/components/knowledge';
 
 const SEVERITY_CONF: Record<string, { bg: string; text: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   critical: { bg: '#FEE2E2', text: '#991B1B', label: '紧急', icon: 'alert-circle' },
@@ -206,6 +207,7 @@ export default function ActionCardDetailScreen() {
                 </Text>
               </View>
             )}
+            <EvidenceRefsRow refs={card.evidence_refs} />
           </View>
 
           {/* 正文 — markdown 渲染 (用户报多页 markdown 显示原文) */}

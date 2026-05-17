@@ -41,7 +41,7 @@ import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
-import { ClaimSheet } from '../components/knowledge';
+import { EvidenceRefsRow } from '../components/knowledge';
 
 export default function GeneticReportScreen() {
   const { c } = useTheme();
@@ -50,7 +50,6 @@ export default function GeneticReportScreen() {
   const [filterCat, setFilterCat] = useState<string | null>(null);
   const [showMisses, setShowMisses] = useState(false);
   const [expandedRsid, setExpandedRsid] = useState<Set<string>>(new Set());
-  const [openClaimIds, setOpenClaimIds] = useState<string[] | null>(null);
 
   const { data, isLoading, isRefetching, error } = useQuery<GeneticReport>({
     queryKey: ['genetic-report'],
@@ -206,7 +205,6 @@ export default function GeneticReportScreen() {
               expanded={expandedRsid.has(it.rsid)}
               onToggle={() => toggleExpand(it.rsid)}
               onPressDetail={() => router.push(`/snp/${it.rsid}` as never)}
-              onOpenEvidence={refs => setOpenClaimIds(refs)}
               c={c}
             />
           ))}
@@ -215,11 +213,6 @@ export default function GeneticReportScreen() {
             <Text style={[styles.empty, { color: c.labelTertiary }]}>这个分类下暂无数据</Text>
           )}
         </ScrollView>
-        <ClaimSheet
-          visible={!!openClaimIds}
-          claimIds={openClaimIds ?? []}
-          onClose={() => setOpenClaimIds(null)}
-        />
       </SafeAreaView>
     </>
   );
@@ -359,14 +352,12 @@ function SnpCard({
   expanded,
   onToggle,
   onPressDetail,
-  onOpenEvidence,
   c,
 }: {
   item: GeneticReportItem;
   expanded: boolean;
   onToggle: () => void;
   onPressDetail: () => void;
-  onOpenEvidence: (refs: string[]) => void;
   c: any;
 }) {
   const isMiss = !item.hit;
@@ -438,18 +429,7 @@ function SnpCard({
           )}
 
           {!isMiss && item.evidence_refs && item.evidence_refs.length > 0 && (
-            <TouchableOpacity
-              testID={`evidence-chip-${item.rsid}`}
-              activeOpacity={0.75}
-              style={[styles.evidenceChip, { borderColor: c.brand }]}
-              onPress={() => onOpenEvidence(item.evidence_refs!)}
-            >
-              <Ionicons name="library-outline" size={12} color={c.brand} />
-              <Text style={[styles.evidenceChipText, { color: c.brand }]}>
-                系统证据 {item.evidence_refs.length} 条
-              </Text>
-              <Ionicons name="chevron-forward" size={11} color={c.brand} />
-            </TouchableOpacity>
+            <EvidenceRefsRow refs={item.evidence_refs} testID={`evidence-chip-${item.rsid}`} />
           )}
 
           {/* G-W4: 跳详情页 (LLM 个性化建议在那里) */}

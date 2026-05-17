@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import InterventionCard from '../InterventionCard';
 import type { ActionCard } from '../../../services/actionCards';
 
@@ -7,6 +8,13 @@ jest.mock('../../../services/api', () => ({
   __esModule: true,
   default: { get: jest.fn(), patch: jest.fn() },
 }));
+
+function renderWithQuery(ui: React.ReactElement) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 describe('InterventionCard', () => {
   const card: ActionCard = {
@@ -52,5 +60,19 @@ describe('InterventionCard', () => {
     fireEvent.press(getByText('复盘结果'));
 
     expect(getByText('干预复盘')).toBeTruthy();
+  });
+
+  it('shows system knowledge evidence refs on expanded cards', () => {
+    const withEvidence: ActionCard = {
+      ...card,
+      evidence_refs: ['claim:c_recovery_low_reduce_intensity'],
+    };
+    const { getByText } = renderWithQuery(
+      <InterventionCard card={withEvidence} onComplete={jest.fn()} />,
+    );
+
+    fireEvent.press(getByText('连续记录晚餐时间'));
+
+    expect(getByText('系统证据 1')).toBeTruthy();
   });
 });

@@ -23,7 +23,7 @@ export interface ActionCard {
   created_at: string;
   expires_at?: string | null;
   completed_at?: string | null;
-  checklist?: Array<{ item: string; done: boolean }>;
+  checklist?: { item: string; done: boolean }[];
   latest_assessment?: {
     score?: number;
     summary?: string;
@@ -47,6 +47,7 @@ export interface ActionCard {
   severity?: 'critical' | 'high' | 'medium' | 'low' | 'info' | null;
   // 2026-05-12: 证据等级
   evidence_level?: 'high' | 'medium' | 'low' | 'medical_grade' | null;
+  evidence_refs?: string[];
   user_decision?: 'accepted' | 'adjusted' | 'declined' | 'dismissed' | 'false_positive' | null;
   decided_at?: string | null;
   decision_reason?: string | null;
@@ -73,7 +74,8 @@ export interface ActionCardCreateInput {
   baseline_value?: string;
   target_value?: string;
   verification_days?: number;
-  checklist?: Array<{ item: string; done: boolean }>;
+  checklist?: { item: string; done: boolean }[];
+  evidence_refs?: string[];
 }
 
 export type ActionCockpitItem =

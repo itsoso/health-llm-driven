@@ -184,6 +184,7 @@ def _persist_proposed_cards(
                 target_value=proposed.target_value,
                 verification_days=proposed.verification_days,
                 evidence_level=getattr(proposed, "evidence_level", None) or "medium",
+                evidence_refs=list(finding.evidence_refs or []),
                 creator_specialist=finding.specialist_name,
                 check_back_date=check_back,
             )

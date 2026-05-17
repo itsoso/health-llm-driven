@@ -95,6 +95,8 @@ class ActionCard(Base):
     # low = 理论假设/弱证据
     # medical_grade = 高风险, 必须医生介入 (用药调整/遗传病/急性指标)
     evidence_level = Column(String(20))
+    # 系统知识库 claim 引用, 用于 mobile 展示可点开的证据页.
+    evidence_refs = Column(JSON, default=list)
 
     # outcome 分类 (improved / unchanged / worsened / inconclusive), 与 accuracy_score 数字配合
     outcome = Column(String(20))

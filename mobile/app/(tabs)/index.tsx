@@ -35,7 +35,8 @@ import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
 import TrajectorySnapshotPanel from '../../components/dashboard/TrajectorySnapshotPanel';
 import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
-import { createTodayAgentContext, pushChatWithContext } from '../../utils/agentContext';
+import { EvidenceRefsRow } from '../../components/knowledge';
+import { pushChatWithContext } from '../../utils/agentContext';
 import { getDailyOperatingPlan, type DailyPlanAction } from '../../services/dailyPlan';
 import { getHealthTrajectory } from '../../services/trajectory';
 
@@ -178,14 +179,6 @@ export default function TodayScreen() {
   const weeklyAdvice = cards.filter(c => c.source_type === 'weekly_advisor');
 
   const twinSnap = pickTwinSnapshot(twinQuery.data);
-  const todayMetricsContext = {
-    hrv: twinSnap.hrv ?? null,
-    sleep_score: twinSnap.sleep_score ?? null,
-    resting_hr: twinSnap.resting_hr ?? null,
-    systolic_bp: twinSnap.systolic_bp ?? null,
-    diastolic_bp: twinSnap.diastolic_bp ?? null,
-    spo2_avg: twinSnap.spo2_avg ?? null,
-  };
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -433,6 +426,7 @@ function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => voi
         <Text style={[styles.rowSub, { color: c.labelSecondary }]} numberOfLines={2}>
           {card.content}
         </Text>
+        <EvidenceRefsRow refs={card.evidence_refs} />
         {decided && (
           <View style={styles.decidedTag}>
             <Text style={styles.decidedText}>{card.user_decision}</Text>

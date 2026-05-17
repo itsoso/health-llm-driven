@@ -127,6 +127,8 @@ def _build_advisor_prompt(
     low            — 弱证据: 理论假设 / 单一研究 / 跨族群外推
     medical_grade  — **必须医生介入**: 用药调整 / 遗传病 / 急性血压/血糖/肝肾异常
   默认 medium. 涉及降压/降糖/抗凝/抗精神病药调整 → 必须 medical_grade
+- evidence_refs — 可选数组. 如果建议来自 Specialist Findings 中的 `refs=claim:...`,
+  必须原样带上这些 claim_id；不要编造新的 claim_id。
 - baseline_value (当前数值, **纯数字字符串**, 例 "62" 不是 "62 bpm" 不是 "60ms, ACWR 2.38")
 - target_value (目标数值, **纯数字字符串**, 例 "70" 不是 ">70ms")
 - verification_days (整数, 默认 7)
@@ -220,6 +222,7 @@ def _validate_suggestion(s: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "content": str(content).strip(),
         "metric_key": _normalize_metric_key(s.get("metric_key")),
         "evidence_level": _normalize_evidence_level(s.get("evidence_level")),
+        "evidence_refs": _normalize_evidence_refs(s.get("evidence_refs")),
         "baseline_value": (
             str(s["baseline_value"]) if s.get("baseline_value") is not None else None
         ),
@@ -228,6 +231,20 @@ def _validate_suggestion(s: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         ),
         "verification_days": s.get("verification_days") or DEFAULT_VERIFICATION_DAYS,
     }
+
+
+def _normalize_evidence_refs(raw: Any) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+    out: List[str] = []
+    seen = set()
+    for ref in raw:
+        value = str(ref).strip()
+        if not value.startswith("claim:") or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
 
 
 def _findings_to_fallback_suggestions(findings: List[Any]) -> List[Dict[str, Any]]:
@@ -240,6 +257,9 @@ def _findings_to_fallback_suggestions(findings: List[Any]) -> List[Dict[str, Any
         sp = getattr(f, "specialist_name", None) or (
             f.get("specialist_name") if isinstance(f, dict) else None
         )
+        refs = getattr(f, "evidence_refs", None) or (
+            f.get("evidence_refs") if isinstance(f, dict) else None
+        )
         if not title:
             continue
         out.append(
@@ -251,6 +271,7 @@ def _findings_to_fallback_suggestions(findings: List[Any]) -> List[Dict[str, Any
                 "target_value": None,
                 "verification_days": DEFAULT_VERIFICATION_DAYS,
                 "_creator_specialist": sp,
+                "evidence_refs": _normalize_evidence_refs(refs),
             }
         )
     return out
@@ -311,6 +332,7 @@ def _persist_suggestions(
             target_value=s.get("target_value"),
             verification_days=s.get("verification_days") or DEFAULT_VERIFICATION_DAYS,
             evidence_level=s.get("evidence_level") or "medium",
+            evidence_refs=s.get("evidence_refs") or [],
             creator_specialist=s.get("_creator_specialist") or "weekly_advisor",
             check_back_date=now + timedelta(days=s.get("verification_days") or DEFAULT_VERIFICATION_DAYS),
         )
@@ -369,10 +391,14 @@ async def generate_weekly_advice(db: Session, user_id: int) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"[WeeklyAdvisor] user={user_id} specialists 失败: {e}")
 
-    findings_summary = "\n".join(
-        f"- [{getattr(f, 'specialist_name', '?')}] {getattr(f, 'summary', '')}"[:200]
-        for f in findings[:8]
-    )
+    findings_lines = []
+    for f in findings[:8]:
+        refs = _normalize_evidence_refs(getattr(f, "evidence_refs", None))
+        ref_part = f" refs={','.join(refs[:3])}" if refs else " refs=none"
+        findings_lines.append(
+            f"- [{getattr(f, 'specialist_name', '?')}] {getattr(f, 'summary', '')}{ref_part}"[:260]
+        )
+    findings_summary = "\n".join(findings_lines)
 
     # 2026-05-14: 拉 primary_goal + gene highlights, 让 LLM 围绕用户最关心的目标和基因给建议
     primary_goal: Optional[str] = None
