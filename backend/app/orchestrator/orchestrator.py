@@ -548,39 +548,9 @@ def _build_synthesis_prompt(
 def _system_kb_twin_payload(twin: HealthTwin) -> Dict[str, Any]:
     """Map HealthTwin fields into the compact KB condition namespace."""
 
-    goals_text = " ".join(
-        str(goal.get("name") or goal.get("title") or goal.get("goal_type") or goal)
-        for goal in twin.goals.active_goals
-        if isinstance(goal, dict)
-    )
-    goals = {
-        "weight_loss": {"active": any(token in goals_text for token in ("减重", "减肥", "体重", "腰围"))},
-        "metabolic_health": {
-            "active": any(token in goals_text for token in ("代谢", "血糖", "血脂", "血压", "尿酸", "健康"))
-        },
-        "sleep": {"active": any(token in goals_text for token in ("睡眠", "恢复", "精力"))},
-        "longevity": {"active": any(token in goals_text for token in ("长寿", "衰老", "抗衰", "老化"))},
-    }
-    return {
-        "labs": {
-            "hba1c_percent": twin.labs.hba1c,
-            "fasting_glucose_mmol_l": twin.labs.blood_glucose,
-            "ldl_c_mmol_l": twin.labs.ldl,
-            "triglycerides_mmol_l": twin.labs.triglycerides,
-            "systolic_bp": twin.labs.blood_pressure_systolic,
-            "diastolic_bp": twin.labs.blood_pressure_diastolic,
-            "uric_acid_umol_l": twin.labs.uric_acid,
-            "eGFR": twin.labs.egfr,
-        },
-        "wearable": {
-            "sleep_duration_hours": twin.physiological.sleep_duration_h_latest,
-            "hrv_latest": twin.physiological.hrv_latest,
-            "resting_hr": twin.physiological.resting_hr,
-        },
-        "medications": twin.medication.active_meds,
-        "supplements": twin.supplement.active_supplements,
-        "goals": goals,
-    }
+    from app.services.system_knowledge_service import system_kb_twin_payload_from_health_twin
+
+    return system_kb_twin_payload_from_health_twin(twin)
 
 
 def _attach_kb_evidence_to_findings(

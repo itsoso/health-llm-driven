@@ -444,6 +444,107 @@ def format_system_knowledge_for_prompt(
     return rendered[: max_chars - 3].rstrip() + "..."
 
 
+def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
+    """Map HealthTwin into the compact condition namespace used by KB claims.
+
+    The KB contract is intentionally small and stable (`twin.genetics.*`,
+    `twin.labs.*`, `twin.goals.*`). Keeping this mapper in the KB service avoids
+    each agent path drifting into a slightly different interpretation.
+    """
+
+    labs = getattr(twin, "labs", None)
+    physiological = getattr(twin, "physiological", None)
+    medication = getattr(twin, "medication", None)
+    supplement = getattr(twin, "supplement", None)
+    goals_state = getattr(twin, "goals", None)
+
+    goals_text = " ".join(
+        str(goal.get("name") or goal.get("title") or goal.get("goal_type") or goal)
+        for goal in getattr(goals_state, "active_goals", []) or []
+        if isinstance(goal, dict)
+    )
+    goals = {
+        "weight_loss": {"active": any(token in goals_text for token in ("减重", "减肥", "体重", "腰围"))},
+        "metabolic_health": {
+            "active": any(token in goals_text for token in ("代谢", "血糖", "血脂", "血压", "尿酸", "健康"))
+        },
+        "sleep": {"active": any(token in goals_text for token in ("睡眠", "恢复", "精力"))},
+        "longevity": {"active": any(token in goals_text for token in ("长寿", "衰老", "抗衰", "老化"))},
+    }
+
+    return {
+        "genetics": _system_kb_genetics_from_health_twin(twin),
+        "labs": {
+            "hba1c_percent": getattr(labs, "hba1c", None),
+            "fasting_glucose_mmol_l": getattr(labs, "blood_glucose", None),
+            "ldl_c_mmol_l": getattr(labs, "ldl", None),
+            "triglycerides_mmol_l": getattr(labs, "triglycerides", None),
+            "systolic_bp": getattr(labs, "blood_pressure_systolic", None),
+            "diastolic_bp": getattr(labs, "blood_pressure_diastolic", None),
+            "uric_acid_umol_l": getattr(labs, "uric_acid", None),
+            "eGFR": getattr(labs, "egfr", None),
+        },
+        "wearable": {
+            "sleep_duration_hours": getattr(physiological, "sleep_duration_h_latest", None),
+            "hrv_latest": getattr(physiological, "hrv_latest", None),
+            "resting_hr": getattr(physiological, "resting_hr", None),
+        },
+        "medications": getattr(medication, "active_meds", []) if medication is not None else [],
+        "supplements": getattr(supplement, "active_supplements", []) if supplement is not None else [],
+        "goals": goals,
+    }
+
+
+def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
+    genetic = getattr(twin, "genetic", None)
+    if genetic is None:
+        return {}
+
+    variants: list[dict[str, Any]] = []
+    for attr in (
+        "drug_sensitivity",
+        "risk_variants",
+        "protective_variants",
+        "nutrition_variants",
+        "recovery_variants",
+        "exercise_variants",
+        "cognition_variants",
+        "personality_variants",
+        "sleep_variants",
+    ):
+        values = getattr(genetic, attr, None) or []
+        variants.extend(item for item in values if isinstance(item, dict))
+
+    out: dict[str, Any] = {}
+    for variant in variants:
+        gene = str(variant.get("gene_name") or "").upper()
+        genotype = str(variant.get("genotype") or "").upper()
+        risk_level = str(variant.get("risk_level") or "").lower()
+        result_label = str(variant.get("result_label") or "").lower()
+        is_risk = risk_level in {"medium", "high"} or any(
+            token in result_label for token in ("减弱", "下降", "风险", "poor", "reduced")
+        )
+
+        if gene == "MTHFR":
+            if "TT" in genotype:
+                out["MTHFR_C677T"] = "TT"
+            elif "CT" in genotype:
+                out["MTHFR_C677T"] = "CT"
+            elif "CC" in genotype:
+                out["MTHFR_C677T"] = "CC"
+            elif is_risk:
+                out["MTHFR_C677T"] = "CT"
+            out["MTHFR"] = genotype or "present"
+        elif gene == "APOE":
+            out["APOE"] = genotype or "present"
+        elif gene in {"FTO", "ACTN3"}:
+            out[gene] = genotype or "present"
+        elif gene == "ALDH2":
+            out["ALDH2"] = genotype or ("GA" if is_risk else "present")
+
+    return out
+
+
 def attach_system_knowledge_evidence(
     db: Session,
     twin: dict[str, Any],

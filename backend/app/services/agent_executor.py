@@ -223,6 +223,11 @@ class AgentExecutor:
                 "不要重新生成方案; 引用条目名称时跟用户已看见的一致.\n"
                 f"```\n{extra_context.strip()[:4000]}\n```"
             )
+        system_kb_context = self._build_system_knowledge_prompt_context(user_id, message)
+        if system_kb_context:
+            system_content += f"\n\n{system_kb_context}"
+            if "系统知识库" not in sources_used:
+                sources_used.append("系统知识库")
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
         # 直接 SQL count 用户哪些表有数据, 给"AI 用了什么数据"chip 用.
         try:
@@ -626,6 +631,86 @@ class AgentExecutor:
             pass
 
         return "\n".join(parts)
+
+    def _build_system_knowledge_prompt_context(self, user_id: int, message: str) -> str:
+        """Render message-scoped system KB matches for the active chat turn.
+
+        Mobile private chat uses `/agent/stream`, not the orchestrator synthesis
+        path. Evidence cards emitted at `done` time are useful for UI, but too
+        late for the LLM to ground its answer. This prompt block keeps the same
+        reviewed KB source as the card and injects only bounded summaries.
+        """
+
+        try:
+            from app.services.system_knowledge_service import (
+                CLAIM_BOUNDARY,
+                build_evidence_card_for_message,
+            )
+
+            evidence_card = build_evidence_card_for_message(self.db, message)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[agent_executor] system KB prompt lookup skipped: {e}")
+            return ""
+
+        if not evidence_card:
+            try:
+                from app.services.system_knowledge_service import (
+                    format_system_knowledge_for_prompt,
+                    system_kb_twin_payload_from_health_twin,
+                )
+                from app.twin.builder import build_twin
+
+                twin = build_twin(self.db, user_id, use_cache=True)
+                return format_system_knowledge_for_prompt(
+                    self.db,
+                    system_kb_twin_payload_from_health_twin(twin),
+                    max_claims=4,
+                    max_chars=1500,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[agent_executor] system KB twin prompt lookup skipped: {e}")
+                return ""
+
+        data = evidence_card.get("data") or {}
+        entity = data.get("entity") or {}
+        claims = data.get("claims") or []
+        if not claims:
+            return ""
+
+        lines = [
+            "## 系统知识库相关条目",
+            "下面是系统级 LLM Wiki V2 的已审核知识条目。回答本轮问题时必须优先使用这些条目，"
+            "并保留不确定性边界；不要把它们扩写成诊断、治疗或处方。",
+        ]
+        if entity:
+            title = entity.get("title") or entity.get("entity_id") or entity.get("doc_id")
+            summary = entity.get("summary")
+            line = f"- 实体: {title} ({entity.get('doc_id')})"
+            if summary:
+                line += f": {summary}"
+            lines.append(line)
+
+        for claim in claims[:3]:
+            sources = ", ".join(claim.get("sources") or [])
+            confidence = claim.get("confidence")
+            confidence_text = f"{confidence:.2f}" if isinstance(confidence, float) else "n/a"
+            line = (
+                f"- Claim: {claim.get('title') or claim.get('doc_id')} "
+                f"[{claim.get('evidence_level') or '?'} conf={confidence_text}] "
+                f"({claim.get('doc_id')})"
+            )
+            summary = claim.get("summary")
+            if summary:
+                line += f": {summary}"
+            if sources:
+                line += f" 来源: {sources}"
+            lines.append(line)
+
+        lines.append(f"边界: {data.get('claim_boundary') or CLAIM_BOUNDARY}")
+        rendered = "\n".join(lines)
+        if len(rendered) <= 1500:
+            return rendered
+        return rendered[:1497].rstrip() + "..."
 
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
