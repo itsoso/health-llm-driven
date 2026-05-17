@@ -25,9 +25,25 @@ export interface KnowledgeClaimBundle {
   claim_boundary?: string;
 }
 
+export interface KnowledgeEntityBundle {
+  entity: KnowledgeDocument;
+  linked_claims?: KnowledgeDocument[];
+  edges?: any[];
+  claim_boundary?: string;
+}
+
 export async function getKnowledgeClaim(claimId: string): Promise<KnowledgeClaimBundle> {
   const encoded = encodeURIComponent(claimId);
   const res = await api.get(`/knowledge/claim/${encoded}`);
+  return res.data;
+}
+
+export async function getKnowledgeEntity(
+  entityType: string,
+  entityId: string,
+): Promise<KnowledgeEntityBundle> {
+  const encoded = encodeURIComponent(entityId);
+  const res = await api.get(`/knowledge/entity/${entityType}/${encoded}`);
   return res.data;
 }
 

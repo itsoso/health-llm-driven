@@ -1,11 +1,32 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SupplementCardView } from '../SupplementCard';
 import { EvidenceRefsRow } from '../EvidenceRefsRow';
 
+jest.mock('../../../../services/systemKnowledge', () => ({
+  getKnowledgeClaim: jest.fn(),
+  submitKnowledgeClaimFeedback: jest.fn(),
+}));
+
+const { getKnowledgeClaim, submitKnowledgeClaimFeedback } = jest.requireMock(
+  '../../../../services/systemKnowledge',
+);
+
+function renderWithQuery(ui: React.ReactElement) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
 describe('EvidenceRefsRow', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('renders compact evidence entry on ordinary cards', () => {
-    const screen = render(
+    const screen = renderWithQuery(
       <SupplementCardView
         checked={1}
         total={2}
@@ -21,7 +42,7 @@ describe('EvidenceRefsRow', () => {
   });
 
   it('opens claim details from system knowledge', async () => {
-    const loadClaim = jest.fn().mockResolvedValue({
+    getKnowledgeClaim.mockResolvedValue({
       claim: {
         doc_id: 'claim:c_mthfr_c677t_hcy_folate_boundary',
         title: 'MTHFR C677T 与叶酸转化边界',
@@ -32,26 +53,25 @@ describe('EvidenceRefsRow', () => {
       claim_boundary: '仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。',
     });
 
-    const screen = render(
-      <EvidenceRefsRow
-        refs={['claim:c_mthfr_c677t_hcy_folate_boundary']}
-        loadClaim={loadClaim}
-      />,
+    const screen = renderWithQuery(
+      <EvidenceRefsRow refs={['claim:c_mthfr_c677t_hcy_folate_boundary']} />,
     );
 
     fireEvent.press(screen.getByTestId('system-kb-evidence-chip'));
 
     await waitFor(() => {
-      expect(loadClaim).toHaveBeenCalledWith('claim:c_mthfr_c677t_hcy_folate_boundary');
+      expect(getKnowledgeClaim).toHaveBeenCalledWith(
+        'claim:c_mthfr_c677t_hcy_folate_boundary',
+      );
       expect(screen.getByText('MTHFR C677T 与叶酸转化边界')).toBeTruthy();
     });
     expect(screen.getByText('B级')).toBeTruthy();
-    expect(screen.getByText('dedao:qiuzilong-genetics-07')).toBeTruthy();
+    expect(screen.getByText(/dedao:qiuzilong-genetics-07/)).toBeTruthy();
     expect(screen.getByText(/不替代医生诊断/)).toBeTruthy();
   });
 
   it('submits disagree feedback for a claim', async () => {
-    const loadClaim = jest.fn().mockResolvedValue({
+    getKnowledgeClaim.mockResolvedValue({
       claim: {
         doc_id: 'claim:c_mthfr_c677t_hcy_folate_boundary',
         title: 'MTHFR C677T 与叶酸转化边界',
@@ -59,14 +79,10 @@ describe('EvidenceRefsRow', () => {
         confidence: 0.82,
       },
     });
-    const submitFeedback = jest.fn().mockResolvedValue({ ok: true });
+    submitKnowledgeClaimFeedback.mockResolvedValue({ ok: true });
 
-    const screen = render(
-      <EvidenceRefsRow
-        refs={['claim:c_mthfr_c677t_hcy_folate_boundary']}
-        loadClaim={loadClaim}
-        submitFeedback={submitFeedback}
-      />,
+    const screen = renderWithQuery(
+      <EvidenceRefsRow refs={['claim:c_mthfr_c677t_hcy_folate_boundary']} />,
     );
 
     fireEvent.press(screen.getByTestId('system-kb-evidence-chip'));
@@ -75,10 +91,10 @@ describe('EvidenceRefsRow', () => {
       expect(screen.getByText('这条证据不对')).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByText('这条证据不对'));
+    fireEvent.press(screen.getByTestId('claim-feedback-button'));
 
     await waitFor(() => {
-      expect(submitFeedback).toHaveBeenCalledWith(
+      expect(submitKnowledgeClaimFeedback).toHaveBeenCalledWith(
         'claim:c_mthfr_c677t_hcy_folate_boundary',
         '用户在移动端反馈这条系统知识库证据不适用',
       );

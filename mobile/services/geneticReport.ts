@@ -29,6 +29,7 @@ export interface GeneticReportItem {
   risk_level: 'high' | 'medium' | 'low' | 'info' | null;
   variant_nature: 'protective' | 'risk' | 'neutral' | null;
   related_cards: RelatedCard[];
+  evidence_refs?: string[];
 }
 
 export interface Cluster {
@@ -73,7 +74,7 @@ export interface GeneticPredictions {
   disease_risk: {
     status: 'screening' | 'no_data' | string;
     message: string;
-    top_risks: Array<{
+    top_risks: {
       rsid: string | null;
       gene: string;
       variant_name: string | null;
@@ -82,7 +83,7 @@ export interface GeneticPredictions {
       risk_level: 'high' | 'medium' | 'low' | 'info';
       evidence_level: string;
       message: string;
-    }>;
+    }[];
   };
 }
 
@@ -102,12 +103,12 @@ export interface SnpDetail {
   variant_name: string;
   category: string;
   description: string;
-  genotype_meanings: Array<{
+  genotype_meanings: {
     genotype: string;
     display: string;
     label: string;
     risk: string;
-  }>;
+  }[];
   user: {
     hit: boolean;
     genotype: string | null;
@@ -116,7 +117,7 @@ export interface SnpDetail {
   };
   actions: SnpActions | null;
   related_cards: RelatedCard[];
-  siblings: Array<{ rsid: string; gene: string; variant_name: string }>;
+  siblings: { rsid: string; gene: string; variant_name: string }[];
 }
 
 /**

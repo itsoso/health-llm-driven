@@ -33,6 +33,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
+from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.genetic_data import GeneticProfile, GeneticVariant
 
 logger = logging.getLogger(__name__)
@@ -227,6 +228,85 @@ def _match_variant_for_snp(
     return rsid_exact or exact
 
 
+_EVIDENCE_REFS_LIMIT = 3
+
+
+def _attach_evidence_refs(db: Session, items: List[Dict[str, Any]]) -> None:
+    """每个 hit item 加 evidence_refs: List[claim_doc_id], 按 confidence desc, 取前 3.
+
+    数据通路: entity:gene/{symbol} —[supports|evidence_for|...]→ claim:*.
+    成本: 3 条 batch SQL, 与 items 数 N 无关.
+    Miss item 跳过, evidence_refs 设空 list.
+    """
+    hit_genes = sorted({it["gene"] for it in items if it.get("hit")})
+    if not hit_genes:
+        for it in items:
+            it["evidence_refs"] = []
+        return
+
+    entity_rows = (
+        db.query(KBDocument.doc_id, KBDocument.entity_id)
+        .filter(
+            KBDocument.doc_type == "entity",
+            KBDocument.entity_type == "gene",
+            KBDocument.entity_id.in_(hit_genes),
+            KBDocument.is_archived.is_(False),
+        )
+        .all()
+    )
+    entity_doc_by_gene: Dict[str, str] = {r.entity_id: r.doc_id for r in entity_rows}
+    if not entity_doc_by_gene:
+        for it in items:
+            it["evidence_refs"] = []
+        return
+
+    gene_by_entity_doc: Dict[str, str] = {v: k for k, v in entity_doc_by_gene.items()}
+    entity_doc_ids = list(entity_doc_by_gene.values())
+
+    edges = (
+        db.query(KBEdge.src_doc_id, KBEdge.dst_doc_id)
+        .filter(
+            KBEdge.src_doc_id.in_(entity_doc_ids),
+            KBEdge.dst_doc_id.like("claim:%"),
+        )
+        .all()
+    )
+    claim_ids = list({e.dst_doc_id for e in edges})
+    if not claim_ids:
+        for it in items:
+            it["evidence_refs"] = []
+        return
+
+    claim_rows = (
+        db.query(KBDocument.doc_id, KBDocument.confidence)
+        .filter(
+            KBDocument.doc_id.in_(claim_ids),
+            KBDocument.doc_type == "claim",
+            KBDocument.is_archived.is_(False),
+        )
+        .all()
+    )
+    confidence_by_claim: Dict[str, float] = {
+        r.doc_id: (r.confidence if r.confidence is not None else 0.0) for r in claim_rows
+    }
+
+    gene_to_claims: Dict[str, List[str]] = {}
+    for e in edges:
+        gene = gene_by_entity_doc.get(e.src_doc_id)
+        if not gene or e.dst_doc_id not in confidence_by_claim:
+            continue
+        gene_to_claims.setdefault(gene, []).append(e.dst_doc_id)
+    for gene, ids in gene_to_claims.items():
+        ids.sort(key=lambda i: confidence_by_claim.get(i, 0.0), reverse=True)
+        gene_to_claims[gene] = ids[:_EVIDENCE_REFS_LIMIT]
+
+    for it in items:
+        if it.get("hit"):
+            it["evidence_refs"] = gene_to_claims.get(it["gene"], [])
+        else:
+            it["evidence_refs"] = []
+
+
 def build_report(db: Session, user_id: int) -> Dict[str, Any]:
     """主入口: 返回报告页所需全部数据 (除 LLM 总结, 它独立 cache)."""
     profile = _resolve_active_profile(db, user_id)
@@ -304,6 +384,8 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
         it["category"],
         it["gene"],
     ))
+
+    _attach_evidence_refs(db, items)
 
     # G-W4 圆 (2026-05-12): cluster 聚合 — 按 category 分组, 每组 hits/total + top
     # risk_level. 让 mobile 头部一眼看到"叶酸/运动/药物/疾病" 各组占比.

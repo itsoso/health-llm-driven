@@ -41,6 +41,7 @@ import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
+import { ClaimSheet } from '../components/knowledge';
 
 export default function GeneticReportScreen() {
   const { c } = useTheme();
@@ -49,6 +50,7 @@ export default function GeneticReportScreen() {
   const [filterCat, setFilterCat] = useState<string | null>(null);
   const [showMisses, setShowMisses] = useState(false);
   const [expandedRsid, setExpandedRsid] = useState<Set<string>>(new Set());
+  const [openClaimIds, setOpenClaimIds] = useState<string[] | null>(null);
 
   const { data, isLoading, isRefetching, error } = useQuery<GeneticReport>({
     queryKey: ['genetic-report'],
@@ -204,6 +206,7 @@ export default function GeneticReportScreen() {
               expanded={expandedRsid.has(it.rsid)}
               onToggle={() => toggleExpand(it.rsid)}
               onPressDetail={() => router.push(`/snp/${it.rsid}` as never)}
+              onOpenEvidence={refs => setOpenClaimIds(refs)}
               c={c}
             />
           ))}
@@ -212,6 +215,11 @@ export default function GeneticReportScreen() {
             <Text style={[styles.empty, { color: c.labelTertiary }]}>这个分类下暂无数据</Text>
           )}
         </ScrollView>
+        <ClaimSheet
+          visible={!!openClaimIds}
+          claimIds={openClaimIds ?? []}
+          onClose={() => setOpenClaimIds(null)}
+        />
       </SafeAreaView>
     </>
   );
@@ -333,12 +341,14 @@ function SnpCard({
   expanded,
   onToggle,
   onPressDetail,
+  onOpenEvidence,
   c,
 }: {
   item: GeneticReportItem;
   expanded: boolean;
   onToggle: () => void;
   onPressDetail: () => void;
+  onOpenEvidence: (refs: string[]) => void;
   c: any;
 }) {
   const isMiss = !item.hit;
@@ -407,6 +417,21 @@ function SnpCard({
             <Text style={[styles.relatedNone, { color: c.labelTertiary }]}>
               暂无基于这条基因的活跃建议
             </Text>
+          )}
+
+          {!isMiss && item.evidence_refs && item.evidence_refs.length > 0 && (
+            <TouchableOpacity
+              testID={`evidence-chip-${item.rsid}`}
+              activeOpacity={0.75}
+              style={[styles.evidenceChip, { borderColor: c.brand }]}
+              onPress={() => onOpenEvidence(item.evidence_refs!)}
+            >
+              <Ionicons name="library-outline" size={12} color={c.brand} />
+              <Text style={[styles.evidenceChipText, { color: c.brand }]}>
+                系统证据 {item.evidence_refs.length} 条
+              </Text>
+              <Ionicons name="chevron-forward" size={11} color={c.brand} />
+            </TouchableOpacity>
           )}
 
           {/* G-W4: 跳详情页 (LLM 个性化建议在那里) */}
@@ -592,5 +617,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   detailLinkText: { fontSize: 12, fontWeight: '600' },
+  evidenceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 8,
+  },
+  evidenceChipText: { fontSize: 11, fontWeight: '600' },
   empty: { textAlign: 'center', padding: spacing.xl, fontSize: 13 },
 });

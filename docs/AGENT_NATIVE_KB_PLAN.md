@@ -15,6 +15,7 @@
 - Admin lint: contradiction + invalid review status included.
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists; not scheduled.
+- Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback.
 
 ---
 
