@@ -1,7 +1,6 @@
 """补剂管理 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 from typing import List, Optional, Dict, Any
 from datetime import date, timedelta
 from pydantic import BaseModel
@@ -23,7 +22,6 @@ from app.services.daily_supplement_guide import get_daily_supplement_guide
 from app.utils.redis_cache import (
     cache_supplement_recommendation,
     get_cached_supplement_recommendation,
-    invalidate_supplement_recommendation
 )
 import logging
 
@@ -61,7 +59,7 @@ def get_user_supplements(
     """获取用户的补剂列表"""
     query = db.query(SupplementDefinition).filter(SupplementDefinition.user_id == user_id)
     if active_only:
-        query = query.filter(SupplementDefinition.is_active == True)
+        query = query.filter(SupplementDefinition.is_active)
     return query.order_by(SupplementDefinition.sort_order, SupplementDefinition.id).all()
 
 
@@ -69,10 +67,14 @@ def get_user_supplements(
 def update_supplement(
     supplement_id: int,
     update_data: SupplementDefinitionUpdate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """更新补剂"""
-    supplement = db.query(SupplementDefinition).filter(SupplementDefinition.id == supplement_id).first()
+    supplement = db.query(SupplementDefinition).filter(
+        SupplementDefinition.id == supplement_id,
+        SupplementDefinition.user_id == current_user.id,
+    ).first()
     if not supplement:
         raise HTTPException(status_code=404, detail="补剂不存在")
 
@@ -87,10 +89,14 @@ def update_supplement(
 @router.delete("/definitions/{supplement_id}")
 def delete_supplement(
     supplement_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """删除补剂"""
-    supplement = db.query(SupplementDefinition).filter(SupplementDefinition.id == supplement_id).first()
+    supplement = db.query(SupplementDefinition).filter(
+        SupplementDefinition.id == supplement_id,
+        SupplementDefinition.user_id == current_user.id,
+    ).first()
     if not supplement:
         raise HTTPException(status_code=404, detail="补剂不存在")
 
@@ -175,7 +181,7 @@ def get_user_supplements_with_records(
     """获取用户某天的补剂列表及打卡状态"""
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == user_id,
-        SupplementDefinition.is_active == True
+        SupplementDefinition.is_active
     ).order_by(SupplementDefinition.timing, SupplementDefinition.sort_order).all()
 
     result = []
@@ -205,7 +211,7 @@ def get_supplement_stats(
 
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == user_id,
-        SupplementDefinition.is_active == True
+        SupplementDefinition.is_active
     ).all()
 
     stats = []
@@ -243,7 +249,7 @@ def get_my_supplements(
         SupplementDefinition.user_id == current_user.id
     )
     if active_only:
-        query = query.filter(SupplementDefinition.is_active == True)
+        query = query.filter(SupplementDefinition.is_active)
     return query.order_by(SupplementDefinition.sort_order, SupplementDefinition.id).all()
 
 
@@ -285,7 +291,7 @@ def copy_day_records(
     source_records = db.query(SupplementRecord).filter(
         SupplementRecord.user_id == current_user.id,
         SupplementRecord.record_date == request.from_date,
-        SupplementRecord.taken == True
+        SupplementRecord.taken
     ).all()
 
     if not source_records:
@@ -329,7 +335,7 @@ def get_my_supplements_with_records(
     """获取当前用户某天的补剂列表及打卡状态（需要登录）"""
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == current_user.id,
-        SupplementDefinition.is_active == True
+        SupplementDefinition.is_active
     ).order_by(SupplementDefinition.timing, SupplementDefinition.sort_order).all()
 
     result = []
@@ -359,7 +365,7 @@ def get_my_supplement_stats(
 
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == current_user.id,
-        SupplementDefinition.is_active == True
+        SupplementDefinition.is_active
     ).all()
 
     stats = []

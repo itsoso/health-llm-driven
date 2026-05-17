@@ -1,0 +1,172 @@
+import json
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_health_manage_deletes_diet_record_by_id(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_delete(url, headers):
+        captured["url"] = url
+        captured["headers"] = headers
+        return '{"message":"Record deleted successfully"}'
+
+    with patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "operation": "delete",
+                "record_id": 605,
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/diet/records/605")
+    assert captured["headers"]["Authorization"] == "Bearer test-token"
+    assert json.loads(result)["message"] == "Record deleted successfully"
+
+
+@pytest.mark.asyncio
+async def test_health_manage_updates_diet_record_by_id(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_put(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id":605,"food_items":"鳕鱼 50g + 鲍鱼 2个","calories":378}'
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 605,
+                "data": {"food_items": "鳕鱼 50g + 鲍鱼 2个", "calories": 378},
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/diet/records/605")
+    assert captured["payload"]["calories"] == 378
+    assert json.loads(result)["id"] == 605
+
+
+@pytest.mark.asyncio
+async def test_health_manage_deletes_exercise_record_by_id(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_delete(url, headers):
+        captured["url"] = url
+        return '{"message":"已删除","id":42}'
+
+    with patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "exercise",
+                "operation": "delete",
+                "record_id": 42,
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/daily-health/exercise/42")
+    assert json.loads(result)["id"] == 42
+
+
+@pytest.mark.asyncio
+async def test_health_manage_updates_illness_record_by_id(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_put(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id":7,"status":"resolved"}'
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 7,
+                "data": {"status": "resolved"},
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/illness/episodes/7")
+    assert captured["payload"]["status"] == "resolved"
+    assert json.loads(result)["status"] == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_health_manage_lists_reminders(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_get(url, headers):
+        captured["url"] = url
+        return '[{"id":9,"title":"吃药"}]'
+
+    with patch.object(executor, "_api_get", new=AsyncMock(side_effect=fake_get)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "reminder",
+                "operation": "list",
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/reminders/me?status=all&limit=50")
+    assert json.loads(result)[0]["id"] == 9
+
+
+@pytest.mark.asyncio
+async def test_health_manage_rejects_unsupported_exercise_update(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    result = await executor._execute_tool(
+        tool_name="health_manage",
+        args_raw=json.dumps({
+            "record_type": "exercise",
+            "operation": "update",
+            "record_id": 42,
+            "data": {"reps": 20},
+        }),
+        user_token="test-token",
+    )
+
+    assert "暂不支持 update" in result

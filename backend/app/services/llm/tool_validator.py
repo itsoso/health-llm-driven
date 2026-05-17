@@ -264,7 +264,8 @@ def validate_health_record(
 _QUERY_DIMENSIONS = {
     "comprehensive", "sleep", "heart_rate", "hrv", "activity",
     "spo2", "spo2_sleep_correlation", "weight", "blood_pressure",
-    "supplements", "water", "diet", "exercise", "body_battery", "stress",
+    "supplements", "water", "diet", "exercise", "workout", "manual_exercise",
+    "body_battery", "stress",
     "medical_exam", "genetic", "genetic_cognitive", "genetic_personality",
     "genetic_comprehensive", "medication",
 }
@@ -275,6 +276,12 @@ _ANALYSIS_TYPES = {
 }
 _ENV_CHECK_TYPES = {"weather", "air_quality", "outdoor_suitability"}
 _PLAN_ACTIONS = {"generate_weekly", "complete_item", "save_to_card"}
+_MANAGE_RECORD_TYPES = {
+    "diet", "water", "weight", "waist", "blood_pressure",
+    "sleep", "mood", "excretion", "exercise", "illness", "symptom",
+    "medication", "medication_log", "supplement_definition", "reminder",
+}
+_MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
 _TARGET_WEEKS = {"current", "next"}
 
@@ -445,9 +452,49 @@ def _validate_manage_plan(
     return None
 
 
+def _validate_health_manage(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    _coerce_enum("health_manage", args, "record_type", _MANAGE_RECORD_TYPES, None, warnings)
+    _coerce_enum("health_manage", args, "operation", _MANAGE_OPERATIONS, None, warnings)
+    rtype = args.get("record_type")
+    operation = args.get("operation")
+    if not rtype:
+        return f"Error: health_manage.record_type 必须是 {sorted(_MANAGE_RECORD_TYPES)} 之一."
+    if not operation:
+        return f"Error: health_manage.operation 必须是 {sorted(_MANAGE_OPERATIONS)} 之一."
+
+    if operation in {"update", "delete"}:
+        record_id = args.get("record_id")
+        if record_id is None:
+            return f"Error: health_manage.{operation} 必须提供 record_id. 先 list 查候选记录, 不要编造 ID."
+        try:
+            record_id_int = int(record_id)
+        except (TypeError, ValueError):
+            return f"Error: health_manage.record_id 必须是整数, 收到 {record_id!r}."
+        if record_id_int <= 0:
+            return f"Error: health_manage.record_id 必须为正整数, 收到 {record_id_int}."
+        args["record_id"] = record_id_int
+
+    if operation == "update":
+        data = args.get("data") or {}
+        if not isinstance(data, dict):
+            return "Error: health_manage.update 的 data 必须是对象."
+        if not data:
+            return "Error: health_manage.update 必须提供 data 补丁字段."
+        args["data"] = data
+
+    if isinstance(args.get("date"), str) and len(args["date"]) > 10:
+        args["date"] = args["date"][:10]
+        warnings.append("[tool_validator] health_manage.date 截断到 YYYY-MM-DD")
+
+    return None
+
+
 # 工具名 → 校验函数分发表
 _TOOL_VALIDATORS: Dict[str, Any] = {
     "health_query": _validate_query,
+    "health_manage": _validate_health_manage,
     "health_analysis": _validate_analysis,
     "environment_check": _validate_environment,
     "supplement_guide": _validate_supplement_guide,

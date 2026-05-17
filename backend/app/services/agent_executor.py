@@ -34,6 +34,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 _TOOL_TO_SOURCE_LABEL = {
     "health_query": "健康数据查询 (Garmin/化验/补剂)",
     "health_record": "今天打卡记录",
+    "health_manage": "健康记录管理 (查询/修改/删除)",
     "exam_query": "化验单详情",
     "indicator_history": "指标历史趋势",
     "knowledge_search": "得到 wiki 知识库",
@@ -516,7 +517,8 @@ class AgentExecutor:
             "",
             "## 数据记录规则",
             "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
-            "- **修改记录也是新记录：用户修改了饮食内容后，必须重新调用 health_record(type=diet) 保存修改后的版本。**",
+            "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
+            "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
             "- 饮水、补剂打卡：直接执行，不需确认",
             "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
             "- 用户说'吃了XX'：药瓶/保健品名(鱼油/维C/B族等) → record_type=supplement；食物 → record_type=diet",
@@ -990,6 +992,8 @@ class AgentExecutor:
                 return await self._exec_health_query(base_url, headers, args)
             elif tool_name == "health_record":
                 return await self._exec_health_record(base_url, headers, args)
+            elif tool_name == "health_manage":
+                return await self._exec_health_manage(base_url, headers, args)
             elif tool_name == "health_analysis":
                 return await self._exec_health_analysis(base_url, headers, args)
             elif tool_name == "environment_check":
@@ -1335,6 +1339,97 @@ class AgentExecutor:
                 return result
         return f"Error: 不支持的记录类型 {rtype}"
 
+    async def _exec_health_manage(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """执行已存在健康记录的查询/修改/删除.
+
+        新增记录继续走 health_record；这里专门承接对话里的 CRUD 管理动作，
+        避免 LLM 查到 ID 后无法真正删除或修改。
+        """
+        record_type = args.get("record_type")
+        operation = args.get("operation")
+        record_id = args.get("record_id")
+        data = args.get("data") or {}
+        target_date = args.get("date")
+        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+
+        list_paths = {
+            "diet": f"/diet/records/me/date/{target_date or today}" if target_date else "/diet/records/me?limit=20",
+            "water": "/water/records/me?limit=20",
+            "weight": "/weight/records/me?limit=20",
+            "waist": "/waist/records/me?limit=20",
+            "blood_pressure": "/blood-pressure/records/me?limit=20",
+            "sleep": "/sleep/records/me?limit=20",
+            "mood": "/mood/records/me?limit=20",
+            "excretion": "/excretion/records/me?limit=20",
+            "exercise": "/daily-health/exercise/me?days=7",
+            "illness": "/illness/episodes/all",
+            "symptom": "/symptoms/me?limit=20",
+            "medication": "/medication/medications/me?active_only=false",
+            "medication_log": "/medication/today/me",
+            "supplement_definition": "/supplements/me/definitions?active_only=false",
+            "reminder": "/reminders/me?status=all&limit=50",
+        }
+        record_paths = {
+            "diet": "/diet/records/{id}",
+            "water": "/water/records/{id}",
+            "weight": "/weight/records/{id}",
+            "waist": "/waist/records/{id}",
+            "blood_pressure": "/blood-pressure/records/{id}",
+            "sleep": "/sleep/records/{id}",
+            "mood": "/mood/records/{id}",
+            "excretion": "/excretion/records/{id}",
+            "exercise": "/daily-health/exercise/{id}",
+            "illness": "/illness/episodes/{id}",
+            "symptom": "/symptoms/{id}",
+            "medication": "/medication/medications/{id}",
+            "medication_log": "/medication/logs/{id}",
+            "supplement_definition": "/supplements/definitions/{id}",
+            "reminder": "/reminders/{id}",
+        }
+        update_supported = {
+            "diet", "water", "weight", "waist", "blood_pressure",
+            "sleep", "mood", "excretion", "illness", "medication",
+            "supplement_definition",
+        }
+
+        if operation == "list":
+            path = list_paths.get(record_type)
+            if not path:
+                return f"Error: 不支持查询 {record_type}"
+            return await self._api_get(f"{base}{path}", headers)
+
+        path_tmpl = record_paths.get(record_type)
+        if not path_tmpl:
+            return f"Error: 不支持管理 {record_type}"
+        if not record_id:
+            return "Error: 修改或删除必须提供 record_id. 请先查询候选记录并确认 ID."
+        path = path_tmpl.format(id=record_id)
+
+        if operation == "delete":
+            result = await self._api_delete(f"{base}{path}", headers)
+            self._invalidate_twin_after_mutation()
+            return result or json.dumps({"message": "删除成功", "record_id": record_id}, ensure_ascii=False)
+
+        if operation == "update":
+            if record_type not in update_supported:
+                return f"Error: {record_type} 暂不支持 update, 可先删除后重记."
+            result = await self._api_put(f"{base}{path}", headers, data)
+            self._invalidate_twin_after_mutation()
+            return result
+
+        return f"Error: 不支持的操作 {operation}"
+
+    def _invalidate_twin_after_mutation(self) -> None:
+        if self._current_user_id is None:
+            return
+        try:
+            from app.twin.cache import invalidate_twin
+            invalidate_twin(self._current_user_id)
+        except Exception as e:
+            logger.warning(f"[health_manage] Twin invalidation 失败 (旁路): {e}")
+
     async def _exec_health_analysis(
         self, base: str, headers: dict, args: dict
     ) -> str:
@@ -1580,5 +1675,21 @@ class AgentExecutor:
         client = self._http_client or httpx.AsyncClient(timeout=90.0)
         resp = await client.patch(url, headers={**headers, "Content-Type": "application/json"}, json=data)
         if resp.status_code not in (200, 201):
+            return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
+        return resp.text
+
+    async def _api_put(self, url: str, headers: dict, data: dict) -> str:
+        """HTTP PUT"""
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
+        resp = await client.put(url, headers={**headers, "Content-Type": "application/json"}, json=data)
+        if resp.status_code not in (200, 201):
+            return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
+        return resp.text
+
+    async def _api_delete(self, url: str, headers: dict) -> str:
+        """HTTP DELETE"""
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
+        resp = await client.delete(url, headers=headers)
+        if resp.status_code not in (200, 202, 204):
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
         return resp.text

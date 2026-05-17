@@ -158,6 +158,68 @@ reminder:         {"title": "吃药", "remind_at": "2026-05-06T08:00:00+08:00"}"
     {
         "type": "function",
         "function": {
+            "name": "health_manage",
+            "description": """管理已存在的健康记录: 查询列表、修改、删除。
+
+和 health_record 的分工:
+- 新增记录: health_record
+- 查询事实/列表: health_query 或 health_manage(operation='list')
+- 修改/删除已有记录: health_manage
+
+当用户说"删掉 ID 605"、"删除重复午餐"、"把午餐热量改成 378"时必须调用本工具,
+不能回答"没有删除功能"。如果用户只说"删除一条"但有多条候选, 先用 list 查出 ID 并让用户确认。
+
+支持 record_type:
+- diet, water, weight, waist, blood_pressure, sleep, mood, excretion: 支持 list/update/delete
+- illness, medication, supplement_definition: 支持 list/update/delete
+- exercise, symptom, medication_log, reminder: 支持 list/delete
+""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "record_type": {
+                        "type": "string",
+                        "enum": [
+                            "diet", "water", "weight", "waist", "blood_pressure",
+                            "sleep", "mood", "excretion", "exercise", "illness",
+                            "symptom", "medication", "medication_log",
+                            "supplement_definition", "reminder",
+                        ],
+                        "description": "要管理的数据类型",
+                    },
+                    "operation": {
+                        "type": "string",
+                        "enum": ["list", "update", "delete"],
+                        "description": "操作: list 查询候选记录; update 修改; delete 删除",
+                    },
+                    "record_id": {
+                        "type": "integer",
+                        "description": "update/delete 必填。必须来自 list/health_query/API 返回的真实 ID, 不要编造。",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "list 可选日期 YYYY-MM-DD。饮食支持按日期汇总; 其他类型走最近列表。",
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": """update 的字段补丁。例如:
+diet: {"food_items":"鳕鱼 50g + 鲍鱼 2个","calories":378,"meal_type":"lunch"}
+water: {"amount":300}
+weight: {"weight":71.2}
+blood_pressure: {"systolic":120,"diastolic":78}
+illness: {"status":"resolved","severity":2}
+medication: {"name":"二甲双胍","dosage":"500mg"}
+supplement_definition: {"name":"维生素D","dosage":"2000IU"}
+""",
+                    },
+                },
+                "required": ["record_type", "operation"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "health_analysis",
             "description": """深度健康分析 — 与 health_query 的区别:
   health_query:    拉**数据** (昨晚睡了几小时, HRV 多少). 事实查询.

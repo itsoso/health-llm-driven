@@ -1,8 +1,6 @@
 """tool_call_validator 单测 — 守门所有 LLM 给的 tool_call 参数."""
 from datetime import date, datetime, timedelta
 
-import pytest
-
 from app.services.llm.tool_validator import validate_health_record, validate_tool_call
 
 
@@ -191,13 +189,32 @@ class TestDispatcher:
         from app.services.tool_schema_registry import HEALTH_TOOLS
         from app.services.llm.tool_validator import (
             _QUERY_DIMENSIONS, _ANALYSIS_TYPES, _ENV_CHECK_TYPES, _PLAN_ACTIONS,
+            _MANAGE_RECORD_TYPES, _MANAGE_OPERATIONS,
         )
         schemas = {t["function"]["name"]: t["function"]["parameters"]["properties"]
                    for t in HEALTH_TOOLS}
         assert set(schemas["health_query"]["dimension"]["enum"]) == _QUERY_DIMENSIONS
+        assert set(schemas["health_manage"]["record_type"]["enum"]) == _MANAGE_RECORD_TYPES
+        assert set(schemas["health_manage"]["operation"]["enum"]) == _MANAGE_OPERATIONS
         assert set(schemas["health_analysis"]["analysis_type"]["enum"]) == _ANALYSIS_TYPES
         assert set(schemas["environment_check"]["check_type"]["enum"]) == _ENV_CHECK_TYPES
         assert set(schemas["manage_plan"]["action"]["enum"]) == _PLAN_ACTIONS
+
+    def test_health_manage_delete_requires_record_id(self):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "delete",
+        })
+        assert "record_id" in (v["error"] or "")
+
+    def test_health_manage_record_id_coerced_to_int(self):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": "605",
+        })
+        assert v["error"] is None
+        assert v["data"]["record_id"] == 605
 
 
 class TestQueryGuard:
