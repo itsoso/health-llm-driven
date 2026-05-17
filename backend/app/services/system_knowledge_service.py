@@ -69,6 +69,7 @@ SOURCE_KIND_ORDER = {
     "article": 5,
     "other": 9,
 }
+EVIDENCE_LEVEL_RANK = {"A": 4, "B": 3, "C": 2, "D": 1}
 
 
 def evidence_level_detail(level: str | None) -> dict[str, str] | None:
@@ -206,6 +207,41 @@ def serialize_document(document: KBDocument, extra: dict[str, Any] | None = None
     return payload
 
 
+def _normalize_knowledge_text(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip().lower())
+
+
+def _claim_semantic_key(claim: KBDocument) -> tuple[str, str]:
+    title_key = _normalize_knowledge_text(claim.title)
+    summary_key = _normalize_knowledge_text(claim.summary)
+    if title_key or summary_key:
+        return title_key, summary_key
+    return str(claim.doc_id), ""
+
+
+def _claim_quality_rank(claim: KBDocument) -> tuple[int, float, str]:
+    level = str(claim.evidence_level or "").strip().upper()
+    return (
+        EVIDENCE_LEVEL_RANK.get(level, 0),
+        float(claim.confidence or 0),
+        str(claim.doc_id),
+    )
+
+
+def dedupe_semantic_claims(claims: list[KBDocument]) -> list[KBDocument]:
+    best_by_key: dict[tuple[str, str], KBDocument] = {}
+    for claim in claims:
+        key = _claim_semantic_key(claim)
+        current = best_by_key.get(key)
+        if current is None or _claim_quality_rank(claim) > _claim_quality_rank(current):
+            best_by_key[key] = claim
+
+    return sorted(
+        best_by_key.values(),
+        key=lambda claim: (-(claim.confidence or 0), str(claim.doc_id)),
+    )
+
+
 def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str, Any] | None:
     entity = (
         db.query(KBDocument)
@@ -241,6 +277,7 @@ def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str
             .order_by(KBDocument.confidence.desc().nullslast(), KBDocument.doc_id.asc())
             .all()
         )
+        linked_claims = dedupe_semantic_claims(linked_claims)
 
     return {
         "entity": serialize_document(entity),

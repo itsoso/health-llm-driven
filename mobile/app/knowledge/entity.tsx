@@ -35,6 +35,12 @@ const EVIDENCE_LABEL: Record<string, string> = {
   C: 'C级',
   D: 'D级',
 };
+const EVIDENCE_RANK: Record<string, number> = {
+  A: 4,
+  B: 3,
+  C: 2,
+  D: 1,
+};
 
 export default function KnowledgeEntityScreen() {
   const router = useRouter();
@@ -53,6 +59,10 @@ export default function KnowledgeEntityScreen() {
   });
 
   const entity = data?.entity;
+  const linkedClaims = useMemo(
+    () => dedupeLinkedClaims(data?.linked_claims || []),
+    [data?.linked_claims],
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -110,9 +120,9 @@ export default function KnowledgeEntityScreen() {
             </Section>
           ) : null}
 
-          {(data.linked_claims || []).length > 0 ? (
-            <Section title={`相关事实 ${data.linked_claims?.length || 0}`} styles={styles}>
-              {(data.linked_claims || []).map((claim) => (
+          {linkedClaims.length > 0 ? (
+            <Section title={`相关事实 ${linkedClaims.length}`} styles={styles}>
+              {linkedClaims.map((claim) => (
                 <ClaimRow key={claim.doc_id} claim={claim} styles={styles} />
               ))}
             </Section>
@@ -128,6 +138,37 @@ export default function KnowledgeEntityScreen() {
       )}
     </SafeAreaView>
   );
+}
+
+function normalizeKnowledgeText(value?: string | null) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function evidenceRank(level?: string | null) {
+  return EVIDENCE_RANK[String(level || '').toUpperCase()] || 0;
+}
+
+function claimQualityRank(claim: KnowledgeDocument) {
+  return evidenceRank(claim.evidence_level) * 100 + Math.round((claim.confidence || 0) * 100);
+}
+
+function dedupeLinkedClaims(claims: KnowledgeDocument[]) {
+  const bestByKey = new Map<string, KnowledgeDocument>();
+  claims.forEach((claim) => {
+    const titleKey = normalizeKnowledgeText(claim.title);
+    const summaryKey = normalizeKnowledgeText(claim.summary);
+    const key = titleKey || summaryKey ? `${titleKey}|${summaryKey}` : claim.doc_id;
+    const current = bestByKey.get(key);
+    if (!current || claimQualityRank(claim) > claimQualityRank(current)) {
+      bestByKey.set(key, claim);
+    }
+  });
+
+  return Array.from(bestByKey.values()).sort((a, b) => {
+    const confidenceDiff = (b.confidence || 0) - (a.confidence || 0);
+    if (confidenceDiff !== 0) return confidenceDiff;
+    return String(a.doc_id).localeCompare(String(b.doc_id));
+  });
 }
 
 function Section({

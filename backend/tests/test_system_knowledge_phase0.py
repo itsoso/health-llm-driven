@@ -75,6 +75,50 @@ def test_get_entity_returns_entity_page_and_linked_claims(client, db, auth_user_
     assert payload["claim_boundary"] == "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
 
 
+def test_get_entity_deduplicates_semantically_identical_claims(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    duplicate = KBDocument(
+        doc_id="claim:c_mthfr_duplicate_from_other_course",
+        doc_type="claim",
+        entity_type="gene",
+        entity_id="MTHFR",
+        title="MTHFR C677T 与叶酸转化边界",
+        summary="C677T CT/TT 用户可优先关注同型半胱氨酸、B12 与活性叶酸。",
+        body="同一语义 claim 的低等级来源副本。",
+        confidence=0.61,
+        evidence_level="C",
+        sources=["dedao:duplicate-course"],
+        last_confirmed=datetime(2026, 5, 15, tzinfo=UTC),
+        decay_rate="normal",
+    )
+    db.add(duplicate)
+    db.flush()
+    db.add(
+        KBEdge(
+            src_doc_id="entity:gene:MTHFR",
+            dst_doc_id=duplicate.doc_id,
+            relation="has_claim",
+            confidence=0.7,
+            source_claim_id=duplicate.doc_id,
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/knowledge/entity/gene/MTHFR", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    matching = [
+        claim
+        for claim in payload["linked_claims"]
+        if claim["title"] == "MTHFR C677T 与叶酸转化边界"
+    ]
+    assert [claim["doc_id"] for claim in matching] == [
+        "claim:c_mthfr_c677t_hcy_folate_boundary"
+    ]
+
+
 def test_lookup_for_twin_returns_structured_matches(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)
