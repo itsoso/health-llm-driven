@@ -269,6 +269,24 @@ function PredictionBoundaryCard({
       <Text style={[styles.predictionText, { color: c.labelTertiary }]}>
         教育: {predictions.education.message}
       </Text>
+      {predictions.learning && predictions.learning.recommendations.length > 0 && (
+        <View style={styles.learningList}>
+          <Text style={[styles.predictionText, { color: c.labelSecondary }]}>
+            学习策略: {predictions.learning.message}
+          </Text>
+          {predictions.learning.recommendations.slice(0, 3).map(item => (
+            <View key={item.title} style={[styles.learningItem, { borderColor: c.separator }]}>
+              <Text style={[styles.learningTitle, { color: c.labelPrimary }]}>{item.title}</Text>
+              <Text style={[styles.predictionText, { color: c.labelSecondary }]} numberOfLines={2}>
+                {item.actions[0]}
+              </Text>
+              <Text style={[styles.predictionText, { color: c.labelTertiary }]} numberOfLines={1}>
+                {item.related_genes.join(' / ')}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -546,6 +564,9 @@ const styles = StyleSheet.create({
   predictionRiskGene: { fontSize: 13, fontWeight: '700', width: 68 },
   predictionRiskLabel: { flex: 1, fontSize: 12 },
   predictionText: { fontSize: 12, lineHeight: 18 },
+  learningList: { gap: 6, marginTop: 4 },
+  learningItem: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 6, gap: 2 },
+  learningTitle: { fontSize: 13, fontWeight: '700' },
   chipRow: { flexGrow: 0, marginVertical: spacing.xs },
   chip: {
     paddingHorizontal: 12,

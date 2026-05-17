@@ -20,7 +20,7 @@ flowchart TD
     E --> H["Genetic predictions endpoint"]
     F --> I["Mobile gene report + SNP detail"]
     G --> J["Specialist agents"]
-    H --> K["Height marker panel / education association panel / disease screening"]
+    H --> K["Height marker panel / education association panel / learning recommendations / disease screening"]
 ```
 
 ## Core Files
@@ -78,6 +78,12 @@ Education:
 - Endpoint returns `exploratory_association` only when the user has one or more supported educational-attainment GWAS markers (`rs9320913`, `rs11584700`, `rs4851266`) in the active profile.
 - The system does not predict whether a person can attend university and does not use genetics for education/social outcome decisions.
 - The response carries `does_not_predict_college=true` and should only be displayed as a personal curiosity/knowledge panel.
+
+Learning:
+
+- Endpoint returns `learning` recommendations when the active profile contains supported cognition/learning markers such as `BDNF rs6265`, `KIBRA rs17070145`, `SNAP25 rs363050`, `ADRA2A rs1800544`, `CHRNA4 rs1044396`, `TPH2 rs4570625`, or `COMT rs4680`.
+- Recommendations are behavior strategies only: aerobic exercise, spaced retrieval, lower cognitive load, low-distraction study setup, and stress/sleep stabilization.
+- The response carries `does_not_score_ability=true`; the UI must not display an IQ/ability score or education outcome prediction.
 
 ## Mobile Function Map
 

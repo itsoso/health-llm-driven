@@ -82,6 +82,23 @@ export interface GeneticPredictions {
     does_not_predict_college?: boolean;
     markers?: TraitPredictionMarker[];
   };
+  learning?: {
+    status: 'actionable_markers' | 'no_supported_marker' | string;
+    message: string;
+    marker_count: number;
+    confidence?: 'low' | 'very_low' | string;
+    does_not_score_ability: boolean;
+    boundary?: string;
+    markers?: {
+      rsid: string | null;
+      gene: string;
+      variant_name: string | null;
+      genotype: string | null;
+      result_label: string | null;
+      risk_level: 'high' | 'medium' | 'low' | 'info';
+    }[];
+    recommendations: LearningRecommendation[];
+  };
   disease_risk: {
     status: 'screening' | 'no_data' | string;
     message: string;
@@ -96,6 +113,16 @@ export interface GeneticPredictions {
       message: string;
     }[];
   };
+}
+
+export interface LearningRecommendation {
+  title: string;
+  rationale: string;
+  actions: string[];
+  related_rsids: string[];
+  related_genes: string[];
+  evidence_level: string;
+  confidence: string;
 }
 
 export interface TraitPredictionMarker {

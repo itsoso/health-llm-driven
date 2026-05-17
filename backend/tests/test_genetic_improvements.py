@@ -235,6 +235,56 @@ def test_genetic_predictions_reports_exploratory_height_and_education_markers(cl
     assert "不能判定" in body["education"]["message"]
 
 
+def test_genetic_predictions_learning_recommendations_use_cognition_markers(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    profile = _profile(db, user.id)
+    _variant(
+        db,
+        profile,
+        rsid="rs6265",
+        category="nutrition",
+        gene_name="BDNF",
+        variant_name="记忆/学习(Val66Met)",
+        genotype="TT",
+        result_label="记忆/学习能力偏弱",
+        risk_level="medium",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs17070145",
+        category="cognition",
+        gene_name="KIBRA",
+        variant_name="情景记忆力(WWC1)",
+        genotype="TT",
+        result_label="情景记忆力偏弱",
+        risk_level="medium",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs1800544",
+        category="cognition",
+        gene_name="ADRA2A",
+        variant_name="注意力/ADHD风险",
+        genotype="GG",
+        result_label="注意力缺陷风险增高",
+        risk_level="medium",
+    )
+
+    res = client.get("/api/v1/genetic/predictions/me", headers=headers)
+
+    assert res.status_code == 200, res.text
+    learning = res.json()["learning"]
+    assert learning["status"] == "actionable_markers"
+    assert learning["marker_count"] == 3
+    titles = [item["title"] for item in learning["recommendations"]]
+    assert any("有氧运动" in title for title in titles)
+    assert any("间隔复习" in title for title in titles)
+    assert any("低干扰" in title for title in titles)
+    assert learning["does_not_score_ability"] is True
+
+
 def test_gene_config_uses_specific_gene_variants_without_overclaiming():
     from types import SimpleNamespace
 

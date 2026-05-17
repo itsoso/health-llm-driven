@@ -81,6 +81,60 @@ EDUCATION_MARKERS: tuple[TraitMarker, ...] = (
 )
 
 
+LEARNING_RULES: tuple[Dict[str, Any], ...] = (
+    {
+        "rsids": ("rs6265",),
+        "title": "用有氧运动打开学习可塑性窗口",
+        "rationale": "BDNF Val66Met 与神经可塑性和记忆相关；命中时更应该用运动、睡眠和重复练习去放大可改变部分。",
+        "actions": [
+            "每周安排 3-4 次 25-45 分钟 Zone 2 或快走/骑行。",
+            "重要学习日前避免熬夜；把新知识输入放在睡眠更稳定的时段。",
+            "高难内容先做 20-30 分钟预习, 再用短测验主动回忆。",
+        ],
+    },
+    {
+        "rsids": ("rs17070145",),
+        "title": "用间隔复习和主动回忆支撑记忆",
+        "rationale": "KIBRA/WWC1 与情景记忆相关；策略重点不是多看几遍, 而是拉开间隔并强迫自己提取。",
+        "actions": [
+            "同一知识点按 1 天、3 天、7 天、14 天做间隔复习。",
+            "每次复习先合上资料写出要点, 再对照补漏。",
+            "把长材料拆成 5-7 个问题卡, 用问题驱动复盘。",
+        ],
+    },
+    {
+        "rsids": ("rs363050",),
+        "title": "降低单次认知负荷",
+        "rationale": "SNAP25 与突触传递和认知灵活性相关；命中时更适合小步快反馈, 不适合长时间硬扛。",
+        "actions": [
+            "把学习块切成 25-40 分钟, 每块只处理一个明确问题。",
+            "每块结束写 3 行总结: 学到了什么、哪里卡住、下一步做什么。",
+            "新领域先建立术语表和概念图, 再进入细节。",
+        ],
+    },
+    {
+        "rsids": ("rs1800544", "rs1044396"),
+        "title": "建立低干扰学习环境",
+        "rationale": "ADRA2A/CHRNA4 与注意力调控相关；建议优先控制环境变量, 而不是靠意志力硬抗分心。",
+        "actions": [
+            "深度学习时关闭通知, 手机放到视线外, 只保留一个主任务窗口。",
+            "使用 25/5 或 40/10 番茄钟, 每轮结束记录完成证据。",
+            "咖啡因放在上午或学习前半段；睡眠受影响时优先降咖啡因。",
+        ],
+    },
+    {
+        "rsids": ("rs4570625", "rs4680"),
+        "title": "先稳压力和睡眠, 再堆学习时长",
+        "rationale": "TPH2/COMT 与情绪、压力和前额叶多巴胺调控相关；压力过高时学习效率比时长更先崩。",
+        "actions": [
+            "考试或高压项目前 7 天固定睡眠窗口, 不临时大幅延长学习时长。",
+            "高压学习块前做 3-5 分钟呼吸或散步, 降低启动阻力。",
+            "把任务拆到当天可完成的最小动作, 用完成率而不是焦虑感评估进展。",
+        ],
+    },
+)
+
+
 def _variant_to_risk(v: GeneticVariant) -> Dict[str, Any]:
     return {
         "rsid": v.rsid,
@@ -91,6 +145,17 @@ def _variant_to_risk(v: GeneticVariant) -> Dict[str, Any]:
         "risk_level": v.risk_level or "info",
         "evidence_level": v.evidence_level or "screening",
         "message": "筛查级遗传相关性提示；请结合体检、家族史、症状和医生判断。",
+    }
+
+
+def _variant_snapshot(v: GeneticVariant) -> Dict[str, Any]:
+    return {
+        "rsid": v.rsid,
+        "gene": v.gene_name,
+        "variant_name": v.variant_name,
+        "genotype": v.genotype,
+        "result_label": v.result_label,
+        "risk_level": v.risk_level or "info",
     }
 
 
@@ -140,6 +205,58 @@ def _trait_marker_hits(
             "note": marker.note,
         })
     return hits, favorable_count
+
+
+def _learning_recommendations(variants: list[GeneticVariant]) -> Dict[str, Any]:
+    by_rsid = _variants_by_rsid(variants)
+    learning_rsids = {
+        rsid
+        for rule in LEARNING_RULES
+        for rsid in rule["rsids"]
+    }
+    matched = [
+        by_rsid[rsid]
+        for rsid in sorted(learning_rsids)
+        if rsid in by_rsid
+    ]
+    if not matched:
+        return {
+            "status": "no_supported_marker",
+            "message": "当前没有命中已支持的学习/注意力相关 SNP；不输出学习能力判断。",
+            "marker_count": 0,
+            "recommendations": [],
+            "confidence": "low",
+            "does_not_score_ability": True,
+        }
+
+    recommendations: list[Dict[str, Any]] = []
+    for rule in LEARNING_RULES:
+        related = [by_rsid[rsid] for rsid in rule["rsids"] if rsid in by_rsid]
+        if not related:
+            continue
+        recommendations.append({
+            "title": rule["title"],
+            "rationale": rule["rationale"],
+            "actions": rule["actions"],
+            "related_rsids": [v.rsid for v in related if v.rsid],
+            "related_genes": sorted({v.gene_name for v in related if v.gene_name}),
+            "evidence_level": "screening",
+            "confidence": "low",
+        })
+
+    return {
+        "status": "actionable_markers",
+        "message": (
+            f"已命中 {len(matched)} 个学习/注意力相关 SNP。以下只作为学习策略个性化提示, "
+            "不评价智力、能力或教育结果。"
+        ),
+        "marker_count": len(matched),
+        "markers": [_variant_snapshot(v) for v in matched],
+        "recommendations": recommendations,
+        "confidence": "low",
+        "does_not_score_ability": True,
+        "boundary": "低置信度相关性 + 行为策略建议；不得用于能力评价、教育筛选或任何自动化决策。",
+    }
 
 
 def _height_prediction(variants: list[GeneticVariant]) -> Dict[str, Any]:
@@ -237,6 +354,7 @@ def build_genetic_predictions(db: Session, user_id: int) -> Dict[str, Any]:
         } if profile else None,
         "height": _height_prediction(variants),
         "education": _education_association(variants),
+        "learning": _learning_recommendations(variants),
         "disease_risk": {
             "status": "screening" if profile else "no_data",
             "message": "仅按当前命中的疾病相关位点做筛查级排序, 不是诊断或发病概率。",
