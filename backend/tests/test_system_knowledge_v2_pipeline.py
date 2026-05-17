@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from app.models.system_knowledge import KBDocument
 from app.services.system_knowledge_importer import import_system_kb_artifacts
 from app.services.system_knowledge_pipeline import (
     classify_health_source,
+    find_private_source_violations,
     scan_health_sources,
 )
 from app.services.system_knowledge_service import lookup_for_twin
@@ -73,6 +75,36 @@ def test_scan_health_sources_excludes_private_material(tmp_path):
     sources = scan_health_sources(root)
 
     assert [source.course_name for source in sources] == ["冯雪·高血糖医学课"]
+
+
+def test_find_private_source_violations_reports_private_paths_without_reading_content(tmp_path):
+    root = tmp_path / "down-dedao"
+    (root / "wiki" / "articles").mkdir(parents=True)
+    (root / "wiki" / "articles" / "personal-weight.md").write_text(
+        "体重 血糖 腰围",
+        encoding="utf-8",
+    )
+    (root / "personal" / "user-3").mkdir(parents=True)
+    (root / "personal" / "user-3" / "health-log.md").write_text(
+        "用户私有健康记录",
+        encoding="utf-8",
+    )
+    (root / "冯雪·高血糖医学课" / "MD").mkdir(parents=True)
+    (root / "冯雪·高血糖医学课" / "MD" / "01 - 血糖为什么升高？.md").write_text(
+        "血糖 体重 腰围 健康 营养",
+        encoding="utf-8",
+    )
+
+    violations = find_private_source_violations(root)
+
+    assert {violation["reason"] for violation in violations} == {
+        "private_name",
+        "private_path",
+    }
+    assert {Path(violation["path"]).name for violation in violations} == {
+        "personal-weight.md",
+        "health-log.md",
+    }
 
 
 def test_classify_health_source_returns_domain_priority():

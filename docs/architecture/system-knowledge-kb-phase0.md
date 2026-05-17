@@ -6,12 +6,15 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 
 ## 2026-05-17 Current State
 
-- Serving DB import: 206 docs / 550 edges.
+- Reviewed artifacts: 209 docs / 562 edges (`16 pages / 45 entities / 148 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
-- Crystallize: draft-only service exists; not scheduled.
+- Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
+- Privacy isolation: scanner excludes private-looking paths; `find_private_source_violations(...)` reports private material without reading content.
+- Search serving: `/knowledge/search` now fuses lexical, FTS-compatible, semantic alias, and graph streams via deterministic RRF.
+- External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
 
 ## Scope
 
@@ -58,6 +61,7 @@ flowchart TD
 - `scripts/lint_system_kb.py`: CLI lint report for orphan/stale/invalid KB content.
 - `scripts/reindex_system_kb.py`: refreshes `tsv` search text and `content_hash`.
 - `scripts/decay_system_kb_confidence.py`: applies lifecycle confidence decay to stale claims.
+- `app.tasks.system_knowledge_lifecycle`: weekly Celery task that runs lint, confidence decay, and draft-only crystallize candidate generation.
 
 ## Mobile Function Map
 
@@ -113,14 +117,14 @@ Current reviewed artifact counts:
 
 - Pages: 16
 - Entities: 45
-- Claims: 145
-- Relations: 550
+- Claims: 148
+- Relations: 562
 
 New behavior:
 
 - `GET /api/v1/knowledge/claim/{claim_id}` returns claim detail, graph neighbors, edges, and medical boundary.
 - `POST /api/v1/knowledge/claim/{claim_id}/feedback` records `feedback_disagree` in `kb_audit` so mobile evidence feedback becomes a lifecycle signal.
-- `GET /api/v1/knowledge/search` performs deterministic DB-only lexical scoring plus graph context. It is compatible with SQLite tests and production PostgreSQL; later FTS/vector/RRF can replace the scorer without changing response shape.
+- `GET /api/v1/knowledge/search` performs deterministic DB-only lexical scoring, precomputed `tsv` FTS-compatible scoring, semantic alias scoring, and one-hop graph context through RRF. It is compatible with SQLite tests and production PostgreSQL; a real embedding backend can replace the alias stream without changing response shape.
 - `GET /api/v1/admin/knowledge/lint_report` reports orphan entities, orphan claims, invalid `applies_when`, and stale claims.
 - `POST /api/v1/admin/knowledge/reindex` refreshes `kb_documents.tsv` and SHA-256 `content_hash`.
 - `apply_confidence_decay(...)` and `scripts/decay_system_kb_confidence.py` implement the first lifecycle hook for stale claim confidence decay.
@@ -142,17 +146,18 @@ New ingest behavior:
 - Existing reviewed claims are not superseded by draft ingest output; possible overlaps are marked as `candidate_duplicates`.
 - Legacy or draft claims may be superseded with an explicit archived copy and metadata trail.
 
-First scaled run:
+Current reviewed artifact run:
 
 - Source root: `/Users/liqiuhua/work/personal/down-dedao`
 - Courses selected: 冯雪科学减肥、冯雪家庭健康管理、冯雪高血压/高血糖/高血脂/高尿酸、仝卿营养、仇子龙基因、王家伟用药、给忙碌者糖尿病、前沿人体微生物组、薄世宁医学通识、怎样获得高质量睡眠。
-- Sources compiled: 13
-- Claims added: 129
-- Entities added: 9
-- Pages added: 4
-- Relations added: 503
+- Sources compiled: 10
+- Claims: 148
+- Entities: 45
+- Pages: 16
+- Relations: 562
 - Claims superseded: 0
+- Selected high-risk claims now include external PubMed/guideline metadata while keeping paid-course text out of artifacts.
 
 ## Next Interfaces
 
-Next work should keep widening the reviewed artifact corpus with more topic templates or a governed LLM extraction pass. The main remaining product work is stronger specialist evidence enforcement, deeper PostgreSQL FTS/vector hybrid search, private-vault cleanup for personal wiki pages, and reviewer workflows for claim approval/supersession.
+Next work should keep widening the reviewed artifact corpus with more topic templates or a governed LLM extraction pass. The main remaining product work is a real admin KB operations dashboard, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.

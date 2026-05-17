@@ -1,5 +1,5 @@
 {
-  "compiled_at": "2026-05-17T02:30:10.435813+00:00",
+  "compiled_at": "2026-05-17T08:16:30.480499+00:00",
   "counts": {
     "claims": 148,
     "entities": 45,
@@ -7,11 +7,11 @@
     "relations": 562
   },
   "diff": {
-    "claims_added": 3,
+    "claims_added": 0,
     "claims_superseded": 0,
     "entities_added": 0,
     "pages_added": 0,
-    "relations_added": 12
+    "relations_added": 0
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",
@@ -138,10 +138,10 @@
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "protocol": "akbp",
   "review": {
-    "documents_reviewed": 209,
+    "documents_reviewed": 134,
     "from_status": "draft",
-    "relations_reviewed": 562,
-    "reviewed_at": "2026-05-17T02:30:23.001479+00:00",
+    "relations_reviewed": 366,
+    "reviewed_at": "2026-05-17T08:16:45.202150+00:00",
     "reviewer": "owner-reviewed-2026-05-17",
     "status": "reviewed"
   },

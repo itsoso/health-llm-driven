@@ -225,6 +225,8 @@ def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_use
     assert "entity:gene:MTHFR" in result_ids
     assert "claim:c_mthfr_c677t_hcy_folate_boundary" in result_ids
     assert payload["graph_context"]["edges"][0]["relation"] == "has_claim"
+    assert {"lexical", "fts"} <= set(payload["retrieval_plan"]["channels"])
+    assert {"lexical", "fts"} <= set(payload["results"][0]["retrieval"]["channels"])
 
 
 def test_search_knowledge_promotes_graph_neighbors_into_results(client, db, auth_user_and_headers):
@@ -269,6 +271,28 @@ def test_search_knowledge_promotes_graph_neighbors_into_results(client, db, auth
     )
     assert "graph" in graph_result["retrieval"]["channels"]
     assert graph_result["retrieval"]["graph_distance"] == 1
+
+
+def test_search_knowledge_uses_semantic_alias_channel(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+
+    response = client.get(
+        "/api/v1/knowledge/search",
+        headers=headers,
+        params={"q": "homocysteine", "limit": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    claim_result = next(
+        item
+        for item in payload["results"]
+        if item["document"]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"
+    )
+    assert "vector" in claim_result["retrieval"]["channels"]
+    assert claim_result["retrieval"]["vector_score"] > 0
+    assert payload["retrieval_plan"]["vector_backend"] == "alias_overlap_v1"
 
 
 def test_admin_lint_report_flags_orphans_and_invalid_conditions(client, db, auth_user_and_headers):

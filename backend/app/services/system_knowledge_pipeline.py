@@ -121,6 +121,38 @@ class HealthSource:
     file_count: int
 
 
+def find_private_source_violations(source_root: str | Path) -> list[dict[str, str]]:
+    """Report private-looking source files before system-KB ingestion.
+
+    The guard intentionally uses path metadata only. It does not read file
+    contents, so a private vault can be detected without copying sensitive text
+    into logs, artifacts, or LLM prompts.
+    """
+
+    root = Path(source_root)
+    if not root.exists():
+        return []
+
+    violations: list[dict[str, str]] = []
+    for path in sorted(root.rglob("*"), key=lambda item: str(item.relative_to(root))):
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            continue
+        relative_parts = path.relative_to(root).parts
+        private_parts = [part for part in relative_parts if _is_private_name(part)]
+        if not private_parts:
+            continue
+        reason = "private_name" if _is_private_name(path.name) else "private_path"
+        violations.append(
+            {
+                "path": str(path),
+                "relative_path": str(path.relative_to(root)),
+                "reason": reason,
+                "matched": private_parts[-1],
+            }
+        )
+    return violations
+
+
 def classify_health_source(course_name: str, file_names: list[str] | None = None) -> ClassifiedSource:
     file_names = file_names or []
     strong_course_match = course_name in PRIORITY_COURSES or any(

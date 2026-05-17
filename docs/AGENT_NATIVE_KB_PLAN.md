@@ -9,14 +9,16 @@
 
 ## 2026-05-17 Current State
 
-- Serving DB import: 206 docs / 550 edges.
+- Reviewed artifacts: 209 docs / 562 edges (`16 pages / 45 entities / 148 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
-- Crystallize: draft-only service exists; not scheduled.
+- Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback and entity deep-link pages.
-- Search serving: `/knowledge/search` now fuses lexical DB matches with one-hop graph expansion via deterministic reciprocal-rank fusion; vector retrieval and PostgreSQL FTS remain later upgrades.
+- Search serving: `/knowledge/search` now fuses lexical DB matches, FTS-compatible `tsv`, semantic alias retrieval, and one-hop graph expansion via deterministic reciprocal-rank fusion.
+- Privacy isolation: source scanner excludes private-looking paths and `find_private_source_violations(...)` reports private material without reading content.
+- External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline references in `metadata.external_sources`.
 
 ---
 
@@ -33,10 +35,10 @@ WSCLA 北极星里的 "Safe" 这个字，依赖于知识库——没有结构化
 | 层 | 现状 | 问题 |
 |---|---|---|
 | 原始素材 | `~/work/personal/down-dedao/raw/` 已有 160+ 门课程、10000+ 课时（健康类约 30 门） | 全是叙事文本，无结构化抽取 |
-| Wiki | `wiki/AK-INDEX.md` `wiki/domains/` `wiki/concepts/` `wiki/articles/` 已有骨架，303 篇 md | 个人化文章 (`personal-*`) 与系统知识混在一起；无 entity / claim 分层；无 confidence / evidence_level |
+| Wiki | `wiki/AK-INDEX.md` `wiki/domains/` `wiki/concepts/` `wiki/articles/` 已有骨架，303 篇 md | Serving plane 已用 reviewed JSONL artifacts 承接 entity/claim；scanner 会排除 private/personal/user-* 路径 |
 | 后端检索 | `KnowledgeLibrarian` specialist + ChromaDB 一个 collection | 纯 keyword/embedding 模糊匹配，对 Twin 里的 `MTHFR_C677T = "TT"` 这种结构化事实没法精确反查 |
 | 消费端 | Specialist 输出建议 + KnowledgeLibrarian 输出引用，**并排两份 finding**，由 LLM 合成时拼接 | 引用经常和具体建议对不上号；Mobile UI 没有"看证据"入口 |
-| 隔离 | `wiki/articles/personal-*.md` 10 篇是 user_id=3 的私人健康分析 | 不该进系统级 KB（V2 §consolidation tiers：working memory ≠ semantic memory） |
+| 隔离 | 私人 episode 不进入 system KB | `find_private_source_violations(...)` 可报告路径风险；用户对话只进 user memory/crystallize draft |
 
 ### 1.3 这次设计要解决的 4 件事
 
@@ -57,7 +59,7 @@ WSCLA 北极星里的 "Safe" 这个字，依赖于知识库——没有结构化
 | 用户私人 episode | `~/.health-llm/private-vault/user-{id}/` 或后端 `user_episode_memory` 表 | 否 | 仅当前用户 |
 | 多用户聚合洞见 | crystallize.py 自动产 system claim PR | 是（人工 review 后） | 是 |
 
-**首要动作**：把现有的 10 篇 `wiki/articles/personal-*.md` 全部迁出 `down-dedao/wiki/`，搬到 `~/.health-llm/private-vault/user-3/`，git rm。
+**当前动作**：系统 KB 扫描器已经排除 `personal/private/私人/个人/用户/user-*` 路径；本地如再出现 `wiki/articles/personal-*.md`，先用 `find_private_source_violations(...)` 报告，再迁到 `~/.health-llm/private-vault/user-3/`。
 
 ### D2 — Entity-first，不是 page-first
 
@@ -348,7 +350,7 @@ ChromaDB 拆 3 个 collection：`kb_entities` / `kb_claims` / `kb_articles`，�
 ### Phase 0 — 隔离 + Schema（**1 周**，立即开始）
 
 - [ ] 写 `down-dedao/wiki/WIKI_SCHEMA.md`（agent 宪法，§4 大纲）
-- [ ] 把 `wiki/articles/personal-*.md` 10 篇迁到 `~/.health-llm/private-vault/user-3/`，git rm
+- [x] 增加 private/personal/user-* 扫描隔离和报告；本地当前未发现可迁出的 `personal-*` 文件
 - [ ] 建 `wiki/entities/{gene,snp,nutrient,supplement,biomarker,condition,drug}/` 骨架，每型 1-2 个示范页
 - [ ] 手写 5 条样板 claim：MTHFR / APOE / FTO / ACTN3 / ALDH2
 - [ ] 后端 migration：建 `kb_documents` / `kb_edges` / `kb_audit` 三表
@@ -440,7 +442,7 @@ ChromaDB 拆 3 个 collection：`kb_entities` / `kb_claims` / `kb_articles`，�
 ## 12. 立即下一步（本周 5 个动作）
 
 1. 写 `wiki/WIKI_SCHEMA.md`（Agent 宪法，1 天）
-2. 迁 `wiki/articles/personal-*.md` 出 system KB（30 分钟，git mv + commit）
+2. 运行 private source violation 检查；若发现 `wiki/articles/personal-*.md`，迁出到 private vault
 3. 建 `wiki/entities/{7 子目录}/` + 每型 1 个示范页（半天）
 4. 手写 5 条样板 claim（半天，亲自写以 calibrate Phase 1 的 LLM ingest prompt）
 5. 后端 migration：3 表上线 + 一次性同步样板（1 天）
@@ -464,7 +466,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
    `down-dedao/wiki` 是离线 authoring/compiler plane；`health-llm-driven/backend/data/system_kb_v2_seed` 和 PostgreSQL 是 serving plane。计划里的“建 wiki/entities/claims 文件树”有价值，但线上产品验收应以 artifacts、DB、API、Agent、Mobile 是否闭环为准。
 
 3. **Phase 2 比继续扩课更紧急**  
-   当前已有 145 条 claim 和 550 条边，但如果 KnowledgeLibrarian、Specialist、Mobile 不能稳定消费，继续扩到 300/700 条只会增加治理负担。短期优先级应是“每条建议能看到 evidence_refs、可点开、可反馈不对”。
+   当前已有 148 条 claim 和 562 条边，但如果 KnowledgeLibrarian、Specialist、Mobile 不能稳定消费，继续扩到 300/700 条只会增加治理负担。短期优先级应是“每条建议能看到 evidence_refs、可点开、可反馈不对”。
 
 ### 13.2 当前真实进度
 
@@ -473,19 +475,19 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | System KB tables | 已有 `kb_documents/kb_edges/kb_audit` | 完成 |
 | Artifact import | 已有 reviewed JSONL import，部署自动导入 | 完成 |
 | Dedao ingest | 已有 dry-run/`--write` deterministic pipeline | 部分完成，不是完整 LLM claim mining |
-| Corpus coverage | 16 pages / 45 entities / 145 claims / 550 relations | 超过最小闭环，未达 300 claim / 80 entity |
+| Corpus coverage | 16 pages / 45 entities / 148 claims / 562 relations | 超过最小闭环，未达 300 claim / 80 entity |
 | KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，旧 Chroma fallback | 本轮补齐 |
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着，specialist schema 未强制 | 部分完成 |
 | Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
-| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status | 部分完成，缺 scheduled self-healing/crystallize |
-| Privacy isolation | `down-dedao/wiki/articles/personal-*.md` 仍存在 | 未完成 |
+| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft | 基本完成，缺 admin 操作面 |
+| Privacy isolation | scanner 排除 private/personal/user-*，并提供 violation report | 完成最小治理闭环 |
 
 ### 13.3 修订后的执行顺序
 
 #### P0：治理收口（优先）
 
-- 迁出 `down-dedao/wiki/articles/personal-*.md` 到 private vault，系统 KB 不再混入 user_id=3 私人健康分析。
+- 持续运行 private source violation 检查；如发现 `down-dedao/wiki/articles/personal-*.md`，迁到 private vault，系统 KB 不混入用户私人健康分析。
 - 补齐 `down-dedao/wiki/entities/{snp,nutrient,condition,drug}` 骨架，但不要把它作为线上验收阻塞项。
 - 给 reviewed artifacts 增加 review 状态统计：`draft/reviewed/needs_review/archived`。
 
@@ -497,7 +499,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 
 #### P2：扩展知识库（中期）
 
-- 目标先从 145 claims 扩到 300 claims、45 entities 扩到 80 entities。
+- 目标先从 148 claims 扩到 300 claims、45 entities 扩到 80 entities。
 - 优先扩：高血压、高血脂、高血糖、高尿酸、糖尿病、营养、用药安全、睡眠恢复。
 - 暂不追求 160+ 门全量课程，避免噪音和 review 队列失控。
 

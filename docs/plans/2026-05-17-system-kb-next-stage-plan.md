@@ -12,27 +12,28 @@
 
 ## Current Baseline
 
-Latest relevant commit: `abcd0af7 feat(kb): complete wiki v2 authoring workflow`.
+Latest relevant implementation pass: 2026-05-17 system KB governance/retrieval update.
 
 Already done:
 
 - System KB tables and artifact import path are live.
-- Deployment imports `206 documents, 550 edges`.
+- Reviewed artifacts contain `209 documents, 562 edges` (`16 pages / 45 entities / 148 claims / 562 relations`) and are imported on backend deploy.
 - `/api/v1/knowledge/entity/...`, `/claim/...`, `/search`, `/lookup_for_twin` exist.
 - `/api/v1/admin/knowledge/lint_report` exists and now flags orphan, invalid condition, stale claim, invalid review status, contradiction.
 - `/api/v1/admin/knowledge/coverage_report` exists for evidence coverage and unsupported findings.
 - Deterministic Dedao ingest exists via `backend/scripts/ingest_course.py` and older `backend/scripts/ingest_dedao_system_kb.py`.
 - Artifact review promotion exists via `promote_artifact_review_status`.
-- Crystallized claim candidate drafting exists in `backend/app/services/system_knowledge_crystallize.py`, but it is not yet scheduled or wired into admin review.
+- Crystallized claim candidate drafting exists in `backend/app/services/system_knowledge_crystallize.py` and runs draft-only from the weekly `system-kb-lifecycle` Celery job.
+- Privacy isolation guard exists in `find_private_source_violations(...)`; ingestion scanner excludes private-looking paths without reading their contents.
+- `/knowledge/search` now returns lexical, FTS-compatible, semantic alias, and graph channels in a stable response shape.
 
 Main remaining gaps:
 
 - Corpus breadth is still under the original 300 claim / 80 entity target.
-- Specialist evidence is attached opportunistically, not enforced as a product contract.
+- Specialist evidence is attached and measured as a product contract through `evidence_refs`, `unsupported`, and coverage-rate metrics.
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has API metrics, but not a real KB operations dashboard.
-- System KB lifecycle is not yet its own Celery task; existing `memory_lifecycle` handles user memory, not global KB lint/decay/crystallize reports.
-- External second-source evidence such as PubMed/Examine is not integrated into high-risk claims.
+- External second-source evidence now exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), but coverage is still partial.
 
 ---
 
@@ -54,12 +55,12 @@ Update each doc with a dated `2026-05-17 Current State` section:
 ```markdown
 ## 2026-05-17 Current State
 
-- Serving DB import: 206 docs / 550 edges.
+- Reviewed artifacts: 209 docs / 562 edges.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
-- Crystallize: draft-only service exists; not scheduled.
+- Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 ```
 
 **Step 2: Verify no stale status remains**

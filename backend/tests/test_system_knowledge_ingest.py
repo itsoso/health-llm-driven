@@ -135,6 +135,9 @@ def test_compile_dedao_ingest_artifacts_generates_diabetes_recheck_loop(tmp_path
     assert claim["entity_type"] == "condition"
     assert claim["entity_id"] == "glycemic-risk"
     assert "entity:biomarker:HbA1c" in claim["recommends_lookup"]
+    assert "guideline:ada-standards-of-care-diabetes-2026" in claim["sources"]
+    assert claim["metadata"]["external_sources"][0]["source"] == "guideline:ada-standards-of-care-diabetes-2026"
+    assert claim["metadata"]["external_sources"][0]["review_status"] == "reviewed"
 
 
 def test_compile_dedao_ingest_artifacts_generates_drug_interaction_review(tmp_path):
@@ -158,6 +161,35 @@ def test_compile_dedao_ingest_artifacts_generates_drug_interaction_review(tmp_pa
     assert claim["entity_type"] == "intervention"
     assert claim["entity_id"] == "medication-review"
     assert "interaction_check" in claim["metadata"]["safety_tags"]
+
+
+def test_compile_dedao_ingest_artifacts_adds_external_references_for_genetic_boundary(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "仇子龙·基因科学20讲" / "MD"
+    course.mkdir(parents=True)
+    (course / "07 - MTHFR 与一碳代谢.md").write_text(
+        "MTHFR、C677T、叶酸、一碳代谢、甲基化和 Hcy。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["仇子龙·基因科学20讲"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    claim = next(claim for claim in result.claims if claim["doc_id"].endswith("_mthfr_boundary"))
+    assert "pubmed:19033271" in claim["sources"]
+    external = claim["metadata"]["external_sources"]
+    assert external == [
+        {
+            "source": "pubmed:19033271",
+            "kind": "research",
+            "review_status": "reviewed",
+            "note": "MTHFR C677T should be interpreted with folate, B12, and homocysteine context.",
+        }
+    ]
 
 
 def test_drug_interaction_review_does_not_match_sleep_course_even_with_interaction_terms(tmp_path):

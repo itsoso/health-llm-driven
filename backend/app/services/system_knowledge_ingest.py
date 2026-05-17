@@ -41,6 +41,7 @@ class ClaimTemplate:
     decay_rate: str = "normal"
     relation_confidence: float = 0.82
     safety_tags: tuple[str, ...] = ()
+    external_sources: tuple[dict[str, str], ...] = ()
 
 
 @dataclass
@@ -428,6 +429,14 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         confidence=0.76,
         decay_rate="slow",
         safety_tags=("recheck_loop", "medical_boundary"),
+        external_sources=(
+            {
+                "source": "guideline:ada-standards-of-care-diabetes-2026",
+                "kind": "guideline",
+                "review_status": "reviewed",
+                "note": "HbA1c and fasting glucose fit medium-cycle glycemic follow-up, not single-point self-diagnosis.",
+            },
+        ),
     ),
     ClaimTemplate(
         topic_id="post_meal_glucose",
@@ -580,6 +589,14 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         evidence_level="B",
         confidence=0.72,
         safety_tags=("no_medication_adjustment",),
+        external_sources=(
+            {
+                "source": "guideline:acc-aha-cholesterol-management",
+                "kind": "guideline",
+                "review_status": "reviewed",
+                "note": "Statin initiation, stopping, and dose decisions require clinician-led risk assessment.",
+            },
+        ),
     ),
     ClaimTemplate(
         topic_id="medical_boundary",
@@ -623,6 +640,14 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         evidence_level="C",
         confidence=0.66,
         safety_tags=("genetic_boundary",),
+        external_sources=(
+            {
+                "source": "pubmed:19033271",
+                "kind": "research",
+                "review_status": "reviewed",
+                "note": "MTHFR C677T should be interpreted with folate, B12, and homocysteine context.",
+            },
+        ),
     ),
     ClaimTemplate(
         topic_id="apoe_lipid_boundary",
@@ -637,6 +662,14 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         evidence_level="C",
         confidence=0.64,
         safety_tags=("genetic_boundary",),
+        external_sources=(
+            {
+                "source": "pubmed:23400713",
+                "kind": "research",
+                "review_status": "reviewed",
+                "note": "APOE interpretation should be anchored to lipid markers and clinical risk context.",
+            },
+        ),
     ),
     ClaimTemplate(
         topic_id="gene_pharmacogenomics_boundary",
@@ -990,6 +1023,9 @@ def _claim_for_template(template: ClaimTemplate, source_key: str, now: datetime)
     }
     if template.safety_tags:
         metadata["safety_tags"] = list(template.safety_tags)
+    if template.external_sources:
+        metadata["external_sources"] = [dict(source) for source in template.external_sources]
+    sources = [source_key, *[source["source"] for source in metadata.get("external_sources", [])]]
     return {
         "doc_id": claim_id,
         "doc_type": "claim",
@@ -1002,7 +1038,7 @@ def _claim_for_template(template: ClaimTemplate, source_key: str, now: datetime)
         "evidence_level": template.evidence_level,
         "applies_when": list(template.applies_when),
         "recommends_lookup": list(template.recommends_lookup),
-        "sources": [source_key],
+        "sources": sources,
         "last_confirmed": now.isoformat(),
         "decay_rate": template.decay_rate,
         "supersedes": [],

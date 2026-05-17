@@ -308,10 +308,11 @@ def search_knowledge(
 ) -> dict[str, Any]:
     """DB-backed hybrid search for the serving KB.
 
-    The first serving implementation stays DB-only so it works with both local
-    SQLite tests and production PostgreSQL. It fuses lexical matches with
-    one-hop graph expansion using reciprocal-rank fusion. A later vector stream
-    can be added without changing the response shape.
+    The serving implementation stays DB-only so it works with both local
+    SQLite tests and production PostgreSQL. It fuses lexical, precomputed FTS
+    text, semantic-alias, and one-hop graph streams using reciprocal-rank
+    fusion. Production PostgreSQL can replace the alias stream with embeddings
+    later without changing the response shape.
     """
 
     normalized_query = (query or "").strip()
@@ -327,14 +328,29 @@ def search_knowledge(
     documents_by_id = {document.doc_id: document for document in documents}
 
     lexical_ranked: list[tuple[float, KBDocument]] = []
+    fts_ranked: list[tuple[float, KBDocument]] = []
+    vector_ranked: list[tuple[float, KBDocument]] = []
+    semantic_terms = _semantic_query_terms(normalized_query)
     for document in documents:
         score = _score_document(document, terms)
         if score > 0 or not terms:
             lexical_ranked.append((score, document))
+        fts_score = _score_precomputed_search_text(document, terms)
+        if fts_score > 0 or not terms:
+            fts_ranked.append((fts_score, document))
+        vector_score = _score_document(document, semantic_terms)
+        if vector_score > 0 and semantic_terms:
+            vector_ranked.append((vector_score, document))
 
     lexical_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
+    fts_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
+    vector_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
     seed_limit = max(1, min(max(limit, 10), 50))
-    seed_ids = {document.doc_id for _score, document in lexical_ranked[:seed_limit]}
+    seed_ids = {
+        document.doc_id
+        for ranked in (lexical_ranked, fts_ranked, vector_ranked)
+        for _score, document in ranked[:seed_limit]
+    }
     edges = []
     neighbors: list[KBDocument] = []
     graph_ranked: list[tuple[float, KBDocument]] = []
@@ -348,7 +364,6 @@ def search_knowledge(
         neighbor_ids = {
             edge.dst_doc_id if edge.src_doc_id in seed_ids else edge.src_doc_id
             for edge in edges
-            if edge.src_doc_id not in seed_ids or edge.dst_doc_id not in seed_ids
         }
         if neighbor_ids:
             neighbors = (
@@ -359,8 +374,6 @@ def search_knowledge(
             )
             for edge in edges:
                 neighbor_id = edge.dst_doc_id if edge.src_doc_id in seed_ids else edge.src_doc_id
-                if neighbor_id in seed_ids:
-                    continue
                 document = documents_by_id.get(neighbor_id)
                 if document is None:
                     continue
@@ -376,7 +389,13 @@ def search_knowledge(
                     meta["relations"].append(edge.relation)
             graph_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
 
-    fused = _fuse_search_rankings(lexical_ranked, graph_ranked, graph_meta_by_doc)
+    fused = _fuse_search_rankings(
+        lexical_ranked,
+        fts_ranked,
+        vector_ranked,
+        graph_ranked,
+        graph_meta_by_doc,
+    )
     selected = fused[: max(1, min(limit, 50))]
 
     return {
@@ -392,6 +411,11 @@ def search_knowledge(
         "graph_context": {
             "edges": [_serialize_edge(edge) for edge in edges],
             "neighbors": [serialize_document(neighbor) for neighbor in neighbors],
+        },
+        "retrieval_plan": {
+            "channels": ["lexical", "fts", "vector", "graph"],
+            "fts_backend": "postgres_tsv_or_precomputed_text",
+            "vector_backend": "alias_overlap_v1",
         },
         "claim_boundary": CLAIM_BOUNDARY,
     }
@@ -930,6 +954,23 @@ def _score_document(document: KBDocument, terms: list[str]) -> float:
     return score
 
 
+def _score_precomputed_search_text(document: KBDocument, terms: list[str]) -> float:
+    if not terms:
+        return 1.0 + float(document.confidence or 0.0) * 0.1
+    text = (document.tsv or _document_search_text(document)).lower()
+    score = 0.0
+    for term in terms:
+        if term in text:
+            score += 1.0 + min(text.count(term), 5) * 0.1
+    if score <= 0:
+        return 0.0
+    if document.doc_type == "claim":
+        score += 0.15
+    if document.confidence:
+        score += float(document.confidence) * 0.05
+    return score
+
+
 def _query_terms(query: str) -> list[str]:
     """Tokenize mixed Chinese/English KB queries without external deps."""
 
@@ -951,8 +992,47 @@ def _query_terms(query: str) -> list[str]:
     return terms
 
 
+SEMANTIC_QUERY_ALIASES = {
+    "homocysteine": ("hcy", "同型半胱氨酸"),
+    "hcy": ("homocysteine", "同型半胱氨酸"),
+    "folate": ("叶酸", "5-mthf", "mthfr"),
+    "methylfolate": ("5-mthf", "活性叶酸", "叶酸"),
+    "ldl": ("ldl-c", "低密度脂蛋白", "胆固醇"),
+    "ldl-c": ("ldl", "低密度脂蛋白", "胆固醇"),
+    "apob": ("apo b", "载脂蛋白b", "血脂"),
+    "hba1c": ("糖化血红蛋白", "血糖"),
+    "glucose": ("血糖", "空腹血糖", "餐后血糖"),
+    "sleep": ("睡眠", "恢复"),
+    "recovery": ("恢复", "睡眠", "hrv"),
+    "statin": ("他汀", "降脂药", "ldl-c"),
+    "metformin": ("二甲双胍", "降糖药", "血糖"),
+    "mthfr": ("叶酸", "同型半胱氨酸", "hcy"),
+    "apoe": ("血脂", "ldl-c", "胆固醇"),
+}
+
+
+def _semantic_query_terms(query: str) -> list[str]:
+    terms = _query_terms(query)
+    seen = set(terms)
+    expanded = list(terms)
+    for term in terms:
+        for alias in SEMANTIC_QUERY_ALIASES.get(term, ()):
+            value = alias.strip().lower()
+            if value and value not in seen:
+                seen.add(value)
+                expanded.append(value)
+                for subterm in _query_terms(value):
+                    if subterm in seen:
+                        continue
+                    seen.add(subterm)
+                    expanded.append(subterm)
+    return expanded
+
+
 def _fuse_search_rankings(
     lexical_ranked: list[tuple[float, KBDocument]],
+    fts_ranked: list[tuple[float, KBDocument]],
+    vector_ranked: list[tuple[float, KBDocument]],
     graph_ranked: list[tuple[float, KBDocument]],
     graph_meta_by_doc: dict[str, dict[str, Any]],
 ) -> list[tuple[float, KBDocument, dict[str, Any]]]:
@@ -974,6 +1054,8 @@ def _fuse_search_rankings(
                 "score": 0.0,
                 "channels": set(),
                 "lexical_score": None,
+                "fts_score": None,
+                "vector_score": None,
                 "graph_score": None,
                 "graph_distance": None,
                 "relations": [],
@@ -985,6 +1067,18 @@ def _fuse_search_rankings(
         entry["score"] += 1.0 / (rrf_k + rank)
         entry["channels"].add("lexical")
         entry["lexical_score"] = round(score, 4)
+
+    for rank, (score, document) in enumerate(fts_ranked, start=1):
+        entry = _entry(document)
+        entry["score"] += 1.0 / (rrf_k + rank)
+        entry["channels"].add("fts")
+        entry["fts_score"] = round(score, 4)
+
+    for rank, (score, document) in enumerate(vector_ranked, start=1):
+        entry = _entry(document)
+        entry["score"] += 1.0 / (rrf_k + rank)
+        entry["channels"].add("vector")
+        entry["vector_score"] = round(score, 4)
 
     for rank, (score, document) in enumerate(graph_ranked, start=1):
         entry = _entry(document)
@@ -1001,6 +1095,8 @@ def _fuse_search_rankings(
         retrieval = {
             "channels": channels,
             "lexical_score": entry["lexical_score"],
+            "fts_score": entry["fts_score"],
+            "vector_score": entry["vector_score"],
             "graph_score": entry["graph_score"],
             "graph_distance": entry["graph_distance"],
             "relations": entry["relations"],
