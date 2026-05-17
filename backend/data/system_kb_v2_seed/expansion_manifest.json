@@ -1,0 +1,22 @@
+{
+  "copyright_policy": "Only transformed short claims and source references are stored; no paid-course long text is served.",
+  "priority_courses": [
+    "仇子龙·基因科学20讲",
+    "仝卿·营养科学20讲",
+    "王家伟·日常用药健康课",
+    "冯雪·高血压医学课",
+    "冯雪·高血脂医学课",
+    "冯雪·高血糖医学课",
+    "冯雪·高尿酸医学课",
+    "给忙碌者的糖尿病医学课",
+    "薄世宁·医学通识50讲",
+    "怎样获得高质量睡眠"
+  ],
+  "review_policy": "All generated artifacts remain draft until promoted by human reviewer.",
+  "target_counts": {
+    "claims": 300,
+    "entities": 80,
+    "relations": 800
+  },
+  "version": "2026-05-17"
+}

@@ -3,6 +3,15 @@
 日期：2026-05-16  
 状态：已上线 Phase 0 + Phase 1a/1b serving slice；Phase 1c Dedao ingest pipeline + 首轮课程规模化 artifacts 已接入
 
+## 2026-05-17 Current State
+
+- Serving DB import: 206 docs / 550 edges.
+- Ingest authoring CLI: `backend/scripts/ingest_course.py`.
+- Review promotion: `promote_artifact_review_status`.
+- Admin lint: contradiction + invalid review status included.
+- Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
+- Crystallize: draft-only service exists; not scheduled.
+
 ## 结论
 
 基于 `/Users/liqiuhua/work/personal/down-dedao` 的系统级知识库已经搭起来了，但当前不是“把所有得到课程全文直接塞进线上 RAG”。当前上线的是更克制的 LLM Wiki V2 serving slice + deterministic ingest pipeline：

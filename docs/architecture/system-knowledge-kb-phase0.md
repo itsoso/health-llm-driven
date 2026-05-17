@@ -4,6 +4,15 @@ Date: 2026-05-16
 
 This document records the implemented vertical slice for the LLM Wiki v2 system knowledge base.
 
+## 2026-05-17 Current State
+
+- Serving DB import: 206 docs / 550 edges.
+- Ingest authoring CLI: `backend/scripts/ingest_course.py`.
+- Review promotion: `promote_artifact_review_status`.
+- Admin lint: contradiction + invalid review status included.
+- Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
+- Crystallize: draft-only service exists; not scheduled.
+
 ## Scope
 
 Phase 0 makes reviewed system knowledge addressable by structured entity and claim IDs. The follow-on Phase 1a extension adds a reviewed JSONL artifact import path and expands the seed corpus across metabolic health, nutrition, sleep/recovery, movement, blood pressure, lipids, blood sugar, uric acid, and medication safety. Phase 1b adds DB-backed search, claim detail, admin lint/reindex, confidence decay, specialist `evidence_refs`, and an `aging_hallmark` taxonomy layer. Phase 1c adds the deterministic Dedao ingest pipeline, PR-style diff review flow, conflict/supersession guardrails, and the first scaled Dedao corpus expansion. User conversations remain outside the system KB.

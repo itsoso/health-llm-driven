@@ -1,0 +1,12 @@
+{
+  "artifact_dir": "/Users/liqiuhua/work/personal/health-llm-driven/backend/data/system_kb_v2_seed",
+  "claims_reviewed": 148,
+  "documents_reviewed": 209,
+  "entities_reviewed": 45,
+  "from_status": "draft",
+  "pages_reviewed": 16,
+  "relations_reviewed": 562,
+  "reviewed_at": "2026-05-17T02:30:23.001479+00:00",
+  "reviewer": "owner-reviewed-2026-05-17",
+  "to_status": "reviewed"
+}

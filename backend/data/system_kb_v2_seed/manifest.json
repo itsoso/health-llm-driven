@@ -1,22 +1,22 @@
 {
-  "compiled_at": "2026-05-16T12:46:45.965643+00:00",
+  "compiled_at": "2026-05-17T02:30:10.435813+00:00",
   "counts": {
-    "claims": 145,
+    "claims": 148,
     "entities": 45,
     "pages": 16,
-    "relations": 550
+    "relations": 562
   },
   "diff": {
-    "claims_added": 129,
+    "claims_added": 3,
     "claims_superseded": 0,
-    "entities_added": 9,
-    "pages_added": 4,
-    "relations_added": 503
+    "entities_added": 0,
+    "pages_added": 0,
+    "relations_added": 12
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",
-    "review_status": "draft",
-    "source_count": 13,
+    "review_status": "reviewed",
+    "source_count": 10,
     "sources": [
       {
         "claims_generated": 7,
@@ -42,19 +42,6 @@
         "source_key": "dedao:tongqing-nutrition-20"
       },
       {
-        "claims_generated": 16,
-        "course_name": "冯雪·科学减肥16讲",
-        "domains": [
-          "metabolic_health",
-          "nutrition",
-          "medication_safety",
-          "movement",
-          "mental_health"
-        ],
-        "lessons_read": 36,
-        "source_key": "dedao:fengxue-weight-loss"
-      },
-      {
         "claims_generated": 14,
         "course_name": "冯雪·高尿酸医学课",
         "domains": [
@@ -77,7 +64,7 @@
         "source_key": "dedao:fengxue-gaoxueya-yixueke"
       },
       {
-        "claims_generated": 14,
+        "claims_generated": 15,
         "course_name": "冯雪·高血糖医学课",
         "domains": [
           "metabolic_health",
@@ -102,7 +89,7 @@
         "source_key": "dedao:fengxue-gaoxuezhi-yixueke"
       },
       {
-        "claims_generated": 2,
+        "claims_generated": 3,
         "course_name": "王家伟·日常用药健康课",
         "domains": [
           "medication_safety",
@@ -112,7 +99,7 @@
         "source_key": "dedao:wangjiawei-medication-safety"
       },
       {
-        "claims_generated": 10,
+        "claims_generated": 11,
         "course_name": "给忙碌者的糖尿病医学课",
         "domains": [
           "metabolic_health",
@@ -120,35 +107,6 @@
         ],
         "lessons_read": 12,
         "source_key": "dedao:busy-diabetes"
-      },
-      {
-        "claims_generated": 17,
-        "course_name": "冯雪·家庭健康管理100讲",
-        "domains": [
-          "metabolic_health",
-          "cardiovascular",
-          "nutrition",
-          "medication_safety",
-          "sleep_recovery",
-          "movement",
-          "mental_health",
-          "respiratory_allergy",
-          "longevity"
-        ],
-        "lessons_read": 40,
-        "source_key": "dedao:100"
-      },
-      {
-        "claims_generated": 5,
-        "course_name": "前沿课·人体微生物组9讲",
-        "domains": [
-          "genetics",
-          "medication_safety",
-          "mental_health",
-          "microbiome"
-        ],
-        "lessons_read": 10,
-        "source_key": "dedao:9"
       },
       {
         "claims_generated": 3,
@@ -171,7 +129,7 @@
           "respiratory_allergy",
           "longevity"
         ],
-        "lessons_read": 40,
+        "lessons_read": 52,
         "source_key": "dedao:50"
       }
     ]
@@ -179,6 +137,14 @@
   "license_scope": "internal_transformed_claims",
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "protocol": "akbp",
+  "review": {
+    "documents_reviewed": 209,
+    "from_status": "draft",
+    "relations_reviewed": 562,
+    "reviewed_at": "2026-05-17T02:30:23.001479+00:00",
+    "reviewer": "owner-reviewed-2026-05-17",
+    "status": "reviewed"
+  },
   "source_root": "/Users/liqiuhua/work/personal/down-dedao",
   "version": "2.1"
 }

@@ -34,6 +34,7 @@ class ClaimTemplate:
     domains: tuple[str, ...]
     keywords: tuple[str, ...]
     applies_when: tuple[str, ...]
+    source_keys: tuple[str, ...] = ()
     recommends_lookup: tuple[str, ...] = ()
     evidence_level: str = "C"
     confidence: float = 0.64
@@ -413,6 +414,22 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         decay_rate="slow",
     ),
     ClaimTemplate(
+        topic_id="diabetes_recheck_8_12_weeks",
+        entity_type="condition",
+        entity_id="glycemic-risk",
+        title="血糖风险干预需要 8-12 周复查闭环",
+        summary="血糖风险管理应把饮食、运动、睡眠和体重行动放入 8-12 周复查闭环；HbA1c 和空腹血糖用于评估趋势，不用于单次自我诊断。",
+        domains=("metabolic_health",),
+        keywords=("糖尿病", "血糖", "HbA1c", "糖化血红蛋白", "复查", "8-12"),
+        applies_when=("twin.labs.hba1c_percent >= 5.7", "twin.labs.fasting_glucose_mmol_l >= 5.6"),
+        source_keys=("dedao:busy-diabetes", "dedao:fengxue-gaoxuetang-yixueke"),
+        recommends_lookup=("entity:condition:glycemic-risk", "entity:biomarker:HbA1c"),
+        evidence_level="B",
+        confidence=0.76,
+        decay_rate="slow",
+        safety_tags=("recheck_loop", "medical_boundary"),
+    ),
+    ClaimTemplate(
         topic_id="post_meal_glucose",
         entity_type="condition",
         entity_id="glycemic-risk",
@@ -522,6 +539,21 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         safety_tags=("interaction_check",),
     ),
     ClaimTemplate(
+        topic_id="drug_interaction_review",
+        entity_type="intervention",
+        entity_id="medication-review",
+        title="新增药品前应核对药物相互作用",
+        summary="新增处方药或非处方药前，应与现有药品、补剂、饮酒和基础疾病一起做相互作用核对；系统只提供核对清单，不替代医生或药师判断。",
+        domains=("medication_safety",),
+        keywords=("相互作用", "用药", "药品", "处方", "非处方", "药师"),
+        applies_when=("twin.medications.0.name is not null",),
+        source_keys=("dedao:wangjiawei-medication-safety",),
+        recommends_lookup=("entity:intervention:medication-review", "entity:intervention:doctor-handoff"),
+        evidence_level="B",
+        confidence=0.74,
+        safety_tags=("interaction_check", "doctor_or_pharmacist_review"),
+    ),
+    ClaimTemplate(
         topic_id="metformin_medication_boundary",
         entity_type="drug",
         entity_id="metformin",
@@ -606,6 +638,22 @@ CLAIM_TEMPLATES: tuple[ClaimTemplate, ...] = (
         confidence=0.64,
         safety_tags=("genetic_boundary",),
     ),
+    ClaimTemplate(
+        topic_id="gene_pharmacogenomics_boundary",
+        entity_type="condition",
+        entity_id="medication-safety",
+        title="药物代谢基因结果只用于用药核对边界",
+        summary="CYP2D6、CYP2C19 等药物代谢基因结果可作为用药核对线索，但不能直接推出启停药或剂量调整；应结合正在使用的药品、病史和医生/药师意见。",
+        domains=("genetics", "medication_safety"),
+        keywords=("CYP2D6", "CYP2C19", "药物基因", "药物代谢", "华法林"),
+        applies_when=("twin.genetics.CYP2D6 is not null", "twin.genetics.CYP2C19 is not null"),
+        source_keys=("dedao:qiuzilong-genetics-20", "dedao:wangjiawei-medication-safety"),
+        recommends_lookup=("entity:condition:medication-safety", "entity:intervention:medication-review"),
+        evidence_level="C",
+        confidence=0.66,
+        decay_rate="slow",
+        safety_tags=("genetic_boundary", "no_medication_adjustment"),
+    ),
 )
 
 
@@ -644,7 +692,7 @@ def compile_dedao_ingest_artifacts(
         pages[page["doc_id"]] = page
         matched = 0
         for template in CLAIM_TEMPLATES:
-            if not _template_matches_source(template, source.domains, haystack):
+            if not _template_matches_source(template, source.source_key, source.domains, haystack):
                 continue
             matched += 1
             claim = _claim_for_template(template, source.source_key, now)
@@ -897,7 +945,9 @@ def _build_haystack(course_name: str, lessons: list[dict[str, str]]) -> str:
     return "\n".join([course_name, *[lesson["title"] for lesson in lessons], *[lesson["text"] for lesson in lessons]]).lower()
 
 
-def _template_matches_source(template: ClaimTemplate, domains: list[str], haystack: str) -> bool:
+def _template_matches_source(template: ClaimTemplate, source_key: str, domains: list[str], haystack: str) -> bool:
+    if template.source_keys and source_key not in template.source_keys:
+        return False
     if not set(template.domains).intersection(domains):
         return False
     return any(keyword.lower() in haystack for keyword in template.keywords)

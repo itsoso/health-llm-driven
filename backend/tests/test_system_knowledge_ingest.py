@@ -19,6 +19,19 @@ def _jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def test_system_kb_expansion_manifest_lists_priority_courses():
+    path = Path("backend/data/system_kb_v2_seed/expansion_manifest.json")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["target_counts"]["claims"] >= 300
+    assert payload["target_counts"]["entities"] >= 80
+    assert payload["target_counts"]["relations"] >= 800
+    assert "仇子龙·基因科学20讲" in payload["priority_courses"]
+    assert "王家伟·日常用药健康课" in payload["priority_courses"]
+    assert payload["copyright_policy"]
+    assert payload["review_policy"]
+
+
 def test_compile_dedao_ingest_artifacts_extracts_claims_without_raw_course_text(tmp_path):
     source_root = tmp_path / "down-dedao"
     course = source_root / "冯雪·高血压医学课" / "MD"
@@ -50,6 +63,120 @@ def test_compile_dedao_ingest_artifacts_extracts_claims_without_raw_course_text(
     assert salt_claim["sources"] == ["dedao:fengxue-gaoxueya-yixueke"]
     assert "付费课程正文" not in json.dumps(salt_claim, ensure_ascii=False)
     assert result.diff["claims_added"] >= 1
+
+
+def test_compile_dedao_ingest_artifacts_generates_gene_pharmacogenomics_boundary(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "仇子龙·基因科学20讲" / "MD"
+    course.mkdir(parents=True)
+    (course / "12 - 药物代谢基因怎么理解.md").write_text(
+        "CYP2D6、CYP2C19、药物代谢、止痛药、华法林和用药核对。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["仇子龙·基因科学20讲"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    claim = next(
+        claim for claim in result.claims if claim["doc_id"].endswith("_gene_pharmacogenomics_boundary")
+    )
+    assert claim["doc_id"].startswith("claim:c_dedao_")
+    assert claim["entity_type"] == "condition"
+    assert claim["entity_id"] == "medication-safety"
+    assert "entity:intervention:medication-review" in claim["recommends_lookup"]
+    assert claim["metadata"]["claim_boundary"]
+
+
+def test_compile_dedao_ingest_artifacts_generates_sleep_regular_window(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "怎样获得高质量睡眠" / "MD"
+    course.mkdir(parents=True)
+    (course / "01 - 固定入睡和起床时间.md").write_text(
+        "睡眠、入睡、起床、规律、睡眠质量和恢复。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["怎样获得高质量睡眠"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    claim = next(claim for claim in result.claims if claim["doc_id"].endswith("_sleep_regular_window"))
+    assert claim["doc_id"].startswith("claim:c_dedao_")
+    assert claim["entity_type"] == "intervention"
+    assert claim["entity_id"] == "sleep-regularity"
+    assert "twin.wearable.sleep_duration_hours < 7" in claim["applies_when"]
+
+
+def test_compile_dedao_ingest_artifacts_generates_diabetes_recheck_loop(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "给忙碌者的糖尿病医学课" / "MD"
+    course.mkdir(parents=True)
+    (course / "08 - 糖尿病血糖复查闭环.md").write_text(
+        "糖尿病、血糖、HbA1c、糖化血红蛋白、复查、8-12 周和生活方式干预。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["给忙碌者的糖尿病医学课"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    claim = next(claim for claim in result.claims if claim["doc_id"].endswith("_diabetes_recheck_8_12_weeks"))
+    assert claim["doc_id"].startswith("claim:c_dedao_")
+    assert claim["entity_type"] == "condition"
+    assert claim["entity_id"] == "glycemic-risk"
+    assert "entity:biomarker:HbA1c" in claim["recommends_lookup"]
+
+
+def test_compile_dedao_ingest_artifacts_generates_drug_interaction_review(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "王家伟·日常用药健康课" / "MD"
+    course.mkdir(parents=True)
+    (course / "04 - 新增药品前先核对相互作用.md").write_text(
+        "用药、药品、处方、非处方药、药物相互作用和药师核对。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["王家伟·日常用药健康课"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    claim = next(claim for claim in result.claims if claim["doc_id"].endswith("_drug_interaction_review"))
+    assert claim["doc_id"].startswith("claim:c_dedao_")
+    assert claim["entity_type"] == "intervention"
+    assert claim["entity_id"] == "medication-review"
+    assert "interaction_check" in claim["metadata"]["safety_tags"]
+
+
+def test_drug_interaction_review_does_not_match_sleep_course_even_with_interaction_terms(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "怎样获得高质量睡眠" / "MD"
+    course.mkdir(parents=True)
+    (course / "03 - 睡眠用药和相互作用边界.md").write_text(
+        "睡眠、用药、处方、相互作用和医生沟通。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["怎样获得高质量睡眠"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    assert not any(claim["doc_id"].endswith("_drug_interaction_review") for claim in result.claims)
 
 
 def test_compile_dedao_ingest_artifacts_marks_superseded_existing_claim(tmp_path):

@@ -7,6 +7,15 @@
 
 > 本文档是项目级落地计划。Karpathy 原版 LLM Wiki 与 v2 (agentmemory 团队) 的设计原则不在此重复，请直接读 [docs/HARNESS.md](HARNESS.md) §LLM Wiki 概念映射，或仓库 `wiki/HOME.md` 的引用。本文档只写"在我们这个产品里怎么落"。
 
+## 2026-05-17 Current State
+
+- Serving DB import: 206 docs / 550 edges.
+- Ingest authoring CLI: `backend/scripts/ingest_course.py`.
+- Review promotion: `promote_artifact_review_status`.
+- Admin lint: contradiction + invalid review status included.
+- Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
+- Crystallize: draft-only service exists; not scheduled.
+
 ---
 
 ## 1. 为什么要做（北极星 + 现状缺口）
@@ -467,7 +476,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着，specialist schema 未强制 | 部分完成 |
 | Mobile evidence UI | 已有 system evidence card 和 EvidenceRefsRow | 部分完成，缺反馈闭环和统一 ClaimSheet |
-| Lifecycle | 有 lint/reindex/decay 脚本 | 部分完成，缺 contradiction/self-healing/crystallize |
+| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status | 部分完成，缺 scheduled self-healing/crystallize |
 | Privacy isolation | `down-dedao/wiki/articles/personal-*.md` 仍存在 | 未完成 |
 
 ### 13.3 修订后的执行顺序
@@ -492,9 +501,9 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 
 #### P3：V2 生命周期（后置）
 
-- contradiction lint：同一 subject/predicate/object 出现相反结论时标记冲突。
-- reviewer workflow：CLI 生成 diff + review manifest，人工确认后从 draft 升为 reviewed。
-- crystallize：只从多用户聚合审计中提炼候选 claim，不允许单用户对话直接污染 system KB。
+- contradiction lint：已进入 admin lint；下一步接入定期运维报告。
+- reviewer workflow：CLI 已生成 diff + review manifest，并支持人工确认后从 draft 升为 reviewed。
+- crystallize：已有 draft-only service；下一步接入 Celery 周期任务和 admin review 队列。
 - PubMed/Examine 二源只用于提升高风险 claim 的 evidence level，不作为初期覆盖率任务。
 
 ### 13.4 新验收口径
