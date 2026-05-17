@@ -219,7 +219,7 @@ python scripts/import_system_kb_v2_artifacts.py
 - `GET /api/v1/knowledge/entity/{entity_type}/{entity_id}`
 - `GET /api/v1/knowledge/claim/{claim_id}`
 - `POST /api/v1/knowledge/claim/{claim_id}/feedback`
-- `GET /api/v1/knowledge/search?q=...&limit=...`
+- `GET /api/v1/knowledge/search?q=...&limit=...`：DB-backed lexical + one-hop graph expansion + RRF，结果带 `retrieval.channels`
 - `POST /api/v1/knowledge/lookup_for_twin`
 - `GET /api/v1/admin/knowledge/lint_report`
 - `POST /api/v1/admin/knowledge/reindex`
@@ -366,7 +366,7 @@ flowchart TD
 
 当前已经完成“系统知识库能同步、能被 Twin 命中、能进入 Agent prompt、能展示证据卡”的纵切，也已经补上 Dedao deterministic ingest pipeline 和首轮课程规模化 artifacts。还没有完成全部 V2 能力：
 
-- 还没有 Chroma/BM25/graph hybrid search 的完整 serving 路径。
+- Search serving 已有 DB-backed lexical + graph RRF 路径；还没有 PostgreSQL FTS、向量检索和真正三路 BM25/vector/graph 融合。
 - Specialist 输出还没有全面强制 `evidence_refs`。
 - Mobile 已有普通饮食/补剂/训练卡和基因报告卡的 evidence chip、统一 ClaimSheet/EntityCard、claim feedback 入口；后续仍缺更细的来源分组、entity 深链页面和来源可信度解释。
 - 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲覆盖率，换取版权边界、医学边界和 review 可控性。

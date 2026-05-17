@@ -161,15 +161,16 @@ def search_knowledge(
     doc_type: str | None = None,
     entity_type: str | None = None,
 ) -> dict[str, Any]:
-    """Small deterministic hybrid-search placeholder for the serving KB.
+    """DB-backed hybrid search for the serving KB.
 
-    Phase 1b keeps this DB-only so it works with both local SQLite tests and
-    production PostgreSQL. The next phase can replace the scorer with
-    Postgres FTS + vector retrieval while keeping this response shape.
+    The first serving implementation stays DB-only so it works with both local
+    SQLite tests and production PostgreSQL. It fuses lexical matches with
+    one-hop graph expansion using reciprocal-rank fusion. A later vector stream
+    can be added without changing the response shape.
     """
 
     normalized_query = (query or "").strip()
-    terms = [term.lower() for term in re.split(r"\s+", normalized_query) if term.strip()]
+    terms = _query_terms(normalized_query)
 
     docs_query = db.query(KBDocument).filter(KBDocument.is_archived.is_(False))
     if doc_type:
@@ -177,27 +178,32 @@ def search_knowledge(
     if entity_type:
         docs_query = docs_query.filter(KBDocument.entity_type == entity_type)
 
-    scored: list[tuple[float, KBDocument]] = []
-    for document in docs_query.all():
+    documents = docs_query.all()
+    documents_by_id = {document.doc_id: document for document in documents}
+
+    lexical_ranked: list[tuple[float, KBDocument]] = []
+    for document in documents:
         score = _score_document(document, terms)
         if score > 0 or not terms:
-            scored.append((score, document))
+            lexical_ranked.append((score, document))
 
-    scored.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
-    selected = scored[: max(1, min(limit, 50))]
-    selected_ids = {document.doc_id for _score, document in selected}
+    lexical_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
+    seed_limit = max(1, min(max(limit, 10), 50))
+    seed_ids = {document.doc_id for _score, document in lexical_ranked[:seed_limit]}
     edges = []
-    neighbors = []
-    if selected_ids:
+    neighbors: list[KBDocument] = []
+    graph_ranked: list[tuple[float, KBDocument]] = []
+    graph_meta_by_doc: dict[str, dict[str, Any]] = {}
+    if seed_ids:
         edges = (
             db.query(KBEdge)
-            .filter(or_(KBEdge.src_doc_id.in_(selected_ids), KBEdge.dst_doc_id.in_(selected_ids)))
+            .filter(or_(KBEdge.src_doc_id.in_(seed_ids), KBEdge.dst_doc_id.in_(seed_ids)))
             .all()
         )
         neighbor_ids = {
-            edge.dst_doc_id if edge.src_doc_id in selected_ids else edge.src_doc_id
+            edge.dst_doc_id if edge.src_doc_id in seed_ids else edge.src_doc_id
             for edge in edges
-            if edge.src_doc_id not in selected_ids or edge.dst_doc_id not in selected_ids
+            if edge.src_doc_id not in seed_ids or edge.dst_doc_id not in seed_ids
         }
         if neighbor_ids:
             neighbors = (
@@ -206,12 +212,37 @@ def search_knowledge(
                 .order_by(KBDocument.doc_type.asc(), KBDocument.doc_id.asc())
                 .all()
             )
+            for edge in edges:
+                neighbor_id = edge.dst_doc_id if edge.src_doc_id in seed_ids else edge.src_doc_id
+                if neighbor_id in seed_ids:
+                    continue
+                document = documents_by_id.get(neighbor_id)
+                if document is None:
+                    continue
+                edge_confidence = float(edge.confidence or 0.0)
+                doc_confidence = float(document.confidence or 0.0)
+                graph_score = 1.0 + edge_confidence + doc_confidence * 0.1
+                graph_ranked.append((graph_score, document))
+                meta = graph_meta_by_doc.setdefault(
+                    document.doc_id,
+                    {"graph_distance": 1, "relations": []},
+                )
+                if edge.relation not in meta["relations"]:
+                    meta["relations"].append(edge.relation)
+            graph_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
+
+    fused = _fuse_search_rankings(lexical_ranked, graph_ranked, graph_meta_by_doc)
+    selected = fused[: max(1, min(limit, 50))]
 
     return {
         "query": normalized_query,
         "results": [
-            {"score": round(score, 4), "document": serialize_document(document)}
-            for score, document in selected
+            {
+                "score": round(score, 4),
+                "document": serialize_document(document),
+                "retrieval": retrieval,
+            }
+            for score, document, retrieval in selected
         ],
         "graph_context": {
             "edges": [_serialize_edge(edge) for edge in edges],
@@ -733,7 +764,7 @@ def _serialize_edge(edge: KBEdge) -> dict[str, Any]:
 
 def _score_document(document: KBDocument, terms: list[str]) -> float:
     if not terms:
-        return 1.0
+        return 1.0 + float(document.confidence or 0.0) * 0.1
     text = _document_search_text(document).lower()
     score = 0.0
     title = (document.title or "").lower()
@@ -745,11 +776,94 @@ def _score_document(document: KBDocument, terms: list[str]) -> float:
             score += 3.0
         if term in text:
             score += 1.0 + min(text.count(term), 5) * 0.1
+    if score <= 0:
+        return 0.0
     if document.doc_type == "claim":
         score += 0.2
     if document.confidence:
         score += float(document.confidence) * 0.1
     return score
+
+
+def _query_terms(query: str) -> list[str]:
+    """Tokenize mixed Chinese/English KB queries without external deps."""
+
+    seen: set[str] = set()
+    terms: list[str] = []
+
+    def add(term: str) -> None:
+        value = term.strip().lower()
+        if not value or value in seen:
+            return
+        seen.add(value)
+        terms.append(value)
+
+    for token in re.findall(r"[A-Za-z0-9_+.-]+|[\u4e00-\u9fff]+", query or ""):
+        add(token)
+        if re.fullmatch(r"[\u4e00-\u9fff]+", token) and len(token) > 2:
+            for i in range(len(token) - 1):
+                add(token[i : i + 2])
+    return terms
+
+
+def _fuse_search_rankings(
+    lexical_ranked: list[tuple[float, KBDocument]],
+    graph_ranked: list[tuple[float, KBDocument]],
+    graph_meta_by_doc: dict[str, dict[str, Any]],
+) -> list[tuple[float, KBDocument, dict[str, Any]]]:
+    """Fuse lexical and graph rankings with deterministic RRF.
+
+    The raw lexical and graph scores are kept as metadata. The public `score`
+    is the fused score so future vector retrieval can join as another rank
+    stream without changing API shape.
+    """
+
+    rrf_k = 60.0
+    by_doc: dict[str, dict[str, Any]] = {}
+
+    def _entry(document: KBDocument) -> dict[str, Any]:
+        return by_doc.setdefault(
+            document.doc_id,
+            {
+                "document": document,
+                "score": 0.0,
+                "channels": set(),
+                "lexical_score": None,
+                "graph_score": None,
+                "graph_distance": None,
+                "relations": [],
+            },
+        )
+
+    for rank, (score, document) in enumerate(lexical_ranked, start=1):
+        entry = _entry(document)
+        entry["score"] += 1.0 / (rrf_k + rank)
+        entry["channels"].add("lexical")
+        entry["lexical_score"] = round(score, 4)
+
+    for rank, (score, document) in enumerate(graph_ranked, start=1):
+        entry = _entry(document)
+        entry["score"] += 1.0 / (rrf_k + rank)
+        entry["channels"].add("graph")
+        entry["graph_score"] = round(score, 4)
+        graph_meta = graph_meta_by_doc.get(document.doc_id, {})
+        entry["graph_distance"] = graph_meta.get("graph_distance", 1)
+        entry["relations"] = sorted(graph_meta.get("relations", []))
+
+    fused: list[tuple[float, KBDocument, dict[str, Any]]] = []
+    for doc_id, entry in by_doc.items():
+        channels = sorted(entry["channels"])
+        retrieval = {
+            "channels": channels,
+            "lexical_score": entry["lexical_score"],
+            "graph_score": entry["graph_score"],
+            "graph_distance": entry["graph_distance"],
+            "relations": entry["relations"],
+        }
+        fused.append((float(entry["score"]), entry["document"], retrieval))
+
+    fused.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
+    return fused
 
 
 def _document_search_text(document: KBDocument) -> str:

@@ -16,6 +16,7 @@
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists; not scheduled.
 - Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback.
+- Search serving: `/knowledge/search` now fuses lexical DB matches with one-hop graph expansion via deterministic reciprocal-rank fusion; vector retrieval and PostgreSQL FTS remain later upgrades.
 
 ---
 

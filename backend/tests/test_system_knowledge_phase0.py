@@ -199,6 +199,50 @@ def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_use
     assert payload["graph_context"]["edges"][0]["relation"] == "has_claim"
 
 
+def test_search_knowledge_promotes_graph_neighbors_into_results(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    db.add(
+        KBDocument(
+            doc_id="claim:c_active_folate_dose_boundary",
+            doc_type="claim",
+            title="活性叶酸补充剂量边界",
+            summary="从低剂量开始，并结合 B12 与同型半胱氨酸复查。",
+            confidence=0.74,
+            evidence_level="C",
+            sources=["dedao:qiuzilong-genetics-07"],
+            last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+        )
+    )
+    db.flush()
+    db.add(
+        KBEdge(
+            src_doc_id="entity:gene:MTHFR",
+            dst_doc_id="claim:c_active_folate_dose_boundary",
+            relation="recommends",
+            confidence=0.8,
+            source_claim_id="claim:c_mthfr_c677t_hcy_folate_boundary",
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/knowledge/search",
+        headers=headers,
+        params={"q": "MTHFR", "limit": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    graph_result = next(
+        item
+        for item in payload["results"]
+        if item["document"]["doc_id"] == "claim:c_active_folate_dose_boundary"
+    )
+    assert "graph" in graph_result["retrieval"]["channels"]
+    assert graph_result["retrieval"]["graph_distance"] == 1
+
+
 def test_admin_lint_report_flags_orphans_and_invalid_conditions(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True
