@@ -109,6 +109,31 @@ def test_import_medical_exam_from_json_requires_auth(client):
     assert resp.status_code == 401
 
 
+def test_import_medical_exam_from_text_persists_indicators(client, db):
+    """Mobile 手工贴文字兜底必须真实入库,不能只做 parse preview."""
+    from app.models.family_health import MedicalIndicator
+
+    user, headers = _create_user(db)
+    payload = {
+        "text": "ALT 31 U/L，AST 24 U/L，肌酐 71 μmol/L，尿素 4.03 mmol/L，尿酸 299 μmol/L，空腹血糖 5.60 mmol/L",
+        "exam_date": "2026-05-11",
+        "hospital_name": "手工录入",
+    }
+
+    resp = client.post("/api/v1/medical-exams/import/text", json=payload, headers=headers)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["items_count"] >= 6
+    assert data["exam_date"] == "2026-05-11"
+
+    rows = db.query(MedicalIndicator).filter(MedicalIndicator.user_id == user.id).all()
+    codes = {row.item_code for row in rows}
+    assert {"ALT", "AST", "CREA", "BUN", "UA", "FBG"} <= codes
+    assert next(row for row in rows if row.item_code == "FBG").value == 5.6
+    assert next(row for row in rows if row.item_code == "CREA").record_date.isoformat() == "2026-05-11"
+
+
 def test_import_image_requires_auth(client):
     resp = client.post("/api/v1/medical-exams/import/image")
     assert resp.status_code in (401, 422)  # 401 auth / 422 missing file

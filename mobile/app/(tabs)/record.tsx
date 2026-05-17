@@ -83,6 +83,8 @@ export default function RecordScreen() {
           {/* I 产品改进: 声音笔记 — AI 开口邀请, 自动归类录入 */}
           <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
           <QuickNavBtn icon="body-outline" label="体重腰围" color={c.teal} onPress={() => router.push('/body-measurements' as any)} />
+          <QuickNavBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
+          <QuickNavBtn icon="cloud-upload-outline" label="导入档案" color={c.purple} onPress={() => router.push('/import' as any)} />
           <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
           <QuickNavBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
         </View>

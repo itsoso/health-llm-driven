@@ -451,10 +451,12 @@ def create_indicator_from_item(
     from app.models.family_health import MedicalIndicator
 
     raw_name = item_dict.get("item_name") or item_dict.get("name") or ""
-    item_code_hint = item_dict.get("item_code") or ""
-    code, standard_name = normalize_item_name(raw_name)
-    if not code and item_code_hint:
-        code = item_code_hint
+    item_code_hint = str(item_dict.get("item_code") or "").strip()
+    if item_code_hint:
+        code = ITEM_NAME_MAPPING.get(item_code_hint, item_code_hint)
+        standard_name = ITEM_LABELS.get(code, raw_name)
+    else:
+        code, standard_name = normalize_item_name(raw_name)
 
     raw_value = item_dict.get("value")
     numeric_value = None

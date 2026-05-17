@@ -5,6 +5,7 @@ import base64
 import logging
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -21,6 +22,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB,防 OCR 被大图灌穿
+
+
+class MedicalExamTextImportRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=8000)
+    exam_date: str | None = None
+    hospital_name: str | None = Field(default=None, max_length=200)
+    exam_type: str | None = Field(default="biochemistry", max_length=80)
 
 
 def parse_date(date_str) -> date:
@@ -234,6 +242,51 @@ def import_medical_exam_from_json(
     service = MedicalExamImportService()
     exam = service.import_from_json(db, current_user.id, exam_data)
     return {"message": "导入成功", "exam_id": exam.id}
+
+
+@router.post("/import/text")
+def import_medical_exam_from_text(
+    body: MedicalExamTextImportRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """从手工粘贴文本导入化验指标,用于 mobile OCR 失败后的兜底路径."""
+    try:
+        exam = MedicalExamImportService.import_from_text(
+            db,
+            user_id=current_user.id,
+            text=body.text,
+            exam_date=parse_date(body.exam_date),
+            source="mobile_text",
+        )
+        if body.hospital_name:
+            exam.hospital_name = body.hospital_name
+        if body.exam_type:
+            exam.exam_type = body.exam_type
+        db.commit()
+        db.refresh(exam)
+
+        try:
+            from app.twin.cache import invalidate_twin
+            invalidate_twin(current_user.id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[体检文字] Twin invalidation 失败 (旁路): {e}")
+
+        return {
+            "message": "文字解析并导入成功",
+            "exam_id": exam.id,
+            "exam_date": str(exam.exam_date),
+            "exam_type": exam.exam_type,
+            "hospital_name": exam.hospital_name,
+            "items_count": len(exam.items or []),
+        }
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        logger.error(f"文字导入入库失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"入库失败: {str(e)}")
 
 
 @router.post("/import/csv")

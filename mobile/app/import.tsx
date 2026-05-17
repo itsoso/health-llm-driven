@@ -29,9 +29,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
-import { uploadMedicalExamPdf, uploadMedicalExamImage } from '../services/medicalExams';
+import { uploadMedicalExamPdf, uploadMedicalExamImage, uploadMedicalExamText } from '../services/medicalExams';
 import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '../services/geneticData';
-import api from '../services/api';
 
 type FileKind = 'genetic_txt' | 'genetic_pdf' | 'medical_pdf' | 'medical_image';
 
@@ -231,12 +230,14 @@ export default function ImportScreen() {
     setBusy(true);
     setBusyHint('AI 正在从文字中抽取健康指标...');
     try {
-      const res = await api.post('/family-health/parse-medical-text', { text });
+      const data = await uploadMedicalExamText(text, {
+        exam_date: new Date().toISOString().slice(0, 10),
+        hospital_name: '手工贴文字',
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const items = res.data?.indicators || [];
-      const count = items.length;
-      let message = count > 0 ? `从文字中识别出 ${count} 项指标` : '未能识别出指标';
-      let detail = count > 0 ? `例如: ${items.slice(0, 3).map((i: any) => i.name || i.item_name).join(', ')}` : '';
+      const count = data.items_count ?? 0;
+      const message = count > 0 ? `从文字中导入 ${count} 项指标` : '未能识别出指标';
+      const detail = data.exam_id ? `已写入化验记录 #${data.exam_id}` : '';
       setResult({ kind: 'medical_image', message, detail });
     } catch (e: any) {
       Alert.alert('文字解析失败', e?.response?.data?.detail || e?.message || '请稍后再试');

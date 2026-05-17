@@ -147,6 +147,21 @@ export interface MedicalExamImageUploadResult {
   conclusion?: string | null;
 }
 
+export interface MedicalExamTextUploadOptions {
+  exam_date?: string;
+  hospital_name?: string;
+  exam_type?: string;
+}
+
+export interface MedicalExamTextUploadResult {
+  message: string;
+  exam_id: number;
+  exam_date: string;
+  exam_type?: string | null;
+  hospital_name?: string | null;
+  items_count: number;
+}
+
 /**
  * 体检 PDF 上传 → /medical-exams/import/pdf (multipart).
  */
@@ -180,6 +195,21 @@ export async function uploadMedicalExamImage(
     form,
     { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 },
   );
+  return res.data;
+}
+
+/**
+ * 手工贴文字 → /medical-exams/import/text.
+ * 这是 OCR 失败后的持久化兜底路径,不能再走 parse-preview.
+ */
+export async function uploadMedicalExamText(
+  text: string,
+  options: MedicalExamTextUploadOptions = {},
+): Promise<MedicalExamTextUploadResult> {
+  const res = await api.post<MedicalExamTextUploadResult>('/medical-exams/import/text', {
+    text,
+    ...options,
+  });
   return res.data;
 }
 

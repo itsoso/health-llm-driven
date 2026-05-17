@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.models.family_health import MedicalIndicator
 from app.services.agent_executor import AgentExecutor
+from app.services.exam_packages import create_indicator_from_item
 from app.services.medical_text_parser import parse_lab_indicators_from_text
 
 
@@ -27,6 +28,23 @@ def test_parse_lab_indicators_from_text_extracts_liver_kidney_panel():
     assert by_code["CREA"]["value"] == 68
     assert by_code["BUN"]["unit"] == "mmol/L"
     assert by_code["UA"]["value"] == 360
+
+
+def test_create_indicator_prefers_explicit_item_code_over_fuzzy_name():
+    indicator = create_indicator_from_item(
+        user_id=3,
+        exam_id=18,
+        record_date=date(2026, 5, 11),
+        item_dict={
+            "item_name": "尿素氮/肌酐",
+            "item_code": "BUN_CREA_RATIO",
+            "value": 14.0,
+        },
+        source="manual_backfill",
+    )
+
+    assert indicator.item_code == "BUN_CREA_RATIO"
+    assert indicator.name_en == "BUN_CREA_RATIO"
 
 
 def test_agent_upload_medical_exam_text_persists_medical_indicators(db, auth_user_and_headers):

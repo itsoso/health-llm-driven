@@ -1,6 +1,7 @@
+/* eslint-disable import/first */
 jest.mock('../api', () => ({
   __esModule: true,
-  default: { get: jest.fn() },
+  default: { get: jest.fn(), post: jest.fn() },
 }));
 
 import api from '../api';
@@ -9,10 +10,12 @@ import {
   countAbnormal,
   compareExams,
   relativeExamDate,
+  uploadMedicalExamText,
   type MedicalExam,
 } from '../medicalExams';
 
 const mockGet = api.get as jest.Mock;
+const mockPost = api.post as jest.Mock;
 
 const makeExam = (overrides: Partial<MedicalExam> = {}): MedicalExam => ({
   id: 1,
@@ -46,6 +49,28 @@ describe('listMedicalExams', () => {
   it('returns empty when shape is wrong', async () => {
     mockGet.mockResolvedValueOnce({ data: { not: 'array' } });
     expect(await listMedicalExams()).toEqual([]);
+  });
+});
+
+describe('uploadMedicalExamText', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('posts text fallback to the persistent medical-exams import endpoint', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { message: '导入成功', exam_id: 12, exam_date: '2026-05-11', items_count: 6 },
+    });
+
+    const out = await uploadMedicalExamText('ALT 31 U/L，肌酐 71 μmol/L', {
+      exam_date: '2026-05-11',
+      hospital_name: '手工录入',
+    });
+
+    expect(out.exam_id).toBe(12);
+    expect(mockPost).toHaveBeenCalledWith('/medical-exams/import/text', {
+      text: 'ALT 31 U/L，肌酐 71 μmol/L',
+      exam_date: '2026-05-11',
+      hospital_name: '手工录入',
+    });
   });
 });
 
