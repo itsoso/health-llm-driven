@@ -8,10 +8,10 @@
 - "喝了一杯水" → {type: "water", amount: 250}
 - "头疼发烧38.5" → {type: "symptom", description: "头疼发烧", temperature: 38.5}
 """
-import re
 import json
 import logging
-from typing import Dict, Any, Optional
+import re
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,151 @@ PATTERNS = [
 ]
 
 
+LAB_INDICATORS = [
+    {
+        "code": "ALT",
+        "name": "谷丙转氨酶",
+        "category": "liver_function",
+        "unit": "U/L",
+        "aliases": ["ALT", "谷丙转氨酶", "丙氨酸氨基转移酶", "丙氨酸转氨酶"],
+    },
+    {
+        "code": "AST",
+        "name": "谷草转氨酶",
+        "category": "liver_function",
+        "unit": "U/L",
+        "aliases": ["AST", "谷草转氨酶", "天门冬氨酸氨基转移酶", "天冬氨酸氨基转移酶"],
+    },
+    {
+        "code": "GGT",
+        "name": "谷氨酰转肽酶",
+        "category": "liver_function",
+        "unit": "U/L",
+        "aliases": ["GGT", "γ-谷氨酰转肽酶", "γ谷氨酰转肽酶", "谷氨酰转肽酶", "谷氨酰转移酶"],
+    },
+    {
+        "code": "CHE",
+        "name": "胆碱酯酶",
+        "category": "liver_function",
+        "unit": "U/L",
+        "aliases": ["CHE", "胆碱酯酶"],
+    },
+    {
+        "code": "TBIL",
+        "name": "总胆红素",
+        "category": "liver_function",
+        "unit": "μmol/L",
+        "aliases": ["TBIL", "总胆红素"],
+    },
+    {
+        "code": "DBIL",
+        "name": "直接胆红素",
+        "category": "liver_function",
+        "unit": "μmol/L",
+        "aliases": ["DBIL", "直接胆红素", "结合胆红素"],
+    },
+    {
+        "code": "CREA",
+        "name": "肌酐",
+        "category": "kidney_function",
+        "unit": "μmol/L",
+        "aliases": ["CREA", "Cr", "CRE", "肌酐", "血肌酐"],
+    },
+    {
+        "code": "BUN",
+        "name": "尿素氮",
+        "category": "kidney_function",
+        "unit": "mmol/L",
+        "aliases": ["BUN", "尿素氮", "尿素"],
+    },
+    {
+        "code": "UA",
+        "name": "尿酸",
+        "category": "kidney_function",
+        "unit": "μmol/L",
+        "aliases": ["UA", "尿酸", "血尿酸"],
+    },
+    {
+        "code": "FBG",
+        "name": "空腹血糖",
+        "category": "glucose",
+        "unit": "mmol/L",
+        "aliases": ["FBG", "FPG", "空腹血糖", "葡萄糖"],
+    },
+    {
+        "code": "HCY",
+        "name": "同型半胱氨酸",
+        "category": "cardiovascular",
+        "unit": "μmol/L",
+        "aliases": ["HCY", "Hcy", "同型半胱氨酸", "同型半胱酸"],
+    },
+]
+
+_LAB_UNITS_RE = r"(?:U/L|IU/L|μmol/L|umol/L|µmol/L|mmol/L|mg/dL|g/L|%)"
+
+
+def parse_lab_indicators_from_text(text: str) -> list[dict[str, Any]]:
+    """Extract multi-indicator lab panels from pasted/chat OCR text.
+
+    This parser is deliberately deterministic. LLM output may mention values in
+    prose, but persistence needs stable item codes so Twin and KB conditions can
+    read the newest liver/kidney labs immediately.
+    """
+
+    if not text:
+        return []
+
+    normalized = (
+        text.replace("μ", "µ")
+        .replace("（", "(")
+        .replace("）", ")")
+        .replace("：", ":")
+        .replace("，", ",")
+        .replace("；", ";")
+    )
+    items_by_code: dict[str, dict[str, Any]] = {}
+    for indicator in LAB_INDICATORS:
+        code = indicator["code"]
+        aliases = sorted(indicator["aliases"], key=len, reverse=True)
+        alias_re = "|".join(re.escape(alias) for alias in aliases)
+        pattern = re.compile(
+            rf"(?P<alias>{alias_re})[^\d\-+]{{0,32}}"
+            rf"(?P<value>\d{{1,4}}(?:\.\d+)?)\s*"
+            rf"(?P<unit>{_LAB_UNITS_RE})?"
+            rf"\s*(?P<flag>[↑↓HhLl高低偏高偏低]*)",
+            re.IGNORECASE,
+        )
+        for match in pattern.finditer(normalized):
+            try:
+                value = float(match.group("value"))
+            except (TypeError, ValueError):
+                continue
+            flag = (match.group("flag") or "").strip()
+            is_abnormal = "normal"
+            if any(token in flag for token in ("↑", "H", "h", "高", "偏高")):
+                is_abnormal = "high"
+            elif any(token in flag for token in ("↓", "L", "l", "低", "偏低")):
+                is_abnormal = "low"
+
+            unit = (match.group("unit") or indicator["unit"]).replace("µ", "μ")
+            current = items_by_code.get(code)
+            if current is not None and current.get("is_abnormal") != "normal":
+                continue
+            items_by_code[code] = {
+                "item_name": indicator["name"],
+                "item_code": code,
+                "name_en": code,
+                "category": indicator["category"],
+                "value": value,
+                "unit": unit,
+                "is_abnormal": is_abnormal,
+                "result": {"high": "偏高", "low": "偏低"}.get(is_abnormal, "正常"),
+                "notes": "由聊天/文本自动解析",
+            }
+
+    return list(items_by_code.values())
+
+
 def parse_medical_text(text: str) -> Optional[Dict[str, Any]]:
     """
     尝试用正则快速解析医疗文本。
@@ -70,6 +215,14 @@ def parse_medical_text(text: str) -> Optional[Dict[str, Any]]:
         解析结果 dict，或 None（需要 LLM 兜底）
     """
     text = text.strip()
+    lab_items = parse_lab_indicators_from_text(text)
+    if len(lab_items) >= 2:
+        return {
+            "type": "medical_exam",
+            "items": lab_items,
+            "display": f"识别到 {len(lab_items)} 项化验指标",
+        }
+
     for pattern, handler in PATTERNS:
         match = re.search(pattern, text)
         if match:

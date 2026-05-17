@@ -30,6 +30,7 @@ _NULL_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+is\s+(?P<negation>not
 _GENE_MESSAGE_PATTERNS = {
     "MTHFR": re.compile(r"\bMTHFR\b(?:[-\s_]*(?P<mthfr>CC|CT|TT))?", re.IGNORECASE),
     "APOE": re.compile(r"\bAPOE\b(?:[-\s_]*(?P<apoe>E[234]/E[234]|E[234]E[234]))?", re.IGNORECASE),
+    "9p21": re.compile(r"\b(?:9p21|rs10757274)\b(?:[-\s_]*(?P<ninep21>AA|AG|GG))?", re.IGNORECASE),
     "FTO": re.compile(r"\bFTO\b", re.IGNORECASE),
     "ACTN3": re.compile(r"\bACTN3\b", re.IGNORECASE),
     "ALDH2": re.compile(r"\bALDH2\b(?:[-\s_]*(?P<aldh2>GA|AA|GG|\*1/\*2|\*2/\*2))?", re.IGNORECASE),
@@ -754,6 +755,9 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
             out["MTHFR"] = genotype or "present"
         elif gene == "APOE":
             out["APOE"] = genotype or "present"
+        elif gene == "9P21":
+            out["9p21"] = genotype or "present"
+            out["rs10757274"] = genotype or "present"
         elif gene in {"FTO", "ACTN3"}:
             out[gene] = genotype or "present"
         elif gene == "ALDH2":
@@ -1370,6 +1374,8 @@ def _extract_entity_keys(twin: dict[str, Any]) -> set[tuple[str, str]]:
         "MTHFR_C677T": "MTHFR",
         "MTHFR": "MTHFR",
         "APOE": "APOE",
+        "9p21": "9p21",
+        "rs10757274": "9p21",
         "FTO": "FTO",
         "ACTN3": "ACTN3",
         "ALDH2": "ALDH2",
@@ -1425,6 +1431,10 @@ def _twin_from_message(message: str) -> dict[str, Any]:
                 genetics["APOE"] = "E3/E4"
         elif gene == "ALDH2":
             genetics["ALDH2"] = (match.group("aldh2") or "GA").upper()
+        elif gene == "9p21":
+            genotype = (match.group("ninep21") or "AA").upper()
+            genetics["9p21"] = genotype
+            genetics["rs10757274"] = genotype
         else:
             genetics[gene] = "present"
     return {"genetics": genetics, "labs": {}}

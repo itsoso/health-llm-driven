@@ -241,7 +241,9 @@ class AgentExecutor:
 
         # 如果有图片，先用 vision 模型识别内容，再将识别结果注入文本消息
         if images:
-            vision_description = await self._analyze_image_with_vision(message, images)
+            vision_description = await self._try_import_medical_report_images(user_id, images)
+            if not vision_description:
+                vision_description = await self._analyze_image_with_vision(message, images)
             if vision_description:
                 enriched_message = f"{message}\n\n[图片识别结果]: {vision_description}"
                 for i in range(len(messages) - 1, -1, -1):
@@ -883,6 +885,82 @@ class AgentExecutor:
             logger.warning(f"[Vision] 图片分析异常: {e}")
             return None
 
+    async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
+        """Detect lab-report images in chat, persist recognized indicators, and summarize.
+
+        The normal chat image path used to describe photos for diet logging only.
+        Lab screenshots therefore informed one answer but never reached the
+        canonical MedicalIndicator timeline. This hook keeps report ingestion
+        protocol-first: OCR returns structured items, then the same importer used
+        by upload endpoints writes MedicalExam + MedicalIndicator.
+        """
+        if not images:
+            return None
+        try:
+            from app.services.ai.medical_report_ocr import recognize_medical_report
+            from app.services.data_collection.medical_exam_import import MedicalExamImportService
+            from app.twin.cache import invalidate_twin
+
+            imported = []
+            for img in images:
+                result = await recognize_medical_report(
+                    img["base64"],
+                    image_type=img.get("type", "jpeg"),
+                )
+                items = result.get("items") if isinstance(result, dict) else None
+                if not items or len(items) < 2:
+                    continue
+                exam_date = None
+                if result.get("report_date"):
+                    try:
+                        exam_date = parse_date_value = datetime.strptime(str(result["report_date"])[:10], "%Y-%m-%d").date()
+                    except Exception:
+                        parse_date_value = None
+                    exam_date = parse_date_value
+                exam = MedicalExamImportService.import_from_items(
+                    self.db,
+                    user_id=user_id,
+                    items_data=items,
+                    exam_date=exam_date or datetime.now(BEIJING_TZ).date(),
+                    exam_type=result.get("report_type") or "medical_report",
+                    hospital_name=result.get("institution"),
+                    notes="从聊天图片 OCR 自动导入",
+                    source="agent_image_ocr",
+                )
+                imported.append((exam, result, items))
+
+            if not imported:
+                return None
+
+            try:
+                invalidate_twin(user_id)
+            except Exception:
+                pass
+
+            total_items = sum(len(items) for _exam, _result, items in imported)
+            abnormal_items = [
+                item
+                for _exam, _result, items in imported
+                for item in items
+                if item.get("is_abnormal")
+            ]
+            abnormal_text = "；".join(
+                f"{item.get('name') or item.get('item_name') or item.get('name_en')} {item.get('value')} {item.get('unit') or ''}".strip()
+                for item in abnormal_items[:8]
+            )
+            exam_ids = ", ".join(str(exam.id) for exam, _result, _items in imported)
+            note = f"已将图片中的 {total_items} 项化验指标写入系统，体检记录 ID: {exam_ids}。"
+            if abnormal_text:
+                note += f" 识别到异常/标记项：{abnormal_text}。"
+            return note
+        except Exception as e:
+            logger.warning(f"[Vision] 医疗报告图片自动入库失败: {e}", exc_info=True)
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            return None
+
     async def _execute_tool(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
     ) -> str:
@@ -1368,10 +1446,50 @@ class AgentExecutor:
         text = (args.get("text") or "").strip()
         if not text:
             return "Error: text 不能为空"
-        # 复用 family_health 的 parse-medical-text (内部 LLM 抽指标 + 路由入库)
-        return await self._api_post(
-            f"{base}/family-health/parse-medical-text", headers, {"text": text}
-        )
+        if self._current_user_id is None:
+            return "Error: 当前会话无 user_id, 无法写入化验指标"
+
+        try:
+            from datetime import date as _date
+
+            from app.services.data_collection.medical_exam_import import MedicalExamImportService
+            from app.twin.cache import invalidate_twin
+
+            raw_date = args.get("exam_date")
+            exam_date = (
+                datetime.strptime(raw_date, "%Y-%m-%d").date()
+                if raw_date
+                else _date.today()
+            )
+            exam = MedicalExamImportService.import_from_text(
+                self.db,
+                user_id=self._current_user_id,
+                text=text,
+                exam_date=exam_date,
+                source="agent_text",
+            )
+            try:
+                invalidate_twin(self._current_user_id)
+            except Exception:
+                pass
+            return json.dumps(
+                {
+                    "message": "化验指标已写入系统",
+                    "exam_id": exam.id,
+                    "exam_date": exam.exam_date.isoformat() if exam.exam_date else None,
+                    "items_count": len(exam.items or []),
+                },
+                ensure_ascii=False,
+            )
+        except ValueError as e:
+            return f"Error: {e}"
+        except Exception as e:
+            logger.error(f"[upload_medical_exam_text] 入库失败: {e}", exc_info=True)
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            return f"Error: 化验指标入库失败: {e}"
 
     async def _exec_query_lab_indicators(
         self, base: str, headers: dict, args: dict

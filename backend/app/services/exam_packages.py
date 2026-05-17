@@ -2,7 +2,8 @@
 
 用于标准化体检项目的分类和识别
 """
-from typing import Dict, List, Any
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 # ========== 体检套餐定义 ==========
 EXAM_PACKAGES: Dict[str, Dict[str, Any]] = {
@@ -112,6 +113,31 @@ EXAM_PACKAGES: Dict[str, Dict[str, Any]] = {
 # ========== 检测项目标准化映射 ==========
 # 用于将PDF中识别的各种名称映射到标准代码
 ITEM_NAME_MAPPING: Dict[str, str] = {
+    # 肝肾功能
+    "ALT": "ALT",
+    "谷丙转氨酶": "ALT",
+    "丙氨酸氨基转移酶": "ALT",
+    "AST": "AST",
+    "谷草转氨酶": "AST",
+    "天门冬氨酸氨基转移酶": "AST",
+    "GGT": "GGT",
+    "γ-谷氨酰转肽酶": "GGT",
+    "谷氨酰转肽酶": "GGT",
+    "CHE": "CHE",
+    "胆碱酯酶": "CHE",
+    "TBIL": "TBIL",
+    "总胆红素": "TBIL",
+    "DBIL": "DBIL",
+    "直接胆红素": "DBIL",
+    "Cr": "CREA",
+    "CREA": "CREA",
+    "肌酐": "CREA",
+    "血肌酐": "CREA",
+    "BUN": "BUN",
+    "尿素氮": "BUN",
+    "UA": "UA",
+    "尿酸": "UA",
+
     # 糖化血红蛋白
     "糖化血红蛋白": "glucose_hba1c",
     "糖化血红蛋白测定": "glucose_hba1c",
@@ -243,6 +269,17 @@ ITEM_NAME_MAPPING: Dict[str, str] = {
 
 # ========== 检测项目标准名称 ==========
 ITEM_LABELS: Dict[str, str] = {
+    # 肝肾功能
+    "ALT": "谷丙转氨酶",
+    "AST": "谷草转氨酶",
+    "GGT": "谷氨酰转肽酶",
+    "CHE": "胆碱酯酶",
+    "TBIL": "总胆红素",
+    "DBIL": "直接胆红素",
+    "CREA": "肌酐",
+    "BUN": "尿素氮",
+    "UA": "尿酸",
+
     # 血糖相关
     "glucose_hba1c": "糖化血红蛋白",
     "glucose_fasting": "空腹血糖",
@@ -364,9 +401,6 @@ def get_package_items(package_key: str) -> List[Dict[str, str]]:
 
 
 # ========== 指标统一化工具函数 ==========
-
-import re
-from typing import Optional, Tuple
 
 _ABNORMAL_LABELS = frozenset({
     "true", "yes", "1", "异常", "偏高", "偏低",

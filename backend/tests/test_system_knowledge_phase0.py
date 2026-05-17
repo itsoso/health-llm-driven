@@ -143,6 +143,49 @@ def test_build_evidence_card_for_message_detects_mthfr_tt_question(db):
     assert card["data"]["claims"][0]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"
 
 
+def test_build_evidence_card_for_message_detects_9p21_aa_question(db):
+    entity = KBDocument(
+        doc_id="entity:gene:9p21",
+        doc_type="entity",
+        entity_type="gene",
+        entity_id="9p21",
+        title="9p21",
+        summary="9p21 区域用于心血管风险沟通，必须结合血脂、血压、炎症和生活方式指标。",
+        body="9p21 不是补剂处方锚点。",
+        confidence=0.72,
+        evidence_level="C",
+        sources=["dedao:qiuzilong-genetics-20"],
+        last_confirmed=datetime(2026, 5, 17, tzinfo=UTC),
+        decay_rate="normal",
+    )
+    claim = KBDocument(
+        doc_id="claim:c_9p21_cardiovascular_labs_lifestyle_boundary",
+        doc_type="claim",
+        entity_type="gene",
+        entity_id="9p21",
+        title="9p21 AA 解读必须锚定心血管临床指标",
+        summary="9p21 AA 只能作为冠心病/动脉粥样硬化风险沟通线索；补剂建议必须先看 LDL-C、ApoB、血压、血糖、炎症、肝肾功能和运动恢复数据。",
+        body="不应仅凭 9p21 AA 给出确定补剂方案。",
+        confidence=0.68,
+        evidence_level="C",
+        applies_when=["twin.genetics.9p21 in ['AA', 'AG']", "twin.genetics.rs10757274 in ['AA', 'AG']"],
+        recommends_lookup=["entity:gene:9p21", "entity:biomarker:LDL-C", "entity:biomarker:BP"],
+        sources=["dedao:qiuzilong-genetics-20"],
+        last_confirmed=datetime(2026, 5, 17, tzinfo=UTC),
+        decay_rate="normal",
+    )
+    db.add_all([entity, claim])
+    db.flush()
+    db.add(KBEdge(src_doc_id=entity.doc_id, dst_doc_id=claim.doc_id, relation="has_claim", confidence=0.88))
+    db.commit()
+
+    card = build_evidence_card_for_message(db, "针对我的 9p21 基因 AA，补剂方面怎么做？")
+
+    assert card is not None
+    assert card["data"]["entity"]["doc_id"] == "entity:gene:9p21"
+    assert card["data"]["claims"][0]["doc_id"] == "claim:c_9p21_cardiovascular_labs_lifestyle_boundary"
+
+
 def test_get_claim_returns_claim_detail_with_neighbors(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)
