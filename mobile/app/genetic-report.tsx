@@ -259,9 +259,11 @@ function PredictionBoundaryCard({
       <Text style={[styles.predictionText, { color: c.labelTertiary }]}>
         身高: {predictions.height.message}
       </Text>
+      <TraitCoverageRow label="身高位点" trait={predictions.height} c={c} />
       <Text style={[styles.predictionText, { color: c.labelTertiary }]}>
         教育: {predictions.education.message}
       </Text>
+      <TraitCoverageRow label="教育位点" trait={predictions.education} c={c} />
       {predictions.learning && predictions.learning.recommendations.length > 0 && (
         <View style={styles.learningList}>
           <Text style={[styles.predictionText, { color: c.labelSecondary }]}>
@@ -280,6 +282,36 @@ function PredictionBoundaryCard({
           ))}
         </View>
       )}
+    </View>
+  );
+}
+
+function TraitCoverageRow({
+  label,
+  trait,
+  c,
+}: {
+  label: string;
+  trait: GeneticPredictions['height'] | GeneticPredictions['education'];
+  c: any;
+}) {
+  if (trait.supported_marker_count == null) return null;
+  const hitCount = trait.marker_count ?? 0;
+  const supportedCount = trait.supported_marker_count;
+  const isEmpty = hitCount === 0;
+  return (
+    <View style={[styles.coverageBox, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+      <View style={styles.coverageHead}>
+        <Text style={[styles.coverageLabel, { color: c.labelSecondary }]}>{label}</Text>
+        <Text style={[styles.coverageCount, { color: isEmpty ? c.amber : c.brand }]}>
+          {hitCount}/{supportedCount}
+        </Text>
+      </View>
+      {trait.coverage_note ? (
+        <Text style={[styles.coverageNote, { color: c.labelTertiary }]}>
+          {trait.coverage_note}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -544,6 +576,16 @@ const styles = StyleSheet.create({
   predictionRiskGene: { fontSize: 13, fontWeight: '700', width: 68 },
   predictionRiskLabel: { flex: 1, fontSize: 12 },
   predictionText: { fontSize: 12, lineHeight: 18 },
+  coverageBox: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    padding: 8,
+    gap: 4,
+  },
+  coverageHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  coverageLabel: { fontSize: 12, fontWeight: '600' },
+  coverageCount: { fontSize: 12, fontWeight: '700', fontFamily: 'Courier' },
+  coverageNote: { fontSize: 11, lineHeight: 16 },
   learningList: { gap: 6, marginTop: 4 },
   learningItem: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 6, gap: 2 },
   learningTitle: { fontSize: 13, fontWeight: '700' },

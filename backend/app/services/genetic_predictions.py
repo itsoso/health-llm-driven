@@ -207,6 +207,28 @@ def _trait_marker_hits(
     return hits, favorable_count
 
 
+def _coverage_fields(hits: list[Dict[str, Any]], markers: tuple[TraitMarker, ...]) -> Dict[str, Any]:
+    supported_count = len(markers)
+    hit_count = len(hits)
+    missing_count = max(0, supported_count - hit_count)
+    if hit_count == 0:
+        note = (
+            f"当前仅支持 {supported_count} 个探索性 marker；本次检测文件未覆盖这些 rsid 或未成功入库。"
+            "这不代表没有遗传相关性，只代表不能用当前数据展示这一项。"
+        )
+    else:
+        note = (
+            f"当前支持 {supported_count} 个探索性 marker，本次命中 {hit_count} 个、缺失 {missing_count} 个。"
+            "该结果只能作为低置信度方向提示。"
+        )
+    return {
+        "marker_count": hit_count,
+        "supported_marker_count": supported_count,
+        "missing_marker_count": missing_count,
+        "coverage_note": note,
+    }
+
+
 def _learning_recommendations(variants: list[GeneticVariant]) -> Dict[str, Any]:
     by_rsid = _variants_by_rsid(variants)
     learning_rsids = {
@@ -261,6 +283,7 @@ def _learning_recommendations(variants: list[GeneticVariant]) -> Dict[str, Any]:
 
 def _height_prediction(variants: list[GeneticVariant]) -> Dict[str, Any]:
     hits, favorable_count = _trait_marker_hits(variants, HEIGHT_MARKERS)
+    coverage = _coverage_fields(hits, HEIGHT_MARKERS)
     if not hits:
         return {
             "status": "insufficient_model",
@@ -268,6 +291,9 @@ def _height_prediction(variants: list[GeneticVariant]) -> Dict[str, Any]:
                 "当前没有已校准到该用户祖源和检测芯片的身高 polygenic score 权重, "
                 "也没有命中已支持的探索性身高 marker, 不能输出个人身高数值预测。"
             ),
+            **coverage,
+            "confidence": "low",
+            "boundary": "不能用少量 marker 预测厘米数；需要全量 PRS、祖源校准、性别、年龄和环境信息。",
             "required_inputs": [
                 "validated_height_prs_weights",
                 "ancestry_or_population_calibration",
@@ -285,7 +311,7 @@ def _height_prediction(variants: list[GeneticVariant]) -> Dict[str, Any]:
             f"{favorable_count}/{max_alleles}。这只能说明方向性 polygenic signal 的一小部分, "
             "不能换算成厘米数；真实身高还需要全量 PRS、祖源校准、性别、父母身高、营养和生长阶段信息。"
         ),
-        "marker_count": len(hits),
+        **coverage,
         "favorable_allele_count": favorable_count,
         "max_alleles": max_alleles,
         "confidence": "low",
@@ -302,6 +328,7 @@ def _height_prediction(variants: list[GeneticVariant]) -> Dict[str, Any]:
 
 def _education_association(variants: list[GeneticVariant]) -> Dict[str, Any]:
     hits, favorable_count = _trait_marker_hits(variants, EDUCATION_MARKERS)
+    coverage = _coverage_fields(hits, EDUCATION_MARKERS)
     if not hits:
         return {
             "status": "unsupported",
@@ -309,8 +336,11 @@ def _education_association(variants: list[GeneticVariant]) -> Dict[str, Any]:
                 "不会预测个人是否能上大学。教育结果强烈受家庭、学校、经济、地区、政策和个人选择影响, "
                 "用基因给个人做教育命运判断不可靠。"
             ),
+            **coverage,
+            "confidence": "very_low",
             "allowed_use": "只能用于解释为什么产品不提供该类预测, 不进入用户画像或推荐决策。",
             "does_not_predict_college": True,
+            "boundary": "教育相关 marker 只来自群体统计相关；不得用于能力评价或教育筛选。",
         }
 
     max_alleles = len(hits) * 2
@@ -321,7 +351,7 @@ def _education_association(variants: list[GeneticVariant]) -> Dict[str, Any]:
             f"{favorable_count}/{max_alleles}。这不能判定你是否能上大学, "
             "也不能用于评价能力；它只是在群体研究中与教育年限/教育完成度有弱统计相关。"
         ),
-        "marker_count": len(hits),
+        **coverage,
         "favorable_allele_count": favorable_count,
         "max_alleles": max_alleles,
         "confidence": "very_low",

@@ -66,6 +66,10 @@ export interface GeneticPredictions {
     message: string;
     required_inputs?: string[];
     marker_count?: number;
+    supported_marker_count?: number;
+    missing_marker_count?: number;
+    coverage_note?: string;
+    boundary?: string;
     favorable_allele_count?: number;
     max_alleles?: number;
     confidence?: 'low' | 'very_low' | string;
@@ -76,6 +80,10 @@ export interface GeneticPredictions {
     message: string;
     allowed_use?: string;
     marker_count?: number;
+    supported_marker_count?: number;
+    missing_marker_count?: number;
+    coverage_note?: string;
+    boundary?: string;
     favorable_allele_count?: number;
     max_alleles?: number;
     confidence?: 'low' | 'very_low' | string;
@@ -208,6 +216,8 @@ export const CATEGORY_LABELS: Record<string, string> = {
   sleep: '睡眠',
   recovery: '恢复',
   personality: '人格',
+  height_trait: '身高倾向',
+  education_trait: '教育相关',
   other: '其他',
 };
 

@@ -156,7 +156,13 @@ def test_genetic_predictions_height_disease_and_education_guard(client, db, auth
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["height"]["status"] == "insufficient_model"
+    assert body["height"]["marker_count"] == 0
+    assert body["height"]["supported_marker_count"] >= 3
+    assert "检测文件未覆盖" in body["height"]["coverage_note"]
     assert body["education"]["status"] == "unsupported"
+    assert body["education"]["marker_count"] == 0
+    assert body["education"]["supported_marker_count"] >= 3
+    assert "检测文件未覆盖" in body["education"]["coverage_note"]
     assert "不会预测个人是否能上大学" in body["education"]["message"]
     assert body["disease_risk"]["status"] == "screening"
     assert body["disease_risk"]["top_risks"][0]["risk_level"] == "high"
@@ -227,9 +233,13 @@ def test_genetic_predictions_reports_exploratory_height_and_education_markers(cl
     body = res.json()
     assert body["height"]["status"] == "exploratory_marker_score"
     assert body["height"]["marker_count"] == 2
+    assert body["height"]["supported_marker_count"] >= 3
+    assert body["height"]["missing_marker_count"] >= 1
     assert body["height"]["favorable_allele_count"] == 3
     assert body["education"]["status"] == "exploratory_association"
     assert body["education"]["marker_count"] == 3
+    assert body["education"]["supported_marker_count"] >= 3
+    assert body["education"]["missing_marker_count"] == 0
     assert body["education"]["favorable_allele_count"] == 3
     assert body["education"]["does_not_predict_college"] is True
     assert "不能判定" in body["education"]["message"]
