@@ -1391,7 +1391,8 @@ class AgentExecutor:
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",
             "sleep", "mood", "excretion", "illness", "medication",
-            "supplement_definition",
+            "supplement_definition", "exercise", "symptom", "medication_log",
+            "reminder",
         }
 
         if operation == "list":

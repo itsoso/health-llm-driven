@@ -1,34 +1,35 @@
 """日常健康记录API"""
 import logging
+from datetime import date
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import date
-from app.database import get_db
 
-logger = logging.getLogger(__name__)
+from app.api.deps import get_current_user_required
+from app.database import get_db
+from app.models.daily_health import (
+    DietRecord,
+    ExerciseRecord,
+    GarminData,
+    OutdoorActivity,
+    SupplementIntake,
+    WaterIntake,
+)
+from app.models.user import User
 from app.schemas.daily_health import (
-    GarminDataCreate,
-    GarminDataResponse,
+    DietRecordCreate,
     ExerciseRecordCreate,
     ExerciseRecordResponse,
-    DietRecordCreate,
-    WaterIntakeCreate,
+    ExerciseRecordUpdate,
+    GarminDataCreate,
+    GarminDataResponse,
+    OutdoorActivityCreate,
     SupplementIntakeCreate,
-    OutdoorActivityCreate
+    WaterIntakeCreate,
 )
-from app.api.deps import get_current_user_required
-from app.models.user import User
-from app.models.daily_health import (
-    GarminData,
-    ExerciseRecord,
-    DietRecord,
-    WaterIntake,
-    SupplementIntake,
-    OutdoorActivity
-)
-from app.models.user import User
-from app.api.deps import get_current_user_required
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -180,6 +181,28 @@ def get_today_exercises(
         ExerciseRecord.record_date == today,
     ).order_by(ExerciseRecord.created_at.desc()).all()
     return records
+
+
+@router.put("/exercise/{exercise_id}", response_model=ExerciseRecordResponse)
+def update_exercise_record(
+    exercise_id: int,
+    payload: ExerciseRecordUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """更新单条锻炼记录（本人）"""
+    record = db.query(ExerciseRecord).filter(
+        ExerciseRecord.id == exercise_id,
+        ExerciseRecord.user_id == current_user.id,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(record, key, value)
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 @router.delete("/exercise/{exercise_id}")

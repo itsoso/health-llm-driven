@@ -2,7 +2,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import date, datetime, time
 from typing import Optional, Any, Dict
-import math
 
 
 class GarminDataCreate(BaseModel):
@@ -153,6 +152,20 @@ class ExerciseRecordCreate(BaseModel):
     exercise_type: str
     duration: Optional[int] = None              # 分钟
     duration_seconds: Optional[int] = None      # 秒 (倒立等亚分钟精度场景)
+    intensity: Optional[str] = None
+    calories_burned: Optional[int] = None
+    reps: Optional[int] = None
+    sets: Optional[int] = None
+    distance: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class ExerciseRecordUpdate(BaseModel):
+    """更新锻炼记录"""
+    record_date: Optional[date] = None
+    exercise_type: Optional[str] = None
+    duration: Optional[int] = None
+    duration_seconds: Optional[int] = None
     intensity: Optional[str] = None
     calories_burned: Optional[int] = None
     reps: Optional[int] = None

@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
 from app.database import get_db
+from app.models.medication import Medication, MedicationLog
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services.medication_service import medication_service
@@ -45,6 +46,15 @@ class MedicationLogCreate(BaseModel):
     medication_id: int
     taken_time: str
     status: str = "taken"
+    skip_reason: Optional[str] = None
+    actual_dosage: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MedicationLogUpdate(BaseModel):
+    medication_id: Optional[int] = None
+    taken_time: Optional[str] = None
+    status: Optional[str] = None
     skip_reason: Optional[str] = None
     actual_dosage: Optional[str] = None
     notes: Optional[str] = None
@@ -170,7 +180,6 @@ async def delete_medication_log(
     db: Session = Depends(get_db),
 ):
     """删除一条服药日志（本人），用于撤销误点的快速打卡"""
-    from app.models.medication import MedicationLog
     log = db.query(MedicationLog).filter(
         MedicationLog.id == log_id,
         MedicationLog.user_id == current_user.id,
@@ -181,6 +190,42 @@ async def delete_medication_log(
     db.commit()
     logger.info(f"[MedAPI] 用户 {current_user.id} 删除服药日志 {log_id}")
     return {"message": "已删除", "id": log_id}
+
+
+@router.put("/logs/{log_id}")
+async def update_medication_log(
+    log_id: int,
+    data: MedicationLogUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """更新一条服药日志（本人），用于对话内修正误点/漏记"""
+    payload = data.model_dump(exclude_unset=True)
+    status_value = payload.get("status")
+    if status_value is not None and status_value not in {"taken", "skipped", "delayed"}:
+        raise HTTPException(status_code=400, detail="status 必须是 taken/skipped/delayed")
+
+    log = db.query(MedicationLog).filter(
+        MedicationLog.id == log_id,
+        MedicationLog.user_id == current_user.id,
+    ).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    if "medication_id" in payload:
+        med = db.query(Medication).filter(
+            Medication.id == payload["medication_id"],
+            Medication.user_id == current_user.id,
+        ).first()
+        if not med:
+            raise HTTPException(status_code=404, detail="药品不存在")
+
+    for key, value in payload.items():
+        setattr(log, key, value)
+    db.commit()
+    db.refresh(log)
+    logger.info(f"[MedAPI] 用户 {current_user.id} 更新服药日志 {log_id}")
+    return _serialize_medication_log(log)
 
 
 @router.get("/today/me")
@@ -220,4 +265,19 @@ def _serialize_medication(med) -> Dict[str, Any]:
         "is_active": med.is_active,
         "notes": med.notes,
         "created_at": str(med.created_at) if med.created_at else None,
+    }
+
+
+def _serialize_medication_log(log: MedicationLog) -> Dict[str, Any]:
+    return {
+        "id": log.id,
+        "user_id": log.user_id,
+        "medication_id": log.medication_id,
+        "taken_date": str(log.taken_date) if log.taken_date else None,
+        "taken_time": log.taken_time,
+        "status": log.status,
+        "skip_reason": log.skip_reason,
+        "actual_dosage": log.actual_dosage,
+        "notes": log.notes,
+        "created_at": str(log.created_at) if log.created_at else None,
     }

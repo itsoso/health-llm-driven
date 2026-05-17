@@ -172,7 +172,7 @@ reminder:         {"title": "吃药", "remind_at": "2026-05-06T08:00:00+08:00"}"
 支持 record_type:
 - diet, water, weight, waist, blood_pressure, sleep, mood, excretion: 支持 list/update/delete
 - illness, medication, supplement_definition: 支持 list/update/delete
-- exercise, symptom, medication_log, reminder: 支持 list/delete
+- exercise, symptom, medication_log, reminder: 支持 list/update/delete
 """,
             "parameters": {
                 "type": "object",
@@ -210,6 +210,10 @@ blood_pressure: {"systolic":120,"diastolic":78}
 illness: {"status":"resolved","severity":2}
 medication: {"name":"二甲双胍","dosage":"500mg"}
 supplement_definition: {"name":"维生素D","dosage":"2000IU"}
+exercise: {"reps":20,"sets":2}
+symptom: {"severity":2,"notes":"洗鼻后缓解"}
+medication_log: {"status":"skipped","skip_reason":"医生要求暂停"}
+reminder: {"title":"明早复查血压","priority":"high"}
 """,
                     },
                 },

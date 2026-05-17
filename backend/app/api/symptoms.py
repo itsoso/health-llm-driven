@@ -35,6 +35,17 @@ class SymptomCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class SymptomUpdate(BaseModel):
+    body_part: Optional[str] = Field(None, description="见 VALID_BODY_PARTS")
+    description: Optional[str] = Field(None, min_length=1, max_length=500)
+    severity: Optional[int] = Field(None, ge=1, le=10)
+    triggers: Optional[List[str]] = None
+    duration_minutes: Optional[int] = Field(None, ge=0)
+    occurred_at: Optional[datetime] = None
+    source: Optional[str] = Field(None, pattern="^(manual|voice|siri)$")
+    notes: Optional[str] = None
+
+
 class SymptomResponse(BaseModel):
     id: int
     user_id: int
@@ -116,6 +127,31 @@ def list_my_symptoms(
 
     rows = q.order_by(desc(SymptomEntry.occurred_at)).limit(limit).all()
     return [_to_response(r) for r in rows]
+
+
+@router.put("/{symptom_id}", response_model=SymptomResponse)
+def update_symptom(
+    symptom_id: int,
+    payload: SymptomUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    e = db.query(SymptomEntry).filter(
+        SymptomEntry.id == symptom_id,
+        SymptomEntry.user_id == current_user.id,
+    ).first()
+    if e is None:
+        raise HTTPException(status_code=404, detail="不存在")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "body_part" in data and data["body_part"] not in VALID_BODY_PARTS:
+        raise HTTPException(status_code=400, detail=f"body_part 必须是 {sorted(VALID_BODY_PARTS)} 之一")
+    for key, value in data.items():
+        setattr(e, key, value)
+    e.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(e)
+    return _to_response(e)
 
 
 @router.delete("/{symptom_id}", status_code=status.HTTP_204_NO_CONTENT)

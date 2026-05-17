@@ -152,21 +152,70 @@ async def test_health_manage_lists_reminders(db):
 
 
 @pytest.mark.asyncio
-async def test_health_manage_rejects_unsupported_exercise_update(db):
+async def test_health_manage_updates_exercise_record_by_id(db):
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
     executor._current_user_id = 3
 
-    result = await executor._execute_tool(
-        tool_name="health_manage",
-        args_raw=json.dumps({
-            "record_type": "exercise",
-            "operation": "update",
-            "record_id": 42,
-            "data": {"reps": 20},
-        }),
-        user_token="test-token",
-    )
+    captured = {}
 
-    assert "暂不支持 update" in result
+    async def fake_put(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id":42,"reps":20,"sets":2}'
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "exercise",
+                "operation": "update",
+                "record_id": 42,
+                "data": {"reps": 20, "sets": 2},
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/daily-health/exercise/42")
+    assert captured["payload"] == {"reps": 20, "sets": 2}
+    assert json.loads(result)["reps"] == 20
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("record_type", "path", "payload"),
+    [
+        ("symptom", "/symptoms/12", {"severity": 2, "notes": "已缓解"}),
+        ("medication_log", "/medication/logs/13", {"status": "skipped", "skip_reason": "医生要求暂停"}),
+        ("reminder", "/reminders/14", {"title": "明早复查血压", "priority": "high"}),
+    ],
+)
+async def test_health_manage_updates_remaining_record_types(db, record_type, path, payload):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_put(url, headers, data):
+        captured["url"] = url
+        captured["payload"] = data
+        return json.dumps({"id": int(path.rsplit("/", 1)[1]), **data}, ensure_ascii=False)
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": record_type,
+                "operation": "update",
+                "record_id": int(path.rsplit("/", 1)[1]),
+                "data": payload,
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith(path)
+    assert captured["payload"] == payload
+    assert json.loads(result)["id"] == int(path.rsplit("/", 1)[1])
