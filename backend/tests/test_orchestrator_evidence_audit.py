@@ -14,8 +14,13 @@ def test_specialist_audit_snapshot_marks_unsupported_when_no_evidence_refs():
     snapshot = _specialist_audit_snapshot([finding])
 
     assert snapshot[0]["unsupported"] is True
+    assert snapshot[0]["support_status"] == "model_inference"
+    assert snapshot[0]["evidence_ref_count"] == 0
+    assert snapshot[0]["unsupported_reason"] == "missing_system_kb_evidence_refs"
     assert snapshot[0]["evidence_refs"] == []
     assert snapshot[0]["data"]["unsupported"] is True
+    assert snapshot[0]["data"]["support_status"] == "model_inference"
+    assert snapshot[0]["data"]["evidence_ref_count"] == 0
     assert snapshot[0]["data"]["unsupported_reason"] == "missing_system_kb_evidence_refs"
 
 
@@ -32,5 +37,10 @@ def test_specialist_audit_snapshot_preserves_supported_evidence_refs():
     snapshot = _specialist_audit_snapshot([finding])
 
     assert snapshot[0]["unsupported"] is False
+    assert snapshot[0]["support_status"] == "supported"
+    assert snapshot[0]["evidence_ref_count"] == 1
+    assert snapshot[0]["unsupported_reason"] is None
     assert snapshot[0]["evidence_refs"] == ["claim:c_recovery_low_reduce_intensity"]
     assert snapshot[0]["data"]["unsupported"] is False
+    assert snapshot[0]["data"]["support_status"] == "supported"
+    assert snapshot[0]["data"]["evidence_ref_count"] == 1

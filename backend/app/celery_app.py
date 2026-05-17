@@ -32,6 +32,7 @@ celery_app = Celery(
         "app.tasks.outcome_grader",
         "app.tasks.open_loop_manager",
         "app.tasks.memory_lifecycle",
+        "app.tasks.system_knowledge_lifecycle",
         "app.tasks.insights",
         "app.tasks.monthly_report",
         "app.tasks.episode_scheduler",
@@ -241,6 +242,13 @@ celery_app.conf.beat_schedule = {
     "rebuild-knowledge-index": {
         "task": "app.tasks.maintenance.rebuild_knowledge_index",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
+    },
+
+    # 每周一 04:30 系统级 KB 生命周期维护:
+    # lint + confidence decay + multi-user crystallize draft report.
+    "system-kb-lifecycle": {
+        "task": "app.tasks.system_knowledge_lifecycle.run_system_kb_lifecycle",
+        "schedule": crontab(hour=4, minute=30, day_of_week=1),
     },
 
     # 每天 23:55 检查 24h LLM 成本, 超阈值 log warning (Sentry breadcrumb)

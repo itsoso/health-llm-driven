@@ -607,14 +607,19 @@ def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[s
     for f in findings:
         refs = list(f.evidence_refs or [])
         unsupported = len(refs) == 0
+        evidence_ref_count = len(refs)
+        support_status = "model_inference" if unsupported else "supported"
+        unsupported_reason = "missing_system_kb_evidence_refs" if unsupported else None
         data = f.model_dump(mode="json").get("raw") or {}
         if not isinstance(data, dict):
             data = {"raw": data}
         data = dict(data)
         data["evidence_refs"] = refs
+        data["evidence_ref_count"] = evidence_ref_count
+        data["support_status"] = support_status
         data["unsupported"] = unsupported
         if unsupported:
-            data["unsupported_reason"] = "missing_system_kb_evidence_refs"
+            data["unsupported_reason"] = unsupported_reason
         snapshot.append(
             {
                 "specialist": f.specialist_name,
@@ -622,7 +627,10 @@ def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[s
                 "summary": f.summary,
                 "data": data,
                 "evidence_refs": refs,
+                "evidence_ref_count": evidence_ref_count,
+                "support_status": support_status,
                 "unsupported": unsupported,
+                "unsupported_reason": unsupported_reason,
                 "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
             }
         )

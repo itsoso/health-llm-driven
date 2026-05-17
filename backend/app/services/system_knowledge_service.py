@@ -16,6 +16,7 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
+SPECIALIST_EVIDENCE_REF_RATE_TARGET = 0.85
 VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
 POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
@@ -745,6 +746,8 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
         "with_evidence_refs": with_refs,
         "unsupported": unsupported,
         "evidence_ref_rate": round(with_refs / total, 4) if total else 0.0,
+        "target_evidence_ref_rate": SPECIALIST_EVIDENCE_REF_RATE_TARGET,
+        "meets_target": (with_refs / total) >= SPECIALIST_EVIDENCE_REF_RATE_TARGET if total else False,
         "unsupported_rate": round(unsupported / total, 4) if total else 0.0,
         "by_specialist": by_specialist,
     }

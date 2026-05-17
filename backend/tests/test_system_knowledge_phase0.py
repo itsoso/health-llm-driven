@@ -367,6 +367,8 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["specialist_findings"]["with_evidence_refs"] == 1
     assert payload["specialist_findings"]["unsupported"] == 2
     assert payload["specialist_findings"]["evidence_ref_rate"] == 0.3333
+    assert payload["specialist_findings"]["target_evidence_ref_rate"] == 0.85
+    assert payload["specialist_findings"]["meets_target"] is False
     assert payload["feedback"]["disagree"] == 1
 
 
