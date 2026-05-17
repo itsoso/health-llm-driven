@@ -27,6 +27,7 @@ import {
   submitKnowledgeClaimFeedback,
   type KnowledgeClaimBundle,
   type KnowledgeDocument,
+  type KnowledgeSourceDetail,
 } from '../../services/systemKnowledge';
 import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 import { EntityCard } from './EntityCard';
@@ -198,9 +199,12 @@ function ClaimBlock({
   isLast: boolean;
 }) {
   const claim = bundle.claim;
-  const evidenceText = claim.evidence_level ? EVIDENCE_LABEL[claim.evidence_level] : null;
+  const evidenceText =
+    claim.evidence_level_detail?.label ||
+    (claim.evidence_level ? EVIDENCE_LABEL[claim.evidence_level] : null);
   const confidencePct = typeof claim.confidence === 'number' ? Math.round(claim.confidence * 100) : null;
   const sources = (claim.sources || []).slice(0, 3);
+  const sourceDetails = (claim.source_details || []).slice(0, 3);
   const entityNeighbors: KnowledgeDocument[] = (bundle.neighbors || []).filter(
     (n) => n.doc_type === 'entity',
   );
@@ -221,6 +225,11 @@ function ClaimBlock({
       {confidencePct != null ? (
         <Text style={styles.meta}>置信度 {confidencePct}%</Text>
       ) : null}
+      {claim.evidence_level_detail?.description ? (
+        <Text style={styles.evidenceDescription}>
+          {claim.evidence_level_detail.description}
+        </Text>
+      ) : null}
 
       {claim.summary ? <Text style={styles.body}>{claim.summary}</Text> : null}
 
@@ -231,7 +240,16 @@ function ClaimBlock({
         </View>
       ) : null}
 
-      {sources.length > 0 ? (
+      {sourceDetails.length > 0 ? (
+        <View style={styles.sourcesWrap}>
+          <Text style={styles.sourcesLabel}>来源</Text>
+          <View style={styles.sourceChipRow}>
+            {sourceDetails.map((src, idx) => (
+              <SourceChip key={`${src.source}-${idx}`} source={src} styles={styles} />
+            ))}
+          </View>
+        </View>
+      ) : sources.length > 0 ? (
         <View style={styles.sourcesWrap}>
           <Text style={styles.sourcesLabel}>来源</Text>
           {sources.map((src, idx) => (
@@ -250,6 +268,25 @@ function ClaimBlock({
           ))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function SourceChip({
+  source,
+  styles,
+}: {
+  source: KnowledgeSourceDetail;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.sourceChip}>
+      <Text style={styles.sourceChipLabel} numberOfLines={1}>
+        {source.label || '来源'}
+      </Text>
+      <Text style={styles.sourceChipName} numberOfLines={1}>
+        {source.display_name || source.source}
+      </Text>
     </View>
   );
 }
@@ -345,6 +382,12 @@ function createStyles(c: ColorPalette) {
       color: c.labelPrimary,
       lineHeight: 18,
     },
+    evidenceDescription: {
+      marginTop: 4,
+      fontSize: 11,
+      color: c.labelSecondary,
+      lineHeight: 15,
+    },
     boundaryBox: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -376,6 +419,33 @@ function createStyles(c: ColorPalette) {
       fontSize: 11,
       color: c.labelSecondary,
       lineHeight: 15,
+    },
+    sourceChipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+    },
+    sourceChip: {
+      maxWidth: '100%',
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+      borderRadius: 6,
+      backgroundColor: c.bgPrimary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.separator,
+    },
+    sourceChipLabel: {
+      fontSize: 10,
+      color: c.brand,
+      fontWeight: '700',
+      lineHeight: 13,
+    },
+    sourceChipName: {
+      maxWidth: 240,
+      marginTop: 1,
+      fontSize: 11,
+      color: c.labelSecondary,
+      lineHeight: 14,
     },
     entitiesWrap: {
       marginTop: 10,

@@ -27,8 +27,29 @@ function makeBundle(claimId: string) {
       title: `Claim ${claimId}`,
       summary: '叶酸代谢与同型半胱氨酸的边界说明',
       evidence_level: 'B',
+      evidence_level_detail: {
+        level: 'B',
+        label: 'B级',
+        description: '中等证据：来自人群研究、临床观察或有来源的专家课程。',
+      },
       confidence: 0.82,
-      sources: ['dedao:qiuzilong-genetics-07'],
+      sources: ['dedao:qiuzilong-genetics-07', 'pubmed:19033271'],
+      source_details: [
+        {
+          source: 'dedao:qiuzilong-genetics-07',
+          kind: 'course',
+          label: '得到课程',
+          trust_tier: 'expert_course',
+          display_name: '仇子龙·基因科学20讲 #07',
+        },
+        {
+          source: 'pubmed:19033271',
+          kind: 'research',
+          label: 'PubMed',
+          trust_tier: 'clinical_research',
+          display_name: 'PubMed 19033271',
+        },
+      ],
     },
     neighbors: [
       {
@@ -94,10 +115,13 @@ describe('ClaimSheet', () => {
       expect(screen.getByText('Claim claim:c_mthfr_folate')).toBeTruthy();
     });
     expect(screen.getByText('B级')).toBeTruthy();
+    expect(screen.getByText(/中等证据/)).toBeTruthy();
     expect(screen.getByText('置信度 82%')).toBeTruthy();
     expect(screen.getByText(/叶酸代谢与同型半胱氨酸/)).toBeTruthy();
     expect(screen.getByText('MTHFR')).toBeTruthy();
-    expect(screen.getByText(/dedao:qiuzilong/)).toBeTruthy();
+    expect(screen.getByText('得到课程')).toBeTruthy();
+    expect(screen.getByText('PubMed')).toBeTruthy();
+    expect(screen.getByText(/仇子龙/)).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('claim-feedback-button'));
 

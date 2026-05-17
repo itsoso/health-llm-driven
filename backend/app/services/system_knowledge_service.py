@@ -36,7 +36,149 @@ _GENE_MESSAGE_PATTERNS = {
 }
 
 
+EVIDENCE_LEVEL_DETAILS = {
+    "A": {
+        "level": "A",
+        "label": "A级",
+        "description": "高等级证据：来自指南、系统综述、Meta 分析或随机对照研究，可作为强证据参考。",
+    },
+    "B": {
+        "level": "B",
+        "label": "B级",
+        "description": "中等证据：来自人群研究、临床观察、机制研究或有明确来源的专家课程，适合做健康管理参考。",
+    },
+    "C": {
+        "level": "C",
+        "label": "C级",
+        "description": "有限证据：多来自科普、专家解释或间接机制，需要结合个人数据和更高等级来源复核。",
+    },
+    "D": {
+        "level": "D",
+        "label": "D级",
+        "description": "低等级证据：多为个案、经验或待验证观察，只能作为探索线索。",
+    },
+}
+
+SOURCE_KIND_ORDER = {
+    "guideline": 0,
+    "research": 1,
+    "database": 2,
+    "course": 3,
+    "book": 4,
+    "article": 5,
+    "other": 9,
+}
+
+
+def evidence_level_detail(level: str | None) -> dict[str, str] | None:
+    if not level:
+        return None
+    normalized = str(level).strip().upper()
+    detail = EVIDENCE_LEVEL_DETAILS.get(normalized)
+    if detail:
+        return detail.copy()
+    return {
+        "level": normalized,
+        "label": f"{normalized}级",
+        "description": "未登记的证据等级，请查看原始来源并谨慎使用。",
+    }
+
+
+def _humanize_source_tail(value: str) -> str:
+    return value.replace("-", " ").replace("_", " ").strip()
+
+
+def source_detail(source: str) -> dict[str, str]:
+    raw = str(source or "").strip()
+    lowered = raw.lower()
+    prefix, _, value = raw.partition(":")
+    normalized_prefix = prefix.lower()
+
+    if normalized_prefix in {"pubmed", "pmid"}:
+        return {
+            "source": raw,
+            "kind": "research",
+            "label": "PubMed",
+            "trust_tier": "clinical_research",
+            "display_name": f"PubMed {value or raw}",
+        }
+    if normalized_prefix in {"guideline", "nih", "cdc", "who", "nmpa", "fda"}:
+        label = normalized_prefix.upper() if normalized_prefix != "guideline" else "临床指南"
+        return {
+            "source": raw,
+            "kind": "guideline",
+            "label": label,
+            "trust_tier": "clinical_guideline",
+            "display_name": _humanize_source_tail(value or raw),
+        }
+    if normalized_prefix == "examine":
+        return {
+            "source": raw,
+            "kind": "database",
+            "label": "Examine",
+            "trust_tier": "evidence_database",
+            "display_name": _humanize_source_tail(value or raw),
+        }
+    if normalized_prefix in {"dedao", "得到"}:
+        return {
+            "source": raw,
+            "kind": "course",
+            "label": "得到课程",
+            "trust_tier": "expert_course",
+            "display_name": _humanize_source_tail(value or raw),
+        }
+    if normalized_prefix in {"book", "course"}:
+        return {
+            "source": raw,
+            "kind": normalized_prefix,
+            "label": "书籍" if normalized_prefix == "book" else "课程",
+            "trust_tier": "expert_content",
+            "display_name": _humanize_source_tail(value or raw),
+        }
+    if "pubmed" in lowered:
+        return {
+            "source": raw,
+            "kind": "research",
+            "label": "PubMed",
+            "trust_tier": "clinical_research",
+            "display_name": raw,
+        }
+    return {
+        "source": raw,
+        "kind": "other",
+        "label": "其他来源",
+        "trust_tier": "unclassified",
+        "display_name": raw,
+    }
+
+
+def source_details(sources: list[str] | None) -> list[dict[str, str]]:
+    return [source_detail(source) for source in sources or [] if str(source or "").strip()]
+
+
+def source_groups(sources: list[str] | None) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for detail in source_details(sources):
+        kind = detail["kind"]
+        if kind not in grouped:
+            grouped[kind] = {
+                "kind": kind,
+                "label": detail["label"],
+                "trust_tier": detail["trust_tier"],
+                "count": 0,
+                "sources": [],
+            }
+        grouped[kind]["count"] += 1
+        grouped[kind]["sources"].append(detail)
+
+    return sorted(
+        grouped.values(),
+        key=lambda group: (SOURCE_KIND_ORDER.get(group["kind"], 9), group["label"]),
+    )
+
+
 def serialize_document(document: KBDocument, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    sources = document.sources or []
     payload = {
         "doc_id": document.doc_id,
         "doc_type": document.doc_type,
@@ -47,9 +189,12 @@ def serialize_document(document: KBDocument, extra: dict[str, Any] | None = None
         "body": document.body,
         "confidence": document.confidence,
         "evidence_level": document.evidence_level,
+        "evidence_level_detail": evidence_level_detail(document.evidence_level),
         "applies_when": document.applies_when or [],
         "recommends_lookup": document.recommends_lookup or [],
-        "sources": document.sources or [],
+        "sources": sources,
+        "source_details": source_details(sources),
+        "source_groups": source_groups(sources),
         "last_confirmed": document.last_confirmed.isoformat() if document.last_confirmed else None,
         "decay_rate": document.decay_rate,
         "is_archived": document.is_archived,

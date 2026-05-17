@@ -10,12 +10,35 @@ export interface KnowledgeDocument {
   body?: string | null;
   confidence?: number | null;
   evidence_level?: string | null;
+  evidence_level_detail?: {
+    level?: string | null;
+    label?: string | null;
+    description?: string | null;
+  } | null;
   applies_when?: string[];
   recommends_lookup?: string[];
   sources?: string[];
+  source_details?: KnowledgeSourceDetail[];
+  source_groups?: KnowledgeSourceGroup[];
   last_confirmed?: string | null;
   decay_rate?: string | null;
   metadata?: Record<string, any>;
+}
+
+export interface KnowledgeSourceDetail {
+  source: string;
+  kind?: string | null;
+  label?: string | null;
+  trust_tier?: string | null;
+  display_name?: string | null;
+}
+
+export interface KnowledgeSourceGroup {
+  kind: string;
+  label?: string | null;
+  trust_tier?: string | null;
+  count: number;
+  sources: KnowledgeSourceDetail[];
 }
 
 export interface KnowledgeClaimBundle {

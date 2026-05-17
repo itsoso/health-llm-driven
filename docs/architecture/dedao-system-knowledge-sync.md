@@ -323,7 +323,7 @@ Phase 0 已支持用户明确问基因问题时返回证据卡，例如：
 
 后端会生成 `system_knowledge_evidence` card，移动端展示证据等级、置信度、来源和医学边界。
 
-普通饮食、补剂、运动、恢复卡片中的 `evidence_refs` 已渲染成可点击 evidence chip。点击后打开统一 `ClaimSheet`，读取 `/knowledge/claim/{claim_id}`，展示 claim、来源、医学边界和相关 entity，并支持“这条证据不对”反馈写入 `/knowledge/claim/{claim_id}/feedback`。
+普通饮食、补剂、运动、恢复卡片中的 `evidence_refs` 已渲染成可点击 evidence chip。点击后打开统一 `ClaimSheet`，读取 `/knowledge/claim/{claim_id}`，展示 claim、来源分组、来源类型（如得到课程 / PubMed）、证据等级说明、医学边界和相关 entity，并支持“这条证据不对”反馈写入 `/knowledge/claim/{claim_id}/feedback`。
 
 基因报告页也支持 per-gene `evidence_refs`，命中基因卡会显示“系统证据 N 条”，复用同一 `ClaimSheet`。
 
@@ -368,7 +368,7 @@ flowchart TD
 
 - Search serving 已有 DB-backed lexical + graph RRF 路径；还没有 PostgreSQL FTS、向量检索和真正三路 BM25/vector/graph 融合。
 - Specialist 输出还没有全面强制 `evidence_refs`。
-- Mobile 已有普通饮食/补剂/训练卡和基因报告卡的 evidence chip、统一 ClaimSheet/EntityCard、claim feedback 入口；后续仍缺更细的来源分组、entity 深链页面和来源可信度解释。
+- Mobile 已有普通饮食/补剂/训练卡和基因报告卡的 evidence chip、统一 ClaimSheet/EntityCard、来源分组、来源可信度解释和 claim feedback 入口；后续仍缺 entity 深链页面。
 - 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲覆盖率，换取版权边界、医学边界和 review 可控性。
 - 给忙碌者的营养健康公开课在本轮扫描中没有进入最终 source set，原因是本地目录未暴露可识别的受支持文件；后续补齐源文件后可用同一 pipeline 追加。
 

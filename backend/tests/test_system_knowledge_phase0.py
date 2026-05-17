@@ -160,6 +160,34 @@ def test_get_claim_returns_claim_detail_with_neighbors(client, db, auth_user_and
     assert payload["claim_boundary"] == "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
 
 
+def test_get_claim_includes_evidence_and_source_details(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+
+    response = client.get(
+        "/api/v1/knowledge/claim/claim:c_mthfr_c677t_hcy_folate_boundary",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    claim = response.json()["claim"]
+    assert claim["evidence_level_detail"]["level"] == "B"
+    assert claim["evidence_level_detail"]["label"] == "B级"
+    assert "中等" in claim["evidence_level_detail"]["description"]
+
+    source_labels = {source["label"] for source in claim["source_details"]}
+    assert {"得到课程", "PubMed"} <= source_labels
+    dedao_source = next(
+        source for source in claim["source_details"] if source["source"] == "dedao:qiuzilong-genetics-07"
+    )
+    assert dedao_source["kind"] == "course"
+    assert dedao_source["trust_tier"] == "expert_course"
+
+    groups = {group["kind"]: group for group in claim["source_groups"]}
+    assert groups["course"]["count"] == 1
+    assert groups["research"]["count"] == 1
+
+
 def test_claim_feedback_disagree_writes_audit_log(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)
