@@ -33,7 +33,12 @@ from sqlalchemy.orm import Session
 from app.agents.safety_guardian import evaluate_safety
 from app.models.action_card import ActionCard
 from app.orchestrator.intent import classify_intent
-from app.orchestrator.orchestrator import _run_specialists, _select_specialists
+from app.orchestrator.orchestrator import (
+    _apply_planner_evidence_policy,
+    _attach_kb_evidence_to_findings,
+    _run_specialists,
+    _select_specialists,
+)
 from app.twin import build_twin
 from app.twin.formatter import twin_to_prompt_blob
 
@@ -251,6 +256,33 @@ def _findings_to_fallback_suggestions(findings: List[Any]) -> List[Dict[str, Any
     return out
 
 
+def _apply_weekly_advisor_evidence_policy(
+    db: Session,
+    twin: Any,
+    findings: List[Any],
+) -> tuple[List[Any], Dict[str, Any]]:
+    """Reuse Orchestrator's evidence gate before weekly advice consumes findings."""
+
+    if not findings:
+        return findings, {"input_count": 0, "kept_count": 0, "blocked_count": 0, "blocked": []}
+    try:
+        _attach_kb_evidence_to_findings(db, twin, findings)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[WeeklyAdvisor] system KB evidence attach skipped: %s", e)
+    try:
+        filtered, trace = _apply_planner_evidence_policy(findings)
+        return filtered, trace
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[WeeklyAdvisor] evidence policy skipped: %s", e)
+        return findings, {
+            "input_count": len(findings),
+            "kept_count": len(findings),
+            "blocked_count": 0,
+            "blocked": [],
+            "error": str(e)[:200],
+        }
+
+
 def _persist_suggestions(
     db: Session,
     user_id: int,
@@ -323,10 +355,17 @@ async def generate_weekly_advice(db: Session, user_id: int) -> Dict[str, Any]:
 
     # Specialist findings (跑全部相关 specialist 一遍)
     findings: List[Any] = []
+    evidence_policy_trace: Dict[str, Any] = {
+        "input_count": 0,
+        "kept_count": 0,
+        "blocked_count": 0,
+        "blocked": [],
+    }
     try:
         intent = classify_intent("本周健康总结建议")
         specialists = _select_specialists(intent, twin, None)
         findings = _run_specialists(twin, specialists, {"query": "weekly_advisor", "db": db})
+        findings, evidence_policy_trace = _apply_weekly_advisor_evidence_policy(db, twin, findings)
     except Exception as e:
         logger.warning(f"[WeeklyAdvisor] user={user_id} specialists 失败: {e}")
 
@@ -411,4 +450,9 @@ async def generate_weekly_advice(db: Session, user_id: int) -> Dict[str, Any]:
 
     # 写库
     ids = _persist_suggestions(db, user_id, suggestions, fallback_used)
-    return {"created": len(ids), "fallback": fallback_used, "card_ids": ids}
+    return {
+        "created": len(ids),
+        "fallback": fallback_used,
+        "card_ids": ids,
+        "evidence_policy": evidence_policy_trace,
+    }

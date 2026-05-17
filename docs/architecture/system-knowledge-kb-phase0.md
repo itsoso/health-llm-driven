@@ -18,6 +18,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 303 newly generated claims, 83 entities, 46 pages, and 2362 relations were promoted to reviewed status in this pass while preserving previous reviewed artifacts.
 - Admin operations dashboard: `/api/v1/admin/knowledge/operations_dashboard` aggregates coverage, external-evidence metrics, lint, latest lifecycle report, and action items.
 - Planner evidence policy: Orchestrator blocks unsupported actionable findings from final synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are kept.
+- Weekly Advisor evidence policy: fallback weekly action cards attach system KB evidence and reuse Planner evidence filtering before persistence.
 
 ## Scope
 
@@ -163,4 +164,4 @@ Current reviewed artifact run:
 
 ## Next Interfaces
 
-The Phase 2 corpus breadth target is met, the backend admin operations dashboard is available, and Planner-level evidence filtering is active for Orchestrator synthesis. Next work should focus on applying the same evidence policy to push scheduler/action cards, governed LLM extraction for higher recall, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.
+The Phase 2 corpus breadth target is met, the backend admin operations dashboard is available, and Planner-level evidence filtering is active for Orchestrator synthesis and Weekly Advisor fallback action cards. Next work should focus on applying the same evidence policy to direct push scheduler notification surfaces, governed LLM extraction for higher recall, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.

@@ -1,13 +1,12 @@
 """test_weekly_advisor —— 周建议产出 + 兜底 + 幂等 (P2-1)."""
 
-from datetime import datetime, timedelta, timezone
-from contextlib import contextmanager
 from unittest.mock import patch, AsyncMock
 
 import pytest
 
 from app.models.action_card import ActionCard
 from app.models.user import User
+from app.orchestrator.schema import SpecialistFinding
 from app.services import weekly_advisor
 
 
@@ -142,6 +141,46 @@ async def test_fallback_to_findings_when_llm_empty(db):
     ).all()
     titles = {c.title for c in cards}
     assert any("睡眠" in t for t in titles)
+
+
+@pytest.mark.asyncio
+async def test_fallback_filters_unsupported_same_domain_findings(db):
+    """weekly_advisor 也必须复用 Planner evidence policy, 避免绕开 Orchestrator。"""
+    user = _make_user(db, "advisor_evidence_policy")
+
+    fake_findings = [
+        SpecialistFinding(
+            specialist_name="movement_coach",
+            category="movement",
+            summary="本周安排 30 分钟慢跑",
+            findings=[{"title": "慢跑 30 分钟", "action": "Z1 慢跑"}],
+        ),
+        SpecialistFinding(
+            specialist_name="recovery_coach",
+            category="recovery",
+            summary="恢复不足，本周先降强度",
+            findings=[{"title": "本周降强度", "action": "改成散步和拉伸"}],
+            evidence_refs=["claim:c_recovery_low_reduce_intensity"],
+        ),
+    ]
+
+    with _patch_llm("[]"), \
+         patch("app.services.weekly_advisor.evaluate_safety", return_value=type("R", (), {"alerts": []})()), \
+         patch("app.services.weekly_advisor.build_twin", return_value=type("T", (), {"meta": type("M", (), {"user_id": user.id, "data_sources": []})()})()), \
+         patch("app.services.weekly_advisor.twin_to_prompt_blob", return_value="<blob>"), \
+         patch("app.services.weekly_advisor._select_specialists", return_value=[]), \
+         patch("app.services.weekly_advisor._run_specialists", return_value=fake_findings):
+        result = await weekly_advisor.generate_weekly_advice(db, user.id)
+
+    assert result["created"] == 1
+    assert result["evidence_policy"]["blocked_count"] == 1
+    cards = db.query(ActionCard).filter(
+        ActionCard.user_id == user.id,
+        ActionCard.source_type == "weekly_advisor",
+    ).all()
+    assert len(cards) == 1
+    assert "恢复" in cards[0].title or "降强度" in cards[0].title
+    assert "慢跑" not in cards[0].title
 
 
 def test_parse_llm_suggestions_handles_markdown_wrapping(db):

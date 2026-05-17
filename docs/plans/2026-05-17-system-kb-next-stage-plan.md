@@ -27,6 +27,7 @@ Already done:
 - Privacy isolation guard exists in `find_private_source_violations(...)`; ingestion scanner excludes private-looking paths without reading their contents.
 - `/knowledge/search` now returns lexical, FTS-compatible, semantic alias, and graph channels in a stable response shape.
 - Phase 2 corpus breadth target is complete: the compiler scanned 46 health-relevant Dedao/book source directories and promoted 303 generated claims, 83 entities, 46 pages, and 2362 relations to reviewed status.
+- Weekly Advisor action-card generation now reuses Orchestrator system-KB evidence attachment and planner evidence policy before persisting fallback specialist findings.
 
 Main remaining gaps:
 
@@ -35,7 +36,7 @@ Main remaining gaps:
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
 - External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count and source kind.
-- Remaining evidence-enforcement gap is push scheduler/action-card generation, which can still emit unsupported suggestions outside Orchestrator synthesis.
+- Remaining evidence-enforcement gap is direct push scheduler notification surfaces, which can still emit unsupported suggestions outside Orchestrator/Weekly Advisor synthesis.
 
 ---
 
@@ -580,5 +581,6 @@ The next stage is complete when:
 - Specialist audit snapshots expose `support_status`.
 - Mobile has one reusable evidence sheet path for claim details and feedback.
 - System KB lifecycle produces weekly lint/decay/crystallize audit reports.
+- Weekly Advisor fallback action cards apply the same planner evidence policy as Orchestrator.
 - No full paid-course text is stored in serving DB or displayed in mobile.
 - User-private memory remains outside system KB.

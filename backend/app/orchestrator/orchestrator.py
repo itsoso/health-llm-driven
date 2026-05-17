@@ -653,8 +653,12 @@ def _mark_planner_policy(
     reason: str | None = None,
     kept_reason: str | None = None,
 ) -> None:
-    if not isinstance(finding.raw, dict):
-        finding.raw = {}
+    raw = getattr(finding, "raw", None)
+    if not isinstance(raw, dict):
+        try:
+            finding.raw = {}
+        except Exception:  # noqa: BLE001
+            return
     payload: Dict[str, Any] = {"blocked": blocked}
     if reason:
         payload["reason"] = reason
@@ -664,7 +668,7 @@ def _mark_planner_policy(
 
 
 def _planner_evidence_domain(finding: SpecialistFinding) -> str:
-    text = f"{finding.specialist_name} {finding.category}".lower()
+    text = f"{getattr(finding, 'specialist_name', '')} {getattr(finding, 'category', '')}".lower()
     if any(token in text for token in ("movement", "recovery", "training", "exercise")):
         return "training_recovery"
     if any(token in text for token in ("fuel", "nutrition", "diet", "metabolic")):
@@ -673,29 +677,29 @@ def _planner_evidence_domain(finding: SpecialistFinding) -> str:
         return "medication_supplement_safety"
     if "sleep" in text:
         return "sleep_recovery"
-    return (finding.category or "general").lower() or "general"
+    return (getattr(finding, "category", None) or "general").lower() or "general"
 
 
 def _finding_is_actionable(finding: SpecialistFinding) -> bool:
-    for item in finding.findings or []:
+    for item in getattr(finding, "findings", None) or []:
         if not isinstance(item, dict):
             continue
         if str(item.get("type") or "").lower() == "data_gap":
             continue
         if item.get("action") or item.get("recommendation") or item.get("title"):
             return True
-    return bool((finding.summary or "").strip())
+    return bool((getattr(finding, "summary", "") or "").strip())
 
 
 def _finding_is_safety_or_data_gap(finding: SpecialistFinding) -> bool:
-    name = (finding.specialist_name or "").lower()
-    category = (finding.category or "").lower()
+    name = (getattr(finding, "specialist_name", "") or "").lower()
+    category = (getattr(finding, "category", "") or "").lower()
     if "safety" in name or category == "safety":
         return True
-    raw = finding.raw or {}
+    raw = getattr(finding, "raw", None) or {}
     if isinstance(raw, dict) and raw.get("data_gap"):
         return True
-    for item in finding.findings or []:
+    for item in getattr(finding, "findings", None) or []:
         if not isinstance(item, dict):
             continue
         item_type = str(item.get("type") or "").lower()

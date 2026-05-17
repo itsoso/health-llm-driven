@@ -17,6 +17,7 @@
 - Corpus expansion: deterministic Dedao compiler scanned 46 health-relevant source directories and promoted 303 newly generated claims / 83 entities / 46 pages / 2362 relations to reviewed status, while preserving older reviewed artifacts.
 - Admin operations: `/api/v1/admin/knowledge/operations_dashboard` returns coverage, external-evidence metrics, lint summary, latest lifecycle report, and action items.
 - Planner enforcement: Orchestrator now filters unsupported actionable specialist findings before final synthesis when the same evidence domain has a KB-supported finding; safety-critical alerts and data gaps bypass this filter.
+- Weekly Advisor evidence enforcement: weekly fallback action cards now attach system KB evidence and run the same planner evidence policy before persisting specialist-derived suggestions.
 
 ## 结论
 
@@ -375,7 +376,7 @@ flowchart TD
 当前已经完成“系统知识库能同步、能被 Twin 命中、能进入 Agent prompt、能展示证据卡”的纵切，也已经补上 Dedao deterministic ingest pipeline、Phase 2 reviewed corpus expansion、admin operations dashboard 和外部证据覆盖指标。还没有完成全部 V2 能力：
 
 - Search serving 已有 DB-backed lexical + graph RRF 路径；还没有 PostgreSQL FTS、向量检索和真正三路 BM25/vector/graph 融合。
-- Specialist 输出已标注 `support_status / unsupported / unsupported_reason` 并进入 coverage dashboard；Planner 层已对同证据域的无证据 actionable 建议做确定性过滤。下一步是把同样的 policy 推到 push scheduler 和 action card generation。
+- Specialist 输出已标注 `support_status / unsupported / unsupported_reason` 并进入 coverage dashboard；Planner 层已对同证据域的无证据 actionable 建议做确定性过滤，Weekly Advisor 兜底生成 action card 时也复用同一策略。下一步是把同样的 policy 推到直接 push scheduler 通知面。
 - Mobile 已有普通饮食/补剂/训练卡和基因报告卡的 evidence chip、统一 ClaimSheet/EntityCard、来源分组、来源可信度解释、entity 深链页和 claim feedback 入口。
 - 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲部分覆盖率，换取版权边界、医学边界和 review 可控性。
 - 给忙碌者的营养健康公开课在本轮扫描中没有进入最终 source set，原因是本地目录未暴露可识别的受支持文件；后续补齐源文件后可用同一 pipeline 追加。
