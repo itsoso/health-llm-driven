@@ -16,6 +16,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Search serving: `/knowledge/search` now fuses lexical, FTS-compatible, semantic alias, and graph streams via deterministic RRF.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
 - Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 303 newly generated claims, 83 entities, 46 pages, and 2362 relations were promoted to reviewed status in this pass while preserving previous reviewed artifacts.
+- Admin operations dashboard: `/api/v1/admin/knowledge/operations_dashboard` aggregates coverage, external-evidence metrics, lint, latest lifecycle report, and action items.
 
 ## Scope
 
@@ -161,4 +162,4 @@ Current reviewed artifact run:
 
 ## Next Interfaces
 
-The Phase 2 corpus breadth target is met. Next work should focus on governed LLM extraction for higher recall, stronger specialist evidence enforcement, a real admin KB operations dashboard, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.
+The Phase 2 corpus breadth target is met and the backend admin operations dashboard is available. Next work should focus on governed LLM extraction for higher recall, stronger Planner-level evidence enforcement, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.

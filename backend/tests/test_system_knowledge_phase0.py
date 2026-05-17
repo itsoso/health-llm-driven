@@ -406,7 +406,13 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
                 title="Reviewed claim",
                 confidence=0.7,
                 evidence_level="B",
-                metadata_json={"review_status": "reviewed"},
+                metadata_json={
+                    "review_status": "reviewed",
+                    "external_sources": [
+                        {"kind": "research", "source": "pubmed:123", "review_status": "reviewed"}
+                    ],
+                },
+                sources=["dedao:foo", "pubmed:123"],
             ),
             KBDocument(
                 doc_id="claim:c_draft",
@@ -465,7 +471,68 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["specialist_findings"]["evidence_ref_rate"] == 0.3333
     assert payload["specialist_findings"]["target_evidence_ref_rate"] == 0.85
     assert payload["specialist_findings"]["meets_target"] is False
+    assert payload["external_evidence"]["claim_total"] == 2
+    assert payload["external_evidence"]["claims_with_external_sources"] == 1
+    assert payload["external_evidence"]["external_source_rate"] == 0.5
+    assert payload["external_evidence"]["by_kind"]["research"] == 1
     assert payload["feedback"]["disagree"] == 1
+
+
+def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="entity:condition:metabolic-health",
+                doc_type="entity",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Metabolic health",
+                metadata_json={"review_status": "reviewed"},
+            ),
+            KBDocument(
+                doc_id="claim:c_supported",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Supported",
+                evidence_level="B",
+                metadata_json={
+                    "review_status": "reviewed",
+                    "external_sources": [
+                        {"kind": "guideline", "source": "guideline:test", "review_status": "reviewed"}
+                    ],
+                },
+                sources=["dedao:test", "guideline:test"],
+            ),
+            KBEdge(
+                src_doc_id="entity:condition:metabolic-health",
+                dst_doc_id="claim:c_supported",
+                relation="has_claim",
+                confidence=0.9,
+                source_claim_id="claim:c_supported",
+            ),
+            KBAudit(
+                doc_id=None,
+                op="lifecycle_report",
+                actor="celery:system-kb-lifecycle",
+                diff={"lint": {"summary": {"orphan_claims": 0}}, "decay": {"processed": 1}},
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/operations_dashboard", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "attention"
+    assert payload["coverage"]["documents"]["total"] == 2
+    assert payload["coverage"]["external_evidence"]["claims_with_external_sources"] == 1
+    assert payload["lint"]["summary"]["orphan_claims"] == 0
+    assert payload["latest_lifecycle_report"]["op"] == "lifecycle_report"
+    assert "specialist_evidence_below_target" in payload["action_items"]
 
 
 def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_user_and_headers):

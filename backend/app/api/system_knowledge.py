@@ -15,6 +15,7 @@ from app.services.system_knowledge_service import (
     get_claim_bundle,
     get_entity_bundle,
     get_knowledge_coverage_report,
+    get_knowledge_operations_dashboard,
     lint_knowledge_base,
     lookup_for_twin,
     reindex_knowledge_documents,
@@ -172,6 +173,26 @@ def get_system_knowledge_coverage_report(
             "documents": result["documents"]["total"],
             "specialist_findings": result["specialist_findings"]["total"],
             "unsupported": result["specialist_findings"]["unsupported"],
+        },
+    )
+    return result
+
+
+@admin_router.get("/operations_dashboard", summary="系统知识库运营治理总览")
+def get_system_knowledge_operations_dashboard(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = get_knowledge_operations_dashboard(db)
+    _record_audit(
+        db,
+        doc_id=None,
+        op="operations_dashboard",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "status": result["status"],
+            "action_items": result["action_items"],
+            "documents": result["coverage"]["documents"]["total"],
         },
     )
     return result

@@ -549,10 +549,27 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "by_review_status": dict(sorted(by_review_status.items())),
             "by_evidence_level": dict(sorted(by_evidence_level.items())),
         },
+        "external_evidence": _aggregate_external_evidence_coverage(documents),
         "specialist_findings": _aggregate_specialist_evidence_coverage(db),
         "feedback": {
             "disagree": db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").count(),
         },
+    }
+
+
+def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
+    """Single admin-facing snapshot for KB governance operations."""
+
+    coverage = get_knowledge_coverage_report(db)
+    lint = lint_knowledge_base(db)
+    latest_lifecycle = _latest_lifecycle_report(db)
+    action_items = _knowledge_operations_action_items(coverage, lint, latest_lifecycle)
+    return {
+        "status": "ok" if not action_items else "attention",
+        "coverage": coverage,
+        "lint": lint,
+        "latest_lifecycle_report": latest_lifecycle,
+        "action_items": action_items,
     }
 
 
@@ -1207,6 +1224,82 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
         "unsupported_rate": round(unsupported / total, 4) if total else 0.0,
         "by_specialist": by_specialist,
     }
+
+
+def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[str, Any]:
+    claim_total = 0
+    claims_with_external_sources = 0
+    by_kind: dict[str, int] = {}
+    for document in documents:
+        if document.doc_type != "claim":
+            continue
+        claim_total += 1
+        external_sources = _document_external_sources(document)
+        if external_sources:
+            claims_with_external_sources += 1
+        for source in external_sources:
+            kind = str(source.get("kind") or "other")
+            by_kind[kind] = by_kind.get(kind, 0) + 1
+
+    return {
+        "claim_total": claim_total,
+        "claims_with_external_sources": claims_with_external_sources,
+        "external_source_rate": round(claims_with_external_sources / claim_total, 4) if claim_total else 0.0,
+        "by_kind": dict(sorted(by_kind.items())),
+    }
+
+
+def _document_external_sources(document: KBDocument) -> list[dict[str, Any]]:
+    metadata = document.metadata_json or {}
+    external_sources = metadata.get("external_sources")
+    if isinstance(external_sources, list):
+        return [source for source in external_sources if isinstance(source, dict)]
+    result: list[dict[str, Any]] = []
+    for source in document.sources or []:
+        source_text = str(source)
+        if source_text.startswith("pubmed:"):
+            result.append({"kind": "research", "source": source_text})
+        elif source_text.startswith("guideline:"):
+            result.append({"kind": "guideline", "source": source_text})
+    return result
+
+
+def _latest_lifecycle_report(db: Session) -> dict[str, Any] | None:
+    audit = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == "lifecycle_report")
+        .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+        .first()
+    )
+    if audit is None:
+        return None
+    return {
+        "id": audit.id,
+        "op": audit.op,
+        "actor": audit.actor,
+        "ts": audit.ts.isoformat() if audit.ts else None,
+        "diff": audit.diff or {},
+    }
+
+
+def _knowledge_operations_action_items(
+    coverage: dict[str, Any],
+    lint: dict[str, Any],
+    latest_lifecycle_report: dict[str, Any] | None,
+) -> list[str]:
+    action_items: list[str] = []
+    specialist = coverage.get("specialist_findings") or {}
+    if not specialist.get("meets_target", False):
+        action_items.append("specialist_evidence_below_target")
+    external = coverage.get("external_evidence") or {}
+    if external.get("claim_total", 0) and external.get("external_source_rate", 0.0) < 0.2:
+        action_items.append("external_evidence_coverage_low")
+    lint_summary = lint.get("summary") if isinstance(lint, dict) else {}
+    if isinstance(lint_summary, dict) and any(int(count or 0) > 0 for count in lint_summary.values()):
+        action_items.append("kb_lint_issues_present")
+    if latest_lifecycle_report is None:
+        action_items.append("lifecycle_report_missing")
+    return action_items
 
 
 def _extract_finding_evidence_refs(finding: dict[str, Any]) -> list[Any]:

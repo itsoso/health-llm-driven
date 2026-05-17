@@ -32,8 +32,8 @@ Main remaining gaps:
 
 - Specialist evidence is attached and measured as a product contract through `evidence_refs`, `unsupported`, and coverage-rate metrics.
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
-- Admin has API metrics, but not a real KB operations dashboard.
-- External second-source evidence now exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), but coverage is still partial.
+- Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
+- External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count and source kind.
 
 ---
 

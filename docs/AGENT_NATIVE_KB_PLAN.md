@@ -20,6 +20,7 @@
 - Privacy isolation: source scanner excludes private-looking paths and `find_private_source_violations(...)` reports private material without reading content.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline references in `metadata.external_sources`.
 - Phase 2 corpus expansion: deterministic compiler scanned 46 health-relevant source directories and promoted 303 generated claims / 83 entities / 46 pages / 2362 relations to reviewed status, exceeding the 300 claim / 80 entity target.
+- Admin operations: `/api/v1/admin/knowledge/operations_dashboard` summarizes coverage, external evidence, lint, latest lifecycle report, and action items.
 
 ---
 
@@ -481,7 +482,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着，specialist schema 未强制 | 部分完成 |
 | Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
-| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft | 基本完成，缺 admin 操作面 |
+| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft；admin operations dashboard 可看治理状态 | 基本完成，后续是可视化页面 |
 | Privacy isolation | scanner 排除 private/personal/user-*，并提供 violation report | 完成最小治理闭环 |
 
 ### 13.3 修订后的执行顺序

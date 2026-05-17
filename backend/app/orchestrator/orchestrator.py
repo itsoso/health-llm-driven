@@ -387,6 +387,12 @@ def _build_synthesis_prompt(
     findings_text_parts: List[str] = []
     for f in findings:
         findings_text_parts.append(f"【{f.specialist_name}】{f.summary}")
+        refs = list(f.evidence_refs or [])
+        support_status = "supported" if refs else "model_inference"
+        evidence_ref_text = ",".join(refs) if refs else "none"
+        findings_text_parts.append(
+            f"  证据契约: support_status={support_status}; evidence_refs={evidence_ref_text}"
+        )
         for idx, item in enumerate(f.findings, 1):
             if isinstance(item, dict):
                 sev = item.get("severity_label", "")
@@ -395,6 +401,9 @@ def _build_synthesis_prompt(
                 line = f"  {idx}. [{sev}] {title}"
                 if action:
                     line += f" → {action}"
+                item_refs = item.get("evidence_refs")
+                if isinstance(item_refs, list) and item_refs:
+                    line += f" (evidence_refs={','.join(str(ref) for ref in item_refs)})"
                 findings_text_parts.append(line)
     findings_text = "\n".join(findings_text_parts) or "(无 specialist 输出)"
 
@@ -516,6 +525,10 @@ def _build_synthesis_prompt(
             "    - 长期趋势:   '(参照你近 90 天 HRV 下降趋势)'\n"
             "  没用到差异化数据的通用建议**不要**加 marker (避免噪声). "
             "  用了就**必须**加, 不加视为输出不合格."
+            "\n12. **系统知识库证据优先**: 专家裁决中会出现 `support_status` 和 `evidence_refs`。"
+            " `support_status=supported` 的建议有系统知识库 claim 支撑，优先采用；"
+            " `support_status=model_inference` 或 `evidence_refs=none` 的建议只能作为模型推断，"
+            "不得压过有证据的相反建议。若回答采用模型推断，必须用'目前证据不足，先作为尝试'等字样降级表达。"
         )
 
         # P3-1 Coach Persona: 末尾追加风格指令 (不改前面规则, 只加语气)
