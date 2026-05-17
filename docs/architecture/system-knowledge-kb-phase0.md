@@ -6,7 +6,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 
 ## 2026-05-17 Current State
 
-- Reviewed artifacts: 209 docs / 562 edges (`16 pages / 45 entities / 148 claims`); backend deploy imports them into serving DB.
+- Reviewed artifacts: 495 docs / 2510 edges (`52 pages / 98 entities / 345 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
@@ -15,6 +15,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Privacy isolation: scanner excludes private-looking paths; `find_private_source_violations(...)` reports private material without reading content.
 - Search serving: `/knowledge/search` now fuses lexical, FTS-compatible, semantic alias, and graph streams via deterministic RRF.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
+- Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 303 newly generated claims, 83 entities, 46 pages, and 2362 relations were promoted to reviewed status in this pass while preserving previous reviewed artifacts.
 
 ## Scope
 
@@ -149,15 +150,15 @@ New ingest behavior:
 Current reviewed artifact run:
 
 - Source root: `/Users/liqiuhua/work/personal/down-dedao`
-- Courses selected: 冯雪科学减肥、冯雪家庭健康管理、冯雪高血压/高血糖/高血脂/高尿酸、仝卿营养、仇子龙基因、王家伟用药、给忙碌者糖尿病、前沿人体微生物组、薄世宁医学通识、怎样获得高质量睡眠。
-- Sources compiled: 10
-- Claims: 148
-- Entities: 45
-- Pages: 16
-- Relations: 562
+- Courses selected: all scanner-detected health-relevant directories under `down-dedao`, capped at 60 lessons per course for this deterministic pass.
+- Sources scanned: 46
+- Claims: 345
+- Entities: 98
+- Pages: 52
+- Relations: 2510
 - Claims superseded: 0
 - Selected high-risk claims now include external PubMed/guideline metadata while keeping paid-course text out of artifacts.
 
 ## Next Interfaces
 
-Next work should keep widening the reviewed artifact corpus with more topic templates or a governed LLM extraction pass. The main remaining product work is a real admin KB operations dashboard, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.
+The Phase 2 corpus breadth target is met. Next work should focus on governed LLM extraction for higher recall, stronger specialist evidence enforcement, a real admin KB operations dashboard, broader external evidence coverage, and replacing the semantic alias stream with a proper embedding/vector backend when operationally justified.

@@ -1,22 +1,22 @@
 {
-  "compiled_at": "2026-05-17T08:16:30.480499+00:00",
+  "compiled_at": "2026-05-17T09:00:03.221823+00:00",
   "counts": {
-    "claims": 148,
-    "entities": 45,
-    "pages": 16,
-    "relations": 562
+    "claims": 345,
+    "entities": 98,
+    "pages": 52,
+    "relations": 2510
   },
   "diff": {
-    "claims_added": 0,
+    "claims_added": 197,
     "claims_superseded": 0,
-    "entities_added": 0,
-    "pages_added": 0,
-    "relations_added": 0
+    "entities_added": 53,
+    "pages_added": 36,
+    "relations_added": 1948
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",
     "review_status": "reviewed",
-    "source_count": 10,
+    "source_count": 46,
     "sources": [
       {
         "claims_generated": 7,
@@ -40,6 +40,19 @@
         ],
         "lessons_read": 21,
         "source_key": "dedao:tongqing-nutrition-20"
+      },
+      {
+        "claims_generated": 16,
+        "course_name": "冯雪·科学减肥16讲",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "medication_safety",
+          "movement",
+          "mental_health"
+        ],
+        "lessons_read": 36,
+        "source_key": "dedao:fengxue-weight-loss"
       },
       {
         "claims_generated": 14,
@@ -109,6 +122,222 @@
         "source_key": "dedao:busy-diabetes"
       },
       {
+        "claims_generated": 14,
+        "course_name": "Ebook",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "genetics",
+          "medication_safety",
+          "movement",
+          "mental_health",
+          "respiratory_allergy",
+          "longevity"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:ebook"
+      },
+      {
+        "claims_generated": 2,
+        "course_name": "众病之王的解决方案",
+        "domains": [
+          "medication_safety"
+        ],
+        "lessons_read": 16,
+        "source_key": "dedao:4f92bc701538"
+      },
+      {
+        "claims_generated": 18,
+        "course_name": "冯雪·家庭健康管理100讲",
+        "domains": [
+          "metabolic_health",
+          "cardiovascular",
+          "nutrition",
+          "medication_safety",
+          "sleep_recovery",
+          "movement",
+          "mental_health",
+          "respiratory_allergy",
+          "longevity"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:100-ecc79a079a92"
+      },
+      {
+        "claims_generated": 9,
+        "course_name": "冯雪·心脏医学课",
+        "domains": [
+          "cardiovascular",
+          "medication_safety",
+          "movement",
+          "mental_health"
+        ],
+        "lessons_read": 33,
+        "source_key": "dedao:6d6d728c0857"
+      },
+      {
+        "claims_generated": 2,
+        "course_name": "刘嘉·心理学基础30讲",
+        "domains": [
+          "genetics",
+          "mental_health"
+        ],
+        "lessons_read": 24,
+        "source_key": "dedao:30-d2387370a60c"
+      },
+      {
+        "claims_generated": 5,
+        "course_name": "前沿课·人体微生物组9讲",
+        "domains": [
+          "genetics",
+          "medication_safety",
+          "mental_health",
+          "microbiome"
+        ],
+        "lessons_read": 10,
+        "source_key": "dedao:9-45587866f8e1"
+      },
+      {
+        "claims_generated": 13,
+        "course_name": "卓克·科学思维课",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "genetics",
+          "medication_safety",
+          "movement"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:812285bec0da"
+      },
+      {
+        "claims_generated": 7,
+        "course_name": "卓克·科技参考",
+        "domains": [
+          "cardiovascular",
+          "nutrition",
+          "genetics",
+          "longevity"
+        ],
+        "lessons_read": 46,
+        "source_key": "dedao:3d62e82e2856"
+      },
+      {
+        "claims_generated": 13,
+        "course_name": "卓克·科技参考3（年度日更）",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "genetics",
+          "medication_safety",
+          "movement",
+          "respiratory_allergy",
+          "microbiome",
+          "longevity"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:3-ac6d81649401"
+      },
+      {
+        "claims_generated": 18,
+        "course_name": "卓克·科技参考4",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "genetics",
+          "medication_safety",
+          "sleep_recovery",
+          "movement",
+          "mental_health",
+          "respiratory_allergy",
+          "longevity"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:4-ba1c9a1c7c4e"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "如何做好孩子的情绪教养",
+        "domains": [
+          "mental_health"
+        ],
+        "lessons_read": 8,
+        "source_key": "dedao:8fab5a62262b"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "如何管好孩子的牙健康",
+        "domains": [
+          "respiratory_allergy"
+        ],
+        "lessons_read": 8,
+        "source_key": "dedao:b15c9e51bdc1"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "孙轶飞·医学文明300讲（年度日更）",
+        "domains": [
+          "medication_safety"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:300-67d4c8b35ce5"
+      },
+      {
+        "claims_generated": 5,
+        "course_name": "尹烨·健康参考（年度日更）",
+        "domains": [
+          "cardiovascular",
+          "respiratory_allergy",
+          "longevity"
+        ],
+        "lessons_read": 14,
+        "source_key": "dedao:b055fc6c9aa5"
+      },
+      {
+        "claims_generated": 14,
+        "course_name": "年度得到·薄世宁临床医学前沿报告（2023-2024）",
+        "domains": [
+          "metabolic_health",
+          "cardiovascular",
+          "medication_safety",
+          "mental_health",
+          "respiratory_allergy"
+        ],
+        "lessons_read": 13,
+        "source_key": "dedao:2023-2024"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "怎样健康活过100岁",
+        "domains": [
+          "longevity"
+        ],
+        "lessons_read": 8,
+        "source_key": "dedao:100-478f48791370"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "怎样学会正念冥想",
+        "domains": [
+          "mental_health",
+          "respiratory_allergy"
+        ],
+        "lessons_read": 11,
+        "source_key": "dedao:8a04e6692f2b"
+      },
+      {
+        "claims_generated": 3,
+        "course_name": "怎样成为精力管理的高手",
+        "domains": [
+          "sleep_recovery",
+          "movement",
+          "mental_health",
+          "respiratory_allergy"
+        ],
+        "lessons_read": 11,
+        "source_key": "dedao:2bdb9c7e04b0"
+      },
+      {
         "claims_generated": 3,
         "course_name": "怎样获得高质量睡眠",
         "domains": [
@@ -118,6 +347,118 @@
         ],
         "lessons_read": 7,
         "source_key": "dedao:64370aedc717"
+      },
+      {
+        "claims_generated": 11,
+        "course_name": "有效管理你的健康",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "movement"
+        ],
+        "lessons_read": 13,
+        "source_key": "dedao:9d976f32760f"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "李超·泌尿医学课",
+        "domains": [
+          "longevity"
+        ],
+        "lessons_read": 11,
+        "source_key": "dedao:f11cad92e2fa"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "焦虑情绪管理课",
+        "domains": [
+          "mental_health"
+        ],
+        "lessons_read": 6,
+        "source_key": "dedao:46859bf78ead"
+      },
+      {
+        "claims_generated": 4,
+        "course_name": "王煜全·全球科技产业报告",
+        "domains": [
+          "medication_safety",
+          "movement",
+          "longevity"
+        ],
+        "lessons_read": 49,
+        "source_key": "dedao:41840e31783b"
+      },
+      {
+        "claims_generated": 16,
+        "course_name": "王立铭·巡山报告（月度更新）",
+        "domains": [
+          "metabolic_health",
+          "cardiovascular",
+          "nutrition",
+          "genetics",
+          "medication_safety",
+          "movement",
+          "mental_health",
+          "microbiome",
+          "longevity"
+        ],
+        "lessons_read": 60,
+        "source_key": "dedao:e190475afacc"
+      },
+      {
+        "claims_generated": 5,
+        "course_name": "王立铭·脑科学50讲",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "sleep_recovery",
+          "movement",
+          "mental_health",
+          "longevity"
+        ],
+        "lessons_read": 51,
+        "source_key": "dedao:50-5f9b135d0abf"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "给孩子的博物学",
+        "domains": [
+          "cardiovascular",
+          "genetics",
+          "medication_safety"
+        ],
+        "lessons_read": 29,
+        "source_key": "dedao:3d1fc1d99673"
+      },
+      {
+        "claims_generated": 1,
+        "course_name": "给忙碌者的大脑健康课",
+        "domains": [
+          "movement",
+          "longevity"
+        ],
+        "lessons_read": 10,
+        "source_key": "dedao:901dcb099a78"
+      },
+      {
+        "claims_generated": 6,
+        "course_name": "给忙碌者的骨科医学课",
+        "domains": [
+          "metabolic_health",
+          "movement"
+        ],
+        "lessons_read": 10,
+        "source_key": "dedao:3072e5c756dd"
+      },
+      {
+        "claims_generated": 2,
+        "course_name": "蔡钰·情绪价值30讲",
+        "domains": [
+          "movement",
+          "mental_health"
+        ],
+        "lessons_read": 26,
+        "source_key": "dedao:30-27c664570ad8"
       },
       {
         "claims_generated": 4,
@@ -130,7 +471,81 @@
           "longevity"
         ],
         "lessons_read": 52,
-        "source_key": "dedao:50"
+        "source_key": "dedao:50-fb1886b71ece"
+      },
+      {
+        "claims_generated": 5,
+        "course_name": "薄世宁临床医学前沿报告（2020-2021）",
+        "domains": [
+          "genetics",
+          "medication_safety",
+          "respiratory_allergy",
+          "longevity"
+        ],
+        "lessons_read": 21,
+        "source_key": "dedao:2020-2021"
+      },
+      {
+        "claims_generated": 15,
+        "course_name": "薄世宁临床医学前沿报告（2021-2022）",
+        "domains": [
+          "metabolic_health",
+          "nutrition",
+          "medication_safety",
+          "movement",
+          "microbiome",
+          "longevity"
+        ],
+        "lessons_read": 21,
+        "source_key": "dedao:2021-2022"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "陈海贤·自我发展心理学",
+        "domains": [
+          "mental_health"
+        ],
+        "lessons_read": 28,
+        "source_key": "dedao:eaf7d9b79f34"
+      },
+      {
+        "claims_generated": 0,
+        "course_name": "陶勇·给忙碌者的眼科医学课",
+        "domains": [
+          "mental_health"
+        ],
+        "lessons_read": 11,
+        "source_key": "dedao:d12839fa6d11"
+      },
+      {
+        "claims_generated": 3,
+        "course_name": "随时随地正念冥想",
+        "domains": [
+          "sleep_recovery",
+          "movement",
+          "mental_health",
+          "respiratory_allergy"
+        ],
+        "lessons_read": 13,
+        "source_key": "dedao:55b95c64e7fb"
+      },
+      {
+        "claims_generated": 1,
+        "course_name": "顾衡好书榜",
+        "domains": [
+          "movement"
+        ],
+        "lessons_read": 23,
+        "source_key": "dedao:35bfb53ac1c8"
+      },
+      {
+        "claims_generated": 1,
+        "course_name": "陈焕然·美容整形医学10讲",
+        "domains": [
+          "general_wellness"
+        ],
+        "lessons_read": 23,
+        "source_key": "dedao:10-7651995b8546"
       }
     ]
   },
@@ -138,11 +553,11 @@
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "protocol": "akbp",
   "review": {
-    "documents_reviewed": 134,
+    "documents_reviewed": 432,
     "from_status": "draft",
-    "relations_reviewed": 366,
-    "reviewed_at": "2026-05-17T08:16:45.202150+00:00",
-    "reviewer": "owner-reviewed-2026-05-17",
+    "relations_reviewed": 2362,
+    "reviewed_at": "2026-05-17T09:01:24.847299+00:00",
+    "reviewer": "owner-reviewed-2026-05-17-phase2",
     "status": "reviewed"
   },
   "source_root": "/Users/liqiuhua/work/personal/down-dedao",

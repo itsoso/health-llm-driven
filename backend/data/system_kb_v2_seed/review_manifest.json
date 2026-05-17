@@ -1,12 +1,12 @@
 {
   "artifact_dir": "backend/data/system_kb_v2_seed",
-  "claims_reviewed": 94,
-  "documents_reviewed": 134,
-  "entities_reviewed": 30,
+  "claims_reviewed": 303,
+  "documents_reviewed": 432,
+  "entities_reviewed": 83,
   "from_status": "draft",
-  "pages_reviewed": 10,
-  "relations_reviewed": 366,
-  "reviewed_at": "2026-05-17T08:16:45.202150+00:00",
-  "reviewer": "owner-reviewed-2026-05-17",
+  "pages_reviewed": 46,
+  "relations_reviewed": 2362,
+  "reviewed_at": "2026-05-17T09:01:24.847299+00:00",
+  "reviewer": "owner-reviewed-2026-05-17-phase2",
   "to_status": "reviewed"
 }

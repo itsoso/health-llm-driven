@@ -9,7 +9,7 @@
 
 ## 2026-05-17 Current State
 
-- Reviewed artifacts: 209 docs / 562 edges (`16 pages / 45 entities / 148 claims`); backend deploy imports them into serving DB.
+- Reviewed artifacts: 495 docs / 2510 edges (`52 pages / 98 entities / 345 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
@@ -19,6 +19,7 @@
 - Search serving: `/knowledge/search` now fuses lexical DB matches, FTS-compatible `tsv`, semantic alias retrieval, and one-hop graph expansion via deterministic reciprocal-rank fusion.
 - Privacy isolation: source scanner excludes private-looking paths and `find_private_source_violations(...)` reports private material without reading content.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline references in `metadata.external_sources`.
+- Phase 2 corpus expansion: deterministic compiler scanned 46 health-relevant source directories and promoted 303 generated claims / 83 entities / 46 pages / 2362 relations to reviewed status, exceeding the 300 claim / 80 entity target.
 
 ---
 
@@ -465,8 +466,8 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 2. **authoring plane 与 serving plane 要分开验收**  
    `down-dedao/wiki` 是离线 authoring/compiler plane；`health-llm-driven/backend/data/system_kb_v2_seed` 和 PostgreSQL 是 serving plane。计划里的“建 wiki/entities/claims 文件树”有价值，但线上产品验收应以 artifacts、DB、API、Agent、Mobile 是否闭环为准。
 
-3. **Phase 2 比继续扩课更紧急**  
-   当前已有 148 条 claim 和 562 条边，但如果 KnowledgeLibrarian、Specialist、Mobile 不能稳定消费，继续扩到 300/700 条只会增加治理负担。短期优先级应是“每条建议能看到 evidence_refs、可点开、可反馈不对”。
+3. **Phase 2 corpus breadth 已达标，下一步应转向质量和消费强约束**
+   当前已有 345 条 claim 和 2510 条边。继续扩课的边际收益开始低于治理和消费质量；短期优先级应是“每条关键建议能看到 evidence_refs、可点开、可反馈不对”，并提高外部二次证据覆盖率。
 
 ### 13.2 当前真实进度
 
@@ -474,8 +475,8 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 |---|---|---|
 | System KB tables | 已有 `kb_documents/kb_edges/kb_audit` | 完成 |
 | Artifact import | 已有 reviewed JSONL import，部署自动导入 | 完成 |
-| Dedao ingest | 已有 dry-run/`--write` deterministic pipeline | 部分完成，不是完整 LLM claim mining |
-| Corpus coverage | 16 pages / 45 entities / 148 claims / 562 relations | 超过最小闭环，未达 300 claim / 80 entity |
+| Dedao ingest | 已有 dry-run/`--write` deterministic pipeline；本轮扫描 46 个健康相关来源目录 | deterministic pipeline 完成，仍不是完整 LLM claim mining |
+| Corpus coverage | 52 pages / 98 entities / 345 claims / 2510 relations | Phase 2 breadth 达标 |
 | KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，旧 Chroma fallback | 本轮补齐 |
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着，specialist schema 未强制 | 部分完成 |
@@ -499,8 +500,8 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 
 #### P2：扩展知识库（中期）
 
-- 目标先从 148 claims 扩到 300 claims、45 entities 扩到 80 entities。
-- 优先扩：高血压、高血脂、高血糖、高尿酸、糖尿病、营养、用药安全、睡眠恢复。
+- 已完成：从 148 claims 扩到 345 claims、45 entities 扩到 98 entities。
+- 已覆盖：高血压、高血脂、高血糖、高尿酸、糖尿病、营养、用药安全、睡眠恢复、运动、微生物组、心脏、骨科、精力管理、正念和部分生命科学课程。
 - 暂不追求 160+ 门全量课程，避免噪音和 review 队列失控。
 
 #### P3：V2 生命周期（后置）

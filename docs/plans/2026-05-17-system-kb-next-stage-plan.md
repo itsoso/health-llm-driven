@@ -17,7 +17,7 @@ Latest relevant implementation pass: 2026-05-17 system KB governance/retrieval u
 Already done:
 
 - System KB tables and artifact import path are live.
-- Reviewed artifacts contain `209 documents, 562 edges` (`16 pages / 45 entities / 148 claims / 562 relations`) and are imported on backend deploy.
+- Reviewed artifacts contain `495 documents, 2510 edges` (`52 pages / 98 entities / 345 claims / 2510 relations`) and are imported on backend deploy.
 - `/api/v1/knowledge/entity/...`, `/claim/...`, `/search`, `/lookup_for_twin` exist.
 - `/api/v1/admin/knowledge/lint_report` exists and now flags orphan, invalid condition, stale claim, invalid review status, contradiction.
 - `/api/v1/admin/knowledge/coverage_report` exists for evidence coverage and unsupported findings.
@@ -26,10 +26,10 @@ Already done:
 - Crystallized claim candidate drafting exists in `backend/app/services/system_knowledge_crystallize.py` and runs draft-only from the weekly `system-kb-lifecycle` Celery job.
 - Privacy isolation guard exists in `find_private_source_violations(...)`; ingestion scanner excludes private-looking paths without reading their contents.
 - `/knowledge/search` now returns lexical, FTS-compatible, semantic alias, and graph channels in a stable response shape.
+- Phase 2 corpus breadth target is complete: the compiler scanned 46 health-relevant Dedao/book source directories and promoted 303 generated claims, 83 entities, 46 pages, and 2362 relations to reviewed status.
 
 Main remaining gaps:
 
-- Corpus breadth is still under the original 300 claim / 80 entity target.
 - Specialist evidence is attached and measured as a product contract through `evidence_refs`, `unsupported`, and coverage-rate metrics.
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has API metrics, but not a real KB operations dashboard.
@@ -55,7 +55,7 @@ Update each doc with a dated `2026-05-17 Current State` section:
 ```markdown
 ## 2026-05-17 Current State
 
-- Reviewed artifacts: 209 docs / 562 edges.
+- Reviewed artifacts: 495 docs / 2510 edges.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
@@ -85,6 +85,8 @@ git commit -m "docs(kb): align system knowledge current state"
 ## Phase 2: Corpus Expansion To Reviewed 300+ Claims
 
 **Intent:** Expand breadth without violating copyright or review boundaries.
+
+**Status 2026-05-17:** Complete. Reviewed corpus now exceeds the target with `98 entities / 345 claims / 2510 relations`. The expansion manifest remains as the target contract for future ingestion rounds.
 
 ### Task 2: Add A Corpus Expansion Manifest
 
@@ -571,7 +573,7 @@ If native dependencies/config changed, use EAS build + TestFlight instead of OTA
 
 The next stage is complete when:
 
-- Reviewed corpus reaches at least `80 entities / 300 claims`, or the expansion manifest explains why a course was skipped.
+- Reviewed corpus reaches at least `80 entities / 300 claims`, or the expansion manifest explains why a course was skipped. Completed 2026-05-17 with `98 entities / 345 claims`.
 - Admin `coverage_report` includes target rate and current evidence rate.
 - Specialist audit snapshots expose `support_status`.
 - Mobile has one reusable evidence sheet path for claim details and feedback.

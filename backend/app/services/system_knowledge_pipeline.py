@@ -236,7 +236,9 @@ def _source_key(course_name: str) -> str:
     if course_name in SOURCE_KEY_OVERRIDES:
         return SOURCE_KEY_OVERRIDES[course_name]
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", course_name).strip("-").lower()
-    if slug:
+    if slug and not slug.isdigit():
         return f"dedao:{slug}"
     digest = hashlib.sha1(course_name.encode("utf-8")).hexdigest()[:12]
+    if slug:
+        return f"dedao:{slug}-{digest}"
     return f"dedao:{digest}"

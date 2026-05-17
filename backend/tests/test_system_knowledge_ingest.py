@@ -13,6 +13,7 @@ from app.services.system_knowledge_ingest import (
     promote_artifact_review_status,
     write_reviewed_artifacts,
 )
+from app.services.system_knowledge_pipeline import scan_health_sources
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -30,6 +31,36 @@ def test_system_kb_expansion_manifest_lists_priority_courses():
     assert "王家伟·日常用药健康课" in payload["priority_courses"]
     assert payload["copyright_policy"]
     assert payload["review_policy"]
+
+
+def test_scan_health_sources_avoids_numeric_source_key_collisions(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    for course_name in ["冯雪·家庭健康管理100讲", "怎样健康活过100岁"]:
+        course = source_root / course_name
+        course.mkdir(parents=True)
+        (course / "01 - 医学健康睡眠运动.md").write_text("医学、健康、睡眠、运动。", encoding="utf-8")
+
+    sources = scan_health_sources(source_root)
+    source_keys = [source.source_key for source in sources]
+
+    assert len(source_keys) == 2
+    assert len(set(source_keys)) == 2
+    assert all(key != "dedao:100" for key in source_keys)
+
+
+def test_system_kb_reviewed_artifacts_meet_expansion_targets():
+    root = Path("backend/data/system_kb_v2_seed")
+    manifest = json.loads((root / "expansion_manifest.json").read_text(encoding="utf-8"))
+
+    counts = {
+        "claims": len(_jsonl(root / "claims.jsonl")),
+        "entities": len(_jsonl(root / "entities.jsonl")),
+        "relations": len(_jsonl(root / "relations.jsonl")),
+    }
+
+    assert counts["claims"] >= manifest["target_counts"]["claims"]
+    assert counts["entities"] >= manifest["target_counts"]["entities"]
+    assert counts["relations"] >= manifest["target_counts"]["relations"]
 
 
 def test_compile_dedao_ingest_artifacts_extracts_claims_without_raw_course_text(tmp_path):
@@ -63,6 +94,34 @@ def test_compile_dedao_ingest_artifacts_extracts_claims_without_raw_course_text(
     assert salt_claim["sources"] == ["dedao:fengxue-gaoxueya-yixueke"]
     assert "付费课程正文" not in json.dumps(salt_claim, ensure_ascii=False)
     assert result.diff["claims_added"] >= 1
+
+
+def test_compile_dedao_ingest_artifacts_links_related_entities_with_mentions(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    course = source_root / "冯雪·高尿酸医学课" / "MD"
+    course.mkdir(parents=True)
+    (course / "03 - 尿酸、肾功能和痛风风险.md").write_text(
+        "尿酸、痛风、肾功能、饮酒、含糖饮料和体重管理。",
+        encoding="utf-8",
+    )
+
+    result = compile_dedao_ingest_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "empty-artifacts",
+        course_names=["冯雪·高尿酸医学课"],
+        now=datetime(2026, 5, 17, tzinfo=UTC),
+    )
+
+    claim = next(claim for claim in result.claims if claim["doc_id"].endswith("_uric_acid_context"))
+    entity_ids = {entity["doc_id"] for entity in result.entities}
+    assert "entity:condition:gout-risk" in entity_ids
+    assert "entity:intervention:alcohol-reduction" in entity_ids
+    assert any(
+        relation["src_doc_id"] == claim["doc_id"]
+        and relation["dst_doc_id"] == "entity:condition:gout-risk"
+        and relation["relation"] == "mentions"
+        for relation in result.relations
+    )
 
 
 def test_compile_dedao_ingest_artifacts_generates_gene_pharmacogenomics_boundary(tmp_path):
