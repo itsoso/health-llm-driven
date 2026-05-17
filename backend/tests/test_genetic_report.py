@@ -178,7 +178,9 @@ def test_endpoint_returns_full_shape_with_summary_skipped(client, db):
     body = resp.json()
     assert body["profile"]["test_provider"] == "WeGene"
     assert body["stats"]["hits"] == 1
-    assert body["stats"]["total_known"] == 52
+    assert body["stats"]["total_known"] >= 58
+    assert any(c["category"] == "height_trait" for c in body["clusters"])
+    assert any(c["category"] == "education_trait" for c in body["clusters"])
     assert body["agent_summary"] is None  # skipped
 
 
@@ -251,7 +253,7 @@ def test_related_cards_limit_3(db):
 def test_miss_items_have_empty_related_cards(db):
     from app.models.action_card import ActionCard
     user = _make_user(db, "miss_no_relate")[0]
-    p = _make_profile(db, user.id)
+    _make_profile(db, user.id)
     db.add(ActionCard(
         user_id=user.id, title="ALDH2 警告", content="酒精代谢",
         card_type="alert", source_type="safety_alert",
@@ -328,7 +330,7 @@ def test_get_snp_detail_user_not_hit_returns_static(db):
     """用户没测过该 SNP — 返回静态 + user.hit=False, actions 可能 None."""
     user = _make_user(db, "snp_no_hit")[0]
     # 不创建 profile/variant
-    with patch.object(genetic_report, "_build_snp_detail_prompt") as mock_prompt:
+    with patch.object(genetic_report, "_build_snp_detail_prompt"):
         # 用户未命中, prompt 不应该走到 (LLM 不会被调) — 但当前实现仍会调 LLM
         # 为防 LLM 出错影响测试, 直接 mock provider 返回 None
         with patch("app.services.llm.get_llm_provider") as mock_llm:

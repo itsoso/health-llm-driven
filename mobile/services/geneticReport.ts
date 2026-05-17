@@ -65,11 +65,22 @@ export interface GeneticPredictions {
     status: 'insufficient_model' | string;
     message: string;
     required_inputs?: string[];
+    marker_count?: number;
+    favorable_allele_count?: number;
+    max_alleles?: number;
+    confidence?: 'low' | 'very_low' | string;
+    markers?: TraitPredictionMarker[];
   };
   education: {
     status: 'unsupported' | string;
     message: string;
     allowed_use?: string;
+    marker_count?: number;
+    favorable_allele_count?: number;
+    max_alleles?: number;
+    confidence?: 'low' | 'very_low' | string;
+    does_not_predict_college?: boolean;
+    markers?: TraitPredictionMarker[];
   };
   disease_risk: {
     status: 'screening' | 'no_data' | string;
@@ -85,6 +96,18 @@ export interface GeneticPredictions {
       message: string;
     }[];
   };
+}
+
+export interface TraitPredictionMarker {
+  rsid: string;
+  gene: string;
+  label: string;
+  genotype: string | null;
+  favorable_allele: string;
+  favorable_allele_count: number;
+  max_alleles: number;
+  source: string;
+  note: string;
 }
 
 export interface SnpActions {

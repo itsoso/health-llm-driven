@@ -54,6 +54,8 @@ _CATEGORY_ZH = {
     "recovery": "恢复能力",
     "cognition": "认知功能",
     "personality": "人格特质",
+    "height_trait": "身高倾向",
+    "education_trait": "教育相关",
 }
 
 
@@ -600,6 +602,14 @@ def _build_snp_detail_prompt(
     if category in {"cognition", "personality"}:
         boundary_lines.extend([
             "认知/人格边界: 只能作为低置信度相关性解释, 不能预测个人能力、人格标签或教育结果。",
+        ])
+    if category == "height_trait":
+        boundary_lines.extend([
+            "身高边界: 只能作为探索性 marker 计数, 不能换算成厘米数或替代全量 PRS。",
+        ])
+    if category == "education_trait":
+        boundary_lines.extend([
+            "教育边界: 只能展示群体统计弱相关, 不能预测个人是否能上大学, 也不能用于能力评价或任何决策。",
         ])
     boundary_block = "\n".join(boundary_lines)
 

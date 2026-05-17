@@ -51,6 +51,16 @@ _CLAIM_BOUNDARIES = {
         "message": "人格/情绪相关位点只能作为低置信度相关性解释，不能给个人贴标签。",
         "requires_clinician": False,
     },
+    "height_trait": {
+        "claim_boundary": "exploratory_polygenic_marker",
+        "message": "身高相关位点只能作为低置信度 marker 计数，不能换算成厘米数或替代全量 PRS。",
+        "requires_clinician": False,
+    },
+    "education_trait": {
+        "claim_boundary": "exploratory_social_trait_association",
+        "message": "教育相关位点只能展示群体弱相关，不能预测个人是否能上大学或用于任何评价决策。",
+        "requires_clinician": False,
+    },
 }
 
 

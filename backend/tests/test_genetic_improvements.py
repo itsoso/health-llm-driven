@@ -162,6 +162,79 @@ def test_genetic_predictions_height_disease_and_education_guard(client, db, auth
     assert body["disease_risk"]["top_risks"][0]["risk_level"] == "high"
 
 
+def test_genetic_predictions_reports_exploratory_height_and_education_markers(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    profile = _profile(db, user.id)
+    _variant(
+        db,
+        profile,
+        rsid="rs1042725",
+        category="height_trait",
+        gene_name="HMGA2",
+        variant_name="成人身高相关位点",
+        genotype="CC",
+        result_label="身高增加相关等位基因 2/2",
+        risk_level="info",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs143383",
+        category="height_trait",
+        gene_name="GDF5",
+        variant_name="骨骼发育/身高相关位点",
+        genotype="CT",
+        result_label="身高增加相关等位基因 1/2",
+        risk_level="info",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs9320913",
+        category="education_trait",
+        gene_name="LOC100129158",
+        variant_name="教育年限相关位点",
+        genotype="AA",
+        result_label="教育年限相关等位基因 2/2",
+        risk_level="info",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs11584700",
+        category="education_trait",
+        gene_name="LRRN2",
+        variant_name="大学完成相关位点",
+        genotype="AG",
+        result_label="教育年限相关等位基因 1/2",
+        risk_level="info",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs4851266",
+        category="education_trait",
+        gene_name="LOC150577",
+        variant_name="教育年限相关位点",
+        genotype="CC",
+        result_label="教育年限相关等位基因 0/2",
+        risk_level="info",
+    )
+
+    res = client.get("/api/v1/genetic/predictions/me", headers=headers)
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["height"]["status"] == "exploratory_marker_score"
+    assert body["height"]["marker_count"] == 2
+    assert body["height"]["favorable_allele_count"] == 3
+    assert body["education"]["status"] == "exploratory_association"
+    assert body["education"]["marker_count"] == 3
+    assert body["education"]["favorable_allele_count"] == 3
+    assert body["education"]["does_not_predict_college"] is True
+    assert "不能判定" in body["education"]["message"]
+
+
 def test_gene_config_uses_specific_gene_variants_without_overclaiming():
     from types import SimpleNamespace
 

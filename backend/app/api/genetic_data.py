@@ -503,6 +503,26 @@ KNOWN_SNPS = {
     "rs5751876": {"category": "sleep", "gene": "ADORA2A", "variant": "腺苷受体/咖啡因影响睡眠",
         "map": {"CC": ("CC", "咖啡因对睡眠影响小", "low"), "CT": ("CT", "咖啡因对睡眠影响中等", "low"), "TT": ("TT", "咖啡因严重影响睡眠(中午后禁咖啡因)", "medium")},
         "desc": "腺苷A2A受体，TT型对咖啡因阻断腺苷的效应更敏感，午后摄入咖啡因显著延长入睡潜伏期"},
+    # ── 身高探索性 marker (height_trait) ──
+    "rs1042725": {"category": "height_trait", "gene": "HMGA2", "variant": "成人身高相关位点",
+        "map": {"TT": ("TT", "身高增加相关等位基因 0/2", "info"), "CT": ("CT", "身高增加相关等位基因 1/2", "info"), "CC": ("CC", "身高增加相关等位基因 2/2", "info")},
+        "desc": "HMGA2 身高 GWAS marker；只用于探索性 marker 计数，不能换算成厘米数"},
+    "rs143383": {"category": "height_trait", "gene": "GDF5", "variant": "骨骼发育/身高相关位点",
+        "map": {"TT": ("TT", "身高增加相关等位基因 0/2", "info"), "CT": ("CT", "身高增加相关等位基因 1/2", "info"), "CC": ("CC", "身高增加相关等位基因 2/2", "info")},
+        "desc": "GDF5 与骨骼发育相关；只用于探索性 marker 计数，不能预测最终身高"},
+    "rs6440003": {"category": "height_trait", "gene": "ZBTB38", "variant": "成人身高相关位点",
+        "map": {"GG": ("GG", "身高增加相关等位基因 0/2", "info"), "AG": ("AG", "身高增加相关等位基因 1/2", "info"), "AA": ("AA", "身高增加相关等位基因 2/2", "info")},
+        "desc": "ZBTB38 身高 GWAS marker；只用于探索性 marker 计数，不能替代全量 PRS"},
+    # ── 教育年限探索性 marker (education_trait) ──
+    "rs9320913": {"category": "education_trait", "gene": "LOC100129158", "variant": "教育年限相关位点",
+        "map": {"GG": ("GG", "教育年限相关等位基因 0/2", "info"), "AG": ("AG", "教育年限相关等位基因 1/2", "info"), "AA": ("AA", "教育年限相关等位基因 2/2", "info")},
+        "desc": "教育年限 GWAS marker；只代表群体弱相关，不能判断个人能否上大学"},
+    "rs11584700": {"category": "education_trait", "gene": "LRRN2", "variant": "大学完成/教育年限相关位点",
+        "map": {"GG": ("GG", "教育年限相关等位基因 0/2", "info"), "AG": ("AG", "教育年限相关等位基因 1/2", "info"), "AA": ("AA", "教育年限相关等位基因 2/2", "info")},
+        "desc": "教育年限/教育完成度 GWAS marker；不能用于能力评价或教育结果预测"},
+    "rs4851266": {"category": "education_trait", "gene": "LOC150577", "variant": "教育年限相关位点",
+        "map": {"CC": ("CC", "教育年限相关等位基因 0/2", "info"), "CT": ("CT", "教育年限相关等位基因 1/2", "info"), "TT": ("TT", "教育年限相关等位基因 2/2", "info")},
+        "desc": "教育年限 GWAS marker；只用于个人好奇层面的相关性展示"},
 }
 
 

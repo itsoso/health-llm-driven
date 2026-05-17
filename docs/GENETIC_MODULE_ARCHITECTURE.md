@@ -20,7 +20,7 @@ flowchart TD
     E --> H["Genetic predictions endpoint"]
     F --> I["Mobile gene report + SNP detail"]
     G --> J["Specialist agents"]
-    H --> K["Height unavailable / education blocked / disease screening"]
+    H --> K["Height marker panel / education association panel / disease screening"]
 ```
 
 ## Core Files
@@ -69,12 +69,15 @@ Disease risk:
 
 Height:
 
-- Endpoint exists, but returns `insufficient_model` until a validated PRS weight set and population calibration are available.
+- Endpoint returns `exploratory_marker_score` only when the user has one or more supported height GWAS markers (`HMGA2`, `GDF5`, `ZBTB38`) in the active profile.
+- The panel reports marker count and height-increasing allele count, but does not convert this into centimeters.
+- If no supported markers are present, it still returns `insufficient_model` until a validated PRS weight set and population calibration are available.
 
 Education:
 
-- Explicitly unsupported.
+- Endpoint returns `exploratory_association` only when the user has one or more supported educational-attainment GWAS markers (`rs9320913`, `rs11584700`, `rs4851266`) in the active profile.
 - The system does not predict whether a person can attend university and does not use genetics for education/social outcome decisions.
+- The response carries `does_not_predict_college=true` and should only be displayed as a personal curiosity/knowledge panel.
 
 ## Mobile Function Map
 
