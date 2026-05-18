@@ -42,4 +42,21 @@ describe('LlmModelPicker', () => {
 
     expect(onSelect).toHaveBeenCalledWith('minimax-m25');
   });
+
+  it('renders the dropdown above assistant page content', () => {
+    render(
+      <LlmModelPicker
+        currentLabel="Qwen Max"
+        currentModelId="qwen-max"
+        options={options}
+        savingModelId={null}
+        disabled={false}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /当前模型/ }));
+
+    expect(screen.getByTestId('llm-model-picker-menu')).toHaveClass('z-[80]');
+  });
 });

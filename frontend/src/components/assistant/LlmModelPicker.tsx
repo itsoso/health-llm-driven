@@ -61,7 +61,7 @@ export default function LlmModelPicker({
   };
 
   return (
-    <div ref={rootRef} className="relative min-w-0">
+    <div ref={rootRef} className="relative z-[80] min-w-0">
       <button
         type="button"
         aria-label={`当前模型 ${currentLabel}`}
@@ -86,7 +86,10 @@ export default function LlmModelPicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#2b2b2b] p-2 shadow-2xl shadow-black/50">
+        <div
+          data-testid="llm-model-picker-menu"
+          className="absolute left-0 top-full z-[80] mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#2b2b2b] p-2 shadow-2xl shadow-black/50"
+        >
           <div className="px-2 pb-2 pt-1 text-xs text-zinc-500">本页直接切换，下一条消息立即生效</div>
           <button
             type="button"

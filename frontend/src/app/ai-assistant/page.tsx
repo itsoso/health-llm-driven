@@ -214,7 +214,7 @@ export default function AIAssistantPage() {
 
   return (
     <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#212121] text-zinc-100">
-      <header className="shrink-0 border-b border-white/[0.08] bg-[#212121]/95 px-3 py-2.5 backdrop-blur">
+      <header className="relative z-[70] shrink-0 overflow-visible border-b border-white/[0.08] bg-[#212121]/95 px-3 py-2.5 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-1">
             <button
@@ -244,7 +244,7 @@ export default function AIAssistantPage() {
         </div>
       </header>
 
-      <section className="flex min-h-0 flex-1">
+      <section className="relative z-0 flex min-h-0 flex-1">
         {historyOpen && (
           <HistoryRail
             conversations={conversations}
