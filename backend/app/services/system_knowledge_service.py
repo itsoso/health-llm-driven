@@ -300,17 +300,23 @@ def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str
     }
 
 
-def get_claim_bundle(db: Session, claim_id: str) -> dict[str, Any] | None:
+def get_claim_bundle(
+    db: Session,
+    claim_id: str,
+    *,
+    include_archived: bool = False,
+) -> dict[str, Any] | None:
     claim = (
         db.query(KBDocument)
         .filter(
             KBDocument.doc_id == claim_id,
             KBDocument.doc_type == "claim",
-            KBDocument.is_archived.is_(False),
         )
         .first()
     )
     if claim is None:
+        return None
+    if claim.is_archived and not include_archived:
         return None
 
     edges = (
@@ -337,6 +343,125 @@ def get_claim_bundle(db: Session, claim_id: str) -> dict[str, Any] | None:
         "edges": [_serialize_edge(edge) for edge in edges],
         "claim_boundary": CLAIM_BOUNDARY,
     }
+
+
+def update_claim_review(
+    db: Session,
+    claim_id: str,
+    *,
+    actor: str,
+    review_status: str | None = None,
+    evidence_level: str | None = None,
+    confidence: float | None = None,
+    external_source: dict[str, Any] | None = None,
+    clear_candidate_duplicates: bool = False,
+    resolve_feedback: bool = False,
+    note: str | None = None,
+) -> dict[str, Any] | None:
+    """Apply a governed reviewer decision to one compiled claim.
+
+    This mutates serving metadata only. Raw course material and reviewed JSONL
+    artifacts remain the source-of-truth authoring plane.
+    """
+
+    claim = (
+        db.query(KBDocument)
+        .filter(KBDocument.doc_id == claim_id, KBDocument.doc_type == "claim")
+        .first()
+    )
+    if claim is None:
+        return None
+
+    if review_status is not None and review_status not in VALID_REVIEW_STATUSES:
+        raise ValueError(f"invalid review_status: {review_status}")
+
+    before = {
+        "review_status": (claim.metadata_json or {}).get("review_status"),
+        "evidence_level": claim.evidence_level,
+        "confidence": claim.confidence,
+        "is_archived": claim.is_archived,
+        "sources": list(claim.sources or []),
+        "metadata": dict(claim.metadata_json or {}),
+    }
+    metadata = dict(claim.metadata_json or {})
+
+    if review_status is not None:
+        metadata["review_status"] = review_status
+        claim.is_archived = review_status == "archived"
+        if review_status == "reviewed":
+            metadata["reviewed_at"] = datetime.now(UTC).isoformat()
+            metadata["reviewed_by"] = actor
+            claim.last_confirmed = datetime.now(UTC)
+        elif review_status == "archived":
+            metadata["archived_at"] = datetime.now(UTC).isoformat()
+            metadata["archived_by"] = actor
+
+    if evidence_level is not None:
+        claim.evidence_level = evidence_level.strip().upper()
+    if confidence is not None:
+        claim.confidence = max(0.0, min(1.0, float(confidence)))
+
+    if external_source:
+        normalized_source = _normalize_external_source(external_source, actor=actor)
+        if normalized_source:
+            raw_external_sources = metadata.get("external_sources")
+            existing = [
+                source
+                for source in (raw_external_sources if isinstance(raw_external_sources, list) else [])
+                if isinstance(source, dict)
+            ]
+            source_key = normalized_source.get("source")
+            if source_key and all(source.get("source") != source_key for source in existing):
+                existing.append(normalized_source)
+            metadata["external_sources"] = existing
+
+            sources = list(claim.sources or [])
+            if source_key and source_key not in sources:
+                sources.append(str(source_key))
+            claim.sources = sources
+
+    if clear_candidate_duplicates:
+        metadata["candidate_duplicates"] = []
+
+    if resolve_feedback:
+        metadata["feedback_resolution"] = {
+            "resolved": True,
+            "resolved_at": datetime.now(UTC).isoformat(),
+            "resolved_by": actor,
+            "note": note,
+        }
+
+    if note:
+        metadata["review_note"] = note
+
+    claim.metadata_json = metadata
+    db.add(claim)
+    db.flush()
+
+    after = {
+        "review_status": metadata.get("review_status"),
+        "evidence_level": claim.evidence_level,
+        "confidence": claim.confidence,
+        "is_archived": claim.is_archived,
+        "sources": list(claim.sources or []),
+        "metadata": metadata,
+    }
+    db.add(
+        KBAudit(
+            doc_id=claim.doc_id,
+            op="review_update",
+            actor=actor,
+            diff={
+                "before": before,
+                "after": after,
+                "note": note,
+                "clear_candidate_duplicates": clear_candidate_duplicates,
+                "resolve_feedback": resolve_feedback,
+            },
+        )
+    )
+    db.commit()
+    return get_claim_bundle(db, claim.doc_id, include_archived=True)
 
 
 def search_knowledge(
@@ -1895,6 +2020,23 @@ def _review_queue_sort_key(item: dict[str, Any]) -> tuple[int, str]:
     reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
     reason_rank = min((priority.get(str(reason), 9) for reason in reasons), default=9)
     return (reason_rank, str(item.get("doc_id") or ""))
+
+
+def _normalize_external_source(source: dict[str, Any], *, actor: str) -> dict[str, Any] | None:
+    source_id = str(source.get("source") or "").strip()
+    if not source_id:
+        return None
+
+    now = datetime.now(UTC).isoformat()
+    return {
+        "kind": str(source.get("kind") or source_detail(source_id)["kind"]).strip() or "external",
+        "source": source_id,
+        "title": str(source.get("title") or "").strip() or None,
+        "url": str(source.get("url") or "").strip() or None,
+        "review_status": str(source.get("review_status") or "reviewed").strip() or "reviewed",
+        "reviewed_at": str(source.get("reviewed_at") or now),
+        "reviewed_by": str(source.get("reviewed_by") or actor),
+    }
 
 
 def _document_external_sources(document: KBDocument) -> list[dict[str, Any]]:

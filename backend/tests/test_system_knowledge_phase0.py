@@ -856,6 +856,112 @@ def test_admin_review_queue_prioritizes_claims_needing_human_review(client, db, 
     assert db.query(KBAudit).filter(KBAudit.op == "review_queue").count() == 1
 
 
+def test_admin_review_update_promotes_claim_and_records_external_evidence(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_review_target",
+                doc_type="claim",
+                entity_type="gene",
+                entity_id="MTHFR",
+                title="Needs reviewer action",
+                evidence_level="C",
+                confidence=0.61,
+                metadata_json={
+                    "review_status": "needs_review",
+                    "candidate_duplicates": ["claim:c_old"],
+                },
+                sources=["dedao:test"],
+            ),
+            KBAudit(
+                doc_id="claim:c_review_target",
+                op="feedback_disagree",
+                actor=f"user:{user.id}",
+                diff={"reason": "需要二源"},
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.patch(
+        "/api/v1/admin/knowledge/claim/claim:c_review_target/review",
+        headers=headers,
+        json={
+            "review_status": "reviewed",
+            "evidence_level": "B",
+            "confidence": 0.78,
+            "clear_candidate_duplicates": True,
+            "resolve_feedback": True,
+            "note": "补充 PubMed 二源后通过",
+            "external_source": {
+                "kind": "research",
+                "source": "pubmed:19033271",
+                "title": "MTHFR and folate metabolism",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    claim = payload["claim"]
+    assert claim["doc_id"] == "claim:c_review_target"
+    assert claim["evidence_level"] == "B"
+    assert claim["confidence"] == 0.78
+    assert claim["metadata"]["review_status"] == "reviewed"
+    assert claim["metadata"]["candidate_duplicates"] == []
+    assert claim["metadata"]["feedback_resolution"]["resolved"] is True
+    assert claim["metadata"]["external_sources"][0]["source"] == "pubmed:19033271"
+    assert claim["metadata"]["external_sources"][0]["review_status"] == "reviewed"
+    assert claim["sources"] == ["dedao:test", "pubmed:19033271"]
+
+    audit_ops = [
+        row.op
+        for row in db.query(KBAudit)
+        .filter(KBAudit.doc_id == "claim:c_review_target")
+        .order_by(KBAudit.id.asc())
+        .all()
+    ]
+    assert audit_ops == ["feedback_disagree", "review_update"]
+
+
+def test_admin_review_update_archives_claim_from_serving_detail(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add(
+        KBDocument(
+            doc_id="claim:c_archive_target",
+            doc_type="claim",
+            entity_type="condition",
+            entity_id="metabolic-health",
+            title="Archive target",
+            evidence_level="C",
+            confidence=0.5,
+            metadata_json={"review_status": "needs_review"},
+            sources=["dedao:test"],
+        )
+    )
+    db.commit()
+
+    response = client.patch(
+        "/api/v1/admin/knowledge/claim/claim:c_archive_target/review",
+        headers=headers,
+        json={"review_status": "archived", "note": "重复且证据不足"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["claim"]["is_archived"] is True
+    stored = db.get(KBDocument, "claim:c_archive_target")
+    assert stored is not None
+    assert stored.is_archived is True
+    assert (stored.metadata_json or {})["review_status"] == "archived"
+    assert db.query(KBAudit).filter(KBAudit.op == "review_update").count() == 1
+
+    detail = client.get("/api/v1/knowledge/claim/claim:c_archive_target", headers=headers)
+    assert detail.status_code == 404
+
+
 def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True

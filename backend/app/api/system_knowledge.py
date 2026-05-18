@@ -21,6 +21,7 @@ from app.services.system_knowledge_service import (
     lookup_for_twin,
     reindex_knowledge_documents,
     search_knowledge,
+    update_claim_review,
 )
 
 router = APIRouter(prefix="/knowledge", tags=["system-knowledge"])
@@ -39,6 +40,24 @@ class TwinLookupRequest(BaseModel):
 class ClaimFeedbackRequest(BaseModel):
     feedback: Literal["disagree"] = "disagree"
     reason: str | None = Field(default=None, max_length=500)
+
+
+class ExternalSourceReviewRequest(BaseModel):
+    kind: str | None = Field(default=None, max_length=80)
+    source: str = Field(..., min_length=1, max_length=300)
+    title: str | None = Field(default=None, max_length=500)
+    url: str | None = Field(default=None, max_length=1000)
+    review_status: Literal["reviewed", "needs_review", "draft"] = "reviewed"
+
+
+class ClaimReviewUpdateRequest(BaseModel):
+    review_status: Literal["draft", "reviewed", "needs_review", "archived"] | None = None
+    evidence_level: Literal["A", "B", "C", "D"] | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    external_source: ExternalSourceReviewRequest | None = None
+    clear_candidate_duplicates: bool = False
+    resolve_feedback: bool = False
+    note: str | None = Field(default=None, max_length=1000)
 
 
 @router.get("/entity/{entity_type}/{entity_id}", summary="获取系统知识库实体与关联 claim")
@@ -205,6 +224,34 @@ def get_system_knowledge_review_queue(
             "review_status": review_status,
         },
     )
+    return result
+
+
+@admin_router.patch("/claim/{claim_id}/review", summary="更新系统知识库 claim review 状态")
+def update_system_knowledge_claim_review(
+    claim_id: str,
+    request: ClaimReviewUpdateRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = update_claim_review(
+            db,
+            claim_id,
+            actor=f"admin:{admin_user.id}",
+            review_status=request.review_status,
+            evidence_level=request.evidence_level,
+            confidence=request.confidence,
+            external_source=request.external_source.model_dump() if request.external_source else None,
+            clear_candidate_duplicates=request.clear_candidate_duplicates,
+            resolve_feedback=request.resolve_feedback,
+            note=request.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="知识库 claim 不存在")
     return result
 
 
