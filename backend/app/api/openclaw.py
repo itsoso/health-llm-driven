@@ -60,6 +60,20 @@ class OpenClawConversationDetailResponse(BaseModel):
         from_attributes = True
 
 
+class ConversationTitleUpdate(BaseModel):
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        normalized = v.strip()
+        if not normalized:
+            raise ValueError("标题不能为空")
+        if len(normalized) > 120:
+            raise ValueError("标题最多 120 个字符")
+        return normalized
+
+
 class RateMessageRequest(BaseModel):
     rating: int
 
@@ -315,6 +329,27 @@ async def delete_conversation(
     if not ok:
         raise HTTPException(status_code=404, detail="对话不存在")
     return {"ok": True}
+
+
+@router.patch("/conversations/{conversation_id}", summary="重命名 OpenClaw 对话")
+async def update_conversation_title(
+    conversation_id: int,
+    body: ConversationTitleUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    service = OpenClawService(db)
+    try:
+        conv = service.update_conversation_title(current_user.id, conversation_id, body.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "updated_at": str(conv.updated_at),
+    }
 
 
 @router.post("/messages/{message_id}/rate", summary="评价 OpenClaw 消息质量")

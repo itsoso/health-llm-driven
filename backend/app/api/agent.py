@@ -103,6 +103,18 @@ class AgentRequest(BaseModel):
         return v
 
 
+class ConversationTitleUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        normalized = v.strip()
+        if not normalized:
+            raise ValueError("标题不能为空")
+        return normalized
+
+
 @router.post("/stream", summary="统一健康助理流式对话")
 async def agent_stream(
     request: Request,
@@ -360,6 +372,30 @@ async def delete_conversation(
     if not ok:
         raise HTTPException(status_code=404, detail="对话不存在")
     return {"ok": True}
+
+
+@router.patch("/conversations/{conversation_id}", summary="重命名统一健康助理对话")
+async def update_conversation_title(
+    conversation_id: int,
+    body: ConversationTitleUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.openclaw_service import OpenClawService
+
+    service = OpenClawService(db)
+    try:
+        conv = service.update_conversation_title(current_user.id, conversation_id, body.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "updated_at": str(conv.updated_at),
+        "mode": "agent",
+    }
 
 
 @router.get("/conversation-opener", summary="Chat 起手未读续接 — AI 主动开场白")

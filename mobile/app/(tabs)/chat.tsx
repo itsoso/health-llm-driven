@@ -8,7 +8,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { deleteConversation, getConversations } from '../../services/chat';
+import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import BrandCircle from '../../components/chat/BrandCircle';
@@ -223,6 +223,19 @@ export default function ChatScreen() {
     if (conversationId === id) newChat();
   }, [conversationId, newChat]);
 
+  const handleRenameConversation = useCallback(async (id: number, title: string) => {
+    const updated = await updateConversationTitle(id, title);
+    if (!updated) {
+      setHistoryError('重命名失败，请稍后重试');
+      throw new Error('rename conversation failed');
+    }
+    setConversations(prev => prev.map(item => (
+      item.id === id
+        ? { ...item, title: updated.title, updated_at: updated.updated_at || item.updated_at }
+        : item
+    )));
+  }, []);
+
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => (
     <ChatBubble item={item} onViewImage={setViewingImage} />
   ), []);
@@ -374,6 +387,7 @@ export default function ChatScreen() {
         currentConversationId={conversationId}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
+        onRenameConversation={handleRenameConversation}
         loading={historyLoading}
         error={historyError}
         onRetry={loadConversationHistory}

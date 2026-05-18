@@ -29,6 +29,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
 jest.mock('../../../services/chat', () => ({
   deleteConversation: jest.fn(),
   getConversations: (...args: any[]) => mockOpenHistory(...args),
+  updateConversationTitle: jest.fn(),
 }));
 
 jest.mock('../../../services/conversationOpener', () => ({

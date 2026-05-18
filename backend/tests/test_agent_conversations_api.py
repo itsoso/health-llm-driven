@@ -94,3 +94,55 @@ def test_agent_conversation_delete_removes_owned_conversation(client, db, auth_u
     assert res.status_code == 200
     assert res.json()["ok"] is True
     assert db.query(OpenClawConversation).filter(OpenClawConversation.id == conv.id).first() is None
+
+
+def test_agent_conversation_title_update_renames_owned_conversation(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "分析我最近的代谢健康")
+
+    res = client.patch(
+        f"/api/v1/agent/conversations/{conv.id}",
+        headers=headers,
+        json={"title": "5月代谢复盘"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["title"] == "5月代谢复盘"
+    db.refresh(conv)
+    assert conv.title == "5月代谢复盘"
+
+
+def test_agent_conversation_title_update_enforces_user_isolation(
+    client, db, auth_user_and_headers
+):
+    _, headers = auth_user_and_headers
+    other = _create_user(db, "rename_isolated")
+    other_conv = _create_conversation(db, other.id, "其他人的对话")
+
+    res = client.patch(
+        f"/api/v1/agent/conversations/{other_conv.id}",
+        headers=headers,
+        json={"title": "不该成功"},
+    )
+
+    assert res.status_code == 404
+    db.refresh(other_conv)
+    assert other_conv.title == "其他人的对话"
+
+
+def test_openclaw_conversation_title_update_uses_same_store(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "旧标题")
+
+    res = client.patch(
+        f"/api/v1/openclaw/conversations/{conv.id}",
+        headers=headers,
+        json={"title": "移动端新标题"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["title"] == "移动端新标题"
+    db.refresh(conv)
+    assert conv.title == "移动端新标题"

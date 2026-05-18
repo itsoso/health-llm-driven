@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, radii } from '../../constants/theme';
@@ -15,6 +16,7 @@ interface Props {
   currentConversationId?: number;
   onSelectConversation: (id: number) => void;
   onDeleteConversation: (id: number) => void;
+  onRenameConversation?: (id: number, title: string) => Promise<void> | void;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -23,10 +25,14 @@ interface Props {
 export default function ConversationSheet({
   visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
-  loading, error, onRetry,
+  onRenameConversation, loading, error, onRetry,
 }: Props) {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const { height: screenH, width: screenW } = useWindowDimensions();
   const isTablet = screenW >= 768;
   // iPhone: 列表占屏幕 70%; iPad: 占 75% 但封顶 800
@@ -48,6 +54,34 @@ export default function ConversationSheet({
     ...conversations.filter((c: any) => isWeekly(titleOf(c))).sort(byNewest),
     ...conversations.filter((c: any) => !isPinned(titleOf(c))),
   ];
+
+  const startRename = (item: any) => {
+    setEditingId(item.id);
+    setDraftTitle(item.title || '');
+    setRenameError(null);
+  };
+
+  const cancelRename = () => {
+    setEditingId(null);
+    setDraftTitle('');
+    setRenameError(null);
+  };
+
+  const saveRename = async (item: any) => {
+    const title = draftTitle.trim();
+    if (!title || savingId) return;
+    setSavingId(item.id);
+    setRenameError(null);
+    try {
+      await onRenameConversation?.(item.id, title);
+      cancelRename();
+    } catch {
+      setRenameError('重命名失败，请稍后重试');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={[styles.overlay, isTablet && styles.overlayTablet]} onPress={onClose}>
@@ -83,38 +117,88 @@ export default function ConversationSheet({
             </View>
           ) : (
             <ScrollView style={{ maxHeight: listMaxHeight }} showsVerticalScrollIndicator={false}>
-              {sortedConversations.slice(0, 20).map((item: any) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.row}
-                  onPress={() => { onClose(); onSelectConversation(item.id); }}
-                  activeOpacity={0.6}
-                  accessibilityRole="button"
-                  accessibilityLabel={`对话: ${item.title || `对话 #${item.id}`}`}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>
-                      {item.title || `对话 #${item.id}`}
-                    </Text>
-                    <Text style={styles.rowDate}>
-                      {(item.updated_at || item.created_at)?.slice(0, 10) || ''}
-                    </Text>
+              {sortedConversations.slice(0, 20).map((item: any) => {
+                const isEditing = editingId === item.id;
+                return (
+                  <View key={item.id} style={[styles.row, currentConversationId === item.id && styles.rowActive]}>
+                    {isEditing ? (
+                      <View style={styles.editWrap}>
+                        <TextInput
+                          accessibilityLabel="对话标题"
+                          value={draftTitle}
+                          onChangeText={setDraftTitle}
+                          autoFocus
+                          editable={savingId !== item.id}
+                          placeholder="输入标题"
+                          placeholderTextColor={c.labelTertiary}
+                          returnKeyType="done"
+                          onSubmitEditing={() => saveRename(item)}
+                          style={styles.titleInput}
+                        />
+                        <TouchableOpacity
+                          onPress={() => saveRename(item)}
+                          disabled={!draftTitle.trim() || savingId === item.id}
+                          hitSlop={8}
+                          style={[styles.iconBtn, (!draftTitle.trim() || savingId === item.id) && styles.iconBtnDisabled]}
+                          accessibilityRole="button"
+                          accessibilityLabel="保存标题"
+                        >
+                          <Ionicons name="checkmark" size={18} color={c.brand} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={cancelRename}
+                          hitSlop={8}
+                          style={styles.iconBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="取消重命名"
+                        >
+                          <Ionicons name="close" size={18} color={c.labelSecondary} />
+                        </TouchableOpacity>
+                        {!!renameError && <Text style={styles.renameError}>{renameError}</Text>}
+                      </View>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={styles.rowMain}
+                          onPress={() => { onClose(); onSelectConversation(item.id); }}
+                          activeOpacity={0.6}
+                          accessibilityRole="button"
+                          accessibilityLabel={`对话: ${item.title || `对话 #${item.id}`}`}
+                        >
+                          <Text style={styles.rowTitle} numberOfLines={1}>
+                            {item.title || `对话 #${item.id}`}
+                          </Text>
+                          <Text style={styles.rowDate}>
+                            {(item.updated_at || item.created_at)?.slice(0, 10) || ''}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => startRename(item)}
+                          hitSlop={8}
+                          style={styles.iconBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="重命名对话"
+                        >
+                          <Ionicons name="pencil-outline" size={16} color={c.labelSecondary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            Alert.alert('删除对话', `确定删除「${item.title || '对话'}」？`, [
+                              { text: '取消', style: 'cancel' },
+                              { text: '删除', style: 'destructive', onPress: () => onDeleteConversation(item.id) },
+                            ]);
+                          }}
+                          hitSlop={8} style={styles.iconBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="删除对话"
+                        >
+                          <Ionicons name="trash-outline" size={16} color={c.red} />
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      Alert.alert('删除对话', `确定删除「${item.title || '对话'}」？`, [
-                        { text: '取消', style: 'cancel' },
-                        { text: '删除', style: 'destructive', onPress: () => onDeleteConversation(item.id) },
-                      ]);
-                    }}
-                    hitSlop={8} style={{ padding: 8 }}
-                    accessibilityRole="button"
-                    accessibilityLabel="删除对话"
-                  >
-                    <Ionicons name="trash-outline" size={16} color={c.red} />
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
+                );
+              })}
             </ScrollView>
           )}
         </Pressable>
@@ -145,8 +229,20 @@ function createStyles(c: ColorPalette, _isDark: boolean) {
       paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: c.separator, flexDirection: 'row', alignItems: 'center',
     },
+    rowActive: { backgroundColor: c.brandLight },
+    rowMain: { flex: 1, minWidth: 0 },
     rowTitle: { fontSize: 15, color: c.labelPrimary },
     rowDate: { fontSize: 12, color: c.labelTertiary, marginTop: 2 },
+    iconBtn: { padding: 8 },
+    iconBtnDisabled: { opacity: 0.4 },
+    editWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+    titleInput: {
+      flex: 1, minWidth: 140, minHeight: 36, paddingHorizontal: 10,
+      paddingVertical: 6, borderRadius: radii.sm, borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.separator, color: c.labelPrimary, backgroundColor: c.bgPrimary,
+      fontSize: 15,
+    },
+    renameError: { width: '100%', color: c.red, fontSize: 12, marginTop: 2 },
     retryBtn: {
       marginTop: 8, paddingHorizontal: 16, paddingVertical: 8,
       borderRadius: radii.md, backgroundColor: c.brand,

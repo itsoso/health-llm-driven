@@ -34,6 +34,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
 jest.mock('../../../services/chat', () => ({
   getConversations: (...args: any[]) => mockGetConversations(...args),
   deleteConversation: (...args: any[]) => mockDeleteConversation(...args),
+  updateConversationTitle: jest.fn(),
 }));
 
 jest.mock('../../../services/conversationOpener', () => ({

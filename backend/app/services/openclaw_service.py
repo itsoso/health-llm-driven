@@ -95,6 +95,27 @@ class OpenClawService:
         self.db.commit()
         return True
 
+    def update_conversation_title(
+        self, user_id: int, conversation_id: int, title: str
+    ) -> Optional[OpenClawConversation]:
+        normalized = (title or "").strip()
+        if not normalized:
+            raise ValueError("标题不能为空")
+        conv = (
+            self.db.query(OpenClawConversation)
+            .filter(
+                OpenClawConversation.id == conversation_id,
+                OpenClawConversation.user_id == user_id,
+            )
+            .first()
+        )
+        if not conv:
+            return None
+        conv.title = normalized[:120]
+        self.db.commit()
+        self.db.refresh(conv)
+        return conv
+
     # ── 消息管理 ──────────────────────────────────────────
 
     def save_message(self, conversation_id: int, role: str, content: str, image_url: str | None = None) -> OpenClawMessage:

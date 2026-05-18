@@ -124,6 +124,9 @@ export const openclawApi = {
   deleteConversation: (conversationId: number) =>
     api.delete(`/openclaw/conversations/${conversationId}`),
 
+  updateConversationTitle: (conversationId: number, title: string) =>
+    api.patch<Conversation>(`/openclaw/conversations/${conversationId}`, { title }),
+
   streamMessage: async function* (message: string, conversationId?: number, imageBase64?: string, imageType?: string, fileBase64?: string, fileName?: string) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const payload: Record<string, any> = {
@@ -218,6 +221,9 @@ export const agentApi = {
 
   deleteConversation: (conversationId: number) =>
     api.delete<{ ok: boolean }>(`/agent/conversations/${conversationId}`),
+
+  updateConversationTitle: (conversationId: number, title: string) =>
+    api.patch<Conversation>(`/agent/conversations/${conversationId}`, { title }),
 
   streamMessage: async function* (
     message: string,

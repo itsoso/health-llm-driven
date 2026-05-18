@@ -13,17 +13,15 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
-  Clock3,
   MessageSquarePlus,
   PanelLeft,
   Sparkles,
-  Trash2,
 } from 'lucide-react';
 import { ChatMessage, Conversation, agentApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
 import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPicker';
+import ConversationHistoryRail from '@/components/assistant/ConversationHistoryRail';
 import { api } from '@/services/api/client';
-import { relativeTime } from '@/utils/timeFormat';
 
 const SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -207,6 +205,18 @@ export default function AIAssistantPage() {
     }
   };
 
+  const renameConversation = async (conversationId: number, title: string) => {
+    const res = await agentApi.updateConversationTitle(conversationId, title);
+    const updated = res.data;
+    setConversations(prev =>
+      prev.map(conv =>
+        conv.id === conversationId
+          ? { ...conv, title: updated.title, updated_at: updated.updated_at || conv.updated_at }
+          : conv,
+      ),
+    );
+  };
+
   const submitSuggestion = (text: string) => {
     if (streaming) return;
     sendMessage(text);
@@ -246,13 +256,14 @@ export default function AIAssistantPage() {
 
       <section className="relative z-0 flex min-h-0 flex-1">
         {historyOpen && (
-          <HistoryRail
+          <ConversationHistoryRail
             conversations={conversations}
             activeConvId={activeConvId}
             loading={historyLoading}
             onLoad={loadConversation}
             onDelete={deleteConversation}
             onNew={startNewConversation}
+            onRename={renameConversation}
           />
         )}
 
@@ -329,71 +340,6 @@ export default function AIAssistantPage() {
         </div>
       </section>
     </main>
-  );
-}
-
-function HistoryRail({
-  conversations,
-  activeConvId,
-  loading,
-  onLoad,
-  onDelete,
-  onNew,
-}: {
-  conversations: Conversation[];
-  activeConvId?: number;
-  loading: boolean;
-  onLoad: (id: number) => void;
-  onDelete: (id: number) => void;
-  onNew: () => void;
-}) {
-  return (
-    <aside className="hidden w-72 shrink-0 border-r border-white/[0.08] bg-[#171717] p-3 md:flex md:flex-col">
-      <button
-        onClick={onNew}
-        className="mb-3 flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-zinc-100 transition-colors hover:bg-white/[0.08]"
-      >
-        <MessageSquarePlus className="h-4 w-4" />
-        新对话
-      </button>
-      <div className="mb-2 flex items-center gap-2 px-2 text-xs font-medium text-zinc-500">
-        <Clock3 className="h-3.5 w-3.5" />
-        历史记录
-        {loading && <span className="ml-auto text-[11px]">加载中</span>}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {conversations.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/10 px-3 py-8 text-center text-xs text-zinc-600">
-            暂无历史对话
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {conversations.map(conv => (
-              <div
-                key={conv.id}
-                className={`group flex items-start gap-2 rounded-xl px-2 py-2 transition-colors ${
-                  conv.id === activeConvId ? 'bg-white/[0.09]' : 'hover:bg-white/[0.06]'
-                }`}
-              >
-                <button onClick={() => onLoad(conv.id)} className="min-w-0 flex-1 text-left">
-                  <div className="truncate text-sm text-zinc-200">{conv.title || '新对话'}</div>
-                  <div className="mt-0.5 truncate text-xs text-zinc-600">
-                    {conv.last_message || relativeTime(conv.updated_at)}
-                  </div>
-                </button>
-                <button
-                  onClick={() => onDelete(conv.id)}
-                  className="mt-0.5 rounded-lg p-1.5 text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
-                  title="删除对话"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </aside>
   );
 }
 

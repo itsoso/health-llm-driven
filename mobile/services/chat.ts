@@ -10,6 +10,8 @@ export interface Conversation {
   id: number;
   title?: string;
   created_at: string;
+  updated_at?: string;
+  last_message?: string;
 }
 
 export interface StreamEvent {
@@ -244,4 +246,21 @@ export async function deleteConversation(conversationId: number): Promise<boolea
     headers: { Authorization: `Bearer ${token}` },
   });
   return res.ok;
+}
+
+export async function updateConversationTitle(
+  conversationId: number,
+  title: string,
+): Promise<Conversation | null> {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) return null;
+  return res.json();
 }

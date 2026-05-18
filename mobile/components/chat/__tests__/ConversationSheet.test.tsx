@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
 import ConversationSheet from '../ConversationSheet';
 
@@ -13,6 +13,29 @@ const baseProps = {
 };
 
 describe('ConversationSheet pinning', () => {
+  it('renames a conversation title inline', async () => {
+    const onRenameConversation = jest.fn().mockResolvedValue(undefined);
+    const conversations = [
+      { id: 415, title: '分析我最近的代谢健康', created_at: '2026-04-25T01:00:00Z', updated_at: '2026-04-25T15:00:00Z' },
+    ];
+
+    const { getByLabelText } = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={conversations as any}
+        onRenameConversation={onRenameConversation}
+      />
+    );
+
+    fireEvent.press(getByLabelText('重命名对话'));
+    fireEvent.changeText(getByLabelText('对话标题'), '最近代谢复盘');
+    fireEvent.press(getByLabelText('保存标题'));
+
+    await waitFor(() => {
+      expect(onRenameConversation).toHaveBeenCalledWith(415, '最近代谢复盘');
+    });
+  });
+
   it('pins per-day briefings to top sorted by updated_at desc', () => {
     const conversations = [
       // 一条普通的、updated_at 最新的对话
