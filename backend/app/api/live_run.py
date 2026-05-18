@@ -130,11 +130,29 @@ def _resolve_target_pace(req: LiveRunStartRequest) -> int:
 def _fetch_readiness_snapshot(db: Session, user_id: int) -> tuple[Optional[int], Optional[int]]:
     """跑前快照 readiness + max_z4_minutes.
 
-    V1 简化: readiness 没接 recovery_coach 实时输出时返回 None,
-    max_z4_minutes 默认 30min (基础门槛).
+    V1 简化:
+    - readiness_score: 优先读取 Garmin 官方 training_readiness_score（最近 7 天内最新一天）
+    - max_z4_minutes: 默认 30min (基础门槛)，后续可接 recovery_coach 输出做个性化上限
     """
-    # TODO: 接 recovery_coach.readiness_score 真实输出
-    return None, 30
+    readiness: Optional[int] = None
+    try:
+        from app.models.daily_health import GarminData
+
+        row = (
+            db.query(GarminData)
+            .filter(GarminData.user_id == user_id)
+            .filter(GarminData.training_readiness_score.isnot(None))
+            .filter(GarminData.record_date >= date.today() - timedelta(days=7))
+            .order_by(desc(GarminData.record_date))
+            .limit(1)
+            .first()
+        )
+        if row and row.training_readiness_score is not None:
+            readiness = int(row.training_readiness_score)
+    except Exception:
+        readiness = None
+
+    return readiness, 30
 
 
 @router.post("/start", response_model=LiveRunResponse, status_code=status.HTTP_201_CREATED)

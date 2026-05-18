@@ -1,6 +1,6 @@
 """跑步动态指导 (Live Run Coach) API测试"""
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from app.models.user import User
 
 
@@ -47,6 +47,27 @@ class TestLiveRunAPI:
         assert data["started_at"] is not None
         assert data["ended_at"] is None
         assert data["narrative_status"] == "pending"
+
+    def test_start_run_includes_readiness_snapshot(self, client, auth_headers, db, test_user):
+        """测试开始跑步 - 返回 readiness_score 快照（来自 Garmin 数据）"""
+        from app.models.daily_health import GarminData
+
+        db.add(GarminData(
+            user_id=test_user.id,
+            record_date=date.today(),
+            training_readiness_score=42,
+        ))
+        db.commit()
+
+        response = client.post(
+            "/api/v1/live-run/start",
+            json={"target_label": "easy"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["readiness_score"] == 42
+        assert data["max_z4_minutes"] == 30
 
     def test_start_run_tempo(self, client, auth_headers):
         """测试开始跑步 - tempo 预设"""
