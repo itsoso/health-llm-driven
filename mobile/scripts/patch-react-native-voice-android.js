@@ -70,6 +70,10 @@ next = next
       "        minSdkVersion safeExtGet('minSdkVersion', 15)",
       "        targetSdkVersion safeExtGet('targetSdkVersion', DEFAULT_TARGET_SDK_VERSION)",
     ].join('\n'),
+  )
+  .replace(
+    /    implementation "com\.android\.support:appcompat-v7:\$\{supportVersion\}"/,
+    '    implementation "androidx.annotation:annotation:1.9.1"',
   );
 
 if (source !== next) {
