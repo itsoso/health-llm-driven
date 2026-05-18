@@ -32,6 +32,8 @@ async def test_agent_stream_injects_system_knowledge_into_model_prompt(db, auth_
     system_prompt = captured_messages[0]["content"]
     assert "## 系统知识库相关条目" in system_prompt
     assert "claim:c_mthfr_c677t_hcy_folate_boundary" in system_prompt
+    assert "具体饮食/补剂/运动建议" in system_prompt
+    assert "claim_id" in system_prompt
     assert "不替代医生诊断" in system_prompt
     assert "系统知识库" in events[-1]["data"]["sources_used"]
 
@@ -86,3 +88,7 @@ async def test_agent_stream_injects_system_knowledge_from_user_twin(db, auth_use
     assert "## 系统知识库相关条目" in system_prompt
     assert "claim:c_mthfr_c677t_hcy_folate_boundary" in system_prompt
     assert "系统知识库" in events[-1]["data"]["sources_used"]
+    cards = events[-1]["data"]["cards"]
+    assert cards
+    assert cards[0]["type"] == "system_knowledge_evidence"
+    assert cards[0]["data"]["claims"][0]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"

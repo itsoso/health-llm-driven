@@ -432,8 +432,7 @@ class AgentExecutor:
         llm_ms_total = sum(llm_rounds_ms)
         evidence_cards = []
         try:
-            from app.services.system_knowledge_service import build_evidence_card_for_message
-            evidence_card = build_evidence_card_for_message(self.db, message)
+            evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
             if evidence_card:
                 evidence_cards.append(evidence_card)
                 if "系统知识库" not in sources_used:
@@ -645,35 +644,50 @@ class AgentExecutor:
         reviewed KB source as the card and injects only bounded summaries.
         """
 
+        evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
+        if not evidence_card:
+            return ""
+        return self._render_system_knowledge_evidence_card_for_prompt(evidence_card)
+
+    def _build_system_knowledge_evidence_card(self, user_id: int, message: str) -> dict | None:
+        """Return the system-KB evidence card for this chat turn.
+
+        Prefer explicit message mentions so direct gene questions produce the
+        most relevant card. If the message has no explicit entity, fall back to
+        the user's Twin so the same KB evidence is visible in mobile metadata,
+        not only hidden inside the prompt.
+        """
+
         try:
             from app.services.system_knowledge_service import (
-                CLAIM_BOUNDARY,
+                build_evidence_card_for_twin,
                 build_evidence_card_for_message,
+                system_kb_twin_payload_from_health_twin,
             )
 
             evidence_card = build_evidence_card_for_message(self.db, message)
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[agent_executor] system KB prompt lookup skipped: {e}")
-            return ""
+            return None
 
-        if not evidence_card:
-            try:
-                from app.services.system_knowledge_service import (
-                    format_system_knowledge_for_prompt,
-                    system_kb_twin_payload_from_health_twin,
-                )
-                from app.twin.builder import build_twin
+        if evidence_card:
+            return evidence_card
 
-                twin = build_twin(self.db, user_id, use_cache=True)
-                return format_system_knowledge_for_prompt(
-                    self.db,
-                    system_kb_twin_payload_from_health_twin(twin),
-                    max_claims=4,
-                    max_chars=1500,
-                )
-            except Exception as e:  # noqa: BLE001
-                logger.debug(f"[agent_executor] system KB twin prompt lookup skipped: {e}")
-                return ""
+        try:
+            from app.twin.builder import build_twin
+
+            twin = build_twin(self.db, user_id, use_cache=True)
+            return build_evidence_card_for_twin(
+                self.db,
+                system_kb_twin_payload_from_health_twin(twin),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[agent_executor] system KB twin card lookup skipped: {e}")
+            return None
+
+    @staticmethod
+    def _render_system_knowledge_evidence_card_for_prompt(evidence_card: dict) -> str:
+        from app.services.system_knowledge_service import CLAIM_BOUNDARY
 
         data = evidence_card.get("data") or {}
         entity = data.get("entity") or {}
@@ -685,6 +699,8 @@ class AgentExecutor:
             "## 系统知识库相关条目",
             "下面是系统级 LLM Wiki V2 的已审核知识条目。回答本轮问题时必须优先使用这些条目，"
             "并保留不确定性边界；不要把它们扩写成诊断、治疗或处方。",
+            "如果输出具体饮食/补剂/运动建议，必须显式标注所依据的 claim_id；"
+            "没有足够 evidence_refs 时要写明“模型推断”。",
         ]
         if entity:
             title = entity.get("title") or entity.get("entity_id") or entity.get("doc_id")

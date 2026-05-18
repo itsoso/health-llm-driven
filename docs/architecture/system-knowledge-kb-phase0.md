@@ -56,7 +56,8 @@ flowchart TD
 - `app.models.system_knowledge.KBDocument`: entity, claim, and article metadata.
 - `app.models.system_knowledge.KBEdge`: typed graph edges between documents.
 - `app.models.system_knowledge.KBAudit`: query and lookup audit trail.
-- `app.services.system_knowledge_service`: deterministic entity bundle, claim detail, DB-backed search, Twin lookup, confidence decay, lint, reindex, and specialist evidence attachment.
+- `app.services.system_knowledge_service`: deterministic entity bundle, claim detail, DB-backed search, Twin lookup, message/Twin evidence-card construction, confidence decay, lint, reindex, and specialist evidence attachment.
+- `app.services.agent_executor`: `/agent/stream` injects the same `system_knowledge_evidence` payload into the LLM prompt and SSE `done.data.cards`; Twin-only matches are now visible to mobile, not hidden inside prompt text.
 - `app.api.system_knowledge`: authenticated `/knowledge/entity/...`, `/knowledge/claim/...`, `/knowledge/claim/{claim_id}/feedback`, `/knowledge/search`, `/knowledge/lookup_for_twin`, plus admin `/admin/knowledge/lint_report` and `/admin/knowledge/reindex`.
 - `migrations/managed/20260516_200000_create_system_knowledge_tables.*.sql`: PostgreSQL production and SQLite test migrations.
 - `app.services.system_knowledge_pipeline`: deterministic source scanner and health-domain classifier for `/Users/liqiuhua/work/personal/down-dedao`.

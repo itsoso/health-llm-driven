@@ -301,6 +301,8 @@ Orchestrator 合成回答时会注入一个受控长度的知识库段落：
 
 - `backend/app/orchestrator/orchestrator.py`
 - `format_system_knowledge_for_prompt(...)`
+- `build_evidence_card_for_message(...)`
+- `build_evidence_card_for_twin(...)`
 - `attach_system_knowledge_evidence(...)`
 - `_system_kb_twin_payload(...)`
 - `lookup_for_twin(...)`
@@ -331,6 +333,7 @@ Phase 0 已支持用户明确问基因问题时返回证据卡，例如：
 ```
 
 后端会生成 `system_knowledge_evidence` card，移动端展示证据等级、置信度、来源和医学边界。
+如果用户没有在问题里明确写基因/位点，但 Health Twin 里已有匹配的基因或化验数据，例如“我最近应该怎么补叶酸？”，`/agent/stream` 会用 Twin payload 命中系统 KB：同一批 claim 既进入 LLM prompt，也进入 SSE `done.data.cards` 和 message meta，移动端能显示证据卡。Prompt 还要求 LLM 在输出具体饮食、补剂或运动建议时显式标注 claim_id；没有足够 `evidence_refs` 时必须标明“模型推断”。
 
 普通饮食、补剂、运动、恢复卡片中的 `evidence_refs` 已渲染成可点击 evidence chip。点击后打开统一 `ClaimSheet`，读取 `/knowledge/claim/{claim_id}`，展示 claim、来源分组、来源类型（如得到课程 / PubMed）、证据等级说明、医学边界和相关 entity，并支持“这条证据不对”反馈写入 `/knowledge/claim/{claim_id}/feedback`。相关 entity 可继续进入 `/knowledge/entity?type={entity_type}&id={entity_id}` 深链页，展示 entity 正文、来源和 linked claims。
 

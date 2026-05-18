@@ -927,6 +927,29 @@ def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any]
     }
 
 
+def build_evidence_card_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any] | None:
+    """Build a mobile evidence card from structured Twin matches.
+
+    This is used when the user asks a general question ("怎么补叶酸") and the
+    relevant gene/lab context comes from the user's HealthTwin rather than from
+    an explicit entity mention in the message. Keeping the card shape identical
+    to message-scoped cards makes mobile evidence rendering consistent.
+    """
+
+    result = lookup_for_twin(db, twin)
+    if not result["claims"]:
+        return None
+
+    return {
+        "type": "system_knowledge_evidence",
+        "data": {
+            "entity": result["entities"][0] if result["entities"] else {},
+            "claims": result["claims"][:3],
+            "claim_boundary": result["claim_boundary"],
+        },
+    }
+
+
 def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
     expression = condition.strip()
     null_match = _NULL_RE.match(expression)
