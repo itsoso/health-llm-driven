@@ -84,8 +84,8 @@ def validate_actions(actions: List[ProtocolAction]) -> ValidationResult:
             logger.warning("Validator 拦截 action %s: %s", a.template_id, text[:80])
             needs_disclaimer = True
 
-        # 灰名单: 含"药"/"补剂"/"症状"等字样但不是硬禁 → 加 disclaimer
-        if any(kw in text for kw in ("药", "补剂", "痛", "症状")):
+        # 灰名单: 涉医/涉药关键词 → 不阻断, 但触发 disclaimer
+        if any(kw in text for kw in _GRAYLIST_KEYWORDS):
             needs_disclaimer = True
 
     if result.blocked_actions:
