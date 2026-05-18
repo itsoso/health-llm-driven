@@ -53,4 +53,38 @@ describe('MedicationEditScreen', () => {
     });
     expect(mockBack).toHaveBeenCalled();
   });
+
+  it('shows an error state and retries when loading fails', async () => {
+    mockGetMedication
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce({
+        id: 1,
+        name: '二甲双胍',
+        dosage: '500mg',
+        frequency: '每日 2 次',
+        purpose: '控糖',
+        notes: null,
+        is_active: true,
+      });
+
+    const screen = renderWithProviders(<MedicationEditScreen />);
+
+    await waitFor(() => {
+      expect(mockGetMedication).toHaveBeenCalledWith(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('加载失败')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('重试加载'));
+
+    await waitFor(() => {
+      expect(mockGetMedication).toHaveBeenCalledTimes(2);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('药品名称')).toBeTruthy();
+    });
+  });
 });

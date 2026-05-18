@@ -112,7 +112,7 @@ export default function MedicationEditScreen() {
     );
   }
 
-  const isLoading = medQuery.isLoading || !medQuery.data;
+  const isLoading = medQuery.isLoading;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -136,6 +136,26 @@ export default function MedicationEditScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {isLoading ? (
             <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+          ) : medQuery.isError ? (
+            <View style={styles.center}>
+              <Ionicons name="alert-circle-outline" size={44} color={c.labelTertiary} />
+              <Text style={txt.errorTitle}>加载失败</Text>
+              <Text style={txt.hint}>请检查网络后重试</Text>
+              <TouchableOpacity
+                onPress={() => { medQuery.refetch(); }}
+                style={styles.retryBtn}
+                accessibilityRole="button"
+                accessibilityLabel="重试加载"
+              >
+                <Text style={txt.retryText}>重试</Text>
+              </TouchableOpacity>
+            </View>
+          ) : !medQuery.data ? (
+            <View style={styles.center}>
+              <Ionicons name="help-circle-outline" size={44} color={c.labelTertiary} />
+              <Text style={txt.errorTitle}>未找到药品</Text>
+              <Text style={txt.hint}>可能已被删除或不可用</Text>
+            </View>
           ) : (
             <View style={styles.form}>
               <Field label="药品名称" required>
@@ -235,6 +255,14 @@ function createStyles(c: ColorPalette) {
     },
     scroll: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl },
     center: { paddingTop: 80, alignItems: 'center' },
+    retryBtn: {
+      marginTop: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 12,
+      borderRadius: radii.lg,
+      backgroundColor: c.bgCard,
+      ...shadows.subtle,
+    },
     form: { paddingTop: spacing.md, gap: spacing.md },
     input: {
       backgroundColor: c.bgCard,
@@ -252,6 +280,8 @@ function createTxt(c: ColorPalette) {
   return {
     title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
     hint: { fontSize: 14, color: c.labelSecondary } as TextStyle,
+    errorTitle: { marginTop: 10, fontSize: 16, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+    retryText: { fontSize: 15, fontWeight: '700', color: c.brand } as TextStyle,
     saveText: { fontSize: 15, fontWeight: '700', color: c.brand } as TextStyle,
   };
 }
