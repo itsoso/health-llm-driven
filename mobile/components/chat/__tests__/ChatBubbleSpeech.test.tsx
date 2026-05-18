@@ -2,7 +2,6 @@ import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import ChatBubble from '../ChatBubble';
 import type { UIMessage } from '../../../hooks/useChatEngine';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -10,6 +9,7 @@ const mockSpeak = jest.fn();
 const mockStop = jest.fn();
 const mockSetAudioModeAsync = jest.fn();
 const mockSelectionAsync = jest.fn();
+const mockSpeakWithUserVoice = jest.fn();
 
 jest.mock('expo-speech', () => ({
   speak: (...args: any[]) => mockSpeak(...args),
@@ -24,6 +24,10 @@ jest.mock('expo-haptics', () => ({
   selectionAsync: (...args: any[]) => mockSelectionAsync(...args),
   notificationAsync: jest.fn(),
   NotificationFeedbackType: { Success: 'success' },
+}));
+
+jest.mock('../../../services/speakWithUserVoice', () => ({
+  speakWithUserVoice: (...args: any[]) => mockSpeakWithUserVoice(...args),
 }));
 
 jest.mock('react-native-markdown-display', () => {
@@ -62,6 +66,10 @@ jest.mock('../../../services/interventionDraft', () => ({
   buildInterventionDraft: jest.fn(() => ({})),
 }));
 
+jest.mock('../../../utils/share', () => ({
+  sharePlainText: jest.fn(),
+}));
+
 jest.mock('../../actions/InterventionDraftSheet', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -69,6 +77,8 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
   MockInterventionDraftSheet.displayName = 'MockInterventionDraftSheet';
   return MockInterventionDraftSheet;
 });
+
+const ChatBubble = require('../ChatBubble').default;
 
 const baseMessage: UIMessage = {
   id: 'assistant-1',
@@ -98,9 +108,7 @@ describe('ChatBubble speech playback', () => {
   });
 
   it('recovers the speech button when native speech startup throws', async () => {
-    mockSpeak.mockImplementation(() => {
-      throw new Error('AVSpeechSynthesizer unavailable');
-    });
+    mockSpeakWithUserVoice.mockRejectedValue(new Error('speech unavailable'));
 
     const { getByLabelText } = renderBubble();
 

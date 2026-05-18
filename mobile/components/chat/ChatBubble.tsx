@@ -146,8 +146,9 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
       }).catch(() => {});
       try { speechHandleRef.current?.cancel(); } catch {}
       try { Speech.stop(); } catch {}
-      // 时长估算: cloud 路径合成需要 1-3s, 加大保底窗口
-      const estMs = Math.max(8000, Math.min(60000, text.length * 260 + 8000));
+      // 长回复会在 speakWithUserVoice 内按句切成多段云端 TTS 串行播放。
+      // 这里只做按钮状态兜底, 上限放宽到 4 分钟, 避免 60s 后 UI 提前显示为未播放。
+      const estMs = Math.max(8000, Math.min(240000, text.length * 260 + 8000));
       speechTimeoutRef.current = setTimeout(finishSpeech, estMs);
       speechHandleRef.current = await speakWithUserVoice(text, {
         onDone: finishSpeech,

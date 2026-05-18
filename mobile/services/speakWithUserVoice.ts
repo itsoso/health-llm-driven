@@ -15,6 +15,8 @@ import {
   loadVoiceStyle, getVoiceStyle, resolveIosSpeechOptions,
 } from './voiceStyle';
 import { synthesize as cloudSynthesize } from './cloudTts';
+import { estimateTtsFallbackMs, shouldFinishAudioPlayback } from '../utils/audioPlayback';
+import { splitTextForCloudTts } from '../utils/ttsText';
 
 export interface SpeakHandle {
   /** 立即停止播放; 多次调用安全. 已结束的句柄调用也安全. */
@@ -76,32 +78,80 @@ export async function speakWithUserVoice(
     };
   }
 
-  // cloud / voxcpm 路径 — 拉 mp3 后用 expo-audio 播
+  // cloud / voxcpm 路径 — 按后端句级 TTS 限制切段, 拉 mp3 后串行播放.
+  // 私教长回复如果整段提交会超过 backend max_length=500, 触发 422 后降级到
+  // iOS 默认嗓音; 这里统一在公共入口切段, 避免每个 UI 调用点重复处理。
   try {
     const voiceKey = opt.cloudVoiceKey ?? 'cloned_private_female';
-    const { localUri } = await cloudSynthesize({ text: trimmed, voiceKey });
-    const player = createAudioPlayer({ uri: localUri });
+    const chunks = splitTextForCloudTts(trimmed);
+    if (chunks.length === 0) throw new Error('text empty');
 
     let finished = false;
-    let sub: { remove?: () => void } | null = null;
+    let currentPlayer: ReturnType<typeof createAudioPlayer> | null = null;
+    let currentSub: { remove?: () => void } | null = null;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
     const finishOnce = (kind: 'done' | 'stopped' | 'error', err?: unknown) => {
       if (finished) return;
       finished = true;
-      try { sub?.remove?.(); } catch {}
-      try { player.remove(); } catch {}
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+      try { currentSub?.remove?.(); } catch {}
+      try { currentPlayer?.remove(); } catch {}
+      currentSub = null;
+      currentPlayer = null;
       if (kind === 'done') callbacks.onDone?.();
       else if (kind === 'stopped') callbacks.onStopped?.();
       else callbacks.onError?.(err);
     };
 
-    sub = player.addListener('playbackStatusUpdate', (s: any) => {
-      if (s?.didJustFinish || s?.finished) finishOnce('done');
-    });
-    player.play();
+    const playChunk = async (index: number) => {
+      if (finished) return;
+      if (index >= chunks.length) {
+        finishOnce('done');
+        return;
+      }
+      const chunk = chunks[index];
+      const { localUri } = await cloudSynthesize({ text: chunk, voiceKey });
+      if (finished) return;
+
+      const player = createAudioPlayer({ uri: localUri });
+      currentPlayer = player;
+      let chunkFinished = false;
+      const finishChunk = () => {
+        if (chunkFinished || finished) return;
+        chunkFinished = true;
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+        try { currentSub?.remove?.(); } catch {}
+        try { player.remove(); } catch {}
+        currentSub = null;
+        currentPlayer = null;
+        playChunk(index + 1).catch((e) => finishOnce('error', e));
+      };
+
+      currentSub = player.addListener('playbackStatusUpdate', (s: any) => {
+        if (shouldFinishAudioPlayback(s)) finishChunk();
+      });
+      timeout = setTimeout(finishChunk, estimateTtsFallbackMs(chunk, (player as any).duration));
+      player.play();
+    };
+
+    // 等第一段完成合成并启动播放后再返回句柄；这样如果首段云端合成失败，
+    // 仍会落到下面的 iOS fallback, 保持原有降级语义。
+    await playChunk(0);
 
     return {
       cancel: () => {
-        try { player.pause(); } catch {}
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+        try { currentPlayer?.pause(); } catch {}
         finishOnce('stopped');
       },
     };

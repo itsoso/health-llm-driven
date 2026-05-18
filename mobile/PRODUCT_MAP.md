@@ -310,7 +310,7 @@ cosyvoice.synthesize → DashScope SDK         [backend/app/services/tts/cosyvoi
 mp3 bytes → mobile expo-audio createAudioPlayer 播
 ```
 
-**聊天气泡朗读**: `components/chat/ChatBubble.tsx` 右下角 `语音播报` 走本机 `expo-speech`, 不是云端 CosyVoice。点击前会把 audio session 切回 `.playback`, 启动失败会恢复按钮状态, 且有时长兜底防止系统回调丢失后一直卡在“停止播报”。
+**聊天气泡朗读**: `components/chat/ChatBubble.tsx` 右下角 `语音播报` 走 `services/speakWithUserVoice.ts`, 按用户在语音风格页选择的 provider 播放。cloud provider 会先用 `utils/ttsText.ts` 把长回复切成 <=480 字分段, 再串行调用云端 CosyVoice, 避免后端 500 字限制触发 422 后退回 iOS 系统音色。点击前会把 audio session 切回 `.playback`, 启动失败会恢复按钮状态, 且有时长兜底防止系统回调丢失后一直卡在“停止播报”。
 
 **voiceStyle.ts**: STORAGE_KEY = `tts_voice_style_v3`, 默认 `cloud_cloned_private_female` (新用户) / 老用户从 v2 自动迁移.
 
