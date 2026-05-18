@@ -29,6 +29,16 @@ export default function TodayPlanPanel({
   const state = plan?.state_summary ?? {};
   const waist = state.waist_cm as number | undefined;
   const bp = state.blood_pressure as string | undefined;
+  const acute = (state.acute && typeof state.acute === 'object')
+    ? state.acute as Record<string, unknown>
+    : null;
+  const isRecoveryMode = Boolean(acute?.should_rest_from_training);
+  const illnessNames = Array.isArray(acute?.illness_names)
+    ? acute.illness_names.map(String).filter(Boolean).slice(0, 3)
+    : [];
+  const recoveryGuardrail = typeof acute?.training_guardrail === 'string' && acute.training_guardrail.trim()
+    ? acute.training_guardrail.trim()
+    : '今天不要求完成训练目标，优先恢复、补水和睡眠。';
 
   return (
     <View style={[styles.container, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -48,6 +58,29 @@ export default function TodayPlanPanel({
           </Text>
         ) : null}
       </View>
+
+      {isRecoveryMode ? (
+        <View style={[styles.recoveryBanner, { backgroundColor: c.tintAmber, borderColor: c.amber }]}>
+          <View style={[styles.recoveryIcon, { backgroundColor: c.bgCard }]}>
+            <Ionicons name="shield-checkmark-outline" size={16} color={c.amber} />
+          </View>
+          <View style={styles.recoveryMain}>
+            <View style={styles.recoveryTitleRow}>
+              <Text style={[styles.recoveryTitle, { color: c.labelPrimary }]}>恢复模式</Text>
+              {illnessNames.length > 0 ? (
+                <View style={[styles.illnessPill, { backgroundColor: c.bgCard }]}>
+                  <Text style={[styles.illnessText, { color: c.labelSecondary }]} numberOfLines={1}>
+                    {illnessNames.join(' / ')}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={[styles.recoveryText, { color: c.labelSecondary }]}>
+              {recoveryGuardrail}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {actions.length === 0 ? (
         <View style={[styles.empty, { borderColor: c.separator }]}>
@@ -111,6 +144,31 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '700' },
   subtitle: { fontSize: 12, fontWeight: '500' },
   metricHint: { maxWidth: 118, fontSize: 12, fontWeight: '600' },
+  recoveryBanner: {
+    flexDirection: 'row',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    gap: spacing.sm,
+  },
+  recoveryIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recoveryMain: { flex: 1, gap: 4 },
+  recoveryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  recoveryTitle: { fontSize: 14, fontWeight: '800' },
+  illnessPill: {
+    maxWidth: 160,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  illnessText: { fontSize: 11, fontWeight: '700' },
+  recoveryText: { fontSize: 12, lineHeight: 17 },
   empty: {
     borderWidth: StyleSheet.hairlineWidth,
     borderStyle: 'dashed',
