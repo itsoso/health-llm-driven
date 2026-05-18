@@ -9,7 +9,7 @@ import operator
 import re
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
@@ -370,16 +370,29 @@ def search_knowledge(
     fts_ranked: list[tuple[float, KBDocument]] = []
     vector_ranked: list[tuple[float, KBDocument]] = []
     semantic_terms = _semantic_query_terms(normalized_query)
+    fts_backend = _fts_backend_for_session(db)
+    postgres_fts_ranked: list[tuple[float, KBDocument]] = []
+    if fts_backend == "postgres_tsv":
+        postgres_fts_ranked = _postgres_fts_rank_documents(
+            db,
+            normalized_query,
+            limit=max(50, limit),
+            doc_type=doc_type,
+            entity_type=entity_type,
+        )
     for document in documents:
         score = _score_document(document, terms)
         if score > 0 or not terms:
             lexical_ranked.append((score, document))
-        fts_score = _score_precomputed_search_text(document, terms)
-        if fts_score > 0 or not terms:
-            fts_ranked.append((fts_score, document))
+        if fts_backend != "postgres_tsv":
+            fts_score = _score_precomputed_search_text(document, terms)
+            if fts_score > 0 or not terms:
+                fts_ranked.append((fts_score, document))
         vector_score = _score_document(document, semantic_terms)
         if vector_score > 0 and semantic_terms:
             vector_ranked.append((vector_score, document))
+    if fts_backend == "postgres_tsv":
+        fts_ranked = postgres_fts_ranked
 
     lexical_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
     fts_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
@@ -453,11 +466,49 @@ def search_knowledge(
         },
         "retrieval_plan": {
             "channels": ["lexical", "fts", "vector", "graph"],
-            "fts_backend": "postgres_tsv_or_precomputed_text",
+            "lexical_backend": "python_weighted_terms",
+            "fts_backend": fts_backend,
             "vector_backend": "alias_overlap_v1",
+            "graph_backend": "kb_edges_one_hop",
+            "rrf_backend": "python_rrf_v1",
         },
         "claim_boundary": CLAIM_BOUNDARY,
     }
+
+
+def _fts_backend_for_session(db: Session) -> str:
+    dialect_name = getattr(getattr(db, "bind", None), "dialect", None)
+    dialect_name = getattr(dialect_name, "name", "")
+    return "postgres_tsv" if dialect_name == "postgresql" else "sqlite_precomputed_text"
+
+
+def _postgres_fts_rank_documents(
+    db: Session,
+    query: str,
+    *,
+    limit: int,
+    doc_type: str | None,
+    entity_type: str | None,
+) -> list[tuple[float, KBDocument]]:
+    """Use PostgreSQL tsvector search when serving on production Postgres."""
+
+    normalized_query = (query or "").strip()
+    if not normalized_query:
+        return []
+
+    ts_query = func.websearch_to_tsquery("simple", normalized_query)
+    rank = func.ts_rank_cd(KBDocument.tsv, ts_query)
+    query_builder = (
+        db.query(KBDocument, rank.label("rank"))
+        .filter(KBDocument.is_archived.is_(False), KBDocument.tsv.op("@@")(ts_query))
+    )
+    if doc_type:
+        query_builder = query_builder.filter(KBDocument.doc_type == doc_type)
+    if entity_type:
+        query_builder = query_builder.filter(KBDocument.entity_type == entity_type)
+
+    rows = query_builder.order_by(desc("rank"), KBDocument.doc_type.asc(), KBDocument.doc_id.asc()).limit(limit).all()
+    return [(float(rank_value or 0.0), document) for document, rank_value in rows]
 
 
 def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:

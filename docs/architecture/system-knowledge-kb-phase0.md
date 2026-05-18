@@ -13,7 +13,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Privacy isolation: scanner excludes private-looking paths; `find_private_source_violations(...)` reports private material without reading content.
-- Search serving: `/knowledge/search` now fuses lexical, FTS-compatible, semantic alias, and graph streams via deterministic RRF.
+- Search serving: `/knowledge/search` now fuses lexical, PostgreSQL `tsvector` FTS, semantic alias, and graph streams via deterministic RRF. SQLite tests use the precomputed-text fallback while production PostgreSQL uses `kb_documents.tsv @@ websearch_to_tsquery(...)`.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
 - Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 314 generated claims, 83 entities, 46 pages, and 2566 relations were promoted to reviewed status across reviewed passes while preserving previous reviewed artifacts.
 - Dedao graph association: the compiler now adds entity-to-entity `contextualizes` edges from claim context, so graph traversal can connect biomarkers, conditions, and interventions even when the query does not name the exact claim.
@@ -139,7 +139,7 @@ New behavior:
 
 - `GET /api/v1/knowledge/claim/{claim_id}` returns claim detail, graph neighbors, edges, and medical boundary.
 - `POST /api/v1/knowledge/claim/{claim_id}/feedback` records `feedback_disagree` in `kb_audit` so mobile evidence feedback becomes a lifecycle signal.
-- `GET /api/v1/knowledge/search` performs deterministic DB-only lexical scoring, precomputed `tsv` FTS-compatible scoring, semantic alias scoring, and one-hop graph context through RRF. It is compatible with SQLite tests and production PostgreSQL; a real embedding backend can replace the alias stream without changing response shape.
+- `GET /api/v1/knowledge/search` performs deterministic DB-only lexical scoring, PostgreSQL `tsvector` FTS scoring in production, SQLite precomputed-text fallback in tests, semantic alias scoring, and one-hop graph context through RRF. A real embedding backend can replace the alias stream without changing response shape.
 - `POST /api/v1/knowledge/lookup_for_twin` now returns both direct `applies_when` matches and graph-context claims reached from structured Twin entities via `contextualizes` and `has_claim` edges. This lets a lab fact such as uric acid pull related condition/intervention claims into Agent prompts even when the claim has no direct threshold condition.
 - `GET /api/v1/admin/knowledge/lint_report` reports orphan entities, orphan claims, invalid `applies_when`, and stale claims.
 - `POST /api/v1/admin/knowledge/reindex` refreshes `kb_documents.tsv` and SHA-256 `content_hash`.

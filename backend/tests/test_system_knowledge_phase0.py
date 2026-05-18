@@ -314,6 +314,10 @@ def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_use
     assert "claim:c_mthfr_c677t_hcy_folate_boundary" in result_ids
     assert payload["graph_context"]["edges"][0]["relation"] == "has_claim"
     assert {"lexical", "fts"} <= set(payload["retrieval_plan"]["channels"])
+    assert payload["retrieval_plan"]["lexical_backend"] == "python_weighted_terms"
+    assert payload["retrieval_plan"]["fts_backend"] == "sqlite_precomputed_text"
+    assert payload["retrieval_plan"]["vector_backend"] == "alias_overlap_v1"
+    assert payload["retrieval_plan"]["rrf_backend"] == "python_rrf_v1"
     assert {"lexical", "fts"} <= set(payload["results"][0]["retrieval"]["channels"])
 
 

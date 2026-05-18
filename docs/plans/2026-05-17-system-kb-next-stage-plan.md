@@ -37,7 +37,7 @@ Main remaining gaps:
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
 - External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count, source kind, target rate, and `meets_target`.
-- Direct PushScheduler wearable health alerts carry the KB V2 safety-alert evidence contract. Celery notification surfaces now tag trend summaries, weekly review invites, action-card followups, agent-loop pushes, and outcome-grader pushes with notification evidence metadata. Push-log evidence coverage is exposed in the admin coverage dashboard and operations action items. Remaining gap: continue expanding claim-backed refs for generated advice, and move search from deterministic lexical/alias RRF to real PostgreSQL FTS/vector/BM25 fusion.
+- Direct PushScheduler wearable health alerts carry the KB V2 safety-alert evidence contract. Celery notification surfaces now tag trend summaries, morning briefings, weekly review invites, action-card followups, agent-loop pushes, and outcome-grader pushes with notification evidence metadata. Push-log evidence coverage is exposed in the admin coverage dashboard and operations action items. Search now uses PostgreSQL `tsvector` FTS in production; remaining gap is real vector/BM25 beyond the deterministic alias stream.
 
 ---
 

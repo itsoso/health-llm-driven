@@ -12,7 +12,7 @@
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Privacy isolation: scanner excludes private-looking source paths; `find_private_source_violations(...)` reports `personal/private/用户/user-*` paths without reading contents.
-- Search serving: `/knowledge/search` returns lexical + FTS-compatible + semantic alias + one-hop graph RRF channels.
+- Search serving: `/knowledge/search` returns lexical + PostgreSQL `tsvector` FTS + semantic alias + one-hop graph RRF channels. SQLite keeps a precomputed-text fallback for focused tests.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims now carry reviewed PubMed/guideline references in `sources` and `metadata.external_sources`.
 - Corpus expansion: deterministic Dedao compiler scanned 46 health-relevant source directories and promoted 314 generated claims / 83 entities / 46 pages / 2566 relations to reviewed status across reviewed passes, while preserving older reviewed artifacts.
 - Graph association: claim context now emits entity-to-entity `contextualizes` edges, for example `hyperuricemia-risk -> chronic-kidney-risk` and `hyperuricemia-risk -> hydration`, so lookup can traverse from a biomarker or condition to related interventions and boundaries.
@@ -231,7 +231,7 @@ python scripts/import_system_kb_v2_artifacts.py
 - `GET /api/v1/knowledge/entity/{entity_type}/{entity_id}`
 - `GET /api/v1/knowledge/claim/{claim_id}`
 - `POST /api/v1/knowledge/claim/{claim_id}/feedback`
-- `GET /api/v1/knowledge/search?q=...&limit=...`：DB-backed lexical + FTS-compatible `tsv` stream + semantic alias stream + one-hop graph expansion + RRF，结果带 `retrieval.channels`
+- `GET /api/v1/knowledge/search?q=...&limit=...`：DB-backed lexical + PostgreSQL `tsvector` FTS stream + semantic alias stream + one-hop graph expansion + RRF，结果带 `retrieval.channels` 和 `retrieval_plan.*_backend`
 - `POST /api/v1/knowledge/lookup_for_twin`：先用 Twin 结构化字段命中 entity，再沿 `contextualizes` / `has_claim` 图谱边补充上下文 entity 和 claim，例如尿酸指标可带出高尿酸风险、肾功能和饮水/复查相关 claim
 - `GET /api/v1/admin/knowledge/lint_report`
 - `POST /api/v1/admin/knowledge/reindex`
@@ -382,7 +382,7 @@ flowchart TD
 
 当前已经完成“系统知识库能同步、能被 Twin 命中、能进入 Agent prompt、能展示证据卡”的纵切，也已经补上 Dedao deterministic ingest pipeline、Phase 2 reviewed corpus expansion、admin operations dashboard 和外部证据覆盖指标。还没有完成全部 V2 能力：
 
-- Search serving 已有 DB-backed lexical + graph RRF 路径；还没有 PostgreSQL FTS、向量检索和真正三路 BM25/vector/graph 融合。
+- Search serving 已有 DB-backed lexical + PostgreSQL `tsvector` FTS + semantic alias + graph RRF 路径；还没有真正向量检索和外部 BM25 引擎。
 - Specialist 输出已标注 `support_status / unsupported / unsupported_reason` 并进入 coverage dashboard；Planner 层已对同证据域的无证据 actionable 建议做确定性过滤，Weekly Advisor 兜底生成 action card 时也复用同一策略。直接 PushScheduler 的可穿戴健康预警已标记 `support_status=safety_alert`、`unsupported=false`、`planner_evidence_policy.kept_reason=safety_or_data_gap` 和 `claim_boundary`。Celery notification 的趋势摘要、周聊邀请、行动卡随访、agent_loop 主动推送和 outcome grader 命中推送也已统一写入 notification evidence metadata，并已并入 admin coverage dashboard 的 `notification_evidence` 统计和 operations action item。`agent_loop` 主动建议现在优先调用用户级 evidence builder：如果用户 Twin 命中系统 KB claim，会自动补 `evidence_refs` 并标为 `supported`；没有命中时才保留 `model_inference`。后续重点是把更多 generated advice 调用点切到同一用户级 builder，并扩大 claim 覆盖。
 - Mobile 已有普通饮食/补剂/训练卡和基因报告卡的 evidence chip、统一 ClaimSheet/EntityCard、来源分组、来源可信度解释、entity 深链页和 claim feedback 入口。
 - 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲部分覆盖率，换取版权边界、医学边界和 review 可控性。
