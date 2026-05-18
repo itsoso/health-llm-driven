@@ -1,5 +1,18 @@
 import '@testing-library/jest-native/extend-expect';
 
+// Jest runs in a Node environment where Axios may select its fetch adapter.
+// Axios's fetch adapter performs a ReadableStream capability probe that can
+// trigger an unhandled rejection with Expo's virtual ReadableStream
+// implementation (observed on Node.js v25). Force Node's spec-compliant
+// ReadableStream for test stability.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ReadableStream } = require('stream/web');
+  (globalThis as any).ReadableStream = ReadableStream;
+} catch {
+  // ignore
+}
+
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn().mockResolvedValue(null),
   setItemAsync: jest.fn().mockResolvedValue(undefined),
