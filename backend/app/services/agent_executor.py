@@ -24,7 +24,7 @@ from app.services.tool_schema_registry import get_health_tools
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ROUNDS = 6
+MAX_TOOL_ROUNDS = 8
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -430,10 +430,41 @@ class AgentExecutor:
                     break
 
             else:
-                # 达到最大轮次
-                msg = "\n\n（已达到最大推理轮次，结束分析）"
-                yield {"event": "token", "data": {"content": msg}}
-                full_reply += msg
+                # 达到工具轮次上限后，不要把半成品直接返回给用户。
+                # DeepSeek 这类模型更容易连续拆分工具查询；上限命中时强制做一次
+                # no-tools synthesis，用已有 tool_result 汇总成最终答案。
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "工具查询轮次已经用完。请停止继续调用工具，"
+                        "只基于上文已经返回的健康数据、体检/基因/知识库结果，"
+                        "给出完整的最终分析和可执行建议。"
+                    ),
+                })
+                _round_start = time.time()
+                response = await self._call_llm(messages, [])
+                llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
+                if isinstance(response, str):
+                    final_text = response
+                elif isinstance(response, dict):
+                    final_text = response.get("content") or ""
+                    if not final_text and response.get("tool_calls"):
+                        final_text = (
+                            "我已经完成了多轮数据查询，但模型仍尝试继续调用工具。"
+                            "请缩小问题范围，或稍后使用更强模型重新分析。"
+                        )
+                else:
+                    final_text = str(response or "")
+
+                if not final_text.strip():
+                    final_text = (
+                        "我已经完成了多轮数据查询，但没有生成足够明确的最终结论。"
+                        "请缩小问题范围，或稍后使用更强模型重新分析。"
+                    )
+                for i in range(0, len(final_text), 20):
+                    chunk = final_text[i:i + 20]
+                    yield {"event": "token", "data": {"content": chunk}}
+                full_reply += final_text
 
         except Exception as e:
             logger.error(f"Agent 执行异常: {e}", exc_info=True)
@@ -697,7 +728,10 @@ class AgentExecutor:
         try:
             from app.twin.builder import build_twin
 
-            twin = build_twin(self.db, user_id, use_cache=True)
+            # Chat prompt grounding must reflect the latest imported labs/genes.
+            # Cached Twin can be stale immediately after upload/import and then
+            # the system KB evidence block silently disappears.
+            twin = build_twin(self.db, user_id, use_cache=False)
             return build_evidence_card_for_twin(
                 self.db,
                 system_kb_twin_payload_from_health_twin(twin),
