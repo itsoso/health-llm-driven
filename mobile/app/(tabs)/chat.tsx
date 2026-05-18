@@ -170,6 +170,7 @@ export default function ChatScreen() {
   const handleSend = useCallback((text: string, images?: any) => {
     isNearBottom.current = true;
     sendMessage(text, images);
+    setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [sendMessage]);
 
@@ -210,6 +211,7 @@ export default function ChatScreen() {
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
     isNearBottom.current = true;
+    setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 120);
   }, [loadConversation]);
 

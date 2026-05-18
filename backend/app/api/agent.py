@@ -33,6 +33,53 @@ _RECENT_DUP_CACHE: dict[tuple[int, str], float] = {}
 _DUP_WINDOW_SECONDS = 3.0
 
 
+def _merge_card_descriptors(*groups: list | None) -> list:
+    """Merge SSE card descriptors without duplicating identical payloads."""
+
+    out: list = []
+    seen: set[str] = set()
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        for card in group:
+            if not isinstance(card, dict) or not isinstance(card.get("type"), str):
+                continue
+            try:
+                key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
+            except Exception:
+                key = f"{card.get('type')}:{len(out)}"
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(card)
+    return out
+
+
+def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> None:
+    """Persist cards appended by the API wrapper into OpenClawMessage.meta.
+
+    AgentExecutor already writes its own metadata before yielding `done`. The
+    route wrapper may append inline/query cards afterwards, so it must patch the
+    same assistant message or history reload will lose cards that were visible
+    during the live stream.
+    """
+
+    if not message_id or not cards:
+        return
+    try:
+        from app.models.openclaw import OpenClawMessage
+
+        msg = db.query(OpenClawMessage).filter(OpenClawMessage.id == message_id).first()
+        if not msg:
+            return
+        meta = dict(msg.meta or {})
+        meta["cards"] = _merge_card_descriptors(meta.get("cards"), cards)
+        msg.meta = meta
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[agent.stream] persist done cards skipped: %s", e)
+
+
 def _check_recent_dup(user_id: int, message: str) -> bool:
     """同一 user 同一 message 在 3s 内重复 → 返回 True (拒绝).
 
@@ -200,11 +247,20 @@ async def agent_stream(
                     if event.get("event") == "done":
                         try:
                             from app.services.inline_cards import build_cards, extract_inline_card_blocks
+                            existing = event.get("data", {}).get("cards")
                             cards = build_cards(bg_db, user_id, msg_text)
                             inline = extract_inline_card_blocks("".join(full_text_buf))
-                            merged = list(inline) + list(cards or [])  # LLM 主动输出的优先
+                            # LLM 主动输出的卡片优先，其次保留 AgentExecutor 已写入的
+                            # system-KB evidence，再追加 query 派生卡片。历史恢复依赖
+                            # message.meta.cards，所以合并后回写同一 assistant message。
+                            merged = _merge_card_descriptors(inline, existing, cards)
                             if merged:
                                 event.setdefault("data", {})["cards"] = merged
+                                _persist_done_cards(
+                                    bg_db,
+                                    event.get("data", {}).get("message_id"),
+                                    merged,
+                                )
                         except Exception as e:
                             logger.debug(f"inline_cards 失败: {e}")
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")

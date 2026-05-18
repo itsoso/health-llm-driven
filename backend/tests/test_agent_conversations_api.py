@@ -2,6 +2,7 @@
 
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
 from app.models.user import User
+from app.api.agent import _merge_card_descriptors
 
 
 def _create_user(db, suffix: str) -> User:
@@ -72,6 +73,36 @@ def test_agent_conversation_detail_returns_messages(client, db, auth_user_and_he
     assert [m["id"] for m in data["messages"]] == [first.id, second.id]
     assert data["messages"][0]["role"] == "user"
     assert data["messages"][1]["content"] == "先做 Zone 2。"
+
+
+def test_agent_conversation_detail_returns_persisted_card_meta(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "知识卡片")
+    msg = _add_message(db, conv.id, "assistant", "已结合知识库回答。")
+    msg.meta = {
+        "cards": [
+            {
+                "type": "system_knowledge_evidence",
+                "data": {"entity": {"title": "MTHFR"}, "claims": []},
+            }
+        ]
+    }
+    db.commit()
+
+    res = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["messages"][0]["meta"]["cards"][0]["type"] == "system_knowledge_evidence"
+
+
+def test_merge_card_descriptors_preserves_existing_and_deduplicates():
+    existing = [{"type": "system_knowledge_evidence", "data": {"entity": {"title": "MTHFR"}}}]
+    inline = [{"type": "menu_share", "data": {"title": "分享", "items": []}}]
+
+    merged = _merge_card_descriptors(inline, existing, existing)
+
+    assert [card["type"] for card in merged] == ["menu_share", "system_knowledge_evidence"]
 
 
 def test_agent_conversation_detail_enforces_user_isolation(client, db, auth_user_and_headers):

@@ -143,6 +143,57 @@ async def test_agent_stream_injects_system_knowledge_from_user_twin(db, auth_use
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_does_not_attach_twin_kb_card_for_pure_record_intent(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    profile = GeneticProfile(
+        user_id=user.id,
+        test_provider="wegene",
+        test_date=date(2026, 5, 1),
+    )
+    db.add(profile)
+    db.flush()
+    db.add(
+        GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            rsid="rs1801133",
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="C677T",
+            genotype="TT",
+            result_label="叶酸代谢显著减弱",
+            risk_level="high",
+            variant_nature="risk",
+        )
+    )
+    db.commit()
+
+    executor = AgentExecutor(db)
+    captured_messages = []
+
+    async def fake_call_llm(messages, tools):
+        captured_messages.extend(messages)
+        return "已记录晚餐。"
+
+    executor._call_llm = fake_call_llm
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录晚餐：牛排150g、炸鸡50g、炸红薯50g",
+            user_auth_token=None,
+        )
+    ]
+
+    assert events[-1]["event"] == "done"
+    assert "## 系统知识库相关条目" not in captured_messages[0]["content"]
+    assert "系统知识库" not in events[-1]["data"]["sources_used"]
+    assert events[-1]["data"]["cards"] == []
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_9p21_supplement_question_injects_boundary_claim(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     _seed_9p21_knowledge(db)

@@ -42,6 +42,33 @@ _TOOL_TO_SOURCE_LABEL = {
 }
 
 
+_RECORD_INTENT_RE = re.compile(
+    r"(记录|打卡|新增|录入|保存|吃了|喝了|服药|已服用|已吃|已喝|删除|修改|撤销|更新)"
+)
+_ADVICE_OR_ANALYSIS_RE = re.compile(
+    r"(分析|解读|建议|方案|风险|评估|为什么|怎么|如何|基于|结合|补剂|叶酸|训练|运动|饮食方案|适合)"
+)
+
+
+def _allow_twin_evidence_fallback(message: str) -> bool:
+    """Whether to attach system-KB evidence from the user's Twin.
+
+    Explicit entity mentions are handled before this function. The fallback is
+    only for advice/analysis turns such as "我最近应该怎么补叶酸"; pure CRUD or
+    logging turns like "记录晚餐..." should not surface a generic MTHFR/9p21
+    card just because the user's Twin happens to match a reviewed claim.
+    """
+
+    text = (message or "").strip()
+    if not text:
+        return False
+    has_record_intent = bool(_RECORD_INTENT_RE.search(text))
+    has_advice_intent = bool(_ADVICE_OR_ANALYSIS_RE.search(text))
+    if has_record_intent and not has_advice_intent:
+        return False
+    return has_advice_intent
+
+
 def _inspect_user_data_sources(db, user_id: int) -> list:
     """快速 SQL count 用户哪些数据可用. 用于 chat done event 的 sources_used.
 
@@ -724,6 +751,9 @@ class AgentExecutor:
 
         if evidence_card:
             return evidence_card
+
+        if not _allow_twin_evidence_fallback(message):
+            return None
 
         try:
             from app.twin.builder import build_twin

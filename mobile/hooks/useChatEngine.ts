@@ -45,6 +45,56 @@ function applyMeta(msg: any): Partial<UIMessage> {
   };
 }
 
+function parseHistoryImageUris(raw: any, imageHost: string): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed.map((u: string) => `${imageHost}${u}`);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Restore durable chat messages plus server-rendered cards from history.
+ *
+ * Live streams render cards from the `done.cards` payload. The backend also
+ * persists the same descriptors under assistant `message.meta.cards`; history
+ * reloads must flatten those descriptors back into card messages or cards will
+ * disappear after reopening a conversation.
+ */
+export function restoreMessagesFromHistory(
+  msgs: any[],
+  imageHost: string = IMAGE_HOST,
+  idPrefix: string = 'hist',
+): UIMessage[] {
+  const restored: UIMessage[] = [];
+  (msgs || []).forEach((m: any, i: number) => {
+    const baseId = `${idPrefix}-${m.id || i}`;
+    restored.push({
+      id: baseId,
+      role: m.role,
+      content: m.content,
+      createdAt: m.created_at,
+      imageUris: parseHistoryImageUris(m.image_url, imageHost),
+      ...applyMeta(m),
+    });
+
+    const serverCards = renderServerCards(m?.meta?.cards);
+    serverCards.forEach((card, cardIndex) => {
+      restored.push({
+        id: `${baseId}-card-${cardIndex}`,
+        role: 'assistant',
+        content: '',
+        cardType: card.type,
+        cardData: card.data,
+        createdAt: m.created_at,
+      });
+    });
+  });
+  return restored;
+}
+
 interface UseChatEngineOptions {
   contextData?: Record<string, any>;
 }
@@ -89,14 +139,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (streamingRef.current) return;
       setHasMoreHistory(total_messages > msgs.length);
       if (msgs.length === 0) return;
-      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-        id: `hist-${m.id || i}`,
-        role: m.role,
-        content: m.content,
-        createdAt: m.created_at,
-        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-        ...applyMeta(m),
-      }));
+      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       setMessages(restored);
       setIsStreaming(false);  // 清掉 streaming 残留态
     } catch {
@@ -151,14 +194,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setWindowDays(DEFAULT_WINDOW_DAYS);
       setHasMoreHistory(total_messages > msgs.length);
       if (msgs.length > 0) {
-        const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-          id: `hist-${m.id || i}`,
-          role: m.role,
-          content: m.content,
-          createdAt: m.created_at,
-          imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-          ...applyMeta(m),
-        }));
+        const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
         setMessages(restored);
         restoreCards(restored);
       }
@@ -209,11 +245,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
       setWindowDays(DEFAULT_WINDOW_DAYS);
       setHasMoreHistory(total_messages > msgs.length);
-      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
-        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-        ...applyMeta(m),
-      }));
+      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'h');
       setMessages(restored);
       restoreCards(restored);
     } catch { throw new Error('加载对话失败'); }
@@ -226,11 +258,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const { messages: msgs, total_messages } = await getConversationMessages(conversationId, { days: nextDays });
       setWindowDays(nextDays);
       setHasMoreHistory(total_messages > msgs.length);
-      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
-        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-        ...applyMeta(m),
-      }));
+      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'h');
       setMessages(restored);
       restoreCards(restored);
     } catch { console.warn('loadMoreHistory failed'); }
