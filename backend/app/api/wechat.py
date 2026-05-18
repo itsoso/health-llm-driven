@@ -266,21 +266,64 @@ async def wechat_login(
 @router.put("/user/info", summary="更新微信用户信息")
 async def update_wechat_user_info(
     user_info: WechatUserInfo,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
-    # 这里应该从 token 中获取当前用户，简化起见先用 openid
 ):
     """更新用户信息（昵称、头像等）"""
-    # TODO: 从 token 中获取用户 ID
-    pass
+    update_fields: Dict[str, str] = {}
+
+    if user_info.nickname is not None:
+        nickname = user_info.nickname.strip()
+        if nickname:
+            current_user.name = nickname
+            update_fields["nickname"] = nickname
+
+    if user_info.avatar_url is not None:
+        avatar_url = user_info.avatar_url.strip()
+        if avatar_url:
+            current_user.avatar_url = avatar_url
+            update_fields["avatar_url"] = avatar_url
+
+    if user_info.gender is not None:
+        gender = user_info.gender.strip()
+        if gender:
+            current_user.gender = gender
+            update_fields["gender"] = gender
+
+    if user_info.phone is not None:
+        phone = user_info.phone.strip()
+        if phone:
+            current_user.phone = phone
+            update_fields["phone"] = phone
+
+    db.commit()
+    db.refresh(current_user)
+
+    logger.info(f"微信用户更新资料: user_id={current_user.id}, fields={sorted(update_fields.keys())}")
+
+    return {
+        "success": True,
+        "user": {
+            "user_id": current_user.id,
+            "nickname": current_user.name,
+            "avatar_url": current_user.avatar_url,
+            "gender": current_user.gender,
+            "phone": current_user.phone,
+        },
+    }
 
 
 @router.get("/check-bindding/{user_id}", summary="检查用户是否绑定了Garmin")
 async def check_garmin_bindding(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """检查微信用户是否已绑定 Garmin 账号"""
     from app.models.user import GarminCredential
+
+    if current_user.id != user_id and not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="无权限查看该用户绑定状态")
 
     credential = db.query(GarminCredential).filter(
         GarminCredential.user_id == user_id
