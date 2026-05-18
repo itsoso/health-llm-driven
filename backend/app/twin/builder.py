@@ -15,7 +15,7 @@ Digital Health Twin 组装器。
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Set, Tuple
 
 from sqlalchemy.orm import Session
@@ -75,6 +75,9 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
 
     # ── Phase A: integrated_profile 先行（下游 _fill_collectors 依赖 BP 字段）──
     _fill_integrated_profile(db, user_id, twin, sources)
+    # 急性病/感冒症状是安全约束，必须在主流程同步填充，避免并行 session
+    # 在测试或事务边界内看不到刚写入的症状/病症记录。
+    _fill_acute_health(db, user_id, twin, sources)
 
     # ── Phase B: 8 个独立步骤并行执行 ──
     # 每个线程使用独立 DB 会话（SQLAlchemy Session 不线程安全）
@@ -315,6 +318,95 @@ def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: 
         sources.add("garmin_official")
     except Exception as e:
         logger.warning(f"[twin] garmin_official 失败: {e}")
+
+
+_COLD_KEYWORDS = (
+    "感冒", "发烧", "发热", "低烧", "高烧", "咳嗽", "咽痛", "嗓子疼", "喉咙痛",
+    "鼻塞", "流鼻涕", "流涕", "打喷嚏", "头痛", "头疼", "畏寒", "寒战",
+    "乏力", "肌肉酸痛", "全身酸痛", "新冠", "流感", "上呼吸道",
+)
+_FEVER_KEYWORDS = ("发烧", "发热", "低烧", "高烧", "体温", "38", "39", "40")
+_RESPIRATORY_BODY_PARTS = {"respiratory", "head", "general"}
+
+
+def _looks_like_cold(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(k.lower() in lowered for k in _COLD_KEYWORDS)
+
+
+def _fill_acute_health(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """填充近期急性病/感冒症状状态。
+
+    规则偏保守：只要有未痊愈 illness episode，或 72 小时内出现呼吸道/全身
+    感冒关键词，就把训练建议降到 rest。用户恢复后删除/标记 resolved 即解除。
+    """
+    try:
+        from app.models.illness import IllnessEpisode
+        from app.models.symptom_entry import SymptomEntry
+
+        active_illnesses = (
+            db.query(IllnessEpisode)
+            .filter(
+                IllnessEpisode.user_id == user_id,
+                IllnessEpisode.status.in_(["active", "improving"]),
+            )
+            .order_by(IllnessEpisode.start_date.desc())
+            .limit(5)
+            .all()
+        )
+
+        cutoff = datetime.now(UTC) - timedelta(hours=72)
+        recent_symptoms = (
+            db.query(SymptomEntry)
+            .filter(
+                SymptomEntry.user_id == user_id,
+                SymptomEntry.occurred_at >= cutoff,
+            )
+            .order_by(SymptomEntry.occurred_at.desc())
+            .limit(10)
+            .all()
+        )
+
+        illness_names = [i.name for i in active_illnesses if i.name]
+        symptom_texts = [
+            s.description for s in recent_symptoms
+            if s.description and (
+                s.body_part in _RESPIRATORY_BODY_PARTS or _looks_like_cold(s.description)
+            )
+        ]
+        combined = " ".join(illness_names + symptom_texts)
+        suspected_cold = bool(combined and _looks_like_cold(combined))
+        fever_reported = any(k in combined for k in _FEVER_KEYWORDS)
+        has_active = bool(active_illnesses)
+
+        if not (has_active or symptom_texts):
+            return
+
+        severities = [
+            int(v) for v in (
+                [getattr(i, "severity", None) for i in active_illnesses]
+                + [getattr(s, "severity", None) for s in recent_symptoms]
+            )
+            if isinstance(v, int)
+        ]
+
+        twin.acute.has_active_illness = has_active
+        twin.acute.illness_names = illness_names[:5]
+        twin.acute.illness_severity_max = max(severities) if severities else None
+        twin.acute.recent_symptoms = symptom_texts[:8]
+        twin.acute.suspected_cold = suspected_cold
+        twin.acute.fever_reported = fever_reported
+        twin.acute.should_rest_from_training = bool(has_active or suspected_cold or fever_reported)
+        if twin.acute.should_rest_from_training:
+            if fever_reported:
+                twin.acute.training_guardrail = "发热/疑似感染期暂停训练；退热且症状明显缓解后再从低强度恢复。"
+            elif suspected_cold:
+                twin.acute.training_guardrail = "感冒/上呼吸道症状期不要求完成运动目标；优先休息、补水和睡眠。"
+            else:
+                twin.acute.training_guardrail = "急性不适期暂停训练目标；症状缓解后再恢复低强度活动。"
+        sources.add("acute")
+    except Exception as e:
+        logger.warning(f"[twin] acute_health 失败: {e}")
 
 
 # ─────────────────────────── 3. 睡眠深度 ───────────────────────────

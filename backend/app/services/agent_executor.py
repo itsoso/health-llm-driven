@@ -1258,13 +1258,13 @@ class AgentExecutor:
         # illness 急性症状记录 — 影响疾病追踪, 必须先确认
         if rtype == "illness":
             data.setdefault("start_date", today)
-            name = data.get("illness_name") or args.get("illness_name")
+            name = data.get("name") or data.get("illness_name") or args.get("name") or args.get("illness_name")
             if not name:
                 return (
-                    "Error: illness 记录必须提供 illness_name. 例如 "
-                    '{"record_type":"illness","data":{"illness_name":"感冒","severity":5}}'
+                    "Error: illness 记录必须提供 name. 例如 "
+                    '{"record_type":"illness","data":{"name":"感冒","severity":5}}'
                 )
-            data["illness_name"] = name
+            data["name"] = name
             sev = data.get("severity") or args.get("severity")
             if sev is not None:
                 data["severity"] = sev
@@ -1369,6 +1369,16 @@ class AgentExecutor:
             except Exception as e:
                 return f"Error: 用药记录失败: {e}"
 
+        if rtype == "illness":
+            payload = dict(data)
+            if "name" not in payload and payload.get("illness_name"):
+                payload["name"] = payload.pop("illness_name")
+            payload.setdefault("start_date", datetime.now(BEIJING_TZ).date().isoformat())
+            payload.setdefault("status", "active")
+            if not payload.get("name"):
+                return "Error: illness 必须提供 name (如 '感冒' / '发烧')"
+            return await self._api_post(f"{base}/illness/episodes", headers, payload)
+
         record_map = {
             # water 走前面早返路径 (L732), 不会从 record_map 命中, 但保留占位避免后续误判
             "water": ("/water/records/quick", "POST", {
@@ -1382,7 +1392,6 @@ class AgentExecutor:
             "supplement": ("/supplements/records", "POST", data),
             # rhinitis 走 special case (见上方 rtype=="rhinitis" 分支), 不在 record_map 里
             "mood": ("/mood/records", "POST", data),
-            "illness": ("/illness/episodes", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
         }

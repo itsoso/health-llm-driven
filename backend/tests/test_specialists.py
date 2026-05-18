@@ -33,6 +33,7 @@ from app.twin.schema import (
     PhysiologicalState,
     SupplementState,
     TwinMeta,
+    AcuteHealthState,
 )
 
 
@@ -317,6 +318,28 @@ class TestMovementCoach:
         # 尽管 readiness=hard，过载必须限制
         assert pres["intensity"] in ("low", "rest")
         assert pres["based_on_readiness"] == "hard"
+
+    def test_acute_cold_symptoms_force_rest_even_when_undertrained(self):
+        s = MovementCoachSpecialist()
+        t = _rich_twin()
+        t.behavioral.acute_chronic_ratio = 0.6
+        t.behavioral.workouts_this_week = 1
+        t.acute = AcuteHealthState(
+            has_active_illness=True,
+            illness_names=["感冒"],
+            recent_symptoms=["咳嗽", "嗓子疼"],
+            suspected_cold=True,
+            should_rest_from_training=True,
+            training_guardrail="急性上呼吸道症状期暂停训练。",
+        )
+
+        finding = s.run(t, {"readiness_zone": "hard"})
+        pres = next(f for f in finding.findings if f.get("type") == "today_prescription")
+
+        assert pres["intensity"] == "rest"
+        assert pres["reason"] == "acute_illness"
+        assert "暂停" in pres["guidance"]
+        assert finding.proposed_cards == []
 
     def test_specialist_applies_on_movement_intent(self):
         s = MovementCoachSpecialist()

@@ -100,6 +100,42 @@ async def test_garmin_sync_does_not_throw_on_missing_amount(db):
 
 
 @pytest.mark.asyncio
+async def test_illness_record_accepts_name_payload(db):
+    """illness schema 使用 name 字段, 执行器应兼容并写入 illness episodes."""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id": 1, "name": "感冒"}'
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "illness",
+                "data": {
+                    "name": "感冒",
+                    "severity": 4,
+                    "status": "active",
+                    "confirmed": True,
+                },
+            }),
+            user_token=None,
+        )
+
+    assert "Error" not in str(result)
+    assert "/illness/episodes" in captured.get("url", "")
+    assert captured["payload"]["name"] == "感冒"
+    assert captured["payload"]["severity"] == 4
+
+
+@pytest.mark.asyncio
 async def test_run_stream_with_extra_context_does_not_crash_before_first_event(db):
     """Regression: sources_used must be initialized before data-source inspection.
 

@@ -119,8 +119,8 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 - rhinitis: 鼻炎症状 (喷嚏/鼻塞/流涕)
 - mood: 情绪
 - medication: 服药一次
-- illness: 生病 / 急性症状 (感冒/发烧)
-- symptom: 身体症状记录 (眼痒/嗓子疼/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个
+- illness: 生病 / 急性症状周期 (感冒/流感/发烧). 用户明确说"我感冒了/生病了/发烧了"优先记录 illness
+- symptom: 身体症状记录 (咳嗽/嗓子疼/鼻塞/流涕/眼痒/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个；感冒相关症状用 body_part=respiratory/general
 - garmin_sync: 触发 Garmin 数据立即同步
 - reminder: 设置提醒""",
                     },
@@ -142,9 +142,9 @@ exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
 rhinitis:         {"sneezing": 2, "congestion": 1, "runny_nose": 0}  // 0-3 级
 mood:             {"score": 7, "notes": "心情不错"}    // score 1-10
 medication:       {"medication_name": "布洛芬", "taken_time": "08:00"}
-illness:          {"illness_name": "感冒", "severity": 5, "start_date": "2026-05-05"}
+illness:          {"name": "感冒", "severity": 5, "start_date": "2026-05-05", "status": "active"}
 symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|head|general|other",
-                   "description": "眼睛痒", "severity": 3,   // severity 1-10, 可选
+                   "description": "咳嗽、嗓子疼、鼻塞", "severity": 3,   // severity 1-10, 可选
                    "triggers": ["pollen", "dust"],            // 可选
                    "occurred_at": "2026-05-08T09:00:00+08:00"} // 可选, 默认现在
 garmin_sync:      {}

@@ -356,6 +356,7 @@ def _build_context(db: Session, user_id: int) -> str:
             days = (today - ill.start_date).days if ill.start_date else 0
             illness_strs.append(f"{ill.name}(第{days}天, {ill.severity}/10)")
         parts.append(f"当前病症: {', '.join(illness_strs)}")
+        parts.append("急性状态约束: 生病/感冒/发热期间不要求完成运动训练目标, 优先恢复、补水、睡眠和症状观察。")
 
     # ── 6. 今日饮水 ─────────────────────────────────────
     try:

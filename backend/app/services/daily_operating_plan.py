@@ -145,6 +145,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     twin = build_twin(db, user_id, use_cache=False)
     body = twin.body_composition
     bp = _bp_text(twin)
+    acute = getattr(twin, "acute", None)
+    acute_rest = bool(getattr(acute, "should_rest_from_training", False))
+    acute_guardrail = getattr(acute, "training_guardrail", None) or "当前有急性不适/生病状态，今天不要求完成运动目标，优先休息、补水和睡眠。"
 
     protein_target = round((body.weight_kg or 70) * 1.6)
     actions: List[Dict[str, Any]] = []
@@ -174,7 +177,20 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     ))
 
     readiness = twin.physiological.training_readiness_score
-    if readiness is not None and readiness < 50:
+    if acute_rest:
+        actions.append(_action(
+            "movement",
+            "暂停训练，优先恢复",
+            acute_guardrail,
+            when="today",
+            metric_key="symptom",
+            target_value="recover",
+            evidence_level="high",
+            evidence_tier="safety_guardrail",
+            confidence="high",
+            claim_boundary="急性病或疑似感染期的活动建议用于健康管理安全兜底；如有发热、胸痛、气促或症状加重，应及时就医。",
+        ))
+    elif readiness is not None and readiness < 50:
         actions.append(_action(
             "movement",
             "低强度 Zone 2 或主动恢复 30 分钟",
@@ -223,6 +239,14 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         "blood_pressure": bp,
         "sleep_score": twin.physiological.sleep_score_latest,
         "training_readiness_score": readiness,
+        "acute": {
+            "has_active_illness": bool(getattr(acute, "has_active_illness", False)),
+            "illness_names": list(getattr(acute, "illness_names", []) or []),
+            "suspected_cold": bool(getattr(acute, "suspected_cold", False)),
+            "fever_reported": bool(getattr(acute, "fever_reported", False)),
+            "should_rest_from_training": acute_rest,
+            "training_guardrail": acute_guardrail if acute_rest else None,
+        },
         "data_sources": twin.meta.data_sources,
     }
     verification_metrics = [
@@ -247,8 +271,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             "meal_timing": "finish_dinner_3h_before_bed",
         },
         "movement_targets": {
-            "weekly_moderate_minutes": 150,
-            "strength_days": 2,
+            "weekly_moderate_minutes": 0 if acute_rest else 150,
+            "strength_days": 0 if acute_rest else 2,
+            **({"status": "paused_for_acute_illness", "resume_rule": "退热且感冒/呼吸道症状明显缓解后，从低强度活动恢复。"} if acute_rest else {}),
         },
         "sleep_targets": {
             "duration_hours": 7,

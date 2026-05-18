@@ -99,6 +99,41 @@ class PreWorkoutGuidanceService:
             logger.info(f"[运动前指导] ========== 开始为用户 {user_id} 生成指导 (debug={debug}) ==========")
             logger.info(f"[运动前指导] 参数: goal_id={goal_id}, workout_type={workout_type}")
 
+            try:
+                from app.twin import build_twin
+                twin = build_twin(db, user_id, use_cache=False)
+                acute = getattr(twin, "acute", None)
+                if bool(getattr(acute, "should_rest_from_training", False)):
+                    guardrail = (
+                        getattr(acute, "training_guardrail", None)
+                        or "当前有急性不适/生病状态，今天不要求完成运动目标，优先休息、补水和睡眠。"
+                    )
+                    self._add_debug_reasoning(debug_info, "检测到急性病/感冒状态，取消运动前训练安排。", "warning")
+                    return {
+                        "success": True,
+                        "workout_type": workout_type or "REST",
+                        "goal_info": None,
+                        "user_status": "急性恢复期",
+                        "training_objective": {
+                            "title": "暂停训练，优先恢复",
+                            "description": guardrail,
+                            "intensity": "休息",
+                        },
+                        "heart_rate_zones": None,
+                        "environment": None,
+                        "warm_up": [],
+                        "key_reminders": [
+                            guardrail,
+                            "如果出现发热、胸痛、气促、明显乏力或症状加重，应及时就医。",
+                            "退热且症状明显缓解后，再从低强度活动恢复。",
+                        ],
+                        "course_insights": [],
+                        "generated_at": get_china_now().isoformat(),
+                        **({"debug": debug_info} if debug_info else {}),
+                    }
+            except Exception as exc:
+                logger.warning("[运动前指导] 急性状态检查失败，继续常规流程: %s", exc)
+
             # 1. 获取用户信息
             step_start = time.time()
 

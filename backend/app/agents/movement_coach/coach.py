@@ -251,6 +251,12 @@ class MovementCoachSpecialist:
             readiness_zone = context.get("readiness_zone")
 
             intensity_code, guidance = _today_intensity(status, readiness_zone)
+            acute = getattr(twin, "acute", None)
+            acute_rest = bool(getattr(acute, "should_rest_from_training", False))
+            acute_guardrail = getattr(acute, "training_guardrail", None)
+            if acute_rest:
+                intensity_code = "rest"
+                guidance = acute_guardrail or "当前有急性不适/生病状态，今天不要求完成运动目标，优先休息。"
 
             findings: List[Dict[str, Any]] = [
                 {
@@ -269,6 +275,7 @@ class MovementCoachSpecialist:
                     "intensity": intensity_code,
                     "guidance": guidance,
                     "based_on_readiness": readiness_zone,
+                    **({"reason": "acute_illness"} if acute_rest else {}),
                 },
             ]
 
@@ -346,7 +353,9 @@ class MovementCoachSpecialist:
             # 信任循环: undertrained / overload 各产一张可验证假设
             proposed_cards: List[ProposedCard] = []
             wpw = b.workouts_this_week or 0
-            if status == "undertrained" and wpw < 3:
+            if acute_rest:
+                proposed_cards = []
+            elif status == "undertrained" and wpw < 3:
                 target_count = max(3, wpw + 2)
                 proposed_cards.append(ProposedCard(
                     title=f"未来 7 天加训：每周训练 {wpw} → {target_count} 次",
@@ -404,6 +413,7 @@ class MovementCoachSpecialist:
                     "acwr": acwr,
                     "intensity": intensity_code,
                     "readiness_used": readiness_zone,
+                    "acute_rest": acute_rest,
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
                 proposed_cards=proposed_cards,

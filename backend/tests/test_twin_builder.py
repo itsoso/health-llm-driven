@@ -18,6 +18,7 @@ from app.twin import build_twin
 from app.twin.builder import _categorize_bmi, _suitability_from_aqi
 from app.twin.formatter import twin_to_prompt_blob
 from app.twin.schema import (
+    AcuteHealthState,
     BehavioralState,
     BodyCompositionState,
     EnvironmentalState,
@@ -80,6 +81,8 @@ class TestSchemaDefaults:
         assert twin.genetic.has_profile is False
         assert twin.behavioral.water_ml_today == 0
         assert twin.behavioral.water_goal_ml == 2000
+        assert twin.acute.has_active_illness is False
+        assert twin.acute.should_rest_from_training is False
         assert twin.goals.active_goals_count == 0
         assert twin.freshness.garmin is None
 
@@ -128,6 +131,50 @@ class TestBuilderEmptyDB:
 
 
 class TestBuilderWithPartialData:
+    def test_build_picks_up_active_cold_and_recent_respiratory_symptoms(self, db):
+        """活跃感冒或近期呼吸道症状应进入 Twin acute 分区, 用于压制运动建议。"""
+        from app.models.user import User
+        from app.models.illness import IllnessEpisode
+        from app.models.symptom_entry import SymptomEntry
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="Twin Test User",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        db.add(IllnessEpisode(
+            user_id=user.id,
+            name="感冒",
+            start_date=date.today() - timedelta(days=1),
+            status="active",
+            severity=5,
+        ))
+        db.add(SymptomEntry(
+            user_id=user.id,
+            occurred_at=datetime.now(timezone.utc),
+            body_part="respiratory",
+            description="咳嗽，嗓子疼，鼻塞",
+            severity=4,
+            source="voice",
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+
+        assert twin.acute.has_active_illness is True
+        assert twin.acute.suspected_cold is True
+        assert twin.acute.should_rest_from_training is True
+        assert "感冒" in twin.acute.illness_names
+        assert any("咳嗽" in s for s in twin.acute.recent_symptoms)
+        assert "acute" in twin.meta.data_sources
+
     def test_build_picks_up_water_intake(self, db):
         """插入一条 WaterIntake 后 Twin 应显示。"""
         from app.models.user import User

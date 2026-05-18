@@ -149,3 +149,28 @@ def test_daily_operating_plan_me_returns_metabolic_actions(client, db, auth_user
     assert measurement["evidence_tier"] == "clinical_guideline"
     assert measurement["confidence"] == "high"
     assert body["verification"]["metrics"]
+
+
+def test_daily_operating_plan_pauses_movement_when_user_has_active_cold(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    from app.models.illness import IllnessEpisode
+
+    db.add(IllnessEpisode(
+        user_id=user.id,
+        name="感冒",
+        start_date=date.today(),
+        status="active",
+        severity=4,
+    ))
+    db.commit()
+
+    resp = client.get("/api/v1/daily-plan/me", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    movement_actions = [action for action in body["actions"] if action["domain"] == "movement"]
+    assert movement_actions
+    assert all("中等强度" not in action["title"] for action in movement_actions)
+    assert any("暂停" in action["title"] or "休息" in action["title"] for action in movement_actions)
+    assert body["movement_targets"]["weekly_moderate_minutes"] == 0
+    assert body["state_summary"]["acute"]["should_rest_from_training"] is True

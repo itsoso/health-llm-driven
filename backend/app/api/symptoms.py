@@ -102,6 +102,11 @@ def create_symptom(
     db.add(e)
     db.commit()
     db.refresh(e)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return _to_response(e)
 
 
@@ -151,6 +156,11 @@ def update_symptom(
     e.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(e)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return _to_response(e)
 
 
@@ -167,3 +177,8 @@ def delete_symptom(
         raise HTTPException(status_code=403, detail="无权删除其他用户的数据")
     db.delete(e)
     db.commit()
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass

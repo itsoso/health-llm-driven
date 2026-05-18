@@ -236,6 +236,19 @@ class BehavioralState(BaseModel):
     sneeze_count_today: int = 0
 
 
+class AcuteHealthState(BaseModel):
+    """急性病/近期症状状态，用于安全兜底运动、睡眠和用药建议。"""
+
+    has_active_illness: bool = False
+    illness_names: List[str] = Field(default_factory=list)
+    illness_severity_max: Optional[int] = None
+    recent_symptoms: List[str] = Field(default_factory=list)
+    suspected_cold: bool = False
+    fever_reported: bool = False
+    should_rest_from_training: bool = False
+    training_guardrail: Optional[str] = None
+
+
 class WorkoutSummary(BaseModel):
     """单次 WorkoutRecord 的 LLM-friendly 摘要 (近 7 天填充).
 
@@ -333,6 +346,7 @@ class HealthTwin(BaseModel):
     gene_config: Optional[Any] = None  # GeneConfig dataclass, built post-init
     environment: EnvironmentalState = Field(default_factory=EnvironmentalState)
     behavioral: BehavioralState = Field(default_factory=BehavioralState)
+    acute: AcuteHealthState = Field(default_factory=AcuteHealthState)
     mental: MentalState = Field(default_factory=MentalState)
     chronic: ChronicConditionState = Field(default_factory=ChronicConditionState)
     goals: GoalsContext = Field(default_factory=GoalsContext)

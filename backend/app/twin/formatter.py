@@ -298,6 +298,26 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
             f"鼻炎今日: 喷嚏 {beh.sneeze_count_today}次 / 洗鼻 {beh.nasal_wash_count_today}次"
         )
 
+    # ─── 急性病 / 感冒症状安全约束
+    acute = twin.acute
+    acute_parts: List[str] = []
+    if acute.illness_names:
+        acute_parts.append("病症=" + "/".join(acute.illness_names[:3]))
+    if acute.recent_symptoms:
+        acute_parts.append("症状=" + "；".join(acute.recent_symptoms[:3]))
+    if acute.illness_severity_max is not None:
+        acute_parts.append(f"最高严重度 {acute.illness_severity_max}/10")
+    if acute.suspected_cold:
+        acute_parts.append("疑似感冒/上呼吸道症状")
+    if acute.fever_reported:
+        acute_parts.append("提到发热")
+    if acute.should_rest_from_training:
+        acute_parts.append("运动目标=暂停/不强求")
+    if acute_parts:
+        lines.append("急性状态: " + ", ".join(acute_parts))
+        if acute.training_guardrail:
+            lines.append("急性状态约束: " + acute.training_guardrail)
+
     # ─── 心理
     m = twin.mental
     mental_parts: List[str] = []

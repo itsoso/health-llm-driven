@@ -18,6 +18,38 @@ from app.services.llm import get_llm_provider
 logger = logging.getLogger(__name__)
 
 
+def apply_acute_training_guardrail(plan_json: Dict[str, Any], guardrail: str) -> Dict[str, Any]:
+    """把周计划中的运动要求降级为休息/恢复。
+
+    LLM 可能仍按示例生成 exercise 项。急性病/感冒期属于安全约束，不能只靠
+    prompt 约束，所以保存前做确定性后处理。
+    """
+    days = plan_json.get("days")
+    if not isinstance(days, dict):
+        return plan_json
+
+    for items in days.values():
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("category") != "exercise":
+                continue
+            item["category"] = "rest"
+            item["title"] = "暂停训练，优先恢复"
+            item["description"] = f"【依据】{guardrail}"
+            item["target_value"] = None
+            item["target_unit"] = None
+    risks = plan_json.setdefault("risks", [])
+    if isinstance(risks, list) and not any("急性" in str(r) or "感冒" in str(r) for r in risks):
+        risks.append("当前有急性病/疑似感冒状态，本周不要求完成运动训练目标。")
+    focus = plan_json.setdefault("focus_areas", [])
+    if isinstance(focus, list) and "急性恢复" not in focus:
+        focus.insert(0, "急性恢复")
+    return plan_json
+
+
 class SmartPlanService:
     def __init__(self, db: Session):
         self.db = db
@@ -476,9 +508,23 @@ class SmartPlanService:
         # Step 3: 获取健康上下文
         step_start = time.time()
         health_context = build_lite_health_context(self.db, user_id) or ""
+        acute_training_guardrail = None
+        try:
+            from app.twin import build_twin
+            twin = build_twin(self.db, user_id, use_cache=False)
+            acute = getattr(twin, "acute", None)
+            if bool(getattr(acute, "should_rest_from_training", False)):
+                acute_training_guardrail = (
+                    getattr(acute, "training_guardrail", None)
+                    or "当前有急性不适/生病状态，本周不要求完成运动目标，优先休息、补水和睡眠。"
+                )
+        except Exception as exc:
+            logger.warning("[smart_plan] acute guardrail lookup failed: %s", exc)
         self._add_step(debug_info, "获取用户健康数据上下文", step_start)
         self._add_reasoning(debug_info, f"健康上下文长度: {len(health_context)} 字符", "data")
         self._add_data(debug_info, "health_context", health_context[:2000] + ("..." if len(health_context) > 2000 else ""))
+        if acute_training_guardrail:
+            self._add_reasoning(debug_info, "检测到急性病/感冒状态，本周运动项将自动降级为恢复。", "warning")
 
         # Step 4: 获取历史计划执行分析
         step_start = time.time()
@@ -560,6 +606,9 @@ class SmartPlanService:
 ## 用户健康数据（请仔细分析趋势和异常）
 {health_context}
 
+## 急性病/感冒安全约束
+{acute_training_guardrail or "无急性病运动限制。"}
+
 ## 历史计划执行情况（请分析行为模式：哪些容易坚持？哪些总是失败？为什么？）
 {feedback_context if feedback_context else "（首次生成计划，无历史数据）"}
 
@@ -618,6 +667,8 @@ class SmartPlanService:
 4. 雨天/差空气质量日安排室内运动，有行程日减少运动安排
 5. 运动安排考虑恢复周期，饮食建议具体到食物/营养素量
 6. 对历史低执行率类别降低门槛或换种形式"""
+        if acute_training_guardrail:
+            prompt += "\n7. 当前有急性病/感冒安全约束：不得安排 exercise 类训练任务；如需行动项，只能使用 rest/habit 类恢复、补水、睡眠、症状观察。"
         self._add_step(debug_info, "构建 AI 分析 Prompt", step_start)
         self._add_reasoning(debug_info, f"Prompt 长度: {len(prompt)} 字符", "info")
         self._add_data(debug_info, "prompt_preview", prompt[:800] + "...")
@@ -631,6 +682,8 @@ class SmartPlanService:
         if not plan_json:
             self._add_reasoning(debug_info, "LLM 生成失败", "error")
             raise ValueError("AI 生成计划失败，请稍后重试")
+        if acute_training_guardrail:
+            plan_json = apply_acute_training_guardrail(plan_json, acute_training_guardrail)
         self._add_reasoning(debug_info, f"LLM 生成成功，模型: {settings.openclaw_model}", "success")
         self._add_reasoning(debug_info, f"focus_areas: {plan_json.get('focus_areas', [])}", "goal")
         insights = plan_json.get("insights", [])

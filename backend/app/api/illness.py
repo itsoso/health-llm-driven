@@ -33,6 +33,11 @@ def create_episode(
     db.add(episode)
     db.commit()
     db.refresh(episode)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return episode
 
 
@@ -104,6 +109,11 @@ def patch_episode(
 
     db.commit()
     db.refresh(episode)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return episode
 
 
@@ -120,6 +130,11 @@ def delete_episode(
         raise HTTPException(status_code=404, detail="病症记录不存在")
     db.delete(episode)
     db.commit()
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -156,6 +171,11 @@ def add_update(
 
     db.commit()
     db.refresh(update)
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return update
 
 
@@ -172,4 +192,9 @@ def delete_update(
         raise HTTPException(status_code=404, detail="更新记录不存在")
     db.delete(update)
     db.commit()
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:
+        pass
     return {"ok": True}

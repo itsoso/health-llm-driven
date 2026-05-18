@@ -207,7 +207,7 @@ def _validate_required(
         "blood_pressure": ["systolic", "diastolic"],
         "exercise": ["exercise_type"],
         "medication": [],  # medication_id 或 medication_name 二选一, 由 API 层判
-        "illness": ["illness_name"],
+        "illness": ["name"],
     }
     needs = required.get(rtype, [])
     missing = [f for f in needs if not data.get(f)]
@@ -234,6 +234,9 @@ def validate_health_record(
     """
     warnings: list = []
     today = datetime.now(BEIJING_TZ).date()
+
+    if rtype == "illness" and "name" not in data and data.get("illness_name"):
+        data["name"] = data["illness_name"]
 
     # 1. 日期守门 (record_date 通用)
     _validate_date(rtype, data, warnings, today)
