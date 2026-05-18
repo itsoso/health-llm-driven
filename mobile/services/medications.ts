@@ -22,6 +22,11 @@ export async function listMedications(activeOnly = true): Promise<Medication[]> 
   return resp.data;
 }
 
+export async function getMedication(id: number): Promise<Medication> {
+  const resp = await api.get<Medication>(`/medication/medications/${id}`);
+  return resp.data;
+}
+
 export async function addMedication(data: Partial<Medication>): Promise<Medication> {
   const resp = await api.post<Medication>('/medication/medications', data);
   return resp.data;

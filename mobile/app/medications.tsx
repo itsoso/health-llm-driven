@@ -147,6 +147,7 @@ export default function MedicationsScreen() {
               <MedicationRow
                 key={m.id} med={m} c={c}
                 tab={tab}
+                onEdit={() => router.push(`/medication-edit?id=${m.id}` as any)}
                 onDeactivate={() => handleDeactivate(m)}
                 onRestore={() => handleRestore(m)}
               />
@@ -159,9 +160,10 @@ export default function MedicationsScreen() {
 }
 
 function MedicationRow({
-  med, c, tab, onDeactivate, onRestore,
+  med, c, tab, onEdit, onDeactivate, onRestore,
 }: {
   med: Medication; c: ColorPalette; tab: TabKey;
+  onEdit: () => void;
   onDeactivate: () => void; onRestore: () => void;
 }) {
   const styles = createStyles(c);
@@ -180,7 +182,13 @@ function MedicationRow({
 
   return (
     <View style={styles.row}>
-      <View style={{ flex: 1 }}>
+      <TouchableOpacity
+        style={{ flex: 1 }}
+        onPress={onEdit}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={`编辑 ${med.name}`}
+      >
         <Text style={txt.medName}>{med.name}</Text>
         {(med.dosage || med.frequency) && (
           <Text style={txt.medMeta}>
@@ -190,7 +198,7 @@ function MedicationRow({
         {med.purpose && (
           <Text style={txt.medPurpose} numberOfLines={1}>{med.purpose}</Text>
         )}
-      </View>
+      </TouchableOpacity>
       {tab === 'active' ? (
         <TouchableOpacity onPress={confirmDeactivate} hitSlop={8} style={styles.actionBtn}>
           <Ionicons name="pause-circle-outline" size={24} color={c.red} />
