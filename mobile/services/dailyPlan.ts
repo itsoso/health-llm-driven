@@ -18,6 +18,7 @@ export type DailyPlanEvidenceTier =
 export type DailyPlanConfidence = 'high' | 'medium' | 'low' | string;
 
 export interface DailyPlanAction {
+  action_key?: string | null;
   domain: DailyPlanDomain;
   title: string;
   why?: string | null;
@@ -30,6 +31,19 @@ export interface DailyPlanAction {
   claim_boundary?: string | null;
   source_card_id?: number | null;
   check_back_date?: string | null;
+}
+
+export type DailyPlanActionFeedbackStatus = 'accepted' | 'adjusted' | 'done' | 'skipped' | 'failed';
+
+export interface DailyPlanActionFeedbackResult {
+  id: number;
+  plan_id?: number | null;
+  plan_date: string;
+  action_key: string;
+  action_title: string;
+  status: DailyPlanActionFeedbackStatus | string;
+  reason?: string | null;
+  source: string;
 }
 
 export interface DailyOperatingPlan {
@@ -69,4 +83,19 @@ export function pickTopPlanActions(actions: DailyPlanAction[] = [], limit = 3): 
   return actions
     .filter(action => Boolean(action?.title))
     .slice(0, limit);
+}
+
+export async function submitDailyPlanActionFeedback(
+  actionKey: string,
+  status: DailyPlanActionFeedbackStatus,
+  reason?: string,
+): Promise<DailyPlanActionFeedbackResult> {
+  const body = reason?.trim()
+    ? { status, reason: reason.trim() }
+    : { status };
+  const { data } = await api.post<DailyPlanActionFeedbackResult>(
+    `/daily-plan/me/actions/${encodeURIComponent(actionKey)}/feedback`,
+    body,
+  );
+  return data;
 }

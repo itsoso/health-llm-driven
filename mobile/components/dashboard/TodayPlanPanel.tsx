@@ -4,7 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
-import { pickTopPlanActions, type DailyOperatingPlan, type DailyPlanAction } from '../../services/dailyPlan';
+import {
+  pickTopPlanActions,
+  submitDailyPlanActionFeedback,
+  type DailyOperatingPlan,
+  type DailyPlanAction,
+  type DailyPlanActionFeedbackStatus,
+} from '../../services/dailyPlan';
 
 const DOMAIN_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   measurement: 'analytics-outline',
@@ -25,6 +31,7 @@ export default function TodayPlanPanel({
   onPressAction?: (action: DailyPlanAction) => void;
 }) {
   const { c } = useTheme();
+  const [feedbackByAction, setFeedbackByAction] = React.useState<Record<string, DailyPlanActionFeedbackStatus | 'sending' | 'error'>>({});
   const actions = pickTopPlanActions(plan?.actions ?? [], 3);
   const state = plan?.state_summary ?? {};
   const waist = state.waist_cm as number | undefined;
@@ -39,6 +46,17 @@ export default function TodayPlanPanel({
   const recoveryGuardrail = typeof acute?.training_guardrail === 'string' && acute.training_guardrail.trim()
     ? acute.training_guardrail.trim()
     : '今天不要求完成训练目标，优先恢复、补水和睡眠。';
+  const submitFeedback = React.useCallback(async (action: DailyPlanAction, status: DailyPlanActionFeedbackStatus) => {
+    const actionKey = action.action_key;
+    if (!actionKey || feedbackByAction[actionKey] === 'sending') return;
+    setFeedbackByAction(prev => ({ ...prev, [actionKey]: 'sending' }));
+    try {
+      await submitDailyPlanActionFeedback(actionKey, status);
+      setFeedbackByAction(prev => ({ ...prev, [actionKey]: status }));
+    } catch {
+      setFeedbackByAction(prev => ({ ...prev, [actionKey]: 'error' }));
+    }
+  }, [feedbackByAction]);
 
   return (
     <View style={[styles.container, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -91,33 +109,71 @@ export default function TodayPlanPanel({
       ) : (
         <View style={styles.actionList}>
           {actions.map((action, index) => (
-            <TouchableOpacity
+            <View
               key={`${action.domain}-${action.title}-${index}`}
-              style={[styles.actionRow, { borderColor: c.separator }]}
-              onPress={() => onPressAction?.(action)}
-              activeOpacity={0.75}
-              accessibilityRole="button"
-              accessibilityLabel={action.title}
+              style={[styles.actionItem, { borderColor: c.separator }]}
             >
-              <View style={[styles.actionIcon, { backgroundColor: c.fill }]}>
-                <Ionicons
-                  name={DOMAIN_ICON[action.domain] ?? 'checkmark-circle-outline'}
-                  size={15}
-                  color={c.brand}
-                />
-              </View>
-              <View style={styles.actionMain}>
-                <Text style={[styles.actionTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-                  {action.title}
-                </Text>
-                {action.why ? (
-                  <Text style={[styles.actionWhy, { color: c.labelSecondary }]} numberOfLines={2}>
-                    {action.why}
+              <TouchableOpacity
+                style={styles.actionRow}
+                onPress={() => onPressAction?.(action)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={action.title}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: c.fill }]}>
+                  <Ionicons
+                    name={DOMAIN_ICON[action.domain] ?? 'checkmark-circle-outline'}
+                    size={15}
+                    color={c.brand}
+                  />
+                </View>
+                <View style={styles.actionMain}>
+                  <Text style={[styles.actionTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+                    {action.title}
                   </Text>
+                  {action.why ? (
+                    <Text style={[styles.actionWhy, { color: c.labelSecondary }]} numberOfLines={2}>
+                      {action.why}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text style={[styles.when, { color: c.labelTertiary }]}>{action.when ?? 'today'}</Text>
+              </TouchableOpacity>
+
+              <View style={styles.feedbackRow}>
+                {([
+                  ['done', '做到了'],
+                  ['skipped', '跳过'],
+                  ['adjusted', '调整'],
+                ] as const).map(([status, label]) => {
+                  const current = action.action_key ? feedbackByAction[action.action_key] : undefined;
+                  const selected = current === status;
+                  const disabled = !action.action_key || current === 'sending';
+                  return (
+                    <TouchableOpacity
+                      key={status}
+                      style={[
+                        styles.feedbackChip,
+                        { backgroundColor: selected ? c.tintTeal : c.fill },
+                        selected && { borderColor: c.teal },
+                      ]}
+                      onPress={() => submitFeedback(action, status)}
+                      disabled={disabled}
+                      activeOpacity={0.75}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${action.title} ${label}`}
+                    >
+                      <Text style={[styles.feedbackText, { color: selected ? c.teal : c.labelSecondary }]}>
+                        {current === 'sending' && status === 'done' ? '记录中' : label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {action.action_key && feedbackByAction[action.action_key] === 'error' ? (
+                  <Text style={[styles.feedbackError, { color: c.red }]}>记录失败</Text>
                 ) : null}
               </View>
-              <Text style={[styles.when, { color: c.labelTertiary }]}>{action.when ?? 'today'}</Text>
-            </TouchableOpacity>
+            </View>
           ))}
         </View>
       )}
@@ -177,12 +233,15 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 13, lineHeight: 18, textAlign: 'center' },
   actionList: { gap: spacing.sm },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  actionItem: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     padding: spacing.sm,
+    gap: spacing.xs,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
   actionIcon: {
@@ -196,4 +255,19 @@ const styles = StyleSheet.create({
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionWhy: { fontSize: 12, lineHeight: 16 },
   when: { fontSize: 11, fontWeight: '600' },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingLeft: 36,
+  },
+  feedbackChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  feedbackText: { fontSize: 11, fontWeight: '700' },
+  feedbackError: { fontSize: 11, fontWeight: '700' },
 });

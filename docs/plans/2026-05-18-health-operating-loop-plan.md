@@ -8,6 +8,14 @@
 
 **Tech Stack:** FastAPI + SQLAlchemy + PostgreSQL, Expo React Native, Jest, pytest, existing KB V2 evidence refs.
 
+## Progress
+
+- [x] Task 1: Recovery Mode Visibility
+- [x] Task 2: Plan Action Feedback Protocol
+- [ ] Task 3: Arbiter For Cross-Domain Conflicts
+- [ ] Task 4: 7/30/90 Day Review
+- [ ] Task 5: Device-First Measurement Automation
+
 ---
 
 ## Task 1: Recovery Mode Visibility
