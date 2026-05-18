@@ -49,6 +49,11 @@ jest.mock('../../../services/memoryOpener', () => ({
   fetchMemoryOpener: jest.fn().mockResolvedValue([]),
 }));
 
+jest.mock('../../../services/llmPreference', () => ({
+  getLlmPreference: jest.fn().mockResolvedValue({ model_id: null, options: [] }),
+  updateLlmPreference: jest.fn(),
+}));
+
 jest.mock('../../../services/actionCards', () => ({
   recordCardAdherence: (...args: any[]) => mockRecordCardAdherence(...args),
 }));

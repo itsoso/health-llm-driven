@@ -15,6 +15,7 @@ import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
+import LlmModelPicker from '../../components/chat/LlmModelPicker';
 import {
   buildConversationOpenerReplyContext,
   buildConversationOpenerReplyMessage,
@@ -22,6 +23,7 @@ import {
   type ConversationOpener,
 } from '../../services/conversationOpener';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
+import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence } from '../../services/actionCards';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
@@ -61,6 +63,10 @@ export default function ChatScreen() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [llmModelId, setLlmModelId] = useState<string | null>(null);
+  const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
+  const [llmSaving, setLlmSaving] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -90,6 +96,34 @@ export default function ChatScreen() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLlmPreference().then(pref => {
+      if (cancelled) return;
+      setLlmModelId(pref.model_id);
+      setLlmOptions(pref.options || []);
+      setLlmError(null);
+    }).catch(() => {
+      if (!cancelled) setLlmError('模型列表加载失败');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSelectModel = useCallback(async (modelId: string | null) => {
+    if (llmSaving || llmModelId === modelId) return;
+    setLlmSaving(modelId || '__default__');
+    setLlmError(null);
+    try {
+      const pref = await updateLlmPreference(modelId);
+      setLlmModelId(pref.model_id);
+      setLlmOptions(pref.options || []);
+    } catch (e: any) {
+      setLlmError(e?.response?.data?.detail || e?.message || '模型切换失败');
+    } finally {
+      setLlmSaving(null);
+    }
+  }, [llmModelId, llmSaving]);
 
   useEffect(() => {
     if (contextConsumed.current) return;
@@ -195,12 +229,22 @@ export default function ChatScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const kbOffset = 0;
+  const activeLlmLabel = llmModelId
+    ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
+    : '系统默认';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Ionicons name="sparkles" size={18} color={c.brand} />
-        <Text style={txt.headerTitle}>健康 Agent</Text>
+        <LlmModelPicker
+          currentLabel={activeLlmLabel}
+          currentModelId={llmModelId}
+          options={llmOptions}
+          savingModelId={llmSaving}
+          disabled={isStreaming}
+          error={llmError}
+          onSelect={handleSelectModel}
+        />
         <View style={{ flex: 1 }} />
         <TouchableOpacity
           onPress={openHistory}
