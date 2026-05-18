@@ -1,17 +1,17 @@
 {
-  "compiled_at": "2026-05-17T09:00:03.221823+00:00",
+  "compiled_at": "2026-05-18T03:58:39.545161+00:00",
   "counts": {
-    "claims": 345,
-    "entities": 98,
+    "claims": 357,
+    "entities": 99,
     "pages": 52,
-    "relations": 2510
+    "relations": 2715
   },
   "diff": {
-    "claims_added": 197,
+    "claims_added": 11,
     "claims_superseded": 0,
-    "entities_added": 53,
-    "pages_added": 36,
-    "relations_added": 1948
+    "entities_added": 0,
+    "pages_added": 0,
+    "relations_added": 204
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",
@@ -122,7 +122,7 @@
         "source_key": "dedao:busy-diabetes"
       },
       {
-        "claims_generated": 14,
+        "claims_generated": 15,
         "course_name": "Ebook",
         "domains": [
           "metabolic_health",
@@ -134,7 +134,7 @@
           "respiratory_allergy",
           "longevity"
         ],
-        "lessons_read": 60,
+        "lessons_read": 106,
         "source_key": "dedao:ebook"
       },
       {
@@ -147,7 +147,7 @@
         "source_key": "dedao:4f92bc701538"
       },
       {
-        "claims_generated": 18,
+        "claims_generated": 19,
         "course_name": "冯雪·家庭健康管理100讲",
         "domains": [
           "metabolic_health",
@@ -160,7 +160,7 @@
           "respiratory_allergy",
           "longevity"
         ],
-        "lessons_read": 60,
+        "lessons_read": 102,
         "source_key": "dedao:100-ecc79a079a92"
       },
       {
@@ -207,7 +207,7 @@
           "medication_safety",
           "movement"
         ],
-        "lessons_read": 60,
+        "lessons_read": 70,
         "source_key": "dedao:812285bec0da"
       },
       {
@@ -223,7 +223,7 @@
         "source_key": "dedao:3d62e82e2856"
       },
       {
-        "claims_generated": 13,
+        "claims_generated": 18,
         "course_name": "卓克·科技参考3（年度日更）",
         "domains": [
           "metabolic_health",
@@ -235,11 +235,11 @@
           "microbiome",
           "longevity"
         ],
-        "lessons_read": 60,
+        "lessons_read": 311,
         "source_key": "dedao:3-ac6d81649401"
       },
       {
-        "claims_generated": 18,
+        "claims_generated": 19,
         "course_name": "卓克·科技参考4",
         "domains": [
           "metabolic_health",
@@ -252,7 +252,7 @@
           "respiratory_allergy",
           "longevity"
         ],
-        "lessons_read": 60,
+        "lessons_read": 320,
         "source_key": "dedao:4-ba1c9a1c7c4e"
       },
       {
@@ -274,12 +274,12 @@
         "source_key": "dedao:b15c9e51bdc1"
       },
       {
-        "claims_generated": 0,
+        "claims_generated": 2,
         "course_name": "孙轶飞·医学文明300讲（年度日更）",
         "domains": [
           "medication_safety"
         ],
-        "lessons_read": 60,
+        "lessons_read": 101,
         "source_key": "dedao:300-67d4c8b35ce5"
       },
       {
@@ -389,7 +389,7 @@
         "source_key": "dedao:41840e31783b"
       },
       {
-        "claims_generated": 16,
+        "claims_generated": 17,
         "course_name": "王立铭·巡山报告（月度更新）",
         "domains": [
           "metabolic_health",
@@ -402,7 +402,7 @@
           "microbiome",
           "longevity"
         ],
-        "lessons_read": 60,
+        "lessons_read": 72,
         "source_key": "dedao:e190475afacc"
       },
       {
@@ -553,11 +553,11 @@
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "protocol": "akbp",
   "review": {
-    "documents_reviewed": 432,
+    "documents_reviewed": 443,
     "from_status": "draft",
-    "relations_reviewed": 2362,
-    "reviewed_at": "2026-05-17T09:01:24.847299+00:00",
-    "reviewer": "owner-reviewed-2026-05-17-phase2",
+    "relations_reviewed": 2566,
+    "reviewed_at": "2026-05-18T04:00:50.749331+00:00",
+    "reviewer": "owner-reviewed-2026-05-18",
     "status": "reviewed"
   },
   "source_root": "/Users/liqiuhua/work/personal/down-dedao",

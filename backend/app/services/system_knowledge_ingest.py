@@ -1427,6 +1427,12 @@ def compile_dedao_ingest_artifacts(
                         confidence=0.62,
                         source_claim_id=claim["doc_id"],
                     )
+            _add_entity_context_relations(
+                relations,
+                primary_entity_doc_id=f"entity:{template.entity_type}:{template.entity_id}",
+                context_entity_doc_ids=[*template.recommends_lookup, *related_entities],
+                source_claim_id=claim["doc_id"],
+            )
         source_stats.append(
             {
                 "course_name": source.course_name,
@@ -1747,6 +1753,35 @@ def _add_relation(
         "source_claim_id": source_claim_id,
         "metadata": {"review_status": "draft"},
     }
+
+
+def _add_entity_context_relations(
+    relations: dict[tuple[str, str, str], dict[str, Any]],
+    *,
+    primary_entity_doc_id: str,
+    context_entity_doc_ids: list[str] | tuple[str, ...],
+    source_claim_id: str,
+) -> None:
+    """Link Dedao-mined entities into a navigable graph.
+
+    Claim-to-entity edges are useful for evidence sheets, but entity-to-entity
+    edges let graph traversal answer questions such as "what does uric acid
+    connect to?" without first keyword-matching the exact claim.
+    """
+
+    for context_doc_id in context_entity_doc_ids:
+        if not context_doc_id.startswith("entity:"):
+            continue
+        if context_doc_id == primary_entity_doc_id:
+            continue
+        _add_relation(
+            relations,
+            src_doc_id=primary_entity_doc_id,
+            dst_doc_id=context_doc_id,
+            relation="contextualizes",
+            confidence=0.58,
+            source_claim_id=source_claim_id,
+        )
 
 
 def _load_existing_artifacts(root: Path) -> dict[str, dict[str, dict[str, Any]]]:

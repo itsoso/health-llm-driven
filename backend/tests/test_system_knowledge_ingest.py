@@ -122,6 +122,19 @@ def test_compile_dedao_ingest_artifacts_links_related_entities_with_mentions(tmp
         and relation["relation"] == "mentions"
         for relation in result.relations
     )
+    assert any(
+        relation["src_doc_id"] == "entity:condition:hyperuricemia-risk"
+        and relation["dst_doc_id"] == "entity:condition:chronic-kidney-risk"
+        and relation["relation"] == "contextualizes"
+        and relation["source_claim_id"] == claim["doc_id"]
+        for relation in result.relations
+    )
+    assert any(
+        relation["src_doc_id"] == "entity:condition:hyperuricemia-risk"
+        and relation["dst_doc_id"] == "entity:intervention:hydration"
+        and relation["relation"] == "contextualizes"
+        for relation in result.relations
+    )
 
 
 def test_compile_dedao_ingest_artifacts_generates_gene_pharmacogenomics_boundary(tmp_path):

@@ -1,11 +1,11 @@
 # Dedao 系统知识库到 Health 系统同步说明
 
 日期：2026-05-16  
-状态：已上线 Phase 0 + Phase 1a/1b serving slice；Phase 1c Dedao ingest pipeline 已接入；2026-05-17 完成 Phase 2 reviewed corpus expansion、隐私扫描、FTS/vector 兼容检索通道和首批外部证据元数据
+状态：已上线 Phase 0 + Phase 1a/1b serving slice；Phase 1c Dedao ingest pipeline 已接入；2026-05-18 完成 Phase 2 reviewed corpus expansion、隐私扫描、FTS/vector 兼容检索通道、首批外部证据元数据和 entity-to-entity 图谱关联
 
-## 2026-05-17 Current State
+## 2026-05-18 Current State
 
-- Reviewed artifacts: 495 docs / 2510 edges (`52 pages / 98 entities / 345 claims`); backend deploy imports them into serving DB.
+- Reviewed artifacts: 508 docs / 2715 edges (`52 pages / 99 entities / 357 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
@@ -14,7 +14,8 @@
 - Privacy isolation: scanner excludes private-looking source paths; `find_private_source_violations(...)` reports `personal/private/用户/user-*` paths without reading contents.
 - Search serving: `/knowledge/search` returns lexical + FTS-compatible + semantic alias + one-hop graph RRF channels.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims now carry reviewed PubMed/guideline references in `sources` and `metadata.external_sources`.
-- Corpus expansion: deterministic Dedao compiler scanned 46 health-relevant source directories and promoted 303 newly generated claims / 83 entities / 46 pages / 2362 relations to reviewed status, while preserving older reviewed artifacts.
+- Corpus expansion: deterministic Dedao compiler scanned 46 health-relevant source directories and promoted 314 generated claims / 83 entities / 46 pages / 2566 relations to reviewed status across reviewed passes, while preserving older reviewed artifacts.
+- Graph association: claim context now emits entity-to-entity `contextualizes` edges, for example `hyperuricemia-risk -> chronic-kidney-risk` and `hyperuricemia-risk -> hydration`, so lookup can traverse from a biomarker or condition to related interventions and boundaries.
 - Admin operations: `/api/v1/admin/knowledge/operations_dashboard` returns coverage, external-evidence metrics, lint summary, latest lifecycle report, and action items.
 - Planner enforcement: Orchestrator now filters unsupported actionable specialist findings before final synthesis when the same evidence domain has a KB-supported finding; safety-critical alerts and data gaps bypass this filter.
 - Weekly Advisor evidence enforcement: weekly fallback action cards now attach system KB evidence and run the same planner evidence policy before persisting specialist-derived suggestions.
@@ -35,7 +36,7 @@
 - Phase 0：12 个文档、5 条图谱边，覆盖 `MTHFR/APOE/FTO/ACTN3/ALDH2` 等基因样板。
 - Phase 1a：49 个文档、25 条图谱边，覆盖代谢健康、营养、血压、血脂、血糖、尿酸、睡眠恢复、运动和用药安全。
 - Phase 1b：扩展到 64 个文档、47 条图谱边，新增 14 个衰老标志实体、1 条“衰老标志仅作轨迹分类框架”边界 claim，并上线 claim/search/admin lint/reindex/decay 能力。
-- Phase 1c/2：通过 `ingest_course.py` 编译 46 个健康相关 Dedao/书籍来源目录，当前 artifacts 为 495 个文档、2510 条图谱边；包含 345 条系统 claim、98 个 entity 和 52 个 source page，覆盖冯雪代谢课程、仇子龙基因、仝卿营养、王家伟用药、薄世宁医学通识/前沿、睡眠、糖尿病、心脏、骨科、微生物组、精力管理、正念和部分生命科学课程，并为高风险 claim 增加首批外部证据引用。
+- Phase 1c/2：通过 `ingest_course.py` 编译 46 个健康相关 Dedao/书籍来源目录，当前 artifacts 为 508 个文档、2715 条图谱边；包含 357 条系统 claim、99 个 entity 和 52 个 source page，覆盖冯雪代谢课程、仇子龙基因、仝卿营养、王家伟用药、薄世宁医学通识/前沿、睡眠、糖尿病、心脏、骨科、微生物组、精力管理、正念和部分生命科学课程，并为高风险 claim 增加首批外部证据引用。
 
 ## 源端：down-dedao
 
@@ -104,22 +105,23 @@ backend/data/system_kb_v2_seed/
 - `entities.jsonl`：实体页，例如代谢健康、HbA1c、LDL-C、体重、腰围、蛋白质目标、睡眠规律。
 - `claims.jsonl`：可被 Agent 使用的原子事实/行动规则，每条必须有边界、证据等级、置信度和 `applies_when`；高风险条目可带 `metadata.external_sources`。
 - `pages.jsonl`：课程页元信息，不是课程全文。
-- `relations.jsonl`：知识图谱边，例如 `entity -> claim`、`page -> claim`、`requires_boundary`。
+- `relations.jsonl`：知识图谱边，例如 `entity -> claim`、`page -> claim`、`requires_boundary`、`entity -> entity contextualizes`。
 
 当前 artifact 计数：
 
-- `pages`: 16
-- `entities`: 45
-- `claims`: 148
-- `relations`: 562
+- `pages`: 52
+- `entities`: 99
+- `claims`: 357
+- `relations`: 2715
 
-其中 Dedao ingest 首轮新增：
+其中最新 Dedao ingest 增量：
 
-- `pages_added`: 4
-- `entities_added`: 9
-- `claims_added`: 0（本轮为 reviewed artifacts 元数据升级，非新增 claim）
-- `relations_added`: 0
+- `pages_added`: 0
+- `entities_added`: 0
+- `claims_added`: 11
+- `relations_added`: 204
 - `claims_superseded`: 0
+- 新增关系中包含 claim-to-entity `mentions`、claim-to-intervention `recommends_lookup`、entity-to-claim `has_claim`、page-to-claim `supports`，以及 113 条 entity-to-entity `contextualizes` 边。
 
 新增 `aging_hallmark` 实体层覆盖：基因组不稳定性、端粒损耗、表观遗传改变、蛋白质稳态丧失、巨自噬失活、营养感知失调、线粒体功能障碍、细胞衰老、干细胞耗竭、细胞间通讯改变、慢性炎症、菌群失调、细胞外基质变化、心理社会压力与孤立。它们只作为长期健康轨迹和机制地图使用，不直接映射为补剂处方。
 
@@ -437,5 +439,5 @@ backend/venv/bin/python backend/scripts/import_system_kb_v2_artifacts.py
 
 ```text
 seeded 12 kb_documents and 5 kb_edges
-imported system KB V2 artifacts: 495 documents, 2510 edges
+imported system KB V2 artifacts: 508 documents, 2715 edges
 ```

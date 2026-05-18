@@ -4,9 +4,9 @@ Date: 2026-05-16
 
 This document records the implemented vertical slice for the LLM Wiki v2 system knowledge base.
 
-## 2026-05-17 Current State
+## 2026-05-18 Current State
 
-- Reviewed artifacts: 495 docs / 2510 edges (`52 pages / 98 entities / 345 claims`); backend deploy imports them into serving DB.
+- Reviewed artifacts: 508 docs / 2715 edges (`52 pages / 99 entities / 357 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
 - Admin lint: contradiction + invalid review status included.
@@ -15,7 +15,8 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Privacy isolation: scanner excludes private-looking paths; `find_private_source_violations(...)` reports private material without reading content.
 - Search serving: `/knowledge/search` now fuses lexical, FTS-compatible, semantic alias, and graph streams via deterministic RRF.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
-- Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 303 newly generated claims, 83 entities, 46 pages, and 2362 relations were promoted to reviewed status in this pass while preserving previous reviewed artifacts.
+- Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 314 generated claims, 83 entities, 46 pages, and 2566 relations were promoted to reviewed status across reviewed passes while preserving previous reviewed artifacts.
+- Dedao graph association: the compiler now adds entity-to-entity `contextualizes` edges from claim context, so graph traversal can connect biomarkers, conditions, and interventions even when the query does not name the exact claim.
 - Admin operations dashboard: `/api/v1/admin/knowledge/operations_dashboard` aggregates coverage, external-evidence metrics, lint, latest lifecycle report, and action items.
 - Planner evidence policy: Orchestrator blocks unsupported actionable findings from final synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are kept.
 - Weekly Advisor evidence policy: fallback weekly action cards attach system KB evidence and reuse Planner evidence filtering before persistence.
@@ -125,7 +126,7 @@ These artifacts are intentionally transformed summaries and short claims. They d
 
 ## Phase 1b Backend Closure
 
-Current reviewed artifact counts:
+Phase 1b intermediate reviewed artifact counts:
 
 - Pages: 16
 - Entities: 45
@@ -163,11 +164,12 @@ Current reviewed artifact run:
 - Source root: `/Users/liqiuhua/work/personal/down-dedao`
 - Courses selected: all scanner-detected health-relevant directories under `down-dedao`, capped at 60 lessons per course for this deterministic pass.
 - Sources scanned: 46
-- Claims: 345
-- Entities: 98
+- Claims: 357
+- Entities: 99
 - Pages: 52
-- Relations: 2510
+- Relations: 2715
 - Claims superseded: 0
+- Latest incremental Dedao write: 11 claims added, 204 relations added, including 113 `contextualizes` entity-to-entity graph edges.
 - Selected high-risk claims now include external PubMed/guideline metadata while keeping paid-course text out of artifacts.
 
 ## Next Interfaces
