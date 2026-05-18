@@ -772,6 +772,103 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
     }
 
 
+def get_knowledge_review_queue(
+    db: Session,
+    *,
+    limit: int = 100,
+    reason: str | None = None,
+    review_status: str | None = None,
+) -> dict[str, Any]:
+    """Return claim-level items that need human system-KB review.
+
+    This is the serving-plane counterpart of the offline PR-style diff. It only
+    exposes transformed claim metadata and reviewer reasons, never raw course
+    text.
+    """
+
+    feedback_counts = {
+        str(doc_id): int(count)
+        for doc_id, count in (
+            db.query(KBAudit.doc_id, func.count(KBAudit.id))
+            .filter(KBAudit.op == "feedback_disagree", KBAudit.doc_id.isnot(None))
+            .group_by(KBAudit.doc_id)
+            .all()
+        )
+        if doc_id
+    }
+    claims = (
+        db.query(KBDocument)
+        .filter(KBDocument.doc_type == "claim", KBDocument.is_archived.is_(False))
+        .all()
+    )
+    items: list[dict[str, Any]] = []
+    by_reason: dict[str, int] = {}
+    by_review_status: dict[str, int] = {}
+
+    for claim in claims:
+        metadata = claim.metadata_json or {}
+        status = str(metadata.get("review_status") or "unreviewed")
+        candidate_duplicates = [
+            str(item)
+            for item in (metadata.get("candidate_duplicates") or [])
+            if item
+        ]
+        external_sources = _document_external_sources(claim)
+        feedback_disagree_count = feedback_counts.get(claim.doc_id, 0)
+        reasons = _review_queue_reasons(
+            review_status=status,
+            external_source_count=len(external_sources),
+            candidate_duplicates=candidate_duplicates,
+            feedback_disagree_count=feedback_disagree_count,
+        )
+        if not reasons:
+            continue
+        if reason and reason not in reasons:
+            continue
+        if review_status and status != review_status:
+            continue
+
+        for queue_reason in reasons:
+            by_reason[queue_reason] = by_reason.get(queue_reason, 0) + 1
+        by_review_status[status] = by_review_status.get(status, 0) + 1
+        items.append(
+            {
+                "doc_id": claim.doc_id,
+                "title": claim.title,
+                "entity_type": claim.entity_type,
+                "entity_id": claim.entity_id,
+                "evidence_level": claim.evidence_level,
+                "confidence": claim.confidence,
+                "review_status": status,
+                "reasons": reasons,
+                "sources": claim.sources or [],
+                "external_source_count": len(external_sources),
+                "candidate_duplicates": candidate_duplicates,
+                "feedback_disagree_count": feedback_disagree_count,
+                "updated_at": claim.updated_at.isoformat() if claim.updated_at else None,
+                "created_at": claim.created_at.isoformat() if claim.created_at else None,
+            }
+        )
+
+    items.sort(key=_review_queue_sort_key)
+    limited_items = items[:limit]
+    return {
+        "summary": {
+            "total": len(items),
+            "returned": len(limited_items),
+            "by_reason": dict(sorted(by_reason.items())),
+            "by_review_status": dict(sorted(by_review_status.items())),
+        },
+        "items": limited_items,
+        "filters": {
+            "reason": reason,
+            "review_status": review_status,
+            "limit": limit,
+        },
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
 def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
     """Single admin-facing snapshot for KB governance operations."""
 
@@ -1764,6 +1861,40 @@ def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[s
         "missing_external_source_claims": missing_external_source_claims[:10],
         "by_kind": dict(sorted(by_kind.items())),
     }
+
+
+def _review_queue_reasons(
+    *,
+    review_status: str,
+    external_source_count: int,
+    candidate_duplicates: list[str],
+    feedback_disagree_count: int,
+) -> list[str]:
+    reasons: list[str] = []
+    if review_status == "draft":
+        reasons.append("draft")
+    if review_status == "needs_review":
+        reasons.append("needs_review")
+    if external_source_count == 0:
+        reasons.append("missing_external_evidence")
+    if candidate_duplicates:
+        reasons.append("candidate_duplicate")
+    if feedback_disagree_count > 0:
+        reasons.append("user_feedback")
+    return reasons
+
+
+def _review_queue_sort_key(item: dict[str, Any]) -> tuple[int, str]:
+    priority = {
+        "needs_review": 0,
+        "draft": 1,
+        "user_feedback": 2,
+        "candidate_duplicate": 3,
+        "missing_external_evidence": 4,
+    }
+    reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
+    reason_rank = min((priority.get(str(reason), 9) for reason in reasons), default=9)
+    return (reason_rank, str(item.get("doc_id") or ""))
 
 
 def _document_external_sources(document: KBDocument) -> list[dict[str, Any]]:

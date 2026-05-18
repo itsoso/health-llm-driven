@@ -16,6 +16,7 @@ from app.services.system_knowledge_service import (
     get_entity_bundle,
     get_knowledge_coverage_report,
     get_knowledge_operations_dashboard,
+    get_knowledge_review_queue,
     lint_knowledge_base,
     lookup_for_twin,
     reindex_knowledge_documents,
@@ -173,6 +174,35 @@ def get_system_knowledge_coverage_report(
             "documents": result["documents"]["total"],
             "specialist_findings": result["specialist_findings"]["total"],
             "unsupported": result["specialist_findings"]["unsupported"],
+        },
+    )
+    return result
+
+
+@admin_router.get("/review_queue", summary="系统知识库人工 review 队列")
+def get_system_knowledge_review_queue(
+    limit: int = Query(100, ge=1, le=500),
+    reason: str | None = Query(None, max_length=80),
+    review_status: str | None = Query(None, max_length=40),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = get_knowledge_review_queue(
+        db,
+        limit=limit,
+        reason=reason,
+        review_status=review_status,
+    )
+    _record_audit(
+        db,
+        doc_id=None,
+        op="review_queue",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "total": result["summary"]["total"],
+            "returned": result["summary"]["returned"],
+            "reason": reason,
+            "review_status": review_status,
         },
     )
     return result

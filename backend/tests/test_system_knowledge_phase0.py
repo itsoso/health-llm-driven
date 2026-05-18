@@ -747,6 +747,115 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
     assert "notification_evidence_unsupported_high" in payload["action_items"]
 
 
+def test_admin_review_queue_prioritizes_claims_needing_human_review(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_draft_no_external",
+                doc_type="claim",
+                entity_type="gene",
+                entity_id="MTHFR",
+                title="Draft no external",
+                evidence_level="C",
+                confidence=0.61,
+                metadata_json={"review_status": "draft"},
+                sources=["dedao:test"],
+            ),
+            KBDocument(
+                doc_id="claim:c_needs_review_duplicate",
+                doc_type="claim",
+                entity_type="gene",
+                entity_id="MTHFR",
+                title="Needs review duplicate",
+                evidence_level="B",
+                confidence=0.72,
+                metadata_json={
+                    "review_status": "needs_review",
+                    "candidate_duplicates": ["claim:c_old"],
+                },
+                sources=["dedao:test", "pubmed:123"],
+            ),
+            KBDocument(
+                doc_id="claim:c_reviewed_missing_external",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Reviewed missing external",
+                evidence_level="B",
+                confidence=0.8,
+                metadata_json={"review_status": "reviewed"},
+                sources=["dedao:test"],
+            ),
+            KBDocument(
+                doc_id="claim:c_feedback",
+                doc_type="claim",
+                entity_type="supplement",
+                entity_id="5-MTHF",
+                title="Feedback claim",
+                evidence_level="B",
+                confidence=0.82,
+                metadata_json={
+                    "review_status": "reviewed",
+                    "external_sources": [
+                        {"kind": "research", "source": "pubmed:456", "review_status": "reviewed"}
+                    ],
+                },
+                sources=["dedao:test", "pubmed:456"],
+            ),
+            KBDocument(
+                doc_id="claim:c_clean",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="sleep",
+                title="Clean reviewed claim",
+                evidence_level="A",
+                confidence=0.9,
+                metadata_json={
+                    "review_status": "reviewed",
+                    "external_sources": [
+                        {"kind": "guideline", "source": "guideline:clean", "review_status": "reviewed"}
+                    ],
+                },
+                sources=["guideline:clean"],
+            ),
+            KBAudit(
+                doc_id="claim:c_feedback",
+                op="feedback_disagree",
+                actor=f"user:{user.id}",
+                diff={"reason": "不适用"},
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/review_queue?limit=10", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["total"] == 4
+    assert payload["summary"]["by_review_status"]["draft"] == 1
+    assert payload["summary"]["by_review_status"]["needs_review"] == 1
+    assert payload["summary"]["by_reason"]["draft"] == 1
+    assert payload["summary"]["by_reason"]["needs_review"] == 1
+    assert payload["summary"]["by_reason"]["missing_external_evidence"] == 2
+    assert payload["summary"]["by_reason"]["candidate_duplicate"] == 1
+    assert payload["summary"]["by_reason"]["user_feedback"] == 1
+    by_id = {item["doc_id"]: item for item in payload["items"]}
+    assert set(by_id) == {
+        "claim:c_draft_no_external",
+        "claim:c_needs_review_duplicate",
+        "claim:c_reviewed_missing_external",
+        "claim:c_feedback",
+    }
+    assert by_id["claim:c_draft_no_external"]["review_status"] == "draft"
+    assert by_id["claim:c_draft_no_external"]["external_source_count"] == 0
+    assert by_id["claim:c_needs_review_duplicate"]["candidate_duplicates"] == ["claim:c_old"]
+    assert by_id["claim:c_feedback"]["feedback_disagree_count"] == 1
+    assert db.query(KBAudit).filter(KBAudit.op == "review_queue").count() == 1
+
+
 def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True
