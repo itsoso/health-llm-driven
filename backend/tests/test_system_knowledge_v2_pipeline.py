@@ -348,6 +348,8 @@ def test_attach_system_knowledge_evidence_adds_claim_refs_to_specialist_findings
     assert finding.raw["system_kb_evidence_refs"] == [
         "claim:c_zone2_as_metabolic_base_not_when_recovery_low"
     ]
+    assert finding.raw["evidence_resolution"]["support_status"] == "supported"
+    assert finding.raw["evidence_resolution"]["unsupported"] is False
     assert finding.findings[0]["evidence_refs"] == [
         "claim:c_zone2_as_metabolic_base_not_when_recovery_low"
     ]

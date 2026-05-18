@@ -765,6 +765,7 @@ class AgentExecutor:
             return build_evidence_card_for_twin(
                 self.db,
                 system_kb_twin_payload_from_health_twin(twin),
+                message=message,
             )
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[agent_executor] system KB twin card lookup skipped: {e}")

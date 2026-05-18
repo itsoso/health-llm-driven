@@ -994,30 +994,13 @@ def attach_system_knowledge_evidence(
     invent evidence from semantic similarity.
     """
 
-    result = lookup_for_twin(db, twin)
-    claims = result.get("claims") or []
-    if not claims:
-        return {"findings_updated": 0, "claim_refs": 0}
+    from app.services.evidence_resolver import EvidenceResolver
 
-    updated = 0
-    for finding in findings:
-        refs = _select_claim_refs_for_specialist(finding, claims, max_refs_per_finding)
-        if not refs:
-            continue
-        existing_refs = list(getattr(finding, "evidence_refs", []) or [])
-        merged_refs = _dedupe_preserve_order(existing_refs + refs)
-        try:
-            finding.evidence_refs = merged_refs
-        except Exception:  # noqa: BLE001
-            pass
-        if isinstance(getattr(finding, "raw", None), dict):
-            finding.raw["system_kb_evidence_refs"] = merged_refs
-        for item in getattr(finding, "findings", []) or []:
-            if isinstance(item, dict) and not item.get("evidence_refs"):
-                item["evidence_refs"] = refs
-        updated += 1
-
-    return {"findings_updated": updated, "claim_refs": len(claims)}
+    return EvidenceResolver(db).apply_to_findings(
+        twin,
+        findings,
+        max_refs_per_finding=max_refs_per_finding,
+    )
 
 
 def _select_claim_refs_for_specialist(
@@ -1103,7 +1086,12 @@ def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any]
     }
 
 
-def build_evidence_card_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any] | None:
+def build_evidence_card_for_twin(
+    db: Session,
+    twin: dict[str, Any],
+    *,
+    message: str | None = None,
+) -> dict[str, Any] | None:
     """Build a mobile evidence card from structured Twin matches.
 
     This is used when the user asks a general question ("怎么补叶酸") and the
@@ -1113,17 +1101,121 @@ def build_evidence_card_for_twin(db: Session, twin: dict[str, Any]) -> dict[str,
     """
 
     result = lookup_for_twin(db, twin)
-    if not result["claims"]:
+    claims = result["claims"]
+    relevance = _filter_claims_for_message_relevance(claims, message)
+    if message is not None:
+        claims = relevance["claims"]
+    if not claims:
         return None
 
     return {
         "type": "system_knowledge_evidence",
         "data": {
             "entity": result["entities"][0] if result["entities"] else {},
-            "claims": result["claims"][:3],
+            "claims": claims[:3],
             "claim_boundary": result["claim_boundary"],
+            "retrieval": {
+                "trigger": "twin_fallback",
+                "filtered_by_message": message is not None,
+                "matched_message_terms": relevance.get("matched_terms", [])[:8],
+            },
         },
     }
+
+
+_KB_RELEVANCE_STOP_TERMS = {
+    "我",
+    "我的",
+    "最近",
+    "今天",
+    "现在",
+    "应该",
+    "一下",
+    "一个",
+    "这个",
+    "那个",
+    "记录",
+    "录入",
+    "保存",
+    "新增",
+    "删除",
+    "修改",
+    "撤销",
+    "更新",
+    "分析",
+    "解读",
+    "建议",
+    "方案",
+    "是否",
+    "合理",
+    "帮我",
+    "结合",
+    "基于",
+}
+
+
+def _filter_claims_for_message_relevance(
+    claims: list[dict[str, Any]],
+    message: str | None,
+) -> dict[str, Any]:
+    """Keep Twin fallback claims only when they are relevant to the turn text.
+
+    Twin matches are useful, but too broad for mixed record+analysis turns: a
+    user can record dinner while their Twin contains MTHFR/9p21 risks. In that
+    case the evidence card should appear only if the message actually asks
+    about the matching topic.
+    """
+
+    if not message:
+        return {"claims": claims, "matched_terms": []}
+
+    terms = [
+        term
+        for term in _semantic_query_terms(message)
+        if term not in _KB_RELEVANCE_STOP_TERMS and len(term) >= 2
+    ]
+    if not terms:
+        return {"claims": [], "matched_terms": []}
+
+    ranked: list[tuple[float, dict[str, Any], list[str]]] = []
+    for claim in claims:
+        text = _claim_search_text_from_serialized(claim)
+        matched_terms = [term for term in terms if term in text]
+        if not matched_terms:
+            continue
+        confidence = claim.get("confidence")
+        confidence_bonus = float(confidence or 0.0) * 0.05
+        score = len(matched_terms) + confidence_bonus
+        ranked.append((score, claim, matched_terms))
+
+    ranked.sort(key=lambda item: (-item[0], str(item[1].get("doc_id") or "")))
+    return {
+        "claims": [claim for _score, claim, _terms in ranked],
+        "matched_terms": _dedupe_preserve_order(
+            term for _score, _claim, matched in ranked for term in matched
+        ),
+    }
+
+
+def _claim_search_text_from_serialized(claim: dict[str, Any]) -> str:
+    fields: list[str] = [
+        str(claim.get("doc_id") or ""),
+        str(claim.get("title") or ""),
+        str(claim.get("summary") or ""),
+        str(claim.get("body") or ""),
+        str(claim.get("entity_type") or ""),
+        str(claim.get("entity_id") or ""),
+    ]
+    for key in ("sources", "recommends_lookup", "matched_conditions"):
+        value = claim.get(key) or []
+        if isinstance(value, list):
+            fields.extend(str(item) for item in value)
+        else:
+            fields.append(str(value))
+    metadata = claim.get("metadata") or {}
+    if isinstance(metadata, dict):
+        fields.extend(str(value) for value in metadata.values() if isinstance(value, (str, int, float)))
+    return " ".join(fields).lower()
 
 
 def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
