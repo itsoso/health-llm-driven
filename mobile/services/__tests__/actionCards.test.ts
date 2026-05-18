@@ -7,6 +7,7 @@ import api from '../api';
 import {
   buildActionCockpitSections,
   createActionCard,
+  recordCardAdherence,
   reviewActionCard,
   getActionCardProgress,
   getActionCardVerificationLabel,
@@ -115,6 +116,19 @@ describe('actionCards helpers', () => {
         summary: '睡眠评分达到目标',
         evidence: ['Garmin sleep_score'],
       },
+    });
+    expect(result).toBe(card);
+  });
+
+  it('records self-reported action card adherence through the backend', async () => {
+    const card = { id: 9, title: '7 天体重保持', status: 'active' } as ActionCard;
+    mockPost.mockResolvedValueOnce({ data: card });
+
+    const result = await recordCardAdherence(9, 70);
+
+    expect(mockPost).toHaveBeenCalledWith('/action-cards/9/adherence', {
+      kind: 'self_reported',
+      confidence: 70,
     });
     expect(result).toBe(card);
   });

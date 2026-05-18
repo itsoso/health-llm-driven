@@ -1,8 +1,12 @@
+/* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
 const mockPush = jest.fn();
+const mockSendMessage = jest.fn();
+const mockFetchConversationOpener = jest.fn();
+const mockRecordCardAdherence = jest.fn();
 
 jest.mock('expo-router', () => ({
   router: { push: mockPush, setParams: jest.fn() },
@@ -15,7 +19,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     messages: [],
     isStreaming: false,
     conversationId: undefined,
-    sendMessage: jest.fn(),
+    sendMessage: mockSendMessage,
     newChat: jest.fn(),
     loadLatestConversation: jest.fn(),
     loadConversation: jest.fn(),
@@ -28,11 +32,24 @@ jest.mock('../../../services/chat', () => ({
 }));
 
 jest.mock('../../../services/conversationOpener', () => ({
-  fetchConversationOpener: jest.fn().mockResolvedValue(null),
+  fetchConversationOpener: (...args: any[]) => mockFetchConversationOpener(...args),
+  buildConversationOpenerReplyContext: (opener: any, reply: string) => JSON.stringify({
+    entry: 'conversation_opener_quick_reply',
+    user_reply: reply,
+    opener_text: opener.text,
+    source: opener.source,
+    source_id: opener.source_id ?? null,
+    deep_link: opener.deep_link ?? null,
+    action_card_id: opener.source === 'action_card_due' ? opener.source_id ?? null : null,
+  }),
 }));
 
 jest.mock('../../../services/memoryOpener', () => ({
   fetchMemoryOpener: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('../../../services/actionCards', () => ({
+  recordCardAdherence: (...args: any[]) => mockRecordCardAdherence(...args),
 }));
 
 jest.mock('../../../hooks/useTheme', () => ({
@@ -54,7 +71,18 @@ jest.mock('../../../hooks/useTheme', () => ({
 jest.mock('../../../components/chat/ChatBubble', () => 'ChatBubble');
 jest.mock('../../../components/chat/BrandCircle', () => 'BrandCircle');
 jest.mock('../../../components/chat/ConversationSheet', () => 'ConversationSheet');
-jest.mock('../../../components/chat/OpenerCard', () => 'OpenerCard');
+jest.mock('../../../components/chat/OpenerCard', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  const MockOpenerCard = ({ opener, onQuickReply }: any) => (
+    <Pressable accessibilityLabel="opener-done" onPress={() => onQuickReply(opener.quick_replies[0])}>
+      <Text>{opener.text}</Text>
+      <Text>{opener.quick_replies[0]}</Text>
+    </Pressable>
+  );
+  MockOpenerCard.displayName = 'MockOpenerCard';
+  return MockOpenerCard;
+});
 jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
 
 import ChatScreen from '../chat';
@@ -63,6 +91,8 @@ describe('ChatScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOpenHistory.mockResolvedValue([]);
+    mockFetchConversationOpener.mockResolvedValue(null);
+    mockRecordCardAdherence.mockResolvedValue({});
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -77,5 +107,39 @@ describe('ChatScreen', () => {
     });
 
     expect(mockOpenHistory).toHaveBeenCalled();
+  });
+
+  it('sends opener quick replies with the opener context so verification has a target', async () => {
+    mockFetchConversationOpener.mockResolvedValueOnce({
+      text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
+      source: 'action_card_due',
+      source_id: 88,
+      quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
+      deep_link: '/action-cards/88',
+      priority: 100,
+    });
+
+    const { getByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('opener-done')).toBeTruthy());
+    fireEvent.press(getByLabelText('opener-done'));
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      '做到了 ✅',
+      null,
+      expect.objectContaining({
+        extraContext: expect.stringContaining('AI 预测：7 天体重保持 ≤ 71.3kg'),
+      }),
+    );
+    const extraContext = mockSendMessage.mock.calls[0][2].extraContext;
+    expect(JSON.parse(extraContext)).toMatchObject({
+      entry: 'conversation_opener_quick_reply',
+      user_reply: '做到了 ✅',
+      source: 'action_card_due',
+      source_id: 88,
+    });
+    await waitFor(() => {
+      expect(mockRecordCardAdherence).toHaveBeenCalledWith(88, 70, 'self_reported');
+    });
   });
 });

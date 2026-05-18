@@ -4,7 +4,7 @@ jest.mock('../api', () => ({
 }));
 
 import api from '../api';
-import { fetchConversationOpener } from '../conversationOpener';
+import { buildConversationOpenerReplyContext, fetchConversationOpener } from '../conversationOpener';
 
 const mockGet = api.get as jest.Mock;
 
@@ -51,5 +51,25 @@ describe('fetchConversationOpener', () => {
   it('returns null when data.opener field missing', async () => {
     mockGet.mockResolvedValueOnce({ data: {} });
     expect(await fetchConversationOpener()).toBeNull();
+  });
+
+  it('builds quick reply context for action-card verification replies', () => {
+    const context = buildConversationOpenerReplyContext({
+      text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
+      source: 'action_card_due',
+      source_id: 88,
+      quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
+      deep_link: '/action-cards/88',
+      priority: 100,
+    }, '做到了 ✅');
+
+    expect(JSON.parse(context)).toMatchObject({
+      entry: 'conversation_opener_quick_reply',
+      user_reply: '做到了 ✅',
+      opener_text: expect.stringContaining('7 天体重保持 ≤ 71.3kg'),
+      source: 'action_card_due',
+      source_id: 88,
+      action_card_id: 88,
+    });
   });
 });

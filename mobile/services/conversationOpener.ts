@@ -20,6 +20,23 @@ export interface ConversationOpener {
   priority: number;
 }
 
+export function buildConversationOpenerReplyContext(
+  opener: ConversationOpener,
+  reply: string,
+): string {
+  return JSON.stringify({
+    entry: 'conversation_opener_quick_reply',
+    user_reply: reply,
+    opener_text: opener.text,
+    source: opener.source,
+    source_id: opener.source_id ?? null,
+    deep_link: opener.deep_link ?? null,
+    action_card_id: opener.source === 'action_card_due' ? opener.source_id ?? null : null,
+    instruction:
+      'This user reply is responding to the opener_text above. Use source/source_id as the verification target instead of treating the reply as standalone text.',
+  });
+}
+
 /**
  * 拉一次 opener. 任何错误返回 null, 不抛 — chat 启动不能被这个挂.
  */

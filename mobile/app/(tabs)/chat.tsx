@@ -15,8 +15,13 @@ import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
-import { fetchConversationOpener, type ConversationOpener } from '../../services/conversationOpener';
+import {
+  buildConversationOpenerReplyContext,
+  fetchConversationOpener,
+  type ConversationOpener,
+} from '../../services/conversationOpener';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
+import { recordCardAdherence } from '../../services/actionCards';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -26,6 +31,12 @@ const SUGGESTIONS = [
   { icon: 'fitness-outline' as const, text: '给我运动建议' },
   { icon: 'trending-up-outline' as const, text: 'HRV趋势分析' },
 ];
+
+function getSelfReportedAdherence(reply: string): number | null {
+  if (/没做|未做|没有做|不算/.test(reply)) return 0;
+  if (/做到|完成|已做|做了/.test(reply)) return 70;
+  return null;
+}
 
 export default function ChatScreen() {
   const { c } = useTheme();
@@ -126,6 +137,21 @@ export default function ChatScreen() {
     sendMessage(text, images);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [sendMessage]);
+
+  const handleOpenerQuickReply = useCallback((text: string) => {
+    isNearBottom.current = true;
+    const extraContext = opener ? buildConversationOpenerReplyContext(opener, text) : undefined;
+    const adherence = opener?.source === 'action_card_due'
+      ? getSelfReportedAdherence(text)
+      : null;
+    if (adherence !== null && opener?.source_id != null) {
+      recordCardAdherence(Number(opener.source_id), adherence, 'self_reported').catch(err => {
+        console.warn('[chat] action card adherence 回写失败', err);
+      });
+    }
+    sendMessage(text, null, extraContext ? { extraContext } : undefined);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+  }, [opener, sendMessage]);
 
   const loadConversationHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -242,7 +268,7 @@ export default function ChatScreen() {
               {opener && (
                 <OpenerCard
                   opener={opener}
-                  onQuickReply={(text) => handleSend(text, null)}
+                  onQuickReply={handleOpenerQuickReply}
                 />
               )}
               <View style={styles.welcome}>

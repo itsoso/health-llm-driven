@@ -57,6 +57,8 @@ export interface ActionCard {
   push_sent_at?: string | null;
   push_delivered_at?: string | null;
   push_clicked_at?: string | null;
+  adherence_kind?: 'self_reported' | 'device' | 'proxy' | string | null;
+  adherence_confidence?: number | null;
 }
 
 export type CardDecision = 'accepted' | 'adjusted' | 'declined' | 'dismissed' | 'false_positive';
@@ -175,6 +177,18 @@ export async function reviewActionCard(id: number, draft: OutcomeReviewDraft): P
       summary: draft.summary,
       evidence: draft.evidence,
     },
+  });
+  return data;
+}
+
+export async function recordCardAdherence(
+  cardId: number,
+  confidence: number,
+  kind: 'self_reported' | 'device' | 'proxy' = 'self_reported',
+): Promise<ActionCard> {
+  const { data } = await api.post<ActionCard>(`/action-cards/${cardId}/adherence`, {
+    kind,
+    confidence,
   });
   return data;
 }
