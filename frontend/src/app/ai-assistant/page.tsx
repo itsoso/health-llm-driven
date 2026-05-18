@@ -11,9 +11,23 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import {
+  ArrowUp,
+  Brain,
+  ChevronDown,
+  MessageSquarePlus,
+  Sparkles,
+} from 'lucide-react';
 import { ChatMessage, agentApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
 import { api } from '@/services/api/client';
+
+const SUGGESTIONS = [
+  '分析我最近的代谢健康',
+  '今天怎么安排训练和恢复',
+  '结合基因和体检给我建议',
+  '帮我复盘最近的睡眠质量',
+];
 
 export default function AIAssistantPage() {
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
@@ -44,8 +58,8 @@ export default function AIAssistantPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || streaming) return;
     setInput('');
     setStreaming(true);
@@ -118,40 +132,60 @@ export default function AIAssistantPage() {
     setMessages([]);
   };
 
+  const submitSuggestion = (text: string) => {
+    if (streaming) return;
+    sendMessage(text);
+  };
+
   return (
-    <main className="flex h-screen bg-slate-950 text-slate-100">
-      {/* 主区: 消息流 + 输入 */}
-      <section className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-sm font-semibold text-slate-300 shrink-0">智能助理</h2>
-            {/* 2026-05-13: 当前模型 chip — 点开跳到 /llm-preference 切换 */}
-            <a
-              href="/llm-preference"
-              className="hidden sm:inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-800/40 px-2 py-0.5 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-500/40 truncate max-w-[14rem]"
-              title="点击切换 AI 模型偏好"
-            >
-              <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" /></svg>
-              <span className="truncate">{llmPref.label || '默认模型'}</span>
-            </a>
-          </div>
+    <main className="flex h-screen flex-col bg-[#212121] text-zinc-100">
+      <header className="shrink-0 border-b border-white/[0.08] bg-[#212121]/95 px-3 py-2.5 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <a
+            href="/llm-preference"
+            className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+            title="切换 AI 模型偏好"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-300">
+              <Brain className="h-3.5 w-3.5" />
+            </span>
+            <span className="truncate">健康 Agent</span>
+            <span className="hidden max-w-[12rem] truncate text-xs font-normal text-zinc-500 sm:inline">
+              {llmPref.label || '默认模型'}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+          </a>
           <button
             onClick={startNewConversation}
-            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-2.5 py-1.5 shrink-0"
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 text-sm font-medium text-zinc-100 transition-colors hover:bg-white/[0.1]"
           >
-            + 新对话
+            <MessageSquarePlus className="h-4 w-4" />
+            <span className="hidden sm:inline">新对话</span>
           </button>
         </div>
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+      </header>
+
+      <section className="flex min-h-0 flex-1 flex-col">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 pb-32 pt-8 sm:px-6">
           {messages.length === 0 && !streaming ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <svg className="h-10 w-10 mb-3 text-emerald-400/60" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" />
-              </svg>
-              <p className="text-sm">和你的健康助理说点什么</p>
-              <p className="mt-1 text-xs text-slate-600">
-                例如 "今天血氧怎么样" / "帮我看看最近化验" / "明天该怎么训练"
-              </p>
+            <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-300 ring-1 ring-teal-300/15">
+                <Sparkles className="h-7 w-7" />
+              </div>
+              <h1 className="mt-5 text-2xl font-semibold tracking-tight text-zinc-50 sm:text-3xl">
+                今天想了解什么？
+              </h1>
+              <div className="mt-8 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                {SUGGESTIONS.map(item => (
+                  <button
+                    key={item}
+                    onClick={() => submitSuggestion(item)}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-zinc-300 transition-colors hover:border-teal-300/30 hover:bg-white/[0.07] hover:text-zinc-50"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <ChatView
@@ -165,8 +199,15 @@ export default function AIAssistantPage() {
         </div>
 
         {/* 输入区 */}
-        <div className="border-t border-slate-800/60 bg-slate-900/60 px-4 py-3">
-          <div className="mx-auto max-w-4xl flex gap-2">
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#212121] via-[#212121] to-transparent px-3 pb-4 pt-10 sm:px-6">
+          <form
+            id="ai-assistant-composer"
+            onSubmit={e => {
+              e.preventDefault();
+              sendMessage();
+            }}
+            className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.7rem] border border-white/10 bg-[#2f2f2f] p-2 shadow-2xl shadow-black/30"
+          >
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -179,16 +220,20 @@ export default function AIAssistantPage() {
               placeholder={streaming ? '回答中…' : '发消息 (Enter 发送, Shift+Enter 换行)'}
               disabled={streaming}
               rows={1}
-              className="flex-1 resize-none rounded-xl bg-slate-800/60 border border-slate-700/60 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 max-h-32"
+              className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
             />
             <button
-              onClick={sendMessage}
+              type="submit"
               disabled={!input.trim() || streaming}
-              className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium px-5"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-950 transition-colors hover:bg-white disabled:bg-zinc-600 disabled:text-zinc-400"
+              title="发送"
             >
-              发送
+              <ArrowUp className="h-5 w-5" />
             </button>
-          </div>
+          </form>
+          <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-600">
+            健康建议不能替代医生诊断；紧急或明显异常请及时就医。
+          </p>
         </div>
       </section>
     </main>
