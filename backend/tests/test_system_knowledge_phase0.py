@@ -1,9 +1,12 @@
 from datetime import UTC, datetime
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.notification import NotificationLog
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 from app.services.system_knowledge_service import (
+    _build_postgres_reindex_statement,
     apply_confidence_decay,
     build_evidence_card_for_message,
 )
@@ -740,6 +743,20 @@ def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_u
     assert refreshed.tsv is not None
     assert "MTHFR" in refreshed.tsv
     assert refreshed.content_hash is not None
+
+
+def test_postgres_reindex_statement_writes_tsvector_not_plain_text():
+    statement = _build_postgres_reindex_statement(
+        doc_id="entity:gene:MTHFR",
+        searchable="MTHFR participates in folate metabolism",
+        content_hash="abc123",
+    )
+
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "to_tsvector" in compiled
+    assert "tsv=to_tsvector" in compiled
+    assert "content_hash" in compiled
 
 
 def test_apply_confidence_decay_reduces_stale_fast_claims(db):

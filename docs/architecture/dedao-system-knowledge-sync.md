@@ -13,7 +13,7 @@
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Privacy isolation: scanner excludes private-looking source paths; `find_private_source_violations(...)` reports `personal/private/用户/user-*` paths without reading contents.
-- Search serving: `/knowledge/search` returns lexical + PostgreSQL `tsvector` FTS + semantic alias + one-hop graph RRF channels. SQLite keeps a precomputed-text fallback for focused tests.
+- Search serving: `/knowledge/search` returns lexical + PostgreSQL `tsvector` FTS + semantic alias + one-hop graph RRF channels. SQLite keeps a precomputed-text fallback for focused tests; production admin reindex updates `kb_documents.tsv` with `to_tsvector('simple', ...)`.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims now carry reviewed PubMed/guideline references in `sources` and `metadata.external_sources`.
 - Corpus expansion: deterministic Dedao compiler scanned 46 health-relevant source directories and promoted 314 generated claims / 83 entities / 46 pages / 2566 relations to reviewed status across reviewed passes, while preserving older reviewed artifacts.
 - Graph association: claim context now emits entity-to-entity `contextualizes` edges, for example `hyperuricemia-risk -> chronic-kidney-risk` and `hyperuricemia-risk -> hydration`, so lookup can traverse from a biomarker or condition to related interventions and boundaries.
@@ -254,7 +254,7 @@ python scripts/decay_system_kb_confidence.py
 说明：
 
 - `lint_system_kb.py` 输出 orphan entity/claim、无效 `applies_when`、过期 claim。
-- `reindex_system_kb.py` 刷新 `kb_documents.tsv` 和 `content_hash`，为后续 PostgreSQL FTS/向量混合检索保留一致接口。
+- `reindex_system_kb.py` 刷新 `kb_documents.tsv` 和 `content_hash`；PostgreSQL 线上字段是 `TSVECTOR`，使用 `to_tsvector('simple', ...)` 写入，SQLite 测试环境保留文本 fallback。
 - `decay_system_kb_confidence.py` 对长期未确认的 claim 做 confidence decay，并写入 `kb_audit`。
 
 ### Twin 命中逻辑

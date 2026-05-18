@@ -9,7 +9,7 @@ import operator
 import re
 from typing import Any
 
-from sqlalchemy import desc, func, or_
+from sqlalchemy import desc, func, or_, update
 from sqlalchemy.orm import Session
 
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
@@ -661,10 +661,15 @@ def _lookup_graph_context_for_entities(
 
 def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str, int]:
     documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    use_postgres_tsvector = _fts_backend_for_session(db) == "postgres_tsv"
     for document in documents:
         searchable = _document_search_text(document)
+        content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+        if use_postgres_tsvector:
+            db.execute(_build_postgres_reindex_statement(document.doc_id, searchable, content_hash))
+            continue
         document.tsv = searchable
-        document.content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+        document.content_hash = content_hash
 
     db.add(
         KBAudit(
@@ -676,6 +681,17 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
     )
     db.commit()
     return {"documents": len(documents)}
+
+
+def _build_postgres_reindex_statement(doc_id: str, searchable: str, content_hash: str):
+    return (
+        update(KBDocument)
+        .where(KBDocument.doc_id == doc_id)
+        .values(
+            tsv=func.to_tsvector("simple", searchable),
+            content_hash=content_hash,
+        )
+    )
 
 
 def lint_knowledge_base(db: Session) -> dict[str, Any]:

@@ -14,7 +14,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Privacy isolation: scanner excludes private-looking paths; `find_private_source_violations(...)` reports private material without reading content.
-- Search serving: `/knowledge/search` now fuses lexical, PostgreSQL `tsvector` FTS, semantic alias, and graph streams via deterministic RRF. SQLite tests use the precomputed-text fallback while production PostgreSQL uses `kb_documents.tsv @@ websearch_to_tsquery(...)`.
+- Search serving: `/knowledge/search` now fuses lexical, PostgreSQL `tsvector` FTS, semantic alias, and graph streams via deterministic RRF. SQLite tests use the precomputed-text fallback while production PostgreSQL uses `kb_documents.tsv @@ websearch_to_tsquery(...)`; admin reindex writes PostgreSQL search text through `to_tsvector('simple', ...)`.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline source metadata.
 - Phase 2 corpus expansion: compiler scanned 46 health-relevant source directories; 314 generated claims, 83 entities, 46 pages, and 2566 relations were promoted to reviewed status across reviewed passes while preserving previous reviewed artifacts.
 - Dedao graph association: the compiler now adds entity-to-entity `contextualizes` edges from claim context, so graph traversal can connect biomarkers, conditions, and interventions even when the query does not name the exact claim.
@@ -75,7 +75,7 @@ flowchart TD
 - `scripts/import_system_kb_v2_artifacts.py`: deployment-safe import entrypoint for reviewed artifacts.
 - `scripts/scan_system_kb_sources.py`: local inspection tool for expanding course/book coverage without publishing raw paid content.
 - `scripts/lint_system_kb.py`: CLI lint report for orphan/stale/invalid KB content.
-- `scripts/reindex_system_kb.py`: refreshes `tsv` search text and `content_hash`.
+- `scripts/reindex_system_kb.py`: refreshes `tsv` search text and `content_hash`; PostgreSQL stores `tsv` as `TSVECTOR`, while SQLite-focused tests keep the plain-text fallback.
 - `scripts/decay_system_kb_confidence.py`: applies lifecycle confidence decay to stale claims.
 - `app.tasks.system_knowledge_lifecycle`: weekly Celery task that runs lint, confidence decay, and draft-only crystallize candidate generation.
 
