@@ -1,0 +1,2099 @@
+{
+  "id": "gene_knowledge",
+  "type": "gene_knowledge_v2",
+  "schema_id": "llm-wiki-v2-gene-knowledge",
+  "version": "dd1cad7",
+  "compiled_at": "2026-05-18T13:10:16.693543+00:00",
+  "source": "ak-kbase",
+  "description": "Unified gene knowledge: entities, atomic claims, derived gene_rules, SNP registry. Compiled from wiki/entities/ and wiki/claims/.",
+  "entities": {
+    "gene": {
+      "9p21": {
+        "entity_id": "9p21",
+        "entity_type": "gene",
+        "title": "9p21",
+        "aliases": [
+          "9p21",
+          "CDKN2B-AS1",
+          "ANRIL"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated",
+          "pubmed:17478679"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 9p21\n\n9 号染色体短臂 21 区，含 CDKN2A/B 和长非编码 RNA ANRIL。多个 GWAS 报告 rs10757274/rs1333049 等位与冠心病、动脉粥样硬化、腹主动脉瘤风险升高相关。OR≈1.2–1.3。\n\n## 相关事实\n\n- [[../../claims/c_9p21_cardiovascular_risk|9p21 与心血管风险监测边界]]\n\n## 关键变异\n\n- [[../snp/rs10757274|rs10757274]]\n\n## 边界\n\n9p21 风险只解释群体方差的一小部分；个体的真实风险由血脂/血压/吸烟/糖代谢主导。基因结果不应改变是否检查或治疗的决策门槛。"
+      },
+      "ACTN3": {
+        "entity_id": "ACTN3",
+        "entity_type": "gene",
+        "title": "ACTN3",
+        "aliases": [],
+        "confidence": 0.7,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# ACTN3\n\n运动表现相关基因，常用于力量/耐力倾向沟通。\n\n## 相关事实\n\n- [[../claims/c_actn3_training_phenotype_boundary|ACTN3 与训练倾向边界]]"
+      },
+      "ALDH2": {
+        "entity_id": "ALDH2",
+        "entity_type": "gene",
+        "title": "ALDH2",
+        "aliases": [],
+        "confidence": 0.76,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# ALDH2\n\n乙醛代谢相关基因，影响饮酒反应和健康风险沟通。\n\n## 相关事实\n\n- [[../claims/c_aldh2_alcohol_boundary|ALDH2 与饮酒风险边界]]"
+      },
+      "APOE": {
+        "entity_id": "APOE",
+        "entity_type": "gene",
+        "title": "APOE",
+        "aliases": [
+          "APOE",
+          "apolipoprotein E"
+        ],
+        "confidence": 0.75,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# APOE\n\n脂质代谢和阿尔茨海默病风险沟通中常见的基因。系统第一阶段只把它用于代谢健康风险解释。\n\n## 相关事实\n\n- [[../claims/c_apoe_ldl_diet_boundary|APOE 与 LDL-C 管理边界]]"
+      },
+      "CYP2C19": {
+        "entity_id": "CYP2C19",
+        "entity_type": "gene",
+        "title": "CYP2C19",
+        "aliases": [
+          "CYP2C19",
+          "cytochrome P450 2C19"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated",
+          "cpic:guideline-cyp2c19-ppi",
+          "cpic:guideline-cyp2c19-clopidogrel"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# CYP2C19\n\n代谢质子泵抑制剂 (奥美拉唑/兰索拉唑) 和氯吡格雷激活的关键酶。东亚 *2/*3 失活等位频率高 (~30%)，PM 比例显著高于欧美。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c19_ppi_substitution|CYP2C19 PM 与 PPI 选择]]\n- [[../../claims/c_cyp2c19_clopidogrel_boundary|CYP2C19 PM 与氯吡格雷无效边界]]\n\n## 关键变异\n\n- [[../snp/rs4244285|rs4244285 (CYP2C19 *2)]]\n\n## 边界\n\n氯吡格雷替换为替格瑞洛/普拉格雷属于心血管科决策；本知识仅用于风险提示。"
+      },
+      "CYP2D6": {
+        "entity_id": "CYP2D6",
+        "entity_type": "gene",
+        "title": "CYP2D6",
+        "aliases": [
+          "CYP2D6",
+          "cytochrome P450 2D6"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated",
+          "cpic:guideline-cyp2d6-opioids",
+          "cpic:guideline-cyp2d6-tca"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# CYP2D6\n\n肝脏 P450 家族关键酶，代谢约 25% 临床常用药物 (可待因/曲马多/某些抗抑郁药/β受体阻滞剂/他莫昔芬)。表型分四类：PM (慢) / IM (中间) / NM (正常) / UM (超快)。东亚人群 IM/PM 比例显著高于欧美。\n\n## 相关事实\n\n- [[../../claims/c_cyp2d6_pm_opioid_boundary|CYP2D6 PM 与可待因/曲马多无效边界]]\n- [[../../claims/c_cyp2d6_pm_antihistamine_substitution|CYP2D6 PM 与抗组胺药替换]]\n\n## 关键变异\n\n- [[../snp/rs5030655|rs5030655 (CYP2D6 *6)]]\n- [[../snp/rs1065852|rs1065852 (CYP2D6 *10，东亚常见 IM)]]\n\n## 边界\n\n表型推断需要测多个 star allele 才准确；商业单点检测仅作风险提示，不替代专业药物基因组检测。"
+      },
+      "FADS1": {
+        "entity_id": "FADS1",
+        "entity_type": "gene",
+        "title": "FADS1",
+        "aliases": [
+          "FADS1",
+          "fatty acid desaturase 1"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated",
+          "pubmed:24067581"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# FADS1\n\n控制 Omega-3/Omega-6 多不饱和脂肪酸去饱和化效率。GG 型转化效率正常；CC 型 ALA → EPA/DHA 转化效率显著降低，需要直接补充鱼油 / 海产 EPA+DHA。东亚人群 FADS1 高效转化型 (TT) 比例高。\n\n## 相关事实\n\n- [[../../claims/c_fads1_omega3_supplementation|FADS1 低转化型与 EPA/DHA 补充]]\n\n## 关键变异\n\n- [[../snp/rs174547|rs174547]]\n\n## 边界\n\n补充 EPA/DHA 的剂量上限受抗凝药物、出血风险约束；剂量决策不要绕过医生。"
+      },
+      "FTO": {
+        "entity_id": "FTO",
+        "entity_type": "gene",
+        "title": "FTO",
+        "aliases": [],
+        "confidence": 0.72,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# FTO\n\n体重和食欲调节相关的常见遗传风险位点集合。用于解释倾向，不用于预测命运。\n\n## 相关事实\n\n- [[../claims/c_fto_weight_risk_boundary|FTO 与体重管理边界]]"
+      },
+      "LCT": {
+        "entity_id": "LCT",
+        "entity_type": "gene",
+        "title": "LCT",
+        "aliases": [
+          "LCT",
+          "MCM6",
+          "lactase",
+          "lactase persistence"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated",
+          "pubmed:11788828"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# LCT\n\n乳糖酶基因 (调控位点在邻近 MCM6 内含子)。rs4988235 (-13910 C/T) T 等位维持成年乳糖酶表达；CC 型成年后乳糖酶下调，即\"乳糖酶不持续\"。东亚人群 CC 比例 >90%。\n\n## 相关事实\n\n- [[../../claims/c_lct_lactose_intolerance|LCT CC 与乳糖摄入边界]]\n\n## 关键变异\n\n- [[../snp/rs4988235|rs4988235 (LCT -13910C>T)]]\n\n## 边界\n\nCC 不等于\"不能喝奶\"，可以分次小量、配主食、或选无乳糖奶/酸奶。乳糖不耐受不是过敏。"
+      },
+      "MTHFR": {
+        "entity_id": "MTHFR",
+        "entity_type": "gene",
+        "title": "MTHFR",
+        "aliases": [
+          "MTHFR",
+          "methylenetetrahydrofolate reductase"
+        ],
+        "confidence": 0.75,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# MTHFR\n\n一碳代谢相关基因，常用于叶酸转化、同型半胱氨酸和 B 族维生素状态的风险沟通。\n\n## 相关事实\n\n- [[../claims/c_mthfr_c677t_hcy_folate_boundary|MTHFR C677T 与叶酸转化边界]]\n\n## 边界\n\nMTHFR 不能单独决定补剂方案；应结合 Hcy、B12、叶酸、饮食和医生建议。"
+      },
+      "SLCO1B1": {
+        "entity_id": "SLCO1B1",
+        "entity_type": "gene",
+        "title": "SLCO1B1",
+        "aliases": [
+          "SLCO1B1",
+          "OATP1B1",
+          "organic anion transporting polypeptide 1B1"
+        ],
+        "confidence": 0.85,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated",
+          "cpic:guideline-slco1b1-statin"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# SLCO1B1\n\n肝脏阴离子转运蛋白，控制他汀类药物 (尤其辛伐他汀) 进入肝细胞的速度。*5 (rs4149056 C 等位) 携带者血浆他汀暴露上升，肌病/横纹肌溶解风险显著增高。\n\n## 相关事实\n\n- [[../../claims/c_slco1b1_statin_myopathy_boundary|SLCO1B1 与他汀肌病风险边界]]\n\n## 关键变异\n\n- [[../snp/rs4149056|rs4149056 (SLCO1B1 *5)]]\n\n## 边界\n\nCC 型并非禁用他汀，而是优先选择对 SLCO1B1 不敏感的瑞舒伐他汀/匹伐他汀或低剂量起始，需医生决策。"
+      }
+    },
+    "snp": {
+      "rs1057910": {
+        "entity_id": "rs1057910",
+        "entity_type": "snp",
+        "title": "rs1057910",
+        "aliases": [
+          "rs1057910",
+          "CYP2C9*3"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "CYP2C9",
+        "body": "# rs1057910\n\nCYP2C9 *3 酶活下降 ~70–90%。东亚 *3 频率 3–5%，是华法林低剂量主要解释位点。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c9_warfarin_dose_boundary|c_cyp2c9_warfarin_dose_boundary]]\n- [[../../claims/c_cyp2c9_nsaid_gi_boundary|c_cyp2c9_nsaid_gi_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1065852": {
+        "entity_id": "rs1065852",
+        "entity_type": "snp",
+        "title": "rs1065852",
+        "aliases": [
+          "rs1065852",
+          "CYP2D6*10"
+        ],
+        "confidence": 0.85,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "CYP2D6",
+        "body": "# rs1065852\n\nCYP2D6 *10 East Asian IM 主要等位；TT 纯合常见于东亚 IM/PM。商业单点检测最易得到的位点。\n\n## 相关事实\n\n- [[../../claims/c_cyp2d6_pm_opioid_boundary|c_cyp2d6_pm_opioid_boundary]]\n- [[../../claims/c_cyp2d6_pm_antihistamine_substitution|c_cyp2d6_pm_antihistamine_substitution]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs10757274": {
+        "entity_id": "rs10757274",
+        "entity_type": "snp",
+        "title": "rs10757274",
+        "aliases": [
+          "rs10757274"
+        ],
+        "confidence": 0.7,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "9p21",
+        "body": "# rs10757274\n\n9p21 区域 tag SNP，AA 冠心病 OR≈1.3。机制涉及 ANRIL 调控 CDKN2A/B。\n\n## 相关事实\n\n- [[../../claims/c_9p21_cardiovascular_risk|c_9p21_cardiovascular_risk]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1229984": {
+        "entity_id": "rs1229984",
+        "entity_type": "snp",
+        "title": "rs1229984",
+        "aliases": [
+          "rs1229984",
+          "ADH1B*2"
+        ],
+        "confidence": 0.8,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "ADH1B",
+        "body": "# rs1229984\n\nADH1B 快代谢等位 (东亚 TT 常见)，乙醇→乙醛加快；与 ALDH2*2 共存时不适反应更强。\n\n## 相关事实\n\n- [[../../claims/c_aldh2_alcohol_boundary|c_aldh2_alcohol_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1544410": {
+        "entity_id": "rs1544410",
+        "entity_type": "snp",
+        "title": "rs1544410",
+        "aliases": [
+          "rs1544410",
+          "VDR BsmI"
+        ],
+        "confidence": 0.66,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "VDR",
+        "body": "# rs1544410\n\nVDR 内含子 SNP，TT 与维 D 受体活性下降相关；补 D 时建议测 25-OH-VitD 滴定。\n\n## 相关事实\n\n- [[../../claims/c_vdr_vitamin_d_dosing|c_vdr_vitamin_d_dosing]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs174547": {
+        "entity_id": "rs174547",
+        "entity_type": "snp",
+        "title": "rs174547",
+        "aliases": [
+          "rs174547"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "FADS1",
+        "body": "# rs174547\n\nFADS1 启动子 SNP。CC 型 ALA→EPA/DHA 转化下降，需要直接补充 EPA/DHA。\n\n## 相关事实\n\n- [[../../claims/c_fads1_omega3_supplementation|c_fads1_omega3_supplementation]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1799853": {
+        "entity_id": "rs1799853",
+        "entity_type": "snp",
+        "title": "rs1799853",
+        "aliases": [
+          "rs1799853",
+          "CYP2C9*2"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "CYP2C9",
+        "body": "# rs1799853\n\nCYP2C9 *2 酶活下降 ~30%。华法林、NSAIDs 剂量调整位点。东亚频率低，欧美 8–10%。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c9_warfarin_dose_boundary|c_cyp2c9_warfarin_dose_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1800562": {
+        "entity_id": "rs1800562",
+        "entity_type": "snp",
+        "title": "rs1800562",
+        "aliases": [
+          "rs1800562",
+          "HFE C282Y"
+        ],
+        "confidence": 0.92,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "HFE",
+        "body": "# rs1800562\n\nHFE C282Y。AA (Y/Y) 纯合是遗传性血色病主要致病基因型；铁蓄积风险高。\n\n## 相关事实\n\n- [[../../claims/c_hfe_iron_overload_boundary|c_hfe_iron_overload_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1800629": {
+        "entity_id": "rs1800629",
+        "entity_type": "snp",
+        "title": "rs1800629",
+        "aliases": [
+          "rs1800629",
+          "TNFA -308"
+        ],
+        "confidence": 0.62,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "TNF-α",
+        "body": "# rs1800629\n\nTNF 启动子 -308，A 等位略增高 TNF-α 表达，与多种慢性炎症倾向弱相关。\n\n## 相关事实\n\n- [[../../claims/c_tnfa_inflammation_tendency|c_tnfa_inflammation_tendency]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs1801133": {
+        "entity_id": "rs1801133",
+        "entity_type": "snp",
+        "title": "rs1801133",
+        "aliases": [
+          "rs1801133",
+          "MTHFR C677T",
+          "C677T"
+        ],
+        "confidence": 0.75,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# rs1801133\n\nMTHFR C677T 位点，常用于叶酸代谢、同型半胱氨酸和 B 族维生素状态的风险沟通。\n\n## 相关事实\n\n- [[../../claims/c_mthfr_c677t_hcy_folate_boundary|MTHFR C677T 与叶酸转化边界]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或补剂剂量；必须结合 Hcy、B12、叶酸、饮食、药物和医生建议。"
+      },
+      "rs1815739": {
+        "entity_id": "rs1815739",
+        "entity_type": "snp",
+        "title": "rs1815739",
+        "aliases": [
+          "rs1815739",
+          "ACTN3 R577X"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "ACTN3",
+        "body": "# rs1815739\n\nα-辅肌动蛋白 3 终止突变。TT (XX) 缺失快肌纤维 α-actinin-3，群体偏耐力；CC (RR) 偏爆发力。\n\n## 相关事实\n\n- [[../../claims/c_actn3_training_phenotype_boundary|c_actn3_training_phenotype_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs4149056": {
+        "entity_id": "rs4149056",
+        "entity_type": "snp",
+        "title": "rs4149056",
+        "aliases": [
+          "rs4149056",
+          "SLCO1B1*5"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "SLCO1B1",
+        "body": "# rs4149056\n\nSLCO1B1 c.521T>C。CC 型他汀肝细胞摄取下降、血浆浓度升高，辛伐他汀肌病 OR≈4.5。\n\n## 相关事实\n\n- [[../../claims/c_slco1b1_statin_myopathy_boundary|c_slco1b1_statin_myopathy_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs4244285": {
+        "entity_id": "rs4244285",
+        "entity_type": "snp",
+        "title": "rs4244285",
+        "aliases": [
+          "rs4244285",
+          "CYP2C19*2",
+          "CYP2C19 681G>A"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated",
+          "cpic:guideline-cyp2c19-ppi"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# rs4244285\n\nCYP2C19 *2 失活等位 (681G>A 剪接缺陷)。AA 纯合 = 慢代谢 (PM)，AG 杂合 = 中间代谢 (IM)。东亚 *2 等位频率 ~30%，PM ~13%。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c19_ppi_substitution|CYP2C19 PM 与 PPI 选择]]\n- [[../../claims/c_cyp2c19_clopidogrel_boundary|CYP2C19 PM 与氯吡格雷无效边界]]\n\n## 边界\n\n单测 *2 漏检 *3 (rs4986893)；PM 推断需要双位点。"
+      },
+      "rs429358": {
+        "entity_id": "rs429358",
+        "entity_type": "snp",
+        "title": "rs429358",
+        "aliases": [
+          "rs429358",
+          "APOE ε4"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "APOE",
+        "body": "# rs429358\n\n决定 APOE ε4 (与 rs7412 联合分型)。CC=ε4/ε4；与 LDL-C 升高、AD 风险显著相关。\n\n## 相关事实\n\n- [[../../claims/c_apoe_ldl_diet_boundary|c_apoe_ldl_diet_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs4680": {
+        "entity_id": "rs4680",
+        "entity_type": "snp",
+        "title": "rs4680",
+        "aliases": [
+          "rs4680",
+          "COMT Val158Met"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "COMT",
+        "body": "# rs4680\n\nCOMT 158 位 Val→Met，酶活下降 3–4 倍。Met/Met 多巴胺清除慢、压力敏感、咖啡因敏感。\n\n## 相关事实\n\n- [[../../claims/c_comt_stress_caffeine_boundary|c_comt_stress_caffeine_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs4986893": {
+        "entity_id": "rs4986893",
+        "entity_type": "snp",
+        "title": "rs4986893",
+        "aliases": [
+          "rs4986893",
+          "CYP2C19*3"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "CYP2C19",
+        "body": "# rs4986893\n\nCYP2C19 *3 提前终止失活等位，东亚约 5%。配合 *2 (rs4244285) 才能完整推断 PM 表型。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c19_ppi_substitution|c_cyp2c19_ppi_substitution]]\n- [[../../claims/c_cyp2c19_clopidogrel_boundary|c_cyp2c19_clopidogrel_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs4988235": {
+        "entity_id": "rs4988235",
+        "entity_type": "snp",
+        "title": "rs4988235",
+        "aliases": [
+          "rs4988235",
+          "LCT -13910C>T",
+          "MCM6 -13910"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "LCT",
+        "body": "# rs4988235\n\nMCM6 内含子 -13910，T 等位维持成年乳糖酶表达。东亚 CC >90%，欧洲 TT/CT 主导。\n\n## 相关事实\n\n- [[../../claims/c_lct_lactose_intolerance|c_lct_lactose_intolerance]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs5030655": {
+        "entity_id": "rs5030655",
+        "entity_type": "snp",
+        "title": "rs5030655",
+        "aliases": [
+          "rs5030655",
+          "CYP2D6*6"
+        ],
+        "confidence": 0.78,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "CYP2D6",
+        "body": "# rs5030655\n\nCYP2D6 *6 (1707delT) 失活等位。携带者酶活下降；常用于商业检测推断 PM 风险。\n\n## 相关事实\n\n- [[../../claims/c_cyp2d6_pm_opioid_boundary|c_cyp2d6_pm_opioid_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs5751876": {
+        "entity_id": "rs5751876",
+        "entity_type": "snp",
+        "title": "rs5751876",
+        "aliases": [
+          "rs5751876"
+        ],
+        "confidence": 0.7,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "ADORA2A",
+        "body": "# rs5751876\n\n腺苷 A2A 受体 SNP。TT 对咖啡因阻断腺苷更敏感，午后摄入显著延长入睡潜伏期。\n\n## 相关事实\n\n- [[../../claims/c_adora2a_caffeine_sleep_boundary|c_adora2a_caffeine_sleep_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs671": {
+        "entity_id": "rs671",
+        "entity_type": "snp",
+        "title": "rs671",
+        "aliases": [
+          "rs671",
+          "ALDH2*2",
+          "Glu504Lys"
+        ],
+        "confidence": 0.92,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "ALDH2",
+        "body": "# rs671\n\nALDH2 Glu504Lys；A 等位酶活几乎消失。AA 几乎不能饮酒，GA 也建议显著限酒。\n\n## 相关事实\n\n- [[../../claims/c_aldh2_alcohol_boundary|c_aldh2_alcohol_boundary]]\n- [[../../claims/c_aldh2_nitroglycerin_boundary|c_aldh2_nitroglycerin_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs7412": {
+        "entity_id": "rs7412",
+        "entity_type": "snp",
+        "title": "rs7412",
+        "aliases": [
+          "rs7412",
+          "APOE ε2"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "APOE",
+        "body": "# rs7412\n\n决定 APOE ε2 (与 rs429358 联合分型)。T 等位 = ε2，对 LDL 有保护倾向但可能 III 型脂蛋白血症。\n\n## 相关事实\n\n- [[../../claims/c_apoe_ldl_diet_boundary|c_apoe_ldl_diet_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs9939609": {
+        "entity_id": "rs9939609",
+        "entity_type": "snp",
+        "title": "rs9939609",
+        "aliases": [
+          "rs9939609",
+          "FTO"
+        ],
+        "confidence": 0.78,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": "FTO",
+        "body": "# rs9939609\n\nFTO 内含子 SNP，A 等位每拷贝 BMI +0.4。AA 肥胖风险增高，但与饮食/运动交互显著。\n\n## 相关事实\n\n- [[../../claims/c_fto_weight_risk_boundary|c_fto_weight_risk_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      }
+    },
+    "drug": {
+      "cetirizine": {
+        "entity_id": "cetirizine",
+        "entity_type": "drug",
+        "title": "西替利嗪",
+        "aliases": [
+          "cetirizine",
+          "西替利嗪"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 西替利嗪\n\n第二代抗组胺，主要经肾排泄，不依赖 CYP2D6/CYP3A4。\n\n## 基因相关注意\n\n肾功不全需减量；可作为 CYP2D6 PM 的替代。"
+      },
+      "clopidogrel": {
+        "entity_id": "clopidogrel",
+        "entity_type": "drug",
+        "title": "氯吡格雷",
+        "aliases": [
+          "clopidogrel",
+          "氯吡格雷"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 氯吡格雷\n\n前药抗血小板，需 CYP2C19 双步活化为活性代谢物。\n\n## 基因相关注意\n\nCYP2C19 PM 活化不足、支架后血栓风险高；优先换替格瑞洛。"
+      },
+      "codeine": {
+        "entity_id": "codeine",
+        "entity_type": "drug",
+        "title": "可待因",
+        "aliases": [
+          "codeine",
+          "可待因"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 可待因\n\n弱阿片镇痛/止咳药；前药，需 CYP2D6 转化为吗啡才有效。\n\n## 基因相关注意\n\nPM 无效且代谢物蓄积副作用；UM 转化过度可致呼吸抑制，禁用于哺乳期 UM。"
+      },
+      "ephedrine": {
+        "entity_id": "ephedrine",
+        "entity_type": "drug",
+        "title": "麻黄碱",
+        "aliases": [
+          "ephedrine",
+          "pseudoephedrine",
+          "麻黄碱",
+          "伪麻黄碱"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 麻黄碱\n\n拟交感减充血剂；升血压、收缩鼻黏膜血管。\n\n## 基因相关注意\n\n心血管高风险 (含 9p21 AA) 应避免长期使用，监测血压。"
+      },
+      "ibuprofen": {
+        "entity_id": "ibuprofen",
+        "entity_type": "drug",
+        "title": "布洛芬",
+        "aliases": [
+          "ibuprofen",
+          "布洛芬",
+          "NSAID"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 布洛芬\n\n非选择性 NSAID；S-异构体主要由 CYP2C9 代谢。\n\n## 基因相关注意\n\nCYP2C9 PM 血浆浓度升高，胃肠出血/AKI 风险增加，需限量限疗程。"
+      },
+      "loratadine": {
+        "entity_id": "loratadine",
+        "entity_type": "drug",
+        "title": "氯雷他定",
+        "aliases": [
+          "loratadine",
+          "氯雷他定"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 氯雷他定\n\n第二代抗组胺，主要经 CYP3A4/CYP2D6 代谢为活性代谢物。\n\n## 基因相关注意\n\nCYP2D6 PM 蓄积致嗜睡；可换西替利嗪 (肾排泄)。"
+      },
+      "nitroglycerin": {
+        "entity_id": "nitroglycerin",
+        "entity_type": "drug",
+        "title": "硝酸甘油",
+        "aliases": [
+          "nitroglycerin",
+          "硝酸甘油"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 硝酸甘油\n\n心绞痛急救；体内由线粒体 ALDH2 转化为活性 NO。\n\n## 基因相关注意\n\nALDH2 缺陷者疗效显著降低；急救场景应了解此弱化效应。"
+      },
+      "omeprazole": {
+        "entity_id": "omeprazole",
+        "entity_type": "drug",
+        "title": "奥美拉唑",
+        "aliases": [
+          "omeprazole",
+          "奥美拉唑",
+          "PPI"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 奥美拉唑\n\n质子泵抑制剂，主要由 CYP2C19 代谢失活。\n\n## 基因相关注意\n\nCYP2C19 PM 血浆浓度显著升高、抑酸过度；可换雷贝拉唑。"
+      },
+      "rabeprazole": {
+        "entity_id": "rabeprazole",
+        "entity_type": "drug",
+        "title": "雷贝拉唑",
+        "aliases": [
+          "rabeprazole",
+          "雷贝拉唑",
+          "PPI"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 雷贝拉唑\n\n质子泵抑制剂，非酶途径代谢为主，CYP2C19 影响弱。\n\n## 基因相关注意\n\n对 CYP2C19 多态性不敏感，是 PM 患者的优选 PPI。"
+      },
+      "simvastatin": {
+        "entity_id": "simvastatin",
+        "entity_type": "drug",
+        "title": "辛伐他汀",
+        "aliases": [
+          "simvastatin",
+          "辛伐他汀",
+          "statin"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 辛伐他汀\n\nHMG-CoA 还原酶抑制；肝细胞摄取依赖 SLCO1B1。\n\n## 基因相关注意\n\nSLCO1B1 *5 CC 型肌病风险 OR≈4.5，FDA 建议 80mg 高剂量禁用；可换瑞舒伐他汀/匹伐他汀。"
+      },
+      "statin": {
+        "entity_id": "statin",
+        "entity_type": "drug",
+        "title": "Statin",
+        "aliases": [
+          "statin",
+          "他汀",
+          "statins",
+          "降脂药"
+        ],
+        "confidence": 0.7,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Statin\n\n他汀类药物是血脂管理中的常见处方药实体，知识库只用于识别用药安全边界和医生沟通问题。\n\n## 相关事实\n\n- 待补充 reviewed claim。\n\n## 边界\n\nAgent 不启动、停止或调整处方药；涉及肌痛、肝酶异常、妊娠、相互作用或剂量调整时应咨询医生。"
+      },
+      "ticagrelor": {
+        "entity_id": "ticagrelor",
+        "entity_type": "drug",
+        "title": "替格瑞洛",
+        "aliases": [
+          "ticagrelor",
+          "替格瑞洛"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 替格瑞洛\n\n可逆 P2Y12 抗血小板，非前药，不依赖 CYP2C19。\n\n## 基因相关注意\n\nCYP2C19 PM 的优选抗血小板替代。"
+      },
+      "tramadol": {
+        "entity_id": "tramadol",
+        "entity_type": "drug",
+        "title": "曲马多",
+        "aliases": [
+          "tramadol",
+          "曲马多"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 曲马多\n\n中枢镇痛药；需 CYP2D6 转化为 O-去甲基曲马多激活 μ-阿片受体。\n\n## 基因相关注意\n\nPM 镇痛差；与 5-HT 类药物合用有 5-HT 综合征风险。"
+      },
+      "warfarin": {
+        "entity_id": "warfarin",
+        "entity_type": "drug",
+        "title": "华法林",
+        "aliases": [
+          "warfarin",
+          "华法林"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 华法林\n\n维生素 K 拮抗抗凝；S-华法林由 CYP2C9 代谢，VKORC1 决定靶点敏感性。\n\n## 基因相关注意\n\nCYP2C9 *2/*3 + VKORC1 -1639 AA 起始剂量需显著下调；INR 监测必备。"
+      }
+    },
+    "biomarker": {
+      "Hcy": {
+        "entity_id": "Hcy",
+        "entity_type": "biomarker",
+        "title": "同型半胱氨酸",
+        "aliases": [
+          "Hcy",
+          "homocysteine"
+        ],
+        "confidence": 0.78,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 同型半胱氨酸\n\n一碳代谢和心血管风险沟通中的临床锚点。"
+      },
+      "INR": {
+        "entity_id": "INR",
+        "entity_type": "biomarker",
+        "title": "国际标准化比值",
+        "aliases": [
+          "INR",
+          "prothrombin time ratio"
+        ],
+        "confidence": 0.82,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 国际标准化比值\n\n华法林抗凝监测金标准；CYP2C9/VKORC1 仅决定起始剂量，长期靠 INR 滴定。"
+      },
+      "LDL-C": {
+        "entity_id": "LDL-C",
+        "entity_type": "biomarker",
+        "title": "低密度脂蛋白胆固醇",
+        "aliases": [
+          "LDL-C",
+          "LDL",
+          "ApoB-100 lipoprotein"
+        ],
+        "confidence": 0.82,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 低密度脂蛋白胆固醇\n\n心血管风险核心生物标志；目标值取决于 10 年风险与 APOE/9p21 等基因背景。"
+      },
+      "ferritin": {
+        "entity_id": "ferritin",
+        "entity_type": "biomarker",
+        "title": "铁蛋白",
+        "aliases": [
+          "ferritin",
+          "SF"
+        ],
+        "confidence": 0.82,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 铁蛋白\n\n铁储备指标；HFE C282Y 纯合需长期监测以发现铁过载。"
+      }
+    },
+    "supplement": {
+      "5-MTHF": {
+        "entity_id": "5-MTHF",
+        "entity_type": "supplement",
+        "title": "5-MTHF",
+        "aliases": [
+          "5-MTHF",
+          "活性叶酸"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 5-MTHF\n\n活性叶酸形式。用于建议时必须结合 B12 与 Hcy 状态，并保留医生咨询边界。"
+      },
+      "CoQ10": {
+        "entity_id": "CoQ10",
+        "entity_type": "supplement",
+        "title": "辅酶 Q10",
+        "aliases": [
+          "CoQ10",
+          "ubiquinol"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 辅酶 Q10\n\n线粒体电子传递体；他汀使用者可能 CoQ10 降低，可考虑补充。"
+      },
+      "EPA-DHA": {
+        "entity_id": "EPA-DHA",
+        "entity_type": "supplement",
+        "title": "EPA+DHA 鱼油",
+        "aliases": [
+          "EPA",
+          "DHA",
+          "omega-3",
+          "鱼油"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# EPA+DHA 鱼油\n\n海产 ω-3 长链脂肪酸；FADS1 低转化型推荐直接补充而非 ALA。"
+      },
+      "methylcobalamin": {
+        "entity_id": "methylcobalamin",
+        "entity_type": "supplement",
+        "title": "甲钴胺",
+        "aliases": [
+          "methylcobalamin",
+          "甲钴胺",
+          "活性 B12"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 甲钴胺\n\n活性 B12，配合甲基叶酸用于 MTHFR TT + 高 Hcy 人群。"
+      }
+    },
+    "intervention": {
+      "alcohol-avoidance": {
+        "entity_id": "alcohol-avoidance",
+        "entity_type": "intervention",
+        "title": "限酒/禁酒",
+        "aliases": [
+          "alcohol avoidance",
+          "abstinence"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 限酒/禁酒\n\nALDH2 缺陷者优先采用禁酒或低酒精策略，避免把饮酒耐受当作健康指标。"
+      },
+      "bp-self-monitor": {
+        "entity_id": "bp-self-monitor",
+        "entity_type": "intervention",
+        "title": "血压自我监测",
+        "aliases": [
+          "home BP",
+          "blood pressure self-monitoring"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 血压自我监测\n\n拟交感药物/9p21 高风险背景下，建议家庭血压每日监测。"
+      },
+      "lactose-restriction": {
+        "entity_id": "lactose-restriction",
+        "entity_type": "intervention",
+        "title": "低乳糖膳食",
+        "aliases": [
+          "lactose restriction",
+          "lactose-free"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# 低乳糖膳食\n\nLCT CC 型可采用分次小量乳品、配主食、酸奶/无乳糖奶等策略。"
+      },
+      "weight-waist-tracking": {
+        "entity_id": "weight-waist-tracking",
+        "entity_type": "intervention",
+        "title": "Weight and Waist Tracking",
+        "aliases": [
+          "体重腰围记录",
+          "晨起体重",
+          "腰围追踪",
+          "weight tracking",
+          "waist tracking"
+        ],
+        "confidence": 0.78,
+        "evidence_level": "B",
+        "sources": [
+          "dedao:fengxue-weight-loss"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Weight and Waist Tracking\n\n代谢健康和减重管理中的基础行为干预：固定时间、固定条件记录体重和腰围，并用多日趋势而不是单日波动判断变化。\n\n## 相关事实\n\n- `claim:c_weight_waist_tracking`\n\n## 边界\n\n体重和腰围是健康轨迹反馈，不是诊断工具；快速下降、浮肿、胸闷、晕厥或其他红旗症状需要就医。"
+      }
+    },
+    "nutrient": {
+      "folate": {
+        "entity_id": "folate",
+        "entity_type": "nutrient",
+        "title": "Folate",
+        "aliases": [
+          "folate",
+          "叶酸",
+          "5-MTHF",
+          "活性叶酸"
+        ],
+        "confidence": 0.75,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Folate\n\n叶酸是一碳代谢相关营养素，和红细胞生成、同型半胱氨酸代谢及孕前营养管理相关。\n\n## 相关事实\n\n- [[../../claims/c_mthfr_c677t_hcy_folate_boundary|MTHFR C677T 与叶酸转化边界]]\n\n## 边界\n\n叶酸或 5-MTHF 补充不应替代贫血、神经症状、高同型半胱氨酸或孕期相关问题的医学评估。"
+      }
+    },
+    "condition": {
+      "hyperhomocysteinemia": {
+        "entity_id": "hyperhomocysteinemia",
+        "entity_type": "condition",
+        "title": "Hyperhomocysteinemia",
+        "aliases": [
+          "hyperhomocysteinemia",
+          "高同型半胱氨酸血症",
+          "Hcy 升高"
+        ],
+        "confidence": 0.75,
+        "evidence_level": "C",
+        "sources": [
+          "system:phase0-curated"
+        ],
+        "last_confirmed": "2026-05-16",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Hyperhomocysteinemia\n\n同型半胱氨酸升高是一种临床化验异常，需要结合 B12、叶酸、肾功能、甲状腺、药物和生活方式背景解释。\n\n## 相关事实\n\n- [[../../claims/c_mthfr_c677t_hcy_folate_boundary|MTHFR C677T 与叶酸转化边界]]\n\n## 边界\n\n系统知识库只能提示复查和生活方式/营养讨论方向；诊断和治疗由医生完成。"
+      }
+    }
+  },
+  "claims": [
+    {
+      "claim_id": "c_9p21_cardiovascular_risk",
+      "entity_type": "gene",
+      "entity_id": "9p21",
+      "title": "9p21 高风险与心血管监测边界",
+      "confidence": 0.66,
+      "evidence_level": "B",
+      "sources": [
+        "pubmed:17478679"
+      ],
+      "applies_when": [
+        "twin.genetics.9p21_rs10757274 == 'AA'"
+      ],
+      "recommends_lookup": [
+        "entity:biomarker:LDL-C",
+        "entity:intervention:bp-self-monitor"
+      ],
+      "predicate": "requires_monitoring",
+      "drug_rules": {
+        "phenotype": "homozygous_risk",
+        "avoid": [
+          {
+            "drug": "ephedrine",
+            "reason": "长期拟交感升压增加心血管事件风险"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "blood_pressure",
+            "action": "拟交感减充血剂期间每日测压"
+          },
+          {
+            "metric": "lipid_panel",
+            "action": "年度血脂复查，目标 LDL-C 按 10 年风险设定"
+          }
+        ]
+      },
+      "body": "9p21 风险等位主要解释群体方差小部分；本条目用于强化常规心血管监测频率，不改变治疗起步阈值。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_actn3_training_phenotype_boundary",
+      "entity_type": "gene",
+      "entity_id": "ACTN3",
+      "title": "ACTN3 与训练倾向边界",
+      "confidence": 0.7,
+      "evidence_level": "C",
+      "sources": [
+        "system:phase0-curated"
+      ],
+      "applies_when": [
+        "twin.genetics.ACTN3 is not null"
+      ],
+      "recommends_lookup": [
+        "entity:intervention:strength-training"
+      ],
+      "predicate": null,
+      "drug_rules": null,
+      "body": "ACTN3 可作为力量/耐力倾向的辅助解释，不能决定训练能力上限或替代训练负荷反馈。"
+    },
+    {
+      "claim_id": "c_adora2a_caffeine_sleep_boundary",
+      "entity_type": "gene",
+      "entity_id": "ADORA2A",
+      "title": "ADORA2A TT 与咖啡因摄入时点边界",
+      "confidence": 0.7,
+      "evidence_level": "B",
+      "sources": [
+        "pubmed:17251936"
+      ],
+      "applies_when": [
+        "twin.genetics.ADORA2A_rs5751876 == 'TT'"
+      ],
+      "recommends_lookup": [
+        "entity:intervention:caffeine-cutoff"
+      ],
+      "predicate": "requires_boundary",
+      "drug_rules": {
+        "phenotype": "high_caffeine_sensitivity",
+        "lifestyle": [
+          "午后 (12:00 后) 避免含咖啡因饮料"
+        ]
+      },
+      "body": "ADORA2A TT 携带者对咖啡因阻断腺苷的效应更敏感，午后摄入显著延长入睡潜伏期。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_aldh2_alcohol_boundary",
+      "entity_type": "gene",
+      "entity_id": "ALDH2",
+      "title": "ALDH2 与饮酒风险边界",
+      "confidence": 0.72,
+      "evidence_level": "C",
+      "sources": [
+        "system:phase0-curated"
+      ],
+      "applies_when": [
+        "twin.genetics.ALDH2 in ['GA', 'AA', '*1/*2', '*2/*2']"
+      ],
+      "recommends_lookup": [
+        "entity:behavior:alcohol-avoidance"
+      ],
+      "predicate": null,
+      "drug_rules": null,
+      "body": "ALDH2 活性降低者应避免把饮酒耐受作为健康信号，并优先采用低酒精或不饮酒策略。"
+    },
+    {
+      "claim_id": "c_aldh2_nitroglycerin_boundary",
+      "entity_type": "gene",
+      "entity_id": "ALDH2",
+      "title": "ALDH2 缺陷与硝酸甘油疗效边界",
+      "confidence": 0.74,
+      "evidence_level": "B",
+      "sources": [
+        "pubmed:16517612"
+      ],
+      "applies_when": [
+        "twin.genetics.ALDH2 in ['GA', 'AA']"
+      ],
+      "recommends_lookup": [
+        "entity:drug:nitroglycerin"
+      ],
+      "predicate": "requires_monitoring",
+      "drug_rules": {
+        "phenotype": "deficient",
+        "monitor": [
+          {
+            "drug": "nitroglycerin",
+            "action": "心绞痛急救时疗效可能不足，需备替代方案"
+          }
+        ]
+      },
+      "body": "ALDH2 缺陷者硝酸甘油生物激活减弱，疗效降低；急救场景应了解此局限。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_apoe_ldl_diet_boundary",
+      "entity_type": "gene",
+      "entity_id": "APOE",
+      "title": "APOE 与 LDL-C 管理边界",
+      "confidence": 0.72,
+      "evidence_level": "C",
+      "sources": [
+        "system:phase0-curated"
+      ],
+      "applies_when": [
+        "twin.genetics.APOE in ['E3/E4', 'E4/E4']",
+        "twin.labs.ldl_c_mmol_l >= 3.4"
+      ],
+      "recommends_lookup": [
+        "entity:biomarker:LDL-C"
+      ],
+      "predicate": null,
+      "drug_rules": null,
+      "body": "APOE E4 携带者可更重视 LDL-C/ApoB 轨迹和饱和脂肪控制，但不能用基因替代血脂指标。"
+    },
+    {
+      "claim_id": "c_cyp2c19_clopidogrel_boundary",
+      "entity_type": "gene",
+      "entity_id": "CYP2C19",
+      "title": "CYP2C19 PM 与氯吡格雷无效边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:guideline-cyp2c19-clopidogrel"
+      ],
+      "applies_when": [
+        "twin.genetics.CYP2C19_phenotype == 'poor'",
+        "twin.medications has 'clopidogrel'"
+      ],
+      "recommends_lookup": [
+        "entity:drug:clopidogrel",
+        "entity:drug:ticagrelor"
+      ],
+      "predicate": "contraindicates",
+      "drug_rules": {
+        "phenotype": "poor",
+        "substitute": [
+          {
+            "from": "clopidogrel",
+            "to": "ticagrelor",
+            "reason": "氯吡格雷需 CYP2C19 双步活化；PM 活性代谢物不足、心血管事件风险增加"
+          }
+        ]
+      },
+      "body": "CYP2C19 PM 使用氯吡格雷支架后血栓风险显著增加，CPIC 建议换替格瑞洛或普拉格雷 (无禁忌时)。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_cyp2c19_ppi_substitution",
+      "entity_type": "gene",
+      "entity_id": "CYP2C19",
+      "title": "CYP2C19 PM 与 PPI 选择",
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:guideline-cyp2c19-ppi"
+      ],
+      "applies_when": [
+        "twin.genetics.CYP2C19_phenotype in ['poor', 'intermediate']",
+        "twin.medications has any of ['omeprazole', 'esomeprazole', 'lansoprazole']"
+      ],
+      "recommends_lookup": [
+        "entity:drug:omeprazole",
+        "entity:drug:rabeprazole"
+      ],
+      "predicate": "recommends_lookup",
+      "drug_rules": {
+        "phenotype": "poor",
+        "substitute": [
+          {
+            "from": "omeprazole",
+            "to": "rabeprazole",
+            "reason": "雷贝拉唑非酶代谢为主，不依赖 CYP2C19"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "omeprazole",
+            "action": "PM 患者建议减量 50% 或换雷贝拉唑"
+          }
+        ]
+      },
+      "body": "CYP2C19 PM 使用奥美拉唑/兰索拉唑血浆浓度显著升高，抑酸过强可能影响 B12、钙、骨密度；优先选用雷贝拉唑或泮托拉唑。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_cyp2c9_nsaid_gi_boundary",
+      "entity_type": "gene",
+      "entity_id": "CYP2C9",
+      "title": "CYP2C9 慢代谢与 NSAIDs 胃肠风险",
+      "confidence": 0.78,
+      "evidence_level": "B",
+      "sources": [
+        "cpic:guideline-cyp2c9-nsaid"
+      ],
+      "applies_when": [
+        "twin.genetics.CYP2C9_phenotype in ['poor', 'intermediate']",
+        "twin.medications has 'ibuprofen'"
+      ],
+      "recommends_lookup": [
+        "entity:drug:ibuprofen"
+      ],
+      "predicate": "requires_monitoring",
+      "drug_rules": {
+        "phenotype": "poor",
+        "monitor": [
+          {
+            "drug": "ibuprofen",
+            "action": "限制连续疗程<5 天、起始剂量 50–75%"
+          }
+        ]
+      },
+      "body": "CYP2C9 慢代谢使 S-NSAID 血浆暴露升高，胃肠出血、AKI 风险增加。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_cyp2c9_warfarin_dose_boundary",
+      "entity_type": "gene",
+      "entity_id": "CYP2C9",
+      "title": "CYP2C9 与华法林剂量边界",
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:guideline-cyp2c9-warfarin"
+      ],
+      "applies_when": [
+        "twin.genetics.CYP2C9 in ['*1/*2', '*1/*3', '*2/*2', '*2/*3', '*3/*3']",
+        "twin.medications has 'warfarin'"
+      ],
+      "recommends_lookup": [
+        "entity:drug:warfarin",
+        "entity:biomarker:INR"
+      ],
+      "predicate": "requires_boundary",
+      "drug_rules": {
+        "phenotype": "poor",
+        "monitor": [
+          {
+            "drug": "warfarin",
+            "action": "起始剂量按 CYP2C9 + VKORC1 调整，INR 监测频率上调"
+          }
+        ]
+      },
+      "body": "CYP2C9 *2/*3 携带者华法林代谢减慢，初始剂量需下调；最终维持剂量由 INR 滴定决定。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_cyp2d6_pm_antihistamine_substitution",
+      "entity_type": "gene",
+      "entity_id": "CYP2D6",
+      "title": "CYP2D6 PM 与抗组胺药替换",
+      "confidence": 0.78,
+      "evidence_level": "B",
+      "sources": [
+        "dedao:qiuzilong-genetics-12",
+        "pubmed:14629326"
+      ],
+      "applies_when": [
+        "twin.genetics.CYP2D6_phenotype in ['poor', 'intermediate']",
+        "twin.medications has 'loratadine'"
+      ],
+      "recommends_lookup": [
+        "entity:drug:loratadine",
+        "entity:drug:cetirizine"
+      ],
+      "predicate": "recommends_lookup",
+      "drug_rules": {
+        "phenotype": "poor",
+        "substitute": [
+          {
+            "from": "loratadine",
+            "to": "cetirizine",
+            "reason": "西替利嗪主要经肾排泄，不依赖 CYP2D6"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "loratadine",
+            "action": "如必须使用 PM 患者建议减量 50% 并监测嗜睡"
+          }
+        ]
+      },
+      "body": "CYP2D6 慢/中间代谢者使用氯雷他定时血浆暴露升高，可换为西替利嗪。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_cyp2d6_pm_opioid_boundary",
+      "entity_type": "gene",
+      "entity_id": "CYP2D6",
+      "title": "CYP2D6 PM 与可待因/曲马多无效边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:guideline-cyp2d6-opioids",
+        "dedao:qiuzilong-genetics-12"
+      ],
+      "applies_when": [
+        "twin.genetics.CYP2D6_phenotype == 'poor'",
+        "twin.medications has any of ['codeine', 'tramadol']"
+      ],
+      "recommends_lookup": [
+        "entity:drug:codeine",
+        "entity:drug:tramadol"
+      ],
+      "predicate": "contraindicates",
+      "drug_rules": {
+        "phenotype": "poor",
+        "avoid": [
+          {
+            "drug": "codeine",
+            "reason": "CYP2D6 PM 无法将可待因转化为吗啡，药物无效且代谢物蓄积"
+          },
+          {
+            "drug": "tramadol",
+            "reason": "CYP2D6 PM 无法激活，镇痛效果差"
+          }
+        ]
+      },
+      "body": "CYP2D6 PM 患者使用可待因或曲马多时镇痛效果差且代谢物蓄积；应优先选择非 CYP2D6 依赖镇痛方案 (对乙酰氨基酚、布洛芬等)。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_fads1_omega3_supplementation",
+      "entity_type": "gene",
+      "entity_id": "FADS1",
+      "title": "FADS1 低转化型与 EPA/DHA 补充",
+      "confidence": 0.72,
+      "evidence_level": "B",
+      "sources": [
+        "pubmed:24067581"
+      ],
+      "applies_when": [
+        "twin.genetics.FADS1_rs174547 in ['CC', 'CT']"
+      ],
+      "recommends_lookup": [
+        "entity:supplement:EPA-DHA"
+      ],
+      "predicate": "recommends_lookup",
+      "drug_rules": {
+        "phenotype": "low_conversion",
+        "supplement": [
+          {
+            "item": "EPA+DHA",
+            "dose": "1–2g/天 (总 EPA+DHA)",
+            "reason": "ALA→EPA/DHA 转化效率低，需要直接补充海产 ω-3"
+          }
+        ]
+      },
+      "body": "FADS1 CC/CT 携带者 ALA 转化效率低；通过鱼/鱼油直接获取 EPA/DHA 比额外摄入亚麻籽 ALA 更有效。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_fto_weight_risk_boundary",
+      "entity_type": "gene",
+      "entity_id": "FTO",
+      "title": "FTO 与体重管理边界",
+      "confidence": 0.72,
+      "evidence_level": "C",
+      "sources": [
+        "system:phase0-curated"
+      ],
+      "applies_when": [
+        "twin.genetics.FTO is not null"
+      ],
+      "recommends_lookup": [
+        "entity:condition:metabolic-health"
+      ],
+      "predicate": null,
+      "drug_rules": null,
+      "body": "FTO 风险位点适合用来解释体重管理倾向，但行动仍应落在蛋白、纤维、睡眠和运动闭环。"
+    },
+    {
+      "claim_id": "c_hfe_iron_overload_boundary",
+      "entity_type": "gene",
+      "entity_id": "HFE",
+      "title": "HFE C282Y 纯合与铁过载监测边界",
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "sources": [
+        "pubmed:21149647"
+      ],
+      "applies_when": [
+        "twin.genetics.HFE_rs1800562 == 'AA'"
+      ],
+      "recommends_lookup": [
+        "entity:biomarker:ferritin"
+      ],
+      "predicate": "requires_monitoring",
+      "drug_rules": {
+        "phenotype": "iron_overload_risk",
+        "avoid": [
+          {
+            "drug": "iron-supplement",
+            "reason": "C282Y 纯合无明确缺铁证据时禁用铁剂"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "ferritin",
+            "action": "每 6–12 月监测铁蛋白与转铁蛋白饱和度"
+          }
+        ],
+        "lifestyle": [
+          "限制红肉/酒精，避免维 C 与铁同服"
+        ]
+      },
+      "body": "HFE C282Y 纯合是遗传性血色病主要致病基因型，需要主动监测铁蛋白避免无症状铁蓄积。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_lct_lactose_intolerance",
+      "entity_type": "gene",
+      "entity_id": "LCT",
+      "title": "LCT CC 与乳糖摄入边界",
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "sources": [
+        "pubmed:11788828"
+      ],
+      "applies_when": [
+        "twin.genetics.LCT_rs4988235 == 'CC'"
+      ],
+      "recommends_lookup": [
+        "entity:intervention:lactose-restriction"
+      ],
+      "predicate": "recommends_lookup",
+      "drug_rules": {
+        "phenotype": "lactase_non_persistence",
+        "avoid": [
+          {
+            "drug": "lactose-containing-tablet",
+            "reason": "乳糖辅料可能引起腹胀腹泻、影响药物吸收"
+          }
+        ],
+        "lifestyle": [
+          "分次小量乳品、配主食、酸奶/无乳糖奶或植物奶"
+        ]
+      },
+      "body": "LCT CC 不等于禁奶；可通过分次小量、配主食、选发酵乳或无乳糖奶维持钙摄入。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_mthfr_c677t_hcy_folate_boundary",
+      "entity_type": "gene",
+      "entity_id": "MTHFR",
+      "title": "MTHFR C677T 与叶酸转化边界",
+      "confidence": 0.82,
+      "evidence_level": "B",
+      "sources": [
+        "dedao:qiuzilong-genetics-07",
+        "pubmed:19033271"
+      ],
+      "applies_when": [
+        "twin.genetics.MTHFR_C677T in ['CT', 'TT']",
+        "twin.labs.homocysteine_umol_l >= 15"
+      ],
+      "recommends_lookup": [
+        "entity:biomarker:Hcy",
+        "entity:supplement:5-MTHF"
+      ],
+      "predicate": null,
+      "drug_rules": null,
+      "body": "C677T CT/TT 用户可优先关注同型半胱氨酸、B12 与活性叶酸；补剂建议应结合化验结果。\n\n边界：仅用于健康管理提示，不用于诊断、治疗或用药决策。"
+    },
+    {
+      "claim_id": "c_slco1b1_statin_myopathy_boundary",
+      "entity_type": "gene",
+      "entity_id": "SLCO1B1",
+      "title": "SLCO1B1 与他汀肌病风险边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:guideline-slco1b1-statin"
+      ],
+      "applies_when": [
+        "twin.genetics.SLCO1B1_rs4149056 in ['CT', 'CC']",
+        "twin.medications has any of ['simvastatin', 'atorvastatin']"
+      ],
+      "recommends_lookup": [
+        "entity:drug:simvastatin"
+      ],
+      "predicate": "requires_boundary",
+      "drug_rules": {
+        "phenotype": "decreased_function",
+        "monitor": [
+          {
+            "drug": "simvastatin",
+            "action": "辛伐他汀 ≤20mg；高剂量改瑞舒伐他汀/匹伐他汀"
+          }
+        ]
+      },
+      "body": "SLCO1B1 521 CC 型辛伐他汀肌病 OR≈4.5；FDA 建议 80mg 辛伐他汀禁用。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    }
+  ],
+  "gene_rules": {
+    "9p21": {
+      "homozygous_risk": {
+        "avoid": [
+          {
+            "drug": "ephedrine",
+            "reason": "长期拟交感升压增加心血管事件风险"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "blood_pressure",
+            "action": "拟交感减充血剂期间每日测压"
+          },
+          {
+            "metric": "lipid_panel",
+            "action": "年度血脂复查，目标 LDL-C 按 10 年风险设定"
+          }
+        ]
+      }
+    },
+    "ADORA2A": {
+      "high_caffeine_sensitivity": {
+        "lifestyle": [
+          "午后 (12:00 后) 避免含咖啡因饮料"
+        ]
+      }
+    },
+    "ALDH2": {
+      "deficient": {
+        "monitor": [
+          {
+            "drug": "nitroglycerin",
+            "action": "心绞痛急救时疗效可能不足，需备替代方案"
+          }
+        ]
+      }
+    },
+    "CYP2C19": {
+      "poor": {
+        "substitute": [
+          {
+            "from": "clopidogrel",
+            "to": "ticagrelor",
+            "reason": "氯吡格雷需 CYP2C19 双步活化；PM 活性代谢物不足、心血管事件风险增加"
+          },
+          {
+            "from": "omeprazole",
+            "to": "rabeprazole",
+            "reason": "雷贝拉唑非酶代谢为主，不依赖 CYP2C19"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "omeprazole",
+            "action": "PM 患者建议减量 50% 或换雷贝拉唑"
+          }
+        ]
+      }
+    },
+    "CYP2C9": {
+      "poor": {
+        "monitor": [
+          {
+            "drug": "ibuprofen",
+            "action": "限制连续疗程<5 天、起始剂量 50–75%"
+          },
+          {
+            "drug": "warfarin",
+            "action": "起始剂量按 CYP2C9 + VKORC1 调整，INR 监测频率上调"
+          }
+        ]
+      }
+    },
+    "CYP2D6": {
+      "poor": {
+        "substitute": [
+          {
+            "from": "loratadine",
+            "to": "cetirizine",
+            "reason": "西替利嗪主要经肾排泄，不依赖 CYP2D6"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "loratadine",
+            "action": "如必须使用 PM 患者建议减量 50% 并监测嗜睡"
+          }
+        ],
+        "avoid": [
+          {
+            "drug": "codeine",
+            "reason": "CYP2D6 PM 无法将可待因转化为吗啡，药物无效且代谢物蓄积"
+          },
+          {
+            "drug": "tramadol",
+            "reason": "CYP2D6 PM 无法激活，镇痛效果差"
+          }
+        ]
+      }
+    },
+    "FADS1": {
+      "low_conversion": {
+        "supplement": [
+          {
+            "item": "EPA+DHA",
+            "dose": "1–2g/天 (总 EPA+DHA)",
+            "reason": "ALA→EPA/DHA 转化效率低，需要直接补充海产 ω-3"
+          }
+        ]
+      }
+    },
+    "HFE": {
+      "iron_overload_risk": {
+        "avoid": [
+          {
+            "drug": "iron-supplement",
+            "reason": "C282Y 纯合无明确缺铁证据时禁用铁剂"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "ferritin",
+            "action": "每 6–12 月监测铁蛋白与转铁蛋白饱和度"
+          }
+        ],
+        "lifestyle": [
+          "限制红肉/酒精，避免维 C 与铁同服"
+        ]
+      }
+    },
+    "LCT": {
+      "lactase_non_persistence": {
+        "avoid": [
+          {
+            "drug": "lactose-containing-tablet",
+            "reason": "乳糖辅料可能引起腹胀腹泻、影响药物吸收"
+          }
+        ],
+        "lifestyle": [
+          "分次小量乳品、配主食、酸奶/无乳糖奶或植物奶"
+        ]
+      }
+    },
+    "SLCO1B1": {
+      "decreased_function": {
+        "monitor": [
+          {
+            "drug": "simvastatin",
+            "action": "辛伐他汀 ≤20mg；高剂量改瑞舒伐他汀/匹伐他汀"
+          }
+        ]
+      }
+    }
+  },
+  "snp_registry": {
+    "rs1057910": {
+      "rsid": "rs1057910",
+      "gene": "CYP2C9",
+      "aliases": [
+        "rs1057910",
+        "CYP2C9*3"
+      ],
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs1065852": {
+      "rsid": "rs1065852",
+      "gene": "CYP2D6",
+      "aliases": [
+        "rs1065852",
+        "CYP2D6*10"
+      ],
+      "confidence": 0.85,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs10757274": {
+      "rsid": "rs10757274",
+      "gene": "9p21",
+      "aliases": [
+        "rs10757274"
+      ],
+      "confidence": 0.7,
+      "evidence_level": "B",
+      "claims": [
+        "c_9p21_cardiovascular_risk"
+      ]
+    },
+    "rs1229984": {
+      "rsid": "rs1229984",
+      "gene": "ADH1B",
+      "aliases": [
+        "rs1229984",
+        "ADH1B*2"
+      ],
+      "confidence": 0.8,
+      "evidence_level": "B",
+      "claims": []
+    },
+    "rs1544410": {
+      "rsid": "rs1544410",
+      "gene": "VDR",
+      "aliases": [
+        "rs1544410",
+        "VDR BsmI"
+      ],
+      "confidence": 0.66,
+      "evidence_level": "C",
+      "claims": []
+    },
+    "rs174547": {
+      "rsid": "rs174547",
+      "gene": "FADS1",
+      "aliases": [
+        "rs174547"
+      ],
+      "confidence": 0.74,
+      "evidence_level": "B",
+      "claims": [
+        "c_fads1_omega3_supplementation"
+      ]
+    },
+    "rs1799853": {
+      "rsid": "rs1799853",
+      "gene": "CYP2C9",
+      "aliases": [
+        "rs1799853",
+        "CYP2C9*2"
+      ],
+      "confidence": 0.84,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs1800562": {
+      "rsid": "rs1800562",
+      "gene": "HFE",
+      "aliases": [
+        "rs1800562",
+        "HFE C282Y"
+      ],
+      "confidence": 0.92,
+      "evidence_level": "A",
+      "claims": [
+        "c_hfe_iron_overload_boundary"
+      ]
+    },
+    "rs1800629": {
+      "rsid": "rs1800629",
+      "gene": "TNF-α",
+      "aliases": [
+        "rs1800629",
+        "TNFA -308"
+      ],
+      "confidence": 0.62,
+      "evidence_level": "C",
+      "claims": []
+    },
+    "rs1801133": {
+      "rsid": "rs1801133",
+      "gene": null,
+      "aliases": [
+        "rs1801133",
+        "MTHFR C677T",
+        "C677T"
+      ],
+      "confidence": 0.75,
+      "evidence_level": "C",
+      "claims": []
+    },
+    "rs1815739": {
+      "rsid": "rs1815739",
+      "gene": "ACTN3",
+      "aliases": [
+        "rs1815739",
+        "ACTN3 R577X"
+      ],
+      "confidence": 0.74,
+      "evidence_level": "B",
+      "claims": []
+    },
+    "rs4149056": {
+      "rsid": "rs4149056",
+      "gene": "SLCO1B1",
+      "aliases": [
+        "rs4149056",
+        "SLCO1B1*5"
+      ],
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "claims": [
+        "c_slco1b1_statin_myopathy_boundary"
+      ]
+    },
+    "rs4244285": {
+      "rsid": "rs4244285",
+      "gene": null,
+      "aliases": [
+        "rs4244285",
+        "CYP2C19*2",
+        "CYP2C19 681G>A"
+      ],
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs429358": {
+      "rsid": "rs429358",
+      "gene": "APOE",
+      "aliases": [
+        "rs429358",
+        "APOE ε4"
+      ],
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs4680": {
+      "rsid": "rs4680",
+      "gene": "COMT",
+      "aliases": [
+        "rs4680",
+        "COMT Val158Met"
+      ],
+      "confidence": 0.74,
+      "evidence_level": "B",
+      "claims": []
+    },
+    "rs4986893": {
+      "rsid": "rs4986893",
+      "gene": "CYP2C19",
+      "aliases": [
+        "rs4986893",
+        "CYP2C19*3"
+      ],
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs4988235": {
+      "rsid": "rs4988235",
+      "gene": "LCT",
+      "aliases": [
+        "rs4988235",
+        "LCT -13910C>T",
+        "MCM6 -13910"
+      ],
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "claims": [
+        "c_lct_lactose_intolerance"
+      ]
+    },
+    "rs5030655": {
+      "rsid": "rs5030655",
+      "gene": "CYP2D6",
+      "aliases": [
+        "rs5030655",
+        "CYP2D6*6"
+      ],
+      "confidence": 0.78,
+      "evidence_level": "B",
+      "claims": []
+    },
+    "rs5751876": {
+      "rsid": "rs5751876",
+      "gene": "ADORA2A",
+      "aliases": [
+        "rs5751876"
+      ],
+      "confidence": 0.7,
+      "evidence_level": "B",
+      "claims": [
+        "c_adora2a_caffeine_sleep_boundary"
+      ]
+    },
+    "rs671": {
+      "rsid": "rs671",
+      "gene": "ALDH2",
+      "aliases": [
+        "rs671",
+        "ALDH2*2",
+        "Glu504Lys"
+      ],
+      "confidence": 0.92,
+      "evidence_level": "A",
+      "claims": []
+    },
+    "rs7412": {
+      "rsid": "rs7412",
+      "gene": "APOE",
+      "aliases": [
+        "rs7412",
+        "APOE ε2"
+      ],
+      "confidence": 0.84,
+      "evidence_level": "B",
+      "claims": []
+    },
+    "rs9939609": {
+      "rsid": "rs9939609",
+      "gene": "FTO",
+      "aliases": [
+        "rs9939609",
+        "FTO"
+      ],
+      "confidence": 0.78,
+      "evidence_level": "A",
+      "claims": []
+    }
+  },
+  "stats": {
+    "entity_counts": {
+      "gene": 11,
+      "snp": 22,
+      "drug": 14,
+      "biomarker": 4,
+      "supplement": 4,
+      "intervention": 4,
+      "nutrient": 1,
+      "condition": 1
+    },
+    "claim_count": 18,
+    "gene_count": 10,
+    "snp_count": 22
+  }
+}

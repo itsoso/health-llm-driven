@@ -91,6 +91,21 @@ class GeneDrugRulesInput(BaseModel):
     rules: Dict[str, Any] = Field(..., description="基因-药物规则")
 
 
+class GeneKnowledgeInput(BaseModel):
+    """gene_knowledge.json (llm-wiki-v2) 全量上传"""
+    id: str = Field(default="gene_knowledge")
+    schema_id: str = Field(default="llm-wiki-v2-gene-knowledge")
+    version: str = Field(..., description="版本号")
+    compiled_at: str = Field(..., description="编译时间")
+    source: str = Field(default="ak-kbase")
+    description: Optional[str] = None
+    entities: Dict[str, Any] = Field(default_factory=dict, description="entity_type → id → entity")
+    claims: List[Dict[str, Any]] = Field(default_factory=list, description="atomic claims with drug_rules")
+    gene_rules: Dict[str, Any] = Field(default_factory=dict, description="gene → phenotype → rules")
+    snp_registry: Dict[str, Any] = Field(default_factory=dict, description="rsid → metadata")
+    stats: Optional[Dict[str, Any]] = None
+
+
 # ========== API Endpoints ==========
 
 @router.get("/stats", summary="获取知识库统计信息")
@@ -740,6 +755,51 @@ def upload_gene_drug_rules(
         "version": input_data.version,
         "gene_count": len(input_data.rules),
         **result
+    }
+
+
+@router.post("/gene-knowledge", summary="上传 gene_knowledge.json (llm-wiki-v2)")
+def upload_gene_knowledge(
+    input_data: GeneKnowledgeInput,
+    current_user: User = Depends(get_current_user_required),
+):
+    """
+    上传 down-dedao/artifacts/gene_knowledge.json 并刷新内存 registry。
+
+    这是 llm-wiki-v2 schema 的全量基因知识包（entities + claims + gene_rules
+    + snp_registry），由 down-dedao/pipeline/compiler.py 从 wiki/entities/ 与
+    wiki/claims/ 编译产出。落盘后立刻热加载到 GeneRulesRegistry，下一次
+    LLM 系统提示词构建即生效，无需重启服务。
+
+    需要管理员权限。
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以上传规则"
+        )
+
+    from app.services.gene_rules_registry import reload_from_payload
+
+    payload = input_data.model_dump() if hasattr(input_data, "model_dump") else input_data.dict()
+    registry = reload_from_payload(payload)
+
+    logger.info(
+        "gene_knowledge 已更新: version=%s genes=%d claims=%d snps=%d",
+        registry.version,
+        len(registry.gene_rules),
+        len(registry.claims),
+        len(registry.snp_registry),
+    )
+
+    return {
+        "message": "gene_knowledge 已更新",
+        "version": registry.version,
+        "schema_id": registry.schema_id,
+        "gene_count": len(registry.gene_rules),
+        "claim_count": len(registry.claims),
+        "snp_count": len(registry.snp_registry),
+        "entity_counts": {k: len(v) for k, v in registry.entities.items()},
     }
 
 

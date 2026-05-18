@@ -235,6 +235,20 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
             else:
                 cfg.drug_metabolism[enzyme] = "normal"
 
+    # ── 从 ak-kbase gene_knowledge registry 补充用药摘要 ──
+    # registry 数据源于 down-dedao/artifacts/gene_knowledge.json (llm-wiki-v2)，
+    # 与上面硬编码 ladder 并存：硬编码负责 phenotype 推断，registry 负责具体规则文案。
+    try:
+        from app.services.gene_rules_registry import get_registry
+        registry = get_registry()
+        if registry.is_loaded() and cfg.drug_metabolism:
+            actionable = {g: p for g, p in cfg.drug_metabolism.items() if p != "normal"}
+            for line in registry.summary_lines_for_phenotypes(actionable):
+                if line not in cfg.summary_lines:
+                    cfg.summary_lines.append(line)
+    except Exception:
+        pass
+
     # ── 慢病相关 ──
     if _risk("ADD1"):
         cfg.salt_sensitivity = "high"

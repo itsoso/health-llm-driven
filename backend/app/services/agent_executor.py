@@ -656,6 +656,15 @@ class AgentExecutor:
             "- JSON 必须 valid, 不要 trailing comma, 不要注释",
         ]
 
+        # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
+        try:
+            from app.services.gene_rules_registry import get_registry
+            gene_section = get_registry().system_prompt_section(user_phenotypes=None)
+            if gene_section:
+                parts.append("\n" + gene_section)
+        except Exception:
+            pass
+
         # 注入健康上下文
         try:
             from app.services.health_context_lite_service import (
