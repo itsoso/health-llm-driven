@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
@@ -12,6 +13,15 @@ NOTIFICATION_CLAIM_BOUNDARY = (
 )
 
 DATA_SUMMARY_TYPES = {"trend_report", "morning_briefing", "prediction_verified"}
+_NOTIFICATION_CONTEXT_KEYS = (
+    "title",
+    "content",
+    "message",
+    "body",
+    "summary",
+    "recommendation",
+    "action",
+)
 
 
 def _normalize_refs(refs: Iterable[Any] | None) -> list[str]:
@@ -89,27 +99,32 @@ def build_notification_evidence_data_for_user(
 
     Generated advice surfaces should not stay `model_inference` when the user
     Twin already matches reviewed system-KB claims. This helper keeps the old
-    explicit-ref behavior, but adds a conservative Twin lookup for actionable
-    notification types.
+    explicit-ref behavior, but only auto-attaches reviewed claim refs when the
+    notification text itself overlaps the matched claim. That prevents a generic
+    dinner or reminder push from surfacing an unrelated MTHFR/APOE evidence card.
     """
 
     refs = _normalize_refs(evidence_refs)
     if not refs and not support_status and notification_type not in DATA_SUMMARY_TYPES:
         try:
-            from app.services.system_knowledge_service import (
-                lookup_for_twin,
-                system_kb_twin_payload_from_health_twin,
-            )
+            from app.services.evidence_resolver import EvidenceResolver
+            from app.services.system_knowledge_service import system_kb_twin_payload_from_health_twin
             from app.twin.builder import build_twin
 
+            context_text = _notification_context_text(existing_data)
+            if not context_text:
+                raise ValueError("notification context is empty")
             twin = build_twin(db, user_id, use_cache=True)
             payload = system_kb_twin_payload_from_health_twin(twin)
-            result = lookup_for_twin(db, payload)
-            refs = [
-                claim["doc_id"]
-                for claim in result.get("claims", [])[:max_refs]
-                if claim.get("doc_id")
-            ]
+            finding = _notification_finding(
+                notification_type=notification_type,
+                source=source,
+                existing_data=existing_data or {},
+                evidence_domain=evidence_domain,
+                context_text=context_text,
+            )
+            resolution = EvidenceResolver(db).resolve_for_finding(payload, finding, max_refs=max_refs)
+            refs = resolution.evidence_refs
         except Exception:
             refs = []
 
@@ -120,4 +135,46 @@ def build_notification_evidence_data_for_user(
         evidence_refs=refs,
         evidence_domain=evidence_domain,
         support_status=support_status,
+    )
+
+
+def _notification_context_text(existing_data: dict[str, Any] | None) -> str:
+    if not isinstance(existing_data, dict):
+        return ""
+    parts: list[str] = []
+    for key in _NOTIFICATION_CONTEXT_KEYS:
+        value = existing_data.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return " ".join(parts).strip()
+
+
+def _notification_finding(
+    *,
+    notification_type: str,
+    source: str,
+    existing_data: dict[str, Any],
+    evidence_domain: str | None,
+    context_text: str,
+) -> SimpleNamespace:
+    title = str(existing_data.get("title") or notification_type)
+    content = str(existing_data.get("content") or existing_data.get("message") or context_text)
+    return SimpleNamespace(
+        specialist_name="notification",
+        category=evidence_domain or notification_type,
+        summary=context_text,
+        findings=[
+            {
+                "title": title,
+                "summary": context_text,
+                "recommendation": content,
+            }
+        ],
+        raw={
+            "notification_type": notification_type,
+            "source": source,
+            "title": title,
+            "content": content,
+        },
+        evidence_refs=[],
     )

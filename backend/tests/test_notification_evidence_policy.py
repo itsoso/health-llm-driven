@@ -84,7 +84,11 @@ def test_ai_advice_for_user_attaches_system_kb_refs_from_twin(db, auth_user_and_
         user_id=user.id,
         notification_type="ai_advice",
         source="agent_loop",
-        existing_data={"source": "agent_loop"},
+        existing_data={
+            "source": "agent_loop",
+            "title": "MTHFR 叶酸建议",
+            "content": "你的 MTHFR C677T TT 与叶酸、同型半胱氨酸管理相关。",
+        },
     )
 
     assert data["support_status"] == "supported"
@@ -92,3 +96,47 @@ def test_ai_advice_for_user_attaches_system_kb_refs_from_twin(db, auth_user_and_
     assert data["unsupported_reason"] is None
     assert data["evidence_refs"] == ["claim:c_mthfr_c677t_hcy_folate_boundary"]
     assert data["planner_evidence_policy"]["kept_reason"] == "supported"
+
+
+def test_ai_advice_for_user_does_not_attach_unrelated_twin_refs(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    profile = GeneticProfile(
+        user_id=user.id,
+        test_provider="wegene",
+        test_date=date(2026, 5, 1),
+    )
+    db.add(profile)
+    db.flush()
+    db.add(
+        GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            rsid="rs1801133",
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="C677T",
+            genotype="TT",
+            result_label="叶酸代谢显著减弱",
+            risk_level="high",
+            variant_nature="risk",
+        )
+    )
+    db.commit()
+
+    data = build_notification_evidence_data_for_user(
+        db,
+        user_id=user.id,
+        notification_type="ai_advice",
+        source="agent_loop",
+        existing_data={
+            "source": "agent_loop",
+            "title": "晚餐记录",
+            "content": "已记录晚餐，今天热量基本平衡。",
+        },
+    )
+
+    assert data["support_status"] == "model_inference"
+    assert data["unsupported"] is True
+    assert data["unsupported_reason"] == "missing_system_kb_evidence_refs"
+    assert data["evidence_refs"] == []

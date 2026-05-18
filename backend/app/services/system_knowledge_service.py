@@ -1617,7 +1617,9 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
     total = 0
     with_refs = 0
     unsupported = 0
-    by_specialist: dict[str, dict[str, int]] = {}
+    by_specialist: dict[str, dict[str, Any]] = {}
+    by_category: dict[str, dict[str, Any]] = {}
+    by_support_status: dict[str, int] = {}
     for row in rows:
         detail = row.result_detail or {}
         findings = detail.get("findings") if isinstance(detail, dict) else []
@@ -1629,15 +1631,19 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
             total += 1
             refs = _extract_finding_evidence_refs(finding)
             is_unsupported = _finding_is_unsupported(finding, refs)
+            support_status = _finding_support_status(finding, refs, is_unsupported)
             if refs:
                 with_refs += 1
             if is_unsupported:
                 unsupported += 1
             specialist = str(finding.get("specialist") or finding.get("specialist_name") or "unknown")
-            bucket = by_specialist.setdefault(specialist, {"total": 0, "with_evidence_refs": 0, "unsupported": 0})
-            bucket["total"] += 1
-            bucket["with_evidence_refs"] += 1 if refs else 0
-            bucket["unsupported"] += 1 if is_unsupported else 0
+            category = str(finding.get("category") or finding.get("kind") or "unknown")
+            _add_evidence_bucket(by_specialist, specialist, refs=refs, is_unsupported=is_unsupported)
+            _add_evidence_bucket(by_category, category, refs=refs, is_unsupported=is_unsupported)
+            by_support_status[support_status] = by_support_status.get(support_status, 0) + 1
+
+    _finalize_evidence_buckets(by_specialist)
+    _finalize_evidence_buckets(by_category)
 
     return {
         "total": total,
@@ -1647,7 +1653,9 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
         "target_evidence_ref_rate": SPECIALIST_EVIDENCE_REF_RATE_TARGET,
         "meets_target": (with_refs / total) >= SPECIALIST_EVIDENCE_REF_RATE_TARGET if total else False,
         "unsupported_rate": round(unsupported / total, 4) if total else 0.0,
-        "by_specialist": by_specialist,
+        "by_specialist": dict(sorted(by_specialist.items())),
+        "by_category": dict(sorted(by_category.items())),
+        "by_support_status": dict(sorted(by_support_status.items())),
     }
 
 
@@ -1658,7 +1666,7 @@ def _aggregate_notification_evidence_coverage(db: Session) -> dict[str, Any]:
     total = 0
     with_refs = 0
     unsupported = 0
-    by_type: dict[str, dict[str, int]] = {}
+    by_type: dict[str, dict[str, Any]] = {}
     by_support_status: dict[str, int] = {}
 
     for row in rows:
@@ -1679,14 +1687,10 @@ def _aggregate_notification_evidence_coverage(db: Session) -> dict[str, Any]:
         if is_unsupported:
             unsupported += 1
 
-        type_bucket = by_type.setdefault(
-            notification_type,
-            {"total": 0, "with_evidence_refs": 0, "unsupported": 0},
-        )
-        type_bucket["total"] += 1
-        type_bucket["with_evidence_refs"] += 1 if refs else 0
-        type_bucket["unsupported"] += 1 if is_unsupported else 0
+        _add_evidence_bucket(by_type, notification_type, refs=refs, is_unsupported=is_unsupported)
         by_support_status[support_status_key] = by_support_status.get(support_status_key, 0) + 1
+
+    _finalize_evidence_buckets(by_type)
 
     return {
         "total": total,
@@ -1697,6 +1701,31 @@ def _aggregate_notification_evidence_coverage(db: Session) -> dict[str, Any]:
         "by_type": dict(sorted(by_type.items())),
         "by_support_status": dict(sorted(by_support_status.items())),
     }
+
+
+def _add_evidence_bucket(
+    buckets: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    refs: list[Any],
+    is_unsupported: bool,
+) -> None:
+    bucket = buckets.setdefault(
+        key or "unknown",
+        {"total": 0, "with_evidence_refs": 0, "unsupported": 0},
+    )
+    bucket["total"] += 1
+    bucket["with_evidence_refs"] += 1 if refs else 0
+    bucket["unsupported"] += 1 if is_unsupported else 0
+
+
+def _finalize_evidence_buckets(buckets: dict[str, dict[str, Any]]) -> None:
+    for bucket in buckets.values():
+        total = int(bucket.get("total") or 0)
+        with_refs = int(bucket.get("with_evidence_refs") or 0)
+        unsupported = int(bucket.get("unsupported") or 0)
+        bucket["evidence_ref_rate"] = round(with_refs / total, 4) if total else 0.0
+        bucket["unsupported_rate"] = round(unsupported / total, 4) if total else 0.0
 
 
 def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[str, Any]:
@@ -1806,6 +1835,27 @@ def _extract_finding_evidence_refs(finding: dict[str, Any]) -> list[Any]:
 def _finding_is_unsupported(finding: dict[str, Any], refs: list[Any]) -> bool:
     data = finding.get("data") if isinstance(finding.get("data"), dict) else {}
     return bool(finding.get("unsupported") or data.get("unsupported") or not refs)
+
+
+def _finding_support_status(
+    finding: dict[str, Any],
+    refs: list[Any],
+    is_unsupported: bool,
+) -> str:
+    data = finding.get("data") if isinstance(finding.get("data"), dict) else {}
+    evidence_resolution = data.get("evidence_resolution") if isinstance(data.get("evidence_resolution"), dict) else {}
+    explicit = (
+        finding.get("support_status")
+        or data.get("support_status")
+        or evidence_resolution.get("support_status")
+    )
+    if explicit:
+        return str(explicit)
+    if refs:
+        return "supported"
+    if is_unsupported:
+        return "model_inference"
+    return "not_applicable"
 
 
 def _normalized_stance(value: Any) -> str | None:

@@ -529,17 +529,25 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
                     "findings": [
                         {
                             "summary": "supported",
+                            "specialist": "fuel_strategist",
+                            "category": "nutrition",
                             "evidence_refs": ["claim:c_reviewed"],
+                            "support_status": "supported",
                             "unsupported": False,
                         },
                         {
                             "summary": "unsupported flag",
+                            "specialist": "fuel_strategist",
+                            "category": "nutrition",
                             "evidence_refs": [],
+                            "support_status": "model_inference",
                             "unsupported": True,
                         },
                         {
                             "summary": "missing refs",
-                            "data": {"unsupported": True},
+                            "specialist": "movement_coach",
+                            "category": "movement",
+                            "data": {"unsupported": True, "support_status": "model_inference"},
                         },
                     ]
                 },
@@ -614,6 +622,13 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["specialist_findings"]["evidence_ref_rate"] == 0.3333
     assert payload["specialist_findings"]["target_evidence_ref_rate"] == 0.85
     assert payload["specialist_findings"]["meets_target"] is False
+    assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["total"] == 2
+    assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["evidence_ref_rate"] == 0.5
+    assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["unsupported_rate"] == 0.5
+    assert payload["specialist_findings"]["by_category"]["nutrition"]["total"] == 2
+    assert payload["specialist_findings"]["by_category"]["movement"]["unsupported"] == 1
+    assert payload["specialist_findings"]["by_support_status"]["supported"] == 1
+    assert payload["specialist_findings"]["by_support_status"]["model_inference"] == 2
     assert payload["external_evidence"]["claim_total"] == 2
     assert payload["external_evidence"]["claims_with_external_sources"] == 1
     assert payload["external_evidence"]["external_source_rate"] == 0.5
@@ -627,6 +642,8 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["notification_evidence"]["unsupported_rate"] == 0.3333
     assert payload["notification_evidence"]["by_type"]["ai_advice"]["total"] == 2
     assert payload["notification_evidence"]["by_type"]["ai_advice"]["unsupported"] == 1
+    assert payload["notification_evidence"]["by_type"]["ai_advice"]["evidence_ref_rate"] == 0.5
+    assert payload["notification_evidence"]["by_type"]["ai_advice"]["unsupported_rate"] == 0.5
     assert payload["notification_evidence"]["by_support_status"]["supported"] == 1
     assert payload["notification_evidence"]["by_support_status"]["model_inference"] == 1
     assert payload["notification_evidence"]["by_support_status"]["data_summary"] == 1
