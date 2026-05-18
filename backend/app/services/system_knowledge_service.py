@@ -589,6 +589,7 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
         },
         "external_evidence": _aggregate_external_evidence_coverage(documents),
         "specialist_findings": _aggregate_specialist_evidence_coverage(db),
+        "notification_evidence": _aggregate_notification_evidence_coverage(db),
         "feedback": {
             "disagree": db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").count(),
         },
@@ -1267,6 +1268,54 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
     }
 
 
+def _aggregate_notification_evidence_coverage(db: Session) -> dict[str, Any]:
+    from app.models.notification import NotificationLog
+
+    rows = db.query(NotificationLog).all()
+    total = 0
+    with_refs = 0
+    unsupported = 0
+    by_type: dict[str, dict[str, int]] = {}
+    by_support_status: dict[str, int] = {}
+
+    for row in rows:
+        data = row.data if isinstance(row.data, dict) else {}
+        support_status = data.get("support_status")
+        if not support_status:
+            continue
+
+        total += 1
+        refs = data.get("evidence_refs")
+        refs = refs if isinstance(refs, list) else []
+        is_unsupported = bool(data.get("unsupported"))
+        notification_type = str(row.notification_type or "unknown")
+        support_status_key = str(support_status or "unknown")
+
+        if refs:
+            with_refs += 1
+        if is_unsupported:
+            unsupported += 1
+
+        type_bucket = by_type.setdefault(
+            notification_type,
+            {"total": 0, "with_evidence_refs": 0, "unsupported": 0},
+        )
+        type_bucket["total"] += 1
+        type_bucket["with_evidence_refs"] += 1 if refs else 0
+        type_bucket["unsupported"] += 1 if is_unsupported else 0
+        by_support_status[support_status_key] = by_support_status.get(support_status_key, 0) + 1
+
+    return {
+        "total": total,
+        "with_evidence_refs": with_refs,
+        "unsupported": unsupported,
+        "evidence_ref_rate": round(with_refs / total, 4) if total else 0.0,
+        "unsupported_rate": round(unsupported / total, 4) if total else 0.0,
+        "by_type": dict(sorted(by_type.items())),
+        "by_support_status": dict(sorted(by_support_status.items())),
+    }
+
+
 def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[str, Any]:
     claim_total = 0
     claims_with_external_sources = 0
@@ -1335,6 +1384,12 @@ def _knowledge_operations_action_items(
     external = coverage.get("external_evidence") or {}
     if external.get("claim_total", 0) and external.get("external_source_rate", 0.0) < 0.2:
         action_items.append("external_evidence_coverage_low")
+    notification_evidence = coverage.get("notification_evidence") or {}
+    if (
+        notification_evidence.get("total", 0)
+        and notification_evidence.get("unsupported_rate", 0.0) > 0.2
+    ):
+        action_items.append("notification_evidence_unsupported_high")
     lint_summary = lint.get("summary") if isinstance(lint, dict) else {}
     if isinstance(lint_summary, dict) and any(int(count or 0) > 0 for count in lint_summary.values()):
         action_items.append("kb_lint_issues_present")

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from app.models.agent_audit_log import AgentAuditLog
+from app.models.notification import NotificationLog
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 from app.services.system_knowledge_service import (
     apply_confidence_decay,
@@ -541,6 +542,53 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
                 actor=f"user:{user.id}",
                 diff={"reason": "不适用"},
             ),
+            NotificationLog(
+                user_id=user.id,
+                notification_type="ai_advice",
+                channel="ios_apns",
+                title="supported push",
+                content="with claim",
+                data={
+                    "support_status": "supported",
+                    "unsupported": False,
+                    "evidence_refs": ["claim:c_reviewed"],
+                    "evidence_ref_count": 1,
+                },
+            ),
+            NotificationLog(
+                user_id=user.id,
+                notification_type="ai_advice",
+                channel="ios_apns",
+                title="unsupported push",
+                content="missing claim",
+                data={
+                    "support_status": "model_inference",
+                    "unsupported": True,
+                    "evidence_refs": [],
+                    "evidence_ref_count": 0,
+                },
+            ),
+            NotificationLog(
+                user_id=user.id,
+                notification_type="trend_report",
+                channel="ios_apns",
+                title="trend push",
+                content="data summary",
+                data={
+                    "support_status": "data_summary",
+                    "unsupported": False,
+                    "evidence_refs": [],
+                    "evidence_ref_count": 0,
+                },
+            ),
+            NotificationLog(
+                user_id=user.id,
+                notification_type="reminder",
+                channel="ios_apns",
+                title="plain reminder",
+                content="not kb governed",
+                data={"reminder_type": "water"},
+            ),
         ]
     )
     db.commit()
@@ -562,6 +610,16 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["external_evidence"]["claims_with_external_sources"] == 1
     assert payload["external_evidence"]["external_source_rate"] == 0.5
     assert payload["external_evidence"]["by_kind"]["research"] == 1
+    assert payload["notification_evidence"]["total"] == 3
+    assert payload["notification_evidence"]["with_evidence_refs"] == 1
+    assert payload["notification_evidence"]["unsupported"] == 1
+    assert payload["notification_evidence"]["evidence_ref_rate"] == 0.3333
+    assert payload["notification_evidence"]["unsupported_rate"] == 0.3333
+    assert payload["notification_evidence"]["by_type"]["ai_advice"]["total"] == 2
+    assert payload["notification_evidence"]["by_type"]["ai_advice"]["unsupported"] == 1
+    assert payload["notification_evidence"]["by_support_status"]["supported"] == 1
+    assert payload["notification_evidence"]["by_support_status"]["model_inference"] == 1
+    assert payload["notification_evidence"]["by_support_status"]["data_summary"] == 1
     assert payload["feedback"]["disagree"] == 1
 
 
@@ -606,6 +664,19 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
                 actor="celery:system-kb-lifecycle",
                 diff={"lint": {"summary": {"orphan_claims": 0}}, "decay": {"processed": 1}},
             ),
+            NotificationLog(
+                user_id=user.id,
+                notification_type="ai_advice",
+                channel="ios_apns",
+                title="unsupported push",
+                content="missing claim",
+                data={
+                    "support_status": "model_inference",
+                    "unsupported": True,
+                    "evidence_refs": [],
+                    "evidence_ref_count": 0,
+                },
+            ),
         ]
     )
     db.commit()
@@ -620,6 +691,7 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
     assert payload["lint"]["summary"]["orphan_claims"] == 0
     assert payload["latest_lifecycle_report"]["op"] == "lifecycle_report"
     assert "specialist_evidence_below_target" in payload["action_items"]
+    assert "notification_evidence_unsupported_high" in payload["action_items"]
 
 
 def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_user_and_headers):
