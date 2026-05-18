@@ -1553,7 +1553,7 @@ def build_pr_style_diff(result: IngestResult, output_dir: str | Path) -> str:
                 if src.exists():
                     shutil.copy2(src, tmp_path / file_name)
         write_reviewed_artifacts(result, tmp_path)
-        chunks: list[str] = []
+        chunks: list[str] = _build_review_queue_summary(result, output_dir)
         for file_name in [*ARTIFACT_FILES, "manifest.json"]:
             before = (output_dir / file_name).read_text(encoding="utf-8").splitlines(keepends=True) if (output_dir / file_name).exists() else []
             after = (tmp_path / file_name).read_text(encoding="utf-8").splitlines(keepends=True) if (tmp_path / file_name).exists() else []
@@ -1571,6 +1571,52 @@ def build_pr_style_diff(result: IngestResult, output_dir: str | Path) -> str:
                 )
             )
         return "\n".join(chunks)
+
+
+def _build_review_queue_summary(result: IngestResult, output_dir: Path) -> list[str]:
+    existing = _load_existing_artifacts(output_dir)
+    new_draft_claims = [
+        claim
+        for claim in result.claims
+        if claim["doc_id"] not in existing["claims"] and (claim.get("metadata") or {}).get("review_status") == "draft"
+    ]
+    missing_external_evidence = [claim for claim in new_draft_claims if not _claim_has_external_evidence(claim)]
+    candidate_duplicates = [
+        claim
+        for claim in result.claims
+        if (claim.get("metadata") or {}).get("candidate_duplicates")
+    ]
+    if not new_draft_claims and not missing_external_evidence and not candidate_duplicates:
+        return []
+
+    lines = [
+        "Review queue:",
+        f"- New draft claims: {len(new_draft_claims)}",
+        f"- Missing external evidence: {len(missing_external_evidence)}",
+        f"- Candidate duplicates: {len(candidate_duplicates)}",
+    ]
+    if new_draft_claims:
+        lines.append("- Claims needing review:")
+        for claim in new_draft_claims:
+            external_status = "yes" if _claim_has_external_evidence(claim) else "no"
+            lines.append(
+                f"  - {claim['doc_id']} | {claim.get('title', '')} | "
+                f"evidence={claim.get('evidence_level', 'C')} | external={external_status}"
+            )
+    if candidate_duplicates:
+        lines.append("- Candidate duplicate claims:")
+        for claim in candidate_duplicates:
+            duplicate_ids = ", ".join((claim.get("metadata") or {}).get("candidate_duplicates") or [])
+            lines.append(f"  - {claim['doc_id']} -> {duplicate_ids}")
+    lines.append("")
+    return lines
+
+
+def _claim_has_external_evidence(claim: dict[str, Any]) -> bool:
+    metadata = claim.get("metadata") or {}
+    if metadata.get("external_sources"):
+        return True
+    return any(str(source).startswith(("pubmed:", "guideline:")) for source in claim.get("sources") or [])
 
 
 def _select_sources(source_root: Path, course_names: list[str] | None, max_courses: int | None) -> list[Any]:

@@ -8,6 +8,7 @@
 - Reviewed artifacts: 508 docs / 2715 edges (`52 pages / 99 entities / 357 claims`); backend deploy imports them into serving DB.
 - Ingest authoring CLI: `backend/scripts/ingest_course.py`.
 - Review promotion: `promote_artifact_review_status`.
+- Ingest review queue: dry-run PR-style diffs prepend new draft claim count, missing external-evidence count, candidate duplicate count, and claim IDs that need reviewer attention.
 - Admin lint: contradiction + invalid review status included.
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
@@ -31,7 +32,7 @@
 - 线上只同步经过整理的实体、短 claim、课程页元信息和图谱边。
 - 不同步完整付费课程正文，不给用户展示大段课程内容。
 - Agent 使用结构化 `applies_when` 命中知识，而不是只靠 embedding 模糊召回。
-- Dedao 课程扩展先通过 dry-run PR-style diff，再写入 reviewed artifacts；draft 结果不会覆盖已经 reviewed 的 claim。
+- Dedao 课程扩展先通过 dry-run PR-style diff 和 reviewer queue 摘要，再写入 reviewed artifacts；draft 结果不会覆盖已经 reviewed 的 claim。
 
 当前线上已导入：
 

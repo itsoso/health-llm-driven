@@ -548,9 +548,12 @@ def test_build_pr_style_diff_reports_artifact_changes_without_mutating_output(tm
     )
     diff = build_pr_style_diff(result, output)
 
+    assert "Review queue:" in diff
+    assert "New draft claims: 1" in diff
+    assert "Missing external evidence: 1" in diff
+    assert "claim:c_dedao_tongqing_nutrition_20_fiber_intake" in diff
     assert "+++ " in diff
     assert "claims.jsonl" in diff
-    assert "claim:c_dedao_tongqing_nutrition_20_fiber_intake" in diff
     assert not (output / "claims.jsonl").exists()
 
 
