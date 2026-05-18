@@ -17,6 +17,7 @@ import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
 import {
   buildConversationOpenerReplyContext,
+  buildConversationOpenerReplyMessage,
   fetchConversationOpener,
   type ConversationOpener,
 } from '../../services/conversationOpener';
@@ -149,7 +150,8 @@ export default function ChatScreen() {
         console.warn('[chat] action card adherence 回写失败', err);
       });
     }
-    sendMessage(text, null, extraContext ? { extraContext } : undefined);
+    const messageText = opener ? buildConversationOpenerReplyMessage(opener, text) : text;
+    sendMessage(messageText, null, extraContext ? { extraContext } : undefined);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [opener, sendMessage]);
 

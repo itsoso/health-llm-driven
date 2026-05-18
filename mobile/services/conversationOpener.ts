@@ -37,6 +37,15 @@ export function buildConversationOpenerReplyContext(
   });
 }
 
+export function buildConversationOpenerReplyMessage(
+  opener: ConversationOpener,
+  reply: string,
+): string {
+  const openerText = opener.text.trim().replace(/\s+/g, ' ');
+  const clipped = openerText.length > 90 ? `${openerText.slice(0, 90)}...` : openerText;
+  return `针对「${clipped}」：${reply}`;
+}
+
 /**
  * 拉一次 opener. 任何错误返回 null, 不抛 — chat 启动不能被这个挂.
  */

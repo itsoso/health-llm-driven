@@ -4,7 +4,11 @@ jest.mock('../api', () => ({
 }));
 
 import api from '../api';
-import { buildConversationOpenerReplyContext, fetchConversationOpener } from '../conversationOpener';
+import {
+  buildConversationOpenerReplyContext,
+  buildConversationOpenerReplyMessage,
+  fetchConversationOpener,
+} from '../conversationOpener';
 
 const mockGet = api.get as jest.Mock;
 
@@ -71,5 +75,18 @@ describe('fetchConversationOpener', () => {
       source_id: 88,
       action_card_id: 88,
     });
+  });
+
+  it('builds visible quick reply text with the opener target', () => {
+    const message = buildConversationOpenerReplyMessage({
+      text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
+      source: 'action_card_due',
+      source_id: 88,
+      quick_replies: ['做到了 ✅', '没做 ❌'],
+      priority: 100,
+    }, '做到了 ✅');
+
+    expect(message).toContain('AI 预测：7 天体重保持 ≤ 71.3kg');
+    expect(message).toContain('做到了 ✅');
   });
 });

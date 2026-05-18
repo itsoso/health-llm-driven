@@ -42,6 +42,7 @@ jest.mock('../../../services/conversationOpener', () => ({
     deep_link: opener.deep_link ?? null,
     action_card_id: opener.source === 'action_card_due' ? opener.source_id ?? null : null,
   }),
+  buildConversationOpenerReplyMessage: (opener: any, reply: string) => `针对「${opener.text}」：${reply}`,
 }));
 
 jest.mock('../../../services/memoryOpener', () => ({
@@ -125,12 +126,13 @@ describe('ChatScreen', () => {
     fireEvent.press(getByLabelText('opener-done'));
 
     expect(mockSendMessage).toHaveBeenCalledWith(
-      '做到了 ✅',
+      expect.stringContaining('AI 预测：7 天体重保持 ≤ 71.3kg'),
       null,
       expect.objectContaining({
         extraContext: expect.stringContaining('AI 预测：7 天体重保持 ≤ 71.3kg'),
       }),
     );
+    expect(mockSendMessage.mock.calls[0][0]).toContain('做到了 ✅');
     const extraContext = mockSendMessage.mock.calls[0][2].extraContext;
     expect(JSON.parse(extraContext)).toMatchObject({
       entry: 'conversation_opener_quick_reply',
