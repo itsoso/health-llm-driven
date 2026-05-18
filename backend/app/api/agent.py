@@ -9,7 +9,7 @@ import logging
 from typing import Optional, List
 
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -241,6 +241,125 @@ async def agent_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/conversations", summary="统一健康助理对话列表")
+async def list_conversations(
+    limit: int = Query(30, ge=1, le=100),
+    title_like: Optional[str] = Query(None, description="按标题模糊过滤"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """List current user's Agent conversations.
+
+    AgentExecutor persists conversations through OpenClawService so mobile/web
+    can resume interrupted streams from the same durable message store.
+    """
+    from sqlalchemy import func
+    from app.models.openclaw import OpenClawMessage
+    from app.services.openclaw_service import OpenClawService
+
+    service = OpenClawService(db)
+    convs = service.get_conversations(current_user.id, limit, title_like=title_like)
+    conv_ids = [c.id for c in convs]
+    last_msgs = {}
+    if conv_ids:
+        subq = (
+            db.query(
+                OpenClawMessage.conversation_id,
+                func.max(OpenClawMessage.id).label("max_id"),
+            )
+            .filter(
+                OpenClawMessage.conversation_id.in_(conv_ids),
+                OpenClawMessage.role == "user",
+            )
+            .group_by(OpenClawMessage.conversation_id)
+            .subquery()
+        )
+        rows = (
+            db.query(OpenClawMessage.conversation_id, OpenClawMessage.content)
+            .join(subq, OpenClawMessage.id == subq.c.max_id)
+            .all()
+        )
+        last_msgs = {r[0]: (r[1] or "")[:80] for r in rows}
+
+    return [
+        {
+            "id": c.id,
+            "title": c.title,
+            "last_message": last_msgs.get(c.id),
+            "created_at": str(c.created_at),
+            "updated_at": str(c.updated_at),
+            "mode": "agent",
+        }
+        for c in convs
+    ]
+
+
+@router.get("/conversations/{conversation_id}", summary="统一健康助理对话详情")
+async def get_conversation(
+    conversation_id: int,
+    days: Optional[int] = Query(None, ge=1, le=365, description="只返回最近 N 天的消息"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.openclaw_service import OpenClawService
+
+    service = OpenClawService(db)
+    conv = service.get_conversation_detail(current_user.id, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+
+    msgs = conv.messages
+    total_messages = len(msgs)
+    if days is not None:
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        msgs = [m for m in msgs if m.created_at and _msg_dt(m.created_at) >= cutoff]
+
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "total_messages": total_messages,
+        "mode": "agent",
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "image_url": m.image_url,
+                "rating": m.rating,
+                "created_at": str(m.created_at),
+                "meta": getattr(m, "meta", None),
+            }
+            for m in msgs
+        ],
+    }
+
+
+def _msg_dt(value):
+    """Normalize SQLite naive / PostgreSQL aware timestamps to aware UTC."""
+    from datetime import datetime, timezone
+
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc) if value else datetime.now(timezone.utc)
+
+
+@router.delete("/conversations/{conversation_id}", summary="删除统一健康助理对话")
+async def delete_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.openclaw_service import OpenClawService
+
+    service = OpenClawService(db)
+    ok = service.delete_conversation(current_user.id, conversation_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {"ok": True}
 
 
 @router.get("/conversation-opener", summary="Chat 起手未读续接 — AI 主动开场白")

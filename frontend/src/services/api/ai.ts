@@ -210,6 +210,15 @@ export const assistantOpenclawApi = {
 
 // ===== 统一健康 Agent API =====
 export const agentApi = {
+  getConversations: (limit: number = 30) =>
+    api.get<Conversation[]>(`/agent/conversations?limit=${limit}`),
+
+  getConversation: (conversationId: number) =>
+    api.get<ConversationDetail & { total_messages?: number }>(`/agent/conversations/${conversationId}`),
+
+  deleteConversation: (conversationId: number) =>
+    api.delete<{ ok: boolean }>(`/agent/conversations/${conversationId}`),
+
   streamMessage: async function* (
     message: string,
     conversationId?: number,

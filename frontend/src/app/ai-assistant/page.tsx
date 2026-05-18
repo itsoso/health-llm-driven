@@ -15,12 +15,16 @@ import {
   ArrowUp,
   Brain,
   ChevronDown,
+  Clock3,
   MessageSquarePlus,
+  PanelLeft,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
-import { ChatMessage, agentApi } from '@/services/api/ai';
+import { ChatMessage, Conversation, agentApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
 import { api } from '@/services/api/client';
+import { relativeTime } from '@/utils/timeFormat';
 
 const SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -32,6 +36,9 @@ const SUGGESTIONS = [
 export default function AIAssistantPage() {
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
@@ -56,6 +63,22 @@ export default function AIAssistantPage() {
       setLlmPref({ label: opt?.label || (id ? id : null), model_id: id });
     }).catch(() => { /* 401/403 静默 */ });
     return () => { cancelled = true; };
+  }, []);
+
+  const refreshConversations = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await agentApi.getConversations(50);
+      setConversations(res.data || []);
+    } catch {
+      setConversations([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshConversations();
   }, []);
 
   const sendMessage = async (overrideText?: string) => {
@@ -124,6 +147,7 @@ export default function AIAssistantPage() {
       if (!activeConvId && realConvId) {
         setActiveConvId(realConvId);
       }
+      refreshConversations();
     }
   };
 
@@ -132,29 +156,68 @@ export default function AIAssistantPage() {
     setMessages([]);
   };
 
+  const loadConversation = async (conversationId: number) => {
+    if (streaming) return;
+    const res = await agentApi.getConversation(conversationId);
+    const loaded = (res.data.messages || []).map((m: any) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      created_at: m.created_at,
+      image_preview: normalizeImagePreview(m.image_url),
+      elapsed_ms: m.meta?.elapsed_ms,
+      llm_ms: m.meta?.llm_ms,
+      llm_rounds: m.meta?.llm_rounds,
+      llm_rounds_ms: m.meta?.llm_rounds_ms,
+      model: m.meta?.model,
+      sources_used: m.meta?.sources_used,
+    })) as ChatMessage[];
+    setActiveConvId(conversationId);
+    setMessages(loaded);
+    setDoneIds(new Set(loaded.filter(m => m.role === 'assistant').map(m => m.id)));
+  };
+
+  const deleteConversation = async (conversationId: number) => {
+    if (!window.confirm('删除这条对话？')) return;
+    await agentApi.deleteConversation(conversationId);
+    setConversations(prev => prev.filter(c => c.id !== conversationId));
+    if (activeConvId === conversationId) {
+      startNewConversation();
+    }
+  };
+
   const submitSuggestion = (text: string) => {
     if (streaming) return;
     sendMessage(text);
   };
 
   return (
-    <main className="flex h-screen flex-col bg-[#212121] text-zinc-100">
+    <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#212121] text-zinc-100">
       <header className="shrink-0 border-b border-white/[0.08] bg-[#212121]/95 px-3 py-2.5 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <a
-            href="/llm-preference"
-            className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-            title="切换 AI 模型偏好"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-300">
-              <Brain className="h-3.5 w-3.5" />
-            </span>
-            <span className="truncate">健康 Agent</span>
-            <span className="hidden max-w-[12rem] truncate text-xs font-normal text-zinc-500 sm:inline">
-              {llmPref.label || '默认模型'}
-            </span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-          </a>
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              onClick={() => setHistoryOpen(open => !open)}
+              className="mr-1 flex h-9 w-9 items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-zinc-100"
+              title="打开/收起历史记录"
+            >
+              <PanelLeft className="h-4.5 w-4.5" />
+            </button>
+            <a
+              href="/llm-preference"
+              className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+              title="切换 AI 模型偏好"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-300">
+                <Brain className="h-3.5 w-3.5" />
+              </span>
+              <span className="truncate">健康 Agent</span>
+              <span className="hidden max-w-[12rem] truncate text-xs font-normal text-zinc-500 sm:inline">
+                {llmPref.label || '默认模型'}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            </a>
+          </div>
           <button
             onClick={startNewConversation}
             className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 text-sm font-medium text-zinc-100 transition-colors hover:bg-white/[0.1]"
@@ -165,77 +228,166 @@ export default function AIAssistantPage() {
         </div>
       </header>
 
-      <section className="flex min-h-0 flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 pb-32 pt-8 sm:px-6">
-          {messages.length === 0 && !streaming ? (
-            <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-300 ring-1 ring-teal-300/15">
-                <Sparkles className="h-7 w-7" />
-              </div>
-              <h1 className="mt-5 text-2xl font-semibold tracking-tight text-zinc-50 sm:text-3xl">
-                今天想了解什么？
-              </h1>
-              <div className="mt-8 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                {SUGGESTIONS.map(item => (
-                  <button
-                    key={item}
-                    onClick={() => submitSuggestion(item)}
-                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-zinc-300 transition-colors hover:border-teal-300/30 hover:bg-white/[0.07] hover:text-zinc-50"
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <ChatView
-              messages={messages}
-              loading={streaming}
-              doneMessageIds={doneIds}
-              messageFeedback={{}}
-              onFeedback={() => {}}
-            />
-          )}
-        </div>
+      <section className="flex min-h-0 flex-1">
+        {historyOpen && (
+          <HistoryRail
+            conversations={conversations}
+            activeConvId={activeConvId}
+            loading={historyLoading}
+            onLoad={loadConversation}
+            onDelete={deleteConversation}
+            onNew={startNewConversation}
+          />
+        )}
 
-        {/* 输入区 */}
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#212121] via-[#212121] to-transparent px-3 pb-4 pt-10 sm:px-6">
-          <form
-            id="ai-assistant-composer"
-            onSubmit={e => {
-              e.preventDefault();
-              sendMessage();
-            }}
-            className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.7rem] border border-white/10 bg-[#2f2f2f] p-2 shadow-2xl shadow-black/30"
-          >
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 pb-32 pt-8 sm:px-6">
+            {messages.length === 0 && !streaming ? (
+              <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-300 ring-1 ring-teal-300/15">
+                  <Sparkles className="h-7 w-7" />
+                </div>
+                <h1 className="mt-5 text-2xl font-semibold tracking-tight text-zinc-50 sm:text-3xl">
+                  今天想了解什么？
+                </h1>
+                <div className="mt-8 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                  {SUGGESTIONS.map(item => (
+                    <button
+                      key={item}
+                      onClick={() => submitSuggestion(item)}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-zinc-300 transition-colors hover:border-teal-300/30 hover:bg-white/[0.07] hover:text-zinc-50"
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <ChatView
+                messages={messages}
+                loading={streaming}
+                doneMessageIds={doneIds}
+                messageFeedback={{}}
+                onFeedback={() => {}}
+              />
+            )}
+          </div>
+
+          {/* 输入区 */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#212121] via-[#212121] to-transparent px-3 pb-4 pt-10 sm:px-6">
+            <form
+              id="ai-assistant-composer"
+              onSubmit={e => {
+                e.preventDefault();
+                sendMessage();
               }}
-              placeholder={streaming ? '回答中…' : '发消息 (Enter 发送, Shift+Enter 换行)'}
-              disabled={streaming}
-              rows={1}
-              className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || streaming}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-950 transition-colors hover:bg-white disabled:bg-zinc-600 disabled:text-zinc-400"
-              title="发送"
+              className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.7rem] border border-white/10 bg-[#2f2f2f] p-2 shadow-2xl shadow-black/30"
             >
-              <ArrowUp className="h-5 w-5" />
-            </button>
-          </form>
-          <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-600">
-            健康建议不能替代医生诊断；紧急或明显异常请及时就医。
-          </p>
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                placeholder={streaming ? '回答中…' : '发消息 (Enter 发送, Shift+Enter 换行)'}
+                disabled={streaming}
+                rows={1}
+                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || streaming}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-950 transition-colors hover:bg-white disabled:bg-zinc-600 disabled:text-zinc-400"
+                title="发送"
+              >
+                <ArrowUp className="h-5 w-5" />
+              </button>
+            </form>
+            <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-600">
+              健康建议不能替代医生诊断；紧急或明显异常请及时就医。
+            </p>
+          </div>
         </div>
       </section>
     </main>
   );
+}
+
+function HistoryRail({
+  conversations,
+  activeConvId,
+  loading,
+  onLoad,
+  onDelete,
+  onNew,
+}: {
+  conversations: Conversation[];
+  activeConvId?: number;
+  loading: boolean;
+  onLoad: (id: number) => void;
+  onDelete: (id: number) => void;
+  onNew: () => void;
+}) {
+  return (
+    <aside className="hidden w-72 shrink-0 border-r border-white/[0.08] bg-[#171717] p-3 md:flex md:flex-col">
+      <button
+        onClick={onNew}
+        className="mb-3 flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-zinc-100 transition-colors hover:bg-white/[0.08]"
+      >
+        <MessageSquarePlus className="h-4 w-4" />
+        新对话
+      </button>
+      <div className="mb-2 flex items-center gap-2 px-2 text-xs font-medium text-zinc-500">
+        <Clock3 className="h-3.5 w-3.5" />
+        历史记录
+        {loading && <span className="ml-auto text-[11px]">加载中</span>}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        {conversations.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/10 px-3 py-8 text-center text-xs text-zinc-600">
+            暂无历史对话
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {conversations.map(conv => (
+              <div
+                key={conv.id}
+                className={`group flex items-start gap-2 rounded-xl px-2 py-2 transition-colors ${
+                  conv.id === activeConvId ? 'bg-white/[0.09]' : 'hover:bg-white/[0.06]'
+                }`}
+              >
+                <button onClick={() => onLoad(conv.id)} className="min-w-0 flex-1 text-left">
+                  <div className="truncate text-sm text-zinc-200">{conv.title || '新对话'}</div>
+                  <div className="mt-0.5 truncate text-xs text-zinc-600">
+                    {conv.last_message || relativeTime(conv.updated_at)}
+                  </div>
+                </button>
+                <button
+                  onClick={() => onDelete(conv.id)}
+                  className="mt-0.5 rounded-lg p-1.5 text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
+                  title="删除对话"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function normalizeImagePreview(imageUrl?: string | null): string | undefined {
+  if (!imageUrl) return undefined;
+  try {
+    const parsed = JSON.parse(imageUrl);
+    if (Array.isArray(parsed)) return parsed[0];
+  } catch {
+    return imageUrl || undefined;
+  }
+  return imageUrl || undefined;
 }
