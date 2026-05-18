@@ -23,6 +23,6 @@
     "@tarojs/binding-darwin-x64": "4.1.10"
   },
   "devDependencies": {
-    "@tarojs/binding-darwin-arm64": "^4.1.10"
+    "@tarojs/binding-darwin-arm64": "4.1.10"
   }
 }

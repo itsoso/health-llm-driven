@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.28.5",
-    "@tarojs/binding-darwin-arm64": "^4.1.10",
+    "@tarojs/binding-darwin-arm64": "4.1.10",
     "@tarojs/cli": "4.1.10",
     "@tarojs/webpack5-runner": "4.1.10",
     "@types/react": "18.3.27",
