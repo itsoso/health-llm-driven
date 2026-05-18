@@ -20,6 +20,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Planner evidence policy: Orchestrator blocks unsupported actionable findings from final synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are kept.
 - Weekly Advisor evidence policy: fallback weekly action cards attach system KB evidence and reuse Planner evidence filtering before persistence.
 - PushScheduler health-alert policy: direct wearable threshold alerts now carry `support_status=safety_alert`, rule identity, evidence domain, `unsupported=false`, and a medical-boundary payload. These alerts are deterministic safety prompts, not unsupported lifestyle recommendations.
+- Generated notification policy: Celery trend summaries, weekly-review invites, action-card followups, agent-loop pushes, and outcome-grader pushes now carry KB V2 notification evidence metadata. Data-summary pushes are marked `support_status=data_summary`; generated advice without claim refs is explicitly auditable as `support_status=model_inference` and `unsupported=true`.
 
 ## Scope
 
@@ -61,6 +62,7 @@ flowchart TD
 - `app.services.system_knowledge_ingest`: deterministic Dedao course ingest, transformed claim mining, duplicate/conflict handling, supersession guardrails, entity/claim/page/relation artifact generation, and PR-style diff rendering.
 - `app.services.system_knowledge_importer`: imports reviewed `manifest.json` plus `entities.jsonl`, `claims.jsonl`, `pages.jsonl`, and `relations.jsonl`.
 - `app.services.notification.push_scheduler`: direct wearable health alerts include KB V2 evidence-contract metadata (`support_status`, `unsupported`, `planner_evidence_policy`, `rule_id`, and `claim_boundary`) before they enter notification logs or push channels.
+- `app.services.notification.evidence_policy`: shared metadata builder for generated notification surfaces (`ai_advice`, `trend_report`, `prediction_verified`) so push logs can be counted in KB coverage and unsupported-advice audits.
 - `scripts/ingest_dedao_system_kb.py`: dry-run or `--write` CLI for expanding reviewed artifacts from selected Dedao courses.
 - `scripts/import_system_kb_v2_artifacts.py`: deployment-safe import entrypoint for reviewed artifacts.
 - `scripts/scan_system_kb_sources.py`: local inspection tool for expanding course/book coverage without publishing raw paid content.

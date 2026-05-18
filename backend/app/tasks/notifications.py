@@ -12,6 +12,7 @@ from app.database import SessionLocal
 from app.models.user import User
 from app.models.notification import UserNotificationSetting
 from app.models.smart_plan import WeeklyPlan
+from app.services.notification.evidence_policy import build_notification_evidence_data
 from app.services.notification.push_service import PushService
 from app.utils.timezone import get_china_now
 from app.utils.async_helpers import run_async
@@ -766,6 +767,11 @@ def send_trend_morning_push():
                     notification_type="trend_report",
                     title="📈 健康趋势",
                     content=body[:200],
+                    data=build_notification_evidence_data(
+                        notification_type="trend_report",
+                        source="notifications.send_trend_morning_push",
+                        evidence_domain="health_trend",
+                    ),
                 ))
                 sent_count += 1
             except Exception as e:
@@ -879,10 +885,15 @@ def send_weekly_review_invite():
                     notification_type="ai_advice",  # 复用 ai_advice 开关 (周聊偏建议性)
                     title="🗓️ 本周聊聊?",
                     content=script[:200],
-                    data={
-                        "deep_link": "/voice-chat?intent=weekly",
-                        "kind": "weekly_review",
-                    },
+                    data=build_notification_evidence_data(
+                        notification_type="ai_advice",
+                        source="notifications.send_weekly_review_invite",
+                        existing_data={
+                            "deep_link": "/voice-chat?intent=weekly",
+                            "kind": "weekly_review",
+                        },
+                        evidence_domain="weekly_review",
+                    ),
                     # 一周窗口去重: 同一用户一周只推一次
                     dedup_window_hours=24 * 6,
                 ))
@@ -1617,7 +1628,13 @@ def check_action_card_followups():
                     notification_type="ai_advice",
                     title=title,
                     content=content,
-                    data={"card_id": card.id, "card_type": card.card_type},
+                    data=build_notification_evidence_data(
+                        notification_type="ai_advice",
+                        source="notifications.check_action_card_followups",
+                        existing_data={"card_id": card.id, "card_type": card.card_type},
+                        evidence_refs=card.evidence_refs or [],
+                        evidence_domain=card.creator_specialist or card.card_type,
+                    ),
                 ))
                 reminded += 1
             except Exception as e:

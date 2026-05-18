@@ -193,13 +193,18 @@ async def post_sync_reasoning(
             severity = result.get("severity", "info")
 
             from app.services.notification.push_service import PushService
+            from app.services.notification.evidence_policy import build_notification_evidence_data
             push_svc = PushService(db)
             await push_svc.send_notification(
                 user_id=user_id,
                 notification_type="ai_advice",
                 title=title,
                 content=message,
-                data={"source": "agent_loop", "severity": severity},
+                data=build_notification_evidence_data(
+                    notification_type="ai_advice",
+                    source="agent_loop",
+                    existing_data={"source": "agent_loop", "severity": severity},
+                ),
             )
             _increment_push_count(user_id)
             logger.info(f"[agent_loop] user={user_id} → notify: {title}")

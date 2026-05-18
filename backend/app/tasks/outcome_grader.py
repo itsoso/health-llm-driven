@@ -331,6 +331,7 @@ def _notify_prediction_hit(db, card: ActionCard) -> bool:
         body = f"{card.creator_specialist}: {card.metric_key} 实测 {actual} (目标 {target})"
 
         # data 字段给 Mobile 深链到 scorecard
+        from app.services.notification.evidence_policy import build_notification_evidence_data
         data = {
             "kind": "prediction_verified",
             "card_id": card.id,
@@ -338,6 +339,13 @@ def _notify_prediction_hit(db, card: ActionCard) -> bool:
             "accuracy_score": card.accuracy_score,
             "deep_link": f"/specialist/{card.creator_specialist}",
         }
+        data = build_notification_evidence_data(
+            notification_type="prediction_verified",
+            source="outcome_grader.grade_due_cards",
+            existing_data=data,
+            evidence_refs=card.evidence_refs or [],
+            evidence_domain=card.creator_specialist,
+        )
 
         # 已有事件循环时 (Celery worker) 直接 run; 测试里不应跑真 push
         result = asyncio.run(push.send_notification(

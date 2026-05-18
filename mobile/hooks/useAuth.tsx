@@ -39,10 +39,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Register 401 handler — forces logout on token expiry
+  // Register 401 handler. Do not erase the persisted token here: a single
+  // incidental 401 during backend deploy/OTA reload should not log the user out.
   useEffect(() => {
     setOnUnauthorized(() => {
-      setToken(null);
       setUser(null);
     });
   }, []);
@@ -57,11 +57,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // 冷启动回灌 token 到 App Group UserDefaults + 共享 keychain,
           // 让 Siri extension 能读到。失败静默 —— 主 App 体验不受影响。
           saveTokenToSharedKeychain(saved).catch(() => {});
-          const me = await fetchCurrentUser();
-          if (mounted) setUser(me);
+          try {
+            const me = await fetchCurrentUser();
+            if (mounted) setUser(me);
+          } catch {
+            // Keep token-authenticated state. Most startup failures after an
+            // app update are transient; explicit logout is the only path that
+            // should delete the persisted token.
+            if (mounted) setUser(null);
+          }
         }
       } catch {
-        // token expired or invalid
         setToken(null);
         setUser(null);
       } finally {
@@ -85,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const isAuthenticated = token !== null && user !== null;
+  const isAuthenticated = token !== null;
 
   return (
     <AuthContext.Provider
