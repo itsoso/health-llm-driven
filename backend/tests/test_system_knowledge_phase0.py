@@ -653,12 +653,29 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
                 },
                 sources=["dedao:test", "guideline:test"],
             ),
+            KBDocument(
+                doc_id="claim:c_missing_external",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="metabolic-health",
+                title="Missing external",
+                evidence_level="B",
+                metadata_json={"review_status": "reviewed"},
+                sources=["dedao:test"],
+            ),
             KBEdge(
                 src_doc_id="entity:condition:metabolic-health",
                 dst_doc_id="claim:c_supported",
                 relation="has_claim",
                 confidence=0.9,
                 source_claim_id="claim:c_supported",
+            ),
+            KBEdge(
+                src_doc_id="entity:condition:metabolic-health",
+                dst_doc_id="claim:c_missing_external",
+                relation="has_claim",
+                confidence=0.8,
+                source_claim_id="claim:c_missing_external",
             ),
             KBAudit(
                 doc_id=None,
@@ -688,9 +705,17 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "attention"
-    assert payload["coverage"]["documents"]["total"] == 2
+    assert payload["coverage"]["documents"]["total"] == 3
     assert payload["coverage"]["external_evidence"]["claims_with_external_sources"] == 1
     assert payload["coverage"]["external_evidence"]["meets_target"] is True
+    assert payload["coverage"]["external_evidence"]["missing_external_source_claims"] == [
+        {
+            "doc_id": "claim:c_missing_external",
+            "title": "Missing external",
+            "entity_type": "condition",
+            "entity_id": "metabolic-health",
+        }
+    ]
     assert payload["lint"]["summary"]["orphan_claims"] == 0
     assert payload["latest_lifecycle_report"]["op"] == "lifecycle_report"
     assert "specialist_evidence_below_target" in payload["action_items"]

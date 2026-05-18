@@ -24,6 +24,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Generated notification policy: Celery trend summaries, morning briefings, weekly-review invites, action-card followups, agent-loop pushes, and outcome-grader pushes now carry KB V2 notification evidence metadata. Data-summary pushes are marked `support_status=data_summary`; generated advice without claim refs is explicitly auditable as `support_status=model_inference` and `unsupported=true`.
 - Admin notification evidence coverage: `/api/v1/admin/knowledge/coverage_report` now includes `notification_evidence` for push logs that carry `support_status`; `/operations_dashboard` emits `notification_evidence_unsupported_high` when unsupported generated pushes need claim-backed cleanup.
 - External evidence governance: `/coverage_report.external_evidence` exposes `target_external_source_rate=0.2` and `meets_target`; `/operations_dashboard` emits `external_evidence_coverage_low` when reviewed claims lack enough PubMed/guideline second-source support.
+- Reviewer workflow support: `/coverage_report.external_evidence.missing_external_source_claims` lists reviewed claims that still need PubMed/guideline second-source promotion, capped for admin review UI consumption.
 
 ## Scope
 

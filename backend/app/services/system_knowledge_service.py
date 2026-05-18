@@ -1453,6 +1453,7 @@ def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[s
     claim_total = 0
     claims_with_external_sources = 0
     by_kind: dict[str, int] = {}
+    missing_external_source_claims: list[dict[str, Any]] = []
     for document in documents:
         if document.doc_type != "claim":
             continue
@@ -1460,17 +1461,28 @@ def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[s
         external_sources = _document_external_sources(document)
         if external_sources:
             claims_with_external_sources += 1
+        elif (document.metadata_json or {}).get("review_status") == "reviewed":
+            missing_external_source_claims.append(
+                {
+                    "doc_id": document.doc_id,
+                    "title": document.title,
+                    "entity_type": document.entity_type,
+                    "entity_id": document.entity_id,
+                }
+            )
         for source in external_sources:
             kind = str(source.get("kind") or "other")
             by_kind[kind] = by_kind.get(kind, 0) + 1
 
     external_source_rate = round(claims_with_external_sources / claim_total, 4) if claim_total else 0.0
+    missing_external_source_claims.sort(key=lambda item: item["doc_id"])
     return {
         "claim_total": claim_total,
         "claims_with_external_sources": claims_with_external_sources,
         "external_source_rate": external_source_rate,
         "target_external_source_rate": EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET,
         "meets_target": external_source_rate >= EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET if claim_total else False,
+        "missing_external_source_claims": missing_external_source_claims[:10],
         "by_kind": dict(sorted(by_kind.items())),
     }
 
