@@ -13,8 +13,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
-  Brain,
-  ChevronDown,
   Clock3,
   MessageSquarePlus,
   PanelLeft,
@@ -23,6 +21,7 @@ import {
 } from 'lucide-react';
 import { ChatMessage, Conversation, agentApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
+import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPicker';
 import { api } from '@/services/api/client';
 import { relativeTime } from '@/utils/timeFormat';
 
@@ -46,6 +45,9 @@ export default function AIAssistantPage() {
   const [llmPref, setLlmPref] = useState<{ label: string | null; model_id: string | null }>({
     label: null, model_id: null,
   });
+  const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
+  const [llmSaving, setLlmSaving] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 自动滚到底
@@ -60,10 +62,29 @@ export default function AIAssistantPage() {
       if (cancelled) return;
       const id = r.data?.model_id as string | null;
       const opt = id ? r.data?.options?.find((o: any) => o.id === id) : null;
+      setLlmOptions(r.data?.options || []);
       setLlmPref({ label: opt?.label || (id ? id : null), model_id: id });
     }).catch(() => { /* 401/403 静默 */ });
     return () => { cancelled = true; };
   }, []);
+
+  const selectModel = async (modelId: string | null) => {
+    if (llmPref.model_id === modelId || llmSaving) return;
+    setLlmSaving(modelId || '__default__');
+    setLlmError(null);
+    try {
+      const res = await api.put('/me/llm-preference', { model_id: modelId });
+      const options = (res.data?.options || []) as ModelOption[];
+      const activeId = res.data?.model_id as string | null;
+      const active = activeId ? options.find(o => o.id === activeId) : null;
+      setLlmOptions(options);
+      setLlmPref({ model_id: activeId, label: active?.label || (activeId ? activeId : null) });
+    } catch (e: any) {
+      setLlmError(e?.response?.data?.detail || e?.message || '模型切换失败');
+    } finally {
+      setLlmSaving(null);
+    }
+  };
 
   const refreshConversations = async () => {
     setHistoryLoading(true);
@@ -203,20 +224,15 @@ export default function AIAssistantPage() {
             >
               <PanelLeft className="h-4.5 w-4.5" />
             </button>
-            <a
-              href="/llm-preference"
-              className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-              title="切换 AI 模型偏好"
-            >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-300">
-                <Brain className="h-3.5 w-3.5" />
-              </span>
-              <span className="truncate">健康 Agent</span>
-              <span className="hidden max-w-[12rem] truncate text-xs font-normal text-zinc-500 sm:inline">
-                {llmPref.label || '默认模型'}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-            </a>
+            <LlmModelPicker
+              currentLabel={llmPref.label || '系统默认'}
+              currentModelId={llmPref.model_id}
+              options={llmOptions}
+              savingModelId={llmSaving}
+              disabled={streaming}
+              error={llmError}
+              onSelect={selectModel}
+            />
           </div>
           <button
             onClick={startNewConversation}
