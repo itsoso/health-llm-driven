@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
@@ -15,6 +16,20 @@ from sqlalchemy.orm import Session
 from app.models.action_card import ActionCard
 
 logger = logging.getLogger(__name__)
+
+
+def _related_card_dedupe_key(card: ActionCard) -> str:
+    """Return a stable semantic-ish key for related-card de-duplication.
+
+    Action cards can be generated repeatedly by the agent across chats and
+    daily plans. The diet plan only needs one row per accepted suggestion topic;
+    otherwise the mobile page becomes dominated by repeated "MTHFR..." cards.
+    """
+    title = re.sub(r"\s+", "", (card.title or "").strip().lower())
+    if title:
+        return f"title:{title}"
+    content = re.sub(r"\s+", "", (card.content or "").strip().lower())
+    return f"content:{content[:120]}"
 
 
 def _fetch_diet_related_cards(db: Session, user_id: int) -> List[ActionCard]:
@@ -37,9 +52,14 @@ def _fetch_diet_related_cards(db: Session, user_id: int) -> List[ActionCard]:
         .all()
     )
     matched = []
+    seen_keys = set()
     for c in cards:
         haystack = (c.title or "") + " " + (c.content or "")
         if any(k in haystack for k in keys):
+            dedupe_key = _related_card_dedupe_key(c)
+            if dedupe_key in seen_keys:
+                continue
+            seen_keys.add(dedupe_key)
             matched.append(c)
             if len(matched) >= 10:
                 break

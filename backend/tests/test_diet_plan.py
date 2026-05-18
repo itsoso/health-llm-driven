@@ -1,9 +1,12 @@
 """test_diet_plan —— G-W7 我的饮食方案 endpoint."""
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
+from app.models.action_card import ActionCard
 from app.models.user import User
 from app.services.auth import auth_service
+from app.services.diet_plan import _fetch_diet_related_cards
 
 
 def _make_user(db, name="diet_user"):
@@ -52,3 +55,40 @@ def test_no_data_user_returns_has_data(client, db):
 def test_endpoint_requires_auth(client):
     resp = client.get("/api/v1/diet-plan/me")
     assert resp.status_code in (401, 403)
+
+
+def test_diet_related_cards_deduplicates_repeated_suggestions(db):
+    user, _headers = _make_user(db, "diet_dedupe")
+    now = datetime.now(timezone.utc)
+    cards = [
+        ActionCard(
+            user_id=user.id,
+            title="MTHFR 变异 —— 建议甲基叶酸形式",
+            content="补剂 / 叶酸 / 5-MTHF",
+            user_decision="accepted",
+            created_at=now - timedelta(minutes=1),
+        ),
+        ActionCard(
+            user_id=user.id,
+            title="MTHFR 变异 —— 建议甲基叶酸形式",
+            content="补剂 / 叶酸 / 5-MTHF",
+            user_decision="accepted",
+            created_at=now - timedelta(minutes=2),
+        ),
+        ActionCard(
+            user_id=user.id,
+            title="每日饮水提升至 2000ml",
+            content="饮水和营养建议",
+            user_decision="accepted",
+            created_at=now - timedelta(minutes=3),
+        ),
+    ]
+    db.add_all(cards)
+    db.commit()
+
+    related = _fetch_diet_related_cards(db, user.id)
+
+    assert [card.title for card in related] == [
+        "MTHFR 变异 —— 建议甲基叶酸形式",
+        "每日饮水提升至 2000ml",
+    ]
