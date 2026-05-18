@@ -19,6 +19,7 @@ This document records the implemented vertical slice for the LLM Wiki v2 system 
 - Admin operations dashboard: `/api/v1/admin/knowledge/operations_dashboard` aggregates coverage, external-evidence metrics, lint, latest lifecycle report, and action items.
 - Planner evidence policy: Orchestrator blocks unsupported actionable findings from final synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are kept.
 - Weekly Advisor evidence policy: fallback weekly action cards attach system KB evidence and reuse Planner evidence filtering before persistence.
+- PushScheduler health-alert policy: direct wearable threshold alerts now carry `support_status=safety_alert`, rule identity, evidence domain, `unsupported=false`, and a medical-boundary payload. These alerts are deterministic safety prompts, not unsupported lifestyle recommendations.
 
 ## Scope
 
@@ -59,6 +60,7 @@ flowchart TD
 - `app.services.system_knowledge_pipeline`: deterministic source scanner and health-domain classifier for `/Users/liqiuhua/work/personal/down-dedao`.
 - `app.services.system_knowledge_ingest`: deterministic Dedao course ingest, transformed claim mining, duplicate/conflict handling, supersession guardrails, entity/claim/page/relation artifact generation, and PR-style diff rendering.
 - `app.services.system_knowledge_importer`: imports reviewed `manifest.json` plus `entities.jsonl`, `claims.jsonl`, `pages.jsonl`, and `relations.jsonl`.
+- `app.services.notification.push_scheduler`: direct wearable health alerts include KB V2 evidence-contract metadata (`support_status`, `unsupported`, `planner_evidence_policy`, `rule_id`, and `claim_boundary`) before they enter notification logs or push channels.
 - `scripts/ingest_dedao_system_kb.py`: dry-run or `--write` CLI for expanding reviewed artifacts from selected Dedao courses.
 - `scripts/import_system_kb_v2_artifacts.py`: deployment-safe import entrypoint for reviewed artifacts.
 - `scripts/scan_system_kb_sources.py`: local inspection tool for expanding course/book coverage without publishing raw paid content.

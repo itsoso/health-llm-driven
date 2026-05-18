@@ -36,7 +36,7 @@ Main remaining gaps:
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
 - External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count and source kind.
-- Remaining evidence-enforcement gap is direct push scheduler notification surfaces, which can still emit unsupported suggestions outside Orchestrator/Weekly Advisor synthesis.
+- Direct PushScheduler wearable health alerts now carry the KB V2 safety-alert evidence contract. Remaining enforcement gap is broader Celery notification surfaces (`ai_advice`, trend reports, and other generated copy) that can still emit outside Orchestrator/Weekly Advisor synthesis.
 
 ---
 

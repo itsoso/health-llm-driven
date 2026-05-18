@@ -376,7 +376,7 @@ flowchart TD
 当前已经完成“系统知识库能同步、能被 Twin 命中、能进入 Agent prompt、能展示证据卡”的纵切，也已经补上 Dedao deterministic ingest pipeline、Phase 2 reviewed corpus expansion、admin operations dashboard 和外部证据覆盖指标。还没有完成全部 V2 能力：
 
 - Search serving 已有 DB-backed lexical + graph RRF 路径；还没有 PostgreSQL FTS、向量检索和真正三路 BM25/vector/graph 融合。
-- Specialist 输出已标注 `support_status / unsupported / unsupported_reason` 并进入 coverage dashboard；Planner 层已对同证据域的无证据 actionable 建议做确定性过滤，Weekly Advisor 兜底生成 action card 时也复用同一策略。下一步是把同样的 policy 推到直接 push scheduler 通知面。
+- Specialist 输出已标注 `support_status / unsupported / unsupported_reason` 并进入 coverage dashboard；Planner 层已对同证据域的无证据 actionable 建议做确定性过滤，Weekly Advisor 兜底生成 action card 时也复用同一策略。直接 PushScheduler 的可穿戴健康预警已标记 `support_status=safety_alert`、`unsupported=false`、`planner_evidence_policy.kept_reason=safety_or_data_gap` 和 `claim_boundary`。后续还需要继续审计 Celery notification 里的 AI advice/trend 类推送面。
 - Mobile 已有普通饮食/补剂/训练卡和基因报告卡的 evidence chip、统一 ClaimSheet/EntityCard、来源分组、来源可信度解释、entity 深链页和 claim feedback 入口。
 - 当前 Dedao ingest 是 deterministic topic-template claim mining，不是无约束 LLM 全文抽取；这样牺牲部分覆盖率，换取版权边界、医学边界和 review 可控性。
 - 给忙碌者的营养健康公开课在本轮扫描中没有进入最终 source set，原因是本地目录未暴露可识别的受支持文件；后续补齐源文件后可用同一 pipeline 追加。

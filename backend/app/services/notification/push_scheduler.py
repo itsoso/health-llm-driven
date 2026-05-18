@@ -15,6 +15,70 @@ from app.utils.timezone import get_china_now
 logger = logging.getLogger(__name__)
 
 
+HEALTH_ALERT_RULES: Dict[str, Dict[str, str]] = {
+    "high_heart_rate": {
+        "rule_id": "wearable.high_resting_heart_rate",
+        "evidence_domain": "vitals_safety",
+    },
+    "low_heart_rate": {
+        "rule_id": "wearable.low_resting_heart_rate",
+        "evidence_domain": "vitals_safety",
+    },
+    "poor_sleep": {
+        "rule_id": "wearable.poor_sleep_score",
+        "evidence_domain": "sleep_recovery",
+    },
+    "low_energy": {
+        "rule_id": "wearable.low_body_battery",
+        "evidence_domain": "sleep_recovery",
+    },
+    "high_stress": {
+        "rule_id": "wearable.high_stress",
+        "evidence_domain": "recovery_stress",
+    },
+}
+
+HEALTH_ALERT_CLAIM_BOUNDARY = (
+    "该推送来自可穿戴数据的确定性安全阈值规则，只用于提示复核和采取保守行动，"
+    "不替代医生诊断、治疗或用药建议。"
+)
+
+
+def build_health_alert_evidence_contract(alert_type: str) -> Dict[str, Any]:
+    """Build KB V2 evidence metadata for deterministic wearable alerts."""
+    rule = HEALTH_ALERT_RULES.get(
+        alert_type,
+        {
+            "rule_id": f"wearable.{alert_type or 'unknown'}",
+            "evidence_domain": "vitals_safety",
+        },
+    )
+    return {
+        "rule_id": rule["rule_id"],
+        "rule_source": "push_scheduler.wearable_threshold",
+        "evidence_domain": rule["evidence_domain"],
+        "evidence_refs": [],
+        "evidence_ref_count": 0,
+        "support_status": "safety_alert",
+        "unsupported": False,
+        "unsupported_reason": None,
+        "planner_evidence_policy": {
+            "blocked": False,
+            "kept_reason": "safety_or_data_gap",
+        },
+        "claim_boundary": HEALTH_ALERT_CLAIM_BOUNDARY,
+    }
+
+
+def build_health_alert_push_data(alert: Dict[str, Any]) -> Dict[str, Any]:
+    """Return push payload data with KB V2 policy fields."""
+    alert_type = str(alert.get("type") or "unknown")
+    return {
+        "alert_type": alert_type,
+        **build_health_alert_evidence_contract(alert_type),
+    }
+
+
 class PushScheduler:
     """
     推送调度器
@@ -229,12 +293,13 @@ class PushScheduler:
                     if existing:
                         continue
 
+                    alert_data = build_health_alert_push_data(alert)
                     result = await push_service.send_notification(
                         user_id=record.user_id,
                         notification_type=NotificationType.HEALTH_ALERT.value,
                         title=alert["title"],
                         content=alert["content"],
-                        data={"alert_type": alert["type"]},
+                        data=alert_data,
                         respect_quiet_hours=False  # 健康预警不受免打扰限制
                     )
 

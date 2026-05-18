@@ -723,3 +723,15 @@ class AIScheduler:
 
 # 全局实例
 ai_scheduler = AIScheduler()
+
+
+class AISchedulerService:
+    """Backward-compatible service wrapper for notification callers."""
+
+    def __init__(self, db: Session, user_id: int):
+        self.db = db
+        self.user_id = user_id
+        self.scheduler = ai_scheduler
+
+    def get_morning_briefing(self) -> Dict[str, Any]:
+        return self.scheduler.generate_morning_briefing(self.db, self.user_id)
