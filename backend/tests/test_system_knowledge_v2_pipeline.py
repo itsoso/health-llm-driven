@@ -11,7 +11,9 @@ from app.services.system_knowledge_pipeline import (
 from app.services.system_knowledge_service import lookup_for_twin
 from app.services.system_knowledge_service import (
     attach_system_knowledge_evidence,
+    evaluate_condition,
     format_system_knowledge_for_prompt,
+    system_kb_twin_payload_from_health_twin,
     _select_claim_refs_for_specialist,
 )
 from app.orchestrator.schema import SpecialistFinding
@@ -41,6 +43,130 @@ def test_lookup_for_twin_matches_boolean_goal_conditions(db):
     assert result["claims"][0]["matched_conditions"] == [
         "twin.goals.weight_loss.active == true"
     ]
+
+
+def test_evaluate_condition_supports_list_membership_for_medications():
+    twin = {
+        "medications": [
+            {"name": "阿司匹林", "generic_name": "aspirin"},
+            "clopidogrel",
+        ]
+    }
+
+    assert evaluate_condition("twin.medications has 'clopidogrel'", twin) is True
+    assert evaluate_condition("twin.medications has any of ['omeprazole', 'aspirin']", twin) is True
+    assert evaluate_condition("twin.medications has 'warfarin'", twin) is False
+
+
+def test_lookup_for_twin_matches_gene_drug_conditions_with_medication_lists(db):
+    db.add(
+        KBDocument(
+            doc_id="claim:c_cyp2c19_clopidogrel_boundary",
+            doc_type="claim",
+            entity_type="gene",
+            entity_id="CYP2C19",
+            title="CYP2C19 PM 与氯吡格雷无效边界",
+            summary="CYP2C19 PM 使用氯吡格雷时需要医生核对替代方案。",
+            confidence=0.9,
+            evidence_level="A",
+            applies_when=[
+                "twin.genetics.CYP2C19_phenotype == 'poor'",
+                "twin.medications has 'clopidogrel'",
+            ],
+            sources=["cpic:guideline-cyp2c19-clopidogrel"],
+            last_confirmed=datetime(2026, 5, 18, tzinfo=UTC),
+        )
+    )
+    db.commit()
+
+    result = lookup_for_twin(
+        db,
+        {
+            "genetics": {"CYP2C19_phenotype": "poor"},
+            "medications": [{"name": "波立维", "generic_name": "clopidogrel"}],
+        },
+    )
+
+    assert [claim["doc_id"] for claim in result["claims"]] == [
+        "claim:c_cyp2c19_clopidogrel_boundary"
+    ]
+    assert "twin.medications has 'clopidogrel'" in result["claims"][0]["matched_conditions"]
+
+
+def test_lookup_for_twin_does_not_match_gene_drug_claim_without_medication_context(db):
+    db.add(
+        KBDocument(
+            doc_id="claim:c_cyp2c19_clopidogrel_boundary",
+            doc_type="claim",
+            entity_type="gene",
+            entity_id="CYP2C19",
+            title="CYP2C19 PM 与氯吡格雷无效边界",
+            summary="CYP2C19 PM 使用氯吡格雷时需要医生核对替代方案。",
+            confidence=0.9,
+            evidence_level="A",
+            applies_when=[
+                "twin.genetics.CYP2C19_phenotype == 'poor'",
+                "twin.medications has 'clopidogrel'",
+            ],
+            sources=["cpic:guideline-cyp2c19-clopidogrel"],
+            last_confirmed=datetime(2026, 5, 18, tzinfo=UTC),
+        )
+    )
+    db.commit()
+
+    result = lookup_for_twin(
+        db,
+        {
+            "genetics": {"CYP2C19_phenotype": "poor"},
+            "medications": [],
+        },
+    )
+
+    assert result["claims"] == []
+
+
+def test_system_kb_twin_payload_maps_pharmacogenomic_variants():
+    class Obj:
+        pass
+
+    twin = Obj()
+    twin.labs = Obj()
+    twin.physiological = Obj()
+    twin.medication = Obj()
+    twin.supplement = Obj()
+    twin.goals = Obj()
+    twin.goals.active_goals = []
+    twin.medication.active_meds = []
+    twin.supplement.active_supplements = []
+    twin.genetic = Obj()
+    twin.genetic.risk_variants = []
+    twin.genetic.protective_variants = []
+    twin.genetic.nutrition_variants = []
+    twin.genetic.recovery_variants = []
+    twin.genetic.exercise_variants = []
+    twin.genetic.cognition_variants = []
+    twin.genetic.personality_variants = []
+    twin.genetic.sleep_variants = []
+    twin.genetic.drug_sensitivity = [
+        {
+            "gene_name": "CYP2C19",
+            "genotype": "*2/*2",
+            "result_label": "慢代谢",
+            "risk_level": "high",
+        },
+        {
+            "gene_name": "SLCO1B1",
+            "genotype": "CT",
+            "result_label": "他汀肌病风险轻度增高",
+            "risk_level": "medium",
+        },
+    ]
+
+    genetics = system_kb_twin_payload_from_health_twin(twin)["genetics"]
+
+    assert genetics["CYP2C19"] == "*2/*2"
+    assert genetics["CYP2C19_phenotype"] == "poor"
+    assert genetics["SLCO1B1_rs4149056"] == "CT"
 
 
 def test_lookup_for_twin_promotes_contextualized_entity_claims(db):

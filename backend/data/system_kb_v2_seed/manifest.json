@@ -1,10 +1,10 @@
 {
   "compiled_at": "2026-05-18T03:58:39.545161+00:00",
   "counts": {
-    "claims": 357,
-    "entities": 99,
-    "pages": 52,
-    "relations": 2715
+    "claims": 375,
+    "entities": 151,
+    "pages": 61,
+    "relations": 2774
   },
   "diff": {
     "claims_added": 11,
@@ -12,6 +12,19 @@
     "entities_added": 0,
     "pages_added": 0,
     "relations_added": 204
+  },
+  "down_dedao_wiki": {
+    "compiled_at": "2026-05-18T15:21:24.843623+00:00",
+    "diff": {
+      "claims_added": 0,
+      "entities_added": 0,
+      "pages_added": 0,
+      "private_skipped": 0,
+      "relations_added": 0
+    },
+    "pipeline": "down_dedao_llm_wiki_bridge_v1",
+    "skipped_private": [],
+    "source_root": "/Users/liqiuhua/work/personal/down-dedao"
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",

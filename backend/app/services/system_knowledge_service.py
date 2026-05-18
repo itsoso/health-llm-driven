@@ -25,6 +25,8 @@ POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "i
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
 
 _IN_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+in\s+(?P<values>\[.*\])$")
+_HAS_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+has\s+(?P<value>.+)$")
+_HAS_ANY_RE = re.compile(r"^any\s+of\s+(?P<values>\[.*\])$")
 _EQ_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(==|=)\s*(?P<value>.+)$")
 _COMPARE_RE = re.compile(
     r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(?P<op>>=|<=|>|<)\s*(?P<value>-?\d+(?:\.\d+)?)$"
@@ -663,8 +665,7 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
     )
     matched_claim_ids: set[str] = set()
     for claim in claims:
-        conditions = claim.applies_when or []
-        matched_conditions = [condition for condition in conditions if evaluate_condition(condition, twin)]
+        matched_conditions = _matched_conditions_for_claim(claim.applies_when or [], twin)
         if matched_conditions:
             matched_claims.append(
                 serialize_document(
@@ -690,6 +691,18 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
         "claims": matched_claims,
         "claim_boundary": CLAIM_BOUNDARY,
     }
+
+
+def _matched_conditions_for_claim(conditions: list[str], twin: dict[str, Any]) -> list[str]:
+    matched_conditions = [condition for condition in conditions if evaluate_condition(condition, twin)]
+    if not matched_conditions:
+        return []
+    membership_conditions = [
+        condition for condition in conditions if _HAS_RE.match((condition or "").strip())
+    ]
+    if membership_conditions and len(matched_conditions) != len(conditions):
+        return []
+    return matched_conditions
 
 
 def _lookup_graph_context_for_entities(
@@ -1198,8 +1211,50 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
             out[gene] = genotype or "present"
         elif gene == "ALDH2":
             out["ALDH2"] = genotype or ("GA" if is_risk else "present")
+        elif gene in {"CYP2C19", "CYP2D6", "CYP2C9"}:
+            out[gene] = genotype or "present"
+            phenotype = _infer_pgx_phenotype(gene, genotype, result_label, risk_level)
+            if phenotype:
+                out[f"{gene}_phenotype"] = phenotype
+        elif gene == "SLCO1B1":
+            out["SLCO1B1"] = genotype or "present"
+            if genotype in {"CT", "CC", "TT"}:
+                out["SLCO1B1_rs4149056"] = genotype
+        elif gene == "HFE":
+            out["HFE"] = genotype or "present"
+            if genotype:
+                out["HFE_rs1800562"] = genotype
+        elif gene == "LCT":
+            out["LCT"] = genotype or "present"
+            if genotype:
+                out["LCT_rs4988235"] = genotype
+        elif gene in {"ADORA2A", "FADS1"}:
+            out[gene] = genotype or ("high" if is_risk else "present")
 
     return out
+
+
+def _infer_pgx_phenotype(gene: str, genotype: str, result_label: str, risk_level: str) -> str | None:
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    if any(token in text for token in ("poor", "慢", "弱", "显著下降", "high")):
+        return "poor"
+    if any(token in text for token in ("intermediate", "中间", "轻度", "medium")):
+        return "intermediate"
+    if any(token in text for token in ("rapid", "ultrarapid", "快", "增强")):
+        return "rapid"
+
+    alleles = [part.strip().upper() for part in re.split(r"[/|]", genotype or "") if part.strip()]
+    inactive = {
+        "CYP2C19": {"*2", "*3"},
+        "CYP2D6": {"*3", "*4", "*5", "*6"},
+        "CYP2C9": {"*2", "*3"},
+    }.get(gene, set())
+    inactive_count = sum(1 for allele in alleles if allele in inactive)
+    if inactive_count >= 2:
+        return "poor"
+    if inactive_count == 1:
+        return "intermediate"
+    return None
 
 
 def attach_system_knowledge_evidence(
@@ -1497,6 +1552,19 @@ def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
             return False
         return value in candidates
 
+    has_match = _HAS_RE.match(expression)
+    if has_match:
+        collection = _value_at_path(twin, has_match.group("path"))
+        value_expression = has_match.group("value").strip()
+        any_match = _HAS_ANY_RE.match(value_expression)
+        if any_match:
+            try:
+                candidates = ast.literal_eval(any_match.group("values"))
+            except (SyntaxError, ValueError):
+                return False
+            return any(_collection_contains(collection, candidate) for candidate in candidates)
+        return _collection_contains(collection, _parse_literal(value_expression))
+
     eq_match = _EQ_RE.match(expression)
     if eq_match:
         value = _value_at_path(twin, eq_match.group("path"))
@@ -1528,8 +1596,51 @@ def is_supported_condition(condition: str) -> bool:
     expression = (condition or "").strip()
     return any(
         pattern.match(expression)
-        for pattern in (_NULL_RE, _IN_RE, _EQ_RE, _COMPARE_RE)
+        for pattern in (_NULL_RE, _IN_RE, _HAS_RE, _EQ_RE, _COMPARE_RE)
     )
+
+
+def _collection_contains(collection: Any, candidate: Any) -> bool:
+    needle = str(candidate or "").strip().lower()
+    if not needle:
+        return False
+    for value in _flatten_membership_values(collection):
+        text = str(value or "").strip().lower()
+        if text == needle or needle in text:
+            return True
+    return False
+
+
+def _flatten_membership_values(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, (str, int, float, bool)):
+        return [value]
+    if isinstance(value, dict):
+        values: list[Any] = []
+        preferred_keys = (
+            "name",
+            "generic_name",
+            "drug",
+            "drug_name",
+            "medication_name",
+            "title",
+            "label",
+            "ingredient",
+        )
+        for key in preferred_keys:
+            if key in value:
+                values.extend(_flatten_membership_values(value.get(key)))
+        if not values:
+            for item in value.values():
+                values.extend(_flatten_membership_values(item))
+        return values
+    if isinstance(value, (list, tuple, set)):
+        values: list[Any] = []
+        for item in value:
+            values.extend(_flatten_membership_values(item))
+        return values
+    return [value]
 
 
 def _serialize_edge(edge: KBEdge) -> dict[str, Any]:
