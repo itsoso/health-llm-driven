@@ -721,21 +721,36 @@ def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[s
 
     snapshot: List[Dict[str, Any]] = []
     for f in findings:
-        refs = list(f.evidence_refs or [])
-        unsupported = len(refs) == 0
-        evidence_ref_count = len(refs)
-        support_status = "model_inference" if unsupported else "supported"
-        unsupported_reason = "missing_system_kb_evidence_refs" if unsupported else None
         data = f.model_dump(mode="json").get("raw") or {}
         if not isinstance(data, dict):
             data = {"raw": data}
         data = dict(data)
+        resolution = data.get("evidence_resolution")
+        if not isinstance(resolution, dict):
+            resolution = {}
+        refs = list(f.evidence_refs or resolution.get("evidence_refs") or [])
+        evidence_ref_count = len(refs)
+        if resolution:
+            support_status = str(
+                resolution.get("support_status")
+                or ("supported" if refs else "model_inference")
+            )
+            unsupported = bool(
+                resolution.get("unsupported", support_status == "model_inference" and not refs)
+            )
+            unsupported_reason = resolution.get("unsupported_reason")
+        else:
+            unsupported = len(refs) == 0
+            support_status = "model_inference" if unsupported else "supported"
+            unsupported_reason = "missing_system_kb_evidence_refs" if unsupported else None
         data["evidence_refs"] = refs
         data["evidence_ref_count"] = evidence_ref_count
         data["support_status"] = support_status
         data["unsupported"] = unsupported
         if unsupported:
             data["unsupported_reason"] = unsupported_reason
+        else:
+            data.pop("unsupported_reason", None)
         snapshot.append(
             {
                 "specialist": f.specialist_name,

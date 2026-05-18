@@ -12,6 +12,7 @@ from app.services.system_knowledge_service import lookup_for_twin
 from app.services.system_knowledge_service import (
     attach_system_knowledge_evidence,
     format_system_knowledge_for_prompt,
+    _select_claim_refs_for_specialist,
 )
 from app.orchestrator.schema import SpecialistFinding
 
@@ -295,9 +296,7 @@ def test_lookup_for_twin_matches_longevity_goal_to_aging_hallmark(db):
 
 def test_seed_artifacts_include_fourteen_aging_hallmarks():
     import json
-    from pathlib import Path
-
-    artifact_path = Path("backend/data/system_kb_v2_seed/entities.jsonl")
+    artifact_path = Path(__file__).resolve().parents[1] / "data/system_kb_v2_seed/entities.jsonl"
     hallmarks = [
         json.loads(line)
         for line in artifact_path.read_text(encoding="utf-8").splitlines()
@@ -353,3 +352,86 @@ def test_attach_system_knowledge_evidence_adds_claim_refs_to_specialist_findings
     assert finding.findings[0]["evidence_refs"] == [
         "claim:c_zone2_as_metabolic_base_not_when_recovery_low"
     ]
+
+
+def test_attach_system_knowledge_evidence_marks_record_findings_not_applicable(db):
+    finding = SpecialistFinding(
+        specialist_name="fuel_strategist",
+        category="nutrition",
+        summary="已记录晚餐",
+        findings=[
+            {
+                "type": "record",
+                "title": "晚餐记录",
+                "food": "牛排 150g",
+                "calories": 380,
+            }
+        ],
+        raw={"operation": "record_meal"},
+    )
+
+    result = attach_system_knowledge_evidence(db, {}, [finding])
+
+    assert result["findings_updated"] == 0
+    assert finding.evidence_refs == []
+    assert finding.raw["evidence_resolution"]["support_status"] == "not_applicable"
+    assert finding.raw["evidence_resolution"]["unsupported"] is False
+    assert finding.raw["unsupported"] is False
+    assert finding.raw["unsupported_reason"] is None
+
+
+def test_attach_system_knowledge_evidence_does_not_fallback_to_unrelated_twin_claim(db):
+    db.add(
+        KBDocument(
+            doc_id="claim:c_mthfr_c677t_hcy_folate_boundary",
+            doc_type="claim",
+            entity_type="gene",
+            entity_id="MTHFR",
+            title="MTHFR C677T 与叶酸转化边界",
+            summary="MTHFR C677T TT 与叶酸转化和同型半胱氨酸监测相关。",
+            confidence=0.82,
+            evidence_level="B",
+            applies_when=["twin.genetics.MTHFR_C677T in [CT, TT]"],
+            sources=["dedao:qiuzilong-genetics-07"],
+            last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+            metadata_json={"domain": "nutrition"},
+        )
+    )
+    db.commit()
+    finding = SpecialistFinding(
+        specialist_name="fuel_strategist",
+        category="nutrition",
+        summary="晚餐热量基本平衡，炸物偏多，建议加一份蔬菜",
+        findings=[{"title": "加一份蔬菜", "action": "下一餐增加绿叶菜"}],
+    )
+
+    attach_system_knowledge_evidence(
+        db,
+        {"genetics": {"MTHFR_C677T": "TT"}},
+        [finding],
+    )
+
+    assert finding.evidence_refs == []
+    assert finding.raw["evidence_resolution"]["support_status"] == "model_inference"
+    assert finding.raw["unsupported"] is True
+
+
+def test_select_claim_refs_requires_finding_claim_text_overlap():
+    finding = SpecialistFinding(
+        specialist_name="fuel_strategist",
+        category="nutrition",
+        summary="晚餐热量基本平衡，炸物偏多，建议加一份蔬菜",
+        findings=[{"title": "加一份蔬菜", "action": "下一餐增加绿叶菜"}],
+    )
+    claims = [
+        {
+            "doc_id": "claim:c_mthfr_c677t_hcy_folate_boundary",
+            "entity_type": "gene",
+            "entity_id": "MTHFR",
+            "title": "MTHFR C677T 与叶酸转化边界",
+            "summary": "MTHFR C677T TT 与叶酸转化和同型半胱氨酸监测相关。",
+            "metadata": {"domain": "nutrition"},
+        }
+    ]
+
+    assert _select_claim_refs_for_specialist(finding, claims, 3) == []

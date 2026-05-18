@@ -1011,6 +1011,7 @@ def _select_claim_refs_for_specialist(
     specialist = (getattr(finding, "specialist_name", "") or "").lower()
     category = (getattr(finding, "category", "") or "").lower()
     domain_keywords = _specialist_domain_keywords(specialist, category)
+    finding_terms = _finding_relevance_terms(finding)
     selected: list[str] = []
 
     for claim in claims:
@@ -1021,15 +1022,54 @@ def _select_claim_refs_for_specialist(
         haystack = f"{domain} {entity_type} {entity_id}".lower()
         if domain_keywords and not any(keyword in haystack for keyword in domain_keywords):
             continue
+        if finding_terms and not _claim_matches_finding_terms(claim, finding_terms):
+            continue
+        if not finding_terms:
+            continue
         doc_id = claim.get("doc_id")
         if doc_id:
             selected.append(doc_id)
         if len(selected) >= max_refs:
             break
 
-    if not selected:
-        selected = [claim["doc_id"] for claim in claims[:max_refs] if claim.get("doc_id")]
     return _dedupe_preserve_order(selected)
+
+
+def _finding_relevance_terms(finding: Any) -> set[str]:
+    fields: list[str] = [
+        str(getattr(finding, "summary", "") or ""),
+    ]
+    raw = getattr(finding, "raw", None)
+    if isinstance(raw, dict):
+        for value in raw.values():
+            if isinstance(value, (str, int, float)):
+                fields.append(str(value))
+            elif isinstance(value, list):
+                fields.extend(str(item) for item in value if isinstance(item, (str, int, float)))
+    for item in getattr(finding, "findings", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("title", "action", "recommendation", "summary", "metric", "name"):
+            value = item.get(key)
+            if value:
+                fields.append(str(value))
+    return {
+        term
+        for term in _semantic_query_terms(" ".join(fields))
+        if term not in _KB_RELEVANCE_STOP_TERMS and len(term) >= 2
+    }
+
+
+def _claim_matches_finding_terms(claim: dict[str, Any], finding_terms: set[str]) -> bool:
+    claim_text = _claim_search_text_from_serialized(claim)
+    claim_terms = {
+        term
+        for term in _semantic_query_terms(claim_text)
+        if term not in _KB_RELEVANCE_STOP_TERMS and len(term) >= 2
+    }
+    if finding_terms & claim_terms:
+        return True
+    return any(term in claim_text for term in finding_terms)
 
 
 def _specialist_domain_keywords(specialist: str, category: str) -> list[str]:

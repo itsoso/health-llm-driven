@@ -40,6 +40,15 @@ class EvidenceResolver:
         *,
         max_refs: int = 3,
     ) -> EvidenceResolution:
+        if _finding_is_evidence_not_applicable(finding):
+            return EvidenceResolution(
+                evidence_refs=[],
+                support_status="not_applicable",
+                unsupported=False,
+                unsupported_reason=None,
+                matched_claim_count=0,
+            )
+
         from app.services.system_knowledge_service import (
             lookup_for_twin,
             _select_claim_refs_for_specialist,
@@ -105,3 +114,57 @@ class EvidenceResolver:
             updated += 1
 
         return {"findings_updated": updated, "claim_refs": claim_refs}
+
+
+_NON_ADVICE_ITEM_TYPES = {
+    "record",
+    "logged",
+    "log",
+    "data_summary",
+    "summary",
+    "trend_report",
+    "prediction_verified",
+}
+_NON_ADVICE_OPERATIONS = {
+    "record",
+    "record_meal",
+    "log_meal",
+    "create_record",
+    "update_record",
+    "delete_record",
+    "data_summary",
+}
+
+
+def _finding_is_evidence_not_applicable(finding: Any) -> bool:
+    """Return true for CRUD/data-summary findings that are not advice claims.
+
+    These surfaces still need audit metadata, but counting them as
+    `unsupported` would distort KB coverage and make record-confirmation turns
+    look like medical advice without evidence.
+    """
+
+    raw = getattr(finding, "raw", None)
+    if isinstance(raw, dict):
+        operation = str(raw.get("operation") or raw.get("intent") or raw.get("type") or "").lower()
+        if operation in _NON_ADVICE_OPERATIONS:
+            return True
+        if raw.get("data_summary") is True:
+            return True
+
+    items = getattr(finding, "findings", None) or []
+    if not items:
+        return False
+    item_types = {
+        str(item.get("type") or "").lower()
+        for item in items
+        if isinstance(item, dict) and item.get("type")
+    }
+    if item_types and item_types.issubset(_NON_ADVICE_ITEM_TYPES):
+        return True
+
+    text = f"{getattr(finding, 'summary', '')} {getattr(finding, 'category', '')}".lower()
+    if any(token in text for token in ("已记录", "已删除", "已更新", "记录完成")):
+        return True
+
+    return False

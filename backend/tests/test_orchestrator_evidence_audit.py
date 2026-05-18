@@ -53,6 +53,34 @@ def test_specialist_audit_snapshot_preserves_supported_evidence_refs():
     assert snapshot[0]["data"]["evidence_ref_count"] == 1
 
 
+def test_specialist_audit_snapshot_uses_existing_evidence_resolution_when_present():
+    finding = SpecialistFinding(
+        specialist_name="fuel_strategist",
+        category="nutrition",
+        summary="晚餐已记录，热量基本平衡",
+        findings=[{"title": "晚餐记录"}],
+        raw={
+            "evidence_resolution": {
+                "evidence_refs": [],
+                "support_status": "not_applicable",
+                "unsupported": False,
+                "unsupported_reason": None,
+                "matched_claim_count": 0,
+                "resolver": "system_kb_v1",
+            }
+        },
+    )
+
+    snapshot = _specialist_audit_snapshot([finding])
+
+    assert snapshot[0]["support_status"] == "not_applicable"
+    assert snapshot[0]["unsupported"] is False
+    assert snapshot[0]["unsupported_reason"] is None
+    assert snapshot[0]["data"]["support_status"] == "not_applicable"
+    assert snapshot[0]["data"]["unsupported"] is False
+    assert snapshot[0]["data"]["evidence_resolution"]["support_status"] == "not_applicable"
+
+
 def test_synthesis_prompt_exposes_evidence_contract_to_final_llm():
     finding = SpecialistFinding(
         specialist_name="movement_coach",
