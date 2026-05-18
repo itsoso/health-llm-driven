@@ -211,3 +211,19 @@ class TestTasksUseGarminCredential:
         source = inspect.getsource(send_morning_health_summary)
         assert "GarminCredential" in source
         assert "DeviceCredential" not in source
+
+
+class TestNotificationEvidencePayloads:
+    """验证通知任务写入 KB V2 evidence metadata."""
+
+    def test_morning_briefing_payload_is_data_summary(self):
+        from app.tasks.notifications import _morning_briefing_push_data
+
+        data = _morning_briefing_push_data()
+
+        assert data["deep_link"] == "/voice-chat?intent=briefing"
+        assert data["kind"] == "morning_briefing"
+        assert data["support_status"] == "data_summary"
+        assert data["unsupported"] is False
+        assert data["evidence_refs"] == []
+        assert data["notification_evidence_source"] == "notifications.send_morning_health_summary"

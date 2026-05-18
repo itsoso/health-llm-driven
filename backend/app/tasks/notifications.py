@@ -38,6 +38,18 @@ _EXERCISE_UNDERTRAINING_KEYWORDS = (
 )
 
 
+def _morning_briefing_push_data() -> dict:
+    return build_notification_evidence_data(
+        notification_type="morning_briefing",
+        source="notifications.send_morning_health_summary",
+        existing_data={
+            "deep_link": "/voice-chat?intent=briefing",
+            "kind": "morning_briefing",
+        },
+        evidence_domain="daily_briefing",
+    )
+
+
 def _is_exercise_undertraining_risk(text: str) -> bool:
     return any(keyword in (text or "") for keyword in _EXERCISE_UNDERTRAINING_KEYWORDS)
 
@@ -819,11 +831,7 @@ def send_morning_health_summary():
                     notification_type="morning_briefing",
                     title="🌅 早安",
                     content=script[:200],
-                    data={
-                        # 点推送进 voice-chat, intent=briefing 触发自动 TTS 播
-                        "deep_link": "/voice-chat?intent=briefing",
-                        "kind": "morning_briefing",
-                    },
+                    data=_morning_briefing_push_data(),
                     # 同一日只推一次
                     dedup_window_hours=20,
                 ))

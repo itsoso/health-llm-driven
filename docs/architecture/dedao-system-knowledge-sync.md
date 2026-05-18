@@ -20,6 +20,7 @@
 - External evidence governance: coverage reports include target external-source rate and `meets_target`, so PubMed/guideline enrichment is tracked as an operational gate rather than a narrative note.
 - Planner enforcement: Orchestrator now filters unsupported actionable specialist findings before final synthesis when the same evidence domain has a KB-supported finding; safety-critical alerts and data gaps bypass this filter.
 - Weekly Advisor evidence enforcement: weekly fallback action cards now attach system KB evidence and run the same planner evidence policy before persisting specialist-derived suggestions.
+- Notification evidence coverage includes trend summaries, morning briefings, weekly-review invites, action-card followups, agent-loop advice, and outcome-grader pushes.
 
 ## 结论
 
