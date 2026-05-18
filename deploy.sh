@@ -258,13 +258,20 @@ deploy_backend() {
     # 2. 同步环境变量
     sync_env
 
+    # GitHub 在服务器侧偶发超时；预先上传当前 HEAD 的 bundle，
+    # 远端 git pull 失败时仍可通过 deploy.sh 完成同一提交的部署。
+    DEPLOY_BUNDLE=$(mktemp)
+    git bundle create "$DEPLOY_BUNDLE" HEAD >/dev/null
+    scp "$DEPLOY_BUNDLE" "$SERVER:/tmp/health-app-deploy.bundle" >/dev/null
+    rm "$DEPLOY_BUNDLE"
+
     # 3. 部署代码 (skill 同步可能失败 → 我们自己处理回滚, 临时关闭 set -e)
     set +e
     ssh $SERVER "
         cd $REMOTE_PATH && \
         echo '暂存服务器本地改动...' && \
         git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
-        git pull && \
+        (git pull || (echo 'git pull 失败, 使用上传的 deploy bundle...' && git fetch /tmp/health-app-deploy.bundle main && git checkout FETCH_HEAD)) && \
         cd backend && \
         echo '激活虚拟环境...' && \
         source venv/bin/activate && \
