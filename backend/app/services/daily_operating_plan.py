@@ -17,6 +17,20 @@ from app.twin import build_twin
 
 logger = logging.getLogger(__name__)
 
+_ACUTE_REST_SUPPRESS_TITLES = (
+    "跑步",
+    "训练",
+    "力量",
+    "HIIT",
+    "间歇",
+    "冲刺",
+    "配速",
+    "长跑",
+    "马拉松",
+    "举铁",
+    "重量",
+)
+
 
 def _bp_text(twin) -> str | None:
     s = twin.labs.blood_pressure_systolic
@@ -139,6 +153,41 @@ def _guard_plan_actions(
     return guarded
 
 
+def _apply_acute_rest_arbiter(
+    *,
+    acute_rest: bool,
+    actions: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Arbiter v0: safety > acute illness rest overrides training-like interventions.
+
+    目标是避免出现 "暂停训练" 的同时又展示训练/跑步类 intervention 的产品冲突。
+    """
+    if not acute_rest:
+        return actions, []
+
+    kept: List[Dict[str, Any]] = []
+    suppressed_keys: List[str] = []
+    for action in actions:
+        action_key = str(action.get("action_key") or "")
+        title = str(action.get("title") or "")
+        is_intervention = action_key.startswith("intervention.card.")
+        looks_like_training = any(k in title for k in _ACUTE_REST_SUPPRESS_TITLES)
+
+        if is_intervention and looks_like_training:
+            suppressed_keys.append(action_key)
+            continue
+        kept.append(action)
+
+    notes: List[Dict[str, Any]] = []
+    if suppressed_keys:
+        notes.append({
+            "kind": "suppressed_actions",
+            "reason": "acute_rest_from_training",
+            "suppressed_action_keys": suppressed_keys,
+        })
+    return kept, notes
+
+
 def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None) -> Dict[str, Any]:
     """构建并缓存当天 Daily Operating Plan.
 
@@ -238,6 +287,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     ))
 
     actions.extend(_active_interventions(db, user_id))
+    actions, arbitration_notes = _apply_acute_rest_arbiter(acute_rest=acute_rest, actions=actions)
     actions = _guard_plan_actions(db, user_id=user_id, plan_date=plan_date, actions=actions)[:5]
 
     state_summary = {
@@ -256,6 +306,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             "should_rest_from_training": acute_rest,
             "training_guardrail": acute_guardrail if acute_rest else None,
         },
+        **({"arbitration_notes": arbitration_notes} if arbitration_notes else {}),
         "data_sources": twin.meta.data_sources,
     }
     verification_metrics = [
