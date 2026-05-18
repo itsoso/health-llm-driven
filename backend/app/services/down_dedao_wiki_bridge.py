@@ -74,6 +74,8 @@ def compile_down_dedao_wiki_artifacts(
             result.pages.append(page_doc)
             existing_docs.add(page_doc["doc_id"])
 
+    _ensure_relation_endpoint_entities(result, existing_docs, base_artifact_dir, now)
+
     result.diff = {
         "pages_added": len(result.pages),
         "entities_added": len(result.entities),
@@ -148,17 +150,88 @@ def _load_existing_relation_keys(root: Path) -> set[tuple[str, str, str]]:
 
 
 def _merge_jsonl(path: Path, rows: list[dict[str, Any]], key_fields: tuple[str, ...]) -> int:
+    existing_rows = _read_jsonl(path)
+    if not rows:
+        return len(existing_rows)
+
     merged: dict[tuple[Any, ...], dict[str, Any]] = {}
-    for row in _read_jsonl(path):
-        merged[tuple(row.get(field) for field in key_fields)] = row
+    ordered: list[dict[str, Any]] = []
+    for row in existing_rows:
+        key = tuple(row.get(field) for field in key_fields)
+        merged[key] = row
+        ordered.append(row)
     for row in rows:
-        merged[tuple(row.get(field) for field in key_fields)] = row
-    ordered = sorted(merged.values(), key=lambda row: tuple(str(row.get(field, "")) for field in key_fields))
+        key = tuple(row.get(field) for field in key_fields)
+        if key in merged:
+            for index, existing_row in enumerate(ordered):
+                if existing_row is merged[key]:
+                    ordered[index] = row
+                    break
+        else:
+            ordered.append(row)
+        merged[key] = row
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for row in ordered),
         encoding="utf-8",
     )
     return len(ordered)
+
+
+def _ensure_relation_endpoint_entities(
+    result: DownDedaoBridgeResult,
+    known_doc_ids: set[str],
+    artifact_dir: Path,
+    now: datetime,
+) -> None:
+    """Create placeholder entity docs for graph endpoints referenced by relations.
+
+    PostgreSQL enforces FK integrity for kb_edges. Some reviewed wiki claims link
+    to actionable entities (for example entity:intervention:caffeine-cutoff)
+    before a full entity page exists, so the bridge materializes a minimal,
+    reviewed placeholder instead of dropping the relationship.
+    """
+    relation_rows = _read_jsonl(artifact_dir / "relations.jsonl") + result.relations
+    for row in relation_rows:
+        for field in ("src_doc_id", "dst_doc_id"):
+            doc_id = str(row.get(field) or "")
+            if not doc_id.startswith("entity:") or doc_id in known_doc_ids:
+                continue
+            placeholder = _placeholder_entity_document(doc_id, now)
+            if placeholder:
+                result.entities.append(placeholder)
+                known_doc_ids.add(doc_id)
+
+
+def _placeholder_entity_document(doc_id: str, now: datetime) -> dict[str, Any] | None:
+    parts = doc_id.split(":", 2)
+    if len(parts) != 3:
+        return None
+    _, entity_type, entity_id = parts
+    title = entity_id.replace("-", " ")
+    summary = (
+        f"{title} 是 down-dedao LLM Wiki 关系引用的占位实体，"
+        "用于保持系统知识图谱完整；后续需要补充独立证据页。"
+    )
+    return {
+        "doc_id": doc_id,
+        "doc_type": "entity",
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "title": title,
+        "summary": summary,
+        "body": summary,
+        "confidence": 0.55,
+        "evidence_level": "C",
+        "sources": ["down-dedao:llm-wiki"],
+        "last_confirmed": now.isoformat(),
+        "decay_rate": "normal",
+        "metadata": {
+            "origin": "down-dedao-llm-wiki",
+            "placeholder": True,
+            "license_scope": "internal_transformed_claims",
+            "review_status": "reviewed",
+        },
+    }
 
 
 def _iter_gene_entities(groups: dict[str, Any]) -> list[dict[str, Any]]:

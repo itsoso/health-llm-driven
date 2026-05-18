@@ -68,7 +68,10 @@ def test_compile_down_dedao_wiki_artifacts_converts_gene_drug_claims(tmp_path):
                         "twin.genetics.CYP2C19_phenotype == 'poor'",
                         "twin.medications has 'clopidogrel'",
                     ],
-                    "recommends_lookup": ["entity:drug:clopidogrel"],
+                    "recommends_lookup": [
+                        "entity:drug:clopidogrel",
+                        "entity:intervention:caffeine-cutoff",
+                    ],
                     "predicate": "contraindicates",
                     "body": "CYP2C19 PM 使用氯吡格雷时需要医生核对替代方案。",
                 }
@@ -104,6 +107,11 @@ def test_compile_down_dedao_wiki_artifacts_converts_gene_drug_claims(tmp_path):
         and relation["relation"] == "recommends"
         for relation in result.relations
     )
+    placeholder = next(
+        entity for entity in result.entities if entity["doc_id"] == "entity:intervention:caffeine-cutoff"
+    )
+    assert placeholder["metadata"]["placeholder"] is True
+    assert placeholder["metadata"]["review_status"] == "reviewed"
 
 
 def test_compile_down_dedao_wiki_artifacts_imports_topic_pages_without_long_content_or_private_notes(tmp_path):

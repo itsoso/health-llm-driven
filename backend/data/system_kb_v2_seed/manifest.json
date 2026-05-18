@@ -2,7 +2,7 @@
   "compiled_at": "2026-05-18T03:58:39.545161+00:00",
   "counts": {
     "claims": 375,
-    "entities": 151,
+    "entities": 159,
     "pages": 61,
     "relations": 2774
   },
@@ -14,10 +14,10 @@
     "relations_added": 204
   },
   "down_dedao_wiki": {
-    "compiled_at": "2026-05-18T15:21:24.843623+00:00",
+    "compiled_at": "2026-05-18T15:26:54.041019+00:00",
     "diff": {
       "claims_added": 0,
-      "entities_added": 0,
+      "entities_added": 8,
       "pages_added": 0,
       "private_skipped": 0,
       "relations_added": 0
