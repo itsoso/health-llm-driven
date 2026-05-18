@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 import hashlib
+import math
 import operator
 import re
 from typing import Any
@@ -366,7 +368,7 @@ def search_knowledge(
     documents = docs_query.all()
     documents_by_id = {document.doc_id: document for document in documents}
 
-    lexical_ranked: list[tuple[float, KBDocument]] = []
+    lexical_ranked: list[tuple[float, KBDocument]] = _bm25_rank_documents(documents, terms)
     fts_ranked: list[tuple[float, KBDocument]] = []
     vector_ranked: list[tuple[float, KBDocument]] = []
     semantic_terms = _semantic_query_terms(normalized_query)
@@ -381,9 +383,6 @@ def search_knowledge(
             entity_type=entity_type,
         )
     for document in documents:
-        score = _score_document(document, terms)
-        if score > 0 or not terms:
-            lexical_ranked.append((score, document))
         if fts_backend != "postgres_tsv":
             fts_score = _score_precomputed_search_text(document, terms)
             if fts_score > 0 or not terms:
@@ -466,7 +465,7 @@ def search_knowledge(
         },
         "retrieval_plan": {
             "channels": ["lexical", "fts", "vector", "graph"],
-            "lexical_backend": "python_weighted_terms",
+            "lexical_backend": "python_bm25_v1",
             "fts_backend": fts_backend,
             "vector_backend": "alias_overlap_v1",
             "graph_backend": "kb_edges_one_hop",
@@ -1211,6 +1210,58 @@ def _score_document(document: KBDocument, terms: list[str]) -> float:
     if document.confidence:
         score += float(document.confidence) * 0.1
     return score
+
+
+def _bm25_rank_documents(documents: list[KBDocument], terms: list[str]) -> list[tuple[float, KBDocument]]:
+    if not documents:
+        return []
+    if not terms:
+        return [
+            (1.0 + float(document.confidence or 0.0) * 0.1, document)
+            for document in documents
+        ]
+
+    tokenized = {
+        document.doc_id: _query_terms(_document_search_text(document))
+        for document in documents
+    }
+    document_lengths = {doc_id: max(1, len(tokens)) for doc_id, tokens in tokenized.items()}
+    average_length = sum(document_lengths.values()) / max(1, len(document_lengths))
+    document_frequencies: Counter[str] = Counter()
+    for tokens in tokenized.values():
+        document_frequencies.update(set(tokens))
+
+    k1 = 1.5
+    b = 0.75
+    corpus_size = len(documents)
+    ranked: list[tuple[float, KBDocument]] = []
+    for document in documents:
+        tokens = tokenized[document.doc_id]
+        token_counts = Counter(tokens)
+        length = document_lengths[document.doc_id]
+        title = (document.title or "").lower()
+        entity = f"{document.entity_type or ''} {document.entity_id or ''}".lower()
+        score = 0.0
+        for term in terms:
+            term_frequency = token_counts.get(term, 0)
+            if term in title:
+                term_frequency += 3
+            if term in entity:
+                term_frequency += 2
+            if term_frequency <= 0:
+                continue
+            document_frequency = max(1, document_frequencies.get(term, 0))
+            idf = math.log(1 + (corpus_size - document_frequency + 0.5) / (document_frequency + 0.5))
+            denominator = term_frequency + k1 * (1 - b + b * length / max(1.0, average_length))
+            score += idf * (term_frequency * (k1 + 1)) / denominator
+        if score <= 0:
+            continue
+        if document.doc_type == "claim":
+            score += 0.15
+        if document.confidence:
+            score += float(document.confidence) * 0.05
+        ranked.append((score, document))
+    return ranked
 
 
 def _score_precomputed_search_text(document: KBDocument, terms: list[str]) -> float:
