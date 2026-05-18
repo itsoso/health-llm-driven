@@ -230,7 +230,7 @@ python scripts/import_system_kb_v2_artifacts.py
 - `GET /api/v1/knowledge/claim/{claim_id}`
 - `POST /api/v1/knowledge/claim/{claim_id}/feedback`
 - `GET /api/v1/knowledge/search?q=...&limit=...`：DB-backed lexical + FTS-compatible `tsv` stream + semantic alias stream + one-hop graph expansion + RRF，结果带 `retrieval.channels`
-- `POST /api/v1/knowledge/lookup_for_twin`
+- `POST /api/v1/knowledge/lookup_for_twin`：先用 Twin 结构化字段命中 entity，再沿 `contextualizes` / `has_claim` 图谱边补充上下文 entity 和 claim，例如尿酸指标可带出高尿酸风险、肾功能和饮水/复查相关 claim
 - `GET /api/v1/admin/knowledge/lint_report`
 - `POST /api/v1/admin/knowledge/reindex`
 

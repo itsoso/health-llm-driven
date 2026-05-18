@@ -485,17 +485,126 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
         .order_by(KBDocument.confidence.desc().nullslast(), KBDocument.doc_id.asc())
         .all()
     )
+    matched_claim_ids: set[str] = set()
     for claim in claims:
         conditions = claim.applies_when or []
         matched_conditions = [condition for condition in conditions if evaluate_condition(condition, twin)]
         if matched_conditions:
-            matched_claims.append(serialize_document(claim, {"matched_conditions": matched_conditions}))
+            matched_claims.append(
+                serialize_document(
+                    claim,
+                    {
+                        "matched_conditions": matched_conditions,
+                        "match_type": "condition",
+                    },
+                )
+            )
+            matched_claim_ids.add(claim.doc_id)
+
+    contextual_entities, graph_claims = _lookup_graph_context_for_entities(
+        db,
+        entities,
+        excluded_claim_ids=matched_claim_ids,
+    )
+    matched_claims.extend(graph_claims)
 
     return {
         "entities": [serialize_document(entity) for entity in entities],
+        "contextual_entities": [serialize_document(entity) for entity in contextual_entities],
         "claims": matched_claims,
         "claim_boundary": CLAIM_BOUNDARY,
     }
+
+
+def _lookup_graph_context_for_entities(
+    db: Session,
+    entities: list[KBDocument],
+    *,
+    excluded_claim_ids: set[str],
+) -> tuple[list[KBDocument], list[dict[str, Any]]]:
+    """Promote claim context reachable from structured Twin entity matches."""
+
+    direct_entity_ids = {entity.doc_id for entity in entities}
+    if not direct_entity_ids:
+        return [], []
+
+    context_edges = (
+        db.query(KBEdge)
+        .filter(
+            KBEdge.relation == "contextualizes",
+            or_(KBEdge.src_doc_id.in_(direct_entity_ids), KBEdge.dst_doc_id.in_(direct_entity_ids)),
+        )
+        .all()
+    )
+    context_entity_ids = {
+        edge.dst_doc_id if edge.src_doc_id in direct_entity_ids else edge.src_doc_id
+        for edge in context_edges
+        if (edge.dst_doc_id if edge.src_doc_id in direct_entity_ids else edge.src_doc_id).startswith("entity:")
+    }
+    contextual_entities = []
+    if context_entity_ids:
+        contextual_entities = (
+            db.query(KBDocument)
+            .filter(
+                KBDocument.doc_id.in_(context_entity_ids),
+                KBDocument.doc_type == "entity",
+                KBDocument.is_archived.is_(False),
+            )
+            .order_by(KBDocument.entity_type.asc(), KBDocument.entity_id.asc())
+            .all()
+        )
+
+    candidate_entity_ids = context_entity_ids
+    if not candidate_entity_ids:
+        return contextual_entities, []
+
+    claim_edges = (
+        db.query(KBEdge)
+        .filter(or_(KBEdge.src_doc_id.in_(candidate_entity_ids), KBEdge.dst_doc_id.in_(candidate_entity_ids)))
+        .all()
+    )
+    claim_context_by_id: dict[str, dict[str, Any]] = {}
+    for edge in claim_edges:
+        if edge.src_doc_id in candidate_entity_ids and edge.dst_doc_id.startswith("claim:"):
+            claim_id = edge.dst_doc_id
+            via_entity = edge.src_doc_id
+        elif edge.dst_doc_id in candidate_entity_ids and edge.src_doc_id.startswith("claim:"):
+            claim_id = edge.src_doc_id
+            via_entity = edge.dst_doc_id
+        else:
+            continue
+        if claim_id in excluded_claim_ids:
+            continue
+        current = claim_context_by_id.get(claim_id)
+        if current:
+            continue
+        claim_context_by_id[claim_id] = {
+            "match_type": "graph_context",
+            "matched_conditions": [],
+            "matched_context": {
+                "via_entity": via_entity,
+                "relation": edge.relation,
+                "source_claim_id": edge.source_claim_id,
+            },
+        }
+
+    if not claim_context_by_id:
+        return contextual_entities, []
+
+    graph_claims = (
+        db.query(KBDocument)
+        .filter(
+            KBDocument.doc_id.in_(claim_context_by_id.keys()),
+            KBDocument.doc_type == "claim",
+            KBDocument.is_archived.is_(False),
+        )
+        .order_by(KBDocument.confidence.desc().nullslast(), KBDocument.doc_id.asc())
+        .all()
+    )
+    return contextual_entities, [
+        serialize_document(claim, claim_context_by_id[claim.doc_id])
+        for claim in graph_claims
+    ]
 
 
 def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str, int]:

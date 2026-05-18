@@ -138,6 +138,7 @@ New behavior:
 - `GET /api/v1/knowledge/claim/{claim_id}` returns claim detail, graph neighbors, edges, and medical boundary.
 - `POST /api/v1/knowledge/claim/{claim_id}/feedback` records `feedback_disagree` in `kb_audit` so mobile evidence feedback becomes a lifecycle signal.
 - `GET /api/v1/knowledge/search` performs deterministic DB-only lexical scoring, precomputed `tsv` FTS-compatible scoring, semantic alias scoring, and one-hop graph context through RRF. It is compatible with SQLite tests and production PostgreSQL; a real embedding backend can replace the alias stream without changing response shape.
+- `POST /api/v1/knowledge/lookup_for_twin` now returns both direct `applies_when` matches and graph-context claims reached from structured Twin entities via `contextualizes` and `has_claim` edges. This lets a lab fact such as uric acid pull related condition/intervention claims into Agent prompts even when the claim has no direct threshold condition.
 - `GET /api/v1/admin/knowledge/lint_report` reports orphan entities, orphan claims, invalid `applies_when`, and stale claims.
 - `POST /api/v1/admin/knowledge/reindex` refreshes `kb_documents.tsv` and SHA-256 `content_hash`.
 - `apply_confidence_decay(...)` and `scripts/decay_system_kb_confidence.py` implement the first lifecycle hook for stale claim confidence decay.

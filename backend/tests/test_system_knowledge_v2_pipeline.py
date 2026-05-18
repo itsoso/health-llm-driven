@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.models.system_knowledge import KBDocument
+from app.models.system_knowledge import KBDocument, KBEdge
 from app.services.system_knowledge_importer import import_system_kb_artifacts
 from app.services.system_knowledge_pipeline import (
     classify_health_source,
@@ -40,6 +40,79 @@ def test_lookup_for_twin_matches_boolean_goal_conditions(db):
     assert result["claims"][0]["matched_conditions"] == [
         "twin.goals.weight_loss.active == true"
     ]
+
+
+def test_lookup_for_twin_promotes_contextualized_entity_claims(db):
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="entity:biomarker:uric-acid",
+                doc_type="entity",
+                entity_type="biomarker",
+                entity_id="uric-acid",
+                title="尿酸",
+                summary="尿酸是代谢和肾功能轨迹中的关键指标。",
+                confidence=0.78,
+                evidence_level="B",
+                sources=["dedao:fengxue-gaoniaosuan"],
+            ),
+            KBDocument(
+                doc_id="entity:condition:hyperuricemia-risk",
+                doc_type="entity",
+                entity_type="condition",
+                entity_id="hyperuricemia-risk",
+                title="高尿酸风险",
+                summary="尿酸偏高需要结合饮食、酒精、体重和肾功能解释。",
+                confidence=0.76,
+                evidence_level="B",
+                sources=["dedao:fengxue-gaoniaosuan"],
+            ),
+            KBDocument(
+                doc_id="claim:c_uric_acid_hydration_context",
+                doc_type="claim",
+                entity_type="condition",
+                entity_id="hyperuricemia-risk",
+                title="尿酸偏高需结合饮水和肾功能复查",
+                summary="尿酸偏高时应优先确认饮水、酒精、含糖饮料、体重和肾功能背景。",
+                confidence=0.74,
+                evidence_level="B",
+                applies_when=[],
+                sources=["dedao:fengxue-gaoniaosuan"],
+            ),
+        ]
+    )
+    db.flush()
+    db.add_all(
+        [
+            KBEdge(
+                src_doc_id="entity:biomarker:uric-acid",
+                dst_doc_id="entity:condition:hyperuricemia-risk",
+                relation="contextualizes",
+                confidence=0.58,
+                source_claim_id="claim:c_uric_acid_hydration_context",
+            ),
+            KBEdge(
+                src_doc_id="entity:condition:hyperuricemia-risk",
+                dst_doc_id="claim:c_uric_acid_hydration_context",
+                relation="has_claim",
+                confidence=0.84,
+                source_claim_id="claim:c_uric_acid_hydration_context",
+            ),
+        ]
+    )
+    db.commit()
+
+    result = lookup_for_twin(db, {"labs": {"uric_acid_umol_l": 520}})
+
+    assert [entity["doc_id"] for entity in result["entities"]] == ["entity:biomarker:uric-acid"]
+    assert [entity["doc_id"] for entity in result["contextual_entities"]] == [
+        "entity:condition:hyperuricemia-risk"
+    ]
+    assert [claim["doc_id"] for claim in result["claims"]] == [
+        "claim:c_uric_acid_hydration_context"
+    ]
+    assert result["claims"][0]["match_type"] == "graph_context"
+    assert result["claims"][0]["matched_context"]["via_entity"] == "entity:condition:hyperuricemia-risk"
 
 
 def test_scan_health_sources_filters_relevant_courses(tmp_path):

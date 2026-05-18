@@ -482,7 +482,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | Dedao ingest | 已有 dry-run/`--write` deterministic pipeline；本轮扫描 46 个健康相关来源目录 | deterministic pipeline 完成，仍不是完整 LLM claim mining |
 | Corpus coverage | 52 pages / 99 entities / 357 claims / 2715 relations | Phase 2 breadth 达标；新增 entity-to-entity contextual graph |
 | KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，旧 Chroma fallback | 本轮补齐 |
-| Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator | 完成最小闭环 |
+| Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator；`lookup_for_twin` 会沿 `contextualizes` 图谱边补充上下文 claim | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着；Planner synthesis 前会过滤同域无证据 actionable 建议，安全告警和 data_gap 例外；Weekly Advisor fallback action card 也复用同一策略 | 基本完成，后续扩展到直接 push scheduler 通知面 |
 | Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
 | Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft；admin operations dashboard 可看治理状态 | 基本完成，后续是可视化页面 |
