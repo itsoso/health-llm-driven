@@ -369,6 +369,82 @@ def _notify_prediction_hit(db, card: ActionCard) -> bool:
         return False
 
 
+def grade_single_card(db, card: ActionCard, now: datetime) -> dict:
+    """Grade one due ActionCard in-place.
+
+    Returns:
+        {"status": "graded" | "skipped_no_data", "pushed": bool, "note": str}
+
+    This is used by the scheduled batch grader and by interactive opener quick
+    replies, where the user answers "做到了/没做" and expects the specific card
+    they are looking at to be verified immediately.
+    """
+    if card.metric_key == "bp" and card.target_value and "/" in card.target_value:
+        score, note = _grade_bp_dual(
+            db, card.user_id, card.baseline_value or "", card.target_value, now,
+        )
+        if score is None:
+            card.check_back_date = now + timedelta(days=3)
+            card.grading_notes = (card.grading_notes or "") + \
+                f"\n[{now.strftime('%Y-%m-%d')}] {note}, 复查日期顺延 3 天"
+            return {"status": "skipped_no_data", "pushed": False, "note": note}
+
+        final_score, adh_note = _apply_adherence(score, card)
+        card.accuracy_score = final_score
+        card.graded_at = now
+        card.grading_notes = note + adh_note
+        sys_actual = _fetch_metric(db, card.user_id, "systolic_bp", now)
+        base_sys_num = _parse_numeric((card.baseline_value or "").split("/")[0])
+        if sys_actual is not None and base_sys_num is not None:
+            card.outcome, card.effect_size = grade_outcome(
+                "systolic_bp", str(base_sys_num), sys_actual,
+            )
+        logger.info(
+            f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
+            f"metric=bp-dual): score={final_score} (raw {score}) — {note}{adh_note}"
+        )
+        pushed = _notify_prediction_hit(db, card)
+        return {"status": "graded", "pushed": pushed, "note": note + adh_note}
+
+    actual = _fetch_metric(db, card.user_id, card.metric_key, now)
+    if actual is None:
+        card.check_back_date = now + timedelta(days=3)
+        max_age = _max_age_for(card.metric_key)
+        note = f"{card.metric_key} 无 {max_age} 天内数据，复查顺延 3 天"
+        card.grading_notes = (card.grading_notes or "") + \
+            f"\n[{now.strftime('%Y-%m-%d')}] {note}"
+        return {"status": "skipped_no_data", "pushed": False, "note": note}
+
+    baseline = _parse_numeric(card.baseline_value)
+    target = _parse_numeric(card.target_value)
+    direction = _parse_direction(card.target_value)
+    score, note = _grade(baseline, target, actual, direction)
+
+    final_score, adh_note = _apply_adherence(score, card)
+
+    card.actual_value = f"{actual:g}"
+    card.accuracy_score = final_score
+    card.graded_at = now
+    card.grading_notes = note + adh_note
+    if baseline is not None:
+        card.outcome, card.effect_size = grade_outcome(
+            card.metric_key, str(baseline), actual,
+        )
+    logger.info(
+        f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
+        f"metric={card.metric_key}): score={final_score} (raw {score}) — {note}{adh_note}"
+    )
+
+    try:
+        from app.services.memory_extractor import extract_from_action_card_outcome
+        extract_from_action_card_outcome(db, card)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[OutcomeGrader] memory extract 失败 (跳过): {e}")
+
+    pushed = _notify_prediction_hit(db, card)
+    return {"status": "graded", "pushed": pushed, "note": note + adh_note}
+
+
 def _grade_loop(db, now: datetime) -> dict:
     """核心循环, 与 Celery / 测试 都可复用."""
     graded = 0
@@ -386,82 +462,12 @@ def _grade_loop(db, now: datetime) -> dict:
     logger.info(f"[OutcomeGrader] {len(cards)} cards 到期待评")
 
     for card in cards:
-        # BP 双指标特殊路径 — 只有当 target 明确写成 "120/80" 形式时才走
-        if card.metric_key == "bp" and card.target_value and "/" in card.target_value:
-            score, note = _grade_bp_dual(
-                db, card.user_id, card.baseline_value or "", card.target_value, now,
-            )
-            if score is None:
-                card.check_back_date = now + timedelta(days=3)
-                card.grading_notes = (card.grading_notes or "") + \
-                    f"\n[{now.strftime('%Y-%m-%d')}] {note}, 复查日期顺延 3 天"
-                skipped_no_data += 1
-                continue
-            final_score, adh_note = _apply_adherence(score, card)
-            card.accuracy_score = final_score
-            card.graded_at = now
-            card.grading_notes = note + adh_note
-            # outcome / effect_size: 以 systolic 为基准 (BP 整体偏高=worse).
-            # 下游 admin_wscla / weekly_briefing / action_card stats 都依赖这两个字段.
-            sys_actual = _fetch_metric(db, card.user_id, "systolic_bp", now)
-            base_sys_num = _parse_numeric((card.baseline_value or "").split("/")[0])
-            if sys_actual is not None and base_sys_num is not None:
-                card.outcome, card.effect_size = grade_outcome(
-                    "systolic_bp", str(base_sys_num), sys_actual,
-                )
-            graded += 1
-            logger.info(
-                f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
-                f"metric=bp-dual): score={final_score} (raw {score}) — {note}{adh_note}"
-            )
-            # 命中推送 (>=70 分) — Agent Native: AI 主动汇报命中
-            if _notify_prediction_hit(db, card):
-                pushed += 1
-            continue
-
-        actual = _fetch_metric(db, card.user_id, card.metric_key, now)
-        if actual is None:
-            card.check_back_date = now + timedelta(days=3)
-            max_age = _max_age_for(card.metric_key)
-            card.grading_notes = (card.grading_notes or "") + \
-                f"\n[{now.strftime('%Y-%m-%d')}] {card.metric_key} 无 {max_age} 天内数据，复查顺延 3 天"
+        result = grade_single_card(db, card, now)
+        if result["status"] == "skipped_no_data":
             skipped_no_data += 1
             continue
-
-        baseline = _parse_numeric(card.baseline_value)
-        target = _parse_numeric(card.target_value)
-        direction = _parse_direction(card.target_value)
-        score, note = _grade(baseline, target, actual, direction)
-
-        final_score, adh_note = _apply_adherence(score, card)
-
-        card.actual_value = f"{actual:g}"
-        card.accuracy_score = final_score
-        card.graded_at = now
-        card.grading_notes = note + adh_note
-        # outcome / effect_size — 用统一的 grade_outcome (HIGHER_IS_BETTER 表驱动方向).
-        # 这两个字段是下游 (admin_wscla / weekly_briefing / action_card stats) 的真正读源,
-        # accuracy_score 只在 specialist hit-rate 看板里展示.
-        if baseline is not None:
-            card.outcome, card.effect_size = grade_outcome(
-                card.metric_key, str(baseline), actual,
-            )
         graded += 1
-
-        logger.info(
-            f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
-            f"metric={card.metric_key}): score={final_score} (raw {score}) — {note}{adh_note}"
-        )
-
-        # 旁路: 评分结果写入 procedural memory (LLM Wiki v2)
-        try:
-            from app.services.memory_extractor import extract_from_action_card_outcome
-            extract_from_action_card_outcome(db, card)
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"[OutcomeGrader] memory extract 失败 (跳过): {e}")
-
-        # 命中推送 (>=70 分) — Agent Native: AI 主动汇报命中
-        if _notify_prediction_hit(db, card):
+        if result["pushed"]:
             pushed += 1
 
     db.commit()

@@ -213,8 +213,29 @@ class AgentExecutor:
         image_url_value = json.dumps(saved_image_urls) if saved_image_urls else None
         svc.save_message(conv.id, "user", user_content, image_url=image_url_value)
 
+        opener_quick_reply_note = None
+        try:
+            from app.services.opener_quick_reply import apply_opener_quick_reply_context
+
+            opener_quick_reply_note = apply_opener_quick_reply_context(
+                self.db,
+                user_id=user_id,
+                message=message,
+                extra_context=extra_context,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[agent_executor] opener quick reply context failed: {e}")
+
         # 2. 构建 system prompt（复用健康上下文）
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        if opener_quick_reply_note:
+            system_content += (
+                "\n\n## 入口动作处理结果\n"
+                f"{opener_quick_reply_note}\n"
+                "请先用一句话确认这次验证/反馈已经接上了对应行动卡片，再给出下一步。"
+            )
+            if "ActionCard" not in sources_used:
+                sources_used.append("ActionCard")
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
