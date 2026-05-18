@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from sqlalchemy.orm import Session
+
 
 NOTIFICATION_CLAIM_BOUNDARY = (
     "该通知用于健康管理提醒和数据复盘，不替代医生诊断、治疗或用药建议。"
@@ -69,3 +71,53 @@ def build_notification_evidence_data(
     if evidence_domain:
         data["evidence_domain"] = evidence_domain
     return data
+
+
+def build_notification_evidence_data_for_user(
+    db: Session,
+    *,
+    user_id: int,
+    notification_type: str,
+    source: str,
+    existing_data: dict[str, Any] | None = None,
+    evidence_refs: Iterable[Any] | None = None,
+    evidence_domain: str | None = None,
+    support_status: str | None = None,
+    max_refs: int = 3,
+) -> dict[str, Any]:
+    """Build notification evidence metadata and auto-fill KB refs from Twin.
+
+    Generated advice surfaces should not stay `model_inference` when the user
+    Twin already matches reviewed system-KB claims. This helper keeps the old
+    explicit-ref behavior, but adds a conservative Twin lookup for actionable
+    notification types.
+    """
+
+    refs = _normalize_refs(evidence_refs)
+    if not refs and not support_status and notification_type not in DATA_SUMMARY_TYPES:
+        try:
+            from app.services.system_knowledge_service import (
+                lookup_for_twin,
+                system_kb_twin_payload_from_health_twin,
+            )
+            from app.twin.builder import build_twin
+
+            twin = build_twin(db, user_id, use_cache=True)
+            payload = system_kb_twin_payload_from_health_twin(twin)
+            result = lookup_for_twin(db, payload)
+            refs = [
+                claim["doc_id"]
+                for claim in result.get("claims", [])[:max_refs]
+                if claim.get("doc_id")
+            ]
+        except Exception:
+            refs = []
+
+    return build_notification_evidence_data(
+        notification_type=notification_type,
+        source=source,
+        existing_data=existing_data,
+        evidence_refs=refs,
+        evidence_domain=evidence_domain,
+        support_status=support_status,
+    )

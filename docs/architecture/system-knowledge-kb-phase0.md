@@ -64,7 +64,8 @@ flowchart TD
 - `app.services.system_knowledge_ingest`: deterministic Dedao course ingest, transformed claim mining, duplicate/conflict handling, supersession guardrails, entity/claim/page/relation artifact generation, and PR-style diff rendering.
 - `app.services.system_knowledge_importer`: imports reviewed `manifest.json` plus `entities.jsonl`, `claims.jsonl`, `pages.jsonl`, and `relations.jsonl`.
 - `app.services.notification.push_scheduler`: direct wearable health alerts include KB V2 evidence-contract metadata (`support_status`, `unsupported`, `planner_evidence_policy`, `rule_id`, and `claim_boundary`) before they enter notification logs or push channels.
-- `app.services.notification.evidence_policy`: shared metadata builder for generated notification surfaces (`ai_advice`, `trend_report`, `prediction_verified`) so push logs can be counted in KB coverage and unsupported-advice audits.
+- `app.services.notification.evidence_policy`: shared metadata builder for generated notification surfaces (`ai_advice`, `trend_report`, `prediction_verified`) so push logs can be counted in KB coverage and unsupported-advice audits. The user-level builder can auto-fill claim-backed `evidence_refs` from Health Twin matches before marking generated advice as `model_inference`.
+- `app.services.agent_loop`: proactive `ai_advice` notifications use the user-level evidence builder, so Twin-backed KB claims are carried into push metadata instead of being hidden or counted as unsupported.
 - `app.services.system_knowledge_service._aggregate_notification_evidence_coverage`: counts push-log evidence refs, unsupported rate, support-status mix, and per-notification-type coverage for admin governance.
 - `scripts/ingest_dedao_system_kb.py`: dry-run or `--write` CLI for expanding reviewed artifacts from selected Dedao courses.
 - `scripts/import_system_kb_v2_artifacts.py`: deployment-safe import entrypoint for reviewed artifacts.
