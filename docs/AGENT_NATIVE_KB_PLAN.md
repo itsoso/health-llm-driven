@@ -16,12 +16,13 @@
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback and entity deep-link pages.
-- Search serving: `/knowledge/search` now fuses lexical DB matches, FTS-compatible `tsv`, semantic alias retrieval, and one-hop graph expansion via deterministic reciprocal-rank fusion.
+- Search serving: `/knowledge/search` now fuses local BM25 lexical ranking, PostgreSQL `tsvector` FTS, semantic alias retrieval, and one-hop graph expansion via deterministic reciprocal-rank fusion; admin reindex writes production `TSVECTOR` via `to_tsvector('simple', ...)`.
 - Privacy isolation: source scanner excludes private-looking paths and `find_private_source_violations(...)` reports private material without reading content.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline references in `metadata.external_sources`.
 - Phase 2 corpus expansion: deterministic compiler scanned 46 health-relevant source directories and promoted 314 generated claims / 83 entities / 46 pages / 2566 relations to reviewed status across reviewed passes, exceeding the 300 claim / 80 entity target.
 - Graph association: Dedao claim context now also emits entity-to-entity `contextualizes` edges, so an Agent can traverse from a condition/biomarker to related biomarkers, interventions, and safety boundaries without relying only on keyword search.
 - Admin operations: `/api/v1/admin/knowledge/operations_dashboard` summarizes coverage, external evidence, lint, latest lifecycle report, and action items.
+- Ingest reviewer queue: dry-run PR-style diffs prepend new draft claim count, missing external-evidence count, candidate duplicate count, and claim IDs needing reviewer attention.
 - Planner enforcement: Orchestrator applies a deterministic evidence policy before synthesis; unsupported actionable findings are blocked when the same evidence domain already has KB-supported findings, while safety alerts and data gaps are preserved.
 - Weekly Advisor enforcement: fallback weekly action cards now attach system KB evidence and reuse the same planner evidence policy before persistence.
 
@@ -485,7 +486,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator；`lookup_for_twin` 会沿 `contextualizes` 图谱边补充上下文 claim | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着；Planner synthesis 前会过滤同域无证据 actionable 建议，安全告警和 data_gap 例外；Weekly Advisor fallback action card 也复用同一策略 | 基本完成，后续扩展到直接 push scheduler 通知面 |
 | Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
-| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft；admin operations dashboard 可看治理状态 | 基本完成，后续是可视化页面 |
+| Lifecycle | 有 lint/reindex/decay 脚本，admin lint 已覆盖 contradiction + invalid review status；weekly `system-kb-lifecycle` 会跑 lint/decay/crystallize draft；admin operations dashboard 可看治理状态；PostgreSQL reindex 使用 `to_tsvector` 写入 `TSVECTOR` | 基本完成，后续是可视化页面 |
 | Privacy isolation | scanner 排除 private/personal/user-*，并提供 violation report | 完成最小治理闭环 |
 
 ### 13.3 修订后的执行顺序
@@ -511,7 +512,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 #### P3：V2 生命周期（后置）
 
 - contradiction lint：已进入 admin lint；下一步接入定期运维报告。
-- reviewer workflow：CLI 已生成 diff + review manifest，并支持人工确认后从 draft 升为 reviewed。
+- reviewer workflow：CLI 已生成 diff + review queue + review manifest，并支持人工确认后从 draft 升为 reviewed。
 - crystallize：已有 draft-only service；下一步接入 Celery 周期任务和 admin review 队列。
 - PubMed/Examine 二源只用于提升高风险 claim 的 evidence level，不作为初期覆盖率任务。
 

@@ -25,7 +25,7 @@ Already done:
 - Artifact review promotion exists via `promote_artifact_review_status`.
 - Crystallized claim candidate drafting exists in `backend/app/services/system_knowledge_crystallize.py` and runs draft-only from the weekly `system-kb-lifecycle` Celery job.
 - Privacy isolation guard exists in `find_private_source_violations(...)`; ingestion scanner excludes private-looking paths without reading their contents.
-- `/knowledge/search` now returns lexical, FTS-compatible, semantic alias, and graph channels in a stable response shape.
+- `/knowledge/search` now returns local BM25 lexical, PostgreSQL `tsvector` FTS-compatible, semantic alias, and graph channels in a stable response shape.
 - Phase 2 corpus breadth target is complete: the compiler scanned 46 health-relevant Dedao/book source directories and promoted 314 generated claims, 83 entities, 46 pages, and 2566 relations to reviewed status across reviewed passes.
 - Dedao graph association now emits entity-to-entity `contextualizes` relations from claim context, making graph traversal useful for linking biomarkers, conditions, interventions, and safety boundaries.
 - Weekly Advisor action-card generation now reuses Orchestrator system-KB evidence attachment and planner evidence policy before persisting fallback specialist findings.
@@ -37,7 +37,7 @@ Main remaining gaps:
 - Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
 - Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
 - External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count, source kind, target rate, and `meets_target`.
-- Direct PushScheduler wearable health alerts carry the KB V2 safety-alert evidence contract. Celery notification surfaces now tag trend summaries, morning briefings, weekly review invites, action-card followups, agent-loop pushes, and outcome-grader pushes with notification evidence metadata. Push-log evidence coverage is exposed in the admin coverage dashboard and operations action items. Search now uses PostgreSQL `tsvector` FTS in production; remaining gap is real vector/BM25 beyond the deterministic alias stream.
+- Direct PushScheduler wearable health alerts carry the KB V2 safety-alert evidence contract. Celery notification surfaces now tag trend summaries, morning briefings, weekly review invites, action-card followups, agent-loop pushes, and outcome-grader pushes with notification evidence metadata. Push-log evidence coverage is exposed in the admin coverage dashboard and operations action items. Search now uses local BM25 and PostgreSQL `tsvector` FTS in production; remaining gap is real vector retrieval beyond the deterministic alias stream.
 
 ---
 
