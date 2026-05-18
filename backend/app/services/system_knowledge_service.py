@@ -17,6 +17,7 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
 SPECIALIST_EVIDENCE_REF_RATE_TARGET = 0.85
+EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET = 0.2
 VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
 POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
@@ -1463,10 +1464,13 @@ def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[s
             kind = str(source.get("kind") or "other")
             by_kind[kind] = by_kind.get(kind, 0) + 1
 
+    external_source_rate = round(claims_with_external_sources / claim_total, 4) if claim_total else 0.0
     return {
         "claim_total": claim_total,
         "claims_with_external_sources": claims_with_external_sources,
-        "external_source_rate": round(claims_with_external_sources / claim_total, 4) if claim_total else 0.0,
+        "external_source_rate": external_source_rate,
+        "target_external_source_rate": EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET,
+        "meets_target": external_source_rate >= EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET if claim_total else False,
         "by_kind": dict(sorted(by_kind.items())),
     }
 
@@ -1514,7 +1518,7 @@ def _knowledge_operations_action_items(
     if not specialist.get("meets_target", False):
         action_items.append("specialist_evidence_below_target")
     external = coverage.get("external_evidence") or {}
-    if external.get("claim_total", 0) and external.get("external_source_rate", 0.0) < 0.2:
+    if external.get("claim_total", 0) and not external.get("meets_target", False):
         action_items.append("external_evidence_coverage_low")
     notification_evidence = coverage.get("notification_evidence") or {}
     if (

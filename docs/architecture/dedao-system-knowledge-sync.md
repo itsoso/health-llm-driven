@@ -17,6 +17,7 @@
 - Corpus expansion: deterministic Dedao compiler scanned 46 health-relevant source directories and promoted 314 generated claims / 83 entities / 46 pages / 2566 relations to reviewed status across reviewed passes, while preserving older reviewed artifacts.
 - Graph association: claim context now emits entity-to-entity `contextualizes` edges, for example `hyperuricemia-risk -> chronic-kidney-risk` and `hyperuricemia-risk -> hydration`, so lookup can traverse from a biomarker or condition to related interventions and boundaries.
 - Admin operations: `/api/v1/admin/knowledge/operations_dashboard` returns coverage, external-evidence metrics, lint summary, latest lifecycle report, and action items.
+- External evidence governance: coverage reports include target external-source rate and `meets_target`, so PubMed/guideline enrichment is tracked as an operational gate rather than a narrative note.
 - Planner enforcement: Orchestrator now filters unsupported actionable specialist findings before final synthesis when the same evidence domain has a KB-supported finding; safety-critical alerts and data gaps bypass this filter.
 - Weekly Advisor evidence enforcement: weekly fallback action cards now attach system KB evidence and run the same planner evidence policy before persisting specialist-derived suggestions.
 

@@ -609,6 +609,8 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["external_evidence"]["claim_total"] == 2
     assert payload["external_evidence"]["claims_with_external_sources"] == 1
     assert payload["external_evidence"]["external_source_rate"] == 0.5
+    assert payload["external_evidence"]["target_external_source_rate"] == 0.2
+    assert payload["external_evidence"]["meets_target"] is True
     assert payload["external_evidence"]["by_kind"]["research"] == 1
     assert payload["notification_evidence"]["total"] == 3
     assert payload["notification_evidence"]["with_evidence_refs"] == 1
@@ -688,6 +690,7 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
     assert payload["status"] == "attention"
     assert payload["coverage"]["documents"]["total"] == 2
     assert payload["coverage"]["external_evidence"]["claims_with_external_sources"] == 1
+    assert payload["coverage"]["external_evidence"]["meets_target"] is True
     assert payload["lint"]["summary"]["orphan_claims"] == 0
     assert payload["latest_lifecycle_report"]["op"] == "lifecycle_report"
     assert "specialist_evidence_below_target" in payload["action_items"]
