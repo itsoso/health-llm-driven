@@ -12,6 +12,7 @@ from app.tasks.open_loop_manager import (
     _detect_trend_anomaly,
     _detect_plan_deviation,
 )
+from app.utils.timezone import get_china_today
 
 
 # ────── lab_overdue ──────
@@ -22,7 +23,7 @@ def test_lab_overdue_detects_aged_ldl(db):
 
     # 7 个月前的 LDL 化验
     exam = MedicalExam(
-        user_id=1, exam_date=date.today() - timedelta(days=210),
+        user_id=1, exam_date=get_china_today() - timedelta(days=210),
         exam_type="blood", overall_assessment="LDL 偏高",
     )
     db.add(exam)
@@ -47,7 +48,7 @@ def test_lab_not_overdue_kept_quiet(db):
     from app.models.medical_exam import MedicalExam, MedicalExamItem
 
     exam = MedicalExam(
-        user_id=2, exam_date=date.today() - timedelta(days=30),
+        user_id=2, exam_date=get_china_today() - timedelta(days=30),
         exam_type="blood",
     )
     db.add(exam); db.flush()
@@ -73,7 +74,7 @@ def test_sync_stale_detects_3day_gap(db):
 
     # 最近一次记录 5 天前
     db.add(GarminData(
-        user_id=3, record_date=date.today() - timedelta(days=5),
+        user_id=3, record_date=get_china_today() - timedelta(days=5),
         steps=8000,
     ))
     db.commit()
@@ -86,7 +87,7 @@ def test_sync_stale_detects_3day_gap(db):
 def test_sync_fresh_no_loop(db):
     from app.models.daily_health import GarminData
 
-    db.add(GarminData(user_id=4, record_date=date.today(), steps=10000))
+    db.add(GarminData(user_id=4, record_date=get_china_today(), steps=10000))
     db.commit()
     assert _detect_sync_stale(db, user_id=4) == []
 
@@ -143,7 +144,7 @@ def test_action_card_old_grading_not_pushed(db):
 def test_hrv_drop_detected(db):
     from app.models.daily_health import GarminData
 
-    today = date.today()
+    today = get_china_today()
     # 前 7 天: HRV 50 (高)
     for d in range(8, 15):
         db.add(GarminData(user_id=7, record_date=today - timedelta(days=d), hrv=50))
@@ -158,7 +159,7 @@ def test_hrv_drop_detected(db):
 
 def test_no_hrv_drop_no_alert(db):
     from app.models.daily_health import GarminData
-    today = date.today()
+    today = get_china_today()
     for d in range(0, 14):
         db.add(GarminData(user_id=8, record_date=today - timedelta(days=d), hrv=42 + d % 3))
     db.commit()
@@ -174,7 +175,7 @@ def test_collect_sorts_by_score(db):
     from app.models.medical_exam import MedicalExam, MedicalExamItem
     from app.models.daily_health import GarminData
 
-    today = date.today()
+    today = get_china_today()
 
     # 高分: HbA1c 9 个月没复查 (severity 80, ratio ~2x = 160 → cap 至 score 计算上限)
     exam = MedicalExam(user_id=10, exam_date=today - timedelta(days=270))
@@ -208,7 +209,7 @@ def _make_tmpl(db, user_id, category="exercise", days_since_checkin=None, **over
     )
     defaults.update(overrides)
     if days_since_checkin is not None:
-        defaults["last_checkin_date"] = date.today() - timedelta(days=days_since_checkin)
+        defaults["last_checkin_date"] = get_china_today() - timedelta(days=days_since_checkin)
     t = CheckinTemplate(**defaults)
     db.add(t); db.commit(); db.refresh(t)
     return t
