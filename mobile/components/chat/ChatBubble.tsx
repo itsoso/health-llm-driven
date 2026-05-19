@@ -23,6 +23,7 @@ import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUs
 import AttributionChips from './AttributionChips';
 import { radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 
 interface Props {
@@ -33,6 +34,7 @@ interface Props {
 function ChatBubbleInner({ item, onViewImage }: Props) {
   const qc = useQueryClient();
   const { c, isDark } = useTheme();
+  const toast = useToast();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
   const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
@@ -156,14 +158,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
         onError: finishSpeech,
         onFallback: (kind) => {
           if (kind === 'cloud_to_ios') {
-            // 用户已经按下播放按钮, 没必要弹模态; 只在 dev 留痕,
-            // 用 ToastAndroid-like 思路在 iOS 用最轻量提示 (不阻塞).
-            // RN 没原生 toast, 用 Alert 又太重 — 静音变化用户能听到
-            // 一次性 console.warn 给开发者排查即可; 真正用户提示放到后续
-            // 全局 toast 落地后再加.
-            if (__DEV__) {
-              console.warn('[ChatBubble] cloud TTS unavailable, fell back to iOS voice');
-            }
+            toast.show('云端语音暂不可用,临时用系统嗓音', 'info');
           }
         },
       });
