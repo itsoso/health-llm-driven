@@ -10,7 +10,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (59 路由)              │      │
+                        │   mobile/app/*.tsx (66 路由)              │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 130 API 路由 · 156 services              │
+│                  health-api.executor.life · 132 API 路由 · 173 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (11 specialist) │  │ (tool-calling LLM) │            │
@@ -29,7 +29,7 @@
 │                                        │                      │                      │
 │                                        ▼                      ▼                      │
 │                              ┌─────────────────────────────────────────┐              │
-│                              │  Digital Health Twin (13 分区语义视图)  │              │
+│                              │  Digital Health Twin (14 分区语义视图)  │              │
 │                              │  app/twin/schema.py + builder.py         │              │
 │                              └────────────────┬────────────────────────┘              │
 │                                               │ (Redis 5min cache)                    │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**主要入口**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 11 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (13 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 11 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (14 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 
 ---
@@ -62,7 +62,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 130 API 路由, 156 services, 74 models, 50 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 132 API 路由, 173 services, 77 models, 50 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
@@ -84,7 +84,7 @@
 | `backend/app/database.py` | 数据库连接、`get_db` 依赖 |
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
 | `backend/app/models/*.py` | 70 个 SQLAlchemy ORM 模型 |
-| `backend/app/twin/schema.py` | HealthTwin 13 分区 Pydantic schema |
+| `backend/app/twin/schema.py` | HealthTwin 14 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
 | `deploy.sh` | 部署流程(备份+回滚) |
@@ -111,12 +111,12 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 130 条 API 路由 |
-| `backend/app/services/*.py` | 156 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
+| `backend/app/api/*.py` | 132 条 API 路由 |
+| `backend/app/services/*.py` | 173 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
 | `backend/app/tasks/*.py` | 50 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 59 RN 路由 + Tab 导航 |
+| `mobile/app/` | 66 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -175,7 +175,7 @@
                 │
                 ▼
 ┌────────────────────────────────────┐
-│  Digital Health Twin (13 分区)     │  ← 状态视图
+│  Digital Health Twin (14 分区)     │  ← 状态视图
 │  schema.py + builder.py (并行 fill)│
 │  - Redis 5min 缓存                 │
 │  - 降级: 失败 filler 不影响其它    │
@@ -189,7 +189,7 @@
 └────────────────────────────────────┘
 ```
 
-### HealthTwin 13 分区
+### HealthTwin 14 分区
 
 `backend/app/twin/schema.py`:
 
@@ -316,7 +316,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 
 ## 六、API 路由(按域分组)
 
-130 条, 主要分 10 域:
+132 条, 主要分 10 域:
 
 | 域 | 路由前缀 | 关键端点 |
 |---|---|---|
@@ -692,7 +692,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 |---|---|
 | 新增/删除 Specialist | §四, §四 Safety Guardian 规则分类 |
 | 新增/删除 API 路由 | §六 API 路由 |
-| Twin schema 新字段 | §四 HealthTwin 13 分区, §五 数据流 |
+| Twin schema 新字段 | §四 HealthTwin 14 分区, §五 数据流 |
 | Mobile 新路由 / 移除路由 | §七 Mobile 架构 |
 | Celery 新任务 | §九 Celery 调度 |
 | 新 LLM provider / model | §十 LLM Harness |

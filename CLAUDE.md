@@ -231,7 +231,7 @@ Orchestrator (L4)  ← 意图路由 + 专家调度 + LLM 合成
     ↓
 11 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
     ↓
-Digital Health Twin (L2) ← 13 语义分区的统一状态视图 (Redis 5min 缓存)
+Digital Health Twin (L2) ← 14 语义分区的统一状态视图 (Redis 5min 缓存)
     ↓
 Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/药物
 ```
@@ -272,7 +272,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 > 这些数字由 `scripts/check_doc_drift.py` 在 CI 里校验；规则增删时同步更新该脚本的 `EXPECTED` 常量和本表，否则 CI 挂掉。
 
 **Digital Health Twin** (`app/twin/`):
-- `schema.py` — 13 语义分区 Pydantic 模型（physiological/body/labs/cgm/meds/supplement/genetic/env/behavioral/mental/chronic/goals/freshness）
+- `schema.py` — 14 语义分区 Pydantic 模型（physiological/body_composition/labs/cgm/medication/supplement/genetic/environment/behavioral/acute/mental/chronic/goals/freshness）
 - `builder.py` — 从 service 层聚合，Redis 函数级缓存（`use_cache=True`），失败降级
 - `_collectors.py` — 过渡期薄 SQL 层（water/checkin/supplement/BP/exam/gene），事务安全回滚
 - `cache.py` — Redis 5min TTL
@@ -314,7 +314,7 @@ Two entry points:
 
 | 端点 | 方法 | 职责 |
 |---|---|---|
-| `/api/v1/twin/me` | GET | 用户的 Digital Health Twin（13 分区状态快照） |
+| `/api/v1/twin/me` | GET | 用户的 Digital Health Twin（14 分区状态快照） |
 | `/api/v1/twin/me/invalidate` | POST | 手动使 Twin 缓存失效 |
 | `/api/v1/safety/me` | GET | Safety Guardian 安全告警报告 |
 | `/api/v1/safety/rules` | GET | 列出所有已注册的安全规则 |
@@ -497,7 +497,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | `backend/app/database.py` | 数据库连接、会话管理、`get_db` |
 | `backend/app/config.py` | Pydantic Settings、环境变量 |
 | `backend/app/models/*.py` | SQLAlchemy ORM 模型 |
-| `backend/app/twin/schema.py` | Digital Health Twin Pydantic schema（13 分区） |
+| `backend/app/twin/schema.py` | Digital Health Twin Pydantic schema（14 分区） |
 | `backend/main.py` 中间件部分 | 安全头、CORS、限流、请求上下文 |
 | `backend/tests/conftest.py` | 测试基础设施 |
 | `deploy.sh` | 部署流程（含备份与回滚） |
