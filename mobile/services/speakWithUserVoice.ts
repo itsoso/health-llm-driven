@@ -81,6 +81,7 @@ export async function speakWithUserVoice(
   // cloud / voxcpm 路径 — 按后端句级 TTS 限制切段, 拉 mp3 后串行播放.
   // 私教长回复如果整段提交会超过 backend max_length=500, 触发 422 后降级到
   // iOS 默认嗓音; 这里统一在公共入口切段, 避免每个 UI 调用点重复处理。
+  // 段间预合成 (chunk N 播放时并发 synth N+1), 让多段播放接近无缝。
   try {
     const voiceKey = opt.cloudVoiceKey ?? 'cloned_private_female';
     const chunks = splitTextForCloudTts(trimmed);
@@ -90,6 +91,17 @@ export async function speakWithUserVoice(
     let currentPlayer: ReturnType<typeof createAudioPlayer> | null = null;
     let currentSub: { remove?: () => void } | null = null;
     let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const synthCache = new Map<number, Promise<{ localUri: string }>>();
+    const startSynth = (i: number) => {
+      if (i < 0 || i >= chunks.length) return null;
+      let p = synthCache.get(i);
+      if (!p) {
+        p = cloudSynthesize({ text: chunks[i], voiceKey });
+        synthCache.set(i, p);
+      }
+      return p;
+    };
 
     const finishOnce = (kind: 'done' | 'stopped' | 'error', err?: unknown) => {
       if (finished) return;
@@ -102,6 +114,8 @@ export async function speakWithUserVoice(
       try { currentPlayer?.remove(); } catch {}
       currentSub = null;
       currentPlayer = null;
+      // 取消还在进行的 prefetch — promise 本身没法 abort, 但避免后续 await
+      synthCache.clear();
       if (kind === 'done') callbacks.onDone?.();
       else if (kind === 'stopped') callbacks.onStopped?.();
       else callbacks.onError?.(err);
@@ -114,8 +128,16 @@ export async function speakWithUserVoice(
         return;
       }
       const chunk = chunks[index];
-      const { localUri } = await cloudSynthesize({ text: chunk, voiceKey });
+      const synthPromise = startSynth(index);
+      if (!synthPromise) {
+        finishOnce('done');
+        return;
+      }
+      const { localUri } = await synthPromise;
       if (finished) return;
+
+      // 预合成下一段, 失败先吞掉; 真正轮到它播放时再 throw.
+      startSynth(index + 1)?.catch(() => {});
 
       const player = createAudioPlayer({ uri: localUri });
       currentPlayer = player;
@@ -131,6 +153,7 @@ export async function speakWithUserVoice(
         try { player.remove(); } catch {}
         currentSub = null;
         currentPlayer = null;
+        synthCache.delete(index);
         playChunk(index + 1).catch((e) => finishOnce('error', e));
       };
 
