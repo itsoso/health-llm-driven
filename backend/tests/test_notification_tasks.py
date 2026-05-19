@@ -77,6 +77,26 @@ class TestSendSleepReminders:
         assert result["sent_count"] == 2
         assert mock_run_async.call_count == 2
 
+    @patch("app.tasks.notifications.SessionLocal")
+    @patch("app.tasks.notifications.PushService")
+    @patch("app.tasks.notifications.run_async")
+    def test_sleep_reminder_bypasses_quiet_hours(self, mock_run_async, mock_push_cls, mock_session_cls):
+        """睡眠提醒是 bedtime 提醒, 不应被 quiet hours 延迟到第二天早上."""
+        mock_db = MagicMock()
+        mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_db)
+        mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        setting = MagicMock(user_id=1)
+        mock_db.query.return_value.filter.return_value.all.return_value = [setting]
+
+        from app.tasks.notifications import send_sleep_reminders
+        send_sleep_reminders()
+
+        send_fn = mock_push_cls.return_value.send_notification
+        assert send_fn.call_count == 1
+        _, kwargs = send_fn.call_args
+        assert kwargs.get("respect_quiet_hours") is False
+
 
 class TestSendPlanMorningReminder:
     """测试 send_plan_morning_reminder 任务"""
