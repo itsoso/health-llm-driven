@@ -1,7 +1,8 @@
 """Bridge compiled down-dedao LLM Wiki artifacts into System KB V2 seed files.
 
-This module only imports transformed wiki artifacts. It deliberately avoids
-serving long source/course text and skips personal notes.
+This module only imports transformed wiki artifacts and skips personal notes.
+Licensed course/wiki body content may be included when the source export marks
+it as transformed content.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 
 
 ARTIFACT_FILES = ("pages.jsonl", "entities.jsonl", "claims.jsonl", "relations.jsonl")
+SYSTEM_KB_EXPORT_FILENAME = "system_kb_export.json"
 PRIVATE_MARKERS = ("personal", "private", "私人", "个人")
 
 
@@ -42,6 +44,7 @@ def compile_down_dedao_wiki_artifacts(
     artifact_root = source_root / "artifacts"
 
     existing_docs = _load_existing_doc_ids(base_artifact_dir)
+    existing_placeholders = _load_existing_placeholder_doc_ids(base_artifact_dir)
     existing_relations = _load_existing_relation_keys(base_artifact_dir)
 
     result = DownDedaoBridgeResult(source_root=source_root, base_artifact_dir=base_artifact_dir)
@@ -51,9 +54,10 @@ def compile_down_dedao_wiki_artifacts(
         gene_knowledge = _read_json(gene_knowledge_path)
         for entity in _iter_gene_entities(gene_knowledge.get("entities") or {}):
             doc = _entity_to_document(entity, gene_knowledge, now)
-            if doc["doc_id"] not in existing_docs:
+            if doc["doc_id"] not in existing_docs or doc["doc_id"] in existing_placeholders:
                 result.entities.append(doc)
                 existing_docs.add(doc["doc_id"])
+                existing_placeholders.discard(doc["doc_id"])
 
         for claim in gene_knowledge.get("claims") or []:
             doc = _claim_to_document(claim, gene_knowledge, now)
@@ -62,8 +66,19 @@ def compile_down_dedao_wiki_artifacts(
                 existing_docs.add(doc["doc_id"])
             _add_claim_relations(doc, claim, result.relations, existing_relations)
 
+    system_export_path = artifact_root / SYSTEM_KB_EXPORT_FILENAME
+    if system_export_path.exists():
+        _import_system_kb_export(
+            _read_json(system_export_path),
+            result,
+            existing_docs,
+            existing_placeholders,
+            existing_relations,
+            now,
+        )
+
     for page_path in sorted(artifact_root.glob("*.json")):
-        if page_path.name in {"manifest.json", "gene_knowledge.json", "gene_drug_rules.json"}:
+        if page_path.name in {"manifest.json", "gene_knowledge.json", "gene_drug_rules.json", SYSTEM_KB_EXPORT_FILENAME}:
             continue
         if _is_private_artifact(page_path):
             result.skipped_private.append(page_path.name)
@@ -141,6 +156,14 @@ def _load_existing_doc_ids(root: Path) -> set[str]:
     return doc_ids
 
 
+def _load_existing_placeholder_doc_ids(root: Path) -> set[str]:
+    return {
+        row["doc_id"]
+        for row in _read_jsonl(root / "entities.jsonl")
+        if row.get("doc_id") and (row.get("metadata") or {}).get("placeholder") is True
+    }
+
+
 def _load_existing_relation_keys(root: Path) -> set[tuple[str, str, str]]:
     return {
         (row.get("src_doc_id"), row.get("dst_doc_id"), row.get("relation"))
@@ -175,6 +198,61 @@ def _merge_jsonl(path: Path, rows: list[dict[str, Any]], key_fields: tuple[str, 
         encoding="utf-8",
     )
     return len(ordered)
+
+
+def _import_system_kb_export(
+    payload: dict[str, Any],
+    result: DownDedaoBridgeResult,
+    existing_docs: set[str],
+    existing_placeholders: set[str],
+    existing_relations: set[tuple[str, str, str]],
+    now: datetime,
+) -> None:
+    source = {
+        "version": payload.get("version"),
+        "compiled_at": payload.get("compiled_at"),
+        "schema_id": payload.get("schema_id"),
+        "source": payload.get("source"),
+    }
+    for page in payload.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        doc = _page_to_document(page, now)
+        if doc["doc_id"] not in existing_docs:
+            result.pages.append(doc)
+            existing_docs.add(doc["doc_id"])
+
+    for entity in payload.get("entities") or []:
+        if not isinstance(entity, dict):
+            continue
+        doc = _entity_to_document(entity, source, now)
+        if doc["doc_id"] not in existing_docs or doc["doc_id"] in existing_placeholders:
+            result.entities.append(doc)
+            existing_docs.add(doc["doc_id"])
+            existing_placeholders.discard(doc["doc_id"])
+
+    for claim in payload.get("claims") or []:
+        if not isinstance(claim, dict):
+            continue
+        doc = _claim_to_document(claim, source, now)
+        if doc["doc_id"] not in existing_docs:
+            result.claims.append(doc)
+            existing_docs.add(doc["doc_id"])
+        _add_claim_relations(doc, claim, result.relations, existing_relations)
+
+    for relation in payload.get("relations") or []:
+        if not isinstance(relation, dict):
+            continue
+        _add_relation(
+            result.relations,
+            existing_relations,
+            str(relation.get("src_doc_id") or ""),
+            str(relation.get("dst_doc_id") or ""),
+            str(relation.get("relation") or ""),
+            _float_or_default(relation.get("confidence"), 0.7),
+            str(relation.get("source_claim_id") or relation.get("dst_doc_id") or ""),
+            metadata=relation.get("metadata") or {"origin": "down-dedao-llm-wiki"},
+        )
 
 
 def _ensure_relation_endpoint_entities(
@@ -250,26 +328,28 @@ def _entity_to_document(entity: dict[str, Any], source: dict[str, Any], now: dat
     entity_type = str(entity["entity_type"])
     entity_id = str(entity["entity_id"])
     body = entity.get("body") or entity.get("summary") or entity.get("title") or entity_id
+    metadata = entity.get("metadata") or {}
     return {
-        "doc_id": f"entity:{entity_type}:{entity_id}",
+        "doc_id": entity.get("doc_id") or f"entity:{entity_type}:{entity_id}",
         "doc_type": "entity",
         "entity_type": entity_type,
         "entity_id": entity_id,
         "title": entity.get("title") or entity_id,
         "summary": _summary_from_body(body),
-        "body": _compact_body(body),
+        "body": _compact_body(body, limit=6000),
         "confidence": _float_or_default(entity.get("confidence"), 0.72),
         "evidence_level": entity.get("evidence_level") or "C",
         "sources": entity.get("sources") or ["down-dedao:llm-wiki"],
         "last_confirmed": _date_to_datetime(entity.get("last_confirmed"), now),
         "decay_rate": entity.get("decay_rate") or "normal",
         "metadata": {
+            **metadata,
             "origin": "down-dedao-llm-wiki",
             "source_version": source.get("version"),
             "aliases": entity.get("aliases") or [],
             "linked_gene": entity.get("gene"),
-            "license_scope": "internal_transformed_claims",
-            "review_status": "reviewed",
+            "license_scope": metadata.get("license_scope") or "licensed_transformed_content",
+            "review_status": entity.get("review_status") or metadata.get("review_status") or "reviewed",
         },
     }
 
@@ -277,6 +357,7 @@ def _entity_to_document(entity: dict[str, Any], source: dict[str, Any], now: dat
 def _claim_to_document(claim: dict[str, Any], source: dict[str, Any], now: datetime) -> dict[str, Any]:
     claim_id = claim.get("claim_id") or claim.get("doc_id", "").replace("claim:", "")
     body = claim.get("body") or claim.get("summary") or claim.get("title") or claim_id
+    metadata = claim.get("metadata") or {}
     return {
         "doc_id": f"claim:{claim_id}",
         "doc_type": "claim",
@@ -294,13 +375,14 @@ def _claim_to_document(claim: dict[str, Any], source: dict[str, Any], now: datet
         "decay_rate": claim.get("decay_rate") or "normal",
         "supersedes": claim.get("supersedes") or [],
         "metadata": {
+            **metadata,
             "origin": "down-dedao-llm-wiki",
             "source_version": source.get("version"),
             "predicate": claim.get("predicate"),
             "drug_rules": claim.get("drug_rules") or {},
             "claim_boundary": "Health management guidance only; not diagnosis, prescription, or treatment.",
-            "license_scope": "internal_transformed_claims",
-            "review_status": claim.get("review_status") or "reviewed",
+            "license_scope": metadata.get("license_scope") or "licensed_transformed_content",
+            "review_status": claim.get("review_status") or metadata.get("review_status") or "reviewed",
             "safety_tags": _claim_safety_tags(claim),
         },
     }
@@ -309,6 +391,7 @@ def _claim_to_document(claim: dict[str, Any], source: dict[str, Any], now: datet
 def _page_to_document(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
     page_id = str(payload["id"])
     summary = payload.get("summary") or payload.get("title") or page_id
+    body = payload.get("content") or payload.get("body") or summary
     confidence = _float_or_default(payload.get("confidence_score"), 0.7)
     return {
         "doc_id": f"page:ak-kbase:{page_id}",
@@ -317,7 +400,7 @@ def _page_to_document(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
         "entity_id": page_id,
         "title": payload.get("title") or page_id,
         "summary": summary,
-        "body": summary,
+        "body": _compact_body(body, limit=12000),
         "confidence": confidence,
         "evidence_level": "B" if confidence >= 0.8 else "C",
         "sources": payload.get("sources_referenced") or [payload.get("source") or "ak-kbase"],
@@ -331,7 +414,8 @@ def _page_to_document(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
             "conditions": payload.get("conditions") or [],
             "tags": payload.get("tags") or [],
             "category": payload.get("category"),
-            "license_scope": "internal_transformed_claims",
+            "content_hash": payload.get("content_hash"),
+            "license_scope": payload.get("license_scope") or "licensed_transformed_content",
             "review_status": "reviewed",
         },
     }
@@ -343,8 +427,14 @@ def _add_claim_relations(
     relations: list[dict[str, Any]],
     existing: set[tuple[str, str, str]],
 ) -> None:
-    source_entity = f"entity:{doc['entity_type']}:{doc['entity_id']}"
-    _add_relation(relations, existing, source_entity, doc["doc_id"], "has_claim", doc["confidence"], doc["doc_id"])
+    derived_from_page = (doc.get("metadata") or {}).get("derived_from_page")
+    source_doc_id = derived_from_page or (
+        f"entity:{doc['entity_type']}:{doc['entity_id']}"
+        if doc.get("entity_type") and doc.get("entity_id")
+        else None
+    )
+    if source_doc_id:
+        _add_relation(relations, existing, source_doc_id, doc["doc_id"], "has_claim", doc["confidence"], doc["doc_id"])
     for target in doc.get("recommends_lookup") or []:
         if isinstance(target, str) and target.startswith("entity:"):
             _add_relation(relations, existing, doc["doc_id"], target, "recommends", doc["confidence"], doc["doc_id"])
@@ -360,7 +450,10 @@ def _add_relation(
     relation: str,
     confidence: float | None,
     source_claim_id: str,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
+    if not src or not dst or not relation:
+        return
     key = (src, dst, relation)
     if key in existing:
         return
@@ -372,7 +465,7 @@ def _add_relation(
             "relation": relation,
             "confidence": confidence,
             "source_claim_id": source_claim_id,
-            "metadata": {"origin": "down-dedao-llm-wiki"},
+            "metadata": metadata or {"origin": "down-dedao-llm-wiki"},
         }
     )
 

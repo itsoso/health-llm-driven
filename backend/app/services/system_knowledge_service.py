@@ -886,6 +886,7 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
     by_type: dict[str, int] = {}
     by_review_status: dict[str, int] = {}
     by_evidence_level: dict[str, int] = {}
+    by_origin: dict[str, int] = {}
     for document in documents:
         by_type[document.doc_type] = by_type.get(document.doc_type, 0) + 1
         if document.evidence_level:
@@ -893,6 +894,8 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
         metadata = document.metadata_json or {}
         review_status = str(metadata.get("review_status") or "unreviewed")
         by_review_status[review_status] = by_review_status.get(review_status, 0) + 1
+        origin = str(metadata.get("origin") or "unknown")
+        by_origin[origin] = by_origin.get(origin, 0) + 1
 
     return {
         "documents": {
@@ -900,6 +903,7 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "by_type": dict(sorted(by_type.items())),
             "by_review_status": dict(sorted(by_review_status.items())),
             "by_evidence_level": dict(sorted(by_evidence_level.items())),
+            "by_origin": dict(sorted(by_origin.items())),
         },
         "external_evidence": _aggregate_external_evidence_coverage(documents),
         "specialist_findings": _aggregate_specialist_evidence_coverage(db),

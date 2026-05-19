@@ -503,6 +503,7 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
                 confidence=0.7,
                 evidence_level="B",
                 metadata_json={
+                    "origin": "down-dedao-llm-wiki",
                     "review_status": "reviewed",
                     "external_sources": [
                         {"kind": "research", "source": "pubmed:123", "review_status": "reviewed"}
@@ -614,6 +615,8 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert response.status_code == 200
     payload = response.json()
     assert payload["documents"]["total"] == 2
+    assert payload["documents"]["by_origin"]["down-dedao-llm-wiki"] == 1
+    assert payload["documents"]["by_origin"]["unknown"] == 1
     assert payload["documents"]["by_review_status"]["reviewed"] == 1
     assert payload["documents"]["by_review_status"]["draft"] == 1
     assert payload["specialist_findings"]["total"] == 3

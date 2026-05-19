@@ -114,7 +114,7 @@ def test_compile_down_dedao_wiki_artifacts_converts_gene_drug_claims(tmp_path):
     assert placeholder["metadata"]["review_status"] == "reviewed"
 
 
-def test_compile_down_dedao_wiki_artifacts_imports_topic_pages_without_long_content_or_private_notes(tmp_path):
+def test_compile_down_dedao_wiki_artifacts_imports_topic_pages_with_licensed_content_and_skips_private_notes(tmp_path):
     source_root = tmp_path / "down-dedao"
     _write_json(
         source_root / "artifacts" / "gene_knowledge.json",
@@ -125,7 +125,7 @@ def test_compile_down_dedao_wiki_artifacts_imports_topic_pages_without_long_cont
             "claims": [],
         },
     )
-    long_paid_text = "这一段模拟课程正文，不能原样进入 serving artifact。" * 20
+    long_paid_text = "这一段模拟已授权课程正文，可以进入 serving artifact。" * 20
     _write_json(
         source_root / "artifacts" / "concepts_allergic-rhinitis.json",
         {
@@ -163,8 +163,115 @@ def test_compile_down_dedao_wiki_artifacts_imports_topic_pages_without_long_cont
     assert page["entity_type"] == "concept"
     assert page["entity_id"] == "concepts_allergic-rhinitis"
     assert page["metadata"]["conditions"] == ["allergic_rhinitis"]
-    assert "课程正文" not in json.dumps(page, ensure_ascii=False)
+    assert "课程正文" in page["body"]
+    assert page["metadata"]["license_scope"] == "licensed_transformed_content"
     assert result.skipped_private == ["articles_personal-health-trends.json"]
+
+
+def test_compile_down_dedao_wiki_artifacts_absorbs_system_export_and_replaces_placeholders(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    seed_dir = tmp_path / "seed"
+    seed_dir.mkdir()
+    (seed_dir / "entities.jsonl").write_text(
+        json.dumps(
+            {
+                "doc_id": "entity:intervention:caffeine-cutoff",
+                "doc_type": "entity",
+                "entity_type": "intervention",
+                "entity_id": "caffeine-cutoff",
+                "title": "caffeine cutoff",
+                "metadata": {"origin": "down-dedao-llm-wiki", "placeholder": True},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        source_root / "artifacts" / "system_kb_export.json",
+        {
+            "version": "test-export",
+            "pages": [
+                {
+                    "id": "articles_sleep-caffeine",
+                    "title": "咖啡因与睡眠",
+                    "summary": "咖啡因影响睡眠潜伏期。",
+                    "content": "完整课程正文：下午晚些时候摄入咖啡因可能影响睡眠。",
+                    "source_file": "articles/sleep-caffeine.md",
+                    "license_scope": "licensed_transformed_content",
+                    "content_hash": "abc123",
+                }
+            ],
+            "entities": [
+                {
+                    "doc_id": "entity:intervention:caffeine-cutoff",
+                    "entity_type": "intervention",
+                    "entity_id": "caffeine-cutoff",
+                    "title": "咖啡因截止时间",
+                    "summary": "睡眠敏感人群应设置咖啡因截止时间。",
+                    "body": "正式实体页：咖啡因截止时间用于解释睡眠和刺激物暴露的边界。",
+                    "confidence": 0.74,
+                    "evidence_level": "C",
+                    "metadata": {"license_scope": "licensed_transformed_content"},
+                }
+            ],
+            "claims": [
+                {
+                    "claim_id": "c_articles_sleep_caffeine_overview",
+                    "entity_type": "article",
+                    "entity_id": "articles_sleep-caffeine",
+                    "title": "咖啡因与睡眠概览",
+                    "summary": "该页解释咖啡因与睡眠的关系。",
+                    "body": "页面概览 claim。",
+                    "metadata": {
+                        "derived_from_page": "page:ak-kbase:articles_sleep-caffeine",
+                        "license_scope": "licensed_transformed_content",
+                    },
+                },
+                {
+                    "claim_id": "c_sleep_caffeine_cutoff",
+                    "entity_type": "intervention",
+                    "entity_id": "caffeine-cutoff",
+                    "title": "咖啡因截止时间支持睡眠管理",
+                    "summary": "晚间咖啡因摄入可能影响睡眠。",
+                    "body": "只用于健康管理建议。",
+                    "recommends_lookup": ["entity:intervention:caffeine-cutoff"],
+                }
+            ],
+            "relations": [
+                {
+                    "src_doc_id": "page:ak-kbase:articles_sleep-caffeine",
+                    "dst_doc_id": "claim:c_sleep_caffeine_cutoff",
+                    "relation": "has_claim",
+                    "confidence": 0.7,
+                    "source_claim_id": "claim:c_sleep_caffeine_cutoff",
+                }
+            ],
+        },
+    )
+
+    result = compile_down_dedao_wiki_artifacts(
+        source_root=source_root,
+        base_artifact_dir=seed_dir,
+        now=datetime(2026, 5, 19, tzinfo=UTC),
+    )
+
+    assert result.pages[0]["body"].startswith("完整课程正文")
+    assert result.pages[0]["metadata"]["content_hash"] == "abc123"
+    entity = next(item for item in result.entities if item["doc_id"] == "entity:intervention:caffeine-cutoff")
+    assert entity["title"] == "咖啡因截止时间"
+    assert entity["metadata"].get("placeholder") is not True
+    assert any(
+        relation["src_doc_id"] == "page:ak-kbase:articles_sleep-caffeine"
+        and relation["dst_doc_id"] == "claim:c_articles_sleep_caffeine_overview"
+        for relation in result.relations
+    )
+    assert not any(entity["doc_id"] == "entity:article:articles_sleep-caffeine" for entity in result.entities)
+    assert any(
+        relation["src_doc_id"] == "page:ak-kbase:articles_sleep-caffeine"
+        and relation["dst_doc_id"] == "claim:c_sleep_caffeine_cutoff"
+        for relation in result.relations
+    )
 
 
 def test_write_down_dedao_wiki_artifacts_is_idempotent(tmp_path):

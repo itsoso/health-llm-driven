@@ -1,10 +1,10 @@
 {
   "compiled_at": "2026-05-18T03:58:39.545161+00:00",
   "counts": {
-    "claims": 375,
+    "claims": 384,
     "entities": 159,
     "pages": 61,
-    "relations": 2774
+    "relations": 2808
   },
   "diff": {
     "claims_added": 11,
@@ -14,13 +14,13 @@
     "relations_added": 204
   },
   "down_dedao_wiki": {
-    "compiled_at": "2026-05-18T15:26:54.041019+00:00",
+    "compiled_at": "2026-05-19T00:34:54.758003+00:00",
     "diff": {
-      "claims_added": 0,
+      "claims_added": 9,
       "entities_added": 8,
       "pages_added": 0,
       "private_skipped": 0,
-      "relations_added": 0
+      "relations_added": 34
     },
     "pipeline": "down_dedao_llm_wiki_bridge_v1",
     "skipped_private": [],
