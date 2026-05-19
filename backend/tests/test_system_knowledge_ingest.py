@@ -21,7 +21,7 @@ def _jsonl(path: Path) -> list[dict]:
 
 
 def test_system_kb_expansion_manifest_lists_priority_courses():
-    path = Path("backend/data/system_kb_v2_seed/expansion_manifest.json")
+    path = Path(__file__).resolve().parents[1] / "data" / "system_kb_v2_seed" / "expansion_manifest.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     assert payload["target_counts"]["claims"] >= 300
@@ -49,7 +49,7 @@ def test_scan_health_sources_avoids_numeric_source_key_collisions(tmp_path):
 
 
 def test_system_kb_reviewed_artifacts_meet_expansion_targets():
-    root = Path("backend/data/system_kb_v2_seed")
+    root = Path(__file__).resolve().parents[1] / "data" / "system_kb_v2_seed"
     manifest = json.loads((root / "expansion_manifest.json").read_text(encoding="utf-8"))
 
     counts = {
