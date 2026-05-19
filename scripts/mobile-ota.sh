@@ -15,10 +15,10 @@ set -euo pipefail
 CHANNEL="${1:-production}"
 MESSAGE="${2:-$(git log -1 --pretty=format:'%s')}"
 
-cd "$(dirname "$0")/.."/mobile
-
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ANCHOR_FILE="${REPO_ROOT}/.last-ota-commit"
+
+cd "${REPO_ROOT}/mobile"
 
 echo "==> EAS Update → channel=${CHANNEL}"
 echo "    message: ${MESSAGE}"
