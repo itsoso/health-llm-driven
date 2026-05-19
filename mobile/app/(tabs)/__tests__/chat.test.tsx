@@ -5,7 +5,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 const mockOpenHistory = jest.fn();
 const mockPush = jest.fn();
 const mockSendMessage = jest.fn();
-const mockFetchConversationOpener = jest.fn();
+const mockFetchConversationStarters = jest.fn();
 const mockRecordCardAdherence = jest.fn();
 
 jest.mock('expo-router', () => ({
@@ -33,7 +33,7 @@ jest.mock('../../../services/chat', () => ({
 }));
 
 jest.mock('../../../services/conversationOpener', () => ({
-  fetchConversationOpener: (...args: any[]) => mockFetchConversationOpener(...args),
+  fetchConversationStarters: (...args: any[]) => mockFetchConversationStarters(...args),
   buildConversationOpenerReplyContext: (opener: any, reply: string) => JSON.stringify({
     entry: 'conversation_opener_quick_reply',
     user_reply: reply,
@@ -98,7 +98,7 @@ describe('ChatScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOpenHistory.mockResolvedValue([]);
-    mockFetchConversationOpener.mockResolvedValue(null);
+    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
     mockRecordCardAdherence.mockResolvedValue({});
   });
 
@@ -117,13 +117,16 @@ describe('ChatScreen', () => {
   });
 
   it('sends opener quick replies with the opener context so verification has a target', async () => {
-    mockFetchConversationOpener.mockResolvedValueOnce({
-      text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
-      source: 'action_card_due',
-      source_id: 88,
-      quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
-      deep_link: '/action-cards/88',
-      priority: 100,
+    mockFetchConversationStarters.mockResolvedValueOnce({
+      opener: {
+        text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
+        source: 'action_card_due',
+        source_id: 88,
+        quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
+        deep_link: '/action-cards/88',
+        priority: 100,
+      },
+      suggestions: null,
     });
 
     const { getByLabelText } = render(<ChatScreen />);
@@ -149,5 +152,19 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(mockRecordCardAdherence).toHaveBeenCalledWith(88, 70, 'self_reported');
     });
+  });
+
+  it('uses dynamic starter suggestions when backend provides them', async () => {
+    mockFetchConversationStarters.mockResolvedValueOnce({
+      opener: null,
+      suggestions: ['解读我最近一次体检（关注: LDL-C）', '帮我提升补剂依从率（近7天完成率 42.9%）'],
+    });
+
+    const { getByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('解读我最近一次体检（关注: LDL-C）')).toBeTruthy();
+    });
+    expect(getByText('帮我提升补剂依从率（近7天完成率 42.9%）')).toBeTruthy();
   });
 });

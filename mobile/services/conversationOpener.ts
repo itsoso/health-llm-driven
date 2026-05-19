@@ -20,6 +20,11 @@ export interface ConversationOpener {
   priority: number;
 }
 
+export interface ConversationStarters {
+  opener: ConversationOpener | null;
+  suggestions: string[] | null;
+}
+
 export function buildConversationOpenerReplyContext(
   opener: ConversationOpener,
   reply: string,
@@ -57,5 +62,22 @@ export async function fetchConversationOpener(): Promise<ConversationOpener | nu
     return res.data?.opener ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * 拉新对话页动态 prompts + opener. 任何错误返回 {opener:null,suggestions:null}.
+ */
+export async function fetchConversationStarters(): Promise<ConversationStarters> {
+  try {
+    const res = await api.get<ConversationStarters>(
+      '/agent/conversation-starters',
+    );
+    return {
+      opener: res.data?.opener ?? null,
+      suggestions: Array.isArray(res.data?.suggestions) ? res.data!.suggestions : null,
+    };
+  } catch {
+    return { opener: null, suggestions: null };
   }
 }

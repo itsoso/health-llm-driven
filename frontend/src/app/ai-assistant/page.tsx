@@ -23,7 +23,7 @@ import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPick
 import ConversationHistoryRail from '@/components/assistant/ConversationHistoryRail';
 import { api } from '@/services/api/client';
 
-const SUGGESTIONS = [
+const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
   '今天怎么安排训练和恢复',
   '结合基因和体检给我建议',
@@ -47,6 +47,7 @@ export default function AIAssistantPage() {
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
   const [llmError, setLlmError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [starterSuggestions, setStarterSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
 
   // 自动滚到底
   useEffect(() => {
@@ -99,6 +100,27 @@ export default function AIAssistantPage() {
   useEffect(() => {
     refreshConversations();
   }, []);
+
+  const refreshConversationStarters = async () => {
+    try {
+      const res = await api.get('/agent/conversation-starters');
+      const items = res.data?.suggestions;
+      if (Array.isArray(items) && items.length > 0) {
+        setStarterSuggestions(items.slice(0, 4));
+      } else {
+        setStarterSuggestions(DEFAULT_SUGGESTIONS);
+      }
+    } catch {
+      setStarterSuggestions(DEFAULT_SUGGESTIONS);
+    }
+  };
+
+  useEffect(() => {
+    // Only needed for the empty-state new conversation page.
+    if (messages.length !== 0 || streaming) return;
+    refreshConversationStarters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConvId]);
 
   const sendMessage = async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -173,6 +195,7 @@ export default function AIAssistantPage() {
   const startNewConversation = () => {
     setActiveConvId(undefined);
     setMessages([]);
+    refreshConversationStarters();
   };
 
   const loadConversation = async (conversationId: number) => {
@@ -278,7 +301,7 @@ export default function AIAssistantPage() {
                   今天想了解什么？
                 </h1>
                 <div className="mt-8 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                  {SUGGESTIONS.map(item => (
+                  {starterSuggestions.map(item => (
                     <button
                       key={item}
                       onClick={() => submitSuggestion(item)}

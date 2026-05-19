@@ -481,6 +481,34 @@ def conversation_opener(
     return {"opener": asdict(opener) if opener else None}
 
 
+@router.get("/conversation-starters", summary="新对话页 prompts — 动态建议 chip")
+def conversation_starters(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Return dynamic prompt chips for the new-chat empty state.
+
+    This endpoint is fail-soft: it never raises (except auth) and falls back to
+    stable defaults on any internal error.
+    """
+    from dataclasses import asdict
+    from app.services.conversation_opener import compute_conversation_opener
+    from app.services.conversation_starters import compute_conversation_suggestions
+
+    opener = None
+    try:
+        opener = compute_conversation_opener(db, current_user.id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[conversation_starters] opener bypass: {e}")
+
+    suggestions = compute_conversation_suggestions(db, current_user.id, limit=4)
+
+    return {
+        "opener": asdict(opener) if opener else None,
+        "suggestions": suggestions,
+    }
+
+
 @router.get("/tools", summary="列出可用工具")
 def list_agent_tools(
     current_user: User = Depends(get_current_user_required),

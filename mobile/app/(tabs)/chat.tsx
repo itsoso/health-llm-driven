@@ -19,7 +19,7 @@ import LlmModelPicker from '../../components/chat/LlmModelPicker';
 import {
   buildConversationOpenerReplyContext,
   buildConversationOpenerReplyMessage,
-  fetchConversationOpener,
+  fetchConversationStarters,
   type ConversationOpener,
 } from '../../services/conversationOpener';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
@@ -28,12 +28,31 @@ import { recordCardAdherence } from '../../services/actionCards';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-const SUGGESTIONS = [
-  { icon: 'pulse-outline' as const, text: '今天的健康状况如何？' },
-  { icon: 'moon-outline' as const, text: '分析我的睡眠质量' },
-  { icon: 'fitness-outline' as const, text: '给我运动建议' },
-  { icon: 'trending-up-outline' as const, text: 'HRV趋势分析' },
+type SuggestionCard = { icon: keyof typeof Ionicons.glyphMap; text: string };
+
+const SUGGESTIONS: SuggestionCard[] = [
+  { icon: 'pulse-outline', text: '今天的健康状况如何？' },
+  { icon: 'moon-outline', text: '分析我的睡眠质量' },
+  { icon: 'fitness-outline', text: '给我运动建议' },
+  { icon: 'trending-up-outline', text: 'HRV趋势分析' },
 ];
+
+function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
+  if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
+  if (/睡眠|打鼾|鼻塞|血氧|SpO2|HRV|静息心率|恢复/i.test(text)) return 'moon-outline';
+  if (/训练|运动|跑步|骑行|力量|有氧|恢复/i.test(text)) return 'fitness-outline';
+  if (/补剂|维生素|鱼油|叶酸|镁|药/i.test(text)) return 'medical-outline';
+  if (/趋势|复盘|分析/i.test(text)) return 'trending-up-outline';
+  return 'sparkles-outline';
+}
+
+function decorateSuggestions(texts: string[] | null | undefined): SuggestionCard[] | null {
+  if (!texts || !Array.isArray(texts) || texts.length === 0) return null;
+  return texts
+    .map((text) => ({ text: String(text), icon: guessSuggestionIcon(String(text)) }))
+    .filter((s) => s.text.trim().length > 0)
+    .slice(0, 4);
+}
 
 function getSelfReportedAdherence(reply: string): number | null {
   if (/没做|未做|没有做|不算/.test(reply)) return 0;
@@ -79,10 +98,14 @@ export default function ChatScreen() {
   // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
   // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
+  const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
   useEffect(() => {
     let cancelled = false;
-    fetchConversationOpener().then(o => {
-      if (!cancelled) setOpener(o);
+    fetchConversationStarters().then(({ opener: newOpener, suggestions }) => {
+      if (cancelled) return;
+      setOpener(newOpener);
+      const decorated = decorateSuggestions(suggestions);
+      if (decorated) setStarterSuggestions(decorated);
     });
     return () => { cancelled = true; };
   }, []);
@@ -343,7 +366,7 @@ export default function ChatScreen() {
                     : '我可以帮你分析数据、解答疑问、提供建议'}
                 </Text>
                 <View style={styles.sugGrid}>
-                  {SUGGESTIONS.map(s => (
+                  {starterSuggestions.map(s => (
                     <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => handleSend(s.text, null)} activeOpacity={0.7}>
                       <Ionicons name={s.icon} size={18} color={c.brand} />
                       <Text style={txt.sugText}>{s.text}</Text>
