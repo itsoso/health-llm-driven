@@ -376,6 +376,33 @@ view_logs() {
 }
 
 # 主函数
+# 检查 mobile/ 自上次 production OTA 以来的漂移; 有未推送的 mobile 改动就提示
+check_ota_drift() {
+    local anchor_file="$SCRIPT_DIR/.last-ota-commit"
+    if [[ ! -f "$anchor_file" ]]; then
+        return 0
+    fi
+    local last_ota
+    last_ota=$(tr -d '[:space:]' < "$anchor_file")
+    if [[ -z "$last_ota" ]]; then
+        return 0
+    fi
+    if ! git -C "$SCRIPT_DIR" cat-file -e "$last_ota" 2>/dev/null; then
+        print_warning "OTA anchor commit ${last_ota:0:8} 在本地不存在 (可能被 rebase),跳过 drift 检查"
+        return 0
+    fi
+    local mobile_commits
+    mobile_commits=$(git -C "$SCRIPT_DIR" log --oneline "${last_ota}..HEAD" -- mobile/ 2>/dev/null || true)
+    if [[ -n "$mobile_commits" ]]; then
+        echo ""
+        print_warning "检测到 mobile/ 自上次 OTA (${last_ota:0:8}) 后有未推送改动:"
+        echo "$mobile_commits" | sed 's/^/    /'
+        echo ""
+        echo -e "${YELLOW}    建议运行: ./scripts/mobile-ota.sh production${NC}"
+        echo ""
+    fi
+}
+
 main() {
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
@@ -439,16 +466,19 @@ main() {
             push_code
             deploy_frontend
             deploy_backend
+            check_ota_drift
             echo ""
             check_status
             ;;
         "frontend")
             push_code
             deploy_frontend
+            check_ota_drift
             ;;
         "backend")
             push_code
             deploy_backend
+            check_ota_drift
             ;;
         "env")
             sync_env

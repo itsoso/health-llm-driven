@@ -17,6 +17,9 @@ MESSAGE="${2:-$(git log -1 --pretty=format:'%s')}"
 
 cd "$(dirname "$0")/.."/mobile
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ANCHOR_FILE="${REPO_ROOT}/.last-ota-commit"
+
 echo "==> EAS Update → channel=${CHANNEL}"
 echo "    message: ${MESSAGE}"
 echo ""
@@ -24,6 +27,13 @@ echo ""
 # 不打 web bundle (react-native-maps 不支持 web)
 # --environment 与 channel 名字对齐 (development/preview/production), 新版 eas-cli 在 non-interactive 下必填
 npx eas-cli update --branch "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${CHANNEL}" --non-interactive
+
+# 记录这次 OTA 对应的 commit, 让 deploy.sh 检测后续 mobile/ 漂移
+if [ "${CHANNEL}" = "production" ]; then
+  CURRENT_COMMIT=$(git -C "${REPO_ROOT}" rev-parse HEAD)
+  echo "${CURRENT_COMMIT}" > "${ANCHOR_FILE}"
+  echo "    anchor 写入 .last-ota-commit (${CURRENT_COMMIT:0:8})"
+fi
 
 echo ""
 echo "✓ 推送完成. 设备下次冷启 (或后台 30s+) 会自动拉取新 bundle."
