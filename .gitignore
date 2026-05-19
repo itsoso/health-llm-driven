@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -54,3 +55,5 @@ Thumbs.db
 .gitnexus
 .claude/
 backend/.coverage
+.coverage
+backend/.venv/
