@@ -3,7 +3,7 @@ import tempfile
 import os
 import base64
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -177,7 +177,7 @@ def update_medical_exam_item(
     payload = body.model_dump(exclude_unset=True)
     for field, val in payload.items():
         setattr(item, field, val)
-    item.manually_corrected_at = datetime.utcnow()
+    item.manually_corrected_at = datetime.now(timezone.utc)
 
     # 同步 medical_indicators — 按 exam_id + (item_code or item_name) 关联.
     # 历史 OCR 写入会同时落 MedicalIndicator (source='image_ocr'), 校正必须 mirror.

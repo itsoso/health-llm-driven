@@ -14,7 +14,7 @@ future: 支持 ?from=<date>&to=<date> 时间范围, 支持更多源 (mood / symp
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -66,8 +66,8 @@ def build_timeline(
 ) -> List[TimelineEvent]:
     """从多源聚合 timeline 事件."""
     events: List[TimelineEvent] = []
-    since_dt = datetime.utcnow() - timedelta(days=days)
-    since_date = (datetime.utcnow() - timedelta(days=days)).date()
+    since_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    since_date = (datetime.now(timezone.utc) - timedelta(days=days)).date()
 
     events.extend(_workouts(db, user_id, since_dt))
     events.extend(_alerts(db, user_id, since_date))

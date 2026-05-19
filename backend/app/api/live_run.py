@@ -12,7 +12,7 @@ V1 端点 (skeleton):
   - end 时把 mobile 累计的 events / gps_samples 一次性提交到后端
   - narrative LLM 复盘异步生成 (V1 同步生成简化, V2 切 Celery)
 """
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -194,7 +194,7 @@ def end_run(
     if s.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权操作")
 
-    s.ended_at = datetime.utcnow()
+    s.ended_at = datetime.now(timezone.utc)
     s.total_distance_m = req.total_distance_m
     s.total_duration_s = req.total_duration_s
     s.avg_pace_seconds = req.avg_pace_seconds

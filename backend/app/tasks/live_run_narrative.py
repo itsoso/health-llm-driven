@@ -85,7 +85,7 @@ def _summarize_events(events: list) -> str:
 
 
 def _summarize_recent_runs(db, user_id: int, exclude_id: int) -> str:
-    cutoff = datetime.utcnow() - timedelta(days=7)
+    cutoff = datetime.now(UTC) - timedelta(days=7)
     rows = (
         db.query(LiveRunSession)
         .filter(LiveRunSession.user_id == user_id)
