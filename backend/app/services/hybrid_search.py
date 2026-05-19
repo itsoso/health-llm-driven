@@ -36,7 +36,10 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────── 简易中文分词 ───────────────────────
 
-_PUNCT = re.compile(r'[\s　,，.。;；:：!！?？"\'""''\(\)（）\[\]【】\{\}<>《》/\\|@#$%^&*+=~`-]+')
+# 原写法 r'..."\'""''\(\)...' 在 27 27 处提前闭合 raw string,
+# 后段的 '\(\)' 是非 raw, Python 3.12 会报 SyntaxWarning.
+# 用 triple-quoted raw string 避免单引号冲突.
+_PUNCT = re.compile(r"""[\s　,，.。;；:：!！?？"'""''()（）\[\]【】{}<>《》/\\|@#$%^&*+=~`-]+""")
 _ASCII = re.compile(r'[a-zA-Z0-9]+')
 _CJK = re.compile(r'[一-鿿]')
 

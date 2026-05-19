@@ -41,10 +41,24 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
 
 
 def test_managed_system_knowledge_migration_creates_phase0_tables():
-    engine = create_engine("sqlite:///:memory:")
-    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    """验证 KB phase0 migration 在 sqlite 上能正常 CREATE 三张表 + 索引.
 
-    apply_managed_migrations(engine, migrations_dir)
+    不跑全量 managed_migrations: 其它 ALTER 类 migration (如 add_detected_source)
+    假定 ORM 表已建好, 而 ORM create_all 又会把本测试想验证的 kb_* 表先建出来 —
+    两难. 直接对 phase0 这份 sqlite 文件跑 SQL 即可.
+    """
+    engine = create_engine("sqlite:///:memory:")
+    migration_file = (
+        Path(__file__).resolve().parents[1]
+        / "migrations" / "managed"
+        / "20260516_200000_create_system_knowledge_tables.sqlite.sql"
+    )
+    sql = migration_file.read_text(encoding="utf-8")
+    with engine.begin() as conn:
+        for stmt in sql.split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(text(s))
 
     inspector = inspect(engine)
     tables = inspector.get_table_names()

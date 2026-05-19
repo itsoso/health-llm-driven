@@ -2,7 +2,7 @@
 
 与 disease_tracking 不同, 本 API 不绑 UserDiseaseProfile, 适合偶发症状的低门槛录入.
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -90,7 +90,7 @@ def create_symptom(
 
     e = SymptomEntry(
         user_id=current_user.id,
-        occurred_at=payload.occurred_at or datetime.utcnow(),
+        occurred_at=payload.occurred_at or datetime.now(timezone.utc),
         body_part=payload.body_part,
         description=payload.description,
         severity=payload.severity,
@@ -153,7 +153,7 @@ def update_symptom(
         raise HTTPException(status_code=400, detail=f"body_part 必须是 {sorted(VALID_BODY_PARTS)} 之一")
     for key, value in data.items():
         setattr(e, key, value)
-    e.updated_at = datetime.utcnow()
+    e.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(e)
     try:
