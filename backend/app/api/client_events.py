@@ -8,7 +8,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -40,6 +40,18 @@ _ALLOWED_EVENTS = frozenset({
 class EventIn(BaseModel):
     event_name: str = Field(..., max_length=64)
     meta: Optional[Dict[str, Any]] = None
+
+    @field_validator("meta")
+    @classmethod
+    def _meta_size_limit(cls, v: Optional[Dict[str, Any]]):
+        if v is None:
+            return v
+        import json
+
+        payload = json.dumps(v, ensure_ascii=False, separators=(",", ":"), default=str)
+        if len(payload.encode("utf-8")) > 2048:
+            raise ValueError("meta too large (max 2KB)")
+        return v
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED, summary="上报一条 UI 事件")

@@ -49,6 +49,22 @@ def test_post_client_event_without_meta_ok(client, db, auth_user_and_headers):
     assert rows[0].meta is None
 
 
+def test_post_client_event_rejects_oversized_meta(client, auth_user_and_headers):
+    """防滥用: meta 不允许塞超大 JSON（避免 DB/日志/网络被打爆）."""
+    _, headers = auth_user_and_headers
+    r = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "reasoning_sheet_opened",
+            "meta": {"blob": "x" * 5000},
+        },
+    )
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert any("meta too large" in (e.get("msg") or "") for e in detail), detail
+
+
 def test_client_events_stats_counts_by_event(db, auth_user_and_headers):
     from app.models.user import User
     from app.services.observability_service import client_events_stats
