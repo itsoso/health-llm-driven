@@ -27,6 +27,11 @@ export interface SpeakCallbacks {
   onDone?: () => void;     // 自然播完
   onStopped?: () => void;  // cancel() / Speech.stop() 触发
   onError?: (e: unknown) => void;
+  /**
+   * 云端合成失败,自动降级到 iOS 系统嗓音前触发一次. 调用方可以借此提示用户
+   * "云端语音暂不可用,临时使用系统嗓音" — 否则用户只听到嗓音变了不知道为何.
+   */
+  onFallback?: (kind: 'cloud_to_ios') => void;
 }
 
 /**
@@ -186,14 +191,41 @@ export async function speakWithUserVoice(
     if (__DEV__) {
       console.warn('[speakWithUserVoice] cloud failed, falling back to iOS:', e);
     }
+    callbacks.onFallback?.('cloud_to_ios');
     try {
       const fallbackOpts = await resolveIosSpeechOptions(style);
-      Speech.speak(trimmed, {
-        ...fallbackOpts,
-        onDone: callbacks.onDone,
-        onStopped: callbacks.onStopped,
-        onError: callbacks.onError,
-      });
+      // iOS 引擎对超长中文会切到中途, 复用 cloud 的切段器 (用更小的 maxChars,
+      // iOS 比 CosyVoice 更敏感, 300 字一段比较稳).
+      const iosChunks = splitTextForCloudTts(trimmed, 300);
+      let stopped = false;
+      const speakIndex = (i: number) => {
+        if (stopped) return;
+        if (i >= iosChunks.length) {
+          callbacks.onDone?.();
+          return;
+        }
+        Speech.speak(iosChunks[i], {
+          ...fallbackOpts,
+          onDone: () => speakIndex(i + 1),
+          onStopped: () => {
+            if (stopped) return;
+            stopped = true;
+            callbacks.onStopped?.();
+          },
+          onError: (err) => {
+            if (stopped) return;
+            stopped = true;
+            callbacks.onError?.(err);
+          },
+        });
+      };
+      speakIndex(0);
+      return {
+        cancel: () => {
+          stopped = true;
+          try { Speech.stop(); } catch {}
+        },
+      };
     } catch (fallbackErr) {
       callbacks.onError?.(fallbackErr);
     }

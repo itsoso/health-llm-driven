@@ -71,6 +71,7 @@ show_help() {
     echo "  -p, --push      仅推送代码到 GitHub (不部署)"
     echo "  -s, --status    查看服务器服务状态"
     echo "  -l, --logs      查看服务器日志"
+    echo "  -y, --yes       跳过 mobile/ drift 交互确认"
     echo "  -h, --help      显示此帮助信息"
     echo ""
     echo "配置文件: .env-online (本地管理，不被 git 追踪)"
@@ -376,8 +377,9 @@ view_logs() {
 }
 
 # 主函数
-# 检查 mobile/ 自上次 production OTA 以来的漂移; 有未推送的 mobile 改动就提示
-check_ota_drift() {
+# 部署前检查 mobile/ 自上次 production OTA 以来的漂移; 有未推送的 mobile 改动就提示
+# 默认交互式询问 [y/N], 用 -y/--yes 跳过
+confirm_ota_drift() {
     local anchor_file="$SCRIPT_DIR/.last-ota-commit"
     if [[ ! -f "$anchor_file" ]]; then
         return 0
@@ -393,14 +395,35 @@ check_ota_drift() {
     fi
     local mobile_commits
     mobile_commits=$(git -C "$SCRIPT_DIR" log --oneline "${last_ota}..HEAD" -- mobile/ 2>/dev/null || true)
-    if [[ -n "$mobile_commits" ]]; then
-        echo ""
-        print_warning "检测到 mobile/ 自上次 OTA (${last_ota:0:8}) 后有未推送改动:"
-        echo "$mobile_commits" | sed 's/^/    /'
-        echo ""
-        echo -e "${YELLOW}    建议运行: ./scripts/mobile-ota.sh production${NC}"
-        echo ""
+    if [[ -z "$mobile_commits" ]]; then
+        return 0
     fi
+    echo ""
+    print_warning "检测到 mobile/ 自上次 OTA (${last_ota:0:8}) 后有未推送改动:"
+    echo "$mobile_commits" | sed 's/^/    /'
+    echo ""
+    if [[ "${AUTO_YES:-0}" -eq 1 ]]; then
+        print_warning "已通过 -y 跳过确认; 部署完后请记得 ./scripts/mobile-ota.sh production"
+        echo ""
+        return 0
+    fi
+    if [[ ! -t 0 ]]; then
+        # 非交互 (CI / 重定向),自动放行但提示
+        print_warning "非交互环境,自动继续; 部署完后请记得 ./scripts/mobile-ota.sh production"
+        echo ""
+        return 0
+    fi
+    read -r -p "继续部署? 部署后再 OTA 也可以 [y/N] " reply
+    case "$reply" in
+        [yY]|[yY][eE][sS])
+            echo ""
+            return 0
+            ;;
+        *)
+            print_error "已取消; 建议先跑 ./scripts/mobile-ota.sh production"
+            exit 1
+            ;;
+    esac
 }
 
 main() {
@@ -412,6 +435,7 @@ main() {
 
     # 默认部署全部
     DEPLOY_MODE="all"
+    AUTO_YES=0
 
     # 解析参数
     while [[ $# -gt 0 ]]; do
@@ -448,6 +472,10 @@ main() {
                 DEPLOY_MODE="logs"
                 shift
                 ;;
+            -y|--yes)
+                AUTO_YES=1
+                shift
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -460,25 +488,29 @@ main() {
         esac
     done
 
+    # 部署前先检查 mobile/ drift — 抓住"忘了 OTA"的常见错
+    case $DEPLOY_MODE in
+        "all"|"frontend"|"backend")
+            confirm_ota_drift
+            ;;
+    esac
+
     # 执行对应操作
     case $DEPLOY_MODE in
         "all")
             push_code
             deploy_frontend
             deploy_backend
-            check_ota_drift
             echo ""
             check_status
             ;;
         "frontend")
             push_code
             deploy_frontend
-            check_ota_drift
             ;;
         "backend")
             push_code
             deploy_backend
-            check_ota_drift
             ;;
         "env")
             sync_env
