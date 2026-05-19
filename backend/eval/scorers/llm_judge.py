@@ -80,12 +80,18 @@ def score_llm_judge(
     question: str,
     actual: str,
     expected: Dict[str, Any],
-    judge_call=_call_judge,  # 可注入 mock
+    judge_call=None,  # 可注入 mock; None 表示 call-time 解析模块级 _call_judge
 ) -> Dict[str, Any]:
     """expected 字段:
         llm_judge_min_score: int — pass 的最低分数, 默认 3
         llm_judge_model: str | None — 指定 judge 模型 (None 用默认)
     """
+    # default=_call_judge 会在 def 时把函数对象固化, 让 monkeypatch
+    # lj_mod._call_judge 失效 (CI 跑 orchestrator runner case 时炸过).
+    # 推到 call-time 解析, 模块属性变化才能被吃到.
+    if judge_call is None:
+        judge_call = _call_judge
+
     min_score = int(expected.get("llm_judge_min_score", 3))
     model = expected.get("llm_judge_model")
 
