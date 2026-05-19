@@ -141,7 +141,12 @@ async def telegram_webhook(
     # 主路径: 自动意图分流
     from app.services.telegram_inbound import handle_inbound_text
     try:
-        reply = await handle_inbound_text(db, int(advisor_user_id), text)
+        reply = await handle_inbound_text(
+            db,
+            int(advisor_user_id),
+            text,
+            source_message_id=str(message_id) if message_id is not None else None,
+        )
     except Exception as e:
         logger.error(f"[telegram-webhook] handle_inbound_text 失败: {e}", exc_info=True)
         await _reply_to_telegram(chat_id, f"⚠️ 处理出错: {str(e)[:120]}")

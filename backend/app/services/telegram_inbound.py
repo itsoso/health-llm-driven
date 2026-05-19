@@ -254,7 +254,13 @@ async def llm_chat_reply(text: str) -> str:
 
 # ─── 主入口 ──────────────────────────────────────────────────────────
 
-async def handle_inbound_text(db, user_id: int, text: str) -> str:
+async def handle_inbound_text(
+    db,
+    user_id: int,
+    text: str,
+    *,
+    source_message_id: Optional[str] = None,
+) -> str:
     """
     根据 text 自动分流, 返回给用户的 Telegram 回执.
     """
@@ -266,7 +272,11 @@ async def handle_inbound_text(db, user_id: int, text: str) -> str:
         from app.services.directive_parser import parse_and_store
         try:
             ids = parse_and_store(
-                db, user_id=user_id, text=text, source="external_telegram"
+                db,
+                user_id=user_id,
+                text=text,
+                source="external_telegram",
+                source_message_id=source_message_id,
             )
             if not ids:
                 return "ℹ️ 没识别出指令. 试试 'LDL 控制在 2.6 以下' 或 '严格戒酒 30 天'"

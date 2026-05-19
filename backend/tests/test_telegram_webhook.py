@@ -67,8 +67,9 @@ class TestDoctorReply:
         assert r.json()["ignored"] == "command"
 
     def test_short_text_ignored(self, client, db):
+        # 03f96231 把阈值放宽到 len < 2 (允许 "嗯"/"好" 等短回复进 LLM); 用 1 字测试
         r = client.post("/api/v1/telegram/webhook?secret=test-secret",
-                       json={"message": {"chat": {"id": 12345}, "text": "ok"}})
+                       json={"message": {"chat": {"id": 12345}, "text": "x"}})
         assert r.status_code == 200
         assert r.json()["ignored"] == "text_too_short"
 
@@ -84,7 +85,8 @@ class TestDoctorReply:
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is True
-        assert body["created"] >= 1
+        # 03f96231 后响应改为 {"ok": True, "reply": "✅ 已录入 N 条指令:..."}
+        assert "已录入" in body["reply"]
 
         rows = db.query(UserDirective).filter(UserDirective.user_id == 7).all()
         assert len(rows) >= 1
@@ -96,7 +98,9 @@ class TestDoctorReply:
                        json={"message": {"chat": {"id": 12345},
                                          "text": "今天天气真好谢谢"}})
         assert r.status_code == 200
-        assert r.json()["created"] == 0
+        body = r.json()
+        assert body["ok"] is True
+        # query/chat intent 不创建 directive
         assert db.query(UserDirective).count() == 0
 
 
