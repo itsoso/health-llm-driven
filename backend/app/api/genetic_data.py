@@ -794,7 +794,7 @@ def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str, im
 
     db = SessionLocal()
     try:
-        job = db.query(GeneticImportJob).get(import_job_id) if import_job_id else None
+        job = db.get(GeneticImportJob, import_job_id) if import_job_id else None
         if job:
             job.status = "processing"
             job.started_at = _utcnow()
@@ -906,7 +906,7 @@ category 分类规则:
 
         # 更新档案备注
         coverage = _build_import_coverage(matched_rsids)
-        profile = db.query(GeneticProfile).get(profile_id)
+        profile = db.get(GeneticProfile, profile_id)
         if profile:
             profile.notes = (
                 f"PDF 自动提取完成, 共 {stats['saved']} 个位点 "
@@ -950,11 +950,11 @@ category 分类规则:
     except Exception as e:
         logger.error(f"[基因PDF] profile={profile_id} 处理失败: {e}", exc_info=True)
         try:
-            profile = db.query(GeneticProfile).get(profile_id)
+            profile = db.get(GeneticProfile, profile_id)
             if profile:
                 profile.notes = f"PDF 提取失败: {str(e)[:100]}"
             if import_job_id:
-                job = db.query(GeneticImportJob).get(import_job_id)
+                job = db.get(GeneticImportJob, import_job_id)
                 if job:
                     job.status = "failed"
                     job.error_message = str(e)[:500]
