@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from app.models.user import User
 from app.models.daily_health import GarminData, WaterIntake
 from app.models.user_profile import UserProfile
+from app.utils.timezone import get_china_today
 
 
 @pytest.fixture
@@ -32,6 +33,9 @@ def auth_headers(client, test_user):
 @pytest.fixture
 def user_with_data(db, test_user):
     """用户 + Garmin 数据 + 用户画像"""
+    # API 用 get_china_today() (Asia/Shanghai), 测试也得用同一个 today, 否则
+    # CI 在 16:00-24:00 UTC 跨日时, date.today() 与 china_today 差一天 → 0ml.
+    today = get_china_today()
     profile = UserProfile(
         user_id=test_user.id,
         height_cm=175,
@@ -44,7 +48,7 @@ def user_with_data(db, test_user):
     for i in range(7):
         garmin = GarminData(
             user_id=test_user.id,
-            record_date=date.today() - timedelta(days=i),
+            record_date=today - timedelta(days=i),
             steps=8000 + i * 500 if i % 2 == 0 else 3000,
             active_minutes=40 if i % 2 == 0 else 10,
             deep_sleep_duration=80 + i * 2,
@@ -58,7 +62,7 @@ def user_with_data(db, test_user):
     # 今日饮水
     water = WaterIntake(
         user_id=test_user.id,
-        record_date=date.today(),
+        record_date=today,
         amount=800,
         drink_type="水",
     )
