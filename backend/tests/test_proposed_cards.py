@@ -101,7 +101,8 @@ class TestRecoveryCoachProposes:
         assert c.target_value.startswith(">")
         assert c.baseline_value == "28"
 
-    def test_high_readiness_no_card(self):
+    def test_high_readiness_emits_forecast_only(self):
+        """高 readiness 时不出 plan/recommendation, 但会出一条 forecast (b17133e5)."""
         from app.agents.recovery_coach.coach import RecoveryCoachSpecialist
         from app.twin.schema import HealthTwin, TwinMeta, PhysiologicalState
 
@@ -112,8 +113,13 @@ class TestRecoveryCoachProposes:
 
         sp = RecoveryCoachSpecialist()
         finding = sp.run(twin, {})
-        # 状态好不应产 card
-        assert finding.proposed_cards == []
+        cards = finding.proposed_cards
+        # 状态好: 不出 plan/recommendation, 只押 forecast
+        assert all(c.card_type == "forecast" for c in cards)
+        assert len(cards) == 1
+        c = cards[0]
+        assert c.metric_key == "hrv"
+        assert c.target_value.startswith(">")
 
 
 class TestHypertensionProposes:
