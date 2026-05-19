@@ -150,7 +150,9 @@ export const WorkoutCardSpec: CardSpec<WorkoutData> = {
 
       // 有时间窗但无匹配数据 → 不要兜底拉 latest (会渲染错日期的运动, 与 LLM 文本矛盾)
       if (window) return null;
-    } catch {}
+    } catch {
+      // 旁路: 主路径失败 → 走下面 fallback (garmin daily). 真正错误下面 fallback 也会失败.
+    }
 
     // Fallback: 仅在泛化问题(无时间窗)时, 用 garmin daily data
     if (!window && g) {

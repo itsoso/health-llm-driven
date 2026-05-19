@@ -221,7 +221,9 @@ export function useVoiceConversation() {
         interruptionMode: 'duckOthers',
         allowsRecording: false,  // → .playback category, 外放
       });
-    } catch {}
+    } catch (e) {
+      if (__DEV__) console.warn('[voice] setPlaybackMode failed:', e);
+    }
   }, []);
 
   const setRecordingMode = useCallback(async () => {
@@ -232,7 +234,9 @@ export function useVoiceConversation() {
         interruptionMode: 'duckOthers',
         allowsRecording: true,  // → .playAndRecord category
       });
-    } catch {}
+    } catch (e) {
+      if (__DEV__) console.warn('[voice] setRecordingMode failed:', e);
+    }
   }, []);
 
   useEffect(() => {
@@ -248,7 +252,9 @@ export function useVoiceConversation() {
       if (opt.provider === 'ios') {
         iosOptsRef.current = await resolveIosSpeechOptions(style);
       }
-    } catch {}
+    } catch (e) {
+      if (__DEV__) console.warn('[voice] refreshVoiceStyle failed:', e);
+    }
   }, []);
 
   useEffect(() => {

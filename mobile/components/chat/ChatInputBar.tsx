@@ -122,7 +122,9 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, convers
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
       if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
-    } catch {}
+    } catch (e) {
+      if (__DEV__) console.warn('[chat] DocumentPicker failed:', e);
+    }
   }, []);
 
   const toggleMenu = () => {

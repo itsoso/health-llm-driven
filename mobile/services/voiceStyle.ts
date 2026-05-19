@@ -167,12 +167,16 @@ export async function loadVoiceStyle(): Promise<VoiceStyle> {
     if (old === 'gentle_tw') return 'ios_gentle_tw';
     if (old === 'standard_cn') return 'ios_standard_cn';
     if (old === 'system') return 'ios_system';
-  } catch {}
+  } catch {
+    // 旁路: AsyncStorage 读失败 → 用默认档.
+  }
   return DEFAULT_VOICE_STYLE;
 }
 
 export async function saveVoiceStyle(style: VoiceStyle): Promise<void> {
-  try { await AsyncStorage.setItem(STORAGE_KEY, style); } catch {}
+  try { await AsyncStorage.setItem(STORAGE_KEY, style); } catch (e) {
+    if (__DEV__) console.warn('[voiceStyle] save failed:', e);
+  }
 }
 
 /**

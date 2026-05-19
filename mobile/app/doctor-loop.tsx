@@ -66,7 +66,9 @@ export default function DoctorLoopScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await sharePlainText({ title: '医生沟通摘要', message: expQ.data.markdown });
-    } catch {}
+    } catch (e) {
+      if (__DEV__) console.warn('[doctor-loop] share failed:', e);
+    }
   };
 
   const onCopy = async () => {

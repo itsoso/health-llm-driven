@@ -276,7 +276,9 @@ export default function RecordScreen() {
                           ? `再记一次 ${m.name} ${hh}:${mm}`
                           : `已记录 ${m.name} ${hh}:${mm}`;
                         showUndo(msg, async () => {
-                          try { await api.delete(`/medication/logs/${res.data.id}`); await invalidateRecordMutation(qc); } catch {}
+                          try { await api.delete(`/medication/logs/${res.data.id}`); await invalidateRecordMutation(qc); } catch (e) {
+                            if (__DEV__) console.warn('[record] undo medication log delete failed:', e);
+                          }
                         });
                       } catch { Alert.alert('记录失败'); }
                     }}

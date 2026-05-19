@@ -110,5 +110,7 @@ export async function cleanupTmpTts(): Promise<void> {
         .filter((n) => n.startsWith('tts_') && n.endsWith('.mp3'))
         .map((n) => FileSystem.deleteAsync(dir + n, { idempotent: true })),
     );
-  } catch {}
+  } catch {
+    // 旁路: 缓存清理 fire-and-forget, 失败下次启动再清.
+  }
 }

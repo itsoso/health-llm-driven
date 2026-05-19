@@ -25,7 +25,9 @@ export function useBiometricLock(isAuthenticated: boolean) {
           setIsEnabled(true);
           setIsLocked(true);
         }
-      } catch {}
+      } catch (e) {
+        if (__DEV__) console.warn('[biometric] SecureStore read failed:', e);
+      }
     })();
   }, []);
 

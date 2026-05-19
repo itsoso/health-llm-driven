@@ -87,7 +87,9 @@ export function useGPSAutoRefresh(enabled: boolean) {
           }
           if (__DEV__) console.log(`[GPS] 漂移破节流: drift=${drift.toFixed(1)}km`);
         }
-      } catch {}
+      } catch {
+        // 旁路: AsyncStorage 读失败 → 当作没节流, 继续刷新.
+      }
 
       // 4. 客户端先反查 city (CLGeocoder 离线可用), 给 backend hint 让它跳过 qweather.
       //    失败不阻断 — backend 会自己用 qweather 兜底, 或没 city 也能正常存 lat/lon.
