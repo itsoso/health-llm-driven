@@ -29,6 +29,12 @@ _ACUTE_REST_SUPPRESS_TITLES = (
     "马拉松",
     "举铁",
     "重量",
+    "健身",
+    "workout",
+    "gym",
+    "run",
+    "jog",
+    "strength",
 )
 
 
@@ -171,7 +177,11 @@ def _apply_acute_rest_arbiter(
         action_key = str(action.get("action_key") or "")
         title = str(action.get("title") or "")
         is_intervention = action_key.startswith("intervention.card.")
-        looks_like_training = any(k in title for k in _ACUTE_REST_SUPPRESS_TITLES)
+        title_lower = title.lower()
+        looks_like_training = any(
+            (k.lower() in title_lower) if k.isascii() else (k in title)
+            for k in _ACUTE_REST_SUPPRESS_TITLES
+        )
 
         if is_intervention and looks_like_training:
             suppressed_keys.append(action_key)
