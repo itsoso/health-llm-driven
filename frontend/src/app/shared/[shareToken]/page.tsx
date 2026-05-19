@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,8 +80,12 @@ export default async function SharedPage({ params }: { params: { shareToken: str
               className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="mb-2 text-xs font-semibold text-teal-700">{roleLabel(m.role)}</div>
-              <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800">
-                {m.content}
+              <div className="text-[15px] leading-7 text-slate-800">
+                {m.role === 'user' ? (
+                  <div className="whitespace-pre-wrap">{m.content}</div>
+                ) : (
+                  <MarkdownRenderer content={m.content} variant="light" />
+                )}
               </div>
             </article>
           ))}
