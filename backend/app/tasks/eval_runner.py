@@ -20,6 +20,7 @@ _SUITES = [
     ("safety", "main"),
     ("recovery", "main"),
     ("insight", "main"),
+    ("health_advice", "main"),
     ("orchestrator", "main"),
 ]
 

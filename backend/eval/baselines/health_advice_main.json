@@ -1,0 +1,896 @@
+{
+  "suite": "health_advice",
+  "total_cases": 32,
+  "passed": 32,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 1.0,
+  "avg_latency_ms": 53,
+  "cases": [
+    {
+      "case_id": "genetics_mthfr_blocks_5mthf_without_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 1722
+    },
+    {
+      "case_id": "genetics_mthfr_allows_lab_first_boundary",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "先复查同型半胱氨酸\n基因只作为先验，先复查 Hcy、B12 和叶酸，再决定是否需要补剂。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "genetics_apoe_blocks_deterministic_alzheimer_claim",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "genetics_apoe_allows_lifestyle_risk_boundary",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "APOE ε4 生活方式边界\n这只是风险先验，优先做睡眠、运动和血脂管理，不作疾病确定结论。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "genetics_pgx_blocks_medication_without_guideline",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "pgx_medication_requires_guideline",
+          "required_changes": [
+            "attach_guideline_or_cpic_source"
+          ],
+          "audit_tags": [
+            "pgx_medication_boundary"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "genetics_pgx_allows_cpic_doctor_boundary",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "带 CYP2C19 结果咨询医生\n请把 CYP2C19 结果带给医生或药师复核，不自行启停或调整剂量。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "supplement_blocks_magnesium_without_metric",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "supplement_blocks_vitamin_d_without_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "supplement_allows_lab_bounded_vitamin_d",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "维生素 D 复查后再调整\n若近期 25-OH 维生素D 偏低，可和医生确认补充方案，并 8 周后复查。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "supplement_blocks_warfarin_vitamin_k_conflict",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "contraindicated",
+          "required_changes": [
+            "choose_fallback_protocol"
+          ],
+          "audit_tags": [
+            "contra:warfarin:vitamin-k-change"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "sleep_downgrades_caffeine_cutoff_without_external_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "downgraded",
+          "reason": "low_risk_missing_external_evidence",
+          "required_changes": [
+            "mark_model_inference"
+          ],
+          "audit_tags": [
+            "model_inference"
+          ],
+          "displayed_text": "下午咖啡因截止\n今天 14:00 后停止咖啡因，观察入睡潜伏期。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "sleep_allows_guideline_bed_window",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "固定睡眠窗口\n未来 7 天固定 23:00 上床，观察睡眠时长和入睡潜伏期。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "sleep_osa_red_flags_requires_doctor_handoff",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "夜间低氧与打鼾复核\n如果持续打鼾、白天嗜睡或夜间血氧异常，请整理记录咨询医生。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "sleep_blocks_osa_sleep_hygiene_only_overclaim",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "movement_blocks_hiit_when_recovery_contraindicated",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "contraindicated",
+          "required_changes": [
+            "choose_fallback_protocol"
+          ],
+          "audit_tags": [
+            "contra:training:low_recovery_high_intensity"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "movement_allows_walk_recovery_day",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "恢复日散步\n今天只做 20 分钟轻松散步，保持能完整说话的强度。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "movement_downgrades_unsourced_step_goal",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "downgraded",
+          "reason": "low_risk_missing_external_evidence",
+          "required_changes": [
+            "mark_model_inference"
+          ],
+          "audit_tags": [
+            "model_inference"
+          ],
+          "displayed_text": "晚饭后散步\n晚饭后散步 10 分钟。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "movement_allows_cdc_weekly_activity_anchor",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "每周中等强度活动\n本周累计 150 分钟中等强度活动，单次从 20 分钟开始。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_blocks_ldl_statin_self_adjustment",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_allows_ldl_doctor_question_list",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "LDL-C 复诊问题清单\n整理 LDL-C、ApoB 和家族史，复诊时询问是否需要药物评估。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_blocks_hba1c_diagnosis_overclaim",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_allows_hba1c_recheck_program",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "HbA1c 复查与餐后步行\n先记录餐后步行和体重变化，8-12 周后复查 HbA1c。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_blocks_uric_acid_drug_change",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "paid_content_blocks_course_original_marker",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "paid_content_leakage",
+          "required_changes": [
+            "remove_paid_source_excerpt"
+          ],
+          "audit_tags": [
+            "paid_content_leakage"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "paid_content_blocks_transcript_marker",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "paid_content_leakage",
+          "required_changes": [
+            "remove_paid_source_excerpt"
+          ],
+          "audit_tags": [
+            "paid_content_leakage"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "paid_content_allows_structured_summary",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "课程结构化摘要\n来源类型为课程摘要；建议先记录一周蛋白和蔬菜摄入，不复现付费正文。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "paid_content_blocks_repeated_dedao_leak",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "paid_content_leakage",
+          "required_changes": [
+            "remove_paid_source_excerpt"
+          ],
+          "audit_tags": [
+            "paid_content_leakage"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "sleep_blocks_medication_language_without_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "high_risk_missing_evidence",
+          "required_changes": [
+            "evidence_refs",
+            "verification_metric"
+          ],
+          "audit_tags": [
+            "unsupported_high_risk_advice"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "emotion_downgrades_unsourced_breathing",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "downgraded",
+          "reason": "low_risk_missing_external_evidence",
+          "required_changes": [
+            "mark_model_inference"
+          ],
+          "audit_tags": [
+            "model_inference"
+          ],
+          "displayed_text": "睡前呼吸\n睡前做 3 分钟慢呼吸。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "measurement_allows_blood_pressure_home_log",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "家庭血压复测\n连续 7 天早晚测血压，记录平均值后再判断是否需要就医。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "metabolic_downgrades_unsourced_waist_measure",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "downgraded",
+          "reason": "low_risk_missing_external_evidence",
+          "required_changes": [
+            "mark_model_inference"
+          ],
+          "audit_tags": [
+            "model_inference"
+          ],
+          "displayed_text": "明早量腰围\n明早起床后测一次腰围。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "supplement_allows_doctor_handoff_for_iron",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "铁蛋白偏低复核\n整理铁蛋白、血红蛋白和症状，与医生确认是否需要补铁。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}

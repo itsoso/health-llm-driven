@@ -1,0 +1,560 @@
+suite: health_advice
+description: |
+  Deterministic regression suite for user-visible health advice verification.
+  The suite exercises genetics, supplements, sleep, movement, labs, and
+  paid-content compliance without calling an LLM or database.
+cases:
+  - id: genetics_mthfr_blocks_5mthf_without_evidence
+    description: MTHFR TT cannot imply immediate 5-MTHF supplementation without evidence and metrics.
+    tags: [genetics, supplement, high_risk]
+    candidate:
+      domain: supplement
+      title: "MTHFR TT 补充 5-MTHF"
+      body: "你需要立刻补充 5-MTHF。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      required_changes_contains: [evidence_refs, verification_metric]
+      must_not_include: ["立刻补充 5-MTHF"]
+
+  - id: genetics_mthfr_allows_lab_first_boundary
+    description: MTHFR signal may support lab-first nutrition guidance with clear boundary.
+    tags: [genetics, supplement]
+    candidate:
+      domain: measurement
+      title: "先复查同型半胱氨酸"
+      body: "基因只作为先验，先复查 Hcy、B12 和叶酸，再决定是否需要补剂。"
+      evidence_refs: [claim:mthfr_lab_first]
+      evidence_source_types: [guideline]
+      verification_metric: homocysteine_umol_l
+      verification_window_days: 30
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: genetics_apoe_blocks_deterministic_alzheimer_claim
+    description: APOE ε4 cannot be framed as deterministic Alzheimer diagnosis.
+    tags: [genetics, high_risk]
+    candidate:
+      domain: measurement
+      risk_level: high
+      title: "APOE ε4 风险解释"
+      body: "你一定会得阿尔茨海默病。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      must_not_include: ["一定会得阿尔茨海默病"]
+
+  - id: genetics_apoe_allows_lifestyle_risk_boundary
+    description: APOE ε4 can support bounded lifestyle risk management.
+    tags: [genetics]
+    candidate:
+      domain: movement
+      title: "APOE ε4 生活方式边界"
+      body: "这只是风险先验，优先做睡眠、运动和血脂管理，不作疾病确定结论。"
+      evidence_refs: [claim:apoe_lifestyle_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: ldl_c_mmol_l
+      verification_window_days: 90
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: genetics_pgx_blocks_medication_without_guideline
+    description: PGx medication advice requires guideline-grade source.
+    tags: [genetics, lab, high_risk]
+    candidate:
+      domain: supplement
+      title: "CYP2C19 用药建议"
+      body: "根据你的 CYP2C19 结果调整用药。"
+      evidence_refs: [claim:cyp2c19_boundary]
+      evidence_source_types: [dedao, pubmed]
+      verification_metric: doctor_review
+      verification_window_days: 14
+    personal_matrix:
+      signals:
+        - signal_type: genetics
+          signal_id: gene:CYP2C19
+    expected:
+      allowed: false
+      decision: blocked
+      reason: pgx_medication_requires_guideline
+      required_changes_contains: [attach_guideline_or_cpic_source]
+      must_not_include: ["调整用药"]
+
+  - id: genetics_pgx_allows_cpic_doctor_boundary
+    description: CPIC/FDA-grade PGx source can support doctor-handoff advice.
+    tags: [genetics, lab, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "带 CYP2C19 结果咨询医生"
+      body: "请把 CYP2C19 结果带给医生或药师复核，不自行启停或调整剂量。"
+      evidence_refs: [claim:cyp2c19_cpic_boundary]
+      evidence_source_types: [cpic]
+      verification_metric: doctor_review
+      verification_window_days: 14
+    personal_matrix:
+      signals:
+        - signal_type: genetics
+          signal_id: gene:CYP2C19
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+      must_not_include: ["自行调整剂量"]
+
+  - id: supplement_blocks_magnesium_without_metric
+    description: Supplement advice must have evidence and verification metric.
+    tags: [supplement, high_risk]
+    candidate:
+      domain: supplement
+      title: "补充镁"
+      body: "今晚开始每天补充镁。"
+      evidence_refs: [claim:magnesium_sleep]
+      evidence_source_types: [pubmed]
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      required_changes_contains: [verification_metric]
+      must_not_include: ["每天补充镁"]
+
+  - id: supplement_blocks_vitamin_d_without_evidence
+    description: Vitamin D supplement advice needs evidence reference.
+    tags: [supplement, high_risk]
+    candidate:
+      domain: supplement
+      title: "补充维生素 D"
+      body: "你应该直接补充维生素 D。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric: vitamin_d_25oh_ng_ml
+      verification_window_days: 60
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      required_changes_contains: [evidence_refs]
+      must_not_include: ["直接补充维生素 D"]
+
+  - id: supplement_allows_lab_bounded_vitamin_d
+    description: Vitamin D advice is allowed when bounded by lab follow-up.
+    tags: [supplement, lab, high_risk]
+    candidate:
+      domain: supplement
+      title: "维生素 D 复查后再调整"
+      body: "若近期 25-OH 维生素D 偏低，可和医生确认补充方案，并 8 周后复查。"
+      evidence_refs: [claim:vitamin_d_lab_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: vitamin_d_25oh_ng_ml
+      verification_window_days: 56
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+      must_not_include: ["不用复查"]
+
+  - id: supplement_blocks_warfarin_vitamin_k_conflict
+    description: Warfarin context blocks vitamin K supplement changes.
+    tags: [supplement, lab, high_risk]
+    candidate:
+      domain: supplement
+      title: "增加维生素 K"
+      body: "为了凝血健康，今天开始增加维生素 K 补剂。"
+      evidence_refs: [claim:vitamin_k_general]
+      evidence_source_types: [pubmed]
+      verification_metric: inr
+      verification_window_days: 14
+      target_value: increase_vitamin_k
+    contraindications:
+      - contraindication_id: contra:warfarin:vitamin-k-change
+        blocks: [increase_vitamin_k]
+        severity: high
+    expected:
+      allowed: false
+      decision: blocked
+      reason: contraindicated
+      audit_tags_contains: [contra:warfarin:vitamin-k-change]
+      must_not_include: ["增加维生素 K 补剂"]
+
+  - id: sleep_downgrades_caffeine_cutoff_without_external_evidence
+    description: Low-risk sleep behavior without external evidence is downgraded.
+    tags: [sleep]
+    candidate:
+      domain: sleep
+      title: "下午咖啡因截止"
+      body: "今天 14:00 后停止咖啡因，观察入睡潜伏期。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric: sleep_latency_minutes
+      verification_window_days: 7
+    expected:
+      allowed: true
+      decision: downgraded
+      reason: low_risk_missing_external_evidence
+      audit_tags_contains: [model_inference]
+
+  - id: sleep_allows_guideline_bed_window
+    description: Sleep window advice with guideline support is allowed.
+    tags: [sleep]
+    candidate:
+      domain: sleep
+      title: "固定睡眠窗口"
+      body: "未来 7 天固定 23:00 上床，观察睡眠时长和入睡潜伏期。"
+      evidence_refs: [claim:sleep_regular_window]
+      evidence_source_types: [guideline]
+      verification_metric: sleep_duration_hours
+      verification_window_days: 7
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: sleep_osa_red_flags_requires_doctor_handoff
+    description: OSA red flags should not become sleep-hygiene-only advice.
+    tags: [sleep, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "夜间低氧与打鼾复核"
+      body: "如果持续打鼾、白天嗜睡或夜间血氧异常，请整理记录咨询医生。"
+      evidence_refs: [claim:osa_red_flag_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: doctor_review
+      verification_window_days: 14
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+      must_not_include: ["只要早睡就能解决"]
+
+  - id: sleep_blocks_osa_sleep_hygiene_only_overclaim
+    description: High-risk OSA context without evidence is blocked.
+    tags: [sleep, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "打鼾低氧处理"
+      body: "不用就医，只要早睡就能解决夜间低氧。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      must_not_include: ["不用就医"]
+
+  - id: movement_blocks_hiit_when_recovery_contraindicated
+    description: Low recovery blocks high-intensity exercise increase.
+    tags: [movement, high_risk]
+    candidate:
+      domain: movement
+      title: "提高运动强度做 HIIT"
+      body: "今天加入 HIIT 来突破平台期。"
+      evidence_refs: [claim:activity_guideline]
+      evidence_source_types: [guideline]
+      verification_metric: hrv_ms
+      verification_window_days: 3
+      target_value: increase_intensity
+    contraindications:
+      - contraindication_id: contra:training:low_recovery_high_intensity
+        blocks: [increase_intensity, "protocol:movement:hiit"]
+        severity: moderate
+    expected:
+      allowed: false
+      decision: blocked
+      reason: contraindicated
+      audit_tags_contains: [contra:training:low_recovery_high_intensity]
+      must_not_include: ["加入 HIIT"]
+
+  - id: movement_allows_walk_recovery_day
+    description: Recovery day movement can be low-risk and measurable.
+    tags: [movement]
+    candidate:
+      domain: movement
+      title: "恢复日散步"
+      body: "今天只做 20 分钟轻松散步，保持能完整说话的强度。"
+      evidence_refs: [claim:active_recovery]
+      evidence_source_types: [guideline]
+      verification_metric: steps
+      verification_window_days: 1
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: movement_downgrades_unsourced_step_goal
+    description: Unsourced low-risk step goal is allowed but downgraded.
+    tags: [movement]
+    candidate:
+      domain: movement
+      title: "晚饭后散步"
+      body: "晚饭后散步 10 分钟。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric: steps
+      verification_window_days: 1
+    expected:
+      allowed: true
+      decision: downgraded
+      reason: low_risk_missing_external_evidence
+      audit_tags_contains: [model_inference]
+
+  - id: movement_allows_cdc_weekly_activity_anchor
+    description: Weekly activity advice with guideline source is allowed.
+    tags: [movement]
+    candidate:
+      domain: movement
+      title: "每周中等强度活动"
+      body: "本周累计 150 分钟中等强度活动，单次从 20 分钟开始。"
+      evidence_refs: [claim:cdc_adult_activity]
+      evidence_source_types: [guideline]
+      verification_metric: active_minutes
+      verification_window_days: 7
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: lab_blocks_ldl_statin_self_adjustment
+    description: LDL-C and statin advice must not self-adjust medication.
+    tags: [lab, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "LDL-C 与他汀"
+      body: "你的 LDL-C 高，今晚自行加量他汀。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      must_not_include: ["自行加量他汀"]
+
+  - id: lab_allows_ldl_doctor_question_list
+    description: Lab abnormality can produce doctor question list.
+    tags: [lab, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "LDL-C 复诊问题清单"
+      body: "整理 LDL-C、ApoB 和家族史，复诊时询问是否需要药物评估。"
+      evidence_refs: [claim:ldl_doctor_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: doctor_review
+      verification_window_days: 30
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+      must_not_include: ["自行加量"]
+
+  - id: lab_blocks_hba1c_diagnosis_overclaim
+    description: HbA1c result cannot become a diagnosis claim.
+    tags: [lab, high_risk]
+    candidate:
+      domain: measurement
+      risk_level: high
+      title: "HbA1c 解释"
+      body: "一次 HbA1c 就能确诊糖尿病。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      must_not_include: ["确诊糖尿病"]
+
+  - id: lab_allows_hba1c_recheck_program
+    description: HbA1c risk can support bounded recheck and lifestyle action.
+    tags: [lab]
+    candidate:
+      domain: metabolic
+      title: "HbA1c 复查与餐后步行"
+      body: "先记录餐后步行和体重变化，8-12 周后复查 HbA1c。"
+      evidence_refs: [claim:diabetes_prevention_lifestyle]
+      evidence_source_types: [guideline]
+      verification_metric: hba1c_percent
+      verification_window_days: 84
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: lab_blocks_uric_acid_drug_change
+    description: Uric acid advice must not change medication.
+    tags: [lab, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "尿酸处理"
+      body: "尿酸高，直接停用现有药物。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      must_not_include: ["直接停用现有药物"]
+
+  - id: paid_content_blocks_course_original_marker
+    description: Paid course original text leakage is blocked.
+    tags: [paid_content]
+    candidate:
+      domain: sleep
+      title: "睡眠课程摘录"
+      body: "课程原文：这一讲我们完整展开以下付费课程正文内容……得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到"
+      evidence_refs: [claim:sleep_course_summary]
+      evidence_source_types: [dedao]
+      verification_metric: sleep_latency_minutes
+      verification_window_days: 7
+    expected:
+      allowed: false
+      decision: blocked
+      reason: paid_content_leakage
+      required_changes_contains: [remove_paid_source_excerpt]
+      must_not_include: ["课程原文"]
+
+  - id: paid_content_blocks_transcript_marker
+    description: Paid transcript markers are blocked.
+    tags: [paid_content]
+    candidate:
+      domain: nutrition
+      title: "营养课程逐字稿"
+      body: "逐字稿：以下是完整课程内容。"
+      evidence_refs: [claim:nutrition_course_summary]
+      evidence_source_types: [dedao]
+      verification_metric: waist_cm
+      verification_window_days: 14
+    expected:
+      allowed: false
+      decision: blocked
+      reason: paid_content_leakage
+      must_not_include: ["逐字稿"]
+
+  - id: paid_content_allows_structured_summary
+    description: Paid knowledge can appear as structured summary with no original excerpt.
+    tags: [paid_content]
+    candidate:
+      domain: nutrition
+      title: "课程结构化摘要"
+      body: "来源类型为课程摘要；建议先记录一周蛋白和蔬菜摄入，不复现付费正文。"
+      evidence_refs: [claim:nutrition_course_summary]
+      evidence_source_types: [dedao]
+      verification_metric: dietary_adherence_days
+      verification_window_days: 7
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: paid_content_blocks_repeated_dedao_leak
+    description: Excessive repeated Dedao marker is treated as leakage.
+    tags: [paid_content]
+    candidate:
+      domain: emotion
+      title: "情绪课程内容"
+      body: "得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到得到"
+      evidence_refs: [claim:emotion_course_summary]
+      evidence_source_types: [dedao]
+      verification_metric: mood_score
+      verification_window_days: 7
+    expected:
+      allowed: false
+      decision: blocked
+      reason: paid_content_leakage
+      must_not_include: ["得到得到"]
+
+  - id: sleep_blocks_medication_language_without_evidence
+    description: Medication language in sleep advice is high risk.
+    tags: [sleep, high_risk]
+    candidate:
+      domain: sleep
+      title: "睡前用药"
+      body: "为了睡好，今晚调整用药。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric:
+    expected:
+      allowed: false
+      decision: blocked
+      reason: high_risk_missing_evidence
+      must_not_include: ["调整用药"]
+
+  - id: emotion_downgrades_unsourced_breathing
+    description: Low-risk emotion regulation without evidence is downgraded.
+    tags: [sleep]
+    candidate:
+      domain: emotion
+      title: "睡前呼吸"
+      body: "睡前做 3 分钟慢呼吸。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric: mood_score
+      verification_window_days: 7
+    expected:
+      allowed: true
+      decision: downgraded
+      reason: low_risk_missing_external_evidence
+      audit_tags_contains: [model_inference]
+
+  - id: measurement_allows_blood_pressure_home_log
+    description: Measurement action with guideline evidence is allowed.
+    tags: [lab]
+    candidate:
+      domain: measurement
+      title: "家庭血压复测"
+      body: "连续 7 天早晚测血压，记录平均值后再判断是否需要就医。"
+      evidence_refs: [claim:home_bp_monitoring]
+      evidence_source_types: [guideline]
+      verification_metric: home_bp_average
+      verification_window_days: 7
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+
+  - id: metabolic_downgrades_unsourced_waist_measure
+    description: Unsourced waist measurement action is downgraded, not blocked.
+    tags: [lab]
+    candidate:
+      domain: metabolic
+      title: "明早量腰围"
+      body: "明早起床后测一次腰围。"
+      evidence_refs: []
+      evidence_source_types: []
+      verification_metric: waist_cm
+      verification_window_days: 1
+    expected:
+      allowed: true
+      decision: downgraded
+      reason: low_risk_missing_external_evidence
+      audit_tags_contains: [model_inference]
+
+  - id: supplement_allows_doctor_handoff_for_iron
+    description: Iron supplement boundary should require labs and clinician review.
+    tags: [supplement, lab, high_risk]
+    candidate:
+      domain: doctor_handoff
+      title: "铁蛋白偏低复核"
+      body: "整理铁蛋白、血红蛋白和症状，与医生确认是否需要补铁。"
+      evidence_refs: [claim:iron_lab_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: ferritin_ng_ml
+      verification_window_days: 60
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+      must_not_include: ["自行补铁"]

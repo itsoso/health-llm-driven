@@ -59,7 +59,7 @@ class TestEvalRunner:
 
         result = eval_runner.run_orchestrator_eval_weekly()
         assert result["status"] == "ok"
-        assert result["suites_run"] == 4
+        assert result["suites_run"] == len(eval_runner._SUITES)
         assert result["regressions"] == {}
         assert push.calls == []  # all-green 不打扰
 
@@ -101,7 +101,7 @@ class TestEvalRunner:
 
         result = eval_runner.run_orchestrator_eval_weekly()
         assert result["status"] == "ok"
-        assert result["suites_run"] == 3  # 其他 3 个跑成功
+        assert result["suites_run"] == len(eval_runner._SUITES) - 1
         assert "orchestrator" in result["errors"]
         assert len(push.calls) == 1
         assert push.calls[0]["severity"] == "warning"

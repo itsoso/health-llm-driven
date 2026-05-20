@@ -204,6 +204,84 @@ def _score_insight(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[s
     return {"grounding": grounding_result}
 
 
+# ============= health advice suite =============
+
+@_register_runner("health_advice")
+def _run_health_advice_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Deterministic advice-verifier eval. No LLM or DB access."""
+    from types import SimpleNamespace
+
+    from app.services.health_advice_verifier import verify_advice
+
+    candidate_data = {
+        "user_id": 0,
+        "source": "eval",
+        "source_id": "health_advice",
+        "domain": "sleep",
+        "title": "",
+        "body": "",
+        "evidence_refs": [],
+        "evidence_source_types": [],
+        "verification_metric": None,
+        "verification_window_days": None,
+        "risk_level": None,
+        "target_value": None,
+    }
+    candidate_data.update(case_inputs.get("candidate") or {})
+    candidate = SimpleNamespace(**candidate_data)
+    result = verify_advice(
+        candidate,
+        case_inputs.get("evidence_resolution") or {},
+        case_inputs.get("personal_matrix") or {},
+        case_inputs.get("contraindications") or [],
+    )
+    displayed_text = f"{candidate.title}\n{candidate.body}" if result.allowed else ""
+    return {
+        "allowed": result.allowed,
+        "decision": result.decision,
+        "reason": result.reason,
+        "required_changes": result.required_changes,
+        "audit_tags": result.audit_tags,
+        "displayed_text": displayed_text,
+    }
+
+
+@_register_scorer("health_advice")
+def _score_health_advice(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    expected = case.expected or {}
+    details: List[str] = []
+    passed = True
+
+    for field_name in ("allowed", "decision", "reason"):
+        if field_name in expected and output.get(field_name) != expected[field_name]:
+            passed = False
+            details.append(f"{field_name}={output.get(field_name)!r}, expected={expected[field_name]!r}")
+
+    for item in expected.get("required_changes_contains") or []:
+        if item not in (output.get("required_changes") or []):
+            passed = False
+            details.append(f"missing required_change={item}")
+
+    for item in expected.get("audit_tags_contains") or []:
+        if item not in (output.get("audit_tags") or []):
+            passed = False
+            details.append(f"missing audit_tag={item}")
+
+    displayed_text = output.get("displayed_text") or ""
+    for phrase in expected.get("must_not_include") or []:
+        if phrase and phrase in displayed_text:
+            passed = False
+            details.append(f"displayed forbidden phrase={phrase}")
+
+    return {
+        "health_advice_contract": {
+            "passed": passed,
+            "score": 1.0 if passed else 0.0,
+            "details": "; ".join(details) if details else "ok",
+        }
+    }
+
+
 # ============= 通用流程 =============
 
 def load_suite(suite: str) -> List[GoldenCase]:
