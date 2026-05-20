@@ -64,6 +64,8 @@ export default function ConversationHistoryRail({
   };
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>, conv: Conversation) => {
+    // IME composition 中 Enter 是确认拼音候选词,不应触发保存
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       saveTitle(conv);

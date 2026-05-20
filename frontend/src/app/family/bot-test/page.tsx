@@ -195,7 +195,10 @@ function BotTestContent() {
           placeholder="输入消息（如：血压150/95）"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendText()}
+          onKeyDown={e => {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            if (e.key === 'Enter') sendText();
+          }}
           disabled={sending}
         />
         <button

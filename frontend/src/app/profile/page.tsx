@@ -320,7 +320,10 @@ export default function ProfilePage() {
                     type="text"
                     value={newCondition}
                     onChange={e => setNewCondition(e.target.value)}
-                    onKeyPress={e => e.key === 'Enter' && addCondition()}
+                    onKeyDown={e => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                      if (e.key === 'Enter') addCondition();
+                    }}
                     placeholder="输入慢性病名称"
                     className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-white/30 focus:outline-none focus:border-purple-500"
                   />
@@ -360,7 +363,10 @@ export default function ProfilePage() {
                     type="text"
                     value={newAllergy}
                     onChange={e => setNewAllergy(e.target.value)}
-                    onKeyPress={e => e.key === 'Enter' && addAllergy()}
+                    onKeyDown={e => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                      if (e.key === 'Enter') addAllergy();
+                    }}
                     placeholder="输入过敏源"
                     className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-white/30 focus:outline-none focus:border-purple-500"
                   />

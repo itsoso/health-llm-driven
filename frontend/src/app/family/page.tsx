@@ -239,7 +239,10 @@ function FamilyContent() {
             placeholder="家庭组名称（如：李家）"
             value={newGroupName}
             onChange={e => setNewGroupName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && createGroup()}
+            onKeyDown={e => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === 'Enter') createGroup();
+            }}
           />
           <button onClick={createGroup} className="w-full bg-blue-500 text-white rounded-lg py-2 font-medium hover:bg-blue-600">创建</button>
         </div>

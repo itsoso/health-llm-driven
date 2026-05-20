@@ -669,7 +669,10 @@ export default function SkillsPage() {
                 type="text"
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateKey()}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  if (e.key === 'Enter') handleCreateKey();
+                }}
                 placeholder="输入名称（如：OpenClaw、Claude Code）"
                 className="flex-1 bg-[#0d0b14] border border-purple-900/30 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
               />

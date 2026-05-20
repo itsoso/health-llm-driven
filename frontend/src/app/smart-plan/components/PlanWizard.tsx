@@ -369,7 +369,10 @@ export function PlanWizard({ targetWeek, debugMode, onClose, onSuccess }: {
                     type="text"
                     value={customFocus}
                     onChange={(e) => setCustomFocus(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomFocus(); } }}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                      if (e.key === 'Enter') { e.preventDefault(); addCustomFocus(); }
+                    }}
                     placeholder="添加自定义重点..."
                     className="flex-1 text-sm px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400"
                   />

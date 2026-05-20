@@ -337,6 +337,8 @@ export default function AIAssistantPage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
+                  // IME composition (拼音/日文/韩文) 中按 Enter 是确认候选词,不是发送
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     sendMessage();
