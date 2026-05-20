@@ -86,6 +86,10 @@ export function mapSourceNameToDataSource(sourceName?: string): DataSource {
   if (/Oura/i.test(sourceName)) return 'oura';
   if (/Withings/i.test(sourceName)) return 'withings-app';
   if (/Garmin/i.test(sourceName)) return 'garmin-app';
+  // 未知 — dev console 打印一次,真机调试时方便看到漏的 bundle id
+  if (__DEV__) {
+    console.warn(`[appleHealth] unknown sourceName="${sourceName}", falling back to 'unknown'. Add to SOURCE_NAME_MAP if recurring.`);
+  }
   return 'unknown';
 }
 
