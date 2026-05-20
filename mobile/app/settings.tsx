@@ -11,6 +11,7 @@ import { useBiometricLock } from '../hooks/useBiometricLock';
 import { invalidateHealthSnapshot, queryKeys } from '../applib/queryKeys';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { AppleHealthRow } from '../components/AppleHealthRow';
 
 export default function SettingsScreen() {
   const { c } = useTheme();
@@ -117,6 +118,7 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="location-outline" label="当前城市" value={city} />
           <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
+          <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
         </View>
 
         {/* Health tools */}
