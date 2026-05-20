@@ -2,7 +2,7 @@
   "expo": {
     "name": "HealthPilot",
     "slug": "health-pilot",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": ["mobile", "health"],
@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "life.executor.health",
       "entitlements": {
-        "aps-environment": "production"
+        "aps-environment": "production",
+        "com.apple.developer.healthkit": true
       },
       "infoPlist": {
         "CFBundleDisplayName": "健康助理",
@@ -28,6 +29,7 @@
         "NSSpeechRecognitionUsageDescription": "识别你的语音,和健康助理连续对话",
         "NSLocationWhenInUseUsageDescription": "用你当前位置查天气、空气质量,给出更贴合的建议",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "跑步过程中需要后台定位才能持续记录路线和配速,息屏 / 切换到其他 App 时不中断",
+        "NSHealthShareUsageDescription": "用于读取 Apple Watch / RingConn / Oura 等设备写入的健康数据,生成个性化健康分析",
         "UIBackgroundModes": ["location", "audio", "fetch"],
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -75,7 +77,14 @@
       "@sentry/react-native",
       "expo-font",
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false,
+          "healthSharePermission": "用于读取 Apple Watch / RingConn / Oura 等设备的健康数据"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

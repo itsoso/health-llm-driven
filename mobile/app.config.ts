@@ -42,6 +42,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       ...((config.ios as any)?.entitlements ?? {}),
       // dev-client 用 ad-hoc provisioning, APNs 走 development token
       'aps-environment': IS_DEV ? 'development' : 'production',
+      // HealthKit 在所有 variant 都开 — dev/preview/prod 真机都需要读 HealthKit 验证
+      'com.apple.developer.healthkit': true,
     },
     infoPlist: {
       ...((config.ios as any)?.infoPlist ?? {}),
