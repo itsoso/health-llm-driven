@@ -34,6 +34,13 @@ export interface DailyPlanAction {
 }
 
 export type DailyPlanActionFeedbackStatus = 'accepted' | 'adjusted' | 'done' | 'skipped' | 'failed';
+export type DailyPlanActionEventType =
+  | 'suggested'
+  | 'accepted'
+  | 'adjusted'
+  | 'completed'
+  | 'skipped'
+  | 'verified';
 
 export interface DailyPlanActionFeedbackResult {
   id: number;
@@ -44,6 +51,23 @@ export interface DailyPlanActionFeedbackResult {
   status: DailyPlanActionFeedbackStatus | string;
   reason?: string | null;
   source: string;
+}
+
+export interface DailyPlanActionEventRequest {
+  event_type: DailyPlanActionEventType;
+  payload?: Record<string, unknown>;
+  plan_date?: string;
+}
+
+export interface DailyPlanActionEventResult {
+  id: number;
+  plan_id?: number | null;
+  plan_date: string;
+  action_id: string;
+  action_title: string;
+  event_type: DailyPlanActionEventType | string;
+  action_state: DailyPlanActionEventType | string;
+  payload: Record<string, unknown>;
 }
 
 export interface DailyOperatingPlan {
@@ -98,4 +122,24 @@ export async function submitDailyPlanActionFeedback(
     body,
   );
   return data;
+}
+
+export async function recordDailyPlanActionEvent(
+  actionId: string,
+  request: DailyPlanActionEventRequest,
+): Promise<DailyPlanActionEventResult> {
+  const body = {
+    event_type: request.event_type,
+    payload: request.payload ?? {},
+    ...(request.plan_date ? { plan_date: request.plan_date } : {}),
+  };
+  const { data } = await api.post<DailyPlanActionEventResult>(
+    `/daily-plan/actions/${encodeURIComponent(actionId)}/events`,
+    body,
+  );
+  return {
+    ...data,
+    action_state: data.action_state || data.event_type,
+    payload: data.payload ?? {},
+  };
 }

@@ -1,8 +1,9 @@
 import api from '../api';
-import { getDailyOperatingPlan, pickTopPlanActions } from '../dailyPlan';
+import { getDailyOperatingPlan, pickTopPlanActions, recordDailyPlanActionEvent } from '../dailyPlan';
 
 jest.mock('../api', () => ({
   get: jest.fn(),
+  post: jest.fn(),
 }));
 
 describe('dailyPlan service', () => {
@@ -58,5 +59,32 @@ describe('dailyPlan service', () => {
     ], 3);
 
     expect(actions.map(a => a.title)).toEqual(['测腰围', '午餐蛋白', 'Zone 2']);
+  });
+
+  it('records daily plan action events and returns normalized action state', async () => {
+    (api.post as jest.Mock).mockResolvedValue({
+      data: {
+        id: 12,
+        plan_id: 7,
+        plan_date: '2026-05-20',
+        action_id: 'sleep.dinner_cutoff',
+        action_title: '睡前 3 小时停止正餐',
+        event_type: 'completed',
+        action_state: 'completed',
+        payload: { source: 'unit-test' },
+      },
+    });
+
+    const result = await recordDailyPlanActionEvent('sleep.dinner_cutoff', {
+      event_type: 'completed',
+      payload: { source: 'unit-test' },
+    });
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/daily-plan/actions/sleep.dinner_cutoff/events',
+      { event_type: 'completed', payload: { source: 'unit-test' } },
+    );
+    expect(result.action_id).toBe('sleep.dinner_cutoff');
+    expect(result.action_state).toBe('completed');
   });
 });
