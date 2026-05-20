@@ -181,14 +181,29 @@ export interface SnpDetail {
 /**
  * G-W1 (2026-05-12): 拉 Mobile 基因报告页所需全部数据.
  * include_summary=false 跳过 LLM (省钱, 用于预览).
+ *
+ * 默认 false (2026-05-20 perf): UI 走两段拉取 — items 先到, summary 异步.
+ * LLM 冷启动 8-17s 不再阻塞首屏.
  */
 export async function fetchGeneticReport(
-  includeSummary = true,
+  includeSummary = false,
 ): Promise<GeneticReport> {
   const { data } = await api.get<GeneticReport>(
     `/genetic/report/me?include_summary=${includeSummary}`,
   );
   return data;
+}
+
+/**
+ * 单独拉 LLM agent_summary (perf 2026-05-20 两段式).
+ * 复用同一路由 + include_summary=true, 后端有 1h LLM 缓存. 慢路径 8-17s 冷,
+ * 暖时几十 ms; 单独 query 避免阻塞首屏 items.
+ */
+export async function fetchGeneticReportSummary(): Promise<string | null> {
+  const { data } = await api.get<GeneticReport>(
+    `/genetic/report/me?include_summary=true`,
+  );
+  return data.agent_summary ?? null;
 }
 
 /**

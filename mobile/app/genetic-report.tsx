@@ -29,6 +29,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchGeneticPredictions,
   fetchGeneticReport,
+  fetchGeneticReportSummary,
   type GeneticReport,
   type GeneticReportItem,
   type GeneticPredictions,
@@ -51,10 +52,18 @@ export default function GeneticReportScreen() {
   const [showMisses, setShowMisses] = useState(false);
   const [expandedRsid, setExpandedRsid] = useState<Set<string>>(new Set());
 
+  // 两段式 (perf 2026-05-20): items 不带 LLM, 首屏 ~50ms 即出. summary 单独并发拉,
+  // 慢路径 8-17s 冷启动不阻塞用户看到命中位点列表.
   const { data, isLoading, isRefetching, error } = useQuery<GeneticReport>({
     queryKey: ['genetic-report'],
-    queryFn: () => fetchGeneticReport(true),
+    queryFn: () => fetchGeneticReport(false),
     staleTime: 5 * 60 * 1000,
+  });
+  const { data: agentSummary, isLoading: isSummaryLoading } = useQuery<string | null>({
+    queryKey: ['genetic-report-summary'],
+    queryFn: fetchGeneticReportSummary,
+    enabled: !!data?.profile,
+    staleTime: 10 * 60 * 1000,
   });
   const { data: predictions } = useQuery<GeneticPredictions>({
     queryKey: ['genetic-predictions'],
@@ -63,7 +72,10 @@ export default function GeneticReportScreen() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const onRefresh = () => qc.invalidateQueries({ queryKey: ['genetic-report'] });
+  const onRefresh = () => {
+    qc.invalidateQueries({ queryKey: ['genetic-report'] });
+    qc.invalidateQueries({ queryKey: ['genetic-report-summary'] });
+  };
 
   const toggleExpand = (rsid: string) => {
     setExpandedRsid(prev => {
@@ -140,14 +152,24 @@ export default function GeneticReportScreen() {
             </Text>
           </View>
 
-          {/* Agent Summary */}
-          {data.agent_summary && (
+          {/* Agent Summary — 两段式: loading 时占位, 拿到才渲染 markdown.
+              null (LLM 失败) 不显示卡片, 静默. */}
+          {(isSummaryLoading || agentSummary) && (
             <View style={[styles.agentCard, { backgroundColor: c.brandLight, borderColor: c.brand }]}>
               <View style={styles.agentHead}>
                 <Ionicons name="sparkles" size={16} color={c.brand} />
                 <Text style={[styles.agentTitle, { color: c.brand }]}>基因 Agent 对你说</Text>
               </View>
-              <MarkdownText>{data.agent_summary}</MarkdownText>
+              {agentSummary ? (
+                <MarkdownText>{agentSummary}</MarkdownText>
+              ) : (
+                <View style={styles.agentLoading}>
+                  <ActivityIndicator size="small" color={c.brand} />
+                  <Text style={[styles.agentLoadingText, { color: c.labelTertiary }]}>
+                    AI 正在为你解读…
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -565,6 +587,8 @@ const styles = StyleSheet.create({
   agentHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   agentTitle: { fontSize: 13, fontWeight: '600' },
   agentBody: { fontSize: 14, lineHeight: 22 },
+  agentLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  agentLoadingText: { fontSize: 13 },
   predictionCard: {
     borderWidth: 1,
     borderRadius: radii.md,
