@@ -126,3 +126,29 @@ def test_open_loop_empty_deeplink_passes_empty_string(db, captured_send_push_kwa
 
     assert ok is True
     assert captured.get("data", {}).get("deep_link") == ""
+
+
+def test_open_loop_quiet_hours_blocks_high_score_push(db, captured_send_push_kwargs):
+    """严格不打扰: 高分 Open-Loop 也不能在 quiet-hours 直连 APNs 穿透."""
+    captured, mock_service = captured_send_push_kwargs
+
+    db.add(_make_setting(user_id=1))
+    db.commit()
+
+    loop = OpenLoop(
+        user_id=1,
+        kind="lab_overdue",
+        signal_key="LDL",
+        score=160,
+        title="该复查 LDL 了",
+        body="180 天没复查",
+        deeplink="health://medical-exams/upload",
+    )
+
+    with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
+         patch("app.tasks.open_loop_manager._is_recently_pushed_or_snoozed", return_value=False), \
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=True):
+        ok = _push_loop(db, user_id=1, loop=loop)
+
+    assert ok is False
+    assert captured == {}

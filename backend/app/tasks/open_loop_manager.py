@@ -503,10 +503,11 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
 
         # Defense-in-depth: quiet hours 守门 — cron 已移到 08:45 避开默认 22:00-08:30,
         # 但用户若把 quiet_hours 往后调 (例如 10:00) 或把结束设得更晚, 仍要尊重.
-        # score>=85 视为 critical, 穿透 quiet_hours (重要化验过期很久等).
-        if loop.score < 85 and _is_in_quiet_hours_now(setting):
+        # 严格不打扰睡眠: Open-Loop 直连 APNs 不允许按 score 穿透 quiet-hours,
+        # 避免绕过 PushService 的统一静默策略。下次 cron 会重试, 不触发 dedup.
+        if _is_in_quiet_hours_now(setting):
             logger.info(
-                f"[open_loop] user={user_id} 在 quiet_hours 窗口内且 score={loop.score}<85, "
+                f"[open_loop] user={user_id} 在 quiet_hours 窗口内, score={loop.score}, "
                 f"跳过 (不触 dedup, 下次 cron 会重试)"
             )
             return False

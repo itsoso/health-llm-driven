@@ -1,8 +1,8 @@
 """Open-Loop push 的 quiet_hours 守门测试.
 
 保证:
-- 默认 22:00-08:30 窗口内, score<85 不推
-- score>=85 (critical-level) 穿透 quiet_hours
+- 默认 22:00-08:30 窗口内不推
+- score>=85 (critical-level) 也不穿透 quiet_hours
 - 用户自定义 quiet_hours 被尊重
 - 跨午夜逻辑正确
 """
