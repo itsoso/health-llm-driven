@@ -12,7 +12,30 @@ from sqlalchemy.orm import Session
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 
 
-DOC_FILES = ("entities.jsonl", "claims.jsonl", "pages.jsonl")
+DOC_FILES = (
+    "entities.jsonl",
+    "claims.jsonl",
+    "pages.jsonl",
+    "protocols.jsonl",
+    "contraindications.jsonl",
+    "eval_cases.jsonl",
+)
+
+CONTRACT_METADATA_KEYS = {
+    "protocol_id",
+    "source_claims",
+    "source_types",
+    "forbidden_when",
+    "verification",
+    "paid_source_policy",
+    "trigger",
+    "blocks",
+    "fallback",
+    "severity",
+    "case_id",
+    "input",
+    "expected",
+}
 
 
 def import_system_kb_artifacts(db: Session, artifact_dir: str | Path, actor: str = "system") -> dict[str, int]:
@@ -59,6 +82,10 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _upsert_document(db: Session, payload: dict[str, Any]) -> None:
     doc_id = payload["doc_id"]
+    metadata = dict(payload.get("metadata") or {})
+    for key in CONTRACT_METADATA_KEYS:
+        if key in payload:
+            metadata[key] = payload[key]
     values = {
         "doc_type": payload["doc_type"],
         "entity_type": payload.get("entity_type"),
@@ -75,7 +102,7 @@ def _upsert_document(db: Session, payload: dict[str, Any]) -> None:
         "last_confirmed": _parse_datetime(payload.get("last_confirmed")),
         "decay_rate": payload.get("decay_rate") or "normal",
         "is_archived": payload.get("is_archived", False),
-        "metadata_json": payload.get("metadata") or {},
+        "metadata_json": metadata,
     }
     existing = db.query(KBDocument).filter(KBDocument.doc_id == doc_id).first()
     if existing:

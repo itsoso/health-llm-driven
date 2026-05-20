@@ -20,7 +20,15 @@ from typing import Any
 from app.services.system_knowledge_pipeline import scan_health_sources
 
 
-ARTIFACT_FILES = ("pages.jsonl", "entities.jsonl", "claims.jsonl", "relations.jsonl")
+ARTIFACT_FILES = (
+    "pages.jsonl",
+    "entities.jsonl",
+    "claims.jsonl",
+    "protocols.jsonl",
+    "contraindications.jsonl",
+    "eval_cases.jsonl",
+    "relations.jsonl",
+)
 CLAIM_BOUNDARY = "Health management guidance only; not diagnosis, prescription, or treatment."
 
 
@@ -52,6 +60,9 @@ class IngestResult:
     entities: list[dict[str, Any]] = field(default_factory=list)
     claims: list[dict[str, Any]] = field(default_factory=list)
     archived_claims: list[dict[str, Any]] = field(default_factory=list)
+    protocols: list[dict[str, Any]] = field(default_factory=list)
+    contraindications: list[dict[str, Any]] = field(default_factory=list)
+    eval_cases: list[dict[str, Any]] = field(default_factory=list)
     relations: list[dict[str, Any]] = field(default_factory=list)
     diff: dict[str, int] = field(default_factory=dict)
     manifest: dict[str, Any] = field(default_factory=dict)
@@ -1465,11 +1476,17 @@ def write_reviewed_artifacts(result: IngestResult, output_dir: str | Path) -> di
     merged_pages = _merge_by_doc_id(existing["pages"], result.pages)
     merged_entities = _merge_by_doc_id(existing["entities"], result.entities)
     merged_claims = _merge_by_doc_id(existing["claims"], [*result.archived_claims, *result.claims])
+    merged_protocols = _merge_by_doc_id(existing["protocols"], result.protocols)
+    merged_contraindications = _merge_by_doc_id(existing["contraindications"], result.contraindications)
+    merged_eval_cases = _merge_by_doc_id(existing["eval_cases"], result.eval_cases)
     merged_relations = _merge_relations(existing["relations"], result.relations)
 
     _write_jsonl(output / "pages.jsonl", merged_pages.values())
     _write_jsonl(output / "entities.jsonl", merged_entities.values())
     _write_jsonl(output / "claims.jsonl", merged_claims.values())
+    _write_jsonl(output / "protocols.jsonl", merged_protocols.values())
+    _write_jsonl(output / "contraindications.jsonl", merged_contraindications.values())
+    _write_jsonl(output / "eval_cases.jsonl", merged_eval_cases.values())
     _write_jsonl(output / "relations.jsonl", merged_relations.values())
 
     manifest = dict(result.manifest)
@@ -1477,6 +1494,9 @@ def write_reviewed_artifacts(result: IngestResult, output_dir: str | Path) -> di
         "pages": len(merged_pages),
         "entities": len(merged_entities),
         "claims": len(merged_claims),
+        "protocols": len(merged_protocols),
+        "contraindications": len(merged_contraindications),
+        "eval_cases": len(merged_eval_cases),
         "relations": len(merged_relations),
     }
     (output / "manifest.json").write_text(
@@ -1505,11 +1525,27 @@ def promote_artifact_review_status(
             root / "entities.jsonl", reviewer, reviewed_at_text, from_status, to_status
         ),
         "claims_reviewed": _promote_jsonl_file(root / "claims.jsonl", reviewer, reviewed_at_text, from_status, to_status),
+        "protocols_reviewed": _promote_jsonl_file(
+            root / "protocols.jsonl", reviewer, reviewed_at_text, from_status, to_status
+        ),
+        "contraindications_reviewed": _promote_jsonl_file(
+            root / "contraindications.jsonl", reviewer, reviewed_at_text, from_status, to_status
+        ),
+        "eval_cases_reviewed": _promote_jsonl_file(
+            root / "eval_cases.jsonl", reviewer, reviewed_at_text, from_status, to_status
+        ),
         "relations_reviewed": _promote_jsonl_file(
             root / "relations.jsonl", reviewer, reviewed_at_text, from_status, to_status
         ),
     }
-    counts["documents_reviewed"] = counts["pages_reviewed"] + counts["entities_reviewed"] + counts["claims_reviewed"]
+    counts["documents_reviewed"] = (
+        counts["pages_reviewed"]
+        + counts["entities_reviewed"]
+        + counts["claims_reviewed"]
+        + counts["protocols_reviewed"]
+        + counts["contraindications_reviewed"]
+        + counts["eval_cases_reviewed"]
+    )
 
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
@@ -1835,6 +1871,9 @@ def _load_existing_artifacts(root: Path) -> dict[str, dict[str, dict[str, Any]]]
         "pages": _read_doc_jsonl(root / "pages.jsonl"),
         "entities": _read_doc_jsonl(root / "entities.jsonl"),
         "claims": _read_doc_jsonl(root / "claims.jsonl"),
+        "protocols": _read_doc_jsonl(root / "protocols.jsonl"),
+        "contraindications": _read_doc_jsonl(root / "contraindications.jsonl"),
+        "eval_cases": _read_doc_jsonl(root / "eval_cases.jsonl"),
         "relations": _read_relation_jsonl(root / "relations.jsonl"),
     }
 
