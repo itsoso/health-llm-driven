@@ -89,6 +89,10 @@ def _resolve_active_profile(db: Session, user_id: int) -> Optional[GeneticProfil
     bug 历史 (2026-05-12): 之前简单按 variants 总数排, 选到 PDF 解析的 605 条
     脏数据 profile (gene_name/result_label 串字段, 例 RS1801131 标成 MTHFR
     实际是 ACTN3). 改为按 "字典命中数" 排, TXT 解析的干净小集合反而胜出.
+
+    perf (2026-05-20): 用户 3 有 6 profiles / 745 variants, 老版本每个 profile
+    一次 .all() 拿全行做 Python score → 835ms. 改为单条批量 SQL 只拿评分要的
+    3 列 (gene_name/variant_name/rsid), 单 profile 短路, 实测 → ~30ms.
     """
     profiles = (
         db.query(GeneticProfile)
@@ -97,29 +101,35 @@ def _resolve_active_profile(db: Session, user_id: int) -> Optional[GeneticProfil
     )
     if not profiles:
         return None
+    if len(profiles) == 1:
+        return profiles[0]
 
     known = _get_known_snps()
     known_rsids = set(known.keys())
     known_genes = {snp["gene"] for snp in known.values()}
     known_gene_variant = {(snp["gene"], snp["variant"]) for snp in known.values()}
 
-    def score(p: GeneticProfile) -> tuple:
-        variants = (
-            db.query(GeneticVariant)
-            .filter(GeneticVariant.profile_id == p.id)
-            .all()
+    profile_ids = [p.id for p in profiles]
+    rows = (
+        db.query(
+            GeneticVariant.profile_id,
+            GeneticVariant.gene_name,
+            GeneticVariant.variant_name,
+            GeneticVariant.rsid,
         )
-        # 严格命中: 新数据优先用 rsid, 旧数据兼容 (gene, variant) 完全匹配字典.
-        strict_hits = sum(
-            1 for v in variants
-            if (getattr(v, "rsid", None) in known_rsids)
-            or (v.gene_name, v.variant_name or "") in known_gene_variant
-        )
-        # 宽松命中: gene 匹配字典任一条
-        loose_hits = sum(1 for v in variants if v.gene_name in known_genes)
-        return (strict_hits, loose_hits, p.id)  # 同分按 id desc
+        .filter(GeneticVariant.profile_id.in_(profile_ids))
+        .all()
+    )
 
-    profiles.sort(key=score, reverse=True)
+    score_map: Dict[int, List[int]] = {pid: [0, 0] for pid in profile_ids}
+    for r in rows:
+        bucket = score_map[r.profile_id]
+        if (r.rsid in known_rsids) or ((r.gene_name, r.variant_name or "") in known_gene_variant):
+            bucket[0] += 1
+        if r.gene_name in known_genes:
+            bucket[1] += 1
+
+    profiles.sort(key=lambda p: (score_map[p.id][0], score_map[p.id][1], p.id), reverse=True)
     return profiles[0]
 
 
