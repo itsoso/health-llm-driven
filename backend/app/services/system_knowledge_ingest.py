@@ -1360,6 +1360,7 @@ def compile_dedao_ingest_artifacts(
     entities: dict[str, dict[str, Any]] = {}
     claims: dict[str, dict[str, Any]] = {}
     archived_claims: dict[str, dict[str, Any]] = {}
+    protocols: dict[str, dict[str, Any]] = {}
     relations: dict[tuple[str, str, str], dict[str, Any]] = {}
     source_stats: list[dict[str, Any]] = []
 
@@ -1375,6 +1376,7 @@ def compile_dedao_ingest_artifacts(
         page = _page_for_source(source, now)
         pages[page["doc_id"]] = page
         matched = 0
+        protocol_matched = 0
         for template in CLAIM_TEMPLATES:
             if not _template_matches_source(template, source.source_key, source.domains, haystack):
                 continue
@@ -1444,6 +1446,18 @@ def compile_dedao_ingest_artifacts(
                 context_entity_doc_ids=[*template.recommends_lookup, *related_entities],
                 source_claim_id=claim["doc_id"],
             )
+            protocol = _protocol_for_claim_template(template, source, claim, lessons, now)
+            if protocol:
+                protocol_matched += 1
+                protocols[protocol["doc_id"]] = protocol
+                _add_relation(
+                    relations,
+                    src_doc_id=claim["doc_id"],
+                    dst_doc_id=protocol["doc_id"],
+                    relation="compiled_to_protocol",
+                    confidence=0.64,
+                    source_claim_id=claim["doc_id"],
+                )
         source_stats.append(
             {
                 "course_name": source.course_name,
@@ -1451,6 +1465,7 @@ def compile_dedao_ingest_artifacts(
                 "domains": source.domains,
                 "lessons_read": len(lessons),
                 "claims_generated": matched,
+                "protocols_generated": protocol_matched,
             }
         )
 
@@ -1461,6 +1476,7 @@ def compile_dedao_ingest_artifacts(
         entities=sorted(entities.values(), key=lambda item: item["doc_id"]),
         claims=sorted(claims.values(), key=lambda item: item["doc_id"]),
         archived_claims=sorted(archived_claims.values(), key=lambda item: item["doc_id"]),
+        protocols=sorted(protocols.values(), key=lambda item: item["doc_id"]),
         relations=sorted(relations.values(), key=lambda item: (item["src_doc_id"], item["relation"], item["dst_doc_id"])),
         source_stats=source_stats,
     )
@@ -1789,6 +1805,138 @@ def _claim_for_template(template: ClaimTemplate, source_key: str, now: datetime)
     }
 
 
+def _protocol_for_claim_template(
+    template: ClaimTemplate,
+    source: Any,
+    claim: dict[str, Any],
+    lessons: list[dict[str, str]],
+    now: datetime,
+) -> dict[str, Any] | None:
+    if template.entity_type != "intervention":
+        return None
+    if not template.recommends_lookup:
+        return None
+
+    domain = _protocol_domain(template)
+    protocol_id = f"protocol:{domain}:{template.topic_id}"
+    verification = _protocol_verification(template)
+    source_chapters = _source_chapters_for_template(template, lessons)
+    title = f"{template.title}行动协议"
+    summary = f"{template.summary} 执行时必须记录验证指标，并保留健康管理边界。"
+
+    return {
+        "doc_id": protocol_id,
+        "doc_type": "protocol",
+        "entity_type": template.entity_type,
+        "entity_id": template.entity_id,
+        "title": title,
+        "summary": summary,
+        "body": summary,
+        "protocol_id": protocol_id,
+        "domain": domain,
+        "source_claims": [claim["doc_id"]],
+        "applies_when": list(template.applies_when),
+        "forbidden_when": _protocol_forbidden_when(template),
+        "risk_level": _protocol_risk_level(template),
+        "action_template": {
+            "title": template.title,
+            "domain": domain,
+            "metric_key": verification["metric"],
+            "target_value": verification["expected_direction"],
+            "claim_boundary": CLAIM_BOUNDARY,
+        },
+        "verification": verification,
+        "paid_source_policy": "transformed_summary_only",
+        "confidence": min(template.confidence, 0.70),
+        "evidence_level": template.evidence_level,
+        "sources": claim.get("sources") or [source.source_key],
+        "last_confirmed": now.isoformat(),
+        "decay_rate": template.decay_rate,
+        "metadata": {
+            "domain": domain,
+            "domains": list(template.domains),
+            "license_scope": "internal_transformed_claims",
+            "review_status": "draft",
+            "source_course": source.course_name,
+            "source_key": source.source_key,
+            "source_chapters": source_chapters,
+            "extraction_method": "deterministic_protocol_candidate_v1",
+            "claim_boundary": CLAIM_BOUNDARY,
+        },
+    }
+
+
+def _protocol_domain(template: ClaimTemplate) -> str:
+    for domain in template.domains:
+        if domain in {"sleep_recovery", "movement", "nutrition", "cardiovascular", "metabolic_health"}:
+            return domain
+    return template.domains[0] if template.domains else "general_wellness"
+
+
+def _protocol_verification(template: ClaimTemplate) -> dict[str, Any]:
+    by_topic = {
+        "salt_reduction": ("systolic_bp", 7, "decrease"),
+        "fiber_intake": ("hba1c_percent", 84, "decrease"),
+        "protein_target": ("protein_intake_g", 7, "increase"),
+        "energy_deficit": ("weight", 14, "decrease"),
+        "weight_waist_tracking": ("waist_cm", 7, "observe"),
+        "zone2_recovery_constraint": ("training_readiness_score", 7, "stable_or_increase"),
+        "strength_training": ("strength_sessions", 14, "increase"),
+        "sleep_regular_window": ("sleep_duration_hours", 7, "increase"),
+        "microbiome_behavior_boundary": ("gi_symptom_score", 14, "observe"),
+    }
+    metric, window_days, expected_direction = by_topic.get(
+        template.topic_id,
+        ("self_report_adherence", 7, "observe"),
+    )
+    return {
+        "metric": metric,
+        "window_days": window_days,
+        "expected_direction": expected_direction,
+    }
+
+
+def _protocol_forbidden_when(template: ClaimTemplate) -> list[str]:
+    tags = set(template.safety_tags)
+    forbidden = []
+    if "recovery_constraint" in tags or "movement" in template.domains:
+        forbidden.append("twin.acute.should_rest_from_training == true")
+    if "doctor_if_severe_bp" in tags or "cardiovascular" in template.domains:
+        forbidden.append("twin.labs.systolic_bp >= 160")
+    return forbidden
+
+
+def _protocol_risk_level(template: ClaimTemplate) -> str:
+    domains = set(template.domains)
+    tags = set(template.safety_tags)
+    if domains.intersection({"medication_safety", "genetics"}) or "no_medication_adjustment" in tags:
+        return "high"
+    if domains.intersection({"cardiovascular"}) or template.entity_id in {"HbA1c", "LDL-C", "TG"}:
+        return "moderate"
+    return "low"
+
+
+def _source_chapters_for_template(template: ClaimTemplate, lessons: list[dict[str, str]]) -> list[dict[str, str]]:
+    matched = []
+    for lesson in lessons:
+        haystack = f"{lesson.get('title', '')}\n{lesson.get('text', '')}".lower()
+        if any(keyword.lower() in haystack for keyword in template.keywords):
+            matched.append(
+                {
+                    "title": lesson.get("title", ""),
+                    "path": lesson.get("path", ""),
+                }
+            )
+        if len(matched) >= 3:
+            break
+    if matched:
+        return matched
+    if not lessons:
+        return []
+    first = lessons[0]
+    return [{"title": first.get("title", ""), "path": first.get("path", "")}]
+
+
 def _entity_for_doc_id(doc_id: str, now: datetime) -> dict[str, Any]:
     base = dict(ENTITY_CATALOG.get(doc_id) or {})
     if not base:
@@ -1953,6 +2101,7 @@ def _diff_counts(existing: dict[str, dict[str, dict[str, Any]]], result: IngestR
         "pages_added": sum(1 for item in result.pages if item["doc_id"] not in existing["pages"]),
         "entities_added": sum(1 for item in result.entities if item["doc_id"] not in existing["entities"]),
         "claims_added": sum(1 for item in result.claims if item["doc_id"] not in existing["claims"]),
+        "protocols_added": sum(1 for item in result.protocols if item["doc_id"] not in existing["protocols"]),
         "relations_added": sum(1 for item in result.relations if _relation_key(item) not in existing["relations"]),
         "claims_superseded": len(result.archived_claims),
     }
@@ -1976,6 +2125,9 @@ def _manifest_for_result(result: IngestResult, now: datetime) -> dict[str, Any]:
             "pages": len(result.pages),
             "entities": len(result.entities),
             "claims": len(result.claims) + len(result.archived_claims),
+            "protocols": len(result.protocols),
+            "contraindications": len(result.contraindications),
+            "eval_cases": len(result.eval_cases),
             "relations": len(result.relations),
         },
         "diff": result.diff,

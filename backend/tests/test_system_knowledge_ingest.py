@@ -431,10 +431,11 @@ def test_promote_artifact_review_status_marks_draft_docs_reviewed_and_writes_man
     claims = _jsonl(output / "claims.jsonl")
     entities = _jsonl(output / "entities.jsonl")
     pages = _jsonl(output / "pages.jsonl")
+    protocols = _jsonl(output / "protocols.jsonl")
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     review_manifest = json.loads((output / "review_manifest.json").read_text(encoding="utf-8"))
 
-    reviewed_docs = [*claims, *entities, *pages]
+    reviewed_docs = [*claims, *entities, *pages, *protocols]
     assert reviewed_docs
     assert all(doc["metadata"]["review_status"] == "reviewed" for doc in reviewed_docs)
     assert all(doc["metadata"]["reviewed_by"] == "medical-reviewer@example.com" for doc in reviewed_docs)
