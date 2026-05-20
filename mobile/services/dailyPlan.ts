@@ -31,6 +31,13 @@ export interface DailyPlanAction {
   claim_boundary?: string | null;
   source_card_id?: number | null;
   check_back_date?: string | null;
+  evidence_refs?: Array<string | { claim_id?: string; doc_id?: string; id?: string }> | null;
+  verification?: {
+    metric?: string | null;
+    window_days?: number | null;
+    expected_direction?: string | null;
+    check_back_date?: string | null;
+  } | null;
 }
 
 export type DailyPlanActionFeedbackStatus = 'accepted' | 'adjusted' | 'done' | 'skipped' | 'failed';

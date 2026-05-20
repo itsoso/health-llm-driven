@@ -6,11 +6,13 @@ import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import {
   pickTopPlanActions,
-  submitDailyPlanActionFeedback,
+  recordDailyPlanActionEvent,
   type DailyOperatingPlan,
   type DailyPlanAction,
-  type DailyPlanActionFeedbackStatus,
+  type DailyPlanActionEventType,
 } from '../../services/dailyPlan';
+import EvidenceChip from '../shared/EvidenceChip';
+import { EvidenceRefsRow } from '../knowledge';
 
 const DOMAIN_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   measurement: 'analytics-outline',
@@ -25,13 +27,15 @@ export default function TodayPlanPanel({
   plan,
   loading,
   onPressAction,
+  onActionEvent,
 }: {
   plan?: DailyOperatingPlan | null;
   loading?: boolean;
   onPressAction?: (action: DailyPlanAction) => void;
+  onActionEvent?: () => void;
 }) {
   const { c } = useTheme();
-  const [feedbackByAction, setFeedbackByAction] = React.useState<Record<string, DailyPlanActionFeedbackStatus | 'sending' | 'error'>>({});
+  const [eventByAction, setEventByAction] = React.useState<Record<string, DailyPlanActionEventType | 'sending' | 'error'>>({});
   const actions = pickTopPlanActions(plan?.actions ?? [], 3);
   const state = plan?.state_summary ?? {};
   const waist = state.waist_cm as number | undefined;
@@ -46,17 +50,18 @@ export default function TodayPlanPanel({
   const recoveryGuardrail = typeof acute?.training_guardrail === 'string' && acute.training_guardrail.trim()
     ? acute.training_guardrail.trim()
     : '今天不要求完成训练目标，优先恢复、补水和睡眠。';
-  const submitFeedback = React.useCallback(async (action: DailyPlanAction, status: DailyPlanActionFeedbackStatus) => {
+  const submitEvent = React.useCallback(async (action: DailyPlanAction, eventType: DailyPlanActionEventType) => {
     const actionKey = action.action_key;
-    if (!actionKey || feedbackByAction[actionKey] === 'sending') return;
-    setFeedbackByAction(prev => ({ ...prev, [actionKey]: 'sending' }));
+    if (!actionKey || eventByAction[actionKey] === 'sending') return;
+    setEventByAction(prev => ({ ...prev, [actionKey]: 'sending' }));
     try {
-      await submitDailyPlanActionFeedback(actionKey, status);
-      setFeedbackByAction(prev => ({ ...prev, [actionKey]: status }));
+      const result = await recordDailyPlanActionEvent(actionKey, { event_type: eventType, payload: {} });
+      setEventByAction(prev => ({ ...prev, [actionKey]: result.action_state as DailyPlanActionEventType }));
+      onActionEvent?.();
     } catch {
-      setFeedbackByAction(prev => ({ ...prev, [actionKey]: 'error' }));
+      setEventByAction(prev => ({ ...prev, [actionKey]: 'error' }));
     }
-  }, [feedbackByAction]);
+  }, [eventByAction, onActionEvent]);
 
   return (
     <View style={[styles.container, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -128,25 +133,36 @@ export default function TodayPlanPanel({
                   />
                 </View>
                 <View style={styles.actionMain}>
-                  <Text style={[styles.actionTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-                    {action.title}
-                  </Text>
+                  <View style={styles.actionTitleRow}>
+                    <Text style={[styles.actionTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+                      {action.title}
+                    </Text>
+                    <EvidenceChip level={action.evidence_level} />
+                  </View>
                   {action.why ? (
                     <Text style={[styles.actionWhy, { color: c.labelSecondary }]} numberOfLines={2}>
                       {action.why}
                     </Text>
                   ) : null}
+                  {action.verification?.metric ? (
+                    <Text style={[styles.verificationText, { color: c.labelTertiary }]}>
+                      验证 {action.verification.metric}
+                      {action.verification.window_days ? ` · ${action.verification.window_days}天` : ''}
+                    </Text>
+                  ) : null}
+                  <EvidenceRefsRow refs={action.evidence_refs} />
                 </View>
                 <Text style={[styles.when, { color: c.labelTertiary }]}>{action.when ?? 'today'}</Text>
               </TouchableOpacity>
 
               <View style={styles.feedbackRow}>
                 {([
-                  ['done', '做到了'],
-                  ['skipped', '跳过'],
+                  ['accepted', '接受'],
                   ['adjusted', '调整'],
+                  ['completed', '完成'],
+                  ['skipped', '跳过'],
                 ] as const).map(([status, label]) => {
-                  const current = action.action_key ? feedbackByAction[action.action_key] : undefined;
+                  const current = action.action_key ? eventByAction[action.action_key] : undefined;
                   const selected = current === status;
                   const disabled = !action.action_key || current === 'sending';
                   return (
@@ -157,19 +173,19 @@ export default function TodayPlanPanel({
                         { backgroundColor: selected ? c.tintTeal : c.fill },
                         selected && { borderColor: c.teal },
                       ]}
-                      onPress={() => submitFeedback(action, status)}
+                      onPress={() => submitEvent(action, status)}
                       disabled={disabled}
                       activeOpacity={0.75}
                       accessibilityRole="button"
                       accessibilityLabel={`${action.title} ${label}`}
                     >
                       <Text style={[styles.feedbackText, { color: selected ? c.teal : c.labelSecondary }]}>
-                        {current === 'sending' && status === 'done' ? '记录中' : label}
+                        {current === 'sending' && status === 'completed' ? '记录中' : label}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
-                {action.action_key && feedbackByAction[action.action_key] === 'error' ? (
+                {action.action_key && eventByAction[action.action_key] === 'error' ? (
                   <Text style={[styles.feedbackError, { color: c.red }]}>记录失败</Text>
                 ) : null}
               </View>
@@ -252,8 +268,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionMain: { flex: 1, gap: 2 },
+  actionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionWhy: { fontSize: 12, lineHeight: 16 },
+  verificationText: { fontSize: 11, fontWeight: '700' },
   when: { fontSize: 11, fontWeight: '600' },
   feedbackRow: {
     flexDirection: 'row',

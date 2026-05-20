@@ -237,6 +237,7 @@ export default function TodayScreen() {
           plan={dailyPlanQuery.data}
           loading={dailyPlanQuery.isLoading}
           onPressAction={openPlanAction}
+          onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
         />
 
         {/* 数据完整度 — Agent 准确率的因, 缺数据时一目了然该补哪几项 */}
