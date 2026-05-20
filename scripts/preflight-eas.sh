@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# preflight-eas.sh — EAS build 前的本地体检
+# preflight-eas.sh — EAS build / 本地 build 前的本地体检 (verify-only)
 #
 # 防止 native config 错了还触发昂贵的 EAS build (今天 LIFO 顺序错那次本来这一步能拦下来)
 #
-# 用法: ./scripts/preflight-eas.sh && eas build ...
-#       或在 mobile-ota.sh / 其他 script 里调用
+# 用法:
+#   ./scripts/preflight-eas.sh           # 只读检查现有 ios/
+#   ./scripts/preflight-eas.sh --rebuild # 跑一次 expo prebuild --clean 再检查 (会重置 ios/, 之后须 pod install)
 #
-# 检查项 (任一失败 exit 1):
-#   - npx expo prebuild --clean 跑通
-#   - ios/HealthPilot/Info.plist 含必须 key (NSHealthShareUsageDescription / NSCameraUsageDescription / NSMicrophoneUsageDescription)
+# 默认不会改 ios/, 只读检查. 如果 ios/ 缺失 → 提示先跑 mobile-local-device.sh
+#
+# 检查项:
+#   - ios/HealthPilot/Info.plist 含必须 key (NSHealthShareUsage / Camera / Microphone / Location)
 #   - ios/HealthPilot/HealthPilot.entitlements 含 com.apple.developer.healthkit
-#   - ios/HealthPilot/HealthPilot.entitlements **不含** com.apple.developer.healthkit.access (空 array 会 fail provisioning profile)
-#   - ios/Podfile.lock 含关键 native module (RNHealth, expo-secure-store)
+#   - entitlements **不含** com.apple.developer.healthkit.access (空 array 会 fail provisioning profile)
+#   - ios/Podfile.lock 含关键 native module (RNAppleHealthKit, ExpoSecureStore)
 
 set -euo pipefail
 
@@ -19,16 +21,29 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MOBILE_DIR="${REPO_ROOT}/mobile"
 cd "${MOBILE_DIR}"
 
-echo "==> [1/4] expo prebuild --clean"
-npx expo prebuild --platform ios --clean --no-install >/dev/null
-echo "    ✓"
+REBUILD=0
+if [ "${1:-}" = "--rebuild" ]; then
+  REBUILD=1
+fi
+
+if [ ${REBUILD} -eq 1 ]; then
+  echo "==> [0/3] expo prebuild --clean (--rebuild flag, 会重置 ios/)"
+  npx expo prebuild --platform ios --clean --no-install >/dev/null
+  echo "    ⚠ ios/ 已重置, 跑 pod install 才能 build:"
+  echo "      cd mobile/ios && pod install"
+  echo ""
+fi
+
+if [ ! -d "ios/HealthPilot" ]; then
+  echo "✗ ios/HealthPilot 不存在 — 先跑 ./scripts/mobile-local-device.sh 生成" >&2
+  exit 1
+fi
 
 INFO_PLIST="ios/HealthPilot/Info.plist"
 ENTITLEMENTS="ios/HealthPilot/HealthPilot.entitlements"
 PODFILE_LOCK="ios/Podfile.lock"
 
-echo ""
-echo "==> [2/4] Info.plist 关键 usage description"
+echo "==> [1/3] Info.plist 关键 usage description"
 fail=0
 for key in NSHealthShareUsageDescription NSCameraUsageDescription NSMicrophoneUsageDescription NSLocationWhenInUseUsageDescription; do
   if grep -q "${key}" "${INFO_PLIST}" 2>/dev/null; then
@@ -41,8 +56,8 @@ done
 [ ${fail} -eq 1 ] && exit 1
 
 echo ""
-echo "==> [3/4] entitlements 检查"
-if grep -q "com.apple.developer.healthkit<" "${ENTITLEMENTS}" || grep -q "<key>com.apple.developer.healthkit</key>" "${ENTITLEMENTS}" 2>/dev/null; then
+echo "==> [2/3] entitlements 检查"
+if grep -q "<key>com.apple.developer.healthkit</key>" "${ENTITLEMENTS}" 2>/dev/null; then
   echo "    ✓ com.apple.developer.healthkit 在"
 else
   echo "    ✗ com.apple.developer.healthkit 缺失" >&2
@@ -58,10 +73,15 @@ else
 fi
 
 echo ""
-echo "==> [4/4] Podfile.lock 关键 native module"
+echo "==> [3/3] Podfile.lock 关键 native module"
+if [ ! -f "${PODFILE_LOCK}" ]; then
+  echo "    ⚠ Podfile.lock 不存在, 先跑: cd mobile/ios && pod install"
+  echo "    (不影响 textual config 检查, 但 native module 不会被链接)"
+  exit 1
+fi
 fail=0
-for pod in RNHealth expo-secure-store; do
-  if grep -q "${pod}" "${PODFILE_LOCK}" 2>/dev/null; then
+for pod in RNAppleHealthKit ExpoSecureStore; do
+  if grep -q "${pod}" "${PODFILE_LOCK}"; then
     echo "    ✓ ${pod}"
   else
     echo "    ✗ ${pod} 没在 Podfile.lock (native module 不会被链接, 会变 noop)"

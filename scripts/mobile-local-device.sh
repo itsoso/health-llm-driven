@@ -49,7 +49,7 @@ cd ..
 
 echo ""
 echo "==> [3/3] 打开 Xcode workspace"
-WORKSPACE=$(ls ios/*.xcworkspace 2>/dev/null | head -1)
+WORKSPACE=$(ls -d ios/*.xcworkspace 2>/dev/null | head -1)
 if [ -z "${WORKSPACE}" ]; then
   echo "✗ 没找到 ios/*.xcworkspace, prebuild 可能失败" >&2
   exit 1
