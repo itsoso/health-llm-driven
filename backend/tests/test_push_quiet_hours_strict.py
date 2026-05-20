@@ -196,6 +196,64 @@ async def test_critical_still_immediate_outside_quiet_hours(db):
     assert delayed == 0
 
 
+@pytest.mark.asyncio
+async def test_quiet_hours_policy_bypass_sends_immediately(db):
+    """明确 bypass 的 bedtime/用户主动提醒不进入 delayed 队列."""
+    user = _make_user(db, username="qh_bypass")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 3, 0, 0)
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="睡前提醒",
+            content="该睡了",
+            quiet_hours_policy="bypass",
+        )
+
+    assert result.get("success") is True
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .count()
+    )
+    assert delayed == 0
+
+
+@pytest.mark.asyncio
+async def test_quiet_hours_policy_drop_skips_without_queueing(db):
+    """明确 drop 的低价值提醒在静默时段直接跳过, 不堆到早上."""
+    user = _make_user(db, username="qh_drop")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 3, 0, 0)
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="低价值提醒",
+            content="稍后再说也可以",
+            quiet_hours_policy="drop",
+        )
+
+    assert result["success"] is False
+    assert result["reason"] == "dropped_for_quiet_hours"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .count()
+    )
+    assert delayed == 0
+
+
 def test_next_quiet_hours_end_during_quiet(db):
     """凌晨 03:00, end=08:30 → 今天 08:30."""
     user = _make_user(db, username="qh_calc1")

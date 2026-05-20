@@ -10,6 +10,7 @@ os.environ.setdefault("GARMIN_ENCRYPTION_KEY", "mI4nYXirjGlbHD7sFogYlqPQJzirU04m
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
@@ -27,16 +28,27 @@ from main import app  # noqa: E402 - env vars and JSONB SQLite compiler must be 
 
 @pytest.fixture(scope="function")
 def db():
-    """创建测试数据库 - 每个测试使用独立的内存数据库"""
+    """创建测试数据库.
+
+    默认保持现有 SQLite 单测速度; 设置 TEST_DATABASE_URL=postgresql://...test...
+    时使用真实 PostgreSQL 语义。Postgres 路径会 drop/create schema, 因此强制库名包含 test。
+    """
     import app.models  # noqa: F401 - ensure all model tables/columns are registered before create_all
 
-    # 使用 StaticPool 确保所有连接使用同一个内存数据库
-    # 使用 check_same_thread=False 允许多线程访问
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool
-    )
+    test_database_url = os.getenv("TEST_DATABASE_URL")
+    if test_database_url:
+        url = make_url(test_database_url)
+        if url.get_backend_name() != "postgresql" or "test" not in (url.database or ""):
+            raise RuntimeError("TEST_DATABASE_URL must point to a PostgreSQL database with 'test' in its name")
+        engine = create_engine(test_database_url, pool_pre_ping=True)
+    else:
+        # 使用 StaticPool 确保所有连接使用同一个内存数据库
+        # 使用 check_same_thread=False 允许多线程访问
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool
+        )
 
     # 清除可能存在的元数据缓存
     Base.metadata.drop_all(bind=engine)

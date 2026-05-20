@@ -141,7 +141,7 @@ pip install garminconnect
 # 创建 .env 文件
 cat > .env << 'EOF'
 # 数据库
-DATABASE_URL=sqlite:///./health.db
+DATABASE_URL=postgresql://health_user:your-postgres-password@localhost:5432/health_db
 
 # OpenAI API（用于AI分析）
 OPENAI_API_KEY=your-openai-api-key
@@ -168,11 +168,12 @@ source venv/bin/activate
 python -c "from app.database import Base, engine; Base.metadata.create_all(bind=engine)"
 ```
 
-#### 方式二：使用 SQL 脚本（推荐用于生产）
+#### 方式二：使用 PostgreSQL 迁移脚本（推荐用于生产）
 
 ```bash
-# 创建完整的数据库结构
-sqlite3 /opt/health-app/backend/health.db < /opt/health-app/scripts/init_database.sql
+cd /opt/health-app/backend
+source venv/bin/activate
+python scripts/apply_managed_migrations.py
 ```
 
 ### 3.6 创建管理员用户
@@ -446,19 +447,12 @@ systemctl restart health-backend health-frontend
 
 ```bash
 # 备份数据库
-cp /opt/health-app/backend/health.db /opt/health-app/backend/health.db.bak.$(date +%Y%m%d)
+pg_dump "$DATABASE_URL" | gzip > /opt/health-app/backups/db_$(date +%Y%m%d_%H%M%S).gz
 
-# 查看可用的迁移脚本
-ls -la /opt/health-app/scripts/migrations/
-
-# 执行指定迁移（根据需要选择）
-sqlite3 /opt/health-app/backend/health.db < /opt/health-app/scripts/migrations/20260107_01_add_garmin_extended_fields.sql
-
-# 执行所有2026年1月的迁移
-for f in /opt/health-app/scripts/migrations/202601*.sql; do
-    echo "执行: $f"
-    sqlite3 /opt/health-app/backend/health.db < "$f" 2>&1 || echo "  (部分列可能已存在，继续...)"
-done
+# 执行受控 PostgreSQL 迁移
+cd /opt/health-app/backend
+source venv/bin/activate
+python scripts/apply_managed_migrations.py
 
 # 重启后端
 systemctl restart health-backend
@@ -585,4 +579,3 @@ tail -f /var/log/nginx/error.log
 ---
 
 **祝部署顺利！** 🚀
-

@@ -1,7 +1,7 @@
 """推送服务主类 - 统一管理各渠道推送"""
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,8 @@ from app.services.advice_guard import AdviceCandidate, guard_and_record_advice
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
+
+QuietHoursPolicy = Literal["delay", "bypass", "drop"]
 
 
 # H1-B: severity 排序 (低 → 高). 其他字面量默认 0.
@@ -262,6 +264,7 @@ class PushService:
         respect_quiet_hours: bool = True,
         severity: str = "info",
         dedup_window_hours: int = 24,
+        quiet_hours_policy: Optional[QuietHoursPolicy] = None,
     ) -> Dict[str, Any]:
         """
         发送推送通知
@@ -273,7 +276,8 @@ class PushService:
             content: 内容
             data: 额外数据. data["rule_id"] 若存在 → 参与 rule 级 opt-out 检查, 并成为 dedup key
             channels: 指定渠道，None 表示使用用户设置的渠道
-            respect_quiet_hours: 是否遵守免打扰时段
+            respect_quiet_hours: 旧参数; False 等价于 quiet_hours_policy="bypass"
+            quiet_hours_policy: 静默时段策略: delay=延迟, bypass=立即发, drop=丢弃
             severity: 严重程度 ("info"|"low"|"warning"|"medium"|"high"|"critical")；
                       只有 "critical" 在免打扰时段放行.
                       < 用户 alert_severity_threshold 的 health_alert 也会被过滤 (H1-B).
@@ -286,6 +290,11 @@ class PushService:
             发送结果 {"success": bool, "channels": {...}}
         """
         rule_id = (data or {}).get("rule_id") if data else None
+        effective_quiet_policy: QuietHoursPolicy = quiet_hours_policy or (
+            "delay" if respect_quiet_hours else "bypass"
+        )
+        if effective_quiet_policy not in {"delay", "bypass", "drop"}:
+            raise ValueError(f"invalid quiet_hours_policy: {effective_quiet_policy}")
 
         # WSCLA 深链注入: data 带 action_card_id → 自动生成 health://card/{id} 深链.
         # 客户端点击通知 → 调 P1-5 click endpoint 回写 push_clicked_at, 然后跳卡片详情页.
@@ -351,7 +360,15 @@ class PushService:
         # 严格不打扰睡眠 (2026-05-11 决定): 静默时段对所有 severity (含 critical)
         # 都不立刻推, 写 status='delayed' log + scheduled_at, 由 Celery 任务
         # flush_delayed_pushes 在 quiet_hours_end 后再 fire.
-        if respect_quiet_hours and self.is_quiet_hours(user_id):
+        if effective_quiet_policy != "bypass" and self.is_quiet_hours(user_id):
+            if effective_quiet_policy == "drop":
+                logger.info(
+                    f"[push] 用户 {user_id} 静默时段命中, policy=drop, severity={severity}, 跳过"
+                )
+                return {
+                    "success": False,
+                    "reason": "dropped_for_quiet_hours",
+                }
             scheduled_at = self.next_quiet_hours_end(user_id)
             self._log_notification_delayed(
                 user_id=user_id,

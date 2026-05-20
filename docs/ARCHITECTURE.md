@@ -553,10 +553,12 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 | **OTA production** | JS-only 推已装 TestFlight | `./scripts/mobile-ota.sh production "msg"` (~30s) |
 | **EAS build production** | 有 native 改动 / 发版 | `eas build -p ios --profile production --auto-submit --non-interactive` (~20min) |
 | **EAS build development** | 真机 dev-client (热重载) | `eas build -p ios --profile development` (首次交互式配凭证) |
+| **TestFlight public QR** | 外部用户扫码安装 | `TESTFLIGHT_PUBLIC_LINK=https://testflight.apple.com/join/... node scripts/testflight-public-link.mjs` |
 
 **规矩**:
 - 有意义 commit 后默认并发启 production + development 两个 EAS build, 不等
 - Metro **必须独立长驻**, `expo run:ios --no-bundler` (否则 run:ios 退出带死 Metro)
+- App Store Connect API 可用时, `node scripts/testflight-public-link.mjs` 会尝试开启/读取 External Testing public link; 否则用 `TESTFLIGHT_PUBLIC_LINK` 生成 `artifacts/testflight/index.html` 扫码页
 - 细节见 `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md`
 
 ---
@@ -658,7 +660,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 
 ### 15.1 Backend
 
-- `pytest tests/` — in-memory SQLite (`conftest.py` 提供 fixture), Redis lazy
+- `pytest tests/` — 默认 in-memory SQLite 跑快速单测；设置 `TEST_DATABASE_URL=postgresql://...test...` 时使用真实 PostgreSQL 测试库（库名必须包含 `test`, fixture 会 drop/create schema）
 - 关键文件:
   - `test_twin_builder.py` — schema 默认值, builder 空/部分, formatter
   - `test_safety_guardian.py` — 规则正反例 + 严重度排序

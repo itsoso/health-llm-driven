@@ -95,7 +95,7 @@ class TestSendSleepReminders:
         send_fn = mock_push_cls.return_value.send_notification
         assert send_fn.call_count == 1
         _, kwargs = send_fn.call_args
-        assert kwargs.get("respect_quiet_hours") is False
+        assert kwargs.get("quiet_hours_policy") == "bypass"
 
 
 class TestSendPlanMorningReminder:

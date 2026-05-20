@@ -12,7 +12,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.api.admin import get_admin_user
@@ -336,6 +336,8 @@ def list_available_models(admin: User = Depends(get_admin_user)):
 
 
 class SelectModelRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_id: Optional[str]   # None / 空 = 恢复默认
 
 
@@ -368,6 +370,8 @@ def select_model(req: SelectModelRequest, admin: User = Depends(get_admin_user))
 
 
 class BenchmarkResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_id: str
     label: str
     runs: int

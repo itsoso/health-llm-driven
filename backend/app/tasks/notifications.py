@@ -236,7 +236,7 @@ def send_sleep_reminders():
                     title="💤 睡眠提醒",
                     content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
                     # Sleep reminder 本身就是 bedtime 提醒, 不能被 quiet hours 延迟到次日 08:30。
-                    respect_quiet_hours=False,
+                    quiet_hours_policy="bypass",
                 ))
                 sent_count += 1
             except Exception as e:

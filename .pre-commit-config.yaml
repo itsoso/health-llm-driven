@@ -29,3 +29,11 @@ repos:
         files: ^backend/app/
         # 只 warn 已知问题, 不阻塞 commit
         args: [--exit-zero]
+
+  - repo: local
+    hooks:
+      - id: exact-dependency-versions
+        name: exact dependency versions
+        entry: node scripts/check-exact-deps.mjs
+        language: system
+        files: '(^|/)?package\.json$'
