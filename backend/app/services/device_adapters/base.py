@@ -21,6 +21,7 @@ class DeviceType(str, Enum):
     APPLE = "apple"
     XIAOMI = "xiaomi"
     FITBIT = "fitbit"
+    HEALTHKIT = "healthkit"  # iOS HealthKit 通用入口 (Apple Watch / RingConn / Oura / Withings 都写它)
     MANUAL = "manual"  # 手动录入
 
 
@@ -81,6 +82,11 @@ class NormalizedHealthData:
 
     # ===== 呼吸 =====
     respiration_rate_avg: Optional[float] = None  # 平均呼吸频率 (次/分钟)
+    respiration_rate_min: Optional[float] = None  # HealthKit RespiratoryRate 当日最低
+    respiration_rate_max: Optional[float] = None  # HealthKit RespiratoryRate 当日最高
+
+    # ===== 体温(Apple Watch / Oura 给的是基线偏移,不是绝对体温) =====
+    body_temp_deviation_c: Optional[float] = None
 
     # ===== 原始数据 =====
     raw_data: Optional[Dict[str, Any]] = field(default_factory=dict)  # 完整原始数据（JSON）
@@ -114,6 +120,9 @@ class NormalizedHealthData:
             "spo2_avg": self.spo2_avg,
             "spo2_min": self.spo2_min,
             "respiration_rate_avg": self.respiration_rate_avg,
+            "respiration_rate_min": self.respiration_rate_min,
+            "respiration_rate_max": self.respiration_rate_max,
+            "body_temp_deviation_c": self.body_temp_deviation_c,
         }
 
 

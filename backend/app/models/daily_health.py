@@ -67,6 +67,11 @@ class GarminData(Base):
     avg_respiration_sleep = Column(Float)  # 睡眠平均呼吸频率 (brpm)
     lowest_respiration = Column(Float)  # 最低呼吸频率
     highest_respiration = Column(Float)  # 最高呼吸频率
+    respiratory_rate_min = Column(Float)  # HealthKit RespiratoryRate 当日最低
+    respiratory_rate_max = Column(Float)  # HealthKit RespiratoryRate 当日最高
+
+    # 体温(基线偏移,Apple Watch / Oura 给出的不是绝对体温)
+    body_temp_deviation_c = Column(Float)
 
     # 血氧饱和度
     spo2_avg = Column(Float)  # 平均血氧饱和度 (%)
@@ -103,11 +108,16 @@ class GarminData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # 数据来源(garmin / apple-watch / ringconn / oura / withings-app / manual / unknown)。
+    # HealthKit 同步进来的多源数据按 sourceName bundle id 细分;同 (user, date) 允许多 source 共存。
+    data_source = Column(String(30), nullable=False, default="garmin", server_default="garmin", index=True)
+
     user = relationship("User", backref="garmin_records")
 
-    # 复合索引：优化按用户和日期查询
+    # 复合索引:优化按用户和日期查询;并发起 (user_id, record_date, data_source) 唯一约束让多源 upsert 不互相覆盖
     __table_args__ = (
         Index('idx_garmin_user_date', 'user_id', 'record_date'),
+        Index('idx_garmin_user_date_source', 'user_id', 'record_date', 'data_source', unique=True),
     )
 
 

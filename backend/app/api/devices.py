@@ -771,3 +771,114 @@ async def sync_apple_data(
         failed_days=failed,
         message=f"同步完成：成功 {synced} 天，失败 {failed} 天"
     )
+
+
+# ===== HealthKit (iOS App 主动推送数据) =====
+
+class HealthKitDailyRecord(BaseModel):
+    """单日 HealthKit 聚合记录 — mobile 端按天预聚合后推上来.
+
+    data_source 标签由 mobile 端按 sourceName 映射决定 (apple-watch / ringconn /
+    oura / withings-app / garmin-app / manual / unknown). 字典外的 sourceName
+    会落到 unknown,后端不拒绝,只 warning."""
+    record_date: str  # ISO date "YYYY-MM-DD"
+    data_source: Optional[str] = None  # 优先用此字段;若空,回落 source_name 映射
+    source_name: Optional[str] = None  # iOS bundle id, 仅当 data_source 为空时使用
+
+    sleep_score: Optional[int] = None
+    total_sleep_minutes: Optional[int] = None
+    deep_sleep_minutes: Optional[int] = None
+    rem_sleep_minutes: Optional[int] = None
+    light_sleep_minutes: Optional[int] = None
+    awake_minutes: Optional[int] = None
+    sleep_start_time: Optional[str] = None  # "HH:MM:SS" or "HH:MM"
+    sleep_end_time: Optional[str] = None
+
+    resting_heart_rate: Optional[int] = None
+    avg_heart_rate: Optional[int] = None
+    max_heart_rate: Optional[int] = None
+    min_heart_rate: Optional[int] = None
+
+    hrv: Optional[float] = None
+    hrv_status: Optional[str] = None
+
+    steps: Optional[int] = None
+    distance_meters: Optional[float] = None
+    floors_climbed: Optional[int] = None
+    active_minutes: Optional[int] = None
+    calories_total: Optional[int] = None
+    calories_active: Optional[int] = None
+
+    stress_level: Optional[int] = None
+    body_battery_high: Optional[int] = None
+    body_battery_low: Optional[int] = None
+
+    spo2_avg: Optional[float] = None
+    spo2_min: Optional[float] = None
+
+    respiration_rate_avg: Optional[float] = None
+    respiration_rate_min: Optional[float] = None
+    respiration_rate_max: Optional[float] = None
+
+    body_temp_deviation_c: Optional[float] = None
+
+    raw_data: Optional[dict] = None
+
+
+class HealthKitImportRequest(BaseModel):
+    records: List[HealthKitDailyRecord]
+
+
+class HealthKitImportError(BaseModel):
+    index: int
+    record_date: Optional[str]
+    error: str
+
+
+class HealthKitImportResponse(BaseModel):
+    imported_count: int
+    source_breakdown: dict  # {"apple-watch": 12, "ringconn": 5, ...}
+    errors: List[HealthKitImportError]
+
+
+# 单批上限 — 前端按月切片 (~30 天/批),给 100 留余量;再大走多批
+_HEALTHKIT_BATCH_LIMIT = 100
+
+
+@router.post(
+    "/healthkit/import",
+    response_model=HealthKitImportResponse,
+    summary="HealthKit 数据导入",
+    description=(
+        "iOS App 端从 HealthKit 读取并按天聚合后,通过此端点 POST 推送. "
+        "支持 Apple Watch / RingConn / Oura / Withings App / 其他写 HealthKit 的设备. "
+        "(user_id, record_date, data_source) 复合唯一,重复 POST 幂等."
+    ),
+)
+async def healthkit_import(
+    request: HealthKitImportRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    if len(request.records) > _HEALTHKIT_BATCH_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"单批最多 {_HEALTHKIT_BATCH_LIMIT} 条记录,请按月分批 (当前 {len(request.records)} 条)",
+        )
+
+    from app.services.device_adapters.healthkit import HealthKitAdapter
+
+    records = [r.model_dump() for r in request.records]
+    result = HealthKitAdapter.batch_save(db, current_user.id, records)
+
+    logger.info(
+        f"[healthkit_import] user={current_user.id} batch={len(records)} "
+        f"imported={result['imported_count']} sources={result['source_breakdown']} "
+        f"errors={len(result['errors'])}"
+    )
+
+    return HealthKitImportResponse(
+        imported_count=result["imported_count"],
+        source_breakdown=result["source_breakdown"],
+        errors=[HealthKitImportError(**e) for e in result["errors"]],
+    )

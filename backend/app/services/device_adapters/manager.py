@@ -252,14 +252,20 @@ class DeviceManager:
 
         注意：目前仍然保存到 GarminData 表（为了兼容）
         后续会迁移到统一的 HealthData 表
+
+        多源支持: 同一 (user_id, record_date) 允许不同 data_source 各占一行,
+        upsert 按 (user_id, record_date, data.source) 三元组定位,避免互相覆盖。
         """
         from app.models.daily_health import GarminData
         import json
 
-        # 查找是否已有记录
+        data_source = data.source or "unknown"
+
+        # 查找是否已有相同来源的记录
         existing = db.query(GarminData).filter(
             GarminData.user_id == user_id,
-            GarminData.record_date == data.record_date
+            GarminData.record_date == data.record_date,
+            GarminData.data_source == data_source,
         ).first()
 
         if existing:
@@ -269,9 +275,13 @@ class DeviceManager:
             # 创建新记录
             record = GarminData(
                 user_id=user_id,
-                record_date=data.record_date
+                record_date=data.record_date,
+                data_source=data_source,
             )
             db.add(record)
+
+        # 来源标签 (覆盖旧记录里可能为 'garmin' 的占位,确保 upsert 后字段一致)
+        record.data_source = data_source
 
         # 映射数据字段
         if data.sleep_score is not None:
@@ -328,6 +338,13 @@ class DeviceManager:
 
         if data.respiration_rate_avg is not None:
             record.avg_respiration_awake = data.respiration_rate_avg
+        if data.respiration_rate_min is not None:
+            record.respiratory_rate_min = data.respiration_rate_min
+        if data.respiration_rate_max is not None:
+            record.respiratory_rate_max = data.respiration_rate_max
+
+        if data.body_temp_deviation_c is not None:
+            record.body_temp_deviation_c = data.body_temp_deviation_c
 
         db.commit()
 
@@ -352,6 +369,12 @@ def _register_default_adapters():
         DeviceManager.register_adapter("withings", WithingsHealthAdapter)
     except ImportError as e:
         logger.warning(f"Withings 适配器注册失败: {e}")
+
+    try:
+        from .healthkit import HealthKitAdapter
+        DeviceManager.register_adapter("healthkit", HealthKitAdapter)
+    except ImportError as e:
+        logger.warning(f"HealthKit 适配器注册失败: {e}")
 
 
 # 模块加载时注册适配器

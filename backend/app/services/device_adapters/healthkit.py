@@ -1,0 +1,238 @@
+"""HealthKit 适配器 — iOS 端 HealthKit 数据汇入入口.
+
+设计:
+- 数据**不**由后端拉取,由 mobile 端从 HealthKit 聚合后 POST 进来,所以
+  fetch_daily_data 抛 NotImplementedError. 这是一个"被动"适配器.
+- HealthKit 是同质数据汇 (Apple Watch / RingConn / Oura / Withings App 都写它),
+  按 sourceName (iOS bundle id) 区分来源. mobile 端预聚合时已确定 data_source.
+- batch_save 接收前端 POST 来的 dict 列表,逐条转 NormalizedHealthData 调
+  DeviceManager._save_health_data,复用现成 upsert 逻辑.
+
+参考:
+- mobile/services/appleHealth.ts 负责 HealthKit 读取、按月切片回填、POST 推送
+- backend/app/api/devices.py POST /devices/healthkit/import 端点是入口
+"""
+
+from datetime import date as _date, datetime, time as _time
+from typing import Any, Dict, List, Optional, Tuple
+import logging
+
+from sqlalchemy.orm import Session
+
+from .base import (
+    AuthType,
+    DeviceAdapter,
+    DeviceType,
+    NormalizedHealthData,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# 已知 sourceName bundle id → data_source 标签字典.
+# 命中字典: 写细分 source. miss: 落 'unknown' + warning,后续看日志补字典.
+_SOURCE_NAME_MAP: Dict[str, str] = {
+    "com.apple.health": "apple-watch",
+    "com.apple.healthkit": "apple-watch",
+    "com.apple.Health": "apple-watch",
+    "com.ringconn.app": "ringconn",
+    "com.ringconn.RingConn": "ringconn",
+    "com.ouraring.oura": "oura",
+    "com.ouraring.OuraRing": "oura",
+    "com.withings.wiScaleNG": "withings-app",
+    "com.withings.healthmate": "withings-app",
+    "com.garmin.connect.mobile": "garmin-app",
+}
+
+# 校验白名单 — mobile 端推上来的 data_source 必须在这个集合里 (或 unknown 兜底)
+_ALLOWED_DATA_SOURCES = frozenset({
+    "ringconn",
+    "oura",
+    "apple-watch",
+    "withings-app",
+    "garmin-app",
+    "manual",
+    "unknown",
+})
+
+
+def map_source_name_to_data_source(source_name: Optional[str]) -> str:
+    """HealthKit sourceName (bundle id) → 我们的 data_source 标签.
+
+    miss 字典时落 'unknown' 并 warning,不抛错 (后续按日志补字典)."""
+    if not source_name:
+        return "unknown"
+    mapped = _SOURCE_NAME_MAP.get(source_name)
+    if mapped:
+        return mapped
+    logger.warning(f"[healthkit] unknown sourceName='{source_name}', fallback=unknown")
+    return "unknown"
+
+
+class HealthKitAdapter(DeviceAdapter):
+    """iOS HealthKit 通用入口 — 数据由 mobile 推送,不主动拉取."""
+
+    @property
+    def device_type(self) -> DeviceType:
+        return DeviceType.HEALTHKIT
+
+    @property
+    def display_name(self) -> str:
+        return "Apple Health (HealthKit)"
+
+    @property
+    def auth_type(self) -> AuthType:
+        # HealthKit 授权在设备本地完成 (iOS 弹窗),后端不持有 token.
+        # 用 TOKEN 占位是为了让 DeviceCredential 字段够用,实际 access_token 可空.
+        return AuthType.TOKEN
+
+    async def authenticate(self, credentials: Dict[str, Any]) -> bool:
+        # HealthKit 授权在 mobile 端完成,后端无法验证.约定: 只要 credential 存在就视为已授权.
+        return True
+
+    async def test_connection(self) -> Dict[str, Any]:
+        return {
+            "success": True,
+            "message": "HealthKit 数据由 iOS App 主动推送,无需后端连通性测试",
+        }
+
+    async def fetch_daily_data(self, target_date: _date) -> Optional[NormalizedHealthData]:
+        # 这是被动适配器: 数据由 mobile POST /devices/healthkit/import 推送.
+        # 后端不主动从 HealthKit 拉数据 (它根本不在后端可达).
+        raise NotImplementedError(
+            "HealthKit 数据由 iOS App 主动推送,不支持后端主动拉取. "
+            "mobile 端调 POST /api/v1/devices/healthkit/import."
+        )
+
+    @staticmethod
+    def _parse_date(value: Any) -> Optional[_date]:
+        if value is None:
+            return None
+        if isinstance(value, _date):
+            return value
+        if isinstance(value, str):
+            try:
+                return _date.fromisoformat(value[:10])
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _parse_time(value: Any) -> Optional[_time]:
+        if value is None:
+            return None
+        if isinstance(value, _time):
+            return value
+        if isinstance(value, str):
+            try:
+                # 接受 "HH:MM" 或 "HH:MM:SS"
+                return _time.fromisoformat(value)
+            except ValueError:
+                try:
+                    parsed = datetime.fromisoformat(value)
+                    return parsed.time()
+                except ValueError:
+                    return None
+        return None
+
+    @classmethod
+    def _record_to_normalized(cls, record: Dict[str, Any]) -> Tuple[NormalizedHealthData, str]:
+        """单条 record dict → NormalizedHealthData. 返回 (data, validated_data_source)."""
+        record_date = cls._parse_date(record.get("record_date"))
+        if record_date is None:
+            raise ValueError(f"record_date 缺失或格式错误: {record.get('record_date')!r}")
+
+        # data_source 优先取 record 字段,其次按 source_name 映射,兜底 unknown
+        ds_raw = record.get("data_source")
+        if ds_raw is None and record.get("source_name"):
+            ds_raw = map_source_name_to_data_source(record["source_name"])
+        if ds_raw not in _ALLOWED_DATA_SOURCES:
+            if ds_raw is not None:
+                logger.warning(f"[healthkit] data_source='{ds_raw}' 不在白名单, fallback=unknown")
+            ds_raw = "unknown"
+
+        return NormalizedHealthData(
+            record_date=record_date,
+            source=ds_raw,
+            sleep_score=record.get("sleep_score"),
+            total_sleep_minutes=record.get("total_sleep_minutes"),
+            deep_sleep_minutes=record.get("deep_sleep_minutes"),
+            rem_sleep_minutes=record.get("rem_sleep_minutes"),
+            light_sleep_minutes=record.get("light_sleep_minutes"),
+            awake_minutes=record.get("awake_minutes"),
+            sleep_start_time=cls._parse_time(record.get("sleep_start_time")),
+            sleep_end_time=cls._parse_time(record.get("sleep_end_time")),
+            resting_heart_rate=record.get("resting_heart_rate"),
+            avg_heart_rate=record.get("avg_heart_rate"),
+            max_heart_rate=record.get("max_heart_rate"),
+            min_heart_rate=record.get("min_heart_rate"),
+            hrv=record.get("hrv"),
+            hrv_status=record.get("hrv_status"),
+            steps=record.get("steps"),
+            distance_meters=record.get("distance_meters"),
+            floors_climbed=record.get("floors_climbed"),
+            active_minutes=record.get("active_minutes"),
+            calories_total=record.get("calories_total"),
+            calories_active=record.get("calories_active"),
+            stress_level=record.get("stress_level"),
+            body_battery_high=record.get("body_battery_high"),
+            body_battery_low=record.get("body_battery_low"),
+            spo2_avg=record.get("spo2_avg"),
+            spo2_min=record.get("spo2_min"),
+            respiration_rate_avg=record.get("respiration_rate_avg"),
+            respiration_rate_min=record.get("respiration_rate_min"),
+            respiration_rate_max=record.get("respiration_rate_max"),
+            body_temp_deviation_c=record.get("body_temp_deviation_c"),
+            raw_data=record.get("raw_data") or {},
+        ), ds_raw
+
+    @classmethod
+    def batch_save(
+        cls,
+        db: Session,
+        user_id: int,
+        records: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """逐条独立 try/except 写入 garmin_data,一条坏数据不让整批 fail.
+
+        返回:
+          {
+            "imported_count": int,
+            "source_breakdown": {"apple-watch": 12, "ringconn": 5, ...},
+            "errors": [{"index": int, "record_date": str|None, "error": str}, ...]
+          }
+        """
+        from .manager import DeviceManager
+
+        imported = 0
+        breakdown: Dict[str, int] = {}
+        errors: List[Dict[str, Any]] = []
+
+        for idx, record in enumerate(records):
+            try:
+                normalized, ds = cls._record_to_normalized(record)
+                DeviceManager._save_health_data(db, user_id, normalized)
+                imported += 1
+                breakdown[ds] = breakdown.get(ds, 0) + 1
+            except Exception as e:
+                logger.warning(
+                    f"[healthkit] batch_save idx={idx} record_date={record.get('record_date')!r} "
+                    f"failed: {type(e).__name__}: {e}"
+                )
+                errors.append({
+                    "index": idx,
+                    "record_date": str(record.get("record_date")) if record.get("record_date") else None,
+                    "error": f"{type(e).__name__}: {e}",
+                })
+                # _save_health_data 内部 db.commit() 失败时由调用方负责 rollback;
+                # 这里独立 try 仅捕获,后续 record 继续.
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+
+        return {
+            "imported_count": imported,
+            "source_breakdown": breakdown,
+            "errors": errors,
+        }
