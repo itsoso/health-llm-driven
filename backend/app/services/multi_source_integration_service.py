@@ -60,6 +60,14 @@ class MultiSourceIntegrationService:
         age_val, gender = _age(user.birth_date), user.gender or "未设置"
 
         garmin = db.query(GarminData).filter(GarminData.user_id == user_id).order_by(desc(GarminData.record_date)).first()
+        # P4 多源合并: 同一日期可能有 garmin/apple-watch/ringconn/oura 多行,
+        # 每字段按 source 优先级独立挑值. 见 multi_source_merger 优先级表.
+        garmin_rows: list = []
+        if garmin:
+            garmin_rows = db.query(GarminData).filter(
+                GarminData.user_id == user_id,
+                GarminData.record_date == garmin.record_date,
+            ).all()
         weight = db.query(WeightRecord).filter(WeightRecord.user_id == user_id).order_by(desc(WeightRecord.record_date)).first()
         health = db.query(BasicHealthData).filter(BasicHealthData.user_id == user_id).order_by(desc(BasicHealthData.record_date)).first()
 
@@ -68,9 +76,21 @@ class MultiSourceIntegrationService:
 
         gm = None
         if garmin:
-            gm = {"date": str(garmin.record_date), "resting_hr": garmin.resting_heart_rate, "hrv": garmin.hrv,
-                   "sleep_score": garmin.sleep_score, "steps": garmin.steps, "stress_level": garmin.stress_level,
-                   "body_battery_current": garmin.body_battery_current}
+            from app.services.multi_source_merger import merge_rows
+            merged = merge_rows(garmin_rows, [
+                "resting_heart_rate", "hrv", "sleep_score", "steps",
+                "stress_level", "body_battery_current", "spo2_avg",
+            ])
+            v = merged["values"]
+            gm = {"date": str(garmin.record_date),
+                  "resting_hr": v.get("resting_heart_rate"),
+                  "hrv": v.get("hrv"),
+                  "sleep_score": v.get("sleep_score"),
+                  "steps": v.get("steps"),
+                  "stress_level": v.get("stress_level"),
+                  "body_battery_current": v.get("body_battery_current"),
+                  "spo2_avg": v.get("spo2_avg"),
+                  "sources": merged["sources"]}  # P4: 每字段 winning source, LLM source-aware
 
         bc = {"date": str(weight.record_date), "weight": weight.weight, "bmi": weight.bmi,
               "body_fat_pct": weight.body_fat_percentage} if weight else None

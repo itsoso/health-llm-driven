@@ -171,6 +171,10 @@ def _fill_integrated_profile(db: Session, user_id: int, twin: HealthTwin, source
             p.body_battery_current = _as_int(garmin.get("body_battery_current"))
             p.spo2_avg = _as_float(garmin.get("spo2_avg"))
             p.last_updated = _as_date(garmin.get("date"))
+            # P4: 多源合并产生的字段→source 字典 (LLM 可知道每个数值由哪个设备提供)
+            srcs = garmin.get("sources") or {}
+            if isinstance(srcs, dict) and srcs:
+                p.field_sources = {k: str(v) for k, v in srcs.items() if v}
             sources.add("garmin")
 
         # — Body composition

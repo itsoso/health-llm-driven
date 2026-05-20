@@ -106,6 +106,20 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if phys_parts:
         age = _age_label(twin.freshness.garmin)
         lines.append(f"生理{age}: " + ", ".join(phys_parts))
+        # P4: 多源 → 每字段的源 (e.g. "HRV←oura, SpO2←ringconn, 步数←garmin")
+        # 仅多源场景输出 (>1 unique source),单源不啰嗦
+        srcs = p.field_sources
+        if srcs:
+            unique = set(srcs.values())
+            if len(unique) > 1:
+                items = []
+                _label = {"resting_heart_rate": "RHR", "spo2_avg": "SpO2", "sleep_score": "睡眠",
+                          "steps": "步数", "hrv": "HRV"}
+                for k in ["hrv", "resting_heart_rate", "spo2_avg", "sleep_score", "steps"]:
+                    if k in srcs:
+                        items.append(f"{_label.get(k, k)}←{srcs[k]}")
+                if items:
+                    lines.append("数据源: " + ", ".join(items))
 
     # ─── 身体
     b = twin.body_composition

@@ -78,6 +78,10 @@ class PhysiologicalState(BaseModel):
 
     last_updated: Optional[date] = None
 
+    # P4 多源合并: 每字段的 winning data_source. 用于 LLM source-aware prompting
+    # (e.g. "HRV 来自 oura,可信度高于 Watch 数据"). 仅当多源数据存在时填充.
+    field_sources: Dict[str, str] = Field(default_factory=dict)
+
 
 # ───────────────────────── Body Composition ────────────────────────────
 
