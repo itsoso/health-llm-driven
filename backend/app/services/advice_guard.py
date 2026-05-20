@@ -54,6 +54,12 @@ class AdviceCandidate:
     evidence_tier: str | None = None
     confidence: str | None = None
     claim_boundary: str | None = None
+    evidence_refs: list[str] | None = None
+    evidence_source_types: list[str] | None = None
+    verification_metric: str | None = None
+    verification_window_days: int | None = None
+    risk_level: str | None = None
+    contraindications: list[dict] | None = None
     valid_for_date: date | None = None
     created_at: datetime | None = None
 
@@ -113,6 +119,14 @@ class AdviceGuard:
     def evaluate(self, candidate: AdviceCandidate) -> AdviceDecision:
         self._validate_contract(candidate)
 
+        health_verification = self._verify_health_contract(candidate)
+        if not health_verification.allowed:
+            return AdviceDecision(
+                allowed=False,
+                reason=health_verification.reason,
+                advice_key=candidate.advice_key,
+            )
+
         for item in self.existing:
             if item.advice_key == candidate.advice_key:
                 return AdviceDecision(
@@ -141,6 +155,16 @@ class AdviceGuard:
         ]
         if missing:
             raise AdviceGuardError(f"Advice candidate missing required fields: {', '.join(missing)}")
+
+    def _verify_health_contract(self, candidate: AdviceCandidate):
+        from app.services.health_advice_verifier import verify_advice
+
+        return verify_advice(
+            candidate,
+            evidence_resolution={"evidence_refs": candidate.evidence_refs or []},
+            personal_matrix={},
+            contraindications=candidate.contraindications or [],
+        )
 
     def _find_conflict(self, candidate: AdviceCandidate) -> AdviceCandidate | None:
         if candidate.domain != "movement":
