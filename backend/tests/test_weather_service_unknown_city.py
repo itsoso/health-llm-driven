@@ -29,3 +29,34 @@ def test_city_to_coords_unknown_city_returns_none():
 def test_city_to_coords_none_input_returns_none():
     svc = WeatherService()
     assert svc._city_to_coords("") is None
+
+
+def test_geoapi_host_stays_public_when_custom_host_set():
+    """客户专属 host (`*.re.qweatherapi.com`) 只代理 /v7 不代理 /v2/city/lookup.
+    历史: __init__ 把 GeoAPI URL 也改到客户 host → city 查 ID 全 404 → weather/now
+    用脏 location 串失败, 日志刷 'API 返回错误: None'. GeoAPI 必须永远公用 host."""
+    from app.services.environment.weather_service import WeatherService
+
+    svc = WeatherService(api_key="test", api_type="premium", api_host="abc.re.qweatherapi.com")
+    assert svc.QWEATHER_BASE_URL == "https://abc.re.qweatherapi.com/v7"
+    assert svc.QWEATHER_GEO_URL == "https://geoapi.qweather.com/v2"
+
+
+def test_qweather_error_message_handles_both_shapes():
+    """老 shape `{code: ...}` 和新 shape `{error: {title, status, detail}}` 都要给可读消息.
+    回归: 之前 `data.get('code')` 在新 shape 下返 None → 日志 'API 返回错误: None'."""
+    from app.services.environment.weather_service import _qweather_error_message
+
+    legacy = _qweather_error_message({"code": "404"}, "120,30")
+    assert "404" in legacy and "120,30" in legacy
+
+    modern = _qweather_error_message(
+        {"error": {"status": 403, "title": "Invalid Host", "detail": "unauthorized API host"}},
+        "120,30",
+    )
+    assert "Invalid Host" in modern
+    assert "403" in modern
+    assert "120,30" in modern
+
+    empty = _qweather_error_message({}, "X")
+    assert "X" in empty

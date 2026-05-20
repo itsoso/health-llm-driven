@@ -15,6 +15,20 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 
+def _qweather_error_message(data: Dict[str, Any], location: str) -> str:
+    """qweather 把错误返成两种 shape: 老的 `{code: "404", ...}` 和新的
+    `{error: {status, title, detail, ...}}`. 老 raise 只取 `code` 一字段,
+    新 shape code 是 None 时日志就是 "API 返回错误: None" — 完全无法定位.
+    这里两路都吃, 给出可读的诊断字符串."""
+    err = data.get("error") if isinstance(data, dict) else None
+    if isinstance(err, dict):
+        title = err.get("title") or err.get("type") or "unknown"
+        status = err.get("status") or "?"
+        detail = err.get("detail") or ""
+        return f"qweather error: {title} (status={status}, location={location!r}) {detail}".strip()
+    return f"qweather error: code={data.get('code')!r} location={location!r}"
+
+
 class WeatherService:
     """
     天气数据服务
@@ -52,11 +66,14 @@ class WeatherService:
         self._geo_cache: Dict[str, dict] = {}  # GeoAPI 城市查找缓存
 
         # 根据API Host或类型选择URL
+        # 注意 (2026-05-20): 客户专属 host (`*.re.qweatherapi.com`) 只代理 /v7 不代理
+        # /v2/city/lookup → GeoAPI 永远走公用 host, 否则 city 名查 ID 全 404, 最终
+        # 导致 weather/now 用脏 location 串失败, 日志刷 "API 返回错误: None".
         if api_host:
             # 使用自定义API Host（推荐方式）
             self.QWEATHER_BASE_URL = f"https://{api_host}/v7"
-            self.QWEATHER_GEO_URL = f"https://{api_host}/v2"
-            logger.info(f"天气服务初始化完成 (使用自定义API Host: {api_host})")
+            self.QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2"
+            logger.info(f"天气服务初始化完成 (使用自定义API Host: {api_host}, GeoAPI 走公用 host)")
         elif api_type == "premium":
             self.QWEATHER_BASE_URL = "https://api.qweather.com/v7"
             self.QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2"
@@ -240,7 +257,7 @@ class WeatherService:
                     "update_time": data.get("updateTime", "")
                 }
             else:
-                raise Exception(f"API 返回错误: {data.get('code')}")
+                raise Exception(_qweather_error_message(data, location))
 
     async def _get_qweather_forecast(
         self,
@@ -302,7 +319,7 @@ class WeatherService:
                     "forecasts": forecasts
                 }
             else:
-                raise Exception(f"API 返回错误: {data.get('code')}")
+                raise Exception(_qweather_error_message(data, location))
 
     async def _get_openmeteo_current(self, lat: float, lon: float) -> Dict[str, Any]:
         """使用 Open-Meteo API 获取当前天气（免费，无需 API Key）"""
