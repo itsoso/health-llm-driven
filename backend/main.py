@@ -344,6 +344,29 @@ def root():
     }
 
 
+_CELERY_STATUS_TTL_SEC = 30.0
+_celery_status_cache: dict = {"value": "unknown", "ts": 0.0}
+
+
+def _get_celery_status_cached() -> str:
+    """30s 内复用上次结果. inspect(timeout=N) 不管几个 worker 都等满 N 秒,
+    放低到 0.3s 就够单 worker 拓扑响应; 真要更深的检查走 /admin/observability/health."""
+    import time
+    now = time.monotonic()
+    if now - _celery_status_cache["ts"] < _CELERY_STATUS_TTL_SEC:
+        return _celery_status_cache["value"]
+    try:
+        from app.celery_app import celery_app
+        active = celery_app.control.inspect(timeout=0.3).active()
+        status = "connected" if active else "no_workers"
+    except Exception as e:
+        logger.warning(f"Celery health check failed: {e}")
+        status = "error"
+    _celery_status_cache["value"] = status
+    _celery_status_cache["ts"] = now
+    return status
+
+
 @app.get("/health", tags=["系统"])
 @app.get("/api/v1/health", tags=["系统"])
 def health_check():
@@ -377,16 +400,10 @@ def health_check():
         db_status = "error"
         overall = "degraded"
 
-    # Celery worker 检查
-    celery_status = "unknown"
-    try:
-        from app.celery_app import celery_app
-        inspector = celery_app.control.inspect(timeout=2)
-        active = inspector.active()
-        celery_status = "connected" if active else "no_workers"
-    except Exception as e:
-        logger.warning(f"Celery health check failed: {e}")
-        celery_status = "error"
+    # Celery worker 检查 — 带 30s 进程内缓存. 每个 /health 都广播 inspect
+    # 会被 timeout 拉满 (broadcast 不知道有几个 worker, 等满 timeout 才返).
+    # LB 探活高频, 之前每次扣 2s, p95 直接掉 20 分.
+    celery_status = _get_celery_status_cached()
 
     if redis_status == "error":
         overall = "degraded"
