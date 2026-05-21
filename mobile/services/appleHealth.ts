@@ -7,14 +7,47 @@
  * data_source 由每条样本的 sourceName (iOS bundle id) 映射决定 —
  * 同一天可能多源,按样本数多数派选定。
  */
-import { Platform } from 'react-native';
-import AppleHealthKit, {
-  HealthKitPermissions,
-  HealthInputOptions,
-  HealthValue,
-  HealthUnit,
+import { Platform, NativeModules } from 'react-native';
+import ReactNativeHealth, {
+  type HealthKitPermissions,
+  type HealthInputOptions,
+  type HealthValue,
+  type HealthUnit,
 } from 'react-native-health';
 import api from './api';
+
+type AppleHealthKitModule = typeof ReactNativeHealth & Record<string, any>;
+
+const NativeAppleHealthKit = NativeModules.AppleHealthKit as AppleHealthKitModule | undefined;
+const ReactNativeAppleHealthKit = ReactNativeHealth as AppleHealthKitModule;
+
+/*
+ * react-native-health 1.19 的默认 export 通过 Object.assign({}, NativeModules.AppleHealthKit, {Constants})
+ * 构造。在 RN 0.83 bridgeless/TurboModule 下，native proxy 方法可能不是 own enumerable，
+ * Object.assign 会丢失 initHealthKit/getXxxSamples。生产优先从 NativeModules 取方法；
+ * Jest/旧桥 fallback 到默认 export。Constants 仍复用库公开的默认 export。
+ */
+const AppleHealthKit = new Proxy((NativeAppleHealthKit ?? ReactNativeAppleHealthKit) as AppleHealthKitModule, {
+  get(target, prop: string | symbol) {
+    if (prop === 'Constants') {
+      return ReactNativeAppleHealthKit.Constants;
+    }
+    if (typeof prop === 'symbol') {
+      return Reflect.get(target, prop);
+    }
+    return target?.[prop] ?? ReactNativeAppleHealthKit?.[prop];
+  },
+});
+
+if (__DEV__ && Platform.OS === 'ios') {
+  // eslint-disable-next-line no-console
+  console.log(
+    '[appleHealth][diag] native module:',
+    !!NativeAppleHealthKit,
+    'initHealthKit:',
+    typeof AppleHealthKit.initHealthKit,
+  );
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export type DataSource =
@@ -42,6 +75,8 @@ export interface HealthKitDailyRecord {
   respiration_rate_max?: number;
   body_temp_deviation_c?: number;
   vo2_max?: number;
+  weight_kg?: number;
+  waist_cm?: number;
 }
 
 export interface BackfillProgress {
@@ -123,6 +158,7 @@ const PERMISSIONS: HealthKitPermissions = {
       AppleHealthKit.Constants.Permissions.BodyTemperature,
       AppleHealthKit.Constants.Permissions.Vo2Max,
       AppleHealthKit.Constants.Permissions.Weight,
+      AppleHealthKit.Constants.Permissions.WaistCircumference,
     ],
     write: [],
   },
@@ -238,6 +274,8 @@ export async function fetchDailyAggregates(
     respRate,
     bodyTemp,
     vo2,
+    weight,
+    waist,
   ] = await Promise.all([
     fetchSamples(AppleHealthKit.getDailyStepCountSamples, opts),
     fetchSamples(AppleHealthKit.getRestingHeartRateSamples, opts),
@@ -252,6 +290,14 @@ export async function fetchDailyAggregates(
     fetchSamples(AppleHealthKit.getRespiratoryRateSamples, opts),
     fetchSamples(AppleHealthKit.getBodyTemperatureSamples, opts),
     fetchSamples(AppleHealthKit.getVo2MaxSamples, opts),
+    fetchSamples(AppleHealthKit.getWeightSamples, {
+      ...opts,
+      unit: 'kg' as HealthUnit,
+    }),
+    fetchSamples(AppleHealthKit.getWaistCircumferenceSamples, {
+      ...opts,
+      unit: 'cm' as HealthUnit,
+    }),
   ]);
 
   // sleep 样本有 inBed / asleep 等多状态,只统计 asleep 时长
@@ -274,6 +320,8 @@ export async function fetchDailyAggregates(
     ...respRate,
     ...bodyTemp,
     ...vo2,
+    ...weight,
+    ...waist,
   ];
   const data_source = majoritySource(allSamples);
 
@@ -298,6 +346,8 @@ export async function fetchDailyAggregates(
     respiration_rate_max: max(respRate),
     body_temp_deviation_c: bodyTemp.length > 0 ? avg(bodyTemp) : undefined,
     vo2_max: avg(vo2),
+    weight_kg: avg(weight),
+    waist_cm: avg(waist),
   };
 }
 
@@ -361,6 +411,34 @@ async function importBatch(records: HealthKitDailyRecord[]): Promise<{
       errors: [e?.response?.data?.detail ?? e?.message ?? '上传失败'],
     };
   }
+}
+
+async function importBodyMeasurements(records: HealthKitDailyRecord[]): Promise<string[]> {
+  const errors: string[] = [];
+  for (const record of records) {
+    const tasks: Promise<unknown>[] = [];
+    if (record.weight_kg != null) {
+      tasks.push(api.post('/weight/records', {
+        record_date: record.record_date,
+        weight: Math.round(record.weight_kg * 10) / 10,
+        notes: 'HealthKit 自动同步',
+      }));
+    }
+    if (record.waist_cm != null) {
+      tasks.push(api.post('/waist/records', {
+        record_date: record.record_date,
+        waist_cm: Math.round(record.waist_cm * 10) / 10,
+        source: 'apple_health',
+        notes: 'HealthKit 自动同步',
+      }));
+    }
+    try {
+      await Promise.all(tasks);
+    } catch (e: any) {
+      errors.push(e?.response?.data?.detail ?? e?.message ?? `${record.record_date}: 体重/腰围上传失败`);
+    }
+  }
+  return errors;
 }
 
 // ── 全量回填 ─────────────────────────────────────────────────────────────────
@@ -441,5 +519,6 @@ export async function syncRecentDays(
   }
 
   const result = await importBatch(records);
-  return { totalImported: result.imported_count, errors: result.errors };
+  const bodyErrors = await importBodyMeasurements(records);
+  return { totalImported: result.imported_count, errors: [...result.errors, ...bodyErrors] };
 }

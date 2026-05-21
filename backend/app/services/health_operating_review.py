@@ -16,6 +16,7 @@ from app.models.weight import WeightRecord
 
 SUPPORTED_REVIEW_WINDOWS = {7, 30, 90}
 COMPLETED_STATUSES = {"completed", "done", "verified"}
+LOWER_IS_BETTER_METRICS = {"weight", "waist_cm", "systolic_bp", "diastolic_bp"}
 
 
 def build_health_operating_review(
@@ -43,15 +44,17 @@ def build_health_operating_review(
         .all()
     )
 
+    metrics = _metric_summary(db, user_id=user_id, start=start, end=end)
     return {
         "window_days": window_days,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "execution": _execution_summary(events),
-        "metrics": _metric_summary(db, user_id=user_id, start=start, end=end),
+        "metrics": metrics,
         "completed_action_keys": [
             event.action_key for event in events if event.feedback_status in COMPLETED_STATUSES
         ],
+        "action_effects": _action_effects(events, metrics),
     }
 
 
@@ -78,6 +81,39 @@ def _metric_summary(db: Session, *, user_id: int, start: date, end: date) -> dic
         "sleep_score": _numeric_change(_query_garmin(db, user_id, start, end, "sleep_score"), precision=0),
         "hrv": _numeric_change(_query_garmin(db, user_id, start, end, "hrv"), precision=0),
     }
+
+
+def _action_effects(events: list[InterventionEvent], metrics: dict[str, Any]) -> list[dict[str, Any]]:
+    """Link completed actions to their verification metric without overstating causality."""
+    effects: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for event in events:
+        if event.feedback_status not in COMPLETED_STATUSES:
+            continue
+        snapshot = event.action_snapshot or {}
+        metric = snapshot.get("verification_metric") or snapshot.get("metric_key")
+        if not metric or metric not in metrics:
+            continue
+        metric_change = metrics[metric]
+        delta = metric_change.get("delta")
+        if metric_change.get("status") != "present" or delta is None:
+            continue
+        key = (event.action_key, metric)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        improved = delta < 0 if metric in LOWER_IS_BETTER_METRICS else delta > 0
+        effects.append({
+            "action_key": event.action_key,
+            "action_title": event.action_title,
+            "metric": metric,
+            "metric_delta": delta,
+            "direction": "improved" if improved else "worsened" if delta else "flat",
+            "confidence": "medium" if improved else "low",
+            "attribution": "temporal_association_not_causation",
+        })
+    return effects
 
 
 def _numeric_change(points: Iterable[tuple[date, float | int | None]], *, precision: int) -> dict[str, Any]:

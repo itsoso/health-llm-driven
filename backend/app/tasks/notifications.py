@@ -50,6 +50,60 @@ def _morning_briefing_push_data() -> dict:
     )
 
 
+def _sleep_reminder_content(db, user_id: int) -> str:
+    """Build bedtime reminder copy from the user's real sleep profile and stress traits."""
+    bedtime = None
+    target_hours = 7.5
+    try:
+        from app.models.user_profile import UserProfile
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if profile:
+            if isinstance(profile.usual_sleep_time, str) and profile.usual_sleep_time.strip():
+                bedtime = profile.usual_sleep_time
+            if isinstance(profile.target_sleep_hours, (int, float)) and profile.target_sleep_hours > 0:
+                target_hours = profile.target_sleep_hours
+    except Exception:
+        pass
+
+    stress_sensitive = False
+    try:
+        from app.models.genetic_data import GeneticVariant
+
+        variants = (
+            db.query(GeneticVariant)
+            .filter(
+                GeneticVariant.user_id == user_id,
+                GeneticVariant.gene_name.in_(["COMT", "ADORA2A", "CLOCK", "PER2"]),
+            )
+            .limit(10)
+            .all()
+        )
+        for variant in variants:
+            text = " ".join([
+                variant.gene_name or "",
+                variant.result_label or "",
+                variant.description or "",
+                str(variant.health_implications or ""),
+            ])
+            if any(keyword in text for keyword in ("压力敏感", "焦虑", "忧虑", "咖啡因影响睡眠")):
+                stress_sensitive = True
+                break
+    except Exception:
+        pass
+
+    if stress_sensitive:
+        base = "你有压力敏感/睡眠易受唤醒的特质，明天有重要事时更要先降唤醒，而不是硬逼自己立刻睡着。"
+        action = "现在写下明天最重要 3 件事，做 5-10 分钟呼吸/拉伸，再关屏。"
+    else:
+        base = "现在开始收尾，降低光照和信息刺激，给睡眠留出缓冲。"
+        action = "把未完成事项写到明天清单，关屏后做 5 分钟放松。"
+
+    if bedtime:
+        return f"按你的常用入睡时间 {bedtime}，该进入睡前流程了。{base}{action} 目标睡眠约 {target_hours:g} 小时。"
+    return f"该进入睡前流程了。{base}{action} 目标睡眠约 {target_hours:g} 小时。"
+
+
 def _is_exercise_undertraining_risk(text: str) -> bool:
     return any(keyword in (text or "") for keyword in _EXERCISE_UNDERTRAINING_KEYWORDS)
 
@@ -234,7 +288,7 @@ def send_sleep_reminders():
                     user_id=setting.user_id,
                     notification_type="reminder",
                     title="💤 睡眠提醒",
-                    content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
+                    content=_sleep_reminder_content(db, setting.user_id),
                     # Sleep reminder 本身就是 bedtime 提醒, 不能被 quiet hours 延迟到次日 08:30。
                     quiet_hours_policy="bypass",
                 ))

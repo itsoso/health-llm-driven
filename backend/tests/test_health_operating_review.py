@@ -62,6 +62,15 @@ def test_daily_plan_review_summarizes_events_and_metric_changes(client, db, auth
     assert body["metrics"]["sleep_score"]["delta"] == 14
     assert body["metrics"]["hrv"]["delta"] == 7
     assert "movement.zone2_recovery" in body["completed_action_keys"]
+    assert body["action_effects"] == [{
+        "action_key": "movement.zone2_recovery",
+        "action_title": "低强度 Zone 2",
+        "metric": "sleep_score",
+        "metric_delta": 14,
+        "direction": "improved",
+        "confidence": "medium",
+        "attribution": "temporal_association_not_causation",
+    }]
 
 
 def test_daily_plan_review_is_user_scoped(client, db, auth_user_and_headers):

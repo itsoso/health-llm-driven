@@ -2,7 +2,7 @@
 import pytest
 from datetime import date
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +97,53 @@ class TestSendSleepReminders:
         _, kwargs = send_fn.call_args
         assert kwargs.get("quiet_hours_policy") == "bypass"
 
+    def test_sleep_reminder_copy_uses_profile_bedtime_and_stress_sensitive_trait(self, db):
+        """睡眠提醒文案应基于真实作息和压力敏感特质, 不硬编码错误睡觉时间."""
+        from app.models.genetic_data import GeneticProfile, GeneticVariant
+        from app.models.user import User
+        from app.models.user_profile import UserProfile
+        from app.tasks.notifications import _sleep_reminder_content
+
+        user = User(
+            username="sleep_trait_user",
+            email="sleep_trait@example.com",
+            hashed_password="x",
+            name="Sleep Trait User",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(UserProfile(user_id=user.id, usual_sleep_time="23:30", target_sleep_hours=7.5))
+        profile = GeneticProfile(
+            user_id=user.id,
+            test_provider="manual",
+            test_date=date.today(),
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+        db.add(GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            rsid="rs4680",
+            category="nutrition",
+            gene_name="COMT",
+            genotype="AA",
+            result_label="压力敏感/焦虑倾向(忧虑型)",
+            risk_level="medium",
+        ))
+        db.commit()
+
+        content = _sleep_reminder_content(db, user.id)
+
+        assert "23:30" in content
+        assert "压力敏感" in content
+        assert "明天有重要事" in content
+        assert "8:30" not in content
+        assert "08:30" not in content
+
 
 class TestSendPlanMorningReminder:
     """测试 send_plan_morning_reminder 任务"""
@@ -157,6 +204,31 @@ class TestSendPlanMorningReminder:
         assert "content" in kwargs
         assert "body" not in kwargs
         mock_run_async.assert_called_once_with("awaitable")
+
+
+class TestDueReminderPolicy:
+    @patch("app.services.notification.push_scheduler.PushService")
+    def test_due_sleep_reminder_bypasses_quiet_hours(self, mock_push_cls):
+        """用户配置的 sleep reminder 是睡前提醒, 不应被静默时段延迟到第二天 08:30."""
+        from app.services.notification.push_scheduler import PushScheduler
+
+        reminder = MagicMock(
+            id=10,
+            user_id=3,
+            reminder_type="sleep",
+            name="💤 睡眠提醒",
+            message="",
+        )
+        push = mock_push_cls.return_value
+        push.get_due_reminders.return_value = [{"user_id": 3, "reminder": reminder}]
+        push.send_notification = AsyncMock(return_value={"success": True})
+
+        scheduler = PushScheduler()
+        import asyncio
+        asyncio.run(scheduler._send_due_reminders(MagicMock(), push))
+
+        kwargs = push.send_notification.call_args.kwargs
+        assert kwargs["quiet_hours_policy"] == "bypass"
 
 
 class TestSendPlanEveningSummary:

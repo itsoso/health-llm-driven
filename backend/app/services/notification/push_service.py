@@ -276,6 +276,7 @@ class PushService:
         severity: str = "info",
         dedup_window_hours: int = 24,
         quiet_hours_policy: Optional[QuietHoursPolicy] = None,
+        log_delivery: bool = True,
     ) -> Dict[str, Any]:
         """
         发送推送通知
@@ -296,6 +297,8 @@ class PushService:
                                 有 rule_id 时按 (user_id, notification_type, rule_id) 去重;
                                 否则按 (user_id, notification_type, title) 去重.
                                 传 0 或负数则禁用去重。
+            log_delivery: 是否新写 NotificationLog. flush delayed push 时为 False,
+                          由原 delayed row 承接 sent/failed 状态, 避免重复展示。
 
         Returns:
             发送结果 {"success": bool, "channels": {...}}
@@ -474,16 +477,21 @@ class PushService:
         if overall_status == NotificationStatus.FAILED.value:
             # 整体 failed 时把第一个 error 放 error_message 做 quick glance
             overall_err = next((c.get("error") for c in channels_log if c.get("error")), None)
-        self._log_notification_multi(
-            user_id=user_id,
-            notification_type=notification_type,
-            title=title,
-            content=content,
-            data=data,
-            status=overall_status,
-            channels=channels_log,
-            error_message=overall_err,
-        )
+        if log_delivery:
+            self._log_notification_multi(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                content=content,
+                data=data,
+                status=overall_status,
+                channels=channels_log,
+                error_message=overall_err,
+            )
+        else:
+            results["_log_status"] = overall_status
+            results["_log_error"] = overall_err
+            results["_channels_log"] = channels_log
 
         return results
 
@@ -788,6 +796,7 @@ class PushService:
                     respect_quiet_hours=False,  # flush 时不再二次延迟
                     severity=severity,
                     dedup_window_hours=0,  # flush 跳过 dedup, 因为这些是已经决定要发的
+                    log_delivery=False,
                 )
 
                 if result.get("success"):
@@ -798,6 +807,9 @@ class PushService:
                     log.status = NotificationStatus.FAILED.value
                     log.error_message = result.get("reason", "flush 失败")
                     failed += 1
+                log.channels = result.get("_channels_log")
+                if result.get("_log_error"):
+                    log.error_message = result.get("_log_error")
                 self.db.commit()
             except Exception as e:  # noqa: BLE001
                 logger.error(

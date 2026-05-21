@@ -29,6 +29,7 @@ jest.mock('react-native-health', () => {
         BodyTemperature: 'BodyTemperature',
         Vo2Max: 'Vo2Max',
         Weight: 'Weight',
+        WaistCircumference: 'WaistCircumference',
       },
     },
     initHealthKit: jest.fn((_p: any, cb: (e: string) => void) => cb('')),
@@ -43,6 +44,8 @@ jest.mock('react-native-health', () => {
     getBodyTemperatureSamples: jest.fn((_o: any, cb: any) => cb('', [])),
     getVo2MaxSamples: jest.fn((_o: any, cb: any) => cb('', [])),
     getHeartRateSamples: jest.fn((_o: any, cb: any) => cb('', [])),
+    getWeightSamples: jest.fn((_o: any, cb: any) => cb('', [])),
+    getWaistCircumferenceSamples: jest.fn((_o: any, cb: any) => cb('', [])),
   };
   return { __esModule: true, default: mock, ...mock };
 });
@@ -167,6 +170,24 @@ describe('fetchDailyAggregates', () => {
     const rec = await fetchDailyAggregates(new Date('2026-05-20T12:00:00Z'));
     expect(rec.data_source).toBe('ringconn');
   });
+
+  it('聚合 HealthKit 体重和腰围样本供设备优先同步', async () => {
+    mockHK.getWeightSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { value: 82.4, sourceName: 'com.withings.wiScaleNG', startDate: '2026-05-20T06:30:00Z', endDate: '2026-05-20T06:30:00Z' },
+      ]),
+    );
+    mockHK.getWaistCircumferenceSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { value: 91.2, sourceName: 'com.ringconn.app', startDate: '2026-05-20T06:31:00Z', endDate: '2026-05-20T06:31:00Z' },
+      ]),
+    );
+
+    const rec = await fetchDailyAggregates(new Date('2026-05-20T12:00:00Z'));
+
+    expect(rec.weight_kg).toBeCloseTo(82.4, 1);
+    expect(rec.waist_cm).toBeCloseTo(91.2, 1);
+  });
 });
 
 describe('syncRecentDays', () => {
@@ -195,5 +216,27 @@ describe('syncRecentDays', () => {
     const result = await syncRecentDays(3);
     expect(result.totalImported).toBe(3);
     expect(result.errors).toEqual([]);
+  });
+
+  it('同步 HealthKit 体重腰围到一屏录入同源 API', async () => {
+    mockHK.getWeightSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 82.4, sourceName: 'com.withings.wiScaleNG', startDate: new Date().toISOString(), endDate: new Date().toISOString() }]),
+    );
+    mockHK.getWaistCircumferenceSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 91.2, sourceName: 'com.ringconn.app', startDate: new Date().toISOString(), endDate: new Date().toISOString() }]),
+    );
+    (api.post as jest.Mock).mockResolvedValue({ data: { imported_count: 1, source_breakdown: {}, errors: [] } });
+
+    await syncRecentDays(1);
+
+    expect(api.post).toHaveBeenCalledWith('/weight/records', expect.objectContaining({
+      weight: 82.4,
+      notes: 'HealthKit 自动同步',
+    }));
+    expect(api.post).toHaveBeenCalledWith('/waist/records', expect.objectContaining({
+      waist_cm: 91.2,
+      source: 'apple_health',
+      notes: 'HealthKit 自动同步',
+    }));
   });
 });

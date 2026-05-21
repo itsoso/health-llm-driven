@@ -200,3 +200,43 @@ class TestTelegramFallback:
 
         assert result["success"] is True
         assert result["channels"]["telegram"]["success"] is True
+
+
+class TestDelayedPushFlush:
+    async def _ok_ios(self, *args, **kwargs):
+        return {"success": True}
+
+    def test_flush_reuses_delayed_log_instead_of_creating_duplicate_sent_log(self, db, monkeypatch):
+        """flush delayed push 只能把原 delayed row 改 sent, 不能额外新增 sent row."""
+        _mk_settings(
+            db,
+            user_id=3,
+            reminder_enabled=True,
+            ios_push_enabled=True,
+            ios_device_token="apns-token",
+            wechat_enabled=False,
+        )
+        delayed = NotificationLog(
+            user_id=3,
+            notification_type=NotificationType.REMINDER.value,
+            channel="multi",
+            title="💤 睡眠提醒",
+            content="该准备睡觉了",
+            data={"reminder_id": 99, "reminder_type": "sleep"},
+            status=NotificationStatus.DELAYED.value,
+            scheduled_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+        db.add(delayed)
+        db.commit()
+        monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
+        monkeypatch.setattr(PushService, "_send_ios", self._ok_ios)
+
+        result = asyncio.run(PushService(db).flush_delayed_pushes())
+
+        assert result["flushed"] == 1
+        assert result["succeeded"] == 1
+        logs = db.query(NotificationLog).all()
+        assert len(logs) == 1
+        assert logs[0].status == NotificationStatus.SENT.value
+        assert logs[0].sent_at is not None
+        assert logs[0].channels == [{"name": "ios_apns", "status": "sent", "error": None}]
