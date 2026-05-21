@@ -25,6 +25,7 @@ import { radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
+import { buildAiShareMessage } from '../../utils/aiShareText';
 
 interface Props {
   item: UIMessage;
@@ -171,13 +172,13 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.
   // 不引 native WeChat SDK (破坏 OTA 反馈环), 复用 RN Share 已够用.
   const handleShare = async () => {
-    const text = stripMarkdownForSpeech(displayText);
-    if (!text) return;
+    const message = buildAiShareMessage(displayText);
+    if (!message) return;
     Haptics.selectionAsync();
     try {
       await sharePlainText({
         title: '健康 Agent · 建议',
-        message: `${text}\n\n— 健康 Agent`,
+        message,
       });
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
   };
