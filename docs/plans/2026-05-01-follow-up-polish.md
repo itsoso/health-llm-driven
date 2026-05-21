@@ -21,6 +21,8 @@
 
 ### M2. Specialist 详情页错误态 (Task 7 flag)
 
+**状态**: ✅ 已完成
+
 **文件**: `mobile/app/specialist/[name].tsx`
 
 **问题**: `useSpecialistScorecard` 报错时页面静默为空 (no spinner, no message). 用户以为在 loading.
@@ -34,6 +36,8 @@
 
 ### M3. 详情页 name 缺失边界 (Task 7 flag)
 
+**状态**: ✅ 已完成
+
 **文件**: `mobile/app/specialist/[name].tsx:62`
 
 **问题**: 若 URL 乱输 (deep link 错了), `useLocalSearchParams` 返 `{}`, `label = "未知"`, 页面显示标题"未知 成绩单" 无内容.
@@ -43,6 +47,8 @@
 **估时**: 5 分钟
 
 ### M4. Journal 无主题 bucket entries 4+ 不可见 (Task 5 flag)
+
+**状态**: ✅ 已完成，采用推荐方案 (a)
 
 **文件**: `mobile/app/(tabs)/journal/index.tsx`
 
@@ -58,6 +64,8 @@
 **估时**: 15 分钟 (选 a)
 
 ### M5. 死代码 `useCaseList` / `useRecentEntries` (Task 5 flag)
+
+**状态**: ✅ 已完成
 
 **文件**: `mobile/hooks/useClinicalJournal.ts`, `mobile/services/clinicalJournal.ts`
 

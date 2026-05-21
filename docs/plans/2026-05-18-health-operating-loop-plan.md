@@ -12,9 +12,9 @@
 
 - [x] Task 1: Recovery Mode Visibility
 - [x] Task 2: Plan Action Feedback Protocol
-- [ ] Task 3: Arbiter For Cross-Domain Conflicts
-- [ ] Task 4: 7/30/90 Day Review
-- [ ] Task 5: Device-First Measurement Automation
+- [x] Task 3: Arbiter For Cross-Domain Conflicts
+- [x] Task 4: 7/30/90 Day Review
+- [x] Task 5: Device-First Measurement Automation
 
 ---
 
@@ -68,6 +68,8 @@
 **Acceptance:**
 - No more “一边休跑、一边提醒运动不足”的 conflict.
 
+**Implemented:** Daily Plan suppresses training-like accepted interventions under acute-rest mode and emits `state_summary.arbitration_notes`.
+
 ## Task 4: 7/30/90 Day Review
 
 **Files:**
@@ -78,6 +80,8 @@
 **Acceptance:**
 - User sees which actions changed weight, waist, BP, sleep, HRV, or labs.
 
+**Implemented:** Backend exposes `GET /daily-plan/review`; mobile progress screen shows 7/30/90-day execution and metric movement.
+
 ## Task 5: Device-First Measurement Automation
 
 **Files:**
@@ -86,3 +90,5 @@
 
 **Acceptance:**
 - Manual input remains fallback; every measurement task has an automation path.
+
+**Implemented:** Daily Plan response includes `measurement_automation` capability map for weight, waist, BP, and CGM with HealthKit/Health Connect/vendor/manual paths.

@@ -148,6 +148,8 @@ def test_daily_operating_plan_me_returns_metabolic_actions(client, db, auth_user
     measurement = next(action for action in body["actions"] if action["domain"] == "measurement")
     assert measurement["evidence_tier"] == "clinical_guideline"
     assert measurement["confidence"] == "high"
+    assert body["measurement_automation"]["weight"]["fallback_ui"] == "manual_one_screen"
+    assert body["measurement_automation"]["waist_cm"]["automation_path"][-1]["method"] == "manual"
     assert body["verification"]["metrics"]
 
 

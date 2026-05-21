@@ -145,15 +145,14 @@ def journal_timeline(
         return s[:60]
 
     def _entry_dict(e: ClinicalJournalEntry) -> dict:
+        has_actionable = bool((e.subjective or "").strip() and (e.plan or "").strip())
         return {
             "id": e.id,
             "generated_at": e.generated_at.isoformat(),
             "created_by": e.created_by,
             "subjective_short": _short(e.subjective),
-            "has_soap": bool(
-                (e.subjective or "").strip()
-                and (e.plan or "").strip()
-            ),
+            "has_actionable": has_actionable,
+            "has_soap": has_actionable,
         }
 
     threads_out: list[dict] = []
@@ -171,14 +170,15 @@ def journal_timeline(
             })
         else:
             # 无 thread 或 thread 已删除
+            preview_group = group[:3]
             threads_out.append({
                 "thread_id": None,
                 "theme": "其他 / 周度摘要",
                 "status": None,
                 "title": None,
-                "entry_count": len(group),
+                "entry_count": len(preview_group),
                 "last_updated": group[0].generated_at.isoformat(),
-                "entries": [_entry_dict(e) for e in group],
+                "entries": [_entry_dict(e) for e in preview_group],
             })
 
     threads_out.sort(key=lambda t: t["last_updated"], reverse=True)

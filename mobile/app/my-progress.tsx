@@ -22,6 +22,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchMyProgress, type ProgressDashboard, type ProgressCard } from '../services/myProgress';
+import {
+  fetchHealthOperatingReview,
+  type HealthOperatingReview,
+  type ReviewWindowDays,
+} from '../services/healthOperatingReview';
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
@@ -54,6 +59,11 @@ export default function MyProgressScreen() {
   const { data, isLoading, isRefetching, error } = useQuery<ProgressDashboard>({
     queryKey: ['my-progress', days],
     queryFn: () => fetchMyProgress(days),
+    staleTime: 2 * 60 * 1000,
+  });
+  const { data: operatingReview } = useQuery<HealthOperatingReview>({
+    queryKey: ['daily-plan-review', days],
+    queryFn: () => fetchHealthOperatingReview(days as ReviewWindowDays),
     staleTime: 2 * 60 * 1000,
   });
 
@@ -106,6 +116,8 @@ export default function MyProgressScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {operatingReview && <OperatingReviewCard review={operatingReview} c={c} />}
 
           {noCards ? (
             <View style={[styles.emptyCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -243,6 +255,67 @@ function OutcomePill({ label, count, color, total }: { label: string; count: num
   );
 }
 
+const REVIEW_METRICS: Record<string, { label: string; unit: string; good: 'up' | 'down' }> = {
+  weight: { label: '体重', unit: 'kg', good: 'down' },
+  waist_cm: { label: '腰围', unit: 'cm', good: 'down' },
+  systolic_bp: { label: '收缩压', unit: 'mmHg', good: 'down' },
+  diastolic_bp: { label: '舒张压', unit: 'mmHg', good: 'down' },
+  sleep_score: { label: '睡眠评分', unit: '', good: 'up' },
+  hrv: { label: 'HRV', unit: 'ms', good: 'up' },
+};
+
+function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: any }) {
+  const rows = Object.entries(REVIEW_METRICS)
+    .map(([key, meta]) => ({ key, ...meta, change: review.metrics[key] }))
+    .filter(row => row.change?.status === 'present' && row.change.delta !== null);
+
+  return (
+    <View style={[styles.reviewCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.reviewHeader}>
+        <View>
+          <Text style={[styles.reviewTitle, { color: c.labelPrimary }]}>Daily Plan 复盘</Text>
+          <Text style={[styles.reviewSub, { color: c.labelTertiary }]}>
+            {review.start_date} → {review.end_date}
+          </Text>
+        </View>
+        <View style={[styles.reviewRate, { backgroundColor: c.tintBlue }]}>
+          <Text style={[styles.reviewRateText, { color: c.brand }]}>
+            {(review.execution.completion_rate * 100).toFixed(0)}%
+          </Text>
+          <Text style={[styles.reviewRateLabel, { color: c.brand }]}>完成率</Text>
+        </View>
+      </View>
+
+      <Text style={[styles.reviewLine, { color: c.labelSecondary }]}>
+        {review.execution.completed_events}/{review.execution.total_events} 个行动已完成
+        {review.completed_action_keys.length > 0 ? ` · ${review.completed_action_keys.length} 个可学习动作` : ''}
+      </Text>
+
+      {rows.length > 0 ? (
+        <View style={styles.reviewMetricGrid}>
+          {rows.slice(0, 4).map(row => {
+            const delta = row.change.delta as number;
+            const isGood = row.good === 'down' ? delta < 0 : delta > 0;
+            const signed = delta > 0 ? `+${delta}` : String(delta);
+            return (
+              <View key={row.key} style={[styles.reviewMetric, { backgroundColor: isGood ? c.tintGreen : c.fill }]}>
+                <Text style={[styles.reviewMetricLabel, { color: c.labelSecondary }]}>{row.label}</Text>
+                <Text style={[styles.reviewMetricValue, { color: isGood ? c.green : c.labelPrimary }]}>
+                  {signed}{row.unit ? ` ${row.unit}` : ''}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <Text style={[styles.reviewLine, { color: c.labelTertiary }]}>
+          这段窗口内关键指标还不足，继续记录体重、腰围、血压、睡眠和 HRV。
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function CardRow({ card, onPress, c }: { card: ProgressCard; onPress: () => void; c: any }) {
   const oc = card.outcome ? OUTCOME_COLORS[card.outcome] : null;
   return (
@@ -357,6 +430,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 13, fontWeight: '500' },
+  reviewCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
+  reviewTitle: { fontSize: 16, fontWeight: '700' },
+  reviewSub: { fontSize: 11, marginTop: 2 },
+  reviewRate: { borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  reviewRateText: { fontSize: 18, fontWeight: '800' },
+  reviewRateLabel: { fontSize: 10, fontWeight: '600' },
+  reviewLine: { fontSize: 12, lineHeight: 18 },
+  reviewMetricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  reviewMetric: { minWidth: '47%', flex: 1, borderRadius: radii.md, padding: spacing.sm },
+  reviewMetricLabel: { fontSize: 11, marginBottom: 2 },
+  reviewMetricValue: { fontSize: 15, fontWeight: '700' },
   emptyCard: {
     borderWidth: 1,
     borderRadius: radii.md,

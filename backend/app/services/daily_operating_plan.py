@@ -17,6 +17,7 @@ from app.services.personal_evidence_matrix import (
     build_personal_evidence_matrix,
     compact_personal_evidence_matrix,
 )
+from app.services.measurement_automation import get_measurement_capability_map
 from app.twin import build_twin
 
 logger = logging.getLogger(__name__)
@@ -391,6 +392,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             "waist": "daily_morning",
             "bp": "if_available_morning_evening",
         },
+        "measurement_automation": get_measurement_capability_map(),
         "doctor_escalation": {
             "needed": bool(twin.labs.blood_pressure_systolic and twin.labs.blood_pressure_systolic >= 160),
             "reason": "血压达到高风险阈值" if twin.labs.blood_pressure_systolic and twin.labs.blood_pressure_systolic >= 160 else None,

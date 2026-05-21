@@ -1,6 +1,6 @@
 import api from './api';
 
-export interface CaseSummary {
+export interface CaseDetail {
   id: number;
   theme: string;
   metric_key: string | null;
@@ -11,7 +11,7 @@ export interface CaseSummary {
   opened_at: string | null;
   last_updated_at: string | null;
   resolved_at: string | null;
-  entry_count: number;
+  entries: JournalEntry[];
 }
 
 export interface JournalEntry {
@@ -26,35 +26,8 @@ export interface JournalEntry {
   created_by: string | null;
 }
 
-export interface CaseDetail extends Omit<CaseSummary, 'entry_count'> {
-  entries: JournalEntry[];
-}
-
-export interface RecentEntry {
-  id: number;
-  case_thread_id: number | null;
-  subjective: string | null;
-  assessment_first_line: string;
-  plan_first_line: string;
-  generated_at: string | null;
-}
-
-export async function listCases(status?: string): Promise<CaseSummary[]> {
-  const { data } = await api.get<CaseSummary[]>('/clinical-journal/cases', {
-    params: status ? { status } : {},
-  });
-  return data;
-}
-
 export async function getCaseDetail(caseId: number): Promise<CaseDetail> {
   const { data } = await api.get<CaseDetail>(`/clinical-journal/cases/${caseId}`);
-  return data;
-}
-
-export async function recentEntries(days: number = 14): Promise<RecentEntry[]> {
-  const { data } = await api.get<RecentEntry[]>('/clinical-journal/entries/recent', {
-    params: { days },
-  });
   return data;
 }
 
@@ -67,7 +40,8 @@ export interface TimelineEntry {
   generated_at: string;
   created_by: string | null;
   subjective_short: string;
-  has_soap: boolean;
+  has_actionable: boolean;
+  has_soap?: boolean;
 }
 
 export interface TimelineThread {

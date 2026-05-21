@@ -89,6 +89,7 @@ export interface DailyOperatingPlan {
   movement_targets?: Record<string, unknown>;
   sleep_targets?: Record<string, unknown>;
   measurements?: Record<string, unknown>;
+  measurement_automation?: Record<string, unknown>;
   doctor_escalation?: {
     needed?: boolean;
     reason?: string | null;

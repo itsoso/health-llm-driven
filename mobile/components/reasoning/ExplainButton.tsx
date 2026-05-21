@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { Pressable, Text, StyleSheet } from 'react-native';
 import { ExplainSheet } from './ExplainSheet';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 type Props =
   | { source: 'safety'; auditId: number; ruleId: string }
@@ -14,6 +15,8 @@ type Props =
 
 export function ExplainButton(props: Props) {
   const [open, setOpen] = useState(false);
+  const { c } = useTheme();
+  const styles = createStyles(c);
   return (
     <>
       <Pressable
@@ -29,12 +32,14 @@ export function ExplainButton(props: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  btn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: '#EEF2FF',
-  },
-  text: { fontSize: 12, color: '#4F46E5', fontWeight: '500' },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    btn: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: c.tintBlue,
+    },
+    text: { fontSize: 12, color: c.brand, fontWeight: '500' },
+  });
+}

@@ -12,9 +12,10 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSpecialistScorecard } from '../../hooks/useSpecialistScorecard';
 import { specialistLabel } from '../../services/personalOutcome';
 import type { ScorecardCard } from '../../services/specialistScorecard';
@@ -63,9 +64,33 @@ export default function SpecialistScorecardScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
+  const router = useRouter();
+  const specialistName = typeof name === 'string' ? name : null;
 
-  const { data, isLoading, isRefetching, refetch } = useSpecialistScorecard(name, 30);
-  const label = specialistLabel((name as string) || null);
+  if (!specialistName) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <Stack.Screen options={{ title: '专家成绩单', headerBackTitle: '返回' }} />
+        <View style={styles.center}>
+          <Text style={styles.errorTitle}>specialist 未知</Text>
+          <Text style={styles.errorHint}>这个链接缺少专家名称，不能加载成绩单。</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
+            <Text style={styles.retryText}>返回</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return <SpecialistScorecardContent name={specialistName} />;
+}
+
+function SpecialistScorecardContent({ name }: { name: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+
+  const { data, isLoading, isError, error, isRefetching, refetch } = useSpecialistScorecard(name, 30);
+  const label = specialistLabel(name);
 
   // Task 9: 埋点 — 每次 mount 发 specialist_scorecard_entered, 看板算进入率
   useEffect(() => {
@@ -92,6 +117,17 @@ export default function SpecialistScorecardScreen() {
         {isLoading && (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={c.brand} />
+          </View>
+        )}
+
+        {!isLoading && isError && (
+          <View style={styles.center}>
+            <Text style={styles.errorTitle}>
+              加载失败: {(error as Error)?.message ?? '网络问题'}
+            </Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()}>
+              <Text style={styles.retryText}>重试</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -137,6 +173,30 @@ function createStyles(c: ColorPalette) {
     safe: { flex: 1, backgroundColor: c.bgPrimary },
     scroll: { padding: spacing.md, paddingBottom: 80 },
     center: { paddingVertical: 40, alignItems: 'center' },
+    errorTitle: {
+      fontSize: typography.bodyMedium.fontSize,
+      fontWeight: '600' as const,
+      color: c.labelPrimary,
+      marginBottom: spacing.xs,
+    },
+    errorHint: {
+      fontSize: typography.bodySmall.fontSize,
+      color: c.labelSecondary,
+      textAlign: 'center',
+      marginBottom: spacing.md,
+    },
+    retryBtn: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.sm,
+      backgroundColor: c.brand,
+      marginTop: spacing.sm,
+    },
+    retryText: {
+      color: '#fff',
+      fontSize: typography.bodySmall.fontSize,
+      fontWeight: '600' as const,
+    },
     summary: {
       backgroundColor: c.bgCard,
       borderRadius: radii.md,

@@ -59,6 +59,7 @@ def test_journal_timeline_groups_by_thread_plus_others(client, db, auth_user_and
     no_thread = [t for t in threads if t["thread_id"] is None]
     assert len(no_thread) == 1
     assert len(no_thread[0]["entries"]) == 1
+    assert "has_actionable" in no_thread[0]["entries"][0]
 
 
 def test_journal_timeline_subjective_short_truncated_60_chars(client, db, auth_user_and_headers):
@@ -109,3 +110,30 @@ def test_journal_timeline_days_filter(client, db, auth_user_and_headers):
     subjects = [e["subjective_short"] for e in flat]
     assert any("近期的" in s for s in subjects)
     assert not any("太老了" in s for s in subjects)
+
+
+def test_journal_timeline_limits_unthreaded_preview_to_three(client, db, auth_user_and_headers):
+    """无主题 bucket 不可点击, 只返回 3 条 preview, 避免 '+N 更多' 误导."""
+    _, headers = auth_user_and_headers
+    user = db.query(User).first()
+    now = datetime.now(timezone.utc)
+
+    for idx in range(5):
+        db.add(ClinicalJournalEntry(
+            user_id=user.id,
+            case_thread_id=None,
+            generated_at=now - timedelta(hours=idx),
+            created_by="briefing_task",
+            subjective=f"无主题 {idx}",
+            objective="auto",
+            assessment="auto",
+            plan="action",
+        ))
+    db.commit()
+
+    r = client.get("/api/v1/clinical-journal/timeline?days=30", headers=headers)
+
+    assert r.status_code == 200
+    no_thread = next(t for t in r.json()["threads"] if t["thread_id"] is None)
+    assert no_thread["entry_count"] == 3
+    assert [e["subjective_short"] for e in no_thread["entries"]] == ["无主题 0", "无主题 1", "无主题 2"]
