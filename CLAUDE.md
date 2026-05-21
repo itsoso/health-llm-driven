@@ -349,6 +349,17 @@ Backend supports multiple LLM providers via `app/config.py`:
 - `OPENCLAW_MODEL=openclaw:main`（冒号自动转斜杠）
 - LLM 失败自动回退到 OpenClaw provider
 
+**Provider 类型与切换**：模型 registry 在 `backend/app/services/llm/model_registry.py`。每个 `ModelEntry.provider` 决定走哪条客户端路径：
+- `openai-proxy` — `OPENAI_API_KEY` + `OPENAI_BASE_URL` (代理 CDN)
+- `tokenplan` — 阿里云 TokenPlan 套餐 (qwen/deepseek/glm/minimax)
+- `moonshot` / `zhipu` — 官方直连 (独立 key, 默认未配)
+- `openclaw` — 内部 OpenClaw 网关
+- `langbridge-proxy` — **走 browser-llm-orchestrator 的 `/api/llm/*` 代理**, 透明用 Claude / GPT / Gemini (含 vision)。需 `LANGBRIDGE_GATEWAY_BASE_URL` + `LANGBRIDGE_GATEWAY_API_KEY` 才会在 admin 下拉里出现。当前暴露 `claude-opus-4.7` / `gpt-5.5` / `gemini-3.1-pro` 三条 entry。
+
+切换粒度：admin 全局 (`set_active_model_id`) / per-user (`user_profile.llm_model_id`)。`create_provider_for_user(user_id, db)` 每次新建,不缓存,用户切换立刻生效。
+
+**Gateway 上线烟测**:配好两个 env 后跑 `python3 backend/scripts/smoke_langbridge_gateway.py` —— 仅靠 stdlib,串 GET `/health` + GET `/models` + POST 非流式 + POST 流式 + POST vision (合成 8×8 PNG),任一失败 exit 非零。模型不支持图片时加 `--skip-vision`,远端代理 buffer 流式时加 `--skip-stream`。
+
 **LLM Harness 设计与方法论**：见 [`docs/HARNESS.md`](docs/HARNESS.md) — source-aware fast path / verification before write / tool schema 加厚 / memory 4-stage / provider failover / streaming TTS / Twin → prompt blob。新加 specialist / source / tool / memory stage 时**必须**同 PR 更新 HARNESS.md。
 
 **Skills: two locations — know which one to edit**

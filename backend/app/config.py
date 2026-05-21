@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     zhipu_api_key: Optional[str] = None
     zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
 
+    # LangBridge Gateway (browser-llm-orchestrator 暴露的 OpenAI 兼容代理)
+    # 让 health 透明使用 Claude/GPT/Gemini 等商用模型, 含 vision 能力.
+    # base_url 形如 https://base.executor.life/api/llm , 不带 /chat/completions.
+    langbridge_gateway_base_url: Optional[str] = None
+    langbridge_gateway_api_key: Optional[str] = None
+
     # Garmin 凭据 (用于后台自动同步)
     garmin_email: Optional[str] = None
     garmin_password: Optional[str] = None

@@ -116,6 +116,37 @@ MODELS: List[ModelEntry] = [
         note="内部网关, 多模型聚合",
         requires_env=("OPENCLAW_API_KEY",),
     ),
+
+    # ──── 商用模型 (经 browser-llm-orchestrator LangBridge gateway) ────
+    # 透明走 https://base.executor.life/api/llm , OpenAI 协议兼容, 支持 vision.
+    # 切换粒度 = user_profile.llm_model_id, admin 也可用 set_active_model_id 全局切.
+    ModelEntry(
+        id="claude-opus-4.7",
+        label="Claude Opus 4.7 · 商用",
+        provider="langbridge-proxy",
+        model="commercial/Claude-Opus-4.7",
+        speed_tier="reasoning",
+        note="多模态 / 推理强 / 经 LangBridge",
+        requires_env=("LANGBRIDGE_GATEWAY_API_KEY",),
+    ),
+    ModelEntry(
+        id="gpt-5.5",
+        label="GPT-5.5 · 商用",
+        provider="langbridge-proxy",
+        model="commercial/GPT-5.5",
+        speed_tier="balanced",
+        note="多模态 / 工具调用 / 经 LangBridge",
+        requires_env=("LANGBRIDGE_GATEWAY_API_KEY",),
+    ),
+    ModelEntry(
+        id="gemini-3.1-pro",
+        label="Gemini 3.1 Pro · 商用",
+        provider="langbridge-proxy",
+        model="commercial/Gemini-3.1-Pro-Preview",
+        speed_tier="reasoning",
+        note="多模态 / 长上下文 / 经 LangBridge",
+        requires_env=("LANGBRIDGE_GATEWAY_API_KEY",),
+    ),
 ]
 
 
@@ -147,6 +178,7 @@ def _env_present(env_name: str, settings) -> bool:
         "OPENCLAW_API_KEY": "openclaw_api_key",
         "MOONSHOT_API_KEY": "moonshot_api_key",
         "ZHIPU_API_KEY": "zhipu_api_key",
+        "LANGBRIDGE_GATEWAY_API_KEY": "langbridge_gateway_api_key",
     }
     field = mapping.get(env_name)
     if not field:

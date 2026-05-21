@@ -51,6 +51,54 @@ class TestUnknownProvider:
             create_llm_provider("nonexistent")
 
 
+class TestLangBridgeProxy:
+    """langbridge-proxy provider 把商用模型代理到 browser-llm-orchestrator gateway."""
+
+    def test_entry_builds_openai_provider_pointing_at_gateway(self):
+        from app.services.llm.factory import _create_from_entry
+        from app.services.llm.model_registry import get_model
+
+        entry = get_model("claude-opus-4.7")
+        assert entry is not None, "claude-opus-4.7 entry 应注册"
+        assert entry.provider == "langbridge-proxy"
+        assert entry.model == "commercial/Claude-Opus-4.7"
+
+        with patch("app.services.llm.factory.settings") as mock_settings:
+            mock_settings.langbridge_gateway_api_key = "test-token"
+            mock_settings.langbridge_gateway_base_url = "https://base.executor.life/api/llm"
+            provider = _create_from_entry(entry)
+            # 复用 OpenAIProvider, 协议层等价
+            assert provider.provider_name == "openai"
+            assert provider.base_url == "https://base.executor.life/api/llm"
+            assert provider.api_key == "test-token"
+            assert provider.model == "commercial/Claude-Opus-4.7"
+
+    def test_missing_api_key_raises(self):
+        from app.services.llm.factory import _create_from_entry
+        from app.services.llm.model_registry import get_model
+
+        entry = get_model("gpt-5.5")
+        assert entry is not None
+        with patch("app.services.llm.factory.settings") as mock_settings:
+            mock_settings.langbridge_gateway_api_key = None
+            mock_settings.langbridge_gateway_base_url = "https://x"
+            with pytest.raises(ValueError, match="LANGBRIDGE_GATEWAY_API_KEY"):
+                _create_from_entry(entry)
+
+    def test_three_commercial_entries_registered(self):
+        from app.services.llm.model_registry import get_model
+        for mid, expected in [
+            ("claude-opus-4.7", "commercial/Claude-Opus-4.7"),
+            ("gpt-5.5", "commercial/GPT-5.5"),
+            ("gemini-3.1-pro", "commercial/Gemini-3.1-Pro-Preview"),
+        ]:
+            e = get_model(mid)
+            assert e is not None, f"{mid} 未注册"
+            assert e.provider == "langbridge-proxy"
+            assert e.model == expected
+            assert "LANGBRIDGE_GATEWAY_API_KEY" in e.requires_env
+
+
 class TestProviderSingleton:
     def test_singleton_caching(self):
         """get_llm_provider 应返回同一实例。"""

@@ -89,6 +89,16 @@ def _create_from_entry(entry) -> LLMProvider:
         )
     if entry.provider == "openclaw":
         return _create_openclaw_provider()
+    if entry.provider == "langbridge-proxy":
+        if not settings.langbridge_gateway_api_key:
+            raise ValueError("LANGBRIDGE_GATEWAY_API_KEY 未配置, 无法用商用模型 gateway")
+        if not settings.langbridge_gateway_base_url:
+            raise ValueError("LANGBRIDGE_GATEWAY_BASE_URL 未配置")
+        return OpenAIProvider(
+            api_key=settings.langbridge_gateway_api_key,
+            base_url=settings.langbridge_gateway_base_url,
+            model=entry.model,
+        )
     raise ValueError(f"unknown entry.provider: {entry.provider}")
 
 
