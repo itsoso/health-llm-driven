@@ -134,7 +134,9 @@ function formatSupplementTable(content: string): string {
     ...rows.map(row => `| ${row.map(escapeTableCell).join(' | ')} |`),
   ].join('\n');
 
-  return `${content.slice(0, tableStart)}${table}${content.slice(tableEnd)}`;
+  const before = content.slice(0, tableStart).trimEnd();
+  const after = content.slice(tableEnd).trimStart();
+  return [before, table, after].filter(Boolean).join('\n\n');
 }
 
 function structureFlattenedMedicalAdvice(content: string): string {
