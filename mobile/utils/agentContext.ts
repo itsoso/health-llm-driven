@@ -1,5 +1,6 @@
 import type { Router } from 'expo-router';
 
+import type { ActionCard } from '@/services/actionCards';
 import type { DailyDietSummary } from '@/services/diet';
 import type { DietPlan } from '@/services/dietPlan';
 import type { MedicalExam } from '@/services/medicalExams';
@@ -354,6 +355,79 @@ export function createMovementPlanAgentContext(plan: MovementPlan): AgentContext
       actual_value: card.actual_value,
     })),
     expected_agent_output: ['本周训练方案复盘', '今日训练/恢复安排', '不同运动类型替代方案', '需要用户反馈的问题'],
+  };
+}
+
+export function createActionCardAgentContext(card: ActionCard): AgentContextPayload {
+  return {
+    from: `action-card/${card.id}`,
+    feedback_intent: 'action_card_adjustment',
+    card: {
+      id: card.id,
+      title: card.title,
+      content: card.content ? card.content.slice(0, 1800) : null,
+      card_type: card.card_type,
+      status: card.status,
+      priority: card.priority,
+      severity: card.severity ?? null,
+      source_type: card.source_type ?? null,
+      source_id: card.source_id ?? null,
+      metric_key: card.metric_key ?? null,
+      baseline_value: card.baseline_value ?? null,
+      target_value: card.target_value ?? null,
+      actual_value: card.actual_value ?? null,
+      verification_days: card.verification_days ?? null,
+      check_back_date: card.check_back_date ?? null,
+      evidence_level: card.evidence_level ?? null,
+      user_decision: card.user_decision ?? null,
+      outcome: card.outcome ?? null,
+      effect_size: card.effect_size ?? null,
+    },
+    checklist: (card.checklist ?? []).slice(0, 12),
+    latest_assessment: card.latest_assessment ? {
+      score: card.latest_assessment.score ?? null,
+      summary: card.latest_assessment.summary ?? null,
+      evidence: card.latest_assessment.evidence ?? [],
+      adjustments: card.latest_assessment.adjustments ?? [],
+    } : null,
+    expected_agent_output: ['判断建议是否仍适合', '调整执行方案', '复盘指标和体感反馈', '下一步行动'],
+  };
+}
+
+export function createBodyMetricsAgentContext(args: {
+  date: string;
+  latestWeightKg?: number | null;
+  latestWeightDate?: string | null;
+  latestWaistCm?: number | null;
+  latestWaistDate?: string | null;
+  weightStats?: Record<string, any> | null;
+  bloodPressureStats?: Record<string, any> | null;
+  draft?: {
+    weightKg?: number | null;
+    waistCm?: number | null;
+    notes?: string | null;
+  } | null;
+}): AgentContextPayload {
+  return {
+    from: `body-metrics/${args.date}`,
+    feedback_intent: 'body_metrics_review',
+    date: args.date,
+    latest: {
+      weight_kg: args.latestWeightKg ?? null,
+      weight_date: args.latestWeightDate ?? null,
+      waist_cm: args.latestWaistCm ?? null,
+      waist_date: args.latestWaistDate ?? null,
+    },
+    stats: {
+      weight: args.weightStats ?? null,
+      blood_pressure: args.bloodPressureStats ?? null,
+    },
+    draft_record: args.draft ? {
+      weight_kg: args.draft.weightKg ?? null,
+      waist_cm: args.draft.waistCm ?? null,
+      notes: args.draft.notes ?? null,
+    } : null,
+    expected_agent_output: ['体重/腰围趋势复盘', '血压风险和生活方式建议', '今天饮食运动调整', '需要继续记录的数据'],
   };
 }
 

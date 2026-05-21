@@ -12,7 +12,12 @@ import { useLatestGarmin } from '../../hooks/useDashboardData';
 import { recordWater, deleteWater } from '../../services/records';
 import { filterMedicationRecordItems } from '../../services/medicationFilters';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
-import { createHydrationAgentContext, createSupplementAgentContext, pushChatWithContext } from '../../utils/agentContext';
+import {
+  createBodyMetricsAgentContext,
+  createHydrationAgentContext,
+  createSupplementAgentContext,
+  pushChatWithContext,
+} from '../../utils/agentContext';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
 import FitnessSnapshotCard from '../../components/dashboard/FitnessSnapshotCard';
@@ -22,6 +27,7 @@ import StrengthCard from '../../components/dashboard/StrengthCard';
 import SymptomCard from '../../components/dashboard/SymptomCard';
 import WorkoutWeekCard from '../../components/dashboard/WorkoutWeekCard';
 import HealthCard from '../../components/design-system/HealthCard';
+import AgentFeedbackLink from '../../components/agent/AgentFeedbackLink';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -239,6 +245,22 @@ export default function RecordScreen() {
               {!weightStats?.current_weight && !bpStats?.average_systolic && (
                 <Text style={txt.empty}>暂无身体数据</Text>
               )}
+              <AgentFeedbackLink
+                label="跟 Agent 看身体和血压趋势"
+                accessibilityLabel="跟 Agent 看身体和血压趋势"
+                prompt="请基于我的体重、腰围和血压记录, 复盘近期趋势和风险, 并给出今天饮食、饮水、运动和睡眠上的调整建议。"
+                context={createBodyMetricsAgentContext({
+                  date: today,
+                  latestWeightKg: weightStats?.current_weight ?? null,
+                  latestWeightDate: weightStats?.latest_date ?? null,
+                  latestWaistCm: weightStats?.current_waist ?? null,
+                  latestWaistDate: weightStats?.latest_waist_date ?? null,
+                  weightStats,
+                  bloodPressureStats: bpStats,
+                })}
+                badge="身体数据和血压"
+                style={styles.bodyAgentLink}
+              />
               {/* Quick record */}
               <View style={styles.quickInputRow}>
                 <TextInput style={styles.quickInput} placeholder="体重 kg" placeholderTextColor={c.labelTertiary}
@@ -453,6 +475,7 @@ function createStyles(c: ColorPalette) {
   // Body grid
   bodyGrid: { flexDirection: 'row', gap: spacing.md, justifyContent: 'center' },
   bodyCell: { alignItems: 'center', flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md, padding: spacing.md },
+  bodyAgentLink: { marginTop: spacing.md },
 
   // Medication
   medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

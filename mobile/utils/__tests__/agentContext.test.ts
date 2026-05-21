@@ -1,6 +1,8 @@
 import {
   AGENT_CONTEXT_MAX_CHARS,
   buildChatContextRoute,
+  createActionCardAgentContext,
+  createBodyMetricsAgentContext,
   createDietAgentContext,
   createDietPlanAgentContext,
   createHydrationAgentContext,
@@ -278,6 +280,75 @@ describe('agentContext', () => {
       from: 'movement-plan/current',
       feedback_intent: 'movement_plan_follow_up',
       training_status: { status: 'overload', status_zh: '过载', acwr: 1.6 },
+    });
+  });
+
+  it('creates action card feedback context with recommendation lifecycle fields', () => {
+    const context = createActionCardAgentContext({
+      id: 88,
+      title: '连续 7 天晚饭后散步 20 分钟',
+      content: '目标是降低餐后血糖波动。',
+      card_type: 'plan',
+      status: 'active',
+      priority: 3,
+      created_at: '2026-05-21T08:00:00Z',
+      checklist: [{ item: '晚饭后散步', done: false }],
+      metric_key: 'blood_glucose',
+      baseline_value: '7.8 mmol/L',
+      target_value: '< 7.0 mmol/L',
+      actual_value: null,
+      verification_days: 7,
+      latest_assessment: { score: 6, summary: '执行还不足', evidence: ['只有 2 天记录'] },
+      user_decision: 'accepted',
+      outcome: null,
+    } as any);
+
+    expect(context).toMatchObject({
+      from: 'action-card/88',
+      feedback_intent: 'action_card_adjustment',
+      card: {
+        id: 88,
+        title: '连续 7 天晚饭后散步 20 分钟',
+        card_type: 'plan',
+        status: 'active',
+        metric_key: 'blood_glucose',
+        baseline_value: '7.8 mmol/L',
+        target_value: '< 7.0 mmol/L',
+      },
+      checklist: [{ item: '晚饭后散步', done: false }],
+      latest_assessment: { score: 6, summary: '执行还不足', evidence: ['只有 2 天记录'] },
+      expected_agent_output: ['判断建议是否仍适合', '调整执行方案', '复盘指标和体感反馈', '下一步行动'],
+    });
+  });
+
+  it('creates body metrics feedback context for weight waist and blood pressure', () => {
+    const context = createBodyMetricsAgentContext({
+      date: '2026-05-21',
+      latestWeightKg: 78.2,
+      latestWeightDate: '2026-05-20',
+      latestWaistCm: 89.5,
+      latestWaistDate: '2026-05-20',
+      weightStats: { current_weight: 78.2, weight_change_7d: -0.6 },
+      bloodPressureStats: { average_systolic: 126, average_diastolic: 82 },
+      draft: { weightKg: 78.0, waistCm: null, notes: '晨起空腹' },
+    });
+
+    expect(context).toEqual({
+      from: 'body-metrics/2026-05-21',
+      feedback_intent: 'body_metrics_review',
+      date: '2026-05-21',
+      latest: {
+        weight_kg: 78.2,
+        weight_date: '2026-05-20',
+        waist_cm: 89.5,
+        waist_date: '2026-05-20',
+      },
+      stats: {
+        weight: { current_weight: 78.2, weight_change_7d: -0.6 },
+        blood_pressure: { average_systolic: 126, average_diastolic: 82 },
+      },
+      draft_record: { weight_kg: 78.0, waist_cm: null, notes: '晨起空腹' },
+      expected_agent_output: ['体重/腰围趋势复盘', '血压风险和生活方式建议', '今天饮食运动调整', '需要继续记录的数据'],
     });
   });
 });

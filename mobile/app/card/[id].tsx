@@ -41,6 +41,8 @@ import { spacing, radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import MarkdownText from '@/components/shared/MarkdownText';
 import { EvidenceRefsRow } from '@/components/knowledge';
+import AgentFeedbackLink from '@/components/agent/AgentFeedbackLink';
+import { createActionCardAgentContext } from '@/utils/agentContext';
 
 const SEVERITY_CONF: Record<string, { bg: string; text: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   critical: { bg: '#FEE2E2', text: '#991B1B', label: '紧急', icon: 'alert-circle' },
@@ -164,6 +166,11 @@ export default function ActionCardDetailScreen() {
   const isClosed = !!card.outcome || !!card.graded_at;
   const hasMetric = !!card.metric_key && (card.baseline_value || card.target_value || card.actual_value);
   const hasChecklist = Array.isArray(card.checklist) && card.checklist.length > 0;
+  const agentActionLabel = isClosed
+    ? '跟 Agent 复盘这个建议'
+    : alreadyDecided
+      ? '跟 Agent 调整执行方案'
+      : '跟 Agent 讨论这个建议';
 
   return (
     <>
@@ -209,6 +216,14 @@ export default function ActionCardDetailScreen() {
             )}
             <EvidenceRefsRow refs={card.evidence_refs} />
           </View>
+
+          <AgentFeedbackLink
+            label={agentActionLabel}
+            accessibilityLabel={agentActionLabel}
+            prompt="请基于这张行动卡, 判断这个建议现在是否仍适合我, 如果我没做到请帮我调整执行方案；如果已经执行, 请帮我复盘指标和体感反馈, 并给出下一步行动。"
+            context={createActionCardAgentContext(card)}
+            badge={`行动卡 · ${card.title}`}
+          />
 
           {/* 正文 — markdown 渲染 (用户报多页 markdown 显示原文) */}
           {card.content && (

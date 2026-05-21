@@ -19,11 +19,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateRecordMutation, queryKeys } from '../applib/queryKeys';
 import { radii, spacing } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import {
   getLatestBodyMeasurements,
   parseOptionalMeasurement,
   saveBodyMeasurements,
 } from '../services/bodyMeasurements';
+import { createBodyMetricsAgentContext } from '../utils/agentContext';
 
 function today(): string {
   const d = new Date();
@@ -51,6 +53,10 @@ export default function BodyMeasurementsScreen() {
   const intro = params.focus === 'morning'
     ? '同一时间测量更利于看趋势。'
     : '体重和腰围一起看，比 BMI 更接近代谢风险。';
+  const draftWeightKg = parseOptionalMeasurement(weightInput);
+  const draftWaistCm = parseOptionalMeasurement(waistInput);
+  const validDraftWeightKg = Number.isNaN(draftWeightKg) ? null : draftWeightKg;
+  const validDraftWaistCm = Number.isNaN(draftWaistCm) ? null : draftWaistCm;
 
   const onSave = async () => {
     const weightKg = parseOptionalMeasurement(weightInput);
@@ -133,6 +139,25 @@ export default function BodyMeasurementsScreen() {
               color={c.orange}
             />
           </View>
+
+          <AgentFeedbackLink
+            label="跟 Agent 看体重腰围趋势"
+            accessibilityLabel="跟 Agent 看体重腰围趋势"
+            prompt="请基于我的体重和腰围记录, 复盘趋势和代谢风险, 结合今天饮食和运动给出调整建议。请说明我接下来还应该记录哪些数据。"
+            context={createBodyMetricsAgentContext({
+              date: today(),
+              latestWeightKg: latest?.weight?.weight ?? null,
+              latestWeightDate: latest?.weight?.record_date ?? null,
+              latestWaistCm: latest?.waist?.waist_cm ?? null,
+              latestWaistDate: latest?.waist?.record_date ?? null,
+              draft: {
+                weightKg: validDraftWeightKg,
+                waistCm: validDraftWaistCm,
+                notes: notes.trim() || null,
+              },
+            })}
+            badge="体重和腰围"
+          />
 
           <View style={styles.formCard}>
             <Field
