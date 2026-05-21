@@ -12,6 +12,9 @@ import re
 from typing import Any, Iterable
 
 
+SUPPLEMENT_EVIDENCE_CATALOG_VERSION = "supplement_evidence_mvp_v1"
+
+
 @dataclass(frozen=True)
 class SupplementEvidenceProfile:
     key: str
@@ -31,6 +34,19 @@ class SupplementEvidenceProfile:
 
 
 @dataclass(frozen=True)
+class EvidenceSourceProfile:
+    source_id: str
+    title: str
+    source_type: str
+    authority_level: str
+    evidence_rank: int
+    url: str
+    license_scope: str = "public_reference"
+    review_status: str = "reviewed"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class SupplementSafetyContext:
     medications: tuple[str, ...] = ()
     chronic_conditions: tuple[str, ...] = ()
@@ -47,6 +63,127 @@ class SupplementSafetyContext:
             allergies=tuple(_as_text_list(getattr(profile, "allergies", None))),
             labs={},
         )
+
+
+SUPPLEMENT_EVIDENCE_SOURCES: dict[str, EvidenceSourceProfile] = {
+    "nih_ods:vitamin-d": EvidenceSourceProfile(
+        source_id="nih_ods:vitamin-d",
+        title="NIH Office of Dietary Supplements: Vitamin D Fact Sheet for Health Professionals",
+        source_type="government_fact_sheet",
+        authority_level="high",
+        evidence_rank=1,
+        url="https://ods.od.nih.gov/factsheets/VitaminD-HealthProfessional/",
+        notes="Used for vitamin D status, dosing boundaries, toxicity, and medication interactions.",
+    ),
+    "guideline:chinese-dris-2023": EvidenceSourceProfile(
+        source_id="guideline:chinese-dris-2023",
+        title="中国居民膳食营养素参考摄入量（2023版）",
+        source_type="national_reference_intake",
+        authority_level="high",
+        evidence_rank=1,
+        url="https://www.cnsoc.org/drpostand/",
+        notes="Used for China-context intake ranges and tolerable upper intake boundaries.",
+    ),
+    "nih_ods:magnesium": EvidenceSourceProfile(
+        source_id="nih_ods:magnesium",
+        title="NIH Office of Dietary Supplements: Magnesium Fact Sheet for Health Professionals",
+        source_type="government_fact_sheet",
+        authority_level="high",
+        evidence_rank=1,
+        url="https://ods.od.nih.gov/factsheets/Magnesium-HealthProfessional/",
+        notes="Used for magnesium intake limits, deficiency context, renal cautions, and interactions.",
+    ),
+    "nih_ods:omega-3": EvidenceSourceProfile(
+        source_id="nih_ods:omega-3",
+        title="NIH Office of Dietary Supplements: Omega-3 Fatty Acids Fact Sheet for Health Professionals",
+        source_type="government_fact_sheet",
+        authority_level="high",
+        evidence_rank=1,
+        url="https://ods.od.nih.gov/factsheets/Omega3FattyAcids-HealthProfessional/",
+        notes="Used for EPA/DHA dosing context, triglyceride evidence, and bleeding-risk cautions.",
+    ),
+    "nih_ods:exercise-performance": EvidenceSourceProfile(
+        source_id="nih_ods:exercise-performance",
+        title="NIH Office of Dietary Supplements: Dietary Supplements for Exercise and Athletic Performance",
+        source_type="government_fact_sheet",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://ods.od.nih.gov/factsheets/ExerciseAndAthleticPerformance-HealthProfessional/",
+        notes="Used for exercise-performance supplement evidence and safety boundaries.",
+    ),
+    "issn:creatine-position-stand": EvidenceSourceProfile(
+        source_id="issn:creatine-position-stand",
+        title="International Society of Sports Nutrition Position Stand: Creatine Supplementation",
+        source_type="sports_nutrition_position_stand",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://jissn.biomedcentral.com/articles/10.1186/s12970-017-0173-z",
+        notes="Used for creatine monohydrate efficacy, dosing, and safety framing.",
+    ),
+    "guideline:acsm-sports-nutrition": EvidenceSourceProfile(
+        source_id="guideline:acsm-sports-nutrition",
+        title="ACSM/AND/DC Joint Position Statement: Nutrition and Athletic Performance",
+        source_type="sports_nutrition_position_statement",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://pubmed.ncbi.nlm.nih.gov/26891166/",
+        notes="Used for protein, recovery, and sports-nutrition context.",
+    ),
+    "issn:protein-exercise": EvidenceSourceProfile(
+        source_id="issn:protein-exercise",
+        title="International Society of Sports Nutrition Position Stand: Protein and Exercise",
+        source_type="sports_nutrition_position_stand",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://jissn.biomedcentral.com/articles/10.1186/s12970-017-0177-8",
+        notes="Used for protein supplementation, resistance training, and recovery context.",
+    ),
+    "nccih:melatonin": EvidenceSourceProfile(
+        source_id="nccih:melatonin",
+        title="NCCIH: Melatonin, What You Need To Know",
+        source_type="government_health_topic",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://www.nccih.nih.gov/health/melatonin-what-you-need-to-know",
+        notes="Used for melatonin benefit boundaries, safety cautions, and short-term use framing.",
+    ),
+    "aasm:sleep-guidance": EvidenceSourceProfile(
+        source_id="aasm:sleep-guidance",
+        title="American Academy of Sleep Medicine Practice Guidelines",
+        source_type="clinical_practice_guideline_index",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://aasm.org/clinical-resources/practice-standards/practice-guidelines/",
+        notes="Used for sleep-medicine guideline alignment; specific claims should resolve to topic guidelines later.",
+    ),
+    "nih_ods:iron": EvidenceSourceProfile(
+        source_id="nih_ods:iron",
+        title="NIH Office of Dietary Supplements: Iron Fact Sheet for Health Professionals",
+        source_type="government_fact_sheet",
+        authority_level="high",
+        evidence_rank=1,
+        url="https://ods.od.nih.gov/factsheets/Iron-HealthProfessional/",
+        notes="Used for iron-deficiency testing, supplementation boundaries, and overload cautions.",
+    ),
+    "nih_ods:vitamin-k": EvidenceSourceProfile(
+        source_id="nih_ods:vitamin-k",
+        title="NIH Office of Dietary Supplements: Vitamin K Fact Sheet for Health Professionals",
+        source_type="government_fact_sheet",
+        authority_level="high",
+        evidence_rank=1,
+        url="https://ods.od.nih.gov/factsheets/VitaminK/",
+        notes="Used for vitamin K forms, bone-health context, and anticoagulant interactions.",
+    ),
+    "nih_ods:b-vitamins": EvidenceSourceProfile(
+        source_id="nih_ods:b-vitamins",
+        title="NIH Office of Dietary Supplements: Vitamin B Fact Sheets",
+        source_type="government_fact_sheet_collection",
+        authority_level="high",
+        evidence_rank=2,
+        url="https://ods.od.nih.gov/factsheets/list-all/",
+        notes="B-complex advice should resolve to nutrient-specific B6, B12, folate, and related pages in the compiler.",
+    ),
+}
 
 
 SUPPLEMENT_EVIDENCE_CATALOG: dict[str, SupplementEvidenceProfile] = {
@@ -195,7 +332,7 @@ def enrich_supplement_recommendations(
 
     context = context or SupplementSafetyContext()
     summary = {
-        "catalog_version": "supplement_evidence_mvp_v1",
+        "catalog_version": SUPPLEMENT_EVIDENCE_CATALOG_VERSION,
         "total": len(recommendations),
         "matched": 0,
         "blocked": 0,
@@ -232,6 +369,55 @@ def enrich_supplement_recommendations(
     return summary
 
 
+def list_supplement_evidence_catalog(include_sources: bool = True) -> list[dict[str, Any]]:
+    """Return reviewed supplement evidence profiles for API/runtime inspection."""
+
+    items: list[dict[str, Any]] = []
+    for profile in sorted(SUPPLEMENT_EVIDENCE_CATALOG.values(), key=lambda item: item.key):
+        payload = _profile_payload(profile)
+        if include_sources:
+            payload["source_details"] = _source_details(profile.sources)
+            unresolved = [source_id for source_id in profile.sources if source_id not in SUPPLEMENT_EVIDENCE_SOURCES]
+            if unresolved:
+                payload["unresolved_sources"] = unresolved
+        items.append(payload)
+    return items
+
+
+def list_supplement_evidence_sources() -> list[dict[str, Any]]:
+    """Return source metadata only; no raw source text is stored in this registry."""
+
+    return [
+        _source_payload(source)
+        for source in sorted(
+            SUPPLEMENT_EVIDENCE_SOURCES.values(),
+            key=lambda item: (item.evidence_rank, item.source_id),
+        )
+    ]
+
+
+def get_supplement_evidence_profile(name_or_key: str) -> dict[str, Any] | None:
+    key = _resolve_profile_key(name_or_key)
+    if not key:
+        return None
+    profile = SUPPLEMENT_EVIDENCE_CATALOG[key]
+    payload = _profile_payload(profile)
+    payload["source_details"] = _source_details(profile.sources)
+    unresolved = [source_id for source_id in profile.sources if source_id not in SUPPLEMENT_EVIDENCE_SOURCES]
+    if unresolved:
+        payload["unresolved_sources"] = unresolved
+    return payload
+
+
+def get_unresolved_supplement_source_ids() -> list[str]:
+    referenced = {
+        source_id
+        for profile in SUPPLEMENT_EVIDENCE_CATALOG.values()
+        for source_id in profile.sources
+    }
+    return sorted(referenced - set(SUPPLEMENT_EVIDENCE_SOURCES))
+
+
 def evidence_warnings_to_precautions(summary: dict[str, Any], limit: int = 4) -> list[str]:
     """Render safety warnings into short user-facing precaution lines."""
 
@@ -247,13 +433,32 @@ def evidence_warnings_to_precautions(summary: dict[str, Any], limit: int = 4) ->
 
 
 def resolve_supplement_key(name: str) -> str | None:
+    return _resolve_profile_key(name)
+
+
+def _resolve_profile_key(name: str) -> str | None:
     normalized = _normalize_text(name)
     if not normalized:
         return None
     for key, profile in SUPPLEMENT_EVIDENCE_CATALOG.items():
+        if normalized in {_normalize_text(key), _normalize_text(profile.display_name)}:
+            return key
+    for key, profile in SUPPLEMENT_EVIDENCE_CATALOG.items():
         if any(_normalize_text(alias) in normalized for alias in profile.aliases):
             return key
     return None
+
+
+def _source_details(source_ids: Iterable[str]) -> list[dict[str, Any]]:
+    return [
+        _source_payload(SUPPLEMENT_EVIDENCE_SOURCES[source_id])
+        for source_id in source_ids
+        if source_id in SUPPLEMENT_EVIDENCE_SOURCES
+    ]
+
+
+def _source_payload(source: EvidenceSourceProfile) -> dict[str, Any]:
+    return asdict(source)
 
 
 def _profile_payload(profile: SupplementEvidenceProfile) -> dict[str, Any]:

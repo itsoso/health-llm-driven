@@ -19,6 +19,12 @@ from app.schemas.supplement import (
 )
 from app.services.supplement_recommendation import SupplementRecommendationService
 from app.services.daily_supplement_guide import get_daily_supplement_guide
+from app.services.supplement_evidence import (
+    SUPPLEMENT_EVIDENCE_CATALOG_VERSION,
+    get_supplement_evidence_profile,
+    list_supplement_evidence_catalog,
+    list_supplement_evidence_sources,
+)
 from app.utils.redis_cache import (
     cache_supplement_recommendation,
     get_cached_supplement_recommendation,
@@ -408,6 +414,43 @@ def get_supplement_daily_guide(
 
 
 # ========== 补剂科学推荐 ==========
+
+@router.get("/evidence/catalog", response_model=Dict[str, Any])
+def get_evidence_catalog(
+    current_user: User = Depends(get_current_user_required),
+):
+    """获取已审校的补剂证据目录"""
+    return {
+        "catalog_version": SUPPLEMENT_EVIDENCE_CATALOG_VERSION,
+        "items": list_supplement_evidence_catalog(),
+    }
+
+
+@router.get("/evidence/sources", response_model=Dict[str, Any])
+def get_evidence_sources(
+    current_user: User = Depends(get_current_user_required),
+):
+    """获取补剂证据来源登记表"""
+    return {
+        "catalog_version": SUPPLEMENT_EVIDENCE_CATALOG_VERSION,
+        "sources": list_supplement_evidence_sources(),
+    }
+
+
+@router.get("/evidence/profile/{name_or_key}", response_model=Dict[str, Any])
+def get_evidence_profile(
+    name_or_key: str,
+    current_user: User = Depends(get_current_user_required),
+):
+    """按补剂名称、别名或 key 获取证据画像"""
+    profile = get_supplement_evidence_profile(name_or_key)
+    if not profile:
+        raise HTTPException(status_code=404, detail="未找到该补剂的证据画像")
+    return {
+        "catalog_version": SUPPLEMENT_EVIDENCE_CATALOG_VERSION,
+        "profile": profile,
+    }
+
 
 class SupplementRecommendationRequest(BaseModel):
     """补剂推荐请求参数"""
