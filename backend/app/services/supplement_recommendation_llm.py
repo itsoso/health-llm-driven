@@ -16,6 +16,11 @@ from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.utils.timezone import get_china_now
 from app.services.llm_health_analyzer import LLMHealthAnalyzer
 from app.services.knowledge.rag_pipeline import RAGPipeline
+from app.services.supplement_evidence import (
+    SupplementSafetyContext,
+    enrich_supplement_recommendations,
+    evidence_warnings_to_precautions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,8 +164,22 @@ class SupplementRecommendationServiceLLM:
                 supplement_status, knowledge_results, debug_info,
                 genetic_data=genetic_data
             )
+            evidence_summary = enrich_supplement_recommendations(
+                llm_result.get("recommendations", []),
+                SupplementSafetyContext.from_profile(profile),
+            )
+            llm_result["evidence_summary"] = evidence_summary
+            llm_result["precautions"] = self._merge_precautions(
+                llm_result.get("precautions", []),
+                evidence_warnings_to_precautions(evidence_summary),
+            )
             if debug:
                 self._add_debug_step(debug_info, "LLM 生成推荐", time.time() - step_start)
+                self._add_debug_reasoning(
+                    debug_info,
+                    "info",
+                    f"🧾 结构化证据匹配 {evidence_summary.get('matched', 0)}/{evidence_summary.get('total', 0)} 条",
+                )
 
             # 8. 计算总耗时
             total_time = time.time() - start_time
@@ -571,6 +590,19 @@ class SupplementRecommendationServiceLLM:
                 "message": "补剂方案合理"
             })
         }
+
+    @staticmethod
+    def _merge_precautions(existing: List[str], extra: List[str], limit: int = 7) -> List[str]:
+        merged: List[str] = []
+        seen = set()
+        for item in [*existing, *extra]:
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+            if len(merged) >= limit:
+                break
+        return merged
 
     def _fallback_rule_based_recommendation(
         self,

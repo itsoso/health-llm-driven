@@ -500,7 +500,9 @@ async def get_supplement_recommendation(
             },
             "recommendations": recommendation.get('recommendations', []),
             "timing_suggestions": recommendation.get('timing_suggestions', {}),
-            "precautions": recommendation.get('precautions', [])
+            "precautions": recommendation.get('precautions', []),
+            "evidence_summary": recommendation.get('evidence_summary', {}),
+            "knowledge_evidence": recommendation.get('knowledge_evidence', {}),
         }
 
         if debug:

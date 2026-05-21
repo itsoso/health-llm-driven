@@ -139,6 +139,8 @@ class TestSupplementRecommendationService:
         assert result["knowledge_evidence"] == fake_evidence
         assert result["recommendations"][0]["knowledge_sources"] == fake_evidence["sources"]
         assert "不能替代医生诊断" in result["recommendations"][0]["claim_boundary"]
+        assert result["evidence_summary"]["matched"] >= 1
+        assert result["recommendations"][0]["evidence_profile"]["evidence_level"] in {"A", "B", "C"}
 
     # ==================== 测试：边界条件 ====================
 

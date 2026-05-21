@@ -11,6 +11,11 @@ from app.models.user_profile import UserProfile
 from app.models.daily_health import GarminData, WorkoutRecord, DietRecord
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.services.knowledge_evidence import build_advice_knowledge_context
+from app.services.supplement_evidence import (
+    SupplementSafetyContext,
+    enrich_supplement_recommendations,
+    evidence_warnings_to_precautions,
+)
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -70,6 +75,10 @@ class SupplementRecommendationService:
             )
             knowledge_evidence = self._build_knowledge_evidence(health_analysis, recommendations)
             self._attach_knowledge_evidence(recommendations, knowledge_evidence)
+            evidence_summary = enrich_supplement_recommendations(
+                recommendations,
+                SupplementSafetyContext.from_profile(profile),
+            )
 
             # 8. 生成服用时间建议
             timing_suggestions = self._generate_timing_suggestions(
@@ -79,6 +88,10 @@ class SupplementRecommendationService:
             # 9. 生成注意事项
             precautions = self._generate_precautions(
                 profile, health_analysis, recommendations
+            )
+            precautions = self._merge_precautions(
+                precautions,
+                evidence_warnings_to_precautions(evidence_summary),
             )
 
             # 10. 计算整体评分
@@ -96,6 +109,7 @@ class SupplementRecommendationService:
                 "precautions": precautions,
                 "supplement_status": supplement_status,
                 "knowledge_evidence": knowledge_evidence,
+                "evidence_summary": evidence_summary,
                 "overall_rating": overall_rating,
                 # 兼容小程序字段
                 "overall_score": overall_rating.get("score", 0) * 10,
@@ -492,6 +506,19 @@ class SupplementRecommendationService:
         recommendations.sort(key=lambda x: priority_order.get(x["priority"], 3))
 
         return recommendations[:6]  # 最多返回6条推荐
+
+    @staticmethod
+    def _merge_precautions(existing: List[str], extra: List[str], limit: int = 7) -> List[str]:
+        merged: List[str] = []
+        seen = set()
+        for item in [*existing, *extra]:
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+            if len(merged) >= limit:
+                break
+        return merged
 
     def _build_knowledge_evidence(
         self,
