@@ -8,7 +8,7 @@ describe('OpenInAppButton deep links', () => {
     expect(buildSharedDeepLinks('abc123')).toEqual([
       'health://shared/abc123',
       'mobile://shared/abc123',
-      'https://health.executor.life/shared/abc123',
+      'https://health.executor.life/open/shared/abc123',
     ]);
   });
 
@@ -23,7 +23,7 @@ describe('OpenInAppButton deep links', () => {
     expect(navigate).toHaveBeenCalledWith('mobile://shared/token123');
 
     vi.advanceTimersByTime(700);
-    expect(navigate).toHaveBeenCalledWith('https://health.executor.life/shared/token123');
+    expect(navigate).toHaveBeenCalledWith('https://health.executor.life/open/shared/token123');
     vi.useRealTimers();
   });
 

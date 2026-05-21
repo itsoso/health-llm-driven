@@ -31,7 +31,7 @@ describe('app.config app links', () => {
     expect(config.ios?.associatedDomains).toContain('applinks:health.executor.life');
   });
 
-  it('adds an Android verified app link for shared pages', () => {
+  it('adds an Android verified app link for app-open shared pages', () => {
     const config = configForVariant();
 
     expect(config.android?.intentFilters).toContainEqual({
@@ -41,7 +41,7 @@ describe('app.config app links', () => {
         {
           scheme: 'https',
           host: 'health.executor.life',
-          pathPrefix: '/shared',
+          pathPrefix: '/open/shared',
         },
       ],
       category: ['BROWSABLE', 'DEFAULT'],

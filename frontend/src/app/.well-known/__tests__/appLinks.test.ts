@@ -5,13 +5,17 @@ import { GET as getAssetLinks } from '../assetlinks.json/route';
 describe('app link verification files', () => {
   const productionAndroidFingerprint = '0D:27:4E:32:7C:CE:1D:0C:5B:4D:E0:18:49:12:EE:D3:EA:24:F4:0B:86:AC:CF:30:4B:79:3A:73:5D:38:97:DA';
 
-  it('serves an Apple app site association file for shared links', async () => {
+  it('serves an Apple app site association file for app-open links only', async () => {
     const res = await getAasa();
     const body = await res.json();
 
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(body.applinks.apps).toEqual([]);
     expect(body.applinks.details).toContainEqual({
+      appID: 'QA2U724DAN.life.executor.health',
+      paths: ['/open/shared/*'],
+    });
+    expect(body.applinks.details).not.toContainEqual({
       appID: 'QA2U724DAN.life.executor.health',
       paths: ['/shared/*'],
     });

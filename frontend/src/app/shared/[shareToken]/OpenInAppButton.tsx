@@ -7,7 +7,7 @@ export function buildSharedDeepLinks(shareToken: string): string[] {
   return [
     `health://shared/${token}`,
     `mobile://shared/${token}`,
-    `https://health.executor.life/shared/${token}`,
+    `https://health.executor.life/open/shared/${token}`,
   ];
 }
 

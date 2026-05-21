@@ -21,6 +21,7 @@ const IS_PREVIEW = VARIANT === 'preview';
 const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
 const ASSOCIATED_DOMAIN = `applinks:${APP_LINK_DOMAIN}`;
+const APP_OPEN_PATH_PREFIX = '/open/shared';
 const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
   action: 'VIEW',
   autoVerify: true,
@@ -28,7 +29,7 @@ const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
     {
       scheme: 'https',
       host: APP_LINK_DOMAIN,
-      pathPrefix: '/shared',
+      pathPrefix: APP_OPEN_PATH_PREFIX,
     },
   ],
   category: ['BROWSABLE', 'DEFAULT'],

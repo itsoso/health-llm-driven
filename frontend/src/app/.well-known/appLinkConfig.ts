@@ -8,6 +8,7 @@ const ANDROID_PACKAGE_NAME = 'life.executor.health';
 const ANDROID_SHA256_CERT_FINGERPRINTS = [
   '0D:27:4E:32:7C:CE:1D:0C:5B:4D:E0:18:49:12:EE:D3:EA:24:F4:0B:86:AC:CF:30:4B:79:3A:73:5D:38:97:DA',
 ] as const;
+const APP_OPEN_PATHS = ['/open/shared/*'] as const;
 
 export function appleAppSiteAssociation() {
   return {
@@ -15,7 +16,7 @@ export function appleAppSiteAssociation() {
       apps: [],
       details: IOS_BUNDLE_IDS.map(bundleId => ({
         appID: `${APPLE_TEAM_ID}.${bundleId}`,
-        paths: ['/shared/*'],
+        paths: [...APP_OPEN_PATHS],
       })),
     },
   };
