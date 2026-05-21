@@ -7,6 +7,7 @@ const mockPush = jest.fn();
 const mockSendMessage = jest.fn();
 const mockFetchConversationStarters = jest.fn();
 const mockRecordCardAdherence = jest.fn();
+const mockNewChat = jest.fn();
 
 jest.mock('expo-router', () => ({
   router: { push: mockPush, setParams: jest.fn() },
@@ -20,7 +21,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     isStreaming: false,
     conversationId: undefined,
     sendMessage: mockSendMessage,
-    newChat: jest.fn(),
+    newChat: mockNewChat,
     loadLatestConversation: jest.fn(),
     loadConversation: jest.fn(),
   }),
@@ -166,5 +167,33 @@ describe('ChatScreen', () => {
       expect(getByText('解读我最近一次体检（关注: LDL-C）')).toBeTruthy();
     });
     expect(getByText('帮我提升补剂依从率（近7天完成率 42.9%）')).toBeTruthy();
+  });
+
+  it('refreshes dynamic starter suggestions when starting a new chat', async () => {
+    mockFetchConversationStarters
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: ['今天饮水 300/2000ml，帮我安排剩余补水'],
+      })
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: ['复盘我最近一次跑步（5.2km / 30min / 均心率 145）'],
+      });
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+
+    await waitFor(() => {
+      expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
+      expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
+    });
+    expect(mockNewChat).toHaveBeenCalled();
   });
 });

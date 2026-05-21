@@ -104,16 +104,20 @@ export default function ChatScreen() {
   // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
-  useEffect(() => {
-    let cancelled = false;
+  const refreshConversationStarters = useCallback((shouldSkip?: () => boolean) => {
     fetchConversationStarters().then(({ opener: newOpener, suggestions }) => {
-      if (cancelled) return;
+      if (shouldSkip?.()) return;
       setOpener(newOpener);
       const decorated = decorateSuggestions(suggestions);
-      if (decorated) setStarterSuggestions(decorated);
+      setStarterSuggestions(decorated || SUGGESTIONS);
     });
-    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    refreshConversationStarters(() => cancelled);
+    return () => { cancelled = true; };
+  }, [refreshConversationStarters]);
 
   // P3-3: 拉 top 1-2 条 memory, 显示在 opener 上方"我记得你: <X>"
   const [memoryOpener, setMemoryOpener] = useState<MemoryOpenerItem[]>([]);
@@ -241,6 +245,13 @@ export default function ChatScreen() {
     setSelectedMessageIds(new Set());
   }, []);
 
+  const handleNewChat = useCallback(() => {
+    exitSelectionMode();
+    setContextBadge(null);
+    newChat();
+    refreshConversationStarters();
+  }, [exitSelectionMode, newChat, refreshConversationStarters]);
+
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
     isNearBottom.current = true;
@@ -258,10 +269,9 @@ export default function ChatScreen() {
     }
     setConversations(prev => prev.filter(item => item.id !== id));
     if (conversationId === id) {
-      exitSelectionMode();
-      newChat();
+      handleNewChat();
     }
-  }, [conversationId, exitSelectionMode, newChat]);
+  }, [conversationId, handleNewChat]);
 
   const handleRenameConversation = useCallback(async (id: number, title: string) => {
     const updated = await updateConversationTitle(id, title);
@@ -367,7 +377,7 @@ export default function ChatScreen() {
         >
           <Ionicons name="mic-circle" size={26} color={c.brand} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => { exitSelectionMode(); newChat(); }} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
+        <TouchableOpacity onPress={handleNewChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
           <Ionicons name="create-outline" size={20} color={c.labelSecondary} />
         </TouchableOpacity>
         {conversationId && messages.length > 0 && (
@@ -376,8 +386,7 @@ export default function ChatScreen() {
               { text: '取消', style: 'cancel' },
               { text: '删除', style: 'destructive', onPress: async () => {
                 await deleteConversation(conversationId);
-                exitSelectionMode();
-                newChat();
+                handleNewChat();
               }},
             ]);
           }} hitSlop={8} style={{ marginLeft: 12 }} accessibilityLabel="删除当前对话" accessibilityRole="button">
