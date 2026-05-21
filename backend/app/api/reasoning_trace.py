@@ -32,6 +32,10 @@ from app.models.agent_audit_log import AgentAuditLog
 from app.models.anomaly_alert import AnomalyAlert
 from app.models.memory_fact import MemoryFact
 from app.models.user import User
+from app.services.reasoning_explainer import (
+    explain_safety_alert,
+    explain_specialist_finding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -246,8 +250,10 @@ def _build_arbitration_trace(log: AgentAuditLog) -> Dict[str, Any]:
     # 冲突双方列表
     specialists = set()
     for c in conflicts:
-        if c.get("specialist_a"): specialists.add(c["specialist_a"])
-        if c.get("specialist_b"): specialists.add(c["specialist_b"])
+        if c.get("specialist_a"):
+            specialists.add(c["specialist_a"])
+        if c.get("specialist_b"):
+            specialists.add(c["specialist_b"])
 
     return {
         "id": f"arb_{log.id}",
@@ -380,11 +386,6 @@ def trace_detail(
 # Explain endpoints — Task 2.2: Mobile ExplainSheet 数据源
 # ------------------------------------------------------------
 
-from app.services.reasoning_explainer import (  # noqa: E402
-    explain_safety_alert,
-    explain_specialist_finding,
-)
-
 
 @router.get("/safety/{audit_id}", summary="Safety 告警推理链 (按 rule_id 反查)")
 def explain_safety(
@@ -393,6 +394,12 @@ def explain_safety(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
+    logger.info(
+        "[reasoning-trace] safety audit_id=%s rule_id=%s user_id=%s",
+        audit_id,
+        rule_id,
+        current_user.id,
+    )
     return explain_safety_alert(
         db, audit_id=audit_id, rule_id=rule_id, user_id=current_user.id,
     )
@@ -405,6 +412,12 @@ def explain_specialist(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
+    logger.info(
+        "[reasoning-trace] specialist audit_id=%s specialist=%s user_id=%s",
+        audit_id,
+        specialist,
+        current_user.id,
+    )
     return explain_specialist_finding(
         db, audit_id=audit_id, specialist=specialist, user_id=current_user.id,
     )
