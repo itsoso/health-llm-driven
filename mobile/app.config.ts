@@ -12,11 +12,27 @@
  */
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
+type AndroidIntentFilter = NonNullable<NonNullable<ExpoConfig['android']>['intentFilters']>[number];
+
 const VARIANT = process.env.APP_VARIANT ?? 'production';
 const IS_DEV = VARIANT === 'development';
 const IS_PREVIEW = VARIANT === 'preview';
 
 const BUNDLE_ID_BASE = 'life.executor.health';
+const APP_LINK_DOMAIN = 'health.executor.life';
+const ASSOCIATED_DOMAIN = `applinks:${APP_LINK_DOMAIN}`;
+const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
+  action: 'VIEW',
+  autoVerify: true,
+  data: [
+    {
+      scheme: 'https',
+      host: APP_LINK_DOMAIN,
+      pathPrefix: '/shared',
+    },
+  ],
+  category: ['BROWSABLE', 'DEFAULT'],
+};
 const bundleId = IS_DEV
   ? `${BUNDLE_ID_BASE}.dev`
   : IS_PREVIEW
@@ -38,6 +54,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     ...(config.ios ?? {}),
     bundleIdentifier: bundleId,
+    associatedDomains: Array.from(new Set([
+      ...(((config.ios as any)?.associatedDomains ?? []) as string[]),
+      ASSOCIATED_DOMAIN,
+    ])),
     entitlements: {
       ...((config.ios as any)?.entitlements ?? {}),
       // dev-client 用 ad-hoc provisioning, APNs 走 development token
@@ -53,5 +73,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     ...(config.android ?? {}),
     package: androidPackage,
+    intentFilters: [
+      ...(((config.android as any)?.intentFilters ?? []) as AndroidIntentFilter[]),
+      SHARED_LINK_INTENT_FILTER,
+    ],
   },
 });
