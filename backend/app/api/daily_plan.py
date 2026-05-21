@@ -16,6 +16,10 @@ from app.schemas.daily_plan_feedback import (
     DailyPlanActionEventResponse,
 )
 from app.services.daily_operating_plan import build_daily_operating_plan
+from app.services.health_operating_review import (
+    SUPPORTED_REVIEW_WINDOWS,
+    build_health_operating_review,
+)
 
 router = APIRouter(prefix="/daily-plan", tags=["daily-plan"])
 
@@ -73,6 +77,18 @@ def get_my_daily_plan(
 ):
     """获取当前用户当天操作计划."""
     return build_daily_operating_plan(db, current_user.id, plan_date=plan_date)
+
+
+@router.get("/review")
+def get_my_daily_plan_review(
+    window_days: int = Query(7, description="复盘窗口，仅支持 7/30/90 天"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取 Daily Plan 行动执行和关键指标变化复盘."""
+    if window_days not in SUPPORTED_REVIEW_WINDOWS:
+        raise HTTPException(status_code=422, detail="window_days 仅支持 7/30/90")
+    return build_health_operating_review(db, user_id=current_user.id, window_days=window_days)
 
 
 @router.post("/me/actions/{action_key}/feedback", response_model=DailyPlanActionFeedbackResponse)
