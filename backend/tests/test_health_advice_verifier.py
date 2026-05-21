@@ -121,6 +121,65 @@ def test_verifier_blocks_paid_source_leakage_markers():
     assert result.reason == "paid_content_leakage"
 
 
+def test_verifier_blocks_epigenetic_short_term_antiaging_overclaim():
+    result = verify_advice(
+        _candidate(
+            domain="recovery",
+            title="甲基化抗衰已经逆转",
+            body="你的甲基化报告证明这 7 天抗衰成功，生物年龄已经被逆转。",
+            evidence_refs=["claim:epigenetic_proxy_boundary"],
+            evidence_source_types=["pubmed"],
+            verification_metric="pace_of_aging",
+            verification_window_days=7,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:epigenetic_proxy_boundary"]},
+        personal_matrix={
+            "signals": [
+                {
+                    "signal_type": "epigenetic",
+                    "signal_id": "epigenetic.pace_of_aging",
+                    "reliability": "experimental",
+                }
+            ]
+        },
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.decision == "blocked"
+    assert result.reason == "epigenetic_overclaim"
+    assert "rewrite_as_long_term_proxy" in result.required_changes
+    assert "epigenetic_boundary" in result.audit_tags
+
+
+def test_verifier_allows_epigenetic_long_term_proxy_boundary():
+    result = verify_advice(
+        _candidate(
+            domain="measurement",
+            title="甲基化长期趋势复测",
+            body="甲基化时钟只作为长期代理指标；先用 8-12 周睡眠、运动和代谢闭环，再复测趋势，不把短期变化当作确定抗衰疗效。",
+            evidence_refs=["claim:epigenetic_proxy_boundary"],
+            evidence_source_types=["pubmed"],
+            verification_metric="pace_of_aging",
+            verification_window_days=90,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:epigenetic_proxy_boundary"]},
+        personal_matrix={
+            "signals": [
+                {
+                    "signal_type": "epigenetic",
+                    "signal_id": "epigenetic.pace_of_aging",
+                    "reliability": "experimental",
+                }
+            ]
+        },
+        contraindications=[],
+    )
+
+    assert result.allowed is True
+    assert result.reason == "allowed"
+
+
 def test_advice_guard_applies_health_verifier_for_candidate_contract():
     guard = AdviceGuard(existing=[])
     result = guard.evaluate(

@@ -10,6 +10,18 @@ HIGH_RISK_DOMAINS = {"supplement", "medication", "doctor_handoff"}
 LOW_RISK_DOMAINS = {"sleep", "movement", "recovery", "emotion", "metabolic", "measurement"}
 GUIDELINE_SOURCE_TYPES = {"guideline", "cpic", "fda", "drug_label"}
 PAID_CONTENT_LEAK_MARKERS = ("课程原文", "付费课程正文", "逐字稿", "原文如下")
+EPIGENETIC_MARKERS = ("甲基化", "表观遗传", "epigenetic", "methylation", "生物年龄", "pace of aging")
+EPIGENETIC_OVERCLAIM_MARKERS = (
+    "证明",
+    "逆转",
+    "治愈",
+    "抗衰成功",
+    "真实衰老速度改变",
+    "短期疗效",
+    "7 天",
+    "7天",
+    "一周",
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,15 @@ def verify_advice(
             reason="paid_content_leakage",
             required_changes=["remove_paid_source_excerpt"],
             audit_tags=["paid_content_leakage"],
+        )
+
+    if _is_epigenetic_overclaim(candidate, personal_matrix or {}):
+        return AdviceVerification(
+            allowed=False,
+            decision="blocked",
+            reason="epigenetic_overclaim",
+            required_changes=["rewrite_as_long_term_proxy"],
+            audit_tags=["epigenetic_boundary"],
         )
 
     contraindication = _matching_contraindication(candidate, contraindications or [])
@@ -118,6 +139,19 @@ def _is_pgx_medication_advice(candidate: Any, personal_matrix: dict[str, Any]) -
             if isinstance(signal, dict) and str(signal.get("signal_type") or "").lower() == "genetics":
                 return True
     return False
+
+
+def _is_epigenetic_overclaim(candidate: Any, personal_matrix: dict[str, Any]) -> bool:
+    text = f"{getattr(candidate, 'title', '')} {getattr(candidate, 'body', '')}".lower()
+    has_epigenetic_text = any(marker.lower() in text for marker in EPIGENETIC_MARKERS)
+    has_epigenetic_signal = any(
+        isinstance(signal, dict)
+        and str(signal.get("signal_type") or "").lower() == "epigenetic"
+        for signal in personal_matrix.get("signals") or []
+    )
+    if not (has_epigenetic_text or has_epigenetic_signal):
+        return False
+    return any(marker.lower() in text for marker in EPIGENETIC_OVERCLAIM_MARKERS)
 
 
 def _matching_contraindication(

@@ -558,3 +558,49 @@ cases:
       decision: allowed
       reason: allowed
       must_not_include: ["自行补铁"]
+
+  - id: epigenetic_blocks_short_term_antiaging_overclaim
+    description: Methylation clocks cannot be used as proof of short-term anti-aging success.
+    tags: [epigenetic, high_risk]
+    candidate:
+      domain: recovery
+      title: "甲基化抗衰已经逆转"
+      body: "你的甲基化报告证明这 7 天抗衰成功，生物年龄已经被逆转。"
+      evidence_refs: [claim:epigenetic_proxy_boundary]
+      evidence_source_types: [pubmed]
+      verification_metric: pace_of_aging
+      verification_window_days: 7
+    personal_matrix:
+      signals:
+        - signal_type: epigenetic
+          signal_id: epigenetic.pace_of_aging
+          reliability: experimental
+    expected:
+      allowed: false
+      decision: blocked
+      reason: epigenetic_overclaim
+      required_changes_contains: [rewrite_as_long_term_proxy]
+      audit_tags_contains: [epigenetic_boundary]
+      must_not_include: ["抗衰成功", "生物年龄已经被逆转"]
+
+  - id: epigenetic_allows_long_term_proxy_retest_plan
+    description: Methylation reports may support bounded long-horizon retest planning.
+    tags: [epigenetic]
+    candidate:
+      domain: measurement
+      title: "甲基化长期趋势复测"
+      body: "甲基化时钟只作为长期代理指标；先用 8-12 周睡眠、运动和代谢闭环，再复测趋势，不把短期变化当作确定抗衰疗效。"
+      evidence_refs: [claim:epigenetic_proxy_boundary]
+      evidence_source_types: [pubmed]
+      verification_metric: pace_of_aging
+      verification_window_days: 90
+    personal_matrix:
+      signals:
+        - signal_type: epigenetic
+          signal_id: epigenetic.pace_of_aging
+          reliability: experimental
+    expected:
+      allowed: true
+      decision: allowed
+      reason: allowed
+      must_not_include: ["已经逆转"]

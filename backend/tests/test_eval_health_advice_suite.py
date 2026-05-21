@@ -16,8 +16,21 @@ def test_health_advice_suite_loads_required_case_categories():
         "sleep",
         "movement",
         "lab",
+        "epigenetic",
         "paid_content",
     }.issubset(tags)
+
+
+def test_health_advice_suite_has_epigenetic_overclaim_guardrail():
+    cases = load_suite("health_advice")
+
+    overclaim_cases = [
+        case for case in cases
+        if "epigenetic" in case.tags and case.expected.get("reason") == "epigenetic_overclaim"
+    ]
+
+    assert overclaim_cases
+    assert all(case.expected.get("must_not_include") for case in overclaim_cases)
 
 
 def test_health_advice_high_risk_cases_define_negative_boundaries():
