@@ -13,6 +13,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -179,6 +180,7 @@ export default function TodayScreen() {
   const weeklyAdvice = cards.filter(c => c.source_type === 'weekly_advisor');
 
   const twinSnap = pickTwinSnapshot(twinQuery.data);
+  const activePlanCount = dailyPlanQuery.data?.actions?.length ?? 0;
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -230,8 +232,13 @@ export default function TodayScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
       >
-        {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
-        <EnvironmentCard />
+        <HomeCommandHeader
+          criticalCount={criticalAlerts.length}
+          planCount={activePlanCount}
+          refreshing={isRefreshing}
+          onOpenAgent={() => router.push('/(tabs)/chat' as any)}
+          onOpenRecord={() => router.push('/(tabs)/record' as any)}
+        />
 
         <TodayPlanPanel
           plan={dailyPlanQuery.data}
@@ -240,20 +247,16 @@ export default function TodayScreen() {
           onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
         />
 
-        {/* 数据完整度 — Agent 准确率的因, 缺数据时一目了然该补哪几项 */}
-        <DataFreshnessPanel />
-
-        <TrajectorySnapshotPanel
-          snapshot={trajectoryQuery.data}
-          loading={trajectoryQuery.isLoading}
-          onPress={openTrajectoryChat}
+        <SectionHeader
+          title="快速入口"
+          subtitle="高频健康任务"
+          action="全部"
+          onPress={() => router.push('/(tabs)/record' as any)}
         />
-
-        {/* 4 入口 — 2x2 grid 学健康记录 VitalsGrid 风格 (2026-05-12 重做) */}
         <View style={styles.gridRow}>
           <HeroTile
             label="我的基因"
-            emoji="🧬"
+            ionIcon="git-branch-outline"
             value={geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—'}
             unit={geneticStatsQuery.data?.total != null ? ` / ${geneticStatsQuery.data.total}` : ''}
             sub="关键位点 · AI 解读"
@@ -263,7 +266,7 @@ export default function TodayScreen() {
           />
           <HeroTile
             label="我的进度"
-            emoji="📈"
+            ionIcon="trending-up-outline"
             value={progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—'}
             unit={progressStatsQuery.data?.total != null ? ` / ${progressStatsQuery.data.total}` : ''}
             sub="改善闭环 · 30 天"
@@ -273,7 +276,7 @@ export default function TodayScreen() {
           />
           <HeroTile
             label="我的运动"
-            emoji="🏃"
+            ionIcon="walk-outline"
             value="处方"
             sub="ACWR · 基因偏好"
             color={c.pink}
@@ -282,7 +285,7 @@ export default function TodayScreen() {
           />
           <HeroTile
             label="我的饮食"
-            emoji="🥗"
+            ionIcon="restaurant-outline"
             value="方案"
             sub="TDEE · 蛋白 · 化验"
             color={c.orange}
@@ -290,6 +293,18 @@ export default function TodayScreen() {
             onPress={() => router.push('/diet-plan' as any)}
           />
         </View>
+
+        <TrajectorySnapshotPanel
+          snapshot={trajectoryQuery.data}
+          loading={trajectoryQuery.isLoading}
+          onPress={openTrajectoryChat}
+        />
+
+        {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
+        <EnvironmentCard />
+
+        {/* 数据完整度 — Agent 准确率的因, 缺数据时一目了然该补哪几项 */}
+        <DataFreshnessPanel />
 
         {isLoading && (
           <View style={styles.loading}>
@@ -300,7 +315,7 @@ export default function TodayScreen() {
         {/* 1. Critical/High 告警卡 */}
         {criticalAlerts.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>需要立即处理</Text>
+            <SectionHeader title="需要立即处理" subtitle={`${criticalAlerts.length} 条高优先级`} />
             {criticalAlerts.slice(0, 3).map(a => (
               <AlertRow
                 key={a.rule_id}
@@ -318,7 +333,10 @@ export default function TodayScreen() {
 
         {/* 2. 本周建议队列 */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>本周建议</Text>
+          <SectionHeader
+            title="本周建议"
+            subtitle={weeklyAdvice.length > 0 ? `${weeklyAdvice.length} 个待处理` : '等待 Agent 生成'}
+          />
           {weeklyAdvice.length === 0 ? (
             <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
               <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
@@ -338,7 +356,7 @@ export default function TodayScreen() {
 
         {/* 3. 身体快照 — 2x2 grid, 默认展开学 VitalsGrid 风格 */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>身体快照</Text>
+          <SectionHeader title="身体快照" subtitle="恢复、睡眠与生命体征" />
           <View style={styles.gridRow}>
             <HeroTile
               label="HRV"
@@ -388,6 +406,114 @@ export default function TodayScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function HomeCommandHeader({
+  criticalCount,
+  planCount,
+  refreshing,
+  onOpenAgent,
+  onOpenRecord,
+}: {
+  criticalCount: number;
+  planCount: number;
+  refreshing: boolean;
+  onOpenAgent: () => void;
+  onOpenRecord: () => void;
+}) {
+  const { c } = useTheme();
+  const dateLabel = formatHomeDate(new Date());
+  const statusColor = criticalCount > 0 ? c.red : c.green;
+  const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
+  return (
+    <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.commandTop}>
+        <View style={styles.commandTitleBlock}>
+          <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
+          <Text style={[styles.commandTitle, { color: c.labelPrimary }]}>今日健康操作台</Text>
+        </View>
+        <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
+      </View>
+
+      <View style={styles.commandMetaRow}>
+        <MetaChip icon="compass-outline" label={`${planCount} 个计划`} />
+        <MetaChip icon="sync-outline" label={refreshing ? '同步中' : '已同步'} />
+      </View>
+
+      <View style={styles.commandActions}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.primaryAction,
+            { backgroundColor: c.brand, opacity: pressed ? 0.86 : 1 },
+          ]}
+          onPress={onOpenAgent}
+          accessibilityRole="button"
+          accessibilityLabel="打开健康 Agent"
+        >
+          <Ionicons name="sparkles-outline" size={17} color="#FFFFFF" />
+          <Text style={styles.primaryActionText}>问 Agent</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.secondaryAction,
+            { borderColor: c.separator, backgroundColor: c.bgPrimary, opacity: pressed ? 0.76 : 1 },
+          ]}
+          onPress={onOpenRecord}
+          accessibilityRole="button"
+          accessibilityLabel="记录健康数据"
+        >
+          <Ionicons name="add-circle-outline" size={17} color={c.brand} />
+          <Text style={[styles.secondaryActionText, { color: c.labelPrimary }]}>记录</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function MetaChip({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
+  const { c } = useTheme();
+  return (
+    <View style={[styles.metaChip, { backgroundColor: c.bgPrimary }]}>
+      <Ionicons name={icon} size={13} color={c.labelSecondary} />
+      <Text style={[styles.metaChipText, { color: c.labelSecondary }]}>{label}</Text>
+    </View>
+  );
+}
+
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+  onPress,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: string;
+  onPress?: () => void;
+}) {
+  const { c } = useTheme();
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderText}>
+        <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>{title}</Text>
+        {subtitle ? <Text style={[styles.sectionSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text> : null}
+      </View>
+      {action && onPress ? (
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => [styles.sectionAction, { opacity: pressed ? 0.65 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel={action}
+        >
+          <Text style={[styles.sectionActionText, { color: c.brand }]}>{action}</Text>
+          <Ionicons name="chevron-forward" size={13} color={c.brand} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -485,12 +611,74 @@ function fmt(v?: number | null): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
+function formatHomeDate(value: Date): string {
+  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][value.getDay()];
+  return `${value.getMonth() + 1}月${value.getDate()}日 · ${weekday}`;
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.lg },  // 110 = tab bar 83 + 缓冲
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
   section: { gap: spacing.sm },
+  commandHeader: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandTitleBlock: { flex: 1, gap: 4 },
+  commandDate: { fontSize: 12, fontWeight: '700' },
+  commandTitle: { fontSize: 24, fontWeight: '800', lineHeight: 30, letterSpacing: 0 },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 12, fontWeight: '800' },
+  commandMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radii.full,
+  },
+  metaChipText: { fontSize: 12, fontWeight: '600' },
+  commandActions: { flexDirection: 'row', gap: spacing.sm },
+  primaryAction: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 7,
+  },
+  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  secondaryAction: {
+    minHeight: 44,
+    minWidth: 102,
+    borderRadius: radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  secondaryActionText: { fontSize: 15, fontWeight: '700' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  sectionHeaderText: { flex: 1, gap: 2 },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
+  sectionSubtitle: { fontSize: 12, fontWeight: '500' },
+  sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
+  sectionActionText: { fontSize: 13, fontWeight: '700' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
@@ -527,7 +715,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   tile: {
-    width: '47.5%',
+    flexBasis: '47.5%',
+    flexGrow: 1,
+    minWidth: 150,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     padding: 14,
@@ -537,9 +727,9 @@ const styles = StyleSheet.create({
     width: 24, height: 24, borderRadius: 7,
     alignItems: 'center', justifyContent: 'center',
   },
-  tileLabel: { fontSize: 13, fontWeight: '500' },
+  tileLabel: { fontSize: 13, fontWeight: '700' },
   tileValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
-  tileValue: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.6 },
+  tileValue: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: 0 },
   tileUnit: { fontSize: 13, fontWeight: '500' },
   tileSub: { fontSize: 11, marginTop: 4 },
 });
