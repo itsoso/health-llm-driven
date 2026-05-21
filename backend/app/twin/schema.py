@@ -187,6 +187,26 @@ class GeneticContext(BaseModel):
     nutrition_variants: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class EpigeneticState(BaseModel):
+    """Experimental methylation-clock feedback for long-horizon trajectory use."""
+
+    has_methylation_report: bool = False
+    status: str = "missing"
+    evidence_tier: str = "experimental"
+    confidence: str = "low"
+    claim_boundary: str = (
+        "甲基化时钟只作为长期代理指标和研究性反馈, "
+        "不能证明个体短期干预成效或真实衰老速度改变。"
+    )
+    latest_test_date: Optional[str] = None
+    vendor: Optional[str] = None
+    clock_type: Optional[str] = None
+    biological_age: Optional[float] = None
+    biological_age_delta_years: Optional[float] = None
+    pace_of_aging: Optional[float] = None
+    raw_summary: Dict[str, Any] = Field(default_factory=dict)
+
+
 # ─────────────────────────── Environmental ─────────────────────────────
 
 
@@ -322,6 +342,7 @@ class DataFreshness(BaseModel):
     labs: Optional[str] = None
     diet: Optional[str] = None
     genetic: Optional[str] = None
+    epigenetic: Optional[str] = None
     medication: Optional[str] = None
 
 
@@ -347,6 +368,7 @@ class HealthTwin(BaseModel):
     medication: MedicationState = Field(default_factory=MedicationState)
     supplement: SupplementState = Field(default_factory=SupplementState)
     genetic: GeneticContext = Field(default_factory=GeneticContext)
+    epigenetic: EpigeneticState = Field(default_factory=EpigeneticState)
     gene_config: Optional[Any] = None  # GeneConfig dataclass, built post-init
     environment: EnvironmentalState = Field(default_factory=EnvironmentalState)
     behavioral: BehavioralState = Field(default_factory=BehavioralState)

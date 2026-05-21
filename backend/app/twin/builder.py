@@ -78,6 +78,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
     # 急性病/感冒症状是安全约束，必须在主流程同步填充，避免并行 session
     # 在测试或事务边界内看不到刚写入的症状/病症记录。
     _fill_acute_health(db, user_id, twin, sources)
+    _fill_epigenetic(db, user_id, twin, sources)
 
     # ── Phase B: 8 个独立步骤并行执行 ──
     # 每个线程使用独立 DB 会话（SQLAlchemy Session 不线程安全）
@@ -256,6 +257,18 @@ def _fill_metabolic_freshness(db: Session, user_id: int, twin: HealthTwin) -> No
     g = _latest_date(GarminData, GarminData.record_date)
     s = _latest_date(SleepRecord, SleepRecord.record_date)
     twin.freshness.sleep = max(filter(None, [g, s]), default=None)
+
+
+def _fill_epigenetic(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    try:
+        from app.services.epigenetic_report_service import latest_epigenetic_state
+
+        twin.epigenetic = latest_epigenetic_state(db, user_id)
+        if twin.epigenetic.has_methylation_report:
+            sources.add("epigenetic_report")
+            twin.freshness.epigenetic = "long_term"
+    except Exception as e:
+        logger.warning(f"[twin] epigenetic 失败: {e}")
 
 
 # ───────────────────── 2. 生理派生量 BMR / TDEE ───────────────────────

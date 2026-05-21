@@ -5,6 +5,7 @@ from app.twin.schema import (
     BehavioralState,
     BodyCompositionState,
     DataFreshness,
+    EpigeneticState,
     GeneticContext,
     HealthTwin,
     LabsContext,
@@ -91,6 +92,7 @@ def test_personal_evidence_matrix_normalizes_core_health_twin_signals():
         assert signal["signal_id"]
         assert signal["signal_type"] in {
             "genetic",
+            "epigenetic",
             "lab",
             "body_measurement",
             "wearable",
@@ -120,6 +122,40 @@ def test_personal_evidence_matrix_normalizes_core_health_twin_signals():
     assert gene["confidence_modifier"] == "lower"
 
 
+def test_personal_evidence_matrix_normalizes_epigenetic_proxy_signals():
+    twin = HealthTwin(
+        meta=TwinMeta(user_id=3, generated_at=datetime(2026, 5, 21, 8, 0, 0)),
+        epigenetic=EpigeneticState(
+            has_methylation_report=True,
+            status="present",
+            latest_test_date="2026-05-01",
+            vendor="TruDiagnostic",
+            clock_type="DunedinPACE",
+            biological_age=41.2,
+            biological_age_delta_years=4.9,
+            pace_of_aging=1.11,
+        ),
+        freshness=DataFreshness(epigenetic="long_term"),
+    )
+
+    matrix = build_personal_evidence_matrix(twin)
+
+    pace = _signal_by_id(matrix, "epigenetic.pace_of_aging")
+    assert pace["value"] == 1.11
+    assert pace["freshness"] == "long_term"
+    assert pace["reliability"] == "experimental"
+    assert pace["domains"] == ["aging_pace", "recovery_capacity"]
+    assert pace["confidence_modifier"] == "lower"
+    assert pace["source"] == "epigenetic_report"
+
+    delta = _signal_by_id(matrix, "epigenetic.biological_age_delta_years")
+    assert delta["value"] == 4.9
+    assert matrix["summary"]["by_signal_type"]["epigenetic"] == 2
+    assert "gap.methylation_report_missing" not in {
+        signal["signal_id"] for signal in matrix["signals"]
+    }
+
+
 def test_personal_evidence_matrix_reports_missing_data_gaps_for_sparse_twin():
     twin = HealthTwin(meta=TwinMeta(user_id=3, generated_at=datetime(2026, 5, 21, 8, 0, 0)))
 
@@ -128,6 +164,7 @@ def test_personal_evidence_matrix_reports_missing_data_gaps_for_sparse_twin():
     gap_ids = {signal["signal_id"] for signal in matrix["signals"] if signal["signal_type"] == "data_gap"}
     assert {
         "gap.genetic_profile_missing",
+        "gap.methylation_report_missing",
         "gap.lab_anchor_missing",
         "gap.body_measurement_missing",
         "gap.wearable_sleep_recovery_missing",

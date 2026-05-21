@@ -16,6 +16,7 @@ def build_personal_evidence_matrix(twin: Any) -> dict[str, Any]:
     signals: list[Signal] = []
 
     _add_genetic_signals(twin, signals)
+    _add_epigenetic_signals(twin, signals)
     _add_lab_signals(twin, signals)
     _add_body_signals(twin, signals)
     _add_wearable_signals(twin, signals)
@@ -124,6 +125,42 @@ def _add_genetic_signals(twin: Any, signals: list[Signal]) -> None:
                 confidence_modifier="lower",
                 source="genetic_report",
             )
+
+
+def _add_epigenetic_signals(twin: Any, signals: list[Signal]) -> None:
+    epigenetic = _section(twin, "epigenetic")
+    if not _value(epigenetic, "has_methylation_report"):
+        return
+
+    freshness = _freshness(twin, "epigenetic", default="long_term")
+    common = {
+        "freshness": freshness,
+        "reliability": "experimental",
+        "domains": ["aging_pace", "recovery_capacity"],
+        "confidence_modifier": "lower",
+        "source": "epigenetic_report",
+    }
+    pace_of_aging = _value(epigenetic, "pace_of_aging")
+    if pace_of_aging is not None:
+        _append_signal(
+            signals,
+            signal_id="epigenetic.pace_of_aging",
+            signal_type="epigenetic",
+            label="Pace of aging",
+            value=pace_of_aging,
+            **common,
+        )
+    biological_age_delta = _value(epigenetic, "biological_age_delta_years")
+    if biological_age_delta is not None:
+        _append_signal(
+            signals,
+            signal_id="epigenetic.biological_age_delta_years",
+            signal_type="epigenetic",
+            label="Biological age delta",
+            value=biological_age_delta,
+            unit="years",
+            **common,
+        )
 
 
 def _add_lab_signals(twin: Any, signals: list[Signal]) -> None:
@@ -291,6 +328,7 @@ def _add_behavior_signals(twin: Any, signals: list[Signal]) -> None:
 
 def _add_data_gap_signals(twin: Any, signals: list[Signal]) -> None:
     genetic = _section(twin, "genetic")
+    epigenetic = _section(twin, "epigenetic")
     labs = _section(twin, "labs")
     body = _section(twin, "body_composition")
     physiological = _section(twin, "physiological")
@@ -298,6 +336,13 @@ def _add_data_gap_signals(twin: Any, signals: list[Signal]) -> None:
 
     if not _value(genetic, "has_profile"):
         _append_gap(signals, "gap.genetic_profile_missing", "Missing genetic profile", ["genetics"])
+    if not _value(epigenetic, "has_methylation_report"):
+        _append_gap(
+            signals,
+            "gap.methylation_report_missing",
+            "Missing methylation trajectory feedback",
+            ["aging_pace"],
+        )
     if _value(labs, "last_exam_date") is None and not _value(labs, "flagged_abnormal"):
         _append_gap(signals, "gap.lab_anchor_missing", "Missing recent lab anchor", ["metabolic_health"])
     if _value(body, "weight_kg") is None and _value(body, "waist_cm") is None:
