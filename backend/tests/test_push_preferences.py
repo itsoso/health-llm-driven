@@ -5,10 +5,8 @@
 - alert_rule_opt_outs: rule_id mute 列表
 - rule-aware dedup: 同 rule_id 窗口内只推一次 (与 title 无关)
 """
-import json
+import asyncio
 from datetime import datetime, timedelta, timezone
-
-import pytest
 
 from app.models.notification import (
     UserNotificationSetting, NotificationLog, NotificationType, NotificationStatus,
@@ -37,7 +35,9 @@ class TestSeverityRank:
 
 def _mk_settings(db, user_id=1, **overrides):
     s = UserNotificationSetting(user_id=user_id, enabled=True, **overrides)
-    db.add(s); db.commit(); db.refresh(s)
+    db.add(s)
+    db.commit()
+    db.refresh(s)
     return s
 
 
@@ -139,7 +139,8 @@ class TestRuleAwareDedup:
             status=NotificationStatus.SENT.value,
             sent_at=sent_at,
         )
-        db.add(log); db.commit()
+        db.add(log)
+        db.commit()
         return log
 
     def test_same_rule_id_detected_as_dup(self, db):
@@ -160,3 +161,42 @@ class TestRuleAwareDedup:
             NotificationLog.data.like('%"rule_id": "ddi.warfarin_nsaid"%'),
         )
         assert q.count() == 0
+
+
+class TestTelegramFallback:
+    class _ConfiguredTelegram:
+        configured = True
+
+        async def send_health_alert(self, **kwargs):
+            return {"success": True}
+
+    def test_reminders_do_not_fall_back_to_global_telegram_chat(self, db, monkeypatch):
+        _mk_settings(db, user_id=3, reminder_enabled=True, ios_push_enabled=False, wechat_enabled=False)
+        monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
+
+        result = asyncio.run(PushService(db).send_notification(
+            user_id=3,
+            notification_type=NotificationType.REMINDER.value,
+            title="💤 睡眠提醒",
+            content="该准备睡觉了，保证充足睡眠，明天精神饱满！",
+            quiet_hours_policy="bypass",
+        ))
+
+        assert result["success"] is False
+        assert result["reason"] == "没有可用的推送渠道"
+        assert db.query(NotificationLog).count() == 0
+
+    def test_health_alerts_can_still_use_global_telegram_fallback(self, db, monkeypatch):
+        _mk_settings(db, user_id=3, ios_push_enabled=False, wechat_enabled=False)
+        monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
+
+        result = asyncio.run(PushService(db).send_notification(
+            user_id=3,
+            notification_type=NotificationType.HEALTH_ALERT.value,
+            title="⚠️ 健康提醒",
+            content="这是需要关注的健康提醒。",
+            severity="warning",
+        ))
+
+        assert result["success"] is True
+        assert result["channels"]["telegram"]["success"] is True

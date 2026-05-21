@@ -37,9 +37,20 @@ _ADVICE_LEDGER_NOTIFICATION_TYPES = {
     "trend_report",
 }
 
+_TELEGRAM_FALLBACK_BLOCKED_TYPES = {
+    NotificationType.REMINDER.value,
+    "plan_reminder",
+}
+
 
 def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
+
+
+def _allows_telegram_fallback(notification_type: str) -> bool:
+    """Global Telegram chat is an operator fallback, not a per-user reminder channel."""
+
+    return notification_type not in _TELEGRAM_FALLBACK_BLOCKED_TYPES
 
 
 def _advice_candidate_from_push(
@@ -400,8 +411,9 @@ class PushService:
                     channels.append(NotificationChannel.WECHAT.value)
                 if settings.ios_push_enabled and settings.ios_device_token:
                     channels.append(NotificationChannel.IOS_APNS.value)
-            # Telegram 作为兜底通道（不依赖用户设置，只要配了 bot token）
-            if self.telegram.configured:
+            # Telegram 是全局 fallback chat, 不能承载 per-user reminders;
+            # 否则所有用户的睡眠/用药提醒会汇聚到同一个 Telegram 会话。
+            if self.telegram.configured and _allows_telegram_fallback(notification_type):
                 channels.append("telegram")
 
         if not channels:
