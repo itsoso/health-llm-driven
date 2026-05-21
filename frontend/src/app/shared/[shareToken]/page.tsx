@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
+import { normalizeSharedAgentContent } from './contentNormalizer';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,7 +93,7 @@ export default async function SharedPage({ params }: { params: { shareToken: str
                 {m.role === 'user' ? (
                   <div className="whitespace-pre-wrap">{m.content}</div>
                 ) : (
-                  <MarkdownRenderer content={m.content} variant="light" />
+                  <MarkdownRenderer content={normalizeSharedAgentContent(m.content)} variant="light" />
                 )}
               </div>
             </article>
