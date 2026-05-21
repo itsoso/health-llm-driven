@@ -4,22 +4,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildSharedDeepLinks, openSharedInApp } from './OpenInAppButton';
 
 describe('OpenInAppButton deep links', () => {
-  it('uses the legacy mobile scheme first and health scheme as fallback', () => {
+  it('uses app schemes first and the universal link as the final fallback', () => {
     expect(buildSharedDeepLinks('abc123')).toEqual([
-      'mobile://shared/abc123',
       'health://shared/abc123',
+      'mobile://shared/abc123',
+      'https://health.executor.life/shared/abc123',
     ]);
   });
 
-  it('tries the fallback scheme when the page is still visible', () => {
+  it('tries fallbacks when the page is still visible', () => {
     vi.useFakeTimers();
     const navigate = vi.fn();
 
     openSharedInApp('token123', navigate, () => true);
+    expect(navigate).toHaveBeenCalledWith('health://shared/token123');
+
+    vi.advanceTimersByTime(700);
     expect(navigate).toHaveBeenCalledWith('mobile://shared/token123');
 
     vi.advanceTimersByTime(700);
-    expect(navigate).toHaveBeenCalledWith('health://shared/token123');
+    expect(navigate).toHaveBeenCalledWith('https://health.executor.life/shared/token123');
     vi.useRealTimers();
   });
 
@@ -31,7 +35,7 @@ describe('OpenInAppButton deep links', () => {
     vi.advanceTimersByTime(700);
 
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith('mobile://shared/token123');
+    expect(navigate).toHaveBeenCalledWith('health://shared/token123');
     vi.useRealTimers();
   });
 });

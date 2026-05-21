@@ -4,7 +4,11 @@ import { useState } from 'react';
 
 export function buildSharedDeepLinks(shareToken: string): string[] {
   const token = encodeURIComponent(shareToken);
-  return [`mobile://shared/${token}`, `health://shared/${token}`];
+  return [
+    `health://shared/${token}`,
+    `mobile://shared/${token}`,
+    `https://health.executor.life/shared/${token}`,
+  ];
 }
 
 export function openSharedInApp(
@@ -16,7 +20,11 @@ export function openSharedInApp(
   const links = buildSharedDeepLinks(shareToken);
   navigate(links[0]);
   setTimer(() => {
-    if (isVisible()) navigate(links[1]);
+    if (!isVisible()) return;
+    navigate(links[1]);
+    setTimer(() => {
+      if (isVisible()) navigate(links[2]);
+    }, 700);
   }, 700);
 }
 
