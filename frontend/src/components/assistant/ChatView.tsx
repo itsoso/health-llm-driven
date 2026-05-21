@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Bookmark, Copy, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Bookmark, Check, Copy, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import { renderCard } from '@/components/assistant/inlineCards';
+import { getShareableMessageIds } from '@/components/assistant/shareSelection';
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -13,6 +14,10 @@ interface ChatViewProps {
   messageFeedback: Record<number, 1 | 5>;
   onFeedback: (msgId: number, rating: 1 | 5) => void;
   onPinMessage?: (content: string, msgId: number) => void;
+  shareSelectionMode?: boolean;
+  selectedMessageIds?: Set<number>;
+  onToggleMessageSelection?: (msgId: number) => void;
+  onShareMessages?: (msgIds: number[]) => void;
 }
 
 const STYLE = {
@@ -21,13 +26,27 @@ const STYLE = {
   userBubbleClass: 'bg-[#2f2f2f] text-zinc-50',
 };
 
-export default function ChatView({ messages, loading, doneMessageIds, messageFeedback, onFeedback, onPinMessage }: ChatViewProps) {
+export default function ChatView({
+  messages,
+  loading,
+  doneMessageIds,
+  messageFeedback,
+  onFeedback,
+  onPinMessage,
+  shareSelectionMode = false,
+  selectedMessageIds = new Set(),
+  onToggleMessageSelection,
+  onShareMessages,
+}: ChatViewProps) {
   // 允许空内容但是有卡片的消息显示
   const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content && !m.card_type));
+  const shareableMessageIds = getShareableMessageIds(visibleMessages);
 
   return (
     <div className="mx-auto max-w-3xl space-y-7">
       {visibleMessages.map(msg => {
+        const canSelectForShare = shareableMessageIds.has(msg.id);
+        const selectedForShare = selectedMessageIds.has(msg.id);
         // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
         if (msg.card_type && msg.card_data) {
           const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
@@ -43,7 +62,24 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
           }
         }
         return (
-        <div key={msg.id} className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        <div key={msg.id} className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-teal-400/[0.06] ring-1 ring-teal-300/20' : ''}`}>
+          {shareSelectionMode && (
+            <button
+              type="button"
+              disabled={!canSelectForShare}
+              onClick={() => canSelectForShare && onToggleMessageSelection?.(msg.id)}
+              className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
+                selectedForShare
+                  ? 'border-teal-300 bg-teal-400 text-zinc-950'
+                  : canSelectForShare
+                    ? 'border-white/15 bg-white/[0.04] text-transparent hover:border-teal-300/60'
+                    : 'border-white/[0.06] bg-white/[0.02] text-transparent opacity-40'
+              }`}
+              aria-label={selectedForShare ? '取消选择这条消息' : '选择这条消息'}
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+          )}
           {msg.role === 'assistant' && (
             <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
               <Sparkles className="h-4 w-4" />
@@ -111,6 +147,11 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
               <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-zinc-200" title="复制">
                 <Copy className="h-3.5 w-3.5" />
               </button>
+              {onShareMessages && (
+                <button onClick={() => onShareMessages([msg.id])} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-teal-300" title="分享这条">
+                  <Share2 className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button onClick={() => onFeedback(msg.id, 5)} className={`rounded-lg p-1.5 transition-all ${messageFeedback[msg.id] === 5 ? 'bg-teal-400/15 text-teal-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="helpful">
                 <ThumbsUp className="h-3.5 w-3.5" />
               </button>

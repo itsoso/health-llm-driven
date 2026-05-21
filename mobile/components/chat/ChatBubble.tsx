@@ -30,9 +30,12 @@ import { buildAiShareMessage } from '../../utils/aiShareText';
 interface Props {
   item: UIMessage;
   onViewImage?: (uri: string) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelected?: (id: string) => void;
 }
 
-function ChatBubbleInner({ item, onViewImage }: Props) {
+function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected }: Props) {
   const qc = useQueryClient();
   const { c, isDark } = useTheme();
   const toast = useToast();
@@ -93,6 +96,10 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   };
 
   const handleLongPress = () => {
+    if (selectionMode) {
+      onToggleSelected?.(item.id);
+      return;
+    }
     Haptics.selectionAsync();
     setShowActions(prev => !prev);
   };
@@ -183,9 +190,25 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
   };
 
+  const handleBubblePress = () => {
+    if (selectionMode) onToggleSelected?.(item.id);
+  };
+
   return (
     <>
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
+        {selectionMode && (
+          <Pressable
+            onPress={() => onToggleSelected?.(item.id)}
+            hitSlop={8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected }}
+            accessibilityLabel={selected ? '取消选择这条消息' : '选择这条消息'}
+            style={[styles.selectMark, selected && styles.selectMarkActive]}
+          >
+            {selected ? <Ionicons name="checkmark" size={13} color="#fff" /> : null}
+          </Pressable>
+        )}
         {!isUser && (
           <BrandCircle size={28} style={{ marginRight: 8 }}>
             <Ionicons name="sparkles" size={12} color="#fff" />
@@ -193,11 +216,13 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
         )}
         {isUser ? (
           <TouchableOpacity
-            style={[styles.bubble, styles.bubbleUser]}
+            style={[styles.bubble, styles.bubbleUser, selected && styles.bubbleSelected]}
             activeOpacity={0.8}
-            onLongPress={handleCopy}
+            onPress={handleBubblePress}
+            onLongPress={selectionMode ? undefined : handleCopy}
             accessibilityRole="text"
             accessibilityLabel={`你: ${item.content}${item.fromSiri ? ' (来自 Siri)' : ''}`}
+            accessibilityState={selectionMode ? { selected } : undefined}
           >
             {item.fromSiri && (
               <View style={styles.siriBadge} accessibilityLabel="来自 Siri">
@@ -221,11 +246,13 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide]}
+            style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide, selected && styles.bubbleSelected]}
             activeOpacity={0.95}
+            onPress={handleBubblePress}
             onLongPress={handleLongPress}
             accessibilityRole="text"
             accessibilityLabel={`AI: ${item.content}`}
+            accessibilityState={selectionMode ? { selected } : undefined}
           >
             {displayText ? (
               <Markdown style={mdStyles}>{displayText}</Markdown>
@@ -274,15 +301,17 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
                   </>
                 ) : null}
                 <View style={{ flex: 1 }} />
-                <Pressable
-                  onPress={handleShare}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel="分享"
-                  style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
-                >
-                  <Ionicons name="share-outline" size={14} color={c.labelSecondary} />
-                </Pressable>
+                {!selectionMode ? (
+                  <Pressable
+                    onPress={handleShare}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="分享"
+                    style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
+                  >
+                    <Ionicons name="share-outline" size={14} color={c.labelSecondary} />
+                  </Pressable>
+                ) : null}
                 <Pressable
                   onPress={handleSpeak}
                   hitSlop={6}
@@ -374,6 +403,30 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     msgRowAI: { justifyContent: 'flex-start' },
     bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
     bubbleUser: { backgroundColor: c.brand, borderBottomRightRadius: 4 },
+    bubbleSelected: {
+      borderWidth: 2,
+      borderColor: c.brand,
+      shadowColor: c.brand,
+      shadowOpacity: 0.16,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    selectMark: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor: c.separator,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+      marginBottom: 10,
+      backgroundColor: c.bgPrimary,
+    },
+    selectMarkActive: {
+      backgroundColor: c.brand,
+      borderColor: c.brand,
+    },
     siriBadge: {
       position: 'absolute',
       top: -6, right: -6,

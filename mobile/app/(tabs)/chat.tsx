@@ -27,6 +27,8 @@ import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../s
 import { recordCardAdherence } from '../../services/actionCards';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { sharePlainText } from '../../utils/share';
+import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 
 type SuggestionCard = { icon: keyof typeof Ionicons.glyphMap; text: string };
 
@@ -86,6 +88,9 @@ export default function ChatScreen() {
   const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
   const [llmError, setLlmError] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [sharing, setSharing] = useState(false);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -231,10 +236,17 @@ export default function ChatScreen() {
     loadConversationHistory();
   }, [loadConversationHistory]);
 
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+  }, []);
+
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
     isNearBottom.current = true;
     setContextBadge(null);
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 120);
   }, [loadConversation]);
 
@@ -245,8 +257,11 @@ export default function ChatScreen() {
       return;
     }
     setConversations(prev => prev.filter(item => item.id !== id));
-    if (conversationId === id) newChat();
-  }, [conversationId, newChat]);
+    if (conversationId === id) {
+      exitSelectionMode();
+      newChat();
+    }
+  }, [conversationId, exitSelectionMode, newChat]);
 
   const handleRenameConversation = useCallback(async (id: number, title: string) => {
     const updated = await updateConversationTitle(id, title);
@@ -261,9 +276,38 @@ export default function ChatScreen() {
     )));
   }, []);
 
+  const toggleMessageSelection = useCallback((id: string) => {
+    setSelectedMessageIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const shareSelectedMessages = useCallback(async () => {
+    const message = buildSelectedChatShareMessage(messages, selectedMessageIds);
+    if (!message || sharing) return;
+    setSharing(true);
+    try {
+      await sharePlainText({ title: '健康 Agent · 对话节选', message });
+      exitSelectionMode();
+    } catch {
+      Alert.alert('分享失败', '请稍后重试');
+    } finally {
+      setSharing(false);
+    }
+  }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
+
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => (
-    <ChatBubble item={item} onViewImage={setViewingImage} />
-  ), []);
+    <ChatBubble
+      item={item}
+      onViewImage={setViewingImage}
+      selectionMode={selectionMode && isShareableChatMessage(item)}
+      selected={selectedMessageIds.has(item.id)}
+      onToggleSelected={toggleMessageSelection}
+    />
+  ), [selectedMessageIds, selectionMode, toggleMessageSelection]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const kbOffset = 0;
@@ -284,6 +328,21 @@ export default function ChatScreen() {
           onSelect={handleSelectModel}
         />
         <View style={{ flex: 1 }} />
+        {messages.some(isShareableChatMessage) && (
+          <TouchableOpacity
+            onPress={() => {
+              if (selectionMode) exitSelectionMode();
+              else setSelectionMode(true);
+            }}
+            hitSlop={8}
+            style={styles.historyAction}
+            accessibilityLabel={selectionMode ? '取消选择分享' : '选择多条分享'}
+            accessibilityRole="button"
+          >
+            <Ionicons name={selectionMode ? 'close' : 'checkbox-outline'} size={19} color={c.labelSecondary} />
+            <Text style={txt.historyAction}>{selectionMode ? '取消' : '多选'}</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           onPress={openHistory}
           hitSlop={8}
@@ -308,7 +367,7 @@ export default function ChatScreen() {
         >
           <Ionicons name="mic-circle" size={26} color={c.brand} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
+        <TouchableOpacity onPress={() => { exitSelectionMode(); newChat(); }} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
           <Ionicons name="create-outline" size={20} color={c.labelSecondary} />
         </TouchableOpacity>
         {conversationId && messages.length > 0 && (
@@ -317,6 +376,7 @@ export default function ChatScreen() {
               { text: '取消', style: 'cancel' },
               { text: '删除', style: 'destructive', onPress: async () => {
                 await deleteConversation(conversationId);
+                exitSelectionMode();
                 newChat();
               }},
             ]);
@@ -390,6 +450,24 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {selectionMode && (
+          <View style={styles.shareBar}>
+            <View style={{ flex: 1 }}>
+              <Text style={txt.shareBarTitle}>已选择 {selectedMessageIds.size} 条</Text>
+              <Text style={txt.shareBarSub}>按当前对话顺序生成分享链接</Text>
+            </View>
+            <TouchableOpacity
+              onPress={shareSelectedMessages}
+              disabled={selectedMessageIds.size === 0 || sharing}
+              style={[styles.shareButton, (selectedMessageIds.size === 0 || sharing) && styles.shareButtonDisabled]}
+              accessibilityLabel="分享已选消息"
+              accessibilityRole="button"
+            >
+              <Ionicons name="share-outline" size={16} color="#fff" />
+              <Text style={txt.shareButton}>{sharing ? '生成中' : '分享'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <ChatInputBar onSend={handleSend} isStreaming={isStreaming} initialText={initialInput} conversationId={conversationId} />
         {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
@@ -466,6 +544,31 @@ function createStyles(c: ColorPalette) {
     paddingHorizontal: spacing.md, paddingVertical: 6,
     backgroundColor: c.brandLight, borderRadius: radii.md,
   },
+  shareBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: 8,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: c.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    ...shadows.subtle,
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: radii.full,
+    backgroundColor: c.brand,
+  },
+  shareButtonDisabled: {
+    opacity: 0.45,
+  },
   });
 }
 
@@ -477,5 +580,8 @@ function createTxt(c: ColorPalette) {
   sugText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
   contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
   historyAction: { fontSize: 12, color: c.labelSecondary, fontWeight: '600' } as TextStyle,
+  shareBarTitle: { fontSize: 13, color: c.labelPrimary, fontWeight: '700' } as TextStyle,
+  shareBarSub: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
+  shareButton: { fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
   };
 }

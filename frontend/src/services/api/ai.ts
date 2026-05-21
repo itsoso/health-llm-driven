@@ -289,6 +289,11 @@ export const sharedApi = {
       conversation_id: conversationId,
       source_type: sourceType,
     }),
+  createTextShare: (title: string, message: string) =>
+    api.post<{ share_token: string; share_url: string }>('/shared/create-text', {
+      title,
+      message,
+    }),
   revokeShare: (shareToken: string) =>
     api.delete(`/shared/${shareToken}`),
 };

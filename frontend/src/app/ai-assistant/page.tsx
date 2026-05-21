@@ -13,15 +13,19 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
+  CheckSquare,
   MessageSquarePlus,
   PanelLeft,
+  Share2,
   Sparkles,
+  X,
 } from 'lucide-react';
-import { ChatMessage, Conversation, agentApi } from '@/services/api/ai';
+import { ChatMessage, Conversation, agentApi, sharedApi } from '@/services/api/ai';
 import ChatView from '@/components/assistant/ChatView';
 import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPicker';
 import ConversationHistoryRail from '@/components/assistant/ConversationHistoryRail';
 import { api } from '@/services/api/client';
+import { buildSelectedChatShareText } from '@/components/assistant/shareSelection';
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -46,6 +50,9 @@ export default function AIAssistantPage() {
   const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
   const [llmError, setLlmError] = useState<string | null>(null);
+  const [shareSelectionMode, setShareSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(new Set());
+  const [sharing, setSharing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
 
@@ -195,6 +202,8 @@ export default function AIAssistantPage() {
   const startNewConversation = () => {
     setActiveConvId(undefined);
     setMessages([]);
+    setShareSelectionMode(false);
+    setSelectedMessageIds(new Set());
     refreshConversationStarters();
   };
 
@@ -217,6 +226,8 @@ export default function AIAssistantPage() {
     setActiveConvId(conversationId);
     setMessages(loaded);
     setDoneIds(new Set(loaded.filter(m => m.role === 'assistant').map(m => m.id)));
+    setShareSelectionMode(false);
+    setSelectedMessageIds(new Set());
   };
 
   const deleteConversation = async (conversationId: number) => {
@@ -243,6 +254,42 @@ export default function AIAssistantPage() {
   const submitSuggestion = (text: string) => {
     if (streaming) return;
     sendMessage(text);
+  };
+
+  const toggleMessageSelection = (messageId: number) => {
+    setSelectedMessageIds(prev => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
+  const exitShareSelection = () => {
+    setShareSelectionMode(false);
+    setSelectedMessageIds(new Set());
+  };
+
+  const shareMessages = async (messageIds?: number[]) => {
+    const ids = messageIds ? new Set(messageIds) : selectedMessageIds;
+    const text = buildSelectedChatShareText(messages, ids);
+    if (!text || sharing) return;
+    setSharing(true);
+    try {
+      const res = await sharedApi.createTextShare('健康 Agent · 对话节选', text);
+      const shareUrl = res.data.share_url;
+      if (navigator.share) {
+        await navigator.share({ title: '健康 Agent · 对话节选', text: '我分享了一段健康 Agent 对话', url: shareUrl });
+      } else {
+        await navigator.clipboard?.writeText(shareUrl);
+        window.alert('分享链接已复制');
+      }
+      if (!messageIds) exitShareSelection();
+    } catch (e: any) {
+      window.alert(e?.response?.data?.detail || e?.message || '分享失败，请稍后重试');
+    } finally {
+      setSharing(false);
+    }
   };
 
   return (
@@ -274,6 +321,18 @@ export default function AIAssistantPage() {
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden sm:inline">新对话</span>
           </button>
+          {messages.some(m => m.content?.trim()) && (
+            <button
+              onClick={() => {
+                if (shareSelectionMode) exitShareSelection();
+                else setShareSelectionMode(true);
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-teal-300/20 bg-teal-400/10 px-3 text-sm font-medium text-teal-200 transition-colors hover:bg-teal-400/15"
+            >
+              {shareSelectionMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+              <span className="hidden sm:inline">{shareSelectionMode ? '取消选择' : '选择分享'}</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -319,9 +378,31 @@ export default function AIAssistantPage() {
                 doneMessageIds={doneIds}
                 messageFeedback={{}}
                 onFeedback={() => {}}
+                shareSelectionMode={shareSelectionMode}
+                selectedMessageIds={selectedMessageIds}
+                onToggleMessageSelection={toggleMessageSelection}
+                onShareMessages={ids => shareMessages(ids)}
               />
             )}
           </div>
+
+          {shareSelectionMode && (
+            <div className="pointer-events-auto absolute inset-x-3 bottom-28 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-teal-300/20 bg-[#171717]/95 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur sm:inset-x-6">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-zinc-100">已选择 {selectedMessageIds.size} 条</div>
+                <div className="text-xs text-zinc-500">按对话顺序生成一个可分享链接</div>
+              </div>
+              <button
+                type="button"
+                disabled={selectedMessageIds.size === 0 || sharing}
+                onClick={() => shareMessages()}
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-teal-300 px-4 text-sm font-semibold text-zinc-950 transition-colors hover:bg-teal-200 disabled:bg-zinc-700 disabled:text-zinc-500"
+              >
+                <Share2 className="h-4 w-4" />
+                {sharing ? '生成中…' : '分享'}
+              </button>
+            </div>
+          )}
 
           {/* 输入区 */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#212121] via-[#212121] to-transparent px-3 pb-4 pt-10 sm:px-6">
