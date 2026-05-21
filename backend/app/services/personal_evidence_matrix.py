@@ -32,6 +32,62 @@ def build_personal_evidence_matrix(twin: Any) -> dict[str, Any]:
     }
 
 
+def derive_personal_matrix_planner_flags(matrix: dict[str, Any]) -> list[str]:
+    """Derive deterministic planner guardrails from a personal evidence matrix."""
+
+    signals = _matrix_signals(matrix)
+    flags: set[str] = set()
+
+    lab_signals = [signal for signal in signals if signal.get("signal_type") == "lab"]
+    gap_ids = {str(signal.get("signal_id")) for signal in signals if signal.get("signal_type") == "data_gap"}
+    if "gap.lab_anchor_missing" in gap_ids:
+        flags.add("lab_anchor_missing")
+    elif not lab_signals or any(signal.get("freshness") == "stale" for signal in lab_signals):
+        flags.add("lab_anchor_stale")
+
+    if _has_poor_recovery_signal(signals):
+        flags.add("poor_recovery_matrix")
+
+    has_genetic = any(signal.get("signal_type") == "genetic" for signal in signals)
+    has_validation_signal = any(
+        signal.get("signal_type") in {"lab", "body_measurement", "wearable", "behavior"}
+        for signal in signals
+    )
+    if has_genetic and not has_validation_signal:
+        flags.add("genetic_only_policy")
+
+    return sorted(flags)
+
+
+def compact_personal_evidence_matrix(matrix: dict[str, Any], *, max_signals: int = 8) -> dict[str, Any]:
+    """Return a planner-safe compact matrix view for state summaries and prompts."""
+
+    signals = _matrix_signals(matrix)
+    priority_signals = sorted(
+        signals,
+        key=lambda signal: (
+            signal.get("signal_type") != "data_gap",
+            signal.get("confidence_modifier") != "lower",
+            str(signal.get("signal_id") or ""),
+        ),
+    )[:max_signals]
+    return {
+        "summary": matrix.get("summary", {}),
+        "planner_flags": derive_personal_matrix_planner_flags(matrix),
+        "key_signals": [
+            {
+                "signal_id": signal.get("signal_id"),
+                "signal_type": signal.get("signal_type"),
+                "freshness": signal.get("freshness"),
+                "reliability": signal.get("reliability"),
+                "confidence_modifier": signal.get("confidence_modifier"),
+                "domains": signal.get("domains", []),
+            }
+            for signal in priority_signals
+        ],
+    }
+
+
 def _add_genetic_signals(twin: Any, signals: list[Signal]) -> None:
     genetic = _section(twin, "genetic")
     if not _value(genetic, "has_profile"):
@@ -381,3 +437,21 @@ def _to_iso(value: Any) -> str | None:
     if value:
         return str(value)
     return None
+
+
+def _matrix_signals(matrix: dict[str, Any]) -> list[Signal]:
+    signals = matrix.get("signals")
+    return signals if isinstance(signals, list) else []
+
+
+def _has_poor_recovery_signal(signals: list[Signal]) -> bool:
+    for signal in signals:
+        signal_id = signal.get("signal_id")
+        value = signal.get("value")
+        if signal_id == "wearable.sleep_score_latest" and isinstance(value, (int, float)) and value < 65:
+            return True
+        if signal_id == "wearable.training_readiness_score" and isinstance(value, (int, float)) and value < 50:
+            return True
+        if signal_id == "wearable.hrv_status" and str(value).lower() in {"low", "poor", "偏低", "低"}:
+            return True
+    return False

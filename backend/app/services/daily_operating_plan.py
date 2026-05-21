@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session
 from app.models.action_card import ActionCard
 from app.models.daily_operating_plan import DailyOperatingPlan
 from app.services.advice_guard import AdviceCandidate, AdviceGuardError, guard_and_record_advice
+from app.services.personal_evidence_matrix import (
+    build_personal_evidence_matrix,
+    compact_personal_evidence_matrix,
+)
 from app.twin import build_twin
 
 logger = logging.getLogger(__name__)
@@ -198,6 +202,38 @@ def _apply_acute_rest_arbiter(
     return kept, notes
 
 
+def _lab_anchor_action(reason: str) -> Dict[str, Any]:
+    return _action(
+        "measurement",
+        "补齐近期关键化验锚点",
+        "当前缺少新鲜化验锚点，补齐 HbA1c、血脂、尿酸和肝肾功能后，再提高补剂或代谢建议置信度。",
+        action_key="measurement.update_lab_anchor",
+        when="this_week",
+        metric_key="lab_anchor",
+        target_value="fresh_lab_panel",
+        evidence_level="high",
+        evidence_tier="clinical_guideline",
+        confidence="high",
+        claim_boundary="化验补齐用于健康管理置信度校准，不替代医生诊断、处方或治疗。",
+    ) | {"personal_evidence": {"trigger": reason}}
+
+
+def _recovery_movement_action(*, trigger: str, guardrail: str | None = None) -> Dict[str, Any]:
+    why = guardrail or "个人证据矩阵显示恢复信号偏弱，今天不堆高强度，先保连续性和恢复。"
+    return _action(
+        "movement",
+        "低强度 Zone 2 或主动恢复 30 分钟",
+        why,
+        action_key="movement.zone2_recovery",
+        when="afternoon",
+        metric_key="rhr",
+        target_value="stable",
+        evidence_tier="wearable_proxy",
+        confidence="medium",
+        claim_boundary="训练准备度和恢复信号是可穿戴代理指标, 不替代医生对疲劳、感染或损伤的诊断。",
+    ) | {"personal_evidence": {"trigger": trigger}}
+
+
 def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None) -> Dict[str, Any]:
     """构建并缓存当天 Daily Operating Plan.
 
@@ -205,6 +241,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     """
     plan_date = plan_date or date.today()
     twin = build_twin(db, user_id, use_cache=False)
+    personal_matrix = build_personal_evidence_matrix(twin)
+    compact_matrix = compact_personal_evidence_matrix(personal_matrix)
+    planner_flags = set(compact_matrix["planner_flags"])
     body = twin.body_composition
     bp = _bp_text(twin)
     acute = getattr(twin, "acute", None)
@@ -227,6 +266,12 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         confidence="high",
         claim_boundary="体重和腰围用于代谢趋势追踪, 不替代医生诊断或影像/实验室检查。",
     ))
+
+    if "lab_anchor_missing" in planner_flags:
+        actions.append(_lab_anchor_action("lab_anchor_missing"))
+    elif "lab_anchor_stale" in planner_flags:
+        actions.append(_lab_anchor_action("lab_anchor_stale"))
+
     actions.append(_action(
         "nutrition",
         f"今天蛋白质目标 {protein_target}g",
@@ -256,18 +301,9 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             claim_boundary="急性病或疑似感染期的活动建议用于健康管理安全兜底；如有发热、胸痛、气促或症状加重，应及时就医。",
         ))
     elif readiness is not None and readiness < 50:
-        actions.append(_action(
-            "movement",
-            "低强度 Zone 2 或主动恢复 30 分钟",
-            "训练准备度偏低时不堆高强度, 先保连续性和恢复。",
-            action_key="movement.zone2_recovery",
-            when="afternoon",
-            metric_key="rhr",
-            target_value="stable",
-            evidence_tier="wearable_proxy",
-            confidence="medium",
-            claim_boundary="训练准备度是可穿戴代理指标, 不替代医生对疲劳、感染或损伤的诊断。",
-        ))
+        actions.append(_recovery_movement_action(trigger="training_readiness_score"))
+    elif "poor_recovery_matrix" in planner_flags:
+        actions.append(_recovery_movement_action(trigger="poor_recovery_matrix"))
     else:
         actions.append(_action(
             "movement",
@@ -318,6 +354,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         },
         **({"arbitration_notes": arbitration_notes} if arbitration_notes else {}),
         "data_sources": twin.meta.data_sources,
+        "personal_evidence_matrix": compact_matrix,
     }
     verification_metrics = [
         m for m in ["weight", "waist_cm", "systolic_bp", "sleep_score"]

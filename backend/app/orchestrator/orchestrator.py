@@ -372,6 +372,7 @@ def _build_synthesis_prompt(
     """
 
     twin_blob = twin_to_prompt_blob(twin)
+    personal_matrix_text = _format_personal_evidence_matrix_for_prompt(twin)
     system_kb_text = ""
     if db is not None:
         try:
@@ -542,6 +543,8 @@ def _build_synthesis_prompt(
         f"【用户原始问题】\n{query}",
         f"【用户当前健康快照】\n{twin_blob or '(数据暂缺)'}",
     ]
+    if personal_matrix_text:
+        user_prompt_parts.append(f"【个人证据矩阵】\n{personal_matrix_text}")
     if system_kb_text:
         user_prompt_parts.append(f"【系统知识库命中】\n{system_kb_text}")
     if credit_text:
@@ -557,6 +560,38 @@ def _build_synthesis_prompt(
     user_prompt_parts.append("请基于以上信息写回答。")
 
     return system_prompt, "\n\n".join(user_prompt_parts)
+
+
+def _format_personal_evidence_matrix_for_prompt(twin: HealthTwin) -> str:
+    try:
+        from app.services.personal_evidence_matrix import (
+            build_personal_evidence_matrix,
+            compact_personal_evidence_matrix,
+        )
+
+        compact = compact_personal_evidence_matrix(build_personal_evidence_matrix(twin), max_signals=6)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[orchestrator] personal evidence matrix prompt skipped: %s", exc)
+        return ""
+
+    summary = compact.get("summary") or {}
+    flags = list(compact.get("planner_flags") or [])
+    lines = [
+        f"summary: signals={summary.get('signal_count', 0)}; data_gaps={summary.get('data_gap_count', 0)}",
+        f"planner_flags={','.join(flags) if flags else 'none'}",
+    ]
+    if "genetic_only_policy" in flags:
+        lines.append("genetic_only_policy=low_until_validated")
+    if "poor_recovery_matrix" in flags:
+        lines.append("recovery_policy=avoid_high_intensity")
+    gap_ids = [
+        str(signal.get("signal_id"))
+        for signal in compact.get("key_signals", [])
+        if str(signal.get("signal_id") or "").startswith("gap.")
+    ]
+    if gap_ids:
+        lines.append(f"data_gaps={','.join(gap_ids)}")
+    return "\n".join(lines)
 
 
 def _system_kb_twin_payload(twin: HealthTwin) -> Dict[str, Any]:
