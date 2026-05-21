@@ -25,6 +25,8 @@ import {
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { useToast } from '../hooks/useToast';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createMedicationAgentContext } from '../utils/agentContext';
 
 type TabKey = 'active' | 'archived';
 
@@ -97,6 +99,8 @@ export default function MedicationsScreen() {
   const isLoading = tab === 'active' ? activeQuery.isLoading : allQuery.isLoading;
   const isFetching = tab === 'active' ? activeQuery.isFetching : allQuery.isFetching;
   const refetch = tab === 'active' ? activeQuery.refetch : allQuery.refetch;
+  const today = new Date().toISOString().split('T')[0];
+  const activeMedications = activeQuery.data || [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -127,6 +131,20 @@ export default function MedicationsScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={c.brand} />}
       >
+        {activeMedications.length > 0 && (
+          <AgentFeedbackLink
+            label="跟 Agent 整理用药问题"
+            accessibilityLabel="跟 Agent 整理用药问题"
+            prompt="请基于我的在用药品列表, 帮我整理今天的用药执行情况、可能需要向医生确认的问题、近期不适该如何描述。不要建议我自行停药、换药或改剂量。"
+            context={createMedicationAgentContext({
+              date: today,
+              activeMedications,
+              archivedMedications: archived,
+            })}
+            badge={`在用药品 ${activeMedications.length} 个`}
+            style={styles.agentLink}
+          />
+        )}
         {isLoading ? (
           <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
         ) : currentList.length === 0 ? (
@@ -231,6 +249,7 @@ function createStyles(c: ColorPalette) {
     },
     tabBtnActive: { backgroundColor: c.bgCard },
     scroll: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl },
+    agentLink: { marginTop: spacing.sm, marginBottom: spacing.md },
     center: { paddingTop: 80, alignItems: 'center' },
     empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: spacing.lg },
     list: { gap: spacing.sm, paddingTop: spacing.sm },

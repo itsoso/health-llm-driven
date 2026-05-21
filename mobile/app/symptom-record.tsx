@@ -21,6 +21,8 @@ import { BODY_PARTS, BodyPart, createSymptom } from '../services/symptoms';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { emitClientEvent } from '../services/clientEvents';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createSymptomAgentContext } from '../utils/agentContext';
 
 const SEVERITY_LEVELS = [
   { value: 1, label: '轻微' },
@@ -41,6 +43,7 @@ export default function SymptomRecordScreen() {
   const [saving, setSaving] = useState(false);
 
   const canSave = bodyPart !== null && description.trim().length > 0;
+  const today = new Date().toISOString().split('T')[0];
 
   const onSave = async () => {
     if (!canSave || saving) return;
@@ -144,6 +147,21 @@ export default function SymptomRecordScreen() {
             })}
           </View>
 
+          <AgentFeedbackLink
+            label="跟 Agent 复盘这个症状"
+            accessibilityLabel="跟 Agent 复盘这个症状"
+            prompt="请基于我正在记录的症状, 帮我复盘可能诱因、需要补充的问题、居家观察和记录建议，并明确哪些情况需要尽快就医。不要给出确定诊断。"
+            context={createSymptomAgentContext({
+              date: today,
+              bodyPart,
+              description,
+              severity,
+              source: 'manual',
+            })}
+            badge="症状记录"
+            style={styles.agentLink}
+          />
+
           <TouchableOpacity style={styles.voiceCta} onPress={onVoice} activeOpacity={0.8}>
             <Ionicons name="mic" size={22} color="#fff" />
             <Text style={txt.voiceText}>或者语音跟我说,我帮你记</Text>
@@ -189,6 +207,7 @@ function createStyles(c: ColorPalette) {
       marginTop: spacing.xl * 1.5, paddingVertical: 16,
       backgroundColor: c.brand, borderRadius: radii.md, ...shadows.subtle,
     },
+    agentLink: { marginTop: spacing.xl },
   });
 }
 

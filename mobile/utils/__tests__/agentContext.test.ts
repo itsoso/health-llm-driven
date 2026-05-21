@@ -6,9 +6,12 @@ import {
   createDietAgentContext,
   createDietPlanAgentContext,
   createHydrationAgentContext,
+  createMedicationAgentContext,
   createMovementPlanAgentContext,
   createSafetyAlertAgentContext,
+  createSleepSpo2AgentContext,
   createSupplementAgentContext,
+  createSymptomAgentContext,
   createWorkoutDetailAgentContext,
   serializeAgentContext,
 } from '../agentContext';
@@ -349,6 +352,96 @@ describe('agentContext', () => {
       },
       draft_record: { weight_kg: 78.0, waist_cm: null, notes: '晨起空腹' },
       expected_agent_output: ['体重/腰围趋势复盘', '血压风险和生活方式建议', '今天饮食运动调整', '需要继续记录的数据'],
+    });
+  });
+
+  it('creates symptom feedback context with safety boundary', () => {
+    expect(createSymptomAgentContext({
+      date: '2026-05-21',
+      bodyPart: 'respiratory',
+      description: '夜里咳嗽，有痰',
+      severity: 5,
+      source: 'manual',
+    })).toEqual({
+      from: 'symptom/2026-05-21',
+      feedback_intent: 'symptom_triage_support',
+      date: '2026-05-21',
+      symptom: {
+        body_part: 'respiratory',
+        description: '夜里咳嗽，有痰',
+        severity: 5,
+        source: 'manual',
+      },
+      safety_boundary: '健康管理建议，不替代诊断；明显异常、急性加重或危险信号应及时就医。',
+      expected_agent_output: ['症状复盘', '可能诱因和需要补充的问题', '居家观察与记录建议', '就医/急诊红旗信号'],
+    });
+  });
+
+  it('creates sleep spo2 feedback context without raw timeseries', () => {
+    const context = createSleepSpo2AgentContext({
+      night_date: '2026-05-20',
+      odi: 6.2,
+      events_count: 9,
+      min_spo2: 88,
+      avg_spo2: 95,
+      total_sleep_minutes: 420,
+      events: [
+        {
+          start_ts: '01:00',
+          end_ts: '01:01',
+          duration_seconds: 45,
+          min_spo2: 88,
+          baseline_spo2: 96,
+          drop_magnitude: 8,
+          concurrent_hr_delta: 12,
+          concurrent_respiration_rate: 17,
+          sleep_stage: 'rem',
+        },
+      ],
+      correlations: [
+        {
+          category: 'diagnostic',
+          subject: '夜间低氧',
+          rule: 'odi_ge_5',
+          hypothesis: '可能存在睡眠呼吸风险',
+          suggested_action: '观察并考虑进一步检查',
+          severity: 'warning',
+          confidence: 'medium',
+          evidence: { odi: 6.2 },
+        },
+      ],
+      action_priorities: ['今晚侧睡'],
+      ask_questions: ['昨晚是否饮酒?'],
+    });
+
+    expect(context).toMatchObject({
+      from: 'sleep-spo2/2026-05-20',
+      feedback_intent: 'sleep_breathing_review',
+      night: { odi: 6.2, events_count: 9, min_spo2: 88 },
+      event_summary: [{ duration_seconds: 45, min_spo2: 88, sleep_stage: 'rem' }],
+      expected_agent_output: ['昨晚呼吸风险复盘', '今晚睡眠实验建议', '需要补充的背景信息', '医生评估提示边界'],
+    });
+    expect(JSON.stringify(context)).not.toContain('start_ts');
+  });
+
+  it('creates medication feedback context with medical safety boundary', () => {
+    const context = createMedicationAgentContext({
+      date: '2026-05-21',
+      activeMedications: [
+        { id: 1, name: '鼻喷雾', dosage: '1 喷', frequency: '每日', purpose: '鼻炎', is_active: true },
+      ] as any,
+      archivedMedications: [
+        { id: 2, name: '旧药', dosage: null, frequency: null, purpose: null, is_active: false },
+      ] as any,
+    });
+
+    expect(context).toMatchObject({
+      from: 'medications/2026-05-21',
+      feedback_intent: 'medication_review_support',
+      active_count: 1,
+      archived_count: 1,
+      active_medications: [{ id: 1, name: '鼻喷雾', dosage: '1 喷', frequency: '每日', purpose: '鼻炎' }],
+      safety_boundary: '不能自行停药、换药或改剂量；只整理执行情况、疑问和就医沟通清单。',
     });
   });
 });

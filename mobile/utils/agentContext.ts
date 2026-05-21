@@ -5,8 +5,11 @@ import type { DailyDietSummary } from '@/services/diet';
 import type { DietPlan } from '@/services/dietPlan';
 import type { MedicalExam } from '@/services/medicalExams';
 import type { MovementPlan } from '@/services/movementPlan';
+import type { Medication } from '@/services/medications';
 import type { SafetyAlert } from '@/services/safety';
+import type { SpO2NightAnalysis } from '@/services/sleepSpo2';
 import type { GarminSleepDay, SleepDebt, SleepStats } from '@/services/sleep';
+import type { BodyPart } from '@/services/symptoms';
 import type {
   PostWorkoutAnalysisResponse,
   WorkoutAnalysis,
@@ -428,6 +431,104 @@ export function createBodyMetricsAgentContext(args: {
       notes: args.draft.notes ?? null,
     } : null,
     expected_agent_output: ['体重/腰围趋势复盘', '血压风险和生活方式建议', '今天饮食运动调整', '需要继续记录的数据'],
+  };
+}
+
+export function createSymptomAgentContext(args: {
+  date: string;
+  bodyPart?: BodyPart | null;
+  description?: string | null;
+  severity?: number | null;
+  source?: 'manual' | 'voice' | 'siri';
+}): AgentContextPayload {
+  return {
+    from: `symptom/${args.date}`,
+    feedback_intent: 'symptom_triage_support',
+    date: args.date,
+    symptom: {
+      body_part: args.bodyPart ?? null,
+      description: args.description?.trim() || null,
+      severity: args.severity ?? null,
+      source: args.source ?? 'manual',
+    },
+    safety_boundary: '健康管理建议，不替代诊断；明显异常、急性加重或危险信号应及时就医。',
+    expected_agent_output: ['症状复盘', '可能诱因和需要补充的问题', '居家观察与记录建议', '就医/急诊红旗信号'],
+  };
+}
+
+export function createSleepSpo2AgentContext(analysis: SpO2NightAnalysis): AgentContextPayload {
+  return {
+    from: `sleep-spo2/${analysis.night_date}`,
+    feedback_intent: 'sleep_breathing_review',
+    night: {
+      date: analysis.night_date,
+      odi: analysis.odi,
+      events_count: analysis.events_count,
+      min_spo2: analysis.min_spo2,
+      avg_spo2: analysis.avg_spo2,
+      total_sleep_minutes: analysis.total_sleep_minutes,
+      snore_events_count: analysis.snore_events?.length ?? 0,
+    },
+    event_summary: (analysis.events ?? []).slice(0, 8).map(event => ({
+      duration_seconds: event.duration_seconds,
+      min_spo2: event.min_spo2,
+      baseline_spo2: event.baseline_spo2,
+      drop_magnitude: event.drop_magnitude,
+      concurrent_hr_delta: event.concurrent_hr_delta,
+      concurrent_respiration_rate: event.concurrent_respiration_rate,
+      sleep_stage: event.sleep_stage,
+    })),
+    correlations: (analysis.correlations ?? []).slice(0, 8).map(item => ({
+      category: item.category,
+      subject: item.subject,
+      rule: item.rule,
+      hypothesis: item.hypothesis,
+      suggested_action: item.suggested_action,
+      severity: item.severity,
+      confidence: item.confidence,
+      evidence: item.evidence as AgentContextValue,
+    })),
+    action_priorities: (analysis.action_priorities ?? []).slice(0, 8),
+    ask_questions: (analysis.ask_questions ?? []).slice(0, 8),
+    safety_boundary: '用于睡眠健康管理和就医沟通准备，不诊断睡眠呼吸暂停；明显低氧、胸痛、呼吸困难或持续异常应就医。',
+    expected_agent_output: ['昨晚呼吸风险复盘', '今晚睡眠实验建议', '需要补充的背景信息', '医生评估提示边界'],
+  };
+}
+
+function compactMedication(med: Medication): AgentContextValue {
+  return {
+    id: med.id,
+    name: med.name,
+    dosage: med.dosage,
+    frequency: med.frequency,
+    times_per_day: med.times_per_day,
+    reminder_times: med.reminder_times,
+    category: med.category,
+    purpose: med.purpose,
+    start_date: med.start_date,
+    end_date: med.end_date,
+    is_active: med.is_active,
+    notes: med.notes,
+  };
+}
+
+export function createMedicationAgentContext(args: {
+  date: string;
+  activeMedications?: Medication[] | null;
+  archivedMedications?: Medication[] | null;
+}): AgentContextPayload {
+  const active = args.activeMedications ?? [];
+  const archived = args.archivedMedications ?? [];
+  return {
+    from: `medications/${args.date}`,
+    feedback_intent: 'medication_review_support',
+    date: args.date,
+    active_count: active.length,
+    archived_count: archived.length,
+    active_medications: active.slice(0, 20).map(compactMedication),
+    archived_medications: archived.slice(0, 10).map(compactMedication),
+    safety_boundary: '不能自行停药、换药或改剂量；只整理执行情况、疑问和就医沟通清单。',
+    expected_agent_output: ['用药执行复盘', '需要向医生确认的问题', '不适症状整理', '记录和提醒优化建议'],
   };
 }
 

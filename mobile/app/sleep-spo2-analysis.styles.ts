@@ -101,6 +101,9 @@ export const createStyles = (c: ColorPalette) => StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 40,
   },
+  agentLink: {
+    marginBottom: spacing.md,
+  },
 });
 
 export const createTxt = (c: ColorPalette) => ({

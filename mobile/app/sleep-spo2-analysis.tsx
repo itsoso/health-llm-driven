@@ -23,6 +23,8 @@ import { invalidateQueryKeys, queryKeys } from '../applib/queryKeys';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import { createStyles, createTxt } from './sleep-spo2-analysis.styles';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createSleepSpo2AgentContext } from '../utils/agentContext';
 
 // 北京时区 (UTC+8) 的 YYYY-MM-DD. 用 toISOString 会被转成 UTC, 早上 8 点前会偏一天.
 function todayISOInBeijing(): string {
@@ -233,6 +235,15 @@ export default function SleepSpo2AnalysisScreen() {
                 color={c.labelPrimary}
               />
             </View>
+
+            <AgentFeedbackLink
+              label="跟 Agent 制定今晚睡眠实验"
+              accessibilityLabel="跟 Agent 制定今晚睡眠实验"
+              prompt="请基于昨晚夜间血氧和呼吸风险分析, 复盘风险等级与可能诱因, 帮我制定今晚可执行的睡眠实验，并列出需要补充的背景信息和什么时候应咨询医生。不要做医学诊断。"
+              context={createSleepSpo2AgentContext(analysis)}
+              badge={`夜间血氧 · ${selectedDate}`}
+              style={styles.agentLink}
+            />
 
             {/* 图表 */}
             {ts && ts.metrics?.spo2?.length ? (
