@@ -906,6 +906,7 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "by_origin": dict(sorted(by_origin.items())),
         },
         "external_evidence": _aggregate_external_evidence_coverage(documents),
+        "protocol_review": _aggregate_protocol_review_coverage(documents),
         "specialist_findings": _aggregate_specialist_evidence_coverage(db),
         "notification_evidence": _aggregate_notification_evidence_coverage(db),
         "feedback": {
@@ -2103,6 +2104,94 @@ def _aggregate_external_evidence_coverage(documents: list[KBDocument]) -> dict[s
     }
 
 
+def _aggregate_protocol_review_coverage(documents: list[KBDocument]) -> dict[str, Any]:
+    protocols = [document for document in documents if document.doc_type == "protocol"]
+    contraindications = [document for document in documents if document.doc_type == "contraindication"]
+    eval_cases = [document for document in documents if document.doc_type == "eval_case"]
+    draft_protocols = []
+    needs_review_protocols = []
+    paid_content_lint_violations = []
+    high_risk_protocols_missing_external_evidence = []
+    by_review_status: dict[str, int] = {}
+    by_risk_level: dict[str, int] = {}
+
+    for protocol in protocols:
+        metadata = protocol.metadata_json or {}
+        review_status = str(metadata.get("review_status") or "unreviewed")
+        risk_level = str(metadata.get("risk_level") or "unknown")
+        by_review_status[review_status] = by_review_status.get(review_status, 0) + 1
+        by_risk_level[risk_level] = by_risk_level.get(risk_level, 0) + 1
+
+        issue = {
+            **_compact_issue(protocol),
+            "review_status": review_status,
+            "risk_level": risk_level,
+        }
+        if review_status == "draft":
+            draft_protocols.append(issue)
+        if review_status == "needs_review":
+            needs_review_protocols.append(issue)
+        if _has_paid_content_lint_violation(protocol):
+            paid_content_lint_violations.append(issue)
+        if risk_level == "high" and not _document_external_sources(protocol):
+            high_risk_protocols_missing_external_evidence.append(issue)
+
+    for issue_list in (
+        draft_protocols,
+        needs_review_protocols,
+        paid_content_lint_violations,
+        high_risk_protocols_missing_external_evidence,
+    ):
+        issue_list.sort(key=lambda item: str(item.get("doc_id") or ""))
+
+    return {
+        "protocols_total": len(protocols),
+        "draft_protocols": len(draft_protocols),
+        "needs_review_protocols": len(needs_review_protocols),
+        "contraindications_total": len(contraindications),
+        "eval_cases_total": len(eval_cases),
+        "paid_content_lint_violations": len(paid_content_lint_violations),
+        "high_risk_protocols_missing_external_evidence": len(high_risk_protocols_missing_external_evidence),
+        "by_review_status": dict(sorted(by_review_status.items())),
+        "by_risk_level": dict(sorted(by_risk_level.items())),
+        "issues": {
+            "draft_protocols": draft_protocols[:10],
+            "needs_review_protocols": needs_review_protocols[:10],
+            "paid_content_lint_violations": paid_content_lint_violations[:10],
+            "high_risk_protocols_missing_external_evidence": high_risk_protocols_missing_external_evidence[:10],
+        },
+    }
+
+
+def _has_paid_content_lint_violation(document: KBDocument) -> bool:
+    metadata = document.metadata_json or {}
+    policy = str(metadata.get("paid_source_policy") or "").strip()
+    if policy and policy != "transformed_summary_only":
+        return True
+
+    text = "\n".join(
+        str(part)
+        for part in (
+            document.title,
+            document.summary,
+            document.body,
+            metadata.get("raw_excerpt"),
+            metadata.get("source_excerpt"),
+            metadata.get("lesson_excerpt"),
+        )
+        if part
+    )
+    paid_markers = (
+        "付费课程正文",
+        "原样放入",
+        "raw_excerpt",
+        "source_excerpt",
+        "逐字稿",
+        "transcript",
+    )
+    return any(marker in text for marker in paid_markers)
+
+
 def _review_queue_reasons(
     *,
     review_status: str,
@@ -2205,6 +2294,13 @@ def _knowledge_operations_action_items(
         and notification_evidence.get("unsupported_rate", 0.0) > 0.2
     ):
         action_items.append("notification_evidence_unsupported_high")
+    protocol_review = coverage.get("protocol_review") or {}
+    if protocol_review.get("draft_protocols", 0) or protocol_review.get("needs_review_protocols", 0):
+        action_items.append("protocol_review_needed")
+    if protocol_review.get("paid_content_lint_violations", 0):
+        action_items.append("protocol_paid_content_lint_violations")
+    if protocol_review.get("high_risk_protocols_missing_external_evidence", 0):
+        action_items.append("high_risk_protocol_external_evidence_missing")
     lint_summary = lint.get("summary") if isinstance(lint, dict) else {}
     if isinstance(lint_summary, dict) and any(int(count or 0) > 0 for count in lint_summary.values()):
         action_items.append("kb_lint_issues_present")
