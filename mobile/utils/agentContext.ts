@@ -4,7 +4,14 @@ import type { DailyDietSummary } from '@/services/diet';
 import type { MedicalExam } from '@/services/medicalExams';
 import type { SafetyAlert } from '@/services/safety';
 import type { GarminSleepDay, SleepDebt, SleepStats } from '@/services/sleep';
-import type { WorkoutStats, WorkoutSummary } from '@/services/workouts';
+import type {
+  PostWorkoutAnalysisResponse,
+  WorkoutAnalysis,
+  WorkoutChartData,
+  WorkoutDetail,
+  WorkoutStats,
+  WorkoutSummary,
+} from '@/services/workouts';
 
 export const AGENT_CONTEXT_MAX_CHARS = 4000;
 
@@ -135,6 +142,95 @@ export function createWorkoutAgentContext(args: {
     } : null,
     acwr: args.acwr ?? null,
     readiness_zone: args.readinessZone ?? null,
+  };
+}
+
+function compactPostWorkoutAnalysis(
+  analysis?: PostWorkoutAnalysisResponse | null,
+  markdown?: string | null,
+): AgentContextValue {
+  if (!analysis && !markdown) return null;
+  const payload = (analysis ?? {}) as Record<string, any>;
+  return {
+    summary_markdown: markdown ? markdown.slice(0, 1800) : null,
+    overall_rating: payload.overall_rating ?? null,
+    intensity_assessment: payload.intensity_assessment ?? null,
+    recovery_tips: Array.isArray(payload.recovery_tips) ? payload.recovery_tips.slice(0, 6) : null,
+    improvement_tips: Array.isArray(payload.improvement_tips) ? payload.improvement_tips.slice(0, 6) : null,
+    knowledge_points: Array.isArray(payload.knowledge_points) ? payload.knowledge_points.slice(0, 4) : null,
+  };
+}
+
+export function createWorkoutDetailAgentContext(args: {
+  workout: WorkoutDetail;
+  chart?: WorkoutChartData | null;
+  analysis?: WorkoutAnalysis | null;
+  postAnalysis?: PostWorkoutAnalysisResponse | null;
+  postAnalysisMarkdown?: string | null;
+}): AgentContextPayload {
+  const workout = args.workout;
+  const chart = args.chart ?? null;
+  const analysis = args.analysis ?? null;
+
+  return {
+    from: `workout/${workout.id}`,
+    feedback_intent: 'post_workout_review',
+    workout: {
+      id: workout.id,
+      date: workout.workout_date,
+      type: workout.workout_type,
+      name: workout.workout_name,
+      source: workout.source,
+      start_time: workout.start_time,
+      end_time: workout.end_time,
+      duration_min: workout.duration_seconds != null ? Math.round(workout.duration_seconds / 60) : null,
+      distance_km: workout.distance_meters != null ? workout.distance_meters / 1000 : null,
+      avg_pace_sec_per_km: workout.avg_pace_seconds_per_km,
+      avg_speed_kmh: workout.avg_speed_kmh,
+      avg_heart_rate: workout.avg_heart_rate,
+      max_heart_rate: workout.max_heart_rate,
+      calories: workout.calories,
+      steps: workout.steps,
+      avg_cadence: workout.avg_cadence,
+      avg_stride_length_cm: workout.avg_stride_length_cm,
+      elevation_gain_meters: workout.elevation_gain_meters,
+      training_effect_aerobic: workout.training_effect_aerobic,
+      training_effect_anaerobic: workout.training_effect_anaerobic,
+      vo2max: workout.vo2max,
+      training_load: workout.training_load,
+      has_route: !!workout.route_data,
+    },
+    chart: chart ? {
+      avg_pace_display: chart.avg_pace_display ?? null,
+      heart_rate_zones: (chart.heart_rate_zones ?? []).map(zone => ({
+        zone: zone.zone,
+        minutes: zone.minutes,
+        percentage: zone.percentage,
+      })),
+      heart_rate_samples_count: chart.heart_rate_timeline?.length ?? 0,
+      pace_samples_count: chart.pace_timeline?.length ?? 0,
+      elevation_samples_count: chart.elevation_timeline?.length ?? 0,
+    } : null,
+    saved_analysis: analysis ? {
+      overall_rating: analysis.overall_rating,
+      intensity_assessment: analysis.intensity_assessment,
+      heart_rate_analysis: analysis.heart_rate_analysis,
+      hr_zone_assessment: analysis.hr_zone_assessment,
+      pace_analysis: analysis.pace_analysis,
+      training_effect_summary: analysis.training_effect_summary,
+      recovery_recommendation: analysis.recovery_recommendation,
+      next_workout_suggestion: analysis.next_workout_suggestion,
+      comparison_with_history: analysis.comparison_with_history,
+      key_insights: analysis.key_insights,
+      improvement_tips: analysis.improvement_tips,
+    } : null,
+    post_workout_analysis: compactPostWorkoutAnalysis(args.postAnalysis, args.postAnalysisMarkdown),
+    expected_agent_output: [
+      '本次运动复盘',
+      '拉伸与恢复建议',
+      '下次训练安排',
+      '需要用户补充反馈的问题',
+    ],
   };
 }
 

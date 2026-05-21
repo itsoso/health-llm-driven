@@ -17,6 +17,7 @@ import { synthesize as cloudSynthesize } from '../services/cloudTts';
 import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { sharePlainText } from '../utils/share';
+import { createWorkoutDetailAgentContext, pushChatWithContext } from '../utils/agentContext';
 import { colors, spacing, radii } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
@@ -393,6 +394,32 @@ export default function WorkoutDetailScreen() {
     return md || null;
   }, [postAnalysis]);
 
+  const workoutTypeLabelForAgent = workout
+    ? WORKOUT_TYPE_LABEL[workout.workout_type] || workout.workout_type || '运动'
+    : '运动';
+  const agentBadge = workout
+    ? [
+        `本次${workoutTypeLabelForAgent}`,
+        workout.distance_meters != null ? `${(workout.distance_meters / 1000).toFixed(1)}km` : null,
+        workout.duration_seconds != null ? `${Math.round(workout.duration_seconds / 60)}min` : null,
+      ].filter(Boolean).join(' · ')
+    : '本次运动';
+
+  const handleChatWorkoutReview = useCallback(() => {
+    if (!workout) return;
+    pushChatWithContext(router, {
+      prompt: `请基于这次${workoutTypeLabelForAgent}做一次运动复盘: 总结表现和风险, 给出跑后拉伸/恢复建议, 并安排下一次训练。最后请指出你还需要我反馈哪些体感信息。`,
+      context: createWorkoutDetailAgentContext({
+        workout,
+        chart,
+        analysis,
+        postAnalysis,
+        postAnalysisMarkdown: postContent,
+      }),
+      badge: agentBadge,
+    });
+  }, [agentBadge, analysis, chart, postAnalysis, postContent, router, workout, workoutTypeLabelForAgent]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={S.safe} edges={['top']}>
@@ -554,6 +581,16 @@ export default function WorkoutDetailScreen() {
           {/* 操作工具条 — 横向 scroll, 防按钮挤压标题 */}
           {(hasAnalysis || (!analyzing && !postAnalyzing)) && (
             <View style={S.aiToolbar}>
+              <TouchableOpacity
+                onPress={handleChatWorkoutReview}
+                activeOpacity={0.75}
+                style={[S.aiToolBtn, S.agentReviewBtn]}
+                accessibilityRole="button"
+                accessibilityLabel="跟 Agent 复盘本次运动"
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+                <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟 Agent 复盘这次</Text>
+              </TouchableOpacity>
               {hasAnalysis && !analyzing && !postAnalyzing && (
                 <TouchableOpacity
                   onPress={handleSpeakCoach}
@@ -722,6 +759,11 @@ const styles = (c: ColorPalette) => StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: c.fill,
   },
+  agentReviewBtn: {
+    backgroundColor: c.brandLight,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.brand,
+  },
 });
 
 const txt = (c: ColorPalette) => ({
@@ -731,6 +773,7 @@ const txt = (c: ColorPalette) => ({
   metricLabel: { fontSize: 11, color: c.labelTertiary, marginBottom: 2 } as TextStyle,
   metricValue: { fontSize: 14, fontWeight: '700', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
   analyzeBtn: { fontSize: 14, fontWeight: '600', color: c.purple } as TextStyle,
+  agentReviewBtn: { fontSize: 13, fontWeight: '600', color: c.brand } as TextStyle,
   reanalyzeBtn: { fontSize: 13, fontWeight: '500', color: c.labelTertiary } as TextStyle,
   cacheBadgeText: { fontSize: 11, fontWeight: '500', color: c.green } as TextStyle,
   analysisText: { fontSize: 14, color: c.labelPrimary, lineHeight: 21 } as TextStyle,

@@ -3,6 +3,7 @@ import {
   buildChatContextRoute,
   createDietAgentContext,
   createSafetyAlertAgentContext,
+  createWorkoutDetailAgentContext,
   serializeAgentContext,
 } from '../agentContext';
 
@@ -109,5 +110,97 @@ describe('agentContext', () => {
       action: '今晚降低训练强度',
       triggered_metrics: { hrv_today: 28, hrv_7d: 40 },
     });
+  });
+
+  it('creates a compact single workout review context without route coordinates', () => {
+    const context = createWorkoutDetailAgentContext({
+      workout: {
+        id: 42,
+        user_id: 7,
+        source: 'garmin',
+        workout_date: '2026-05-21',
+        workout_type: 'running',
+        workout_name: 'Morning Run',
+        start_time: '2026-05-21T07:10:00+08:00',
+        end_time: '2026-05-21T07:55:00+08:00',
+        duration_seconds: 2700,
+        distance_meters: 8200,
+        avg_heart_rate: 143,
+        max_heart_rate: 171,
+        calories: 520,
+        steps: 8600,
+        avg_speed_kmh: 10.9,
+        max_speed_kmh: null,
+        avg_pace_seconds_per_km: 330,
+        avg_cadence: 172,
+        max_cadence: null,
+        avg_stride_length_cm: 104,
+        elevation_gain_meters: 62,
+        elevation_loss_meters: null,
+        training_effect_aerobic: 3.2,
+        training_effect_anaerobic: 0.8,
+        vo2max: 48,
+        training_load: 126,
+        ai_analysis: null,
+        post_workout_analysis: null,
+        route_data: JSON.stringify([{ lat: 31.1, lng: 121.2 }]),
+      },
+      chart: {
+        workout_id: 42,
+        workout_type: 'running',
+        duration_seconds: 2700,
+        heart_rate_timeline: [{ time: 0, hr: 120 }, { time: 60, hr: 135 }],
+        heart_rate_zones: [{ zone: 'Z3', minutes: 18, percentage: 40 }],
+        pace_timeline: [{ time: 0, pace: 330 }],
+        elevation_timeline: [{ distance: 1, elevation: 20 }],
+        avg_heart_rate: 143,
+        max_heart_rate: 171,
+        avg_pace_display: `5'30"/km`,
+        total_distance_km: 8.2,
+        calories: 520,
+      },
+      analysis: {
+        workout_id: 42,
+        overall_rating: '良好',
+        intensity_assessment: '中等偏上',
+        heart_rate_analysis: '心率稳定',
+        hr_zone_assessment: null,
+        pace_analysis: '后半程略降速',
+        training_effect_summary: '有氧效果明确',
+        recovery_recommendation: '补水并放松小腿',
+        next_workout_suggestion: '下次安排轻松跑',
+        comparison_with_history: null,
+        key_insights: ['配速稳定'],
+        improvement_tips: ['加强跑后拉伸'],
+      },
+      postAnalysis: {
+        success: true,
+        recovery_tips: ['泡沫轴放松小腿', '补充碳水和蛋白'],
+        improvement_tips: ['控制前 2 公里速度'],
+      },
+      postAnalysisMarkdown: '## 总评\n本次有氧基础不错。',
+    });
+
+    expect(context.from).toBe('workout/42');
+    expect(context.feedback_intent).toBe('post_workout_review');
+    expect(context.workout).toMatchObject({
+      id: 42,
+      type: 'running',
+      duration_min: 45,
+      distance_km: 8.2,
+      has_route: true,
+    });
+    expect(JSON.stringify(context)).not.toContain('31.1');
+    expect(context.chart).toMatchObject({
+      heart_rate_samples_count: 2,
+      pace_samples_count: 1,
+      elevation_samples_count: 1,
+    });
+    expect(context.expected_agent_output).toEqual([
+      '本次运动复盘',
+      '拉伸与恢复建议',
+      '下次训练安排',
+      '需要用户补充反馈的问题',
+    ]);
   });
 });
