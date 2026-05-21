@@ -569,7 +569,7 @@ def _format_personal_evidence_matrix_for_prompt(twin: HealthTwin) -> str:
             compact_personal_evidence_matrix,
         )
 
-        compact = compact_personal_evidence_matrix(build_personal_evidence_matrix(twin), max_signals=6)
+        compact = compact_personal_evidence_matrix(build_personal_evidence_matrix(twin), max_signals=10)
     except Exception as exc:  # noqa: BLE001
         logger.debug("[orchestrator] personal evidence matrix prompt skipped: %s", exc)
         return ""
@@ -584,6 +584,15 @@ def _format_personal_evidence_matrix_for_prompt(twin: HealthTwin) -> str:
         lines.append("genetic_only_policy=low_until_validated")
     if "poor_recovery_matrix" in flags:
         lines.append("recovery_policy=avoid_high_intensity")
+    epigenetic_ids = [
+        str(signal.get("signal_id"))
+        for signal in compact.get("key_signals", [])
+        if str(signal.get("signal_type") or "") == "epigenetic"
+    ]
+    if epigenetic_ids:
+        lines.append("epigenetic_policy=long_term_proxy_only")
+        lines.append("epigenetic_boundary=甲基化/表观遗传时钟只能作为长期代理指标，不能证明短期抗衰疗效或真实衰老速度改变")
+        lines.append(f"epigenetic_signals={','.join(epigenetic_ids)}")
     gap_ids = [
         str(signal.get("signal_id"))
         for signal in compact.get("key_signals", [])

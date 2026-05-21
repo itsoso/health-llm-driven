@@ -5,6 +5,7 @@ from app.orchestrator.orchestrator import _build_synthesis_prompt
 from app.orchestrator.schema import SpecialistFinding
 from app.twin.schema import (
     DataFreshness,
+    EpigeneticState,
     GeneticContext,
     HealthTwin,
     LabsContext,
@@ -99,3 +100,31 @@ def test_orchestrator_prompt_keeps_genetic_only_associations_low_confidence():
     assert "【个人证据矩阵】" in user_prompt
     assert "genetic_only_policy=low_until_validated" in user_prompt
     assert "gap.lab_anchor_missing" in user_prompt
+
+
+def test_orchestrator_prompt_marks_epigenetic_as_long_term_proxy_only():
+    twin = HealthTwin(
+        meta=TwinMeta(user_id=3, generated_at=datetime(2026, 5, 21, 8, 0, 0)),
+        epigenetic=EpigeneticState(
+            has_methylation_report=True,
+            status="present",
+            latest_test_date="2026-05-01",
+            clock_type="DunedinPACE",
+            pace_of_aging=1.11,
+            biological_age_delta_years=4.9,
+        ),
+        freshness=DataFreshness(epigenetic="long_term"),
+    )
+    finding = SpecialistFinding(
+        specialist_name="longevity_coach",
+        category="recovery",
+        summary="甲基化报告提示长期趋势代理偏高",
+        findings=[{"title": "8-12 周复测趋势", "action": "先执行睡眠、运动和代谢闭环"}],
+    )
+
+    _, user_prompt = _build_synthesis_prompt("我的生物年龄能逆转吗？", twin, [finding])
+
+    assert "【个人证据矩阵】" in user_prompt
+    assert "epigenetic_policy=long_term_proxy_only" in user_prompt
+    assert "不能证明短期抗衰疗效" in user_prompt
+    assert "epigenetic.pace_of_aging" in user_prompt
