@@ -1,7 +1,15 @@
 const HEALTH_METRIC_LABELS = ['睡眠', 'HRV', '步数', '压力', '身体电量', '饮水'] as const;
 const WORKOUT_PLAN_HEADINGS = /(?:📋\s*今日锻炼计划|⚠️\s*注意事项|🏋️\s*推荐方案（[^）]+）|🎯\s*今日步数目标|📌\s*今日建议：)/gu;
 const MEDICAL_DIAGNOSIS_HEADING = /🔬\s*诊断[:：]\s*([^💊🌿🗣🚨📌]*?)(?=\s+感染机制还原|\s+💊|\s+🌿|\s+🗣|$)/u;
-const STRUCTURED_MEDICAL_HEADINGS = /(?:💊\s*治疗策略|🌿\s*补剂调整方案(?:（[^）]+）)?|🗣️?\s*嗓子哑(?:（[^）]+）)?专项护理|🚨\s*何时就医|📌\s*总结)/gu;
+const STRUCTURED_MEDICAL_HEADINGS = /(?:💊\s*治疗策略|🌿\s*补剂调整方案(?:（[^）]+）)?|🗣️?\s*嗓子哑(?:（[^）]+）)?专项护理|🚀\s*怎么才能恢复得快？|📋\s*行动清单|🚨\s*何时就医|📌\s*总结)/gu;
+const RECOVERY_ACTION_LABELS = ['睡眠', '饮水', '饮食', '运动', '监测'] as const;
+const ACTION_CHECKLIST_LABELS = [
+  '带报告复诊呼吸科：',
+  '补剂与抗生素间隔：',
+  '嗓子哑护理：',
+  '饮水打卡：',
+  '继续睡眠优势：',
+] as const;
 const SUPPLEMENT_NAMES = [
   '甘氨酸锌',
   '维生素 C',
@@ -139,6 +147,116 @@ function formatSupplementTable(content: string): string {
   return [before, table, after].filter(Boolean).join('\n\n');
 }
 
+function parseLabelRows(
+  text: string,
+  labels: readonly string[],
+): Array<{ label: string; value: string }> | null {
+  const rows: Array<{ label: string; value: string }> = [];
+
+  for (let i = 0; i < labels.length; i += 1) {
+    const label = labels[i];
+    const nextLabel = labels[i + 1];
+    const start = text.indexOf(label);
+    if (start < 0) return null;
+
+    const valueStart = start + label.length;
+    const end = nextLabel ? text.indexOf(nextLabel, valueStart) : text.length;
+    if (end < 0) return null;
+
+    const value = text.slice(valueStart, end).trim();
+    if (!value) return null;
+    rows.push({ label, value });
+  }
+
+  return rows;
+}
+
+function formatRecoveryActionTable(content: string): string {
+  const tableStart = content.indexOf('维度 具体行动');
+  if (tableStart < 0) return content;
+
+  const afterHeaderStart = tableStart + '维度 具体行动'.length;
+  const nextSectionMatch = content.slice(afterHeaderStart).match(/\s+##\s*(?:📋|🚨|📌)/u);
+  const tableEnd = nextSectionMatch?.index != null
+    ? afterHeaderStart + nextSectionMatch.index
+    : content.length;
+  const tableText = content.slice(afterHeaderStart, tableEnd).trim();
+  const rows = parseLabelRows(tableText, RECOVERY_ACTION_LABELS);
+  if (!rows) return content;
+
+  const table = [
+    '| 维度 | 具体行动 |',
+    '| --- | --- |',
+    ...rows.map(row => `| ${escapeTableCell(row.label)} | ${escapeTableCell(row.value)} |`),
+  ].join('\n');
+
+  const before = content.slice(0, tableStart).trimEnd();
+  const after = content.slice(tableEnd).trimStart();
+  return [before, table, after].filter(Boolean).join('\n\n');
+}
+
+function splitActionChecklistTail(body: string): {
+  checklistText: string;
+  question: string;
+  signature: string;
+} {
+  let checklistText = body.trim();
+  let signature = '';
+  let question = '';
+
+  const signatureMatch = checklistText.match(/\s+—\s*健康 Agent$/u);
+  if (signatureMatch?.index != null) {
+    signature = '— 健康 Agent';
+    checklistText = checklistText.slice(0, signatureMatch.index).trim();
+  }
+
+  const questionMatch = checklistText.match(/\s+(需要我帮[^？?]+[？?])$/u);
+  if (questionMatch?.index != null) {
+    question = questionMatch[1].trim();
+    checklistText = checklistText.slice(0, questionMatch.index).trim();
+  }
+
+  return { checklistText, question, signature };
+}
+
+function parseKnownActionRows(text: string): Array<{ label: string; value: string }> {
+  const matches = ACTION_CHECKLIST_LABELS
+    .map(label => ({ label, index: text.indexOf(label) }))
+    .filter(match => match.index >= 0)
+    .sort((left, right) => left.index - right.index);
+
+  return matches.map((match, index) => {
+    const valueStart = match.index + match.label.length;
+    const valueEnd = index + 1 < matches.length ? matches[index + 1].index : text.length;
+    return {
+      label: match.label,
+      value: text.slice(valueStart, valueEnd).trim(),
+    };
+  }).filter(row => row.value);
+}
+
+function formatActionChecklist(content: string): string {
+  const heading = '## 📋 行动清单';
+  const headingStart = content.indexOf(heading);
+  if (headingStart < 0) return content;
+
+  const bodyStart = headingStart + heading.length;
+  const before = content.slice(0, bodyStart).trimEnd();
+  const body = content.slice(bodyStart).trim();
+  if (!body || body.includes('\n- ')) return content;
+
+  const { checklistText, question, signature } = splitActionChecklistTail(body);
+  const rows = parseKnownActionRows(checklistText);
+  if (rows.length < 2) return content;
+
+  return [
+    before,
+    rows.map(row => `- ${row.label}${row.value}`).join('\n'),
+    question,
+    signature,
+  ].filter(Boolean).join('\n\n');
+}
+
 function structureFlattenedMedicalAdvice(content: string): string {
   if (
     content.includes('\n## ')
@@ -162,7 +280,7 @@ function structureFlattenedMedicalAdvice(content: string): string {
     .join('\n')
     .trim();
 
-  return formatSupplementTable(structured);
+  return formatActionChecklist(formatRecoveryActionTable(formatSupplementTable(structured)));
 }
 
 export function normalizeSharedAgentContent(content: string): string {
