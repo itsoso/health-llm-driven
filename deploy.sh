@@ -169,6 +169,31 @@ verify_deployment() {
     fi
 }
 
+wait_for_skills_manifest() {
+    print_step "验证 skills manifest 可达..."
+    LOCAL_COUNT=$(find backend/skills -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+    REMOTE_COUNT=0
+
+    for attempt in $(seq 1 12); do
+        REMOTE_COUNT=$(curl -sS --max-time 15 \
+            "https://health.executor.life/api/skills/manifest.json" \
+            | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('skills', [])))" 2>/dev/null || echo "0")
+        if [ "$REMOTE_COUNT" != "0" ]; then
+            break
+        fi
+        echo "  (尝试 $attempt/12: manifest 暂未就绪, 重试...)"
+        sleep 5
+    done
+
+    if [ "$REMOTE_COUNT" = "0" ]; then
+        print_warning "Skills manifest 12 次重试仍未就绪 — 后端健康已通过, 请稍后检查 /api/skills/manifest.json"
+    elif [ "$LOCAL_COUNT" != "$REMOTE_COUNT" ]; then
+        print_warning "Skills 数量不匹配: 本地 $LOCAL_COUNT vs 线上 $REMOTE_COUNT"
+    else
+        print_success "Skills 同步: 本地 $LOCAL_COUNT = 线上 $REMOTE_COUNT"
+    fi
+}
+
 # 同步环境变量到服务器
 sync_env() {
     print_step "同步 .env-online 到服务器..."
@@ -301,33 +326,15 @@ deploy_backend() {
         exit 1
     fi
 
-    # 3.5 验证 OpenClaw skills manifest 端点 (warmup 后, 3 次 retry)
-    print_step "验证 skills manifest 可达..."
-    LOCAL_COUNT=$(find backend/skills -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-    REMOTE_COUNT=0
-    for attempt in 1 2 3; do
-        sleep 3
-        REMOTE_COUNT=$(curl -sS --max-time 10 \
-            -H "Authorization: Bearer ${SKILLS_MANIFEST_TOKEN:-uZGKPqDLY3Wd0eTT3lVyDG7cEz5y7DuwkIcfH7zDqW8}" \
-            "https://health.executor.life/api/skills/manifest.json" \
-            | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('skills', [])))" 2>/dev/null || echo "0")
-        if [ "$REMOTE_COUNT" != "0" ]; then break; fi
-        echo "  (尝试 $attempt: manifest 暂未就绪, 重试...)"
-    done
-    if [ "$REMOTE_COUNT" = "0" ]; then
-        print_warning "Skills manifest 3 次重试仍未就绪 — 跳过验证, 留给 health check"
-    elif [ "$LOCAL_COUNT" != "$REMOTE_COUNT" ]; then
-        print_warning "Skills 数量不匹配: 本地 $LOCAL_COUNT vs 线上 $REMOTE_COUNT"
-    else
-        print_success "Skills 同步: 本地 $LOCAL_COUNT = 线上 $REMOTE_COUNT"
-    fi
-
     # 4. 部署后验证（快速失败）
     if ! verify_deployment; then
         rollback_deploy
         print_error "部署失败，已自动回滚"
         exit 1
     fi
+
+    # 4.5 后端健康通过后再验证 OpenClaw skills manifest，避免冷启动误报。
+    wait_for_skills_manifest
 
     print_success "后端部署完成"
 }
