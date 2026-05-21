@@ -67,3 +67,28 @@ def test_managed_system_knowledge_migration_creates_phase0_tables():
     assert "kb_audit" in tables
     assert "ix_kb_documents_entity" in [i["name"] for i in inspector.get_indexes("kb_documents")]
     assert "ix_kb_edges_src_relation" in [i["name"] for i in inspector.get_indexes("kb_edges")]
+
+
+def test_managed_action_cards_graded_at_index_migration(tmp_path: Path):
+    """ActionCard graded_at window probes must have a managed partial index."""
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260521_121000_add_action_cards_graded_at_index.sqlite.sql"
+    postgres_file = migrations_dir / "20260521_121000_add_action_cards_graded_at_index.postgresql.sql"
+
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "WHERE graded_at IS NOT NULL" in postgres_file.read_text(encoding="utf-8")
+
+    isolated_dir = tmp_path / "managed"
+    isolated_dir.mkdir()
+    (isolated_dir / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE action_cards (id INTEGER PRIMARY KEY, graded_at TIMESTAMP)"))
+
+    result = apply_managed_migrations(engine, isolated_dir)
+
+    assert "20260521_121000_add_action_cards_graded_at_index" in [m.id for m in result.applied]
+    indexes = inspect(engine).get_indexes("action_cards")
+    assert "idx_action_cards_graded_at_not_null" in [i["name"] for i in indexes]
