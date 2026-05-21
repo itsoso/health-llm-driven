@@ -22,6 +22,8 @@ import type { ScorecardCard } from '../../services/specialistScorecard';
 import { emitClientEvent } from '../../services/clientEvents';
 import { spacing, radii, typography } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import AgentFeedbackLink from '../../components/agent/AgentFeedbackLink';
+import { createSpecialistScorecardAgentContext } from '../../utils/agentContext';
 
 function scoreColor(score: number, c: ColorPalette): string {
   if (score >= 70) return c.green;
@@ -149,6 +151,15 @@ function SpecialistScorecardContent({ name }: { name: string }) {
               )}
             </View>
 
+            <AgentFeedbackLink
+              label="跟 Agent 复盘这个专家建议"
+              accessibilityLabel="跟 Agent 复盘这个专家建议"
+              prompt={`请基于${label}方向近 30 天的建议成绩单，分析哪些建议有效、哪些偏离，并给出下一轮建议应如何调整。`}
+              context={createSpecialistScorecardAgentContext({ label, data: data as any })}
+              badge={`${label}命中率 ${data.hit_rate.toFixed(0)}%`}
+              style={styles.agentLink}
+            />
+
             {data.cards.length === 0 ? (
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>还没有评分数据</Text>
@@ -203,6 +214,7 @@ function createStyles(c: ColorPalette) {
       padding: spacing.md,
       marginBottom: spacing.md,
     },
+    agentLink: { marginBottom: spacing.md },
     h1: {
       fontSize: typography.titleMedium.fontSize,
       fontWeight: '700' as const,

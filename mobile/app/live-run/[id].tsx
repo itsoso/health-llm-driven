@@ -19,6 +19,8 @@ import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { getLiveRun, type LiveRunSession } from '../../services/liveRun/api';
 import { formatPace, formatDuration, formatDistanceKm } from '../../hooks/useLiveRun';
+import AgentFeedbackLink from '../../components/agent/AgentFeedbackLink';
+import { createLiveRunAgentContext } from '../../utils/agentContext';
 
 const TARGET_LABEL_MAP: Record<string, string> = {
   easy: '轻松',
@@ -141,6 +143,14 @@ export default function LiveRunDetailScreen() {
             </View>
           </View>
         </View>
+
+        <AgentFeedbackLink
+          label="跟 Agent 聊这次实时跑"
+          accessibilityLabel="跟 Agent 聊这次实时跑"
+          prompt="请基于这次实时跑做一次运动复盘: 解释配速、心率和触发事件，给出拉伸恢复建议，并安排下一次训练。最后指出你还需要我补充哪些体感反馈。"
+          context={createLiveRunAgentContext(session as any)}
+          badge={`实时跑 ${formatDistanceKm(session.total_distance_m)}km`}
+        />
 
         {/* 目标设定 */}
         <View style={styles.card}>

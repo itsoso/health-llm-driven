@@ -12,6 +12,8 @@ import ProgressUpdateSheet from '../components/goals/ProgressUpdateSheet';
 import SectionHeader from '../components/design-system/SectionHeader';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createGoalsAgentContext } from '../utils/agentContext';
 
 export default function GoalsScreen() {
   const { c } = useTheme();
@@ -73,6 +75,14 @@ export default function GoalsScreen() {
                 <Ionicons name="sparkles-outline" size={18} color={c.brand} />
                 <Text style={txt.actionText}>{generating ? 'AI 分析中...' : 'AI 生成目标'}</Text>
               </TouchableOpacity>
+              <AgentFeedbackLink
+                label="跟 Agent 调整健康目标"
+                accessibilityLabel="跟 Agent 调整健康目标"
+                prompt="请基于我的当前健康目标，判断目标是否合理、优先级是否需要调整，并拆解成接下来 7 天可执行的行动。"
+                context={createGoalsAgentContext((goals ?? []) as any)}
+                badge={`活跃目标 ${(goals ?? []).length} 个`}
+                style={styles.agentLink}
+              />
             </View>
           }
           ListEmptyComponent={
@@ -102,6 +112,7 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, ...shadows.subtle,
   },
+  agentLink: { marginTop: spacing.sm },
   emptyBox: { alignItems: 'center', gap: 8, paddingVertical: 60 },
 });
 

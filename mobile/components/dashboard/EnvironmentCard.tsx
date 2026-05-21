@@ -13,6 +13,8 @@ import { useRouter } from 'expo-router';
 import api from '../../services/api';
 import { useTheme } from '../../hooks/useTheme';
 import { spacing, radii } from '../../constants/theme';
+import AgentFeedbackLink from '../agent/AgentFeedbackLink';
+import { createEnvironmentAgentContext } from '../../utils/agentContext';
 
 interface WeatherInner {
   available?: boolean;
@@ -210,6 +212,19 @@ export default function EnvironmentCard() {
           </Text>
         </View>
       )}
+
+      <AgentFeedbackLink
+        label="跟 Agent 调整今天户外安排"
+        accessibilityLabel="跟 Agent 调整今天户外安排"
+        prompt="请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。"
+        context={createEnvironmentAgentContext({
+          weather: w ?? null,
+          airQuality: a ?? null,
+          forecast: forecastQ.data ?? null,
+          location: loc ?? null,
+        })}
+        badge={loc?.city ? `${loc.city}环境` : '当前环境'}
+      />
 
       {/* 跑步入口 — 用户报缺, 2026-05-11 加 */}
       <TouchableOpacity

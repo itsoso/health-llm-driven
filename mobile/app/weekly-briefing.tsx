@@ -17,6 +17,8 @@ import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import EvidenceChip from '../components/shared/EvidenceChip';
 import MarkdownText from '../components/shared/MarkdownText';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createWeeklyBriefingAgentContext } from '../utils/agentContext';
 
 interface BriefingCard {
   id: number;
@@ -134,6 +136,14 @@ export default function WeeklyBriefingScreen() {
                 </Text>
               </View>
             )}
+
+            <AgentFeedbackLink
+              label="跟 Agent 复盘本周建议"
+              accessibilityLabel="跟 Agent 复盘本周建议"
+              prompt="请基于本周建议和执行状态，帮我判断哪些该保留、哪些要调整或放弃，并整理下周最重要的 3 个行动。"
+              context={createWeeklyBriefingAgentContext(data as any)}
+              badge={`本周建议 ${data.stats.total} 条`}
+            />
 
             {data.cards.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>

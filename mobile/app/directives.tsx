@@ -27,6 +27,8 @@ import {
 } from '../services/userDirectives';
 import { spacing, radii } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createDirectivesAgentContext } from '../utils/agentContext';
 
 const QK = ['userDirectives'] as const;
 
@@ -137,6 +139,16 @@ export default function DirectivesScreen() {
         </Text>
       </View>
 
+      <View style={styles.agentWrap}>
+        <AgentFeedbackLink
+          label="跟 Agent 检查指令冲突"
+          accessibilityLabel="跟 Agent 检查指令冲突"
+          prompt="请基于我当前给 AI 的硬性指令，检查是否存在冲突、过期、表达不清或需要补充边界的地方。涉及用药和诊断时只整理问题，不给处方。"
+          context={createDirectivesAgentContext(directives as any)}
+          badge={`硬性指令 ${directives.length} 条`}
+        />
+      </View>
+
       {isLoading ? (
         <View style={styles.center}><ActivityIndicator /></View>
       ) : directives.length === 0 ? (
@@ -240,6 +252,7 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     backgroundColor: c.fill,
   },
   complianceText: { fontSize: 11, color: c.labelSecondary, flex: 1 },
+  agentWrap: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   list: { padding: spacing.md, gap: spacing.sm },
   row: {
     backgroundColor: c.bgCard,

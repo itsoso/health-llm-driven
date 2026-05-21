@@ -17,6 +17,8 @@ import type { TimeRange } from '../services/trends';
 import { useWeightHistory, useBPHistory, useIndicatorTrend, useGarminMetricTrend, isGarminMetric } from '../hooks/useTrendData';
 import TrendChart from '../components/charts/TrendChart';
 import TimeRangeSelector from '../components/charts/TimeRangeSelector';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createTrendAgentContext } from '../utils/agentContext';
 
 const TYPE_TITLES: Record<string, string> = {
   weight: '体重趋势',
@@ -91,6 +93,17 @@ export default function IndicatorHistoryScreen() {
             </View>
             <Text style={styles.summaryDate}>{latestPoint.date}</Text>
           </View>
+        )}
+
+        {series && series.length > 0 && (
+          <AgentFeedbackLink
+            label="跟 Agent 解读这个趋势"
+            accessibilityLabel="跟 Agent 解读这个趋势"
+            prompt={`请基于我的${title}做一次趋势复盘: 解释最近变化、可能诱因、接下来 7 天的行动和还需要补充记录的数据。`}
+            context={createTrendAgentContext({ type, title, range, series })}
+            badge={`基于${title} · ${range}`}
+            style={styles.agentLink}
+          />
         )}
 
         <TimeRangeSelector selected={range} onChange={setRange} />
@@ -175,6 +188,9 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     ...typography.caption,
     color: c.labelTertiary,
     marginTop: spacing.xs,
+  },
+  agentLink: {
+    marginBottom: spacing.md,
   },
   loading: {
     height: 220,

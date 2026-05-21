@@ -23,6 +23,8 @@ import { fetchExamExplain, type ExamExplain, type ExplainAction } from '@/servic
 import { spacing, radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import MarkdownText from '@/components/shared/MarkdownText';
+import AgentFeedbackLink from '@/components/agent/AgentFeedbackLink';
+import { createExamExplainAgentContext } from '@/utils/agentContext';
 
 const EVIDENCE_CONF: Record<string, { bg: string; text: string; label: string }> = {
   high: { bg: '#D1FAE5', text: '#065F46', label: '强证据' },
@@ -131,6 +133,14 @@ export default function ExamExplainScreen() {
               )}
             </View>
           )}
+
+          <AgentFeedbackLink
+            label="跟 Agent 讨论这些异常项"
+            accessibilityLabel="跟 Agent 讨论这些异常项"
+            prompt="请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。"
+            context={createExamExplainAgentContext(data as any)}
+            badge={`体检异常 ${data.abnormal_items.length} 项`}
+          />
 
           {/* Abnormal items */}
           {data.abnormal_items.length > 0 && (

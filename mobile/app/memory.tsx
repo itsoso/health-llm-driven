@@ -31,6 +31,8 @@ import {
 } from '../services/memory';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createMemoryAgentContext } from '../utils/agentContext';
 
 export default function MemoryScreen() {
   const router = useRouter();
@@ -135,6 +137,14 @@ export default function MemoryScreen() {
             点 "这条不对" AI 之后不会再用这条信息
           </Text>
         </View>
+
+        <AgentFeedbackLink
+          label="跟 Agent 校准这些记忆"
+          accessibilityLabel="跟 Agent 校准这些记忆"
+          prompt="请基于 AI 当前关于我的记忆，帮我找出可能不准确、过期或需要补充的内容，并说明这些记忆会怎样影响健康建议。"
+          context={createMemoryAgentContext({ facts: mainFacts as any, stats: statsQuery.data as any })}
+          badge={`AI 记忆 ${totalAll} 条`}
+        />
 
         {/* Loading / Empty */}
         {factsQuery.isLoading ? (

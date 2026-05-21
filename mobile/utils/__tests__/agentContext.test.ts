@@ -2,16 +2,29 @@ import {
   AGENT_CONTEXT_MAX_CHARS,
   buildChatContextRoute,
   createActionCardAgentContext,
+  createAiProfileAgentContext,
   createBodyMetricsAgentContext,
   createDietAgentContext,
   createDietPlanAgentContext,
+  createDirectivesAgentContext,
+  createEnvironmentAgentContext,
+  createExamExplainAgentContext,
+  createGeneticReportAgentContext,
+  createGoalsAgentContext,
   createHydrationAgentContext,
+  createImportResultAgentContext,
+  createLiveRunAgentContext,
+  createMemoryAgentContext,
   createMedicationAgentContext,
+  createMonthlyReportAgentContext,
   createMovementPlanAgentContext,
   createSafetyAlertAgentContext,
   createSleepSpo2AgentContext,
+  createSpecialistScorecardAgentContext,
   createSupplementAgentContext,
   createSymptomAgentContext,
+  createTrendAgentContext,
+  createWeeklyBriefingAgentContext,
   createWorkoutDetailAgentContext,
   serializeAgentContext,
 } from '../agentContext';
@@ -442,6 +455,229 @@ describe('agentContext', () => {
       archived_count: 1,
       active_medications: [{ id: 1, name: '鼻喷雾', dosage: '1 喷', frequency: '每日', purpose: '鼻炎' }],
       safety_boundary: '不能自行停药、换药或改剂量；只整理执行情况、疑问和就医沟通清单。',
+    });
+  });
+
+  it('creates trend feedback context from compact chart series', () => {
+    const context = createTrendAgentContext({
+      type: 'hrv',
+      title: 'HRV 趋势',
+      range: '1M',
+      series: [{
+        label: 'HRV',
+        unit: 'ms',
+        referenceRange: { low: 40, high: 100 },
+        data: [
+          { date: '2026-05-19', value: 58 },
+          { date: '2026-05-20', value: 61 },
+          { date: '2026-05-21', value: 63 },
+        ],
+      }],
+    });
+
+    expect(context).toMatchObject({
+      from: 'indicator-history/hrv',
+      feedback_intent: 'indicator_trend_review',
+      title: 'HRV 趋势',
+      range: '1M',
+      latest: { label: 'HRV', date: '2026-05-21', value: 63, unit: 'ms' },
+      reference_ranges: [{ label: 'HRV', low: 40, high: 100 }],
+      expected_agent_output: ['趋势解读', '可能诱因', '下一步行动', '需要补充记录的数据'],
+    });
+  });
+
+  it('creates exam explain feedback context with medical safety boundary', () => {
+    const context = createExamExplainAgentContext({
+      exam: { id: 7, exam_date: '2026-05-21', exam_type: '体检', hospital_name: '三甲医院' },
+      abnormal_items: [
+        { item_name: 'LDL-C', value: 3.8, unit: 'mmol/L', reference_range: '<3.4', is_abnormal: 'high', gene_links: ['APOE'] },
+      ],
+      user_gene_hits: [{ rsid: 'rs429358', gene: 'APOE', genotype: 'CT' }],
+      explanation: {
+        summary: 'LDL 偏高，需要结合生活方式和复查。',
+        see_doctor_specialty: '心内科',
+        recheck_window_days: 30,
+        actions: [{ title: '减少饱和脂肪', category: 'diet', evidence_level: 'medium', metric_key: 'ldl' }],
+      },
+      trends: { 'LDL-C': [{ date: '2026-05-01', value: 3.6 }, { date: '2026-05-21', value: 3.8 }] },
+      related_cards: [{ id: 11, title: '晚餐少油' }],
+    });
+
+    expect(context).toMatchObject({
+      from: 'exam-explain/7',
+      feedback_intent: 'exam_abnormal_review',
+      exam: { date: '2026-05-21', type: '体检', hospital_name: '三甲医院' },
+      abnormal_items: [{ name: 'LDL-C', value: 3.8, unit: 'mmol/L', flag: 'high', gene_links: ['APOE'] }],
+      gene_hits: [{ rsid: 'rs429358', gene: 'APOE', genotype: 'CT' }],
+      actions: [{ title: '减少饱和脂肪', category: 'diet', metric_key: 'ldl' }],
+      safety_boundary: '用于健康管理和就医沟通准备，不替代诊断、治疗或用药建议。',
+    });
+  });
+
+  it('creates genetic report feedback context without raw variants', () => {
+    const context = createGeneticReportAgentContext({
+      report: {
+        profile: { id: 3, test_provider: 'WeGene', test_date: '2026-05-01' },
+        stats: { hits: 38, miss: 14, total_known: 52 },
+        clusters: [{ category: 'metabolic', hit_count: 8, high_risk_count: 2 }],
+        items: [
+          { rsid: 'rs1801133', gene: 'MTHFR', genotype: 'TT', category: 'methylation', hit: true, risk_level: 'high', title: '叶酸代谢' },
+          { rsid: 'rs9939609', gene: 'FTO', genotype: 'AA', category: 'weight', hit: true, risk_level: 'medium', title: '体重管理' },
+        ],
+      },
+      summary: '叶酸代谢和体重管理优先。',
+      predictions: { disease_risk: { top_risks: [{ name: '冠心病', risk_level: 'medium' }] } },
+    });
+
+    expect(context).toMatchObject({
+      from: 'genetic-report/current',
+      feedback_intent: 'genetic_action_plan',
+      profile: { provider: 'WeGene', test_date: '2026-05-01' },
+      stats: { hits: 38, total_known: 52 },
+      disease_risks: [{ name: '冠心病', risk_level: 'medium' }],
+      safety_boundary: '基因结果只用于风险分层和生活方式建议，不等同疾病诊断。',
+    });
+    expect(context.top_hits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rsid: 'rs1801133', gene: 'MTHFR', genotype: 'TT', risk_level: 'high' }),
+    ]));
+  });
+
+  it('creates live run feedback context without GPS coordinates', () => {
+    const context = createLiveRunAgentContext({
+      id: 9,
+      total_distance_m: 5200,
+      total_duration_s: 1800,
+      avg_pace_seconds: 346,
+      max_hr: 171,
+      z4_plus_minutes: 6.5,
+      target_label: 'tempo',
+      target_pace_seconds: 340,
+      readiness_score: 72,
+      narrative_status: 'completed',
+      narrative: '后半程心率偏高。',
+      gps_samples: [{ lat: 31.1, lon: 121.2 }],
+      events: [{ rule_id: 'hr_overload', message: '心率过高', metric_snapshot: { hr: 171 } }],
+    });
+
+    expect(context).toMatchObject({
+      from: 'live-run/9',
+      feedback_intent: 'live_run_review',
+      run: { distance_km: 5.2, duration_min: 30, avg_pace_seconds: 346, max_hr: 171 },
+      target: { label: 'tempo', pace_seconds: 340, readiness_score: 72 },
+      events: [{ rule_id: 'hr_overload', message: '心率过高' }],
+      gps_samples_count: 1,
+    });
+    expect(JSON.stringify(context)).not.toContain('31.1');
+  });
+
+  it('creates weekly and monthly report feedback contexts', () => {
+    const weekly = createWeeklyBriefingAgentContext({
+      week_start: '2026-05-18',
+      primary_goal: 'sleep',
+      stats: { total: 3, accepted: 2, completed: 1, improved: 1 },
+      cards: [{ id: 1, title: '提前睡觉', metric_key: 'sleep_score', baseline_value: '72', target_value: '80' }],
+    });
+    const monthly = createMonthlyReportAgentContext({
+      year: 2026,
+      month: 5,
+      report: {
+        coverage: { covered_days: 20, total_days: 31, pct: 65 },
+        narrative: '睡眠有改善。',
+        next_focus: ['稳定作息'],
+        metric_trends: [{ metric: 'sleep_score', label: '睡眠评分', curr: 82, prev: 72, unit: '' }],
+        ai_scorecard: { overall: { total_graded: 4, hit_rate: 50 }, top_hits: [], top_misses: [] },
+        key_interventions: [{ kind: 'sleep', title: '早睡', date: '2026-05-10' }],
+      },
+    });
+
+    expect(weekly).toMatchObject({
+      from: 'weekly-briefing/2026-05-18',
+      feedback_intent: 'weekly_briefing_review',
+      cards: [{ id: 1, title: '提前睡觉', metric_key: 'sleep_score' }],
+    });
+    expect(monthly).toMatchObject({
+      from: 'monthly-report/2026-05',
+      feedback_intent: 'monthly_report_review',
+      coverage: { covered_days: 20, total_days: 31, pct: 65 },
+      next_focus: ['稳定作息'],
+    });
+  });
+
+  it('creates goal profile memory directive import and environment contexts', () => {
+    expect(createGoalsAgentContext([
+      { id: 1, title: '降低体重', status: 'active', target_value: 75, current_value: 78, unit: 'kg' },
+    ])).toMatchObject({
+      from: 'goals/active',
+      feedback_intent: 'goal_adjustment',
+      active_goals: [{ id: 1, title: '降低体重', target_value: 75, current_value: 78 }],
+    });
+
+    expect(createAiProfileAgentContext({
+      facts: [{ id: 2, tier: 'semantic', predicate: 'responds_to', object_value: '晚饭后散步', effective_confidence: 0.8 }],
+      stats: { by_tier: [{ tier: 'semantic', total: 12, avg_confidence: 0.7 }] },
+      scorecard: { window_days: 90, overall: { total: 5, hit_rate: 60, avg_score: 72 }, top_hits: [{ card_id: 3, title: '散步', score: 88 }] },
+    })).toMatchObject({
+      from: 'ai-profile/current',
+      feedback_intent: 'ai_profile_correction',
+      scorecard: { window_days: 90, hit_rate: 60 },
+    });
+
+    expect(createDirectivesAgentContext([
+      { id: 4, kind: 'target_override', instruction: '血压控制在 130/80 以下', severity: 'mandatory', source: 'manual' },
+    ])).toMatchObject({
+      from: 'directives/active',
+      feedback_intent: 'directive_review',
+      directives: [{ id: 4, kind: 'target_override', severity: 'mandatory' }],
+    });
+
+    expect(createImportResultAgentContext({
+      kind: 'medical_pdf',
+      result: { message: '体检报告解析成功: 28 个指标', detail: '来源: 三甲医院' },
+    })).toMatchObject({
+      from: 'import/medical_pdf',
+      feedback_intent: 'import_result_follow_up',
+      result: { message: '体检报告解析成功: 28 个指标' },
+    });
+
+    expect(createEnvironmentAgentContext({
+      weather: { temperature: 28, weather: '多云', humidity: 70 },
+      airQuality: { aqi: 168, pm25: 82, primary_pollutant: 'PM2.5' },
+      forecast: [{ date: '2026-05-22', weather: '雨', temp_max: 25, temp_min: 18 }],
+      location: { city: '杭州', region: '浙江' },
+    })).toMatchObject({
+      from: 'environment/current',
+      feedback_intent: 'environment_health_plan',
+      location: { city: '杭州', region: '浙江' },
+      air_quality: { aqi: 168, pm25: 82 },
+    });
+  });
+
+  it('creates memory and specialist scorecard feedback contexts', () => {
+    expect(createMemoryAgentContext({
+      facts: [{ id: 9, tier: 'semantic', subject: 'user', predicate: 'prefers', object_value: '低强度跑', effective_confidence: 0.75 }],
+      stats: { by_tier: [{ tier: 'semantic', total: 10, avg_confidence: 0.7 }] },
+    })).toMatchObject({
+      from: 'memory/current',
+      feedback_intent: 'memory_correction',
+      facts: [{ id: 9, predicate: 'prefers', object_value: '低强度跑' }],
+    });
+
+    expect(createSpecialistScorecardAgentContext({
+      label: '运动',
+      data: {
+        specialist: 'movement_coach',
+        window_days: 30,
+        proposed_count: 5,
+        graded_count: 3,
+        hit_rate: 66,
+        avg_accuracy: 74,
+        cards: [{ id: 1, title: '轻松跑', metric_key: 'hrv', target_value: '回升', actual_value: '回升', accuracy_score: 88, why_short: '执行后 HRV 改善' }],
+      },
+    })).toMatchObject({
+      from: 'specialist-scorecard/movement_coach',
+      feedback_intent: 'specialist_scorecard_review',
+      specialist: { name: 'movement_coach', label: '运动', window_days: 30, hit_rate: 66 },
+      cards: [{ id: 1, title: '轻松跑', metric_key: 'hrv', accuracy_score: 88 }],
     });
   });
 });

@@ -43,6 +43,8 @@ import { useTheme } from '../hooks/useTheme';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
 import { EvidenceRefsRow } from '../components/knowledge';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createGeneticReportAgentContext } from '../utils/agentContext';
 
 export default function GeneticReportScreen() {
   const { c } = useTheme();
@@ -174,6 +176,14 @@ export default function GeneticReportScreen() {
           )}
 
           {predictions && <PredictionBoundaryCard predictions={predictions} c={c} />}
+
+          <AgentFeedbackLink
+            label="跟 Agent 制定 30 天基因执行方案"
+            accessibilityLabel="跟 Agent 制定 30 天基因执行方案"
+            prompt="请基于我的基因报告，制定一个 30 天健康执行方案：按优先级列出饮食、运动、补剂、复查指标和不确定性边界。不要把基因风险当成诊断。"
+            context={createGeneticReportAgentContext({ report: data as any, summary: agentSummary, predictions: predictions as any })}
+            badge={`基因命中 ${data.stats.hits}/${data.stats.total_known}`}
+          />
 
           {/* G-W4 Cluster 头部: 按 category 聚合, 高风险靠前. tap 切到对应 filter. */}
           {data.clusters && data.clusters.length > 0 && (

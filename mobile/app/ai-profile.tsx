@@ -28,6 +28,8 @@ import {
 } from '../services/personalOutcome';
 import { spacing, radii } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createAiProfileAgentContext } from '../utils/agentContext';
 
 const FACTS_QK = ['memoryFacts'] as const;
 const STATS_QK = ['memoryStats'] as const;
@@ -117,6 +119,20 @@ export default function AiProfileScreen() {
         <Text style={styles.complianceText}>
           这是 AI 在跨对话中记住的事实和它给你的建议的命中率. 觉得某条不对, 左滑删掉, AI 下次不会再用它.
         </Text>
+      </View>
+
+      <View style={styles.agentWrap}>
+        <AgentFeedbackLink
+          label="跟 Agent 校准我的画像"
+          accessibilityLabel="跟 Agent 校准我的画像"
+          prompt="请基于 AI 当前记住的事实和建议成绩单，帮我找出可能不准确的画像、建议命中或未中的模式，以及我应该补充哪些反馈。"
+          context={createAiProfileAgentContext({
+            facts: (facts.data ?? []) as any,
+            stats: stats.data as any,
+            scorecard: scorecard.data as any,
+          })}
+          badge={`AI 画像 ${totalFacts} 条记忆`}
+        />
       </View>
 
       <View style={styles.tabBar}>
@@ -342,6 +358,15 @@ function ScorecardTab(props: {
         </View>
       </View>
 
+      <AgentFeedbackLink
+        label="跟 Agent 分析建议命中率"
+        accessibilityLabel="跟 Agent 分析建议命中率"
+        prompt="请基于这份 AI 建议成绩单，分析哪些方向建议更有效、哪些偏离较多，并提出下阶段反馈和改进策略。"
+        context={createAiProfileAgentContext({ scorecard: data as any })}
+        badge={`近 ${data.window_days} 天命中率 ${overall.hit_rate.toFixed(0)}%`}
+        style={styles.scoreAgentLink}
+      />
+
       {by_specialist.length > 0 && (
         <>
           <Text style={styles.sectionTitle}>各专家命中率</Text>
@@ -448,6 +473,10 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     backgroundColor: c.fill, borderRadius: radii.sm,
   },
   complianceText: { flex: 1, fontSize: 12, lineHeight: 17, color: c.labelSecondary },
+  agentWrap: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: spacing.md, marginBottom: spacing.xs,
@@ -521,6 +550,7 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   overallBar: { height: '100%' },
   overallStats: { flexDirection: 'row', gap: 12, flexWrap: 'wrap', justifyContent: 'center' },
   overallStatText: { fontSize: 12, color: c.labelSecondary },
+  scoreAgentLink: { marginBottom: spacing.md },
 
   sectionTitle: {
     fontSize: 14, fontWeight: '600', color: c.labelPrimary,

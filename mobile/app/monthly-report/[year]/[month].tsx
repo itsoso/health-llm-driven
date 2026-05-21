@@ -14,6 +14,8 @@ import {
   INTERVENTION_KIND_LABEL, DIRECTION_LABEL, DIRECTION_COLOR,
   type MonthlyReportDetail, type MetricTrend, type ScorecardCard,
 } from '../../../services/monthlyReports';
+import AgentFeedbackLink from '../../../components/agent/AgentFeedbackLink';
+import { createMonthlyReportAgentContext } from '../../../utils/agentContext';
 
 export default function MonthlyReportDetailScreen() {
   const router = useRouter();
@@ -82,6 +84,15 @@ export default function MonthlyReportDetailScreen() {
         <Text style={txt.generatedHint}>
           生成于 {relativeTime(data.generated_at)} · 覆盖 {r.coverage.covered_days}/{r.coverage.total_days} 天 · {r.coverage.pct.toFixed(0)}%
         </Text>
+
+        <AgentFeedbackLink
+          label="跟 Agent 复盘本月"
+          accessibilityLabel="跟 Agent 复盘本月"
+          prompt="请基于本月健康报告做一次月度复盘：总结有效和偏离的建议，解释关键指标变化，并给出下月优先行动安排。"
+          context={createMonthlyReportAgentContext({ year, month, report: r } as any)}
+          badge={`${formatMonth(year, month)}复盘`}
+          style={styles.agentLink}
+        />
 
         {r.narrative ? (
           <View style={styles.card}>
@@ -271,6 +282,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg, marginBottom: spacing.md,
     ...shadows.subtle,
   },
+  agentLink: { marginBottom: spacing.md },
   bulletRow: {
     flexDirection: 'row', alignItems: 'flex-start',
     marginTop: spacing.sm, gap: 8,

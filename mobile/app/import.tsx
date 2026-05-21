@@ -31,6 +31,8 @@ import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { uploadMedicalExamPdf, uploadMedicalExamImage, uploadMedicalExamText } from '../services/medicalExams';
 import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '../services/geneticData';
+import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import { createImportResultAgentContext } from '../utils/agentContext';
 
 type FileKind = 'genetic_txt' | 'genetic_pdf' | 'medical_pdf' | 'medical_image';
 
@@ -325,6 +327,13 @@ export default function ImportScreen() {
                 <Text style={txt.resultTitle}>{result.message}</Text>
               </View>
               {!!result.detail && <Text style={txt.resultDetail}>{result.detail}</Text>}
+              <AgentFeedbackLink
+                label="跟 Agent 解读这次导入"
+                accessibilityLabel="跟 Agent 解读这次导入"
+                prompt="请基于我刚导入的健康档案结果，解释这次导入意味着什么、下一步该查看或补录什么，并给出后续健康管理行动建议。"
+                context={createImportResultAgentContext({ kind: result.kind, result })}
+                badge="导入结果"
+              />
               <TouchableOpacity
                 onPress={() => router.back()}
                 style={styles.doneBtn}

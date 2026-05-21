@@ -567,6 +567,435 @@ export function createMedicalExamAgentContext(exam: MedicalExam): AgentContextPa
   };
 }
 
+function toCompactText(value: unknown, max = 900): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function roundTo(value: number, digits = 1): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function compactSeriesPoint(point: Record<string, any>): AgentContextValue {
+  return {
+    date: point.date ?? point.x ?? point.ts ?? null,
+    value: point.value ?? point.y ?? null,
+    value_text: point.value_text ?? null,
+  };
+}
+
+export function createTrendAgentContext(args: {
+  type: string;
+  title: string;
+  range: string;
+  series?: Array<Record<string, any>> | null;
+}): AgentContextPayload {
+  const series = args.series ?? [];
+  const latestBySeries = series.map(s => {
+    const data = Array.isArray(s.data) ? s.data : [];
+    const latest = data[data.length - 1] ?? null;
+    return {
+      label: s.label ?? args.title,
+      date: latest?.date ?? latest?.x ?? latest?.ts ?? null,
+      value: latest?.value ?? latest?.y ?? null,
+      unit: latest?.unit ?? s.unit ?? null,
+    };
+  }).filter(item => item.date != null || item.value != null);
+
+  return {
+    from: `indicator-history/${args.type}`,
+    feedback_intent: 'indicator_trend_review',
+    type: args.type,
+    title: args.title,
+    range: args.range,
+    latest: latestBySeries[0] ?? null,
+    latest_by_series: latestBySeries.slice(0, 6),
+    reference_ranges: series
+      .filter(s => s.referenceRange)
+      .slice(0, 6)
+      .map(s => ({
+        label: s.label ?? args.title,
+        low: s.referenceRange?.low ?? null,
+        high: s.referenceRange?.high ?? null,
+      })),
+    series: series.slice(0, 6).map(s => ({
+      label: s.label ?? args.title,
+      unit: s.unit ?? null,
+      points: (Array.isArray(s.data) ? s.data : []).slice(-14).map(compactSeriesPoint),
+    })),
+    expected_agent_output: ['趋势解读', '可能诱因', '下一步行动', '需要补充记录的数据'],
+  };
+}
+
+export function createExamExplainAgentContext(data: Record<string, any>): AgentContextPayload {
+  const exam = data.exam ?? {};
+  const expl = data.explanation ?? {};
+  return {
+    from: `exam-explain/${exam.id ?? data.exam_id ?? 'current'}`,
+    feedback_intent: 'exam_abnormal_review',
+    exam: {
+      id: exam.id ?? null,
+      date: exam.exam_date ?? null,
+      type: exam.exam_type ?? null,
+      hospital_name: exam.hospital_name ?? null,
+    },
+    summary: toCompactText(expl.summary, 1200),
+    abnormal_items: (data.abnormal_items ?? []).slice(0, 20).map((item: Record<string, any>) => ({
+      name: item.item_name ?? item.name ?? null,
+      value: item.value ?? item.value_text ?? null,
+      unit: item.unit ?? null,
+      ref_range: item.reference_range ?? item.ref_range ?? null,
+      flag: item.is_abnormal ?? item.flag ?? null,
+      gene_links: (item.gene_links ?? []).slice(0, 6),
+    })),
+    gene_hits: (data.user_gene_hits ?? []).slice(0, 12).map((hit: Record<string, any>) => ({
+      rsid: hit.rsid ?? null,
+      gene: hit.gene ?? null,
+      genotype: hit.genotype ?? null,
+      risk_level: hit.risk_level ?? null,
+    })),
+    actions: (expl.actions ?? []).slice(0, 10).map((action: Record<string, any>) => ({
+      title: action.title ?? null,
+      category: action.category ?? null,
+      evidence_level: action.evidence_level ?? null,
+      metric_key: action.metric_key ?? null,
+      suggested_days: action.suggested_days ?? null,
+    })),
+    trends: Object.entries(data.trends ?? {}).slice(0, 8).map(([name, points]) => ({
+      name,
+      points: (Array.isArray(points) ? points : []).slice(-5).map(compactSeriesPoint),
+    })),
+    related_cards: (data.related_cards ?? []).slice(0, 8).map((card: Record<string, any>) => ({
+      id: card.id ?? null,
+      title: card.title ?? null,
+    })),
+    see_doctor_specialty: expl.see_doctor_specialty ?? null,
+    recheck_window_days: expl.recheck_window_days ?? null,
+    safety_boundary: '用于健康管理和就医沟通准备，不替代诊断、治疗或用药建议。',
+    expected_agent_output: ['异常项优先级', '饮食/运动/补剂行动', '复查和就医沟通清单', '需要用户补充的问题'],
+  };
+}
+
+export function createGeneticReportAgentContext(args: {
+  report?: Record<string, any> | null;
+  summary?: string | null;
+  predictions?: Record<string, any> | null;
+}): AgentContextPayload {
+  const report = args.report ?? {};
+  const items = Array.isArray(report.items) ? report.items : [];
+  const riskRank: Record<string, number> = { high: 0, medium: 1, low: 2, info: 3 };
+  const topHits = items
+    .filter((item: Record<string, any>) => item.hit)
+    .sort((a: Record<string, any>, b: Record<string, any>) =>
+      (riskRank[a.risk_level] ?? 9) - (riskRank[b.risk_level] ?? 9))
+    .slice(0, 12)
+    .map((item: Record<string, any>) => ({
+      rsid: item.rsid ?? null,
+      gene: item.gene ?? null,
+      genotype: item.genotype ?? null,
+      category: item.category ?? null,
+      risk_level: item.risk_level ?? null,
+      title: item.title ?? item.phenotype ?? null,
+    }));
+
+  return {
+    from: 'genetic-report/current',
+    feedback_intent: 'genetic_action_plan',
+    profile: report.profile ? {
+      id: report.profile.id ?? null,
+      provider: report.profile.test_provider ?? report.profile.provider ?? null,
+      test_date: report.profile.test_date ?? null,
+    } : null,
+    stats: report.stats ?? null,
+    summary: toCompactText(args.summary, 1400),
+    clusters: (report.clusters ?? []).slice(0, 8).map((cluster: Record<string, any>) => ({
+      category: cluster.category ?? null,
+      hit_count: cluster.hit_count ?? cluster.hits ?? null,
+      high_risk_count: cluster.high_risk_count ?? null,
+      summary: toCompactText(cluster.summary, 300),
+    })),
+    top_hits: topHits,
+    disease_risks: (args.predictions?.disease_risk?.top_risks ?? []).slice(0, 8).map((risk: Record<string, any>) => ({
+      name: risk.name ?? risk.disease ?? null,
+      risk_level: risk.risk_level ?? null,
+      score: risk.score ?? risk.risk_score ?? null,
+    })),
+    safety_boundary: '基因结果只用于风险分层和生活方式建议，不等同疾病诊断。',
+    expected_agent_output: ['30 天基因行动计划', '优先干预项', '饮食/运动/补剂注意事项', '需要结合化验复核的项目'],
+  };
+}
+
+export function createLiveRunAgentContext(session: Record<string, any>): AgentContextPayload {
+  const distanceM = toFiniteNumber(session.total_distance_m);
+  const durationS = toFiniteNumber(session.total_duration_s);
+  return {
+    from: `live-run/${session.id ?? 'current'}`,
+    feedback_intent: 'live_run_review',
+    run: {
+      id: session.id ?? null,
+      distance_km: distanceM == null ? null : roundTo(distanceM / 1000, 2),
+      duration_min: durationS == null ? null : Math.round(durationS / 60),
+      avg_pace_seconds: session.avg_pace_seconds ?? null,
+      max_hr: session.max_hr ?? null,
+      z4_plus_minutes: session.z4_plus_minutes ?? null,
+      aborted: !!session.aborted,
+    },
+    target: {
+      label: session.target_label ?? null,
+      pace_seconds: session.target_pace_seconds ?? null,
+      readiness_score: session.readiness_score ?? null,
+    },
+    events: (session.events ?? []).slice(0, 12).map((event: Record<string, any>) => ({
+      rule_id: event.rule_id ?? null,
+      message: event.message ?? null,
+      metric_snapshot: (event.metric_snapshot ?? null) as AgentContextValue,
+    })),
+    gps_samples_count: Array.isArray(session.gps_samples) ? session.gps_samples.length : 0,
+    narrative_status: session.narrative_status ?? null,
+    narrative: toCompactText(session.narrative, 1200),
+    expected_agent_output: ['本次实时跑复盘', '配速和心率风险', '拉伸恢复建议', '下一次训练安排'],
+  };
+}
+
+export function createWeeklyBriefingAgentContext(data: Record<string, any>): AgentContextPayload {
+  return {
+    from: `weekly-briefing/${data.week_start ?? 'current'}`,
+    feedback_intent: 'weekly_briefing_review',
+    week_start: data.week_start ?? null,
+    primary_goal: data.primary_goal ?? null,
+    stats: data.stats ?? null,
+    cards: (data.cards ?? []).slice(0, 8).map((card: Record<string, any>) => ({
+      id: card.id ?? null,
+      title: card.title ?? null,
+      metric_key: card.metric_key ?? null,
+      baseline_value: card.baseline_value ?? null,
+      target_value: card.target_value ?? null,
+      actual_value: card.actual_value ?? null,
+      status: card.status ?? null,
+      outcome: card.outcome ?? null,
+      user_decision: card.user_decision ?? null,
+    })),
+    expected_agent_output: ['本周建议复盘', '保留/调整/放弃哪些建议', '下周执行重点', '需要用户反馈的问题'],
+  };
+}
+
+export function createMonthlyReportAgentContext(data: Record<string, any>): AgentContextPayload {
+  const report = data.report ?? data;
+  const year = data.year ?? report.year ?? null;
+  const month = data.month ?? report.month ?? null;
+  const monthLabel = year && month ? `${year}-${String(month).padStart(2, '0')}` : 'current';
+  return {
+    from: `monthly-report/${monthLabel}`,
+    feedback_intent: 'monthly_report_review',
+    month: monthLabel,
+    coverage: report.coverage ?? null,
+    narrative: toCompactText(report.narrative, 1200),
+    next_focus: (report.next_focus ?? []).slice(0, 8),
+    metric_trends: (report.metric_trends ?? []).slice(0, 12).map((trend: Record<string, any>) => ({
+      metric: trend.metric ?? null,
+      label: trend.label ?? null,
+      prev: trend.prev ?? null,
+      curr: trend.curr ?? null,
+      unit: trend.unit ?? null,
+      direction: trend.direction ?? null,
+      delta_pct: trend.delta_pct ?? null,
+    })),
+    ai_scorecard: report.ai_scorecard ? {
+      overall: report.ai_scorecard.overall ?? null,
+      top_hits: (report.ai_scorecard.top_hits ?? []).slice(0, 5),
+      top_misses: (report.ai_scorecard.top_misses ?? []).slice(0, 5),
+    } as AgentContextValue : null,
+    key_interventions: (report.key_interventions ?? []).slice(0, 8),
+    expected_agent_output: ['本月复盘', '下月重点排序', 'AI 建议命中/偏离原因', '下一轮行动安排'],
+  };
+}
+
+export function createGoalsAgentContext(goals?: Array<Record<string, any>> | null): AgentContextPayload {
+  const activeGoals = goals ?? [];
+  return {
+    from: 'goals/active',
+    feedback_intent: 'goal_adjustment',
+    active_goals: activeGoals.slice(0, 12).map(goal => ({
+      id: goal.id ?? null,
+      title: goal.title ?? goal.name ?? null,
+      status: goal.status ?? null,
+      metric_key: goal.metric_key ?? null,
+      target_value: goal.target_value ?? null,
+      current_value: goal.current_value ?? goal.progress_value ?? null,
+      unit: goal.unit ?? null,
+      deadline: goal.deadline ?? goal.target_date ?? null,
+      progress_pct: goal.progress_pct ?? null,
+    })),
+    expected_agent_output: ['目标是否合理', '优先级调整', '本周行动拆解', '需要补充的目标约束'],
+  };
+}
+
+export function createAiProfileAgentContext(args: {
+  facts?: Array<Record<string, any>> | null;
+  stats?: Record<string, any> | null;
+  scorecard?: Record<string, any> | null;
+}): AgentContextPayload {
+  return {
+    from: 'ai-profile/current',
+    feedback_intent: 'ai_profile_correction',
+    memory_stats: args.stats ?? null,
+    facts: (args.facts ?? []).slice(0, 20).map(fact => ({
+      id: fact.id ?? null,
+      tier: fact.tier ?? null,
+      predicate: fact.predicate ?? null,
+      object_value: fact.object_value ?? null,
+      object_unit: fact.object_unit ?? null,
+      confidence: fact.effective_confidence ?? fact.confidence ?? null,
+      reinforcement_count: fact.reinforcement_count ?? null,
+    })),
+    scorecard: args.scorecard ? {
+      window_days: args.scorecard.window_days ?? null,
+      hit_rate: args.scorecard.overall?.hit_rate ?? null,
+      avg_score: args.scorecard.overall?.avg_score ?? null,
+      total: args.scorecard.overall?.total ?? args.scorecard.overall?.total_graded ?? null,
+      top_hits: (args.scorecard.top_hits ?? []).slice(0, 5),
+      top_misses: (args.scorecard.top_misses ?? []).slice(0, 5),
+      by_specialist: (args.scorecard.by_specialist ?? []).slice(0, 8),
+    } as AgentContextValue : null,
+    expected_agent_output: ['指出画像可能不准的地方', '建议如何纠正记忆', '分析建议命中/未中的模式', '下一步反馈链路'],
+  };
+}
+
+export function createSpecialistScorecardAgentContext(args: {
+  label?: string | null;
+  data?: Record<string, any> | null;
+}): AgentContextPayload {
+  const data = args.data ?? {};
+  return {
+    from: `specialist-scorecard/${data.specialist ?? 'unknown'}`,
+    feedback_intent: 'specialist_scorecard_review',
+    specialist: {
+      name: data.specialist ?? null,
+      label: args.label ?? data.specialist ?? null,
+      window_days: data.window_days ?? null,
+      proposed_count: data.proposed_count ?? null,
+      graded_count: data.graded_count ?? null,
+      hit_rate: data.hit_rate ?? null,
+      avg_accuracy: data.avg_accuracy ?? null,
+    },
+    cards: (data.cards ?? []).slice(0, 15).map((card: Record<string, any>) => ({
+      id: card.id ?? null,
+      title: card.title ?? null,
+      metric_key: card.metric_key ?? null,
+      target_value: card.target_value ?? null,
+      actual_value: card.actual_value ?? null,
+      accuracy_score: card.accuracy_score ?? null,
+      adherence_kind: card.adherence_kind ?? null,
+      why_short: card.why_short ?? null,
+    })),
+    expected_agent_output: ['该 specialist 建议命中/偏离模式', '哪些建议需要继续执行或停止', '如何向 Agent 提供更有效反馈', '下一轮建议改进方向'],
+  };
+}
+
+export function createMemoryAgentContext(args: {
+  facts?: Array<Record<string, any>> | null;
+  stats?: Record<string, any> | null;
+}): AgentContextPayload {
+  return {
+    from: 'memory/current',
+    feedback_intent: 'memory_correction',
+    stats: args.stats ?? null,
+    facts: (args.facts ?? []).slice(0, 30).map(fact => ({
+      id: fact.id ?? null,
+      tier: fact.tier ?? null,
+      subject: fact.subject ?? null,
+      predicate: fact.predicate ?? null,
+      object_value: fact.object_value ?? null,
+      object_unit: fact.object_unit ?? null,
+      confidence: fact.effective_confidence ?? fact.confidence ?? null,
+      reinforcement_count: fact.reinforcement_count ?? null,
+    })),
+    expected_agent_output: ['帮我检查哪些记忆可能不准', '建议删除/保留/补充哪些信息', '说明这些记忆如何影响建议'],
+  };
+}
+
+export function createDirectivesAgentContext(directives?: Array<Record<string, any>> | null): AgentContextPayload {
+  return {
+    from: 'directives/active',
+    feedback_intent: 'directive_review',
+    directives: (directives ?? []).slice(0, 20).map(directive => ({
+      id: directive.id ?? null,
+      kind: directive.kind ?? null,
+      instruction: directive.instruction ?? null,
+      metric_key: directive.metric_key ?? null,
+      target_value: directive.target_value ?? null,
+      medication_name: directive.medication_name ?? null,
+      severity: directive.severity ?? null,
+      source: directive.source ?? null,
+      expires_at: directive.expires_at ?? null,
+    })),
+    safety_boundary: '用户指令用于约束 AI 推荐；涉及诊断、处方、停药或改剂量必须咨询医生。',
+    expected_agent_output: ['检查指令是否冲突', '建议补充或澄清的约束', '执行时的风险边界', '下一步管理方式'],
+  };
+}
+
+export function createImportResultAgentContext(args: {
+  kind: string;
+  result?: Record<string, any> | null;
+}): AgentContextPayload {
+  return {
+    from: `import/${args.kind}`,
+    feedback_intent: 'import_result_follow_up',
+    kind: args.kind,
+    result: {
+      message: args.result?.message ?? null,
+      detail: args.result?.detail ?? null,
+      exam_id: args.result?.exam_id ?? null,
+      profile_id: args.result?.profile_id ?? null,
+    },
+    expected_agent_output: ['解释刚导入的数据', '下一步该看哪个页面', '需要补录或复查的信息', '健康管理行动建议'],
+  };
+}
+
+export function createEnvironmentAgentContext(args: {
+  weather?: Record<string, any> | null;
+  airQuality?: Record<string, any> | null;
+  forecast?: Array<Record<string, any>> | null;
+  location?: Record<string, any> | null;
+}): AgentContextPayload {
+  return {
+    from: 'environment/current',
+    feedback_intent: 'environment_health_plan',
+    location: args.location ? {
+      city: args.location.city ?? null,
+      region: args.location.region ?? null,
+    } : null,
+    weather: args.weather ? {
+      temperature: args.weather.temperature ?? null,
+      feels_like: args.weather.feels_like ?? null,
+      weather: args.weather.weather ?? null,
+      humidity: args.weather.humidity ?? null,
+    } : null,
+    air_quality: args.airQuality ? {
+      aqi: args.airQuality.aqi ?? null,
+      aqi_level: args.airQuality.aqi_level ?? null,
+      aqi_description: args.airQuality.aqi_description ?? null,
+      primary_pollutant: args.airQuality.primary_pollutant ?? null,
+      pm25: args.airQuality.pm25 ?? null,
+      pm10: args.airQuality.pm10 ?? null,
+    } : null,
+    forecast: (args.forecast ?? []).slice(0, 3).map(day => ({
+      date: day.date ?? null,
+      weather: day.weather ?? null,
+      temp_max: day.temp_max ?? null,
+      temp_min: day.temp_min ?? null,
+    })),
+    expected_agent_output: ['今天户外活动建议', '跑步/通勤防护', '鼻炎/睡眠/补水注意事项', '是否需要调整训练到室内'],
+  };
+}
+
 export function createTodayAgentContext(args: {
   alerts: SafetyAlert[];
   twinSnapshot: AgentContextPayload;
