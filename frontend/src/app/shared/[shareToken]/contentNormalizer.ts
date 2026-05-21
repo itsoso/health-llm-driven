@@ -1,8 +1,25 @@
 const HEALTH_METRIC_LABELS = ['睡眠', 'HRV', '步数', '压力', '身体电量', '饮水'] as const;
 const WORKOUT_PLAN_HEADINGS = /(?:📋\s*今日锻炼计划|⚠️\s*注意事项|🏋️\s*推荐方案（[^）]+）|🎯\s*今日步数目标|📌\s*今日建议：)/gu;
+const MEDICAL_DIAGNOSIS_HEADING = /🔬\s*诊断[:：]\s*([^💊🌿🗣🚨📌]*?)(?=\s+感染机制还原|\s+💊|\s+🌿|\s+🗣|$)/u;
+const STRUCTURED_MEDICAL_HEADINGS = /(?:💊\s*治疗策略|🌿\s*补剂调整方案(?:（[^）]+）)?|🗣️?\s*嗓子哑(?:（[^）]+）)?专项护理|🚨\s*何时就医|📌\s*总结)/gu;
+const SUPPLEMENT_NAMES = [
+  '甘氨酸锌',
+  '维生素 C',
+  '维生素C',
+  'NAC (乙酰半胱氨酸)',
+  'NAC',
+  '槲皮素 + 菠萝蛋白酶',
+  '益生菌 (AKK)',
+  '甘氨酸镁',
+  '鱼油/Omega-3',
+];
 
 function escapeTableCell(value: string): string {
   return value.replace(/\|/g, '\\|').trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function splitValueAndStatus(segment: string): { value: string; status: string } | null {
@@ -81,6 +98,71 @@ function formatWorkoutPlanTable(content: string): string {
   return `${before}${table}${after ? `\n\n${after}` : ''}`;
 }
 
+function splitSupplementAdviceAndEvidence(raw: string): { advice: string; evidence: string } {
+  const text = raw.trim();
+  const match = text.match(/^((?:✅|⚠️|❌)\s*[^。；;]{1,28}?)\s+(.+)$/u);
+  if (!match) return { advice: text, evidence: '' };
+  return { advice: match[1].trim(), evidence: match[2].trim() };
+}
+
+function formatSupplementTable(content: string): string {
+  const tableStart = content.indexOf('补剂 建议 科学依据');
+  if (tableStart < 0) return content;
+
+  const afterHeaderStart = tableStart + '补剂 建议 科学依据'.length;
+  const nextSectionMatch = content.slice(afterHeaderStart).match(/\s+(?:感染期可临时添加|##\s*🗣️?|##\s*🚨|##\s*📌)/u);
+  const tableEnd = nextSectionMatch?.index != null
+    ? afterHeaderStart + nextSectionMatch.index
+    : content.length;
+  const tableText = content.slice(afterHeaderStart, tableEnd).trim();
+  if (!tableText) return content;
+
+  const namePattern = SUPPLEMENT_NAMES.map(escapeRegExp).join('|');
+  const rowPattern = new RegExp(
+    `(${namePattern})\\s+((?:✅|⚠️|❌)[\\s\\S]*?)(?=\\s+(?:${namePattern})\\s+(?:✅|⚠️|❌)|$)`,
+    'gu',
+  );
+  const rows = Array.from(tableText.matchAll(rowPattern)).map(match => {
+    const { advice, evidence } = splitSupplementAdviceAndEvidence(match[2]);
+    return [match[1], advice, evidence];
+  });
+  if (rows.length < 2) return content;
+
+  const table = [
+    '| 补剂 | 建议 | 科学依据 |',
+    '| --- | --- | --- |',
+    ...rows.map(row => `| ${row.map(escapeTableCell).join(' | ')} |`),
+  ].join('\n');
+
+  return `${content.slice(0, tableStart)}${table}${content.slice(tableEnd)}`;
+}
+
+function structureFlattenedMedicalAdvice(content: string): string {
+  if (
+    content.includes('\n## ')
+    || (!MEDICAL_DIAGNOSIS_HEADING.test(content) && !STRUCTURED_MEDICAL_HEADINGS.test(content))
+  ) {
+    STRUCTURED_MEDICAL_HEADINGS.lastIndex = 0;
+    return content;
+  }
+  STRUCTURED_MEDICAL_HEADINGS.lastIndex = 0;
+
+  let structured = content
+    .replace(MEDICAL_DIAGNOSIS_HEADING, (_match, title) => `\n\n## 🔬 诊断：${String(title).trim()}\n\n`)
+    .replace(STRUCTURED_MEDICAL_HEADINGS, match => `\n\n## ${match.trim()}\n\n`);
+  structured = structured
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(## 🔬[^\n]+?混合感染)\s+(感染机制还原)/u, '$1\n\n$2')
+    .replace(/\s+(首选：|替代：|青霉素过敏时：|你的特殊情况提醒：|抗病毒（针对鼻病毒）)/gu, '\n\n$1')
+    .replace(/\s+(绝对声带休息：|湿化气道：|温盐水漱口：|避免刺激：|控制鼻后滴漏：)/gu, '\n\n$1')
+    .split('\n')
+    .map(line => line.trim())
+    .join('\n')
+    .trim();
+
+  return formatSupplementTable(structured);
+}
+
 export function normalizeSharedAgentContent(content: string): string {
   if (/\n\s*\|.+\|\s*\n\s*\|[\s|:-]+\|/u.test(content)) {
     return content;
@@ -95,6 +177,9 @@ export function normalizeSharedAgentContent(content: string): string {
     const formatted = sectionizeWorkoutPlan(formatWorkoutPlanTable(body));
     return signatureMatch ? `${formatted}\n\n— 健康 Agent` : formatted;
   }
+
+  const structuredMedical = structureFlattenedMedicalAdvice(flattened);
+  if (structuredMedical !== flattened) return structuredMedical;
 
   const headerMatch = content.match(/^(.*?)\s+综合评分：([^\s]+)\s+指标\s+数值\s+状态\s+/u);
   if (!headerMatch) return content;

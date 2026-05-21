@@ -55,6 +55,11 @@ function formatWorkoutPlanTable(content: string): string {
 }
 
 function normalizeFlattenedAgentContent(content: string): string {
+  const original = content.trim();
+  if (/\n\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|\|.+\|)/u.test(original)) {
+    return original;
+  }
+
   if (hasMarkdownTable(content)) return content.trim();
 
   const flattened = content.replace(/\s+/g, ' ').trim();

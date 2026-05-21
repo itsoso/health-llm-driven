@@ -58,4 +58,23 @@ describe('normalizeSharedAgentContent', () => {
       '— 健康 Agent',
     ].join('\n'));
   });
+
+  it('rebuilds flattened medical advice sections and supplement tables', () => {
+    const legacy = '这个核酸检测结果非常关键！ 🔬 诊断：典型的"病毒搭台，细菌唱戏"混合感染 感染机制还原 人鼻病毒先入侵。 💊 治疗策略 抗生素（针对流感嗜血杆菌） ⚠️ 以下为医学常规方案科普。 🌿 补剂调整方案（感染期强化） 补剂 建议 科学依据 甘氨酸锌 ✅ 继续，可短期加量 锌对鼻病毒有明确抑制作用 维生素 C ✅ 继续 支持免疫细胞功能 🗣️ 嗓子哑（急性喉炎）专项护理 绝对声带休息：尽量少说话。';
+
+    expect(normalizeSharedAgentContent(legacy)).toContain([
+      '## 🔬 诊断：典型的"病毒搭台，细菌唱戏"混合感染',
+      '',
+      '感染机制还原 人鼻病毒先入侵。',
+      '',
+      '## 💊 治疗策略',
+    ].join('\n'));
+    expect(normalizeSharedAgentContent(legacy)).toContain([
+      '| 补剂 | 建议 | 科学依据 |',
+      '| --- | --- | --- |',
+      '| 甘氨酸锌 | ✅ 继续，可短期加量 | 锌对鼻病毒有明确抑制作用 |',
+      '| 维生素 C | ✅ 继续 | 支持免疫细胞功能 |',
+    ].join('\n'));
+    expect(normalizeSharedAgentContent(legacy)).toContain('## 🗣️ 嗓子哑（急性喉炎）专项护理');
+  });
 });

@@ -41,4 +41,19 @@ describe('buildAiShareMessage', () => {
       '— 健康 Agent',
     ].join('\n'));
   });
+
+  it('does not collapse ordinary markdown replies into one paragraph', () => {
+    const content = [
+      '## 🔬 诊断',
+      '',
+      '- 鼻病毒先入侵',
+      '- 继发细菌感染风险升高',
+      '',
+      '## 💊 治疗策略',
+      '',
+      '请线下就医确认处方。',
+    ].join('\n');
+
+    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 健康 Agent`);
+  });
 });
