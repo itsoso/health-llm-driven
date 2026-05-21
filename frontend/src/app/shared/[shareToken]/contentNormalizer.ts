@@ -10,6 +10,15 @@ const ACTION_CHECKLIST_LABELS = [
   '饮水打卡：',
   '继续睡眠优势：',
 ] as const;
+const GENERAL_ADVICE_LABELS = [
+  '免疫"开窗期"',
+  '累积疲劳',
+  '时长锁定',
+  '频率红线',
+  '看灯行事',
+  '跑后防护（关键）',
+  '跑后防护',
+] as const;
 const SUPPLEMENT_NAMES = [
   '甘氨酸锌',
   '维生素 C',
@@ -283,6 +292,43 @@ function structureFlattenedMedicalAdvice(content: string): string {
   return formatActionChecklist(formatRecoveryActionTable(formatSupplementTable(structured)));
 }
 
+function structureFlattenedGeneralAdvice(content: string): string {
+  if (content.includes('\n## ') || content.includes('\n- ')) return content;
+
+  let body = content.trim();
+  let signature = '';
+  const signatureMatch = body.match(/\s+—\s*健康 Agent$/u);
+  if (signatureMatch?.index != null) {
+    signature = '— 健康 Agent';
+    body = body.slice(0, signatureMatch.index).trim();
+  }
+
+  let structured = body
+    .replace(/\s+(🛑\s*为什么[^？?]{2,80}[？?])\s+/u, '\n\n## $1\n\n')
+    .replace(/\s+(🛡️\s*新策略[:：]\S{2,80})\s+/u, '\n\n## $1\n\n')
+    .replace(/\s+(💧\s*提醒[:：])\s*/u, '\n\n## $1\n\n')
+    .replace(/\s+(📌\s*今日建议[:：])\s*/u, '\n\n## $1\n\n');
+
+  for (const label of GENERAL_ADVICE_LABELS) {
+    const pattern = new RegExp(`\\s+(${escapeRegExp(label)}[:：])`, 'gu');
+    structured = structured.replace(pattern, '\n\n- $1');
+  }
+
+  structured = structured
+    .replace(/\s+(总结[:：])/gu, '\n\n**$1** ')
+    .split('\n')
+    .map(line => line.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (structured === body || (!structured.includes('\n## ') && !structured.includes('\n- '))) {
+    return content;
+  }
+
+  return [structured, signature].filter(Boolean).join('\n\n');
+}
+
 export function normalizeSharedAgentContent(content: string): string {
   if (/\n\s*\|.+\|\s*\n\s*\|[\s|:-]+\|/u.test(content)) {
     return content;
@@ -302,18 +348,25 @@ export function normalizeSharedAgentContent(content: string): string {
   if (structuredMedical !== flattened) return structuredMedical;
 
   const headerMatch = content.match(/^(.*?)\s+综合评分：([^\s]+)\s+指标\s+数值\s+状态\s+/u);
-  if (!headerMatch) return content;
+  if (!headerMatch) {
+    const structuredGeneral = structureFlattenedGeneralAdvice(flattened);
+    return structuredGeneral !== flattened ? structuredGeneral : content;
+  }
 
   const adviceMatch = content.match(/\s+(📌\s*)?今日建议：\s*/u);
   if (!adviceMatch || adviceMatch.index == null || adviceMatch.index <= headerMatch[0].length) {
-    return content;
+    const structuredGeneral = structureFlattenedGeneralAdvice(flattened);
+    return structuredGeneral !== flattened ? structuredGeneral : content;
   }
 
   const title = headerMatch[1].trim();
   const score = headerMatch[2].trim();
   const metricsText = content.slice(headerMatch[0].length, adviceMatch.index).trim();
   const rows = parseMetricRows(metricsText);
-  if (!rows) return content;
+  if (!rows) {
+    const structuredGeneral = structureFlattenedGeneralAdvice(flattened);
+    return structuredGeneral !== flattened ? structuredGeneral : content;
+  }
 
   const afterAdvice = content.slice(adviceMatch.index + adviceMatch[0].length).trim();
   const table = [

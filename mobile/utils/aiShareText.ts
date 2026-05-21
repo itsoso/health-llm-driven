@@ -1,7 +1,20 @@
 const WORKOUT_PLAN_HEADINGS = /(?:📋\s*今日锻炼计划|⚠️\s*注意事项|🏋️\s*推荐方案（[^）]+）|🎯\s*今日步数目标|📌\s*今日建议：)/gu;
+const GENERAL_ADVICE_LABELS = [
+  '免疫"开窗期"',
+  '累积疲劳',
+  '时长锁定',
+  '频率红线',
+  '看灯行事',
+  '跑后防护（关键）',
+  '跑后防护',
+] as const;
 
 function escapeTableCell(value: string): string {
   return value.replace(/\|/g, '\\|').trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function hasMarkdownTable(content: string): boolean {
@@ -54,6 +67,35 @@ function formatWorkoutPlanTable(content: string): string {
   return `${before}${table}${after ? `\n\n${after}` : ''}`;
 }
 
+function structureFlattenedGeneralAdvice(content: string): string {
+  if (content.includes('\n## ') || content.includes('\n- ')) return content;
+
+  let structured = content.trim()
+    .replace(/\s+(🛑\s*为什么[^？?]{2,80}[？?])\s+/u, '\n\n## $1\n\n')
+    .replace(/\s+(🛡️\s*新策略[:：]\S{2,80})\s+/u, '\n\n## $1\n\n')
+    .replace(/\s+(💧\s*提醒[:：])\s*/u, '\n\n## $1\n\n')
+    .replace(/\s+(📌\s*今日建议[:：])\s*/u, '\n\n## $1\n\n');
+
+  for (const label of GENERAL_ADVICE_LABELS) {
+    const pattern = new RegExp(`\\s+(${escapeRegExp(label)}[:：])`, 'gu');
+    structured = structured.replace(pattern, '\n\n- $1');
+  }
+
+  structured = structured
+    .replace(/\s+(总结[:：])/gu, '\n\n**$1** ')
+    .split('\n')
+    .map(line => line.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (structured === content || (!structured.includes('\n## ') && !structured.includes('\n- '))) {
+    return content;
+  }
+
+  return structured;
+}
+
 function normalizeFlattenedAgentContent(content: string): string {
   const original = content.trim();
   if (/\n\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|\|.+\|)/u.test(original)) {
@@ -69,7 +111,7 @@ function normalizeFlattenedAgentContent(content: string): string {
     return sectionizeWorkoutPlan(formatWorkoutPlanTable(flattened));
   }
 
-  return flattened;
+  return structureFlattenedGeneralAdvice(flattened);
 }
 
 export function buildAiShareMessage(content: string): string {
