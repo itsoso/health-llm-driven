@@ -26,6 +26,7 @@ import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
+import { createMovementPlanAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   optimal: { bg: '#D1FAE5', text: '#065F46' },
@@ -79,6 +80,13 @@ export default function MovementPlanScreen() {
   const today = data.today;
   const sc = ts ? STATUS_COLOR[ts.status] ?? STATUS_COLOR.unknown : STATUS_COLOR.unknown;
   const ic = today ? INTENSITY_COLOR[today.intensity] ?? '#94A3B8' : '#94A3B8';
+  const handleChatMovementPlan = () => {
+    pushChatWithContext(router, {
+      prompt: '请基于我当前的运动方案和近期训练记录, 复盘训练负荷与恢复风险, 给出今天怎么练/是否该休息, 并提供跑步、骑行、力量或低冲击替代方案。最后请问我需要反馈哪些体感信息。',
+      context: createMovementPlanAgentContext(data),
+      badge: '当前运动方案',
+    });
+  };
 
   return (
     <>
@@ -144,6 +152,17 @@ export default function MovementPlanScreen() {
               />
             )}
           </View>
+          <TouchableOpacity
+            onPress={handleChatMovementPlan}
+            style={[styles.agentLink, { backgroundColor: c.brandLight, borderColor: c.brand }]}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="跟 Agent 调整本周训练方案"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+            <Text style={[styles.agentLinkText, { color: c.brand }]}>跟 Agent 调整本周训练</Text>
+            <Ionicons name="chevron-forward" size={15} color={c.brand} />
+          </TouchableOpacity>
 
           {/* 基因偏好 — chip 化 (2026-05-12) */}
           {data.gene_biases && data.gene_biases.length > 0 && (
@@ -353,6 +372,16 @@ const styles = StyleSheet.create({
   summaryTitle: { fontSize: 13, fontWeight: '600' },
   summaryBody: { fontSize: 14, lineHeight: 22 },
   heroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  agentLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  agentLinkText: { fontSize: 14, fontWeight: '600', flex: 1 },
   card: {
     borderWidth: 1,
     borderRadius: radii.md,

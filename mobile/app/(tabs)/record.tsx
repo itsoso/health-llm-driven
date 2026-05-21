@@ -12,6 +12,7 @@ import { useLatestGarmin } from '../../hooks/useDashboardData';
 import { recordWater, deleteWater } from '../../services/records';
 import { filterMedicationRecordItems } from '../../services/medicationFilters';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
+import { createHydrationAgentContext, createSupplementAgentContext, pushChatWithContext } from '../../utils/agentContext';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
 import FitnessSnapshotCard from '../../components/dashboard/FitnessSnapshotCard';
@@ -62,12 +63,41 @@ export default function RecordScreen() {
   const waterData = data?.waterRecords;
   const waterTotal = waterData?.total_amount ?? (Array.isArray(waterData) ? waterData.reduce((s: number, r: any) => s + (r.amount || 0), 0) : 0);
   const waterTarget = waterData?.target_amount ?? 2000;
+  const waterRecords = waterData?.records ?? (Array.isArray(waterData) ? waterData : []);
+  const today = new Date().toISOString().split('T')[0];
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
   const doWater = useCallback(async (amt: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try { const rec = await recordWater(amt); await invalidateRecordMutation(qc); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); await invalidateRecordMutation(qc); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
   }, [qc]);
+
+  const handleChatHydration = useCallback(() => {
+    pushChatWithContext(router, {
+      prompt: '请基于我今天的饮水记录, 复盘是否达标, 安排接下来几个小时怎么补水, 并结合运动、睡眠和补剂提醒注意事项。',
+      context: createHydrationAgentContext({
+        date: today,
+        totalMl: waterTotal,
+        targetMl: waterTarget,
+        records: waterRecords,
+      }),
+      badge: `今日饮水 ${waterTotal}/${waterTarget}ml`,
+    });
+  }, [router, today, waterRecords, waterTarget, waterTotal]);
+
+  const handleChatSupplements = useCallback(() => {
+    const supplements = data?.supplements || [];
+    const total = supplements.length;
+    const taken = supplements.filter((s: any) => s.record?.taken || s.is_taken || s.checked).length;
+    pushChatWithContext(router, {
+      prompt: '请基于我今天的补剂打卡情况, 复盘执行情况, 提醒漏服/冲突风险, 并给出今晚和明天的补剂安排。最后请问我需要补充哪些体感反馈。',
+      context: createSupplementAgentContext({
+        date: today,
+        supplements,
+      }),
+      badge: `今日补剂 ${taken}/${total}`,
+    });
+  }, [data?.supplements, router, today]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -143,7 +173,7 @@ export default function RecordScreen() {
         <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
 
         {/* 6. Supplements */}
-        <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} />
+        <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} onChat={handleChatSupplements} />
 
         {/* 7. Body + Diet (tabbed) */}
         <View style={styles.tabCard}>
@@ -316,6 +346,17 @@ export default function RecordScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          <TouchableOpacity
+            onPress={handleChatHydration}
+            style={styles.agentLink}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="跟 Agent 调整今日饮水"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+            <Text style={txt.agentLink}>跟 Agent 调整今日饮水</Text>
+            <Ionicons name="chevron-forward" size={14} color={c.brand} />
+          </TouchableOpacity>
         </HealthCard>
 
         <View style={{ height: 100 }} />
@@ -427,6 +468,11 @@ function createStyles(c: ColorPalette) {
   // Water
   waterBtnRow: { flexDirection: 'row', gap: spacing.sm },
   waterBtn: { flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingVertical: 10, alignItems: 'center' },
+  agentLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: spacing.md, paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
+  },
   quickInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md },
   quickInput: { flex: 2, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: c.labelPrimary },
   quickSaveBtn: { backgroundColor: c.brand, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 8 },
@@ -470,6 +516,7 @@ function createTxt(c: ColorPalette) {
   medItemMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   waterTotal: { fontSize: 14, fontWeight: '700', color: '#64D2FF' } as TextStyle,
   waterBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
+  agentLink: { fontSize: 13, color: c.brand, fontWeight: '600', flex: 1 } as TextStyle,
   quickSaveTxt: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
   bpSlash: { fontSize: 16, color: c.labelTertiary } as TextStyle,
   empty: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 16 } as TextStyle,

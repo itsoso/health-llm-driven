@@ -26,6 +26,7 @@ import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
+import { createDietPlanAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 const HYDRATION_COLOR: Record<string, string> = {
   low: '#EF4444',
@@ -66,6 +67,14 @@ export default function DietPlanScreen() {
       </View>
     );
   }
+
+  const handleChatDietPlan = () => {
+    pushChatWithContext(router, {
+      prompt: '请基于我当前的饮食方案, 复盘今天饮食、饮水和补剂执行情况, 优化下一餐/今晚安排, 并给出明天最重要的 3 个执行动作。最后请指出需要我反馈哪些体感或记录。',
+      context: createDietPlanAgentContext(data),
+      badge: '当前饮食方案',
+    });
+  };
 
   return (
     <>
@@ -137,6 +146,17 @@ export default function DietPlanScreen() {
               />
             )}
           </View>
+          <TouchableOpacity
+            onPress={handleChatDietPlan}
+            style={[styles.agentLink, { backgroundColor: c.brandLight, borderColor: c.brand }]}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="跟 Agent 优化饮食饮水补剂方案"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+            <Text style={[styles.agentLinkText, { color: c.brand }]}>跟 Agent 优化饮食 · 饮水 · 补剂</Text>
+            <Ionicons name="chevron-forward" size={15} color={c.brand} />
+          </TouchableOpacity>
           {data.next_meal && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
               <View style={styles.mealHead}>
@@ -262,6 +282,16 @@ const styles = StyleSheet.create({
   summaryTitle: { fontSize: 13, fontWeight: '600' },
   summaryBody: { fontSize: 14, lineHeight: 22 },
   heroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  agentLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  agentLinkText: { fontSize: 14, fontWeight: '600', flex: 1 },
   card: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, gap: 8 },
   cardTitle: { fontSize: 14, fontWeight: '600' },
   cardMeta: { fontSize: 12 },

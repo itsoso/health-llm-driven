@@ -2,7 +2,11 @@ import {
   AGENT_CONTEXT_MAX_CHARS,
   buildChatContextRoute,
   createDietAgentContext,
+  createDietPlanAgentContext,
+  createHydrationAgentContext,
+  createMovementPlanAgentContext,
   createSafetyAlertAgentContext,
+  createSupplementAgentContext,
   createWorkoutDetailAgentContext,
   serializeAgentContext,
 } from '../agentContext';
@@ -202,5 +206,78 @@ describe('agentContext', () => {
       '下次训练安排',
       '需要用户补充反馈的问题',
     ]);
+  });
+
+  it('creates hydration feedback context from today water progress', () => {
+    expect(createHydrationAgentContext({
+      date: '2026-05-21',
+      totalMl: 900,
+      targetMl: 2000,
+      records: [{ amount: 300, drink_type: '水' }, { amount: 600, drink_type: '电解质水' }],
+    })).toEqual({
+      from: 'hydration/2026-05-21',
+      feedback_intent: 'hydration_adjustment',
+      date: '2026-05-21',
+      total_ml: 900,
+      target_ml: 2000,
+      progress_pct: 45,
+      remaining_ml: 1100,
+      records: [
+        { amount_ml: 300, drink_type: '水', recorded_at: null },
+        { amount_ml: 600, drink_type: '电解质水', recorded_at: null },
+      ],
+      expected_agent_output: ['今日饮水复盘', '接下来补水安排', '运动/睡眠/补剂相关注意事项'],
+    });
+  });
+
+  it('creates supplement feedback context with pending items only summarised', () => {
+    const context = createSupplementAgentContext({
+      date: '2026-05-21',
+      supplements: [
+        { supplement: { id: 1, name: '维生素 D', timing: 'morning' }, record: { taken: true } },
+        { id: 2, name: '镁', timing: 'bedtime', is_taken: false },
+      ],
+    });
+
+    expect(context).toMatchObject({
+      from: 'supplements/2026-05-21',
+      feedback_intent: 'supplement_checkin_review',
+      total: 2,
+      taken: 1,
+      pending: [{ id: 2, name: '镁', timing: 'bedtime' }],
+    });
+  });
+
+  it('creates compact plan contexts for diet and movement plan follow-up', () => {
+    const dietContext = createDietPlanAgentContext({
+      has_data: true,
+      summary: '今天蛋白质偏低',
+      energy: { tdee_kcal: 2200, intake_kcal: 1600, remaining_kcal: 600, progress_pct: 73 },
+      protein: { today_g: 58, target_g: 110, progress_pct: 53 },
+      hydration: { ml_today: 900, goal_ml: 2000, progress_pct: 45, status: 'low' },
+      supplement: { taken_today: 1, total: 3, pending: ['镁', '鱼油'] },
+      proposed_experiments: [{ title: '早餐加蛋白', metric_key: 'protein' }],
+      related_cards: [],
+    });
+    const movementContext = createMovementPlanAgentContext({
+      has_data: true,
+      summary: '本周训练负荷偏高',
+      training_status: { status: 'overload', status_zh: '过载', acwr: 1.6, workouts_this_week: 4 },
+      today: { intensity: 'low', intensity_zh: '低强度', guidance: '轻松跑或休息' },
+      fitness: { vo2max_running: 48, resting_hr: 58 },
+      proposed_experiments: [{ title: '降低强度', metric_key: 'hrv' }],
+      related_cards: [],
+    });
+
+    expect(dietContext).toMatchObject({
+      from: 'diet-plan/current',
+      feedback_intent: 'diet_plan_follow_up',
+      hydration: { ml_today: 900, goal_ml: 2000, status: 'low' },
+    });
+    expect(movementContext).toMatchObject({
+      from: 'movement-plan/current',
+      feedback_intent: 'movement_plan_follow_up',
+      training_status: { status: 'overload', status_zh: '过载', acwr: 1.6 },
+    });
   });
 });

@@ -12,9 +12,10 @@ const timingOrder = ['morning', 'noon', 'evening', 'bedtime'];
 interface Props {
   supplements: any[];
   onToggle?: () => void;
+  onChat?: () => void;
 }
 
-export default function SupplementCheckin({ supplements, onToggle }: Props) {
+export default function SupplementCheckin({ supplements, onToggle, onChat }: Props) {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
@@ -110,6 +111,18 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
           <Text style={txt.expand}>{expanded ? '收起' : `展开全部 (${total})`}</Text>
         </Pressable>
       )}
+      {onChat && (
+        <Pressable
+          onPress={onChat}
+          style={styles.agentLink}
+          accessibilityRole="button"
+          accessibilityLabel="跟 Agent 调整补剂安排"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+          <Text style={txt.agentLink}>跟 Agent 调整补剂安排</Text>
+          <Ionicons name="chevron-forward" size={14} color={c.brand} />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -159,6 +172,15 @@ function createStyles(c: ColorPalette, isDark: boolean) {
       alignItems: 'center',
       paddingTop: spacing.sm,
     },
+    agentLink: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: spacing.md,
+      paddingTop: spacing.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.separator,
+    },
   });
 }
 
@@ -170,5 +192,6 @@ function createTxt(c: ColorPalette) {
     name: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
     nameChecked: { color: c.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
     expand: { fontSize: 13, color: c.brand, fontWeight: '500' } as TextStyle,
+    agentLink: { fontSize: 13, color: c.brand, fontWeight: '600', flex: 1 } as TextStyle,
   };
 }

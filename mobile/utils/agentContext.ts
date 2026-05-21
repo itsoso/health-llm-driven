@@ -1,7 +1,9 @@
 import type { Router } from 'expo-router';
 
 import type { DailyDietSummary } from '@/services/diet';
+import type { DietPlan } from '@/services/dietPlan';
 import type { MedicalExam } from '@/services/medicalExams';
+import type { MovementPlan } from '@/services/movementPlan';
 import type { SafetyAlert } from '@/services/safety';
 import type { GarminSleepDay, SleepDebt, SleepStats } from '@/services/sleep';
 import type {
@@ -231,6 +233,127 @@ export function createWorkoutDetailAgentContext(args: {
       '下次训练安排',
       '需要用户补充反馈的问题',
     ],
+  };
+}
+
+export function createHydrationAgentContext(args: {
+  date: string;
+  totalMl: number;
+  targetMl: number;
+  records?: Array<Record<string, any>> | null;
+}): AgentContextPayload {
+  const totalMl = args.totalMl ?? 0;
+  const targetMl = args.targetMl || 2000;
+  return {
+    from: `hydration/${args.date}`,
+    feedback_intent: 'hydration_adjustment',
+    date: args.date,
+    total_ml: totalMl,
+    target_ml: targetMl,
+    progress_pct: targetMl > 0 ? Math.round((totalMl / targetMl) * 100) : null,
+    remaining_ml: Math.max(0, targetMl - totalMl),
+    records: (args.records ?? []).slice(0, 8).map(record => ({
+      amount_ml: record.amount ?? record.amount_ml ?? null,
+      drink_type: record.drink_type ?? record.type ?? null,
+      recorded_at: record.recorded_at ?? record.created_at ?? record.time ?? null,
+    })),
+    expected_agent_output: ['今日饮水复盘', '接下来补水安排', '运动/睡眠/补剂相关注意事项'],
+  };
+}
+
+function getSupplementId(item: Record<string, any>): number | string | null {
+  return item.supplement?.id ?? item.supplement_id ?? item.id ?? null;
+}
+
+function getSupplementName(item: Record<string, any>): string {
+  return item.supplement?.name ?? item.supplement_name ?? item.name ?? '未知补剂';
+}
+
+function getSupplementTiming(item: Record<string, any>): string | null {
+  return item.supplement?.timing ?? item.timing ?? null;
+}
+
+function getSupplementTaken(item: Record<string, any>): boolean {
+  return !!(item.record?.taken ?? item.is_taken ?? item.checked);
+}
+
+export function createSupplementAgentContext(args: {
+  date: string;
+  supplements?: Array<Record<string, any>> | null;
+}): AgentContextPayload {
+  const supplements = args.supplements ?? [];
+  const normalized = supplements.map(item => ({
+    id: getSupplementId(item),
+    name: getSupplementName(item),
+    timing: getSupplementTiming(item),
+    taken: getSupplementTaken(item),
+  }));
+  return {
+    from: `supplements/${args.date}`,
+    feedback_intent: 'supplement_checkin_review',
+    date: args.date,
+    total: normalized.length,
+    taken: normalized.filter(item => item.taken).length,
+    pending: normalized
+      .filter(item => !item.taken)
+      .slice(0, 10)
+      .map(({ id, name, timing }) => ({ id, name, timing })),
+    supplements: normalized.slice(0, 20),
+    expected_agent_output: ['今日补剂执行复盘', '漏服/冲突风险提醒', '明天服用安排和需要反馈的问题'],
+  };
+}
+
+export function createDietPlanAgentContext(plan: DietPlan): AgentContextPayload {
+  return {
+    from: 'diet-plan/current',
+    feedback_intent: 'diet_plan_follow_up',
+    summary: plan.summary ?? null,
+    energy: plan.energy ?? null,
+    protein: plan.protein ?? null,
+    hydration: plan.hydration ?? null,
+    supplement: plan.supplement ?? null,
+    next_meal: plan.next_meal ?? null,
+    gene_nudges: (plan.gene_nudges ?? []).slice(0, 5) as AgentContextValue,
+    labs_concern: plan.labs_concern ?? null,
+    proposed_experiments: (plan.proposed_experiments ?? []).slice(0, 5) as AgentContextValue,
+    related_cards: (plan.related_cards ?? []).slice(0, 5).map(card => ({
+      id: card.id,
+      title: card.title,
+      outcome: card.outcome,
+      metric_key: card.metric_key,
+      baseline_value: card.baseline_value,
+      actual_value: card.actual_value,
+    })),
+    expected_agent_output: ['饮食方案复盘', '饮水与补剂调整', '下一餐建议', '需要用户反馈的问题'],
+  };
+}
+
+export function createMovementPlanAgentContext(plan: MovementPlan): AgentContextPayload {
+  return {
+    from: 'movement-plan/current',
+    feedback_intent: 'movement_plan_follow_up',
+    summary: plan.summary ?? null,
+    training_status: plan.training_status ?? null,
+    today: plan.today ?? null,
+    fitness: plan.fitness ?? null,
+    gene_biases: (plan.gene_biases ?? []).slice(0, 5) as AgentContextValue,
+    week_adjustment: plan.week_adjustment ?? null,
+    recent_workouts: plan.recent_workouts ? {
+      count: plan.recent_workouts.count,
+      avg_perceived_exertion: plan.recent_workouts.avg_perceived_exertion ?? null,
+      high_intensity_minutes_7d: plan.recent_workouts.high_intensity_minutes_7d ?? null,
+      workouts: (plan.recent_workouts.workouts ?? []).slice(0, 5),
+    } as AgentContextValue : null,
+    proposed_experiments: (plan.proposed_experiments ?? []).slice(0, 5) as AgentContextValue,
+    related_cards: (plan.related_cards ?? []).slice(0, 5).map(card => ({
+      id: card.id,
+      title: card.title,
+      outcome: card.outcome,
+      metric_key: card.metric_key,
+      baseline_value: card.baseline_value,
+      actual_value: card.actual_value,
+    })),
+    expected_agent_output: ['本周训练方案复盘', '今日训练/恢复安排', '不同运动类型替代方案', '需要用户反馈的问题'],
   };
 }
 
