@@ -75,7 +75,10 @@ function formatWorkoutPlanTable(content: string): string {
     ...rows.map(row => `| ${row.map(escapeTableCell).join(' | ')} |`),
   ].join('\n');
 
-  return content.replace(match[0], table);
+  const start = match.index ?? 0;
+  const before = content.slice(0, start);
+  const after = content.slice(start + match[0].length).trimStart();
+  return `${before}${table}${after ? `\n\n${after}` : ''}`;
 }
 
 export function normalizeSharedAgentContent(content: string): string {
