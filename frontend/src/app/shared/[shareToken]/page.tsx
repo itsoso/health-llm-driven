@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import { normalizeSharedAgentContent } from './contentNormalizer';
+import OpenInAppButton from './OpenInAppButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,13 +102,7 @@ export default async function SharedPage({ params }: { params: { shareToken: str
         </div>
 
         <footer className="mt-6 space-y-3">
-          <a
-            href={`health://shared/${params.shareToken}`}
-            className="flex items-center justify-between rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800 shadow-sm hover:bg-teal-100"
-          >
-            <span className="font-medium">在 App 里打开,体验完整健康助理</span>
-            <span aria-hidden className="text-base">→</span>
-          </a>
+          <OpenInAppButton shareToken={params.shareToken} />
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500">
             本页面是用户主动分享的健康管理内容, 不构成诊断、治疗或用药建议。出现明显异常指标或不适症状时, 请咨询医生。
           </div>
