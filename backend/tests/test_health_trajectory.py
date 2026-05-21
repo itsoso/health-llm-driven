@@ -89,3 +89,58 @@ def test_trajectory_me_returns_missing_data_gaps_for_new_user(client, auth_user_
     assert body["trajectory_risks"][0]["level"] == "unknown"
     assert all(r["confidence"] == "low" for r in body["trajectory_risks"])
     assert all(r["claim_boundary"] for r in body["trajectory_risks"])
+
+
+def test_trajectory_me_uses_latest_epigenetic_report_as_experimental_feedback(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    from app.models.epigenetic_report import EpigeneticReport
+
+    user.birth_date = date(1990, 1, 1)
+    db.add(user)
+    db.add_all([
+        EpigeneticReport(
+            user_id=user.id,
+            vendor="TruDiagnostic",
+            sample_date=date(2026, 1, 5),
+            clock_type="DunedinPACE",
+            biological_age=38.4,
+            pace_of_aging=1.01,
+            confidence="medium",
+            raw_summary={"note": "older report"},
+        ),
+        EpigeneticReport(
+            user_id=user.id,
+            vendor="TruDiagnostic",
+            sample_date=date(2026, 5, 1),
+            clock_type="DunedinPACE",
+            biological_age=41.2,
+            pace_of_aging=1.11,
+            confidence="medium",
+            raw_summary={"pace_percentile": 72},
+        ),
+    ])
+    db.commit()
+
+    resp = client.get("/api/v1/trajectory/me", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    epigenetic = body["epigenetic_feedback"]
+    assert epigenetic["has_methylation_report"] is True
+    assert epigenetic["status"] == "present"
+    assert epigenetic["latest_test_date"] == "2026-05-01"
+    assert epigenetic["vendor"] == "TruDiagnostic"
+    assert epigenetic["clock_type"] == "DunedinPACE"
+    assert epigenetic["biological_age"] == 41.2
+    assert epigenetic["pace_of_aging"] == 1.11
+    assert epigenetic["biological_age_delta_years"] == 4.9
+    assert epigenetic["evidence_tier"] == "experimental"
+    assert epigenetic["confidence"] == "low"
+    assert "短期干预成效" in epigenetic["claim_boundary"]
+
+    gap_codes = {gap["code"] for gap in body["data_gaps"]}
+    assert "methylation_report_missing" not in gap_codes
+    aging_risk = next(risk for risk in body["trajectory_risks"] if risk["domain"] == "aging_pace")
+    assert aging_risk["level"] == "attention"
+    assert "epigenetic_pace_elevated" in aging_risk["signals"]
+    assert aging_risk["confidence"] == "low"

@@ -6,13 +6,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
 from app.models.genetic_data import GeneticProfile, GeneticVariant
+from app.models.user import User
 from app.services.daily_operating_plan import build_daily_operating_plan
+from app.services.epigenetic_report_service import list_epigenetic_reports
 from app.twin import build_twin
 
 
@@ -70,18 +72,78 @@ def _genetic_baseline(db: Session, user_id: int) -> Dict[str, Any]:
     }
 
 
-def _epigenetic_feedback() -> Dict[str, Any]:
+def _epigenetic_feedback(db: Session, user_id: int) -> Dict[str, Any]:
+    latest_reports = list_epigenetic_reports(db, user_id, limit=1)
+    if not latest_reports:
+        return {
+            "has_methylation_report": False,
+            "status": "missing",
+            "evidence_tier": "experimental",
+            "confidence": "low",
+            "claim_boundary": "甲基化时钟只作为长期代理指标和研究性反馈, 不能证明个体短期干预成效或真实衰老速度改变。",
+            "latest_test_date": None,
+            "vendor": None,
+            "clock_type": None,
+            "biological_age": None,
+            "biological_age_delta_years": None,
+            "pace_of_aging": None,
+            "next_step": "接入甲基化报告后, 仅作为长期趋势参考, 不能把短期变化包装成确定性抗衰结果。",
+        }
+
+    latest_report = latest_reports[0]
+    user_birth_date = db.query(User.birth_date).filter(User.id == user_id).scalar()
+    sample_date = _parse_date(latest_report.get("sample_date"))
+    biological_age = latest_report.get("biological_age")
+    chronological_age = _chronological_age_years(user_birth_date, sample_date)
+    biological_age_delta = (
+        round(float(biological_age) - chronological_age, 1)
+        if biological_age is not None and chronological_age is not None
+        else None
+    )
+
     return {
-        "has_methylation_report": False,
-        "status": "missing",
+        "has_methylation_report": True,
+        "status": "present",
         "evidence_tier": "experimental",
         "confidence": "low",
         "claim_boundary": "甲基化时钟只作为长期代理指标和研究性反馈, 不能证明个体短期干预成效或真实衰老速度改变。",
-        "latest_test_date": None,
-        "biological_age_delta_years": None,
-        "pace_of_aging": None,
-        "next_step": "接入甲基化报告后, 仅作为长期趋势参考, 不能把短期变化包装成确定性抗衰结果。",
+        "latest_test_date": latest_report.get("sample_date"),
+        "vendor": latest_report.get("vendor"),
+        "clock_type": latest_report.get("clock_type"),
+        "biological_age": biological_age,
+        "biological_age_delta_years": biological_age_delta,
+        "pace_of_aging": latest_report.get("pace_of_aging"),
+        "raw_summary": latest_report.get("raw_summary") or {},
+        "next_step": "把甲基化结果作为 8-12 周干预复测的长期代理指标, 不作为短期疗效或抗衰确定性结论。",
     }
+
+
+def _parse_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _chronological_age_years(birth_date: date | None, measured_date: date | None) -> float | None:
+    if birth_date is None or measured_date is None:
+        return None
+    return (measured_date - birth_date).days / 365.25
+
+
+def _epigenetic_present_signals(epigenetic: Dict[str, Any]) -> list[str]:
+    signals: list[str] = ["methylation_report_present"]
+    pace_of_aging = epigenetic.get("pace_of_aging")
+    biological_age_delta = epigenetic.get("biological_age_delta_years")
+    if isinstance(pace_of_aging, (int, float)) and pace_of_aging >= 1.05:
+        signals.append("epigenetic_pace_elevated")
+    if isinstance(biological_age_delta, (int, float)) and biological_age_delta >= 3:
+        signals.append("biological_age_delta_elevated")
+    return signals
 
 
 def _data_gaps(twin, genetic: Dict[str, Any], epigenetic: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -194,17 +256,19 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
                 "甲基化时钟是长期代理指标, 不能证明个体短期干预成效, 不替代医生诊断、处方或治疗。",
             ),
         }
+    signals = _epigenetic_present_signals(epigenetic)
+    elevated = any(signal in signals for signal in {"epigenetic_pace_elevated", "biological_age_delta_elevated"})
     return {
         "domain": "aging_pace",
-        "level": "ok",
-        "title": "衰老速度有长期反馈",
-        "why": "甲基化报告已接入。",
-        "signals": [],
-        "primary_action": "按甲基化反馈调整长期干预。",
+        "level": "attention" if elevated else "ok",
+        "title": "衰老速度长期反馈需要关注" if elevated else "衰老速度有长期反馈",
+        "why": "甲基化报告提示长期代理指标偏高, 只能用于复测节奏和生活方式优先级排序。" if elevated else "甲基化报告已接入, 可作为长期趋势代理指标。",
+        "signals": signals,
+        "primary_action": "用 8-12 周代谢、睡眠和运动闭环后复测趋势, 不把短期变化当作确定性抗衰成效。",
         **_evidence_contract(
             "experimental",
             "low",
-            "甲基化时钟是长期代理指标, 不能证明个体短期干预成效, 不替代医生诊断、处方或治疗。",
+            epigenetic.get("claim_boundary") or "甲基化时钟是长期代理指标, 不能证明个体短期干预成效, 不替代医生诊断、处方或治疗。",
         ),
     }
 
@@ -223,7 +287,7 @@ def build_health_trajectory_snapshot(db: Session, user_id: int) -> Dict[str, Any
     twin = build_twin(db, user_id, use_cache=False)
     daily_plan = build_daily_operating_plan(db, user_id)
     genetic = _genetic_baseline(db, user_id)
-    epigenetic = _epigenetic_feedback()
+    epigenetic = _epigenetic_feedback(db, user_id)
     risks = _trajectory_risks(twin, genetic, epigenetic)
 
     return {
