@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -19,6 +20,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 function WorkoutContent() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
 
   useEffect(() => { document.title = '运动 | 健康管理'; }, []);
   const [selectedWorkout, setSelectedWorkout] = useState<number | null>(null);
@@ -28,6 +30,14 @@ function WorkoutContent() {
   const [showPostAnalysis, setShowPostAnalysis] = useState(false);
   const [postAnalysis, setPostAnalysis] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'stats' | 'laps' | 'intervals'>('stats');
+
+  useEffect(() => {
+    const rawId = searchParams.get('id') || searchParams.get('workout_id');
+    const parsed = rawId ? Number(rawId) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setSelectedWorkout(parsed);
+    }
+  }, [searchParams]);
 
   // Fetch workout list
   const { data: workouts, isLoading: loadingWorkouts } = useQuery<WorkoutSummary[]>({

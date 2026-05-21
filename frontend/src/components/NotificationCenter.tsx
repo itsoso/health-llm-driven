@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Bell, X, AlertTriangle, Heart, Sparkles, Clock, CheckCircle, Info } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { notificationApi } from '@/services/api/user';
@@ -14,6 +15,8 @@ interface NotificationLog {
   status: string;
   sent_at: string | null;
   created_at: string | null;
+  data?: Record<string, any> | null;
+  deep_link?: string | null;
 }
 
 const TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
@@ -46,8 +49,30 @@ function formatTime(dateStr: string | null) {
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
+export function resolveNotificationHref(log: Pick<NotificationLog, 'notification_type'> & {
+  data?: Record<string, any> | null;
+  deep_link?: string | null;
+}): string | null {
+  const deepLink = log.deep_link || log.data?.deep_link;
+  if (typeof deepLink === 'string' && deepLink.trim()) {
+    if (deepLink.startsWith('/workout-detail')) {
+      const params = new URLSearchParams(deepLink.split('?')[1] || '');
+      const id = params.get('id') || params.get('workout_id');
+      return id ? `/workout?id=${encodeURIComponent(id)}` : '/workout';
+    }
+    if (deepLink.startsWith('/workout?')) return deepLink;
+  }
+
+  const workoutId = log.data?.workout_id;
+  if (log.notification_type === 'workout_analysis' && workoutId) {
+    return `/workout?id=${encodeURIComponent(String(workoutId))}`;
+  }
+  return null;
+}
+
 export default function NotificationCenter() {
   const { isAuthenticated } = useAuth();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -158,30 +183,48 @@ export default function NotificationCenter() {
                 {logs.map((log) => {
                   const cfg = getTypeConfig(log.notification_type);
                   const isNewItem = new Date(log.created_at || log.sent_at || 0).getTime() > lastSeenRef.current;
-                  return (
-                    <div
-                      key={log.id}
-                      className={`px-4 py-3 hover:bg-white/5 transition-all ${isNewItem ? 'bg-purple-600/5' : ''}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>
-                          {cfg.icon}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-200 leading-tight">
-                            {log.title}
+                  const href = resolveNotificationHref(log);
+                  const content = (
+                    <div className="flex items-start gap-3">
+                      <span className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>
+                        {cfg.icon}
+                      </span>
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-sm font-medium text-gray-200 leading-tight">
+                          {log.title}
+                        </p>
+                        {log.content && (
+                          <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                            {log.content}
                           </p>
-                          {log.content && (
-                            <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">
-                              {log.content}
-                            </p>
-                          )}
-                          <p className="text-xs text-gray-500 mt-1.5">
-                            {formatTime(log.sent_at || log.created_at)}
-                          </p>
-                        </div>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1.5">
+                          {formatTime(log.sent_at || log.created_at)}
+                        </p>
                       </div>
                     </div>
+                  );
+                  return (
+                    href ? (
+                      <button
+                        key={log.id}
+                        type="button"
+                        onClick={() => {
+                          router.push(href);
+                          setIsOpen(false);
+                        }}
+                        className={`block w-full px-4 py-3 hover:bg-white/5 transition-all ${isNewItem ? 'bg-purple-600/5' : ''}`}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div
+                        key={log.id}
+                        className={`px-4 py-3 hover:bg-white/5 transition-all ${isNewItem ? 'bg-purple-600/5' : ''}`}
+                      >
+                        {content}
+                      </div>
+                    )
                   );
                 })}
               </div>

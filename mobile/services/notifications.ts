@@ -77,6 +77,8 @@ export interface NotificationLog {
   status: string;
   sent_at: string | null;
   created_at: string | null;
+  data?: Record<string, any> | null;
+  deep_link?: string | null;
   channels?: Array<{ name: string; status: string; error?: string | null }> | null;
 }
 

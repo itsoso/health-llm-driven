@@ -77,7 +77,7 @@ export const dataExportApi = {
 
 export const notificationApi = {
   getLogs: (limit = 50, type?: string) =>
-    api.get<{ logs: Array<{ id: number; notification_type: string; channel: string; title: string; content: string; status: string; sent_at: string | null; created_at: string | null }> }>('/notification/logs', { params: { limit, notification_type: type } }),
+    api.get<{ logs: Array<{ id: number; notification_type: string; channel: string; title: string; content: string; status: string; sent_at: string | null; created_at: string | null; data?: Record<string, any> | null; deep_link?: string | null }> }>('/notification/logs', { params: { limit, notification_type: type } }),
   getSettings: () =>
     api.get('/notification/settings'),
 };

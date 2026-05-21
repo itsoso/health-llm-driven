@@ -62,6 +62,15 @@ function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & 
   return buckets;
 }
 
+function getLogDeepLink(log: NotificationLog): string | null {
+  const explicit = log.deep_link || log.data?.deep_link;
+  if (typeof explicit === 'string' && explicit.trim()) return explicit;
+  if (log.notification_type === 'workout_analysis' && log.data?.workout_id) {
+    return `/workout-detail?id=${log.data.workout_id}`;
+  }
+  return null;
+}
+
 export default function NotificationHistoryScreen() {
   const router = useRouter();
 
@@ -108,8 +117,10 @@ export default function NotificationHistoryScreen() {
 }
 
 function LogRow({ log }: { log: NotificationLog }) {
+  const router = useRouter();
   const meta = TYPE_META[log.notification_type] || TYPE_META.test;
   const time = log.sent_at?.slice(11, 16) || log.created_at?.slice(11, 16) || '';
+  const deepLink = getLogDeepLink(log);
   const channelIcon: Record<string, string> = {
     ios_apns: '📱',
     wechat: '💬',
@@ -117,7 +128,13 @@ function LogRow({ log }: { log: NotificationLog }) {
   };
 
   return (
-    <View style={styles.logRow}>
+    <TouchableOpacity
+      style={styles.logRow}
+      disabled={!deepLink}
+      onPress={() => { if (deepLink) router.push(deepLink as any); }}
+      accessibilityRole={deepLink ? 'button' : undefined}
+      accessibilityLabel={deepLink ? `打开 ${log.title}` : undefined}
+    >
       <View style={[styles.iconCircle, { backgroundColor: meta.color + '18' }]}>
         <Ionicons name={meta.icon as any} size={16} color={meta.color} />
       </View>
@@ -132,8 +149,11 @@ function LogRow({ log }: { log: NotificationLog }) {
           </Text>
         )}
       </View>
-      <Text style={txt.logTime}>{time}</Text>
-    </View>
+      <View style={styles.trailing}>
+        <Text style={txt.logTime}>{time}</Text>
+        {deepLink && <Ionicons name="chevron-forward" size={16} color={colors.labelTertiary} />}
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -150,6 +170,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs, ...shadows.subtle,
   },
   iconCircle: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  trailing: { alignItems: 'flex-end', gap: 4 },
 });
 
 const txt = {
