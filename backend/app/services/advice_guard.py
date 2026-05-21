@@ -60,6 +60,7 @@ class AdviceCandidate:
     verification_window_days: int | None = None
     risk_level: str | None = None
     contraindications: list[dict] | None = None
+    personal_matrix: dict | None = None
     valid_for_date: date | None = None
     created_at: datetime | None = None
 
@@ -162,7 +163,7 @@ class AdviceGuard:
         return verify_advice(
             candidate,
             evidence_resolution={"evidence_refs": candidate.evidence_refs or []},
-            personal_matrix={},
+            personal_matrix=candidate.personal_matrix or {},
             contraindications=candidate.contraindications or [],
         )
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from app.models.advice_ledger import AdviceLedger
 from app.services.advice_guard import (
     AdviceCandidate,
+    AdviceDecision,
     AdviceGuard,
     AdviceGuardError,
     guard_and_record_advice,
@@ -88,6 +89,29 @@ def test_guard_blocks_conflicting_movement_advice():
     assert result.allowed is False
     assert result.reason == "conflict"
     assert result.conflicts_with_source_id == "chat:1"
+
+
+def test_guard_uses_personal_matrix_to_block_epigenetic_overclaim():
+    guard = AdviceGuard(existing=[])
+    candidate = _candidate(
+        domain="recovery",
+        title="短期抗衰结果",
+        body="检测结果证明这 7 天抗衰成功，年龄已经逆转。",
+        metric_key="pace_of_aging",
+        target_value="trend_down",
+        evidence_refs=["claim:epigenetic_proxy_boundary"],
+        evidence_source_types=["pubmed"],
+        verification_metric="pace_of_aging",
+        verification_window_days=7,
+        personal_matrix={
+            "signals": [{"signal_type": "epigenetic", "signal_id": "epigenetic.pace_of_aging"}],
+        },
+    )
+
+    result = guard.evaluate(candidate)
+
+    assert result.allowed is False
+    assert result.reason == "epigenetic_overclaim"
 
 
 def test_guard_and_record_advice_persists_blocked_conflict():
@@ -224,3 +248,41 @@ def test_daily_plan_guard_filters_conflicting_movement_action():
     filtered = _guard_plan_actions(db, user_id=3, plan_date=date(2026, 5, 16), actions=actions)
 
     assert [item["domain"] for item in filtered] == ["sleep"]
+
+
+def test_daily_plan_guard_attaches_personal_matrix_to_advice_candidate(monkeypatch):
+    captured = []
+
+    def fake_guard_and_record_advice(db, candidate):
+        captured.append(candidate)
+        return AdviceDecision(allowed=True, reason="allowed", advice_key=candidate.advice_key)
+
+    monkeypatch.setattr(
+        "app.services.daily_operating_plan.guard_and_record_advice",
+        fake_guard_and_record_advice,
+    )
+    actions = [{
+        "domain": "recovery",
+        "title": "短期抗衰结果",
+        "why": "检测结果证明这 7 天抗衰成功，年龄已经逆转。",
+        "when": "today",
+        "metric_key": "pace_of_aging",
+        "target_value": "trend_down",
+        "evidence_tier": "wearable_proxy",
+        "confidence": "medium",
+        "claim_boundary": "甲基化/表观遗传时钟只能作为长期代理指标，不能证明短期抗衰疗效。",
+    }]
+    personal_matrix = {
+        "signals": [{"signal_type": "epigenetic", "signal_id": "epigenetic.pace_of_aging"}],
+    }
+
+    filtered = _guard_plan_actions(
+        object(),
+        user_id=3,
+        plan_date=date(2026, 5, 16),
+        actions=actions,
+        personal_matrix=personal_matrix,
+    )
+
+    assert filtered == actions
+    assert captured[0].personal_matrix == personal_matrix

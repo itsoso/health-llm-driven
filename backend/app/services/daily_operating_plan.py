@@ -124,6 +124,7 @@ def _guard_plan_actions(
     user_id: int,
     plan_date: date,
     actions: List[Dict[str, Any]],
+    personal_matrix: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     guarded: List[Dict[str, Any]] = []
     for index, action in enumerate(actions):
@@ -139,6 +140,7 @@ def _guard_plan_actions(
             evidence_tier=action.get("evidence_tier"),
             confidence=action.get("confidence"),
             claim_boundary=action.get("claim_boundary"),
+            personal_matrix=personal_matrix,
             valid_for_date=plan_date,
         )
         try:
@@ -335,7 +337,13 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
 
     actions.extend(_active_interventions(db, user_id))
     actions, arbitration_notes = _apply_acute_rest_arbiter(acute_rest=acute_rest, actions=actions)
-    actions = _guard_plan_actions(db, user_id=user_id, plan_date=plan_date, actions=actions)[:5]
+    actions = _guard_plan_actions(
+        db,
+        user_id=user_id,
+        plan_date=plan_date,
+        actions=actions,
+        personal_matrix=personal_matrix,
+    )[:5]
 
     state_summary = {
         "weight_kg": body.weight_kg,
