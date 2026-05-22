@@ -90,6 +90,45 @@ def test_gene_knowledge_audit_markdown_highlights_next_actions():
     assert "下一步" in markdown
 
 
+def test_gene_knowledge_audit_next_action_names_remaining_tierx_gaps():
+    payload = {
+        "version": "tierx-test",
+        "compiled_at": "2026-05-22T12:00:00+08:00",
+        "entities": {
+            "gene": {
+                "CFTR": {"entity_id": "CFTR", "sources": ["gene_reviews:cystic-fibrosis"]},
+                "ATP7B": {"entity_id": "ATP7B", "sources": ["gene_reviews:wilson-disease"]},
+            }
+        },
+        "claims": [
+            {
+                "claim_id": "c_cftr_dtc_confirmation_boundary",
+                "entity_id": "CFTR",
+                "title": "CFTR DTC 位点命中后的确认边界",
+                "sources": ["gene_reviews:cystic-fibrosis"],
+                "applies_when": ["twin.genetics.CFTR_rs121908763 == 'GG'"],
+                "body": "边界：confirmation_only，不替代临床诊断。",
+            },
+            {
+                "claim_id": "c_atp7b_dtc_confirmation_boundary",
+                "entity_id": "ATP7B",
+                "title": "ATP7B DTC 位点命中后的确认边界",
+                "sources": ["gene_reviews:wilson-disease"],
+                "applies_when": ["twin.genetics.ATP7B_rs137853280 == 'GG'"],
+                "body": "边界：confirmation_only，不替代临床诊断。",
+            },
+        ],
+        "gene_rules": {},
+        "snp_registry": {},
+    }
+
+    report = audit_gene_knowledge(payload)
+
+    assert report["tiers"]["tierx_confirmation_only"]["missing_claim_genes"] == ["BRCA1", "BRCA2"]
+    assert any("BRCA1/BRCA2" in action for action in report["next_actions"])
+    assert not any("CFTR/ATP7B" in action for action in report["next_actions"])
+
+
 def test_audit_gene_knowledge_cli_writes_markdown_report(tmp_path):
     source = tmp_path / "gene_knowledge.json"
     output = tmp_path / "report.md"

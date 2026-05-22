@@ -263,8 +263,9 @@ def audit_gene_knowledge(payload: dict[str, Any]) -> dict[str, Any]:
             "补齐 Tier 0 用药安全规则，优先 HLA-B*58:01/HLA-B*15:02/CYP2D6/DPYD/TPMT/NUDT15。"
         )
     if tierx["missing_claim_genes"]:
+        missing_tierx = "/".join(tierx["missing_claim_genes"])
         report["next_actions"].append(
-            "为 CFTR/ATP7B 等罕见病位点建立 confirmation_only 边界，防止 DTC 结果显示为疾病高风险。"
+            f"为 {missing_tierx} 建立 confirmation_only 边界，防止 DTC 结果显示为疾病高风险。"
         )
     if report["quality_gates"]["claims_missing_applies_when"]:
         report["next_actions"].append("补齐 claims.applies_when，让 Agent 只在结构化 Twin 命中时使用。")

@@ -16,18 +16,18 @@ Generated report: `docs/reports/2026-05-22-gene-knowledge-audit.md`
 
 Current `down-dedao/artifacts/gene_knowledge.json`:
 
-- Gene entities: 14
-- SNP registry entries: 22
-- Claims: 18
+- Gene entities: 16
+- SNP registry entries: 26
+- Claims: 20
 - Gene rules: 10
 - Tier 0 drug-safety coverage: 4/12
 - Tier 1 gene + lab loop coverage: 7/7
-- Tier X confirmation-only coverage: 0/4
+- Tier X confirmation-only coverage: 2/4
 
 Main gaps:
 
 - Missing Tier 0 rules: `HLA-A*31:01`, `HLA-B*15:02`, `HLA-B*58:01`, `VKORC1`, `G6PD`, `DPYD`, `TPMT`, `NUDT15`
-- Missing confirmation-only boundaries: `CFTR`, `ATP7B`, `BRCA1`, `BRCA2`
+- Missing confirmation-only boundaries: `BRCA1`, `BRCA2`
 - Current quality gates pass for existing claims: no missing `applies_when`, no missing boundary text, no drug claim missing clinician boundary
 
 Do not edit `down-dedao` blindly right now: its worktree already has many user/generated changes. First use the audit report as the shared checklist, then modify source wiki files in small batches.
@@ -48,12 +48,18 @@ Do not edit `down-dedao` blindly right now: its worktree already has many user/g
 
 ## Task 2: Add Tier X Confirmation-Only Boundaries First
 
+Status: `CFTR` and `ATP7B` completed on 2026-05-22. Remaining Tier X gaps are `BRCA1` and `BRCA2`.
+
 **Source files in `down-dedao`:**
 
-- Create: `wiki/entities/gene/CFTR.md`
-- Create: `wiki/entities/gene/ATP7B.md`
-- Create: `wiki/claims/c_cftr_dtc_confirmation_boundary.md`
-- Create: `wiki/claims/c_atp7b_dtc_confirmation_boundary.md`
+- Created: `wiki/entities/gene/CFTR.md`
+- Created: `wiki/entities/gene/ATP7B.md`
+- Created: `wiki/entities/snp/rs121908763.md`
+- Created: `wiki/entities/snp/rs149790377.md`
+- Created: `wiki/entities/snp/rs186045772.md`
+- Created: `wiki/entities/snp/rs137853280.md`
+- Created: `wiki/claims/c_cftr_dtc_confirmation_boundary.md`
+- Created: `wiki/claims/c_atp7b_dtc_confirmation_boundary.md`
 
 **Rules:**
 
@@ -145,4 +151,3 @@ Do not edit `down-dedao` blindly right now: its worktree already has many user/g
 
 1. Run targeted genetic tests.
 2. Re-run real user 3 analysis after source artifacts are promoted.
-
