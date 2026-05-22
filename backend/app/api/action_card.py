@@ -53,6 +53,17 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def _effective_expires_at(card: ActionCard) -> datetime | None:
+    expires_at = _as_utc(card.expires_at)
+    if expires_at is not None:
+        return expires_at
+    if card.source_type == "weekly_advisor" and card.created_at is not None:
+        created_at = _as_utc(card.created_at)
+        if created_at is not None:
+            return created_at + timedelta(days=14)
+    return None
+
+
 def _archive_expired_cards(db: Session, *, user_id: int) -> int:
     now = datetime.now(timezone.utc)
     cards = (
@@ -61,13 +72,12 @@ def _archive_expired_cards(db: Session, *, user_id: int) -> int:
             ActionCard.user_id == user_id,
             ActionCard.status == "active",
             ActionCard.is_visible == True,  # noqa: E712
-            ActionCard.expires_at.isnot(None),
         )
         .all()
     )
     archived = 0
     for card in cards:
-        expires_at = _as_utc(card.expires_at)
+        expires_at = _effective_expires_at(card)
         if expires_at is not None and expires_at <= now:
             card.status = "archived"
             card.is_visible = False

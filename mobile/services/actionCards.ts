@@ -111,6 +111,22 @@ export function getActionCardVerificationLabel(card: ActionCard): string | null 
   return null;
 }
 
+export function pickWeeklySuggestionCards(cards: ActionCard[] = [], limit = 5): ActionCard[] {
+  const now = Date.now();
+  return cards
+    .filter(card => {
+      if (card.source_type !== 'weekly_advisor') return false;
+      if (card.status && card.status !== 'active') return false;
+      if (card.user_decision) return false;
+      if (card.expires_at) {
+        const expiresAt = Date.parse(card.expires_at);
+        if (!Number.isNaN(expiresAt) && expiresAt <= now) return false;
+      }
+      return true;
+    })
+    .slice(0, limit);
+}
+
 export function buildActionCockpitSections(
   alerts: SafetyAlert[] = [],
   cards: ActionCard[] = [],

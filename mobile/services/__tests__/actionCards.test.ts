@@ -1,18 +1,19 @@
-jest.mock('../api', () => ({
-  __esModule: true,
-  default: { get: jest.fn(), patch: jest.fn(), post: jest.fn() },
-}));
-
 import api from '../api';
 import {
   buildActionCockpitSections,
   createActionCard,
+  pickWeeklySuggestionCards,
   recordCardAdherence,
   reviewActionCard,
   getActionCardProgress,
   getActionCardVerificationLabel,
   type ActionCard,
 } from '../actionCards';
+
+jest.mock('../api', () => ({
+  __esModule: true,
+  default: { get: jest.fn(), patch: jest.fn(), post: jest.fn() },
+}));
 
 const mockPost = api.post as jest.Mock;
 
@@ -47,6 +48,44 @@ describe('actionCards helpers', () => {
     const card = { expires_at: '2026-05-01T00:00:00Z' } as ActionCard;
 
     expect(getActionCardVerificationLabel(card)).toBe('待验证 2026-05-01');
+  });
+
+  it('keeps the home weekly suggestion queue to undecided current weekly advisor cards', () => {
+    const cards = [
+      {
+        id: 1,
+        title: '待决策建议',
+        status: 'active',
+        source_type: 'weekly_advisor',
+        content: '',
+        card_type: 'recommendation',
+        priority: 5,
+        created_at: '2026-05-22T00:00:00Z',
+      },
+      {
+        id: 2,
+        title: '已接受建议',
+        status: 'active',
+        source_type: 'weekly_advisor',
+        user_decision: 'accepted',
+        content: '',
+        card_type: 'recommendation',
+        priority: 5,
+        created_at: '2026-05-22T00:00:00Z',
+      },
+      {
+        id: 3,
+        title: '其他来源',
+        status: 'active',
+        source_type: 'manual',
+        content: '',
+        card_type: 'recommendation',
+        priority: 5,
+        created_at: '2026-05-22T00:00:00Z',
+      },
+    ] as ActionCard[];
+
+    expect(pickWeeklySuggestionCards(cards).map(card => card.title)).toEqual(['待决策建议']);
   });
 
   it('builds intervention cockpit sections with immediate alerts limited to high priority', () => {

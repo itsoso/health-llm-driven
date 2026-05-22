@@ -27,7 +27,7 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getSafetyReport, type SafetyAlert } from '../../services/safety';
-import { getActiveCards, type ActionCard } from '../../services/actionCards';
+import { getActiveCards, pickWeeklySuggestionCards, type ActionCard } from '../../services/actionCards';
 import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
@@ -177,7 +177,7 @@ export default function TodayScreen() {
   );
 
   const cards: ActionCard[] = cardsQuery.data ?? [];
-  const weeklyAdvice = cards.filter(c => c.source_type === 'weekly_advisor');
+  const weeklyAdvice = pickWeeklySuggestionCards(cards);
 
   const twinSnap = pickTwinSnapshot(twinQuery.data);
   const activePlanCount = dailyPlanQuery.data?.actions?.length ?? 0;

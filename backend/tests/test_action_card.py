@@ -137,3 +137,33 @@ def test_get_active_action_cards_archives_expired_cards(client, db, auth_user_an
     db.refresh(expired)
     assert expired.status == "archived"
     assert expired.is_visible is False
+
+
+def test_get_active_action_cards_archives_legacy_weekly_cards_without_expires(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    from app.models.action_card import ActionCard
+
+    legacy = ActionCard(
+        user_id=user.id,
+        title="旧本周建议",
+        content="历史数据没有 expires_at, 也不应永久留在首页。",
+        status="active",
+        is_visible=True,
+        source_type="weekly_advisor",
+        user_decision="accepted",
+        created_at=datetime.now(timezone.utc) - timedelta(days=21),
+    )
+    db.add(legacy)
+    db.commit()
+    db.refresh(legacy)
+
+    response = client.get("/api/v1/action-cards/me?status=active", headers=headers)
+
+    assert response.status_code == 200
+    ids = [card["id"] for card in response.json()]
+    assert legacy.id not in ids
+
+    db.refresh(legacy)
+    assert legacy.status == "archived"
+    assert legacy.is_visible is False
