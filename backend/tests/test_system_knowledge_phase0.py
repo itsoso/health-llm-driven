@@ -638,9 +638,12 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["documents"]["by_review_status"]["reviewed"] == 1
     assert payload["documents"]["by_review_status"]["draft"] == 1
     assert payload["specialist_findings"]["total"] == 5
+    assert payload["specialist_findings"]["applicable_total"] == 4
+    assert payload["specialist_findings"]["not_applicable"] == 1
     assert payload["specialist_findings"]["with_evidence_refs"] == 2
     assert payload["specialist_findings"]["unsupported"] == 2
-    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.4
+    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.5
+    assert payload["specialist_findings"]["raw_evidence_ref_rate"] == 0.4
     assert payload["specialist_findings"]["target_evidence_ref_rate"] == 0.85
     assert payload["specialist_findings"]["meets_target"] is False
     assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["total"] == 2

@@ -1979,6 +1979,7 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
         .all()
     )
     total = 0
+    not_applicable = 0
     with_refs = 0
     unsupported = 0
     by_specialist: dict[str, dict[str, Any]] = {}
@@ -1996,26 +1997,51 @@ def _aggregate_specialist_evidence_coverage(db: Session) -> dict[str, Any]:
             refs = _extract_finding_evidence_refs(finding)
             is_unsupported = _finding_is_unsupported(finding, refs)
             support_status = _finding_support_status(finding, refs, is_unsupported)
+            is_not_applicable = _support_status_is_not_applicable(support_status)
+            if is_not_applicable:
+                not_applicable += 1
             if refs:
                 with_refs += 1
             if is_unsupported:
                 unsupported += 1
             specialist = str(finding.get("specialist") or finding.get("specialist_name") or "unknown")
             category = str(finding.get("category") or finding.get("kind") or "unknown")
-            _add_evidence_bucket(by_specialist, specialist, refs=refs, is_unsupported=is_unsupported)
-            _add_evidence_bucket(by_category, category, refs=refs, is_unsupported=is_unsupported)
+            _add_evidence_bucket(
+                by_specialist,
+                specialist,
+                refs=refs,
+                is_unsupported=is_unsupported,
+                is_not_applicable=is_not_applicable,
+            )
+            _add_evidence_bucket(
+                by_category,
+                category,
+                refs=refs,
+                is_unsupported=is_unsupported,
+                is_not_applicable=is_not_applicable,
+            )
             by_support_status[support_status] = by_support_status.get(support_status, 0) + 1
 
     _finalize_evidence_buckets(by_specialist)
     _finalize_evidence_buckets(by_category)
+    applicable_total = total - not_applicable
+    raw_evidence_ref_rate = round(with_refs / total, 4) if total else 0.0
+    evidence_ref_rate = round(with_refs / applicable_total, 4) if applicable_total else 0.0
 
     return {
         "total": total,
+        "applicable_total": applicable_total,
+        "not_applicable": not_applicable,
         "with_evidence_refs": with_refs,
         "unsupported": unsupported,
-        "evidence_ref_rate": round(with_refs / total, 4) if total else 0.0,
+        "evidence_ref_rate": evidence_ref_rate,
+        "raw_evidence_ref_rate": raw_evidence_ref_rate,
         "target_evidence_ref_rate": SPECIALIST_EVIDENCE_REF_RATE_TARGET,
-        "meets_target": (with_refs / total) >= SPECIALIST_EVIDENCE_REF_RATE_TARGET if total else False,
+        "meets_target": (
+            (with_refs / applicable_total) >= SPECIALIST_EVIDENCE_REF_RATE_TARGET
+            if applicable_total
+            else False
+        ),
         "unsupported_rate": round(unsupported / total, 4) if total else 0.0,
         "by_specialist": dict(sorted(by_specialist.items())),
         "by_category": dict(sorted(by_category.items())),
@@ -2073,12 +2099,14 @@ def _add_evidence_bucket(
     *,
     refs: list[Any],
     is_unsupported: bool,
+    is_not_applicable: bool = False,
 ) -> None:
     bucket = buckets.setdefault(
         key or "unknown",
-        {"total": 0, "with_evidence_refs": 0, "unsupported": 0},
+        {"total": 0, "not_applicable": 0, "with_evidence_refs": 0, "unsupported": 0},
     )
     bucket["total"] += 1
+    bucket["not_applicable"] += 1 if is_not_applicable else 0
     bucket["with_evidence_refs"] += 1 if refs else 0
     bucket["unsupported"] += 1 if is_unsupported else 0
 
@@ -2086,9 +2114,15 @@ def _add_evidence_bucket(
 def _finalize_evidence_buckets(buckets: dict[str, dict[str, Any]]) -> None:
     for bucket in buckets.values():
         total = int(bucket.get("total") or 0)
+        not_applicable = int(bucket.get("not_applicable") or 0)
+        applicable_total = total - not_applicable
         with_refs = int(bucket.get("with_evidence_refs") or 0)
         unsupported = int(bucket.get("unsupported") or 0)
-        bucket["evidence_ref_rate"] = round(with_refs / total, 4) if total else 0.0
+        bucket["applicable_total"] = applicable_total
+        bucket["evidence_ref_rate"] = (
+            round(with_refs / applicable_total, 4) if applicable_total else 0.0
+        )
+        bucket["raw_evidence_ref_rate"] = round(with_refs / total, 4) if total else 0.0
         bucket["unsupported_rate"] = round(unsupported / total, 4) if total else 0.0
 
 
@@ -2386,6 +2420,14 @@ def _finding_support_status(
     if is_unsupported:
         return "model_inference"
     return "not_applicable"
+
+
+def _support_status_is_not_applicable(support_status: Any) -> bool:
+    return str(support_status or "").strip().lower() in {
+        "not_applicable",
+        "data_gap",
+        "data_summary",
+    }
 
 
 def _normalized_stance(value: Any) -> str | None:
