@@ -49,6 +49,69 @@ def _append_interrupted_notice(text: str, finish_reason: Optional[str]) -> str:
     return f"{text.rstrip()}{INTERRUPTED_COMPLETION_NOTICE}"
 
 
+def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
+    """Recover tool calls emitted as visible JSON text by weaker gateways/models.
+
+    Some commercial proxy models ignore OpenAI `tools` semantics and print a
+    payload like {"name":"health_manage","parameters":{...}} inside content.
+    Treat only trailing JSON objects whose name matches our registered tools as
+    tool calls; ordinary JSON snippets such as menu_share remain user-visible.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None
+
+    allowed = {t.get("function", {}).get("name") for t in tools or []}
+    decoder = json.JSONDecoder()
+    for idx, ch in enumerate(raw):
+        if ch != "{":
+            continue
+        try:
+            payload, end = decoder.raw_decode(raw[idx:])
+        except json.JSONDecodeError:
+            continue
+        if raw[idx + end:].strip().strip("`").strip():
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        fn = payload.get("function") if isinstance(payload.get("function"), dict) else None
+        name = payload.get("name") or payload.get("tool") or (fn or {}).get("name")
+        if name not in allowed:
+            continue
+
+        args = (
+            payload.get("parameters")
+            if "parameters" in payload
+            else payload.get("arguments", (fn or {}).get("arguments", {}))
+        )
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                return None
+        if not isinstance(args, dict):
+            return None
+
+        return {
+            "id": "inline_tool_call_0",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(args, ensure_ascii=False),
+            },
+        }
+    return None
+
+
+def _response_text(response: Any) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        return response.get("content") or ""
+    return str(response or "")
+
+
 # 2026-05-14 #4 可解释性 — tool 名 → 中文标签
 # 用户在 chat bubble 看到 "AI 用了什么数据" 时, 能看懂 (不是 raw tool name).
 _TOOL_TO_SOURCE_LABEL = {
@@ -390,6 +453,20 @@ class AgentExecutor:
                         pass
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
 
+                if isinstance(response, dict) and not response.get("tool_calls"):
+                    inline_tool_call = _extract_inline_tool_call(response.get("content") or "", tools)
+                    if inline_tool_call:
+                        logger.warning(
+                            "[agent_executor] recovered inline tool JSON as tool_call: %s",
+                            inline_tool_call["function"]["name"],
+                        )
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [inline_tool_call],
+                        }
+
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
                     tool_calls = response["tool_calls"]
@@ -481,15 +558,30 @@ class AgentExecutor:
                     if isinstance(response, str):
                         # 已经是完整文本（fallback provider）
                         final_text = response
-                        for i in range(0, len(final_text), 20):
-                            chunk = final_text[i:i + 20]
-                            yield {"event": "token", "data": {"content": chunk}}
                     else:
                         final_text = response.get("content") or ""
                         final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
-                        for i in range(0, len(final_text), 20):
-                            chunk = final_text[i:i + 20]
-                            yield {"event": "token", "data": {"content": chunk}}
+                    if not final_text.strip():
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "上一轮没有生成任何用户可见回复。请不要调用工具，"
+                                "直接用中文给出完整回答。"
+                            ),
+                        })
+                        _round_start = time.time()
+                        retry_response = await self._call_llm(messages, [])
+                        if isinstance(retry_response, dict):
+                            final_finish_reason = retry_response.get("finish_reason") or final_finish_reason
+                        llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
+                        final_text = _response_text(retry_response)
+                        if isinstance(retry_response, dict):
+                            final_text = _append_interrupted_notice(final_text, retry_response.get("finish_reason"))
+                        if not final_text.strip():
+                            final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
+                    for i in range(0, len(final_text), 20):
+                        chunk = final_text[i:i + 20]
+                        yield {"event": "token", "data": {"content": chunk}}
                     full_reply += final_text
                     break
 
@@ -672,8 +764,8 @@ class AgentExecutor:
             "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
             "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
-            "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
-            "- **饮食记录必须包含热量估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)，填入 data.calories 字段一起保存。不要记完再问用户'要不要算热量'。**",
+            "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
+            "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
             "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
             "",
             "## 分析规则",

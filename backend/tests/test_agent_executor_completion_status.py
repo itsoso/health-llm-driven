@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.models.user_profile import UserProfile
@@ -53,6 +55,144 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
     assert done["data"]["finish_reason"] == "length"
     assert saved.meta["completion_status"] == "interrupted"
     assert saved.meta["finish_reason"] == "length"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        if len(calls) == 1:
+            return {"content": "", "finish_reason": "stop"}
+        return {"content": "补发回答：基于 9p21 和运动数据，先保持二区有氧。", "finish_reason": "stop"}
+
+    executor._call_llm = fake_call_llm
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="针对我的 9p21 基因，给我未来 30 天方案",
+            user_auth_token=None,
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "补发回答" in rendered
+    assert calls[-1]["tool_count"] == 0
+    assert events[-1]["event"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        if len(calls) == 1:
+            return {
+                "content": (
+                    "好的，我来帮你删除最后一条饮食记录。\n"
+                    '{"name":"health_manage","parameters":{"record_type":"diet","operation":"delete","record_id":625}}'
+                ),
+                "finish_reason": "stop",
+            }
+        return {"content": "已删除最后一条饮食记录。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        executed.append((tool_name, args_raw, user_token))
+        return '{"message":"删除成功","record_id":625}'
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除最后一条饮食记录",
+            user_auth_token="test-token",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert executed == [
+        ("health_manage", '{"record_type": "diet", "operation": "delete", "record_id": 625}', "test-token")
+    ]
+    assert any(event.get("event") == "tool_call" and event["data"]["tool"] == "health_manage" for event in events)
+    assert "已删除最后一条饮食记录" in rendered
+    assert '"name":"health_manage"' not in rendered
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        if not executed:
+            return {
+                "content": (
+                    "我先识别并记录这顿饭。\n"
+                    '{"name":"health_record","parameters":{"record_type":"diet","data":{'
+                    '"meal_type":"dinner","food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g",'
+                    '"calories":520,"protein":32,"carbs":58,"fat":14,"fiber":5}}}'
+                ),
+                "finish_reason": "stop",
+            }
+        return {"content": "已记录晚餐：约 520 kcal，蛋白质 32g。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw)
+        executed.append((tool_name, args))
+        return '{"id":701,"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="计算热量和营养并记录饮食",
+            user_auth_token="test-token",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert executed[0][0] == "health_record"
+    assert executed[0][1]["record_type"] == "diet"
+    assert executed[0][1]["data"]["protein"] == 32
+    assert any(
+        event.get("event") == "tool_result"
+        and event["data"]["record_type"] == "diet"
+        and event["data"]["record_data"]["calories"] == 520
+        for event in events
+    )
+    assert "已记录晚餐" in rendered
+    assert '"name":"health_record"' not in rendered
 
 
 @pytest.mark.asyncio

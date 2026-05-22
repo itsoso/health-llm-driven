@@ -131,7 +131,8 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 water: {"amount": 250}  // 毫升, **必填整数 1-5000**. 用户没提具体毫升数就先问'喝了多少 ml?', 不要自己默认
 diet:  {"meal_type": "breakfast|lunch|dinner|snack",  // 用英文枚举
         "food_items": "牛奶 200ml + 面包 1 片",      // 必填, 不能只给 calories
-        "calories": 450,                              // 可选, 用户没提就 LLM 自己估
+        "calories": 450,                              // 必填/强烈建议, 用户没提就 LLM 根据份量估
+        "protein": 25, "carbs": 55, "fat": 12, "fiber": 6,  // 强烈建议一并估算, 单位 g
         "record_date": "2026-05-05"}                  // 可选, 默认今天
 supplement:       {"supplement_name": "鱼油"}          // 按名字匹配用户已定义的补剂
 supplement_group: {"timing": "morning|noon|evening|bedtime"}
