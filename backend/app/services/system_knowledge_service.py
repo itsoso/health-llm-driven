@@ -2313,6 +2313,8 @@ def _extract_finding_evidence_refs(finding: dict[str, Any]) -> list[Any]:
     refs = finding.get("evidence_refs")
     if refs is None and isinstance(finding.get("data"), dict):
         refs = finding["data"].get("evidence_refs")
+    if not refs and isinstance(finding.get("data"), dict):
+        refs = finding["data"].get("system_kb_evidence_refs")
     return refs if isinstance(refs, list) else []
 
 

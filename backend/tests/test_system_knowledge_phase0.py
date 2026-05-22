@@ -560,6 +560,14 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
                                 "evidence_refs": [],
                             },
                         },
+                        {
+                            "summary": "legacy kb refs",
+                            "specialist": "rhinitis_specialist",
+                            "category": "chronic",
+                            "data": {
+                                "system_kb_evidence_refs": ["claim:c_reviewed"],
+                            },
+                        },
                     ]
                 },
             ),
@@ -629,10 +637,10 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["documents"]["by_origin"]["unknown"] == 1
     assert payload["documents"]["by_review_status"]["reviewed"] == 1
     assert payload["documents"]["by_review_status"]["draft"] == 1
-    assert payload["specialist_findings"]["total"] == 4
-    assert payload["specialist_findings"]["with_evidence_refs"] == 1
+    assert payload["specialist_findings"]["total"] == 5
+    assert payload["specialist_findings"]["with_evidence_refs"] == 2
     assert payload["specialist_findings"]["unsupported"] == 2
-    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.25
+    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.4
     assert payload["specialist_findings"]["target_evidence_ref_rate"] == 0.85
     assert payload["specialist_findings"]["meets_target"] is False
     assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["total"] == 2
@@ -641,7 +649,8 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["specialist_findings"]["by_category"]["nutrition"]["total"] == 2
     assert payload["specialist_findings"]["by_category"]["movement"]["unsupported"] == 1
     assert payload["specialist_findings"]["by_category"]["longitudinal"]["unsupported"] == 0
-    assert payload["specialist_findings"]["by_support_status"]["supported"] == 1
+    assert payload["specialist_findings"]["by_category"]["chronic"]["evidence_ref_rate"] == 1.0
+    assert payload["specialist_findings"]["by_support_status"]["supported"] == 2
     assert payload["specialist_findings"]["by_support_status"]["model_inference"] == 2
     assert payload["specialist_findings"]["by_support_status"]["not_applicable"] == 1
     assert payload["external_evidence"]["claim_total"] == 2
