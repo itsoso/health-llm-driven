@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.models.system_knowledge import KBDocument
 from app.services.system_knowledge_importer import import_system_kb_artifacts
 from app.services.system_knowledge_ingest import IngestResult, write_reviewed_artifacts
-from app.services.system_knowledge_service import lint_knowledge_base
+from app.services.system_knowledge_service import get_knowledge_coverage_report, lint_knowledge_base
 
 
 def _jsonl(path):
@@ -17,6 +17,14 @@ def test_seed_artifacts_do_not_leave_orphan_entities(db):
     report = lint_knowledge_base(db)
 
     assert report["issues"]["orphan_entities"] == []
+
+
+def test_seed_artifacts_meet_external_evidence_target(db):
+    import_system_kb_artifacts(db, "data/system_kb_v2_seed", actor="test")
+
+    coverage = get_knowledge_coverage_report(db)
+
+    assert coverage["external_evidence"]["meets_target"] is True
 
 
 def test_import_system_kb_protocol_artifacts_preserves_contract_metadata(tmp_path, db):

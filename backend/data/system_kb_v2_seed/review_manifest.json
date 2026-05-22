@@ -3,11 +3,12 @@
   "contraindications_reviewed": 0,
   "documents_reviewed": 10,
   "eval_cases_reviewed": 0,
+  "external_evidence_claims_reviewed": 24,
   "from_status": "draft",
   "orphan_entities_resolved": 27,
   "protocols_reviewed": 10,
   "relations_reviewed": 187,
-  "reviewed_at": "2026-05-22T09:05:00+00:00",
+  "reviewed_at": "2026-05-22T09:45:00+00:00",
   "reviewer": "codex-2026-05-22",
   "to_status": "reviewed"
 }

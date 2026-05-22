@@ -1,5 +1,5 @@
 {
-  "compiled_at": "2026-05-22T09:05:00+00:00",
+  "compiled_at": "2026-05-22T09:45:00+00:00",
   "counts": {
     "claims": 384,
     "contraindications": 0,
@@ -29,6 +29,13 @@
     "pipeline": "down_dedao_llm_wiki_bridge_v1",
     "skipped_private": [],
     "source_root": "~/work/personal/down-dedao"
+  },
+  "external_evidence_enrichment": {
+    "claims_updated": 24,
+    "compiled_at": "2026-05-22T09:45:00+00:00",
+    "pipeline": "system_kb_external_evidence_enrichment_v1",
+    "reviewed_by": "codex-2026-05-22",
+    "target_external_source_rate": 0.2
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",
