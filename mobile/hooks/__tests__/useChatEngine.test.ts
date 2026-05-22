@@ -44,6 +44,7 @@ jest.mock('../../services/clientEvents', () => ({
 import { useChatEngine } from '../useChatEngine';
 
 let finishStream: (() => void) | undefined;
+let failStream: (() => void) | undefined;
 
 async function* streamStartThenWait() {
   yield { type: 'start', conversationId: 777 };
@@ -53,11 +54,20 @@ async function* streamStartThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamStartThenTimeout() {
+  yield { type: 'start', conversationId: 777 };
+  await new Promise<void>((resolve) => {
+    failStream = resolve;
+  });
+  throw new Error('请求超时');
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAsyncStorage = {};
     finishStream = undefined;
+    failStream = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
@@ -139,5 +149,46 @@ describe('useChatEngine', () => {
       finishStream?.();
       await Promise.resolve();
     });
+  });
+
+  it('recovers the server answer when a local stream times out after leaving the page', async () => {
+    mockStreamChat.mockImplementation(streamStartThenTimeout);
+    mockGetConversationMessages.mockResolvedValueOnce({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '继续分析图片记录饮食', created_at: '2026-05-22T23:30:00Z' },
+        { id: 2, role: 'assistant', content: '已从服务端恢复的完整回答', created_at: '2026-05-22T23:31:00Z' },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('继续分析图片记录饮食');
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversationId).toBe(777);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      failStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'assistant', content: '已从服务端恢复的完整回答' }),
+        ]),
+      );
+    });
+    expect(result.current.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: expect.stringContaining('请求超时') }),
+      ]),
+    );
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { days: 7 });
   });
 });

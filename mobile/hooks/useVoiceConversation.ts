@@ -11,6 +11,7 @@ import {
 } from '../services/voiceStyle';
 import { synthesize as cloudSynthesize, cleanupTmpTts } from '../services/cloudTts';
 import { estimateTtsFallbackMs, shouldFinishAudioPlayback } from '../utils/audioPlayback';
+import { splitTextForCloudTts } from '../utils/ttsText';
 
 /**
  * 语音连续对话状态机.
@@ -301,9 +302,14 @@ export function useVoiceConversation() {
       // 新 player 每句一个, 简化生命周期 (非高频场景, 代价可接受)
       const player = createAudioPlayer({ uri: localUri });
       let finished = false;
+      let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
       const finish = () => {
         if (finished) return;
         finished = true;
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
         try { player.remove(); } catch {}
         activePlayerRef.current = null;
         isSpeakingRef.current = false;
@@ -327,7 +333,7 @@ export function useVoiceConversation() {
       // 必须比真实播放时长长, 否则兜底先触发 finish → 下一句重叠播.
       // 80 字 → ~22s + 8s = 30s. 最大 60s.
       const estMs = estimateTtsFallbackMs(text, (player as any).duration);
-      setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, estMs);
+      fallbackTimer = setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, estMs);
       player.play();
     } catch (e) {
       // 云端失败 → 降级 iOS
@@ -354,6 +360,10 @@ export function useVoiceConversation() {
     }
   }, [speakViaCloud, speakViaIos]);
 
+  const enqueueTtsText = useCallback((text: string) => {
+    ttsQueueRef.current.push(...splitTextForCloudTts(text));
+  }, []);
+
   const enqueueSentences = useCallback((chunk: string) => {
     pendingTextRef.current += chunk;
     while (true) {
@@ -366,14 +376,14 @@ export function useVoiceConversation() {
         const clean = stripMarkdownForTTS(sentence).trim();
         // 太短的微句 (< MIN_SENTENCE_LEN) 退回 pending, 攒到下一句一起 synth, 避免段落首句"是。"独立成轨
         if (clean.length >= MIN_SENTENCE_LEN) {
-          ttsQueueRef.current.push(clean);
+          enqueueTtsText(clean);
         } else if (clean) {
           pendingTextRef.current = clean + (pendingTextRef.current.startsWith(' ') ? '' : ' ') + pendingTextRef.current;
         }
       }
     }
     flushTTS();
-  }, [flushTTS]);
+  }, [enqueueTtsText, flushTTS]);
 
   const flushTail = useCallback(() => {
     const tail = pendingTextRef.current.trim();
@@ -381,11 +391,11 @@ export function useVoiceConversation() {
     if (tail) {
       const clean = stripMarkdownForTTS(tail).trim();
       if (clean) {
-        ttsQueueRef.current.push(clean);
+        enqueueTtsText(clean);
         flushTTS();
       }
     }
-  }, [flushTTS]);
+  }, [enqueueTtsText, flushTTS]);
 
   const waitTTSDrain = useCallback(() => {
     return new Promise<void>((resolve) => {

@@ -214,6 +214,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
   }, []);
 
+  const recoverConversationFromServer = useCallback(async (id: number) => {
+    try {
+      const { messages: msgs, total_messages } = await getConversationMessages(
+        id,
+        { days: windowDays || DEFAULT_WINDOW_DAYS },
+      );
+      const hasAssistantAnswer = msgs.some((m: any) =>
+        m?.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0
+      );
+      if (!hasAssistantAnswer) return false;
+
+      setConversationId(id);
+      void rememberConversationId(id);
+      setHasMoreHistory(total_messages > msgs.length);
+      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
+      setMessages(restored);
+      restoreCards(restored);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [restoreCards, windowDays]);
+
   const loadConversationFromServer = useCallback(async (id: number, idPrefix: string = 'hist') => {
     const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
     setWindowDays(DEFAULT_WINDOW_DAYS);
@@ -363,12 +386,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
     }, 8000);
 
+    let streamConversationId = conversationId;
+
     try {
       const toolsUsed: Set<string> = new Set();
       let sawDone = false;
       for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'start') {
           if (evt.conversationId) {
+            streamConversationId = evt.conversationId;
             if (!conversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
@@ -379,6 +405,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         } else if (evt.type === 'done') {
           sawDone = true;
           if (evt.conversationId) {
+            streamConversationId = evt.conversationId;
             if (!conversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
@@ -428,6 +455,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
     } catch (err: any) {
       const isAbort = err?.message === 'aborted';
+      if (!isAbort && streamConversationId) {
+        const recovered = await recoverConversationFromServer(streamConversationId);
+        if (recovered) return;
+      }
       setMessages(prev => prev.map(m => m.id === aId ? {
         ...m,
         completionStatus: isAbort ? 'interrupted' : 'error',
@@ -443,7 +474,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }
-  }, [isStreaming, conversationId, opts.contextData]);
+  }, [isStreaming, conversationId, opts.contextData, recoverConversationFromServer]);
 
   const newChat = useCallback(() => {
     setMessages([]);
