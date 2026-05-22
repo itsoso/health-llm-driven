@@ -175,6 +175,24 @@ def _needs_skill(msg: str) -> bool:
     return bool(_NEEDS_SKILL_RE.search(msg))
 
 
+def _attach_images_to_last_user_message(
+    messages: List[Dict[str, Any]], message: str, images: List[dict]
+) -> None:
+    """Attach chat images to the latest user message in OpenAI vision format."""
+
+    user_msg_content: list = [{"type": "text", "text": message}]
+    for img in images:
+        image_type = img.get("type", "jpeg")
+        user_msg_content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/{image_type};base64,{img['base64']}"},
+        })
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            messages[i]["content"] = user_msg_content
+            break
+
+
 def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
     """L8 (Karpathy "verification is the bottleneck"):
     高确定性 health_record 写库前强制 LLM 复述给用户确认.
@@ -308,11 +326,16 @@ class AgentExecutor:
         messages = svc.build_messages(conv.id, limit=15)
         messages.insert(0, {"role": "system", "content": system_content})
 
-        # 如果有图片，先用 vision 模型识别内容，再将识别结果注入文本消息
+        # 如果有图片：LangBridge 商用模型自身支持多模态，必须直接传原图；
+        # 其它模型保留原来的"先用独立 vision 识别，再降级直传"路径。
         if images:
-            vision_description = await self._try_import_medical_report_images(user_id, images)
-            if not vision_description:
-                vision_description = await self._analyze_image_with_vision(message, images)
+            should_send_raw_images = self._should_send_raw_images_to_primary_model(user_id)
+            vision_description = None
+            if not should_send_raw_images:
+                vision_description = await self._try_import_medical_report_images(user_id, images)
+                if not vision_description:
+                    vision_description = await self._analyze_image_with_vision(message, images)
+
             if vision_description:
                 enriched_message = f"{message}\n\n[图片识别结果]: {vision_description}"
                 for i in range(len(messages) - 1, -1, -1):
@@ -321,17 +344,7 @@ class AgentExecutor:
                         break
                 logger.info(f"[Vision] 图片识别完成: {vision_description[:200]}")
             else:
-                # Vision 模型不可用时，fallback 用多模态格式直接传图
-                user_msg_content: list = [{"type": "text", "text": message}]
-                for img in images:
-                    user_msg_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/{img.get('type', 'jpeg')};base64,{img['base64']}"},
-                    })
-                for i in range(len(messages) - 1, -1, -1):
-                    if messages[i].get("role") == "user":
-                        messages[i]["content"] = user_msg_content
-                        break
+                _attach_images_to_last_user_message(messages, message, images)
 
         # 4. 工具定义
         tools = get_health_tools()
@@ -586,6 +599,30 @@ class AgentExecutor:
     def _upload_chat_image(image_base64: str, image_type: str) -> Optional[str]:
         from app.services.chat_utils import upload_chat_image
         return upload_chat_image(image_base64, image_type)
+
+    def _should_send_raw_images_to_primary_model(self, user_id: int) -> bool:
+        """Return True when the active chat model should receive image parts directly."""
+
+        try:
+            from app.models.user_profile import UserProfile
+            from app.services.llm.model_registry import get_active_model_id, get_model
+
+            model_id = None
+            profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+            if profile:
+                model_id = getattr(profile, "llm_model_id", None)
+            model_id = model_id or get_active_model_id()
+            if not model_id:
+                return False
+            entry = get_model(model_id)
+            return bool(
+                entry
+                and entry.provider == "langbridge-proxy"
+                and str(entry.model).startswith("commercial/")
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[Vision] primary model image capability check skipped: {e}")
+            return False
 
     async def _delegate_to_openclaw(
         self, user_id: int, message: str,
