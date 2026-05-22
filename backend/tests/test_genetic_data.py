@@ -835,6 +835,59 @@ class TestSampleIntegration:
         assert hla.health_implications["confirmation_required"] is False
         assert hla.evidence_level == "screening"
 
+    def test_upload_txt_maps_orviva_priority_screening_markers(self, client, db, auth_user_and_headers):
+        """Orviva/WeGene 原始 TXT 中的重点筛查位点应进入结构化风险预警."""
+        user, headers = auth_user_and_headers
+        sample = (
+            "# rsid\tchromosome\tposition\tgenotype\n"
+            "rs1061235\t6\t29945884\tAA\n"      # HLA-A*31:01 proxy
+            "rs7454108\t6\t32605884\tCT\n"      # HLA-DQ8 proxy
+            "rs121908763\t7\t117559593\tGG\n"   # CFTR clinical marker
+            "rs380390\t1\t196659237\tCC\n"      # AMD GWAS marker
+            "rs2230199\t19\t6718387\tCC\n"      # C3 AMD marker
+            "rs137853280\t13\t51958376\tGG\n"   # ATP7B Wilson disease marker
+        )
+
+        res = client.post(
+            "/api/v1/genetic/profiles/upload-txt",
+            json={
+                "test_provider": "WeGene",
+                "test_date": "2026-05-16",
+                "txt_content": sample,
+            },
+            headers=headers,
+        )
+
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert data["matched_count"] == 6
+
+        variants = {
+            v.rsid: v
+            for v in db.query(GeneticVariant)
+            .filter(GeneticVariant.user_id == user.id)
+            .all()
+        }
+        assert variants["rs1061235"].gene_name == "HLA-A*31:01"
+        assert variants["rs1061235"].category == "drug_sensitivity"
+        assert variants["rs1061235"].risk_level == "high"
+        assert variants["rs1061235"].health_implications["confirmation_required"] is True
+
+        assert variants["rs7454108"].gene_name == "HLA-DQ8"
+        assert variants["rs7454108"].risk_level == "medium"
+        assert "乳糜泻" in variants["rs7454108"].result_label
+
+        assert variants["rs121908763"].gene_name == "CFTR"
+        assert variants["rs121908763"].evidence_level == "requires_confirmation"
+        assert variants["rs121908763"].health_implications["confirmatory_test"]
+
+        assert variants["rs380390"].gene_name == "AMD"
+        assert variants["rs380390"].risk_level == "high"
+        assert variants["rs2230199"].gene_name == "C3"
+
+        assert variants["rs137853280"].gene_name == "ATP7B"
+        assert variants["rs137853280"].evidence_level == "requires_confirmation"
+
 
 class TestGeneticPdfPostprocess:
     """PDF 视觉抽取后处理必须把未知/幻觉 rsid 隔离在正式解读之外."""
