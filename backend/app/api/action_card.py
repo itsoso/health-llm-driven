@@ -45,6 +45,39 @@ ALLOWED_METRIC_KEYS = {"sleep_score", "hrv", "rhr", "weight", "bp",
                        "spo2_odi", "custom"} | LAB_METRIC_KEYS
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _archive_expired_cards(db: Session, *, user_id: int) -> int:
+    now = datetime.now(timezone.utc)
+    cards = (
+        db.query(ActionCard)
+        .filter(
+            ActionCard.user_id == user_id,
+            ActionCard.status == "active",
+            ActionCard.is_visible == True,  # noqa: E712
+            ActionCard.expires_at.isnot(None),
+        )
+        .all()
+    )
+    archived = 0
+    for card in cards:
+        expires_at = _as_utc(card.expires_at)
+        if expires_at is not None and expires_at <= now:
+            card.status = "archived"
+            card.is_visible = False
+            card.updated_at = now
+            archived += 1
+    if archived:
+        db.commit()
+    return archived
+
+
 class ChecklistItem(BaseModel):
     item: str = Field(..., min_length=1, max_length=200)
     done: bool = False
@@ -157,6 +190,9 @@ def get_my_cards(
     current_user: User = Depends(get_current_user_required),
 ):
     """获取当前用户的行动卡片。"""
+    if status in {"active", "all"}:
+        _archive_expired_cards(db, user_id=current_user.id)
+
     q = db.query(ActionCard).filter(
         ActionCard.user_id == current_user.id,
         ActionCard.is_visible == True,  # noqa: E712

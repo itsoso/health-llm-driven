@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def test_create_action_card_preserves_structured_intervention_fields(client, auth_user_and_headers):
@@ -99,3 +99,41 @@ def test_review_action_card_persists_latest_assessment(client, auth_user_and_hea
     assert data["latest_assessment"]["outcome_status"] == "met"
     assert data["latest_assessment"]["actual_value"] == "84"
     assert data["completed_at"] is not None
+
+
+def test_get_active_action_cards_archives_expired_cards(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    from app.models.action_card import ActionCard
+
+    expired = ActionCard(
+        user_id=user.id,
+        title="过期建议",
+        content="这个建议已经过期。",
+        status="active",
+        is_visible=True,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    active = ActionCard(
+        user_id=user.id,
+        title="仍然有效建议",
+        content="这个建议仍然有效。",
+        status="active",
+        is_visible=True,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    db.add_all([expired, active])
+    db.commit()
+    db.refresh(expired)
+    db.refresh(active)
+
+    response = client.get("/api/v1/action-cards/me?status=active", headers=headers)
+
+    assert response.status_code == 200
+    ids = [card["id"] for card in response.json()]
+    assert active.id in ids
+    assert expired.id not in ids
+
+    db.refresh(expired)
+    assert expired.status == "archived"
+    assert expired.is_visible is False

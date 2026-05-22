@@ -1,6 +1,6 @@
 """Daily Operating Plan API."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
 from app.database import get_db
+from app.models.action_card import ActionCard
 from app.models.intervention_event import InterventionEvent
 from app.models.user import User
 from app.schemas.daily_plan_feedback import (
@@ -22,6 +23,9 @@ from app.services.health_operating_review import (
 )
 
 router = APIRouter(prefix="/daily-plan", tags=["daily-plan"])
+
+_ACTION_COMPLETE_STATUSES = {"completed", "done", "verified"}
+_ACTION_DISMISS_STATUSES = {"skipped", "failed"}
 
 
 class DailyPlanActionFeedbackRequest(BaseModel):
@@ -67,6 +71,37 @@ def _load_daily_plan_action(
     if not action:
         raise HTTPException(status_code=404, detail="Daily Plan action 不存在")
     return payload, action
+
+
+def _sync_source_card_lifecycle(
+    db: Session,
+    *,
+    user_id: int,
+    action: dict,
+    status: str,
+) -> None:
+    source_card_id = action.get("source_card_id")
+    if not source_card_id:
+        return
+    if status not in _ACTION_COMPLETE_STATUSES and status not in _ACTION_DISMISS_STATUSES:
+        return
+
+    card = (
+        db.query(ActionCard)
+        .filter(ActionCard.id == source_card_id, ActionCard.user_id == user_id)
+        .first()
+    )
+    if not card:
+        return
+
+    now = datetime.now(timezone.utc)
+    if status in _ACTION_COMPLETE_STATUSES:
+        card.status = "completed"
+        card.completed_at = card.completed_at or now
+    else:
+        card.status = "archived"
+        card.is_visible = False
+    card.updated_at = now
 
 
 @router.get("/me")
@@ -122,6 +157,12 @@ def submit_my_daily_plan_action_feedback(
         action_snapshot=action,
     )
     db.add(row)
+    _sync_source_card_lifecycle(
+        db,
+        user_id=current_user.id,
+        action=action,
+        status=request.status,
+    )
     db.commit()
     db.refresh(row)
 
@@ -172,6 +213,12 @@ def record_my_daily_plan_action_event(
         action_snapshot=action_snapshot,
     )
     db.add(row)
+    _sync_source_card_lifecycle(
+        db,
+        user_id=current_user.id,
+        action=action,
+        status=request.event_type,
+    )
     db.commit()
     db.refresh(row)
 

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
 from app.models.daily_operating_plan import DailyOperatingPlan
+from app.models.intervention_event import InterventionEvent
 from app.services.advice_guard import AdviceCandidate, AdviceGuardError, guard_and_record_advice
 from app.services.personal_evidence_matrix import (
     build_personal_evidence_matrix,
@@ -41,6 +42,15 @@ _ACUTE_REST_SUPPRESS_TITLES = (
     "jog",
     "strength",
 )
+_TERMINAL_ACTION_EVENT_STATUSES = {"completed", "done", "skipped", "failed", "verified"}
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _bp_text(twin) -> str | None:
@@ -88,18 +98,30 @@ def _action(
     }
 
 
-def _active_interventions(db: Session, user_id: int) -> List[Dict[str, Any]]:
+def _active_interventions(db: Session, user_id: int, *, now: datetime | None = None) -> List[Dict[str, Any]]:
+    now = now or datetime.now(timezone.utc)
     cards = (
         db.query(ActionCard)
         .filter(
             ActionCard.user_id == user_id,
             ActionCard.status == "active",
+            ActionCard.is_visible == True,  # noqa: E712
             ActionCard.user_decision.in_(["accepted", "adjusted"]),
         )
         .order_by(desc(ActionCard.priority), desc(ActionCard.created_at))
-        .limit(3)
+        .limit(20)
         .all()
     )
+
+    active_cards: List[ActionCard] = []
+    for card in cards:
+        expires_at = _as_utc(card.expires_at)
+        if expires_at is not None and expires_at <= now:
+            card.status = "archived"
+            card.is_visible = False
+            continue
+        active_cards.append(card)
+
     return [
         _action(
             "intervention",
@@ -114,8 +136,43 @@ def _active_interventions(db: Session, user_id: int) -> List[Dict[str, Any]]:
             confidence=_normalize_confidence(c.evidence_level),
             claim_boundary="这是已接受的行为干预, 不替代医生诊断、处方或治疗。",
         ) | {"source_card_id": c.id, "check_back_date": c.check_back_date.isoformat() if c.check_back_date else None}
-        for c in cards
+        for c in active_cards[:3]
     ]
+
+
+def _terminal_action_keys_for_plan(db: Session, *, user_id: int, plan_date: date) -> set[str]:
+    rows = (
+        db.query(InterventionEvent.action_key)
+        .filter(
+            InterventionEvent.user_id == user_id,
+            InterventionEvent.plan_date == plan_date,
+            InterventionEvent.feedback_status.in_(_TERMINAL_ACTION_EVENT_STATUSES),
+        )
+        .all()
+    )
+    return {str(row[0]) for row in rows if row[0]}
+
+
+def _drop_terminal_actions(
+    db: Session,
+    *,
+    user_id: int,
+    plan_date: date,
+    actions: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    terminal_keys = _terminal_action_keys_for_plan(db, user_id=user_id, plan_date=plan_date)
+    if not terminal_keys:
+        return actions, []
+
+    kept: List[Dict[str, Any]] = []
+    dropped: List[str] = []
+    for action in actions:
+        action_key = str(action.get("action_key") or "")
+        if action_key and action_key in terminal_keys:
+            dropped.append(action_key)
+            continue
+        kept.append(action)
+    return kept, dropped
 
 
 def _guard_plan_actions(
@@ -322,6 +379,8 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             claim_boundary="活动目标用于健康管理, 不替代医生对运动禁忌或心血管风险的评估。",
         ))
 
+    actions.extend(_active_interventions(db, user_id))
+
     actions.append(_action(
         "sleep",
         "睡前 3 小时停止正餐",
@@ -334,9 +393,13 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         confidence="medium",
         claim_boundary="睡眠行为建议用于恢复管理, 不替代睡眠障碍诊断或治疗。",
     ))
-
-    actions.extend(_active_interventions(db, user_id))
     actions, arbitration_notes = _apply_acute_rest_arbiter(acute_rest=acute_rest, actions=actions)
+    actions, completed_action_keys = _drop_terminal_actions(
+        db,
+        user_id=user_id,
+        plan_date=plan_date,
+        actions=actions,
+    )
     actions = _guard_plan_actions(
         db,
         user_id=user_id,
@@ -362,6 +425,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             "training_guardrail": acute_guardrail if acute_rest else None,
         },
         **({"arbitration_notes": arbitration_notes} if arbitration_notes else {}),
+        **({"completed_action_keys": completed_action_keys} if completed_action_keys else {}),
         "data_sources": twin.meta.data_sources,
         "personal_evidence_matrix": compact_matrix,
     }

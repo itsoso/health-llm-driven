@@ -1,6 +1,6 @@
 """Daily Plan action feedback protocol tests."""
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from tests.conftest import create_authenticated_user
 
@@ -116,3 +116,96 @@ def test_daily_plan_action_event_endpoint_prevents_cross_user_action_write(clien
     )
 
     assert resp.status_code == 404
+
+
+def test_completed_daily_plan_action_is_removed_from_refreshed_plan(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    plan_resp = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert plan_resp.status_code == 200
+    action = plan_resp.json()["actions"][0]
+    action_key = action["action_key"]
+
+    event_resp = client.post(
+        f"/api/v1/daily-plan/actions/{action_key}/events",
+        headers=headers,
+        json={"event_type": "completed", "payload": {"source": "home"}},
+    )
+    assert event_resp.status_code == 200
+
+    refreshed = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert refreshed.status_code == 200
+    assert action_key not in [a["action_key"] for a in refreshed.json()["actions"]]
+
+
+def test_completed_intervention_action_syncs_source_card_and_disappears(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    from app.models.action_card import ActionCard
+
+    card = ActionCard(
+        user_id=user.id,
+        title="跑后拉伸 10 分钟",
+        content="跑后完成腿后侧和小腿拉伸。",
+        status="active",
+        is_visible=True,
+        user_decision="accepted",
+        priority=50,
+        metric_key="custom",
+        target_value="stretch_10m",
+        evidence_level="medium",
+    )
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+
+    action_key = f"intervention.card.{card.id}"
+    plan_resp = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert plan_resp.status_code == 200
+    assert action_key in [a["action_key"] for a in plan_resp.json()["actions"]]
+
+    event_resp = client.post(
+        f"/api/v1/daily-plan/actions/{action_key}/events",
+        headers=headers,
+        json={"event_type": "completed", "payload": {"source": "home"}},
+    )
+    assert event_resp.status_code == 200
+
+    db.refresh(card)
+    assert card.status == "completed"
+    assert card.completed_at is not None
+
+    refreshed = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert refreshed.status_code == 200
+    assert action_key not in [a["action_key"] for a in refreshed.json()["actions"]]
+
+
+def test_expired_intervention_card_is_archived_and_not_shown(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    from app.models.action_card import ActionCard
+
+    card = ActionCard(
+        user_id=user.id,
+        title="已过期的补剂行动",
+        content="这个行动窗口已经结束。",
+        status="active",
+        is_visible=True,
+        user_decision="accepted",
+        priority=100,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+        metric_key="custom",
+        target_value="expired",
+        evidence_level="medium",
+    )
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+
+    resp = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert resp.status_code == 200
+    assert f"intervention.card.{card.id}" not in [a["action_key"] for a in resp.json()["actions"]]
+
+    db.refresh(card)
+    assert card.status == "archived"
+    assert card.is_visible is False
