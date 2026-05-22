@@ -66,6 +66,14 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def _effective_expires_at(shared: SharedConversation) -> datetime | None:
+    if shared.expires_at:
+        return _as_utc(shared.expires_at)
+    if shared.created_at:
+        return _as_utc(shared.created_at) + timedelta(days=30)
+    return None
+
+
 def _masked_display_name(user: User) -> Optional[str]:
     raw_name = user.name or user.username
     if not raw_name:
@@ -207,8 +215,9 @@ def get_shared_conversation(
         raise HTTPException(status_code=404, detail="分享链接不存在或已失效")
 
     # 检查过期
-    if shared.expires_at:
-        if datetime.now(UTC) > _as_utc(shared.expires_at):
+    expires_at = _effective_expires_at(shared)
+    if expires_at:
+        if datetime.now(UTC) > expires_at:
             raise HTTPException(status_code=410, detail="分享链接已过期")
 
     # 更新浏览计数

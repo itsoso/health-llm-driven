@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from app.models.shared_conversation import SharedConversation
 
 
@@ -50,3 +52,24 @@ def test_shared_metadata_fetch_can_skip_view_count(client, db, auth_user_and_hea
     assert metadata_resp.status_code == 200
     shared = db.query(SharedConversation).filter_by(user_id=user.id).one()
     assert shared.view_count == 0
+
+
+def test_legacy_share_without_explicit_expiry_expires_after_30_days(client, db, auth_user_and_headers):
+    user, _ = auth_user_and_headers
+    shared = SharedConversation(
+        user_id=user.id,
+        share_token="legacyexpiredsharetoken",
+        source_type="plain_text",
+        source_conversation_id=0,
+        title="历史分享",
+        messages_snapshot=[{"role": "assistant", "content": "历史内容", "created_at": None}],
+        created_at=datetime.now(UTC) - timedelta(days=31),
+        expires_at=None,
+        is_active=True,
+    )
+    db.add(shared)
+    db.commit()
+
+    resp = client.get("/api/v1/shared/legacyexpiredsharetoken")
+
+    assert resp.status_code == 410
