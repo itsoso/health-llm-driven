@@ -89,6 +89,8 @@ def _try_action_card_due(db: Session, user_id: int) -> Optional[OpenerSuggestion
             ActionCard.check_back_date.isnot(None),
             ActionCard.check_back_date <= soon,
             ActionCard.graded_at.is_(None),
+            ActionCard.adherence_confidence.is_(None),
+            ActionCard.user_decision.is_(None),
         )
         .order_by(ActionCard.check_back_date.asc())
         .first()

@@ -24,7 +24,7 @@ import {
 } from '../../services/conversationOpener';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
-import { recordCardAdherence } from '../../services/actionCards';
+import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { sharePlainText } from '../../utils/share';
@@ -104,30 +104,39 @@ export default function ChatScreen() {
   // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
-  const refreshConversationStarters = useCallback((shouldSkip?: () => boolean) => {
-    fetchConversationStarters().then(({ opener: newOpener, suggestions }) => {
-      if (shouldSkip?.()) return;
-      setOpener(newOpener);
-      const decorated = decorateSuggestions(suggestions);
-      setStarterSuggestions(decorated || SUGGESTIONS);
-    });
+  const refreshConversationStarters = useCallback(async (shouldSkip?: () => boolean) => {
+    const { opener: newOpener, suggestions } = await fetchConversationStarters();
+    if (shouldSkip?.()) return;
+    setOpener(newOpener);
+    const decorated = decorateSuggestions(suggestions);
+    setStarterSuggestions(decorated || SUGGESTIONS);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    refreshConversationStarters(() => cancelled);
+    void refreshConversationStarters(() => cancelled);
     return () => { cancelled = true; };
   }, [refreshConversationStarters]);
 
   // P3-3: 拉 top 1-2 条 memory, 显示在 opener 上方"我记得你: <X>"
   const [memoryOpener, setMemoryOpener] = useState<MemoryOpenerItem[]>([]);
+  const refreshMemoryOpener = useCallback(async (shouldSkip?: () => boolean) => {
+    const items = await fetchMemoryOpener(2);
+    if (!shouldSkip?.()) setMemoryOpener(items);
+  }, []);
+
+  const refreshCoachHomeState = useCallback(async () => {
+    await Promise.all([
+      refreshConversationStarters(),
+      refreshMemoryOpener(),
+    ]);
+  }, [refreshConversationStarters, refreshMemoryOpener]);
+
   useEffect(() => {
     let cancelled = false;
-    fetchMemoryOpener(2).then(items => {
-      if (!cancelled) setMemoryOpener(items);
-    });
+    void refreshMemoryOpener(() => cancelled);
     return () => { cancelled = true; };
-  }, []);
+  }, [refreshMemoryOpener]);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,19 +217,40 @@ export default function ChatScreen() {
 
   const handleOpenerQuickReply = useCallback((text: string) => {
     isNearBottom.current = true;
-    const extraContext = opener ? buildConversationOpenerReplyContext(opener, text) : undefined;
-    const adherence = opener?.source === 'action_card_due'
+    const activeOpener = opener;
+    if (activeOpener) setOpener(null);
+    const extraContext = activeOpener ? buildConversationOpenerReplyContext(activeOpener, text) : undefined;
+    const adherence = activeOpener?.source === 'action_card_due'
       ? getSelfReportedAdherence(text)
       : null;
-    if (adherence !== null && opener?.source_id != null) {
-      recordCardAdherence(Number(opener.source_id), adherence, 'self_reported').catch(err => {
-        console.warn('[chat] action card adherence 回写失败', err);
-      });
+    const sideEffects: Promise<unknown>[] = [];
+    if (activeOpener?.source === 'action_card_due' && activeOpener.source_id != null) {
+      const cardId = Number(activeOpener.source_id);
+      if (adherence !== null) {
+        sideEffects.push(recordCardAdherence(cardId, adherence, 'self_reported'));
+      } else if (/调整/.test(text)) {
+        sideEffects.push(recordCardDecision(cardId, 'adjusted', 'opener_quick_reply_adjust'));
+      }
     }
-    const messageText = opener ? buildConversationOpenerReplyMessage(opener, text) : text;
+    if (sideEffects.length > 0) {
+      Promise.allSettled(sideEffects)
+        .then(results => {
+          results.forEach(result => {
+            if (result.status === 'rejected') {
+              console.warn('[chat] opener feedback 回写失败', result.reason);
+            }
+          });
+        })
+        .finally(() => {
+          refreshCoachHomeState().catch(err => console.warn('[chat] opener 刷新失败', err));
+        });
+    } else {
+      refreshCoachHomeState().catch(err => console.warn('[chat] opener 刷新失败', err));
+    }
+    const messageText = activeOpener ? buildConversationOpenerReplyMessage(activeOpener, text) : text;
     sendMessage(messageText, null, extraContext ? { extraContext } : undefined);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [opener, sendMessage]);
+  }, [opener, refreshCoachHomeState, sendMessage]);
 
   const loadConversationHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -249,8 +279,8 @@ export default function ChatScreen() {
     exitSelectionMode();
     setContextBadge(null);
     newChat();
-    refreshConversationStarters();
-  }, [exitSelectionMode, newChat, refreshConversationStarters]);
+    void refreshCoachHomeState();
+  }, [exitSelectionMode, newChat, refreshCoachHomeState]);
 
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);

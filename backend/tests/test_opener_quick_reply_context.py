@@ -108,6 +108,42 @@ def test_action_card_opener_missed_reply_records_zero_adherence_without_grading_
     assert card.graded_at is None
 
 
+def test_action_card_opener_adjust_reply_records_adjusted_decision(db):
+    from app.models.action_card import ActionCard
+    from app.services.opener_quick_reply import apply_opener_quick_reply_context
+
+    now = datetime.now(timezone.utc)
+    card = ActionCard(
+        user_id=3,
+        title="暂停跑步休息 7 天",
+        content="...",
+        status="active",
+        check_back_date=now,
+    )
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+
+    note = apply_opener_quick_reply_context(
+        db,
+        user_id=3,
+        message="调整下计划",
+        extra_context=json.dumps({
+            "entry": "conversation_opener_quick_reply",
+            "user_reply": "调整下计划",
+            "source": "action_card_due",
+            "source_id": card.id,
+        }, ensure_ascii=False),
+        now=now,
+    )
+
+    db.refresh(card)
+    assert note is not None
+    assert "记录 user_decision=adjusted" in note
+    assert card.user_decision == "adjusted"
+    assert card.decided_at is not None
+
+
 @pytest.mark.asyncio
 async def test_agent_stream_applies_opener_quick_reply_before_llm(db):
     from app.models.action_card import ActionCard

@@ -28,6 +28,11 @@ def infer_self_reported_adherence(reply: str) -> Optional[int]:
     return None
 
 
+def infer_adjustment_request(reply: str) -> bool:
+    text = (reply or "").strip()
+    return any(token in text for token in ["调整", "改计划", "换方案", "不适合"])
+
+
 def _load_context(extra_context: Optional[str]) -> Optional[dict[str, Any]]:
     if not extra_context:
         return None
@@ -72,7 +77,8 @@ def apply_opener_quick_reply_context(
 
     reply = str(ctx.get("user_reply") or message or "")
     confidence = infer_self_reported_adherence(reply)
-    if confidence is None:
+    wants_adjustment = infer_adjustment_request(reply)
+    if confidence is None and not wants_adjustment:
         return None
 
     card = (
@@ -83,12 +89,24 @@ def apply_opener_quick_reply_context(
     if not card:
         return "入口动作未执行: 没有找到这张 ActionCard，不能声称已完成验证。"
 
-    card.adherence_kind = "self_reported"
-    card.adherence_confidence = confidence
-
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
+
+    if wants_adjustment and confidence is None:
+        card.user_decision = "adjusted"
+        card.decided_at = now
+        card.decision_reason = "opener_quick_reply_adjust"
+        db.commit()
+        return (
+            f"入口动作已执行: ActionCard #{card.id}《{card.title}》"
+            "记录 user_decision=adjusted. 回复用户时必须基于这张卡调整计划，"
+            "不要继续追问同一个检验日问题。"
+        )
+
+    card.adherence_kind = "self_reported"
+    card.adherence_confidence = confidence
+
     check_back = card.check_back_date
     if check_back is not None and check_back.tzinfo is None:
         check_back = check_back.replace(tzinfo=timezone.utc)

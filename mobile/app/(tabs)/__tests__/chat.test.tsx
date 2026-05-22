@@ -6,7 +6,9 @@ const mockOpenHistory = jest.fn();
 const mockPush = jest.fn();
 const mockSendMessage = jest.fn();
 const mockFetchConversationStarters = jest.fn();
+const mockFetchMemoryOpener = jest.fn();
 const mockRecordCardAdherence = jest.fn();
+const mockRecordCardDecision = jest.fn();
 const mockNewChat = jest.fn();
 
 jest.mock('expo-router', () => ({
@@ -48,7 +50,7 @@ jest.mock('../../../services/conversationOpener', () => ({
 }));
 
 jest.mock('../../../services/memoryOpener', () => ({
-  fetchMemoryOpener: jest.fn().mockResolvedValue([]),
+  fetchMemoryOpener: (...args: any[]) => mockFetchMemoryOpener(...args),
 }));
 
 jest.mock('../../../services/llmPreference', () => ({
@@ -58,6 +60,7 @@ jest.mock('../../../services/llmPreference', () => ({
 
 jest.mock('../../../services/actionCards', () => ({
   recordCardAdherence: (...args: any[]) => mockRecordCardAdherence(...args),
+  recordCardDecision: (...args: any[]) => mockRecordCardDecision(...args),
 }));
 
 jest.mock('../../../hooks/useTheme', () => ({
@@ -100,7 +103,9 @@ describe('ChatScreen', () => {
     jest.clearAllMocks();
     mockOpenHistory.mockResolvedValue([]);
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
+    mockFetchMemoryOpener.mockResolvedValue([]);
     mockRecordCardAdherence.mockResolvedValue({});
+    mockRecordCardDecision.mockResolvedValue({});
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -152,6 +157,48 @@ describe('ChatScreen', () => {
     });
     await waitFor(() => {
       expect(mockRecordCardAdherence).toHaveBeenCalledWith(88, 70, 'self_reported');
+    });
+  });
+
+  it('refreshes opener and memory state after opener feedback is clicked', async () => {
+    mockFetchConversationStarters
+      .mockResolvedValueOnce({
+        opener: {
+          text: '今天就是「夜间血氧复盘」的检验日，做到了吗？',
+          source: 'action_card_due',
+          source_id: 89,
+          quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
+          deep_link: '/action-cards/89',
+          priority: 100,
+        },
+        suggestions: null,
+      })
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: ['复盘昨晚夜间血氧和睡眠恢复'],
+      });
+
+    mockFetchMemoryOpener
+      .mockResolvedValueOnce([{ id: 1, type: 'medical', type_label: '医疗', content: '旧记忆' }])
+      .mockResolvedValueOnce([{ id: 2, type: 'medical', type_label: '医疗', content: '更新后的记忆' }]);
+
+    const { getByLabelText, queryByText, getByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('今天就是「夜间血氧复盘」的检验日，做到了吗？')).toBeTruthy();
+      expect(getByText(/旧记忆/)).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('opener-done'));
+    });
+
+    await waitFor(() => {
+      expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
+      expect(mockFetchMemoryOpener).toHaveBeenCalledTimes(2);
+      expect(queryByText('今天就是「夜间血氧复盘」的检验日，做到了吗？')).toBeNull();
+      expect(getByText('复盘昨晚夜间血氧和睡眠恢复')).toBeTruthy();
+      expect(getByText(/更新后的记忆/)).toBeTruthy();
     });
   });
 

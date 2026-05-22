@@ -74,6 +74,41 @@ def test_action_card_already_graded_ignored(db):
     assert out is None or out.source != "action_card_due"
 
 
+def test_action_card_with_self_reported_adherence_ignored(db):
+    """用户已在私教 opener 反馈过做没做, 不应继续展示同一张复盘卡."""
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=1, title="检查夜间血氧", content="...",
+        status="active", source_type="orchestrator",
+        metric_key="spo2_avg", target_value="95",
+        check_back_date=now,
+        adherence_kind="self_reported",
+        adherence_confidence=70,
+    ))
+    db.commit()
+
+    assert compute_conversation_opener(db, user_id=1) is None
+
+
+def test_action_card_with_user_decision_ignored(db):
+    """用户点过调整/接受/拒绝后, opener 不再用这张卡反复追问."""
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=1, title="暂停训练", content="...",
+        status="active", source_type="orchestrator",
+        check_back_date=now,
+        user_decision="adjusted",
+        decided_at=now,
+    ))
+    db.commit()
+
+    assert compute_conversation_opener(db, user_id=1) is None
+
+
 def test_action_card_check_back_far_future_ignored(db):
     """检验日 >2 天的卡不催 (心智负担)."""
     from app.models.action_card import ActionCard
