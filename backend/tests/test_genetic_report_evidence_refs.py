@@ -1,6 +1,7 @@
 """test_genetic_report_evidence_refs —— per-gene system-KB evidence on build_report items."""
 
 import uuid
+from pathlib import Path
 
 from sqlalchemy import event
 
@@ -9,6 +10,8 @@ from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.user import User
 from app.services import genetic_report
 from app.services.auth import auth_service
+from app.services.genetic_registry import KNOWN_SNPS
+from app.services.system_knowledge_importer import import_system_kb_artifacts
 
 
 def _make_user(db, name="evref_user"):
@@ -218,3 +221,65 @@ def test_evidence_refs_query_count_bounded(db):
     populated = [it for it in r["items"] if it.get("evidence_refs")]
     assert len(populated) == 5
     assert query_count["n"] <= 15, f"too many queries: {query_count['n']}"
+
+
+def test_user3_reanalysis_high_medium_hits_have_seed_evidence_refs(db):
+    """Current user 3 high/medium registry hits should be backed by seed KB refs."""
+    user = _make_user(db, "user3_reanalysis")
+    p = _make_profile(db, user.id)
+
+    production_high_medium = {
+        "rs10757274": ("AA", "high"),
+        "rs380390": ("CC", "high"),
+        "rs137853280": ("GG", "high"),
+        "rs121908763": ("GG", "high"),
+        "rs149790377": ("GG", "high"),
+        "rs186045772": ("GG", "high"),
+        "rs5030655": ("II", "high"),
+        "rs1061235": ("AA", "high"),
+        "rs1801133": ("AA", "high"),
+        "rs541862": ("TT", "medium"),
+        "rs1410996": ("AA", "medium"),
+        "rs7454108": ("CT", "medium"),
+        "rs660895": ("AG", "medium"),
+        "rs1800795": ("GG", "medium"),
+        "rs401681": ("CC", "medium"),
+        "rs4244285": ("AG", "medium"),
+        "rs4149056": ("CT", "medium"),
+        "rs12722": ("CC", "medium"),
+        "rs671": ("AG", "medium"),
+        "rs4988235": ("GG", "medium"),
+        "rs1801394": ("AA", "medium"),
+        "rs4654748": ("TT", "medium"),
+        "rs1050450": ("CC", "medium"),
+    }
+
+    for rsid, (genotype, expected_risk) in production_high_medium.items():
+        snp = KNOWN_SNPS[rsid]
+        result_label = snp["map"][genotype][1]
+        _make_variant(
+            db,
+            p,
+            gene=snp["gene"],
+            variant_name=snp["variant"],
+            rsid=rsid,
+            category=snp["category"],
+            genotype=genotype,
+            result_label=result_label,
+            risk_level=expected_risk,
+            variant_nature="risk",
+        )
+
+    artifact_dir = Path(__file__).resolve().parents[1] / "data" / "system_kb_v2_seed"
+    import_system_kb_artifacts(db, artifact_dir, actor="test:user3_reanalysis")
+
+    report = genetic_report.build_report(db, user.id)
+    missing = sorted(
+        f"{it['rsid']}:{it['gene']}"
+        for it in report["items"]
+        if it.get("hit")
+        and it.get("risk_level") in {"high", "medium"}
+        and not it.get("evidence_refs")
+    )
+
+    assert missing == []
