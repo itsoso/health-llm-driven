@@ -63,6 +63,7 @@ class OpenAIProvider(LLMProvider):
         stream=True: 返回 AsyncIterator 逐 token yield
         """
         use_model = model or self.model
+        return_metadata = bool(kwargs.pop("return_metadata", False))
 
         if stream:
             return self._stream_chat(messages, use_model, temperature, max_tokens, **kwargs)
@@ -77,10 +78,13 @@ class OpenAIProvider(LLMProvider):
             stream=False,
             **kwargs,
         )
-        message = response.choices[0].message
+        choice = response.choices[0]
+        finish_reason = choice.finish_reason
+        message = choice.message
         if message.tool_calls:
-            return {
+            result = {
                 "content": message.content,
+                "finish_reason": finish_reason,
                 "tool_calls": [
                     {
                         "id": tc.id,
@@ -93,7 +97,13 @@ class OpenAIProvider(LLMProvider):
                     for tc in message.tool_calls
                 ],
             }
+            return result
         content = message.content or ""
+        if return_metadata:
+            return {
+                "content": content.strip(),
+                "finish_reason": finish_reason,
+            }
         return content.strip()
 
     async def _stream_chat(

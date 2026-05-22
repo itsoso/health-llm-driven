@@ -26,6 +26,7 @@ export interface UIMessage extends ChatMessage {
   model?: string;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
+  completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
 }
 
 let msgCounter = 0;
@@ -42,6 +43,7 @@ function applyMeta(msg: any): Partial<UIMessage> {
     llmRounds: typeof meta.llm_rounds === 'number' ? meta.llm_rounds : undefined,
     model: typeof meta.model === 'string' ? meta.model : undefined,
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
+    completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
   };
 }
 
@@ -313,6 +315,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     try {
       const toolsUsed: Set<string> = new Set();
+      let sawDone = false;
       for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'start') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
@@ -321,6 +324,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
+          sawDone = true;
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)
           setMessages(prev => prev.map(m => m.id === aId ? {
@@ -330,6 +334,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             llmRounds: evt.llmRounds,
             model: evt.model,
             sourcesUsed: evt.sourcesUsed,
+            completionStatus: evt.completionStatus,
           } : m));
           const serverCards = renderServerCards((evt as any).cards);
           if (serverCards.length > 0) {
@@ -349,13 +354,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           }
         } else if (evt.type === 'error') {
           const errMsg = (evt.content || '').trim() || '请求出错，请稍后再试';
-          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + `\n❌ ${errMsg}` } : m));
+          setMessages(prev => prev.map(m => m.id === aId ? {
+            ...m,
+            completionStatus: 'error',
+            content: m.content + `\n❌ ${errMsg}`,
+          } : m));
         }
+      }
+      if (!sawDone) {
+        setMessages(prev => prev.map(m => m.id === aId ? {
+          ...m,
+          completionStatus: 'interrupted',
+          content: m.content
+            ? `${m.content}\n\n[回复中断，已保留已接收内容]`
+            : '[回复中断，请重新提问]',
+        } : m));
       }
     } catch (err: any) {
       const isAbort = err?.message === 'aborted';
       setMessages(prev => prev.map(m => m.id === aId ? {
         ...m,
+        completionStatus: isAbort ? 'interrupted' : 'error',
         content: m.content
           ? (isAbort ? m.content + '\n\n[回复中断，已保留已接收内容]' : m.content + `\n❌ ${err?.message || '请求失败'}`)
           : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${err?.message || '请求失败'}`),

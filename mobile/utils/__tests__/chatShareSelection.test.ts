@@ -1,4 +1,4 @@
-import { buildSelectedChatShareMessage } from '../chatShareSelection';
+import { buildSelectedChatShareMessage, isShareableChatMessage } from '../chatShareSelection';
 
 describe('buildSelectedChatShareMessage', () => {
   it('formats selected chat messages in visible order', () => {
@@ -17,5 +17,17 @@ describe('buildSelectedChatShareMessage', () => {
       '',
       '— 健康 Agent 对话节选',
     ].join('\n'));
+  });
+
+  it('does not share interrupted assistant messages', () => {
+    const interrupted = {
+      id: 'h-20',
+      role: 'assistant' as const,
+      content: '## 检查计划\n| 时间 | 行动 |\n| **报',
+      completionStatus: 'interrupted' as const,
+    };
+
+    expect(isShareableChatMessage(interrupted)).toBe(false);
+    expect(buildSelectedChatShareMessage([interrupted], new Set(['h-20']))).toBe('');
   });
 });

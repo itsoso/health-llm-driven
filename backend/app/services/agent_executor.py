@@ -25,8 +25,28 @@ from app.services.tool_schema_registry import get_health_tools
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 8
+INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
+    """Map provider finish_reason to a small client-facing completion status."""
+    if finish_reason == "length":
+        return "interrupted"
+    if finish_reason in ("stop", "tool_calls", "function_call"):
+        return "complete"
+    if not finish_reason:
+        return "unknown"
+    return "complete"
+
+
+def _append_interrupted_notice(text: str, finish_reason: Optional[str]) -> str:
+    if _completion_status_from_finish_reason(finish_reason) != "interrupted":
+        return text
+    if INTERRUPTED_COMPLETION_NOTICE.strip() in text:
+        return text
+    return f"{text.rstrip()}{INTERRUPTED_COMPLETION_NOTICE}"
 
 
 # 2026-05-14 #4 可解释性 — tool 名 → 中文标签
@@ -331,6 +351,7 @@ class AgentExecutor:
         # 2026-05-13: 计时 + 模型名可观测性 — 每轮 LLM 耗时积累到 done 事件
         llm_rounds_ms: list = []
         model_name: Optional[str] = None
+        final_finish_reason: Optional[str] = None
 
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
@@ -338,6 +359,8 @@ class AgentExecutor:
                 # 调用 LLM（非流式，需要完整解析 tool_call）
                 _round_start = time.time()
                 response = await self._call_llm(messages, tools)
+                if isinstance(response, dict):
+                    final_finish_reason = response.get("finish_reason") or final_finish_reason
                 llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
                 if model_name is None:
                     try:
@@ -450,6 +473,7 @@ class AgentExecutor:
                             yield {"event": "token", "data": {"content": chunk}}
                     else:
                         final_text = response.get("content") or ""
+                        final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
                         for i in range(0, len(final_text), 20):
                             chunk = final_text[i:i + 20]
                             yield {"event": "token", "data": {"content": chunk}}
@@ -470,11 +494,14 @@ class AgentExecutor:
                 })
                 _round_start = time.time()
                 response = await self._call_llm(messages, [])
+                if isinstance(response, dict):
+                    final_finish_reason = response.get("finish_reason") or final_finish_reason
                 llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
                 if isinstance(response, str):
                     final_text = response
                 elif isinstance(response, dict):
                     final_text = response.get("content") or ""
+                    final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
                     if not final_text and response.get("tool_calls"):
                         final_text = (
                             "我已经完成了多轮数据查询，但模型仍尝试继续调用工具。"
@@ -509,6 +536,7 @@ class AgentExecutor:
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         llm_ms_total = sum(llm_rounds_ms)
+        completion_status = _completion_status_from_finish_reason(final_finish_reason)
         evidence_cards = []
         try:
             evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
@@ -529,6 +557,8 @@ class AgentExecutor:
                 "model": model_name,
                 "sources_used": sources_used,
                 "cards": evidence_cards,
+                "finish_reason": final_finish_reason,
+                "completion_status": completion_status,
             }
         except Exception as e:
             logger.warning(f"[agent_executor] write meta 失败: {e}")
@@ -547,6 +577,8 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "mode": "agent",
                 "cards": evidence_cards,
+                "finish_reason": final_finish_reason,
+                "completion_status": completion_status,
             },
         }
 
@@ -857,6 +889,7 @@ class AgentExecutor:
         return await provider.chat(
             messages=messages, model=None,
             temperature=0.3, max_tokens=4000, stream=False, tools=pass_tools,
+            return_metadata=True,
         )
 
     async def _call_llm_direct(
@@ -930,12 +963,14 @@ class AgentExecutor:
             raise RuntimeError("AI 服务暂时繁忙，请稍后再试")
 
         choice = data.get("choices", [{}])[0]
+        finish_reason = choice.get("finish_reason")
         msg = choice.get("message", {})
 
         # 解析 tool_calls
         if msg.get("tool_calls"):
             return {
                 "content": msg.get("content") or "",
+                "finish_reason": finish_reason,
                 "tool_calls": [
                     {
                         "id": tc.get("id", f"call_{i}"),
@@ -948,7 +983,10 @@ class AgentExecutor:
                     for i, tc in enumerate(msg["tool_calls"])
                 ],
             }
-        return msg.get("content") or ""
+        return {
+            "content": msg.get("content") or "",
+            "finish_reason": finish_reason,
+        }
 
     async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """用 vision 模型预分析图片内容，返回文字描述"""

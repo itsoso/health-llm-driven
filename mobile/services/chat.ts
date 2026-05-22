@@ -31,6 +31,7 @@ export interface StreamEvent {
   model?: string;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
+  completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
   cards?: { type: string; data: any }[];
 }
@@ -183,6 +184,7 @@ export async function* streamChat(
             llmRounds: parsed.data?.llm_rounds,
             model: parsed.data?.model,
             sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
+            completionStatus: parsed.data?.completion_status,
             cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
           };
         } else if (parsed.event === 'error') {

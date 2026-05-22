@@ -179,6 +179,10 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.
   // 不引 native WeChat SDK (破坏 OTA 反馈环), 复用 RN Share 已够用.
   const handleShare = async () => {
+    if (item.completionStatus === 'interrupted' || item.completionStatus === 'error') {
+      toast.show('这条回复没有完整结束，暂不能分享。', 'info');
+      return;
+    }
     const message = buildAiShareMessage(displayText);
     if (!message) return;
     Haptics.selectionAsync();

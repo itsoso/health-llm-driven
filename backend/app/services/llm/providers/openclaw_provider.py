@@ -69,6 +69,7 @@ class OpenClawProvider(LLMProvider):
         stream=True: 返回 AsyncIterator，解析 SSE 逐 token yield
         """
         use_model = model or self.model
+        return_metadata = bool(kwargs.get("return_metadata", False))
 
         payload = {
             "model": use_model,
@@ -95,14 +96,22 @@ class OpenClawProvider(LLMProvider):
             resp.raise_for_status()
             data = resp.json()
 
-        message = data.get("choices", [{}])[0].get("message", {})
+        choice = data.get("choices", [{}])[0]
+        message = choice.get("message", {})
+        finish_reason = choice.get("finish_reason")
         tool_calls = message.get("tool_calls")
         if tool_calls:
             return {
                 "content": message.get("content"),
+                "finish_reason": finish_reason,
                 "tool_calls": tool_calls,
             }
         content = message.get("content", "")
+        if return_metadata:
+            return {
+                "content": content.strip(),
+                "finish_reason": finish_reason,
+            }
         return content.strip()
 
     async def _stream_chat(self, payload: Dict[str, Any]) -> AsyncIterator[str]:

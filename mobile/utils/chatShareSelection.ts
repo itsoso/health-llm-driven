@@ -4,6 +4,7 @@ type ShareableChatMessage = {
   content: string;
   streaming?: boolean;
   cardType?: string;
+  completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
 };
 
 const ROLE_LABEL: Record<ShareableChatMessage['role'], string> = {
@@ -12,7 +13,14 @@ const ROLE_LABEL: Record<ShareableChatMessage['role'], string> = {
 };
 
 export function isShareableChatMessage(message: ShareableChatMessage): boolean {
-  return !message.streaming && !message.cardType && Boolean((message.content || '').trim());
+  if (message.streaming || message.cardType || !((message.content || '').trim())) {
+    return false;
+  }
+  if (message.completionStatus === 'interrupted' || message.completionStatus === 'error') {
+    return false;
+  }
+  const content = message.content || '';
+  return !content.includes('[回复因长度限制中断') && !content.includes('[回复中断');
 }
 
 export function buildSelectedChatShareMessage(
