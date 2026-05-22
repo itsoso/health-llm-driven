@@ -56,6 +56,14 @@ function decorateSuggestions(texts: string[] | null | undefined): SuggestionCard
     .slice(0, 4);
 }
 
+function formatMemoryOpenerText(items: MemoryOpenerItem[]): string {
+  return items
+    .map(item => item.content.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' · ');
+}
+
 function getSelfReportedAdherence(reply: string): number | null {
   if (/没做|未做|没有做|不算/.test(reply)) return 0;
   if (/做到|完成|已做|做了/.test(reply)) return 70;
@@ -440,13 +448,25 @@ export default function ChatScreen() {
           ListEmptyComponent={
             <View>
               {memoryOpener.length > 0 && (
-                <View style={styles.memoryOpener}>
-                  <Ionicons name="bookmark-outline" size={14} color={c.brand} />
-                  <Text style={styles.memoryOpenerText}>
-                    我记得你
-                    {memoryOpener.map(m => `: ${m.content}`).join(' /')}
-                  </Text>
-                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.memoryOpener, pressed && styles.memoryOpenerPressed]}
+                  onPress={() => router.push('/memory')}
+                  accessibilityRole="button"
+                  accessibilityLabel="查看和校准 AI 记忆"
+                >
+                  <View style={styles.memoryIconWrap}>
+                    <Ionicons name="bookmark-outline" size={14} color={c.brand} />
+                  </View>
+                  <View style={styles.memoryTextWrap}>
+                    <View style={styles.memoryHeader}>
+                      <Text style={txt.memoryLabel}>记忆线索</Text>
+                      <Text style={txt.memoryAction}>校准</Text>
+                    </View>
+                    <Text style={txt.memoryBody} numberOfLines={3}>
+                      {formatMemoryOpenerText(memoryOpener)}
+                    </Text>
+                  </View>
+                </Pressable>
               )}
               {opener && (
                 <OpenerCard
@@ -557,15 +577,37 @@ function createStyles(c: ColorPalette) {
   // P3-3: 会诊页 opener "我记得你 X" banner
   memoryOpener: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    backgroundColor: c.brandLight,
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: c.bgCard,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.md,
-    marginBottom: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    ...shadows.subtle,
   },
-  memoryOpenerText: { flex: 1, color: c.brand, fontSize: 12, lineHeight: 17 },
+  memoryOpenerPressed: { opacity: 0.72 },
+  memoryIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.brandLight,
+  },
+  memoryTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  memoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 3,
+  },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',
@@ -619,6 +661,9 @@ function createTxt(c: ColorPalette) {
   sugText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
   contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
   historyAction: { fontSize: 12, color: c.labelSecondary, fontWeight: '600' } as TextStyle,
+  memoryLabel: { fontSize: 11, color: c.labelTertiary, fontWeight: '700' } as TextStyle,
+  memoryAction: { fontSize: 11, color: c.brand, fontWeight: '700' } as TextStyle,
+  memoryBody: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 } as TextStyle,
   shareBarTitle: { fontSize: 13, color: c.labelPrimary, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   shareButton: { fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,

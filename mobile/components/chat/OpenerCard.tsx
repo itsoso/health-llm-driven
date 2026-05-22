@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import type { ConversationOpener } from '../../services/conversationOpener';
-import { spacing, radii } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface Props {
@@ -24,11 +24,50 @@ interface Props {
   onQuickReply: (text: string) => void;
 }
 
+const RAW_METRIC_LABELS: Record<string, string> = {
+  spo2_avg: '血氧饱和度',
+  sleep_score: '睡眠评分',
+  resting_hr: '静息心率',
+  hrv_avg: 'HRV',
+};
+
+export function formatOpenerText(text: string): string {
+  let next = (text || '').trim();
+  Object.entries(RAW_METRIC_LABELS).forEach(([key, label]) => {
+    next = next.replace(new RegExp(`\\[${key}\\]\\s*${label}`, 'gi'), label);
+    next = next.replace(new RegExp(`\\[${key}\\]\\s*`, 'gi'), `${label}`);
+  });
+  return next.replace(/\s+/g, ' ');
+}
+
+export function formatQuickReplyLabel(reply: string): string {
+  if (/没做|未做|没有做|不算/.test(reply)) return '未完成';
+  if (/做到|完成|已做|做了/.test(reply)) return '完成了';
+  if (/调整|计划/.test(reply)) return '调整计划';
+  return reply.replace(/[✅❌]/g, '').trim();
+}
+
+function quickReplyIcon(reply: string): keyof typeof Ionicons.glyphMap {
+  if (/没做|未做|没有做|不算/.test(reply)) return 'close-circle-outline';
+  if (/做到|完成|已做|做了/.test(reply)) return 'checkmark-circle-outline';
+  if (/调整|计划/.test(reply)) return 'repeat-outline';
+  return 'chatbubble-ellipses-outline';
+}
+
+function sourceLabel(source: ConversationOpener['source']): string {
+  if (source === 'action_card_due') return '今日回访';
+  if (source === 'anomaly') return '需要留意';
+  if (source === 'case_thread') return '继续跟进';
+  if (source === 'memory_fact') return '基于近期记录';
+  return '主动提醒';
+}
+
 export default function OpenerCard({ opener, onQuickReply }: Props) {
   const { c, isDark } = useTheme();
   const router = useRouter();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
+  const openerText = formatOpenerText(opener.text);
 
   const onCardPress = () => {
     if (opener.deep_link) {
@@ -50,16 +89,22 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
           pressed && opener.deep_link ? styles.cardPressed : null,
         ]}
         accessibilityRole={opener.deep_link ? 'button' : undefined}
-        accessibilityLabel={`AI 主动续接: ${opener.text}`}
+        accessibilityLabel={`AI 主动续接: ${openerText}`}
       >
-        <View style={styles.iconWrap}>
-          <Ionicons name="sparkles" size={14} color={c.brand} />
-        </View>
+        <View style={styles.accent} />
         <View style={styles.textWrap}>
-          <Text style={txt.body}>{opener.text}</Text>
+          <View style={styles.cardHeader}>
+            <View style={styles.sourcePill}>
+              <Ionicons name="sparkles" size={11} color={c.brand} />
+              <Text style={txt.source}>{sourceLabel(opener.source)}</Text>
+            </View>
+          </View>
+          <Text style={txt.body}>{openerText}</Text>
         </View>
         {opener.deep_link ? (
-          <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
+          <View style={styles.chevronWrap}>
+            <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
+          </View>
         ) : null}
       </Pressable>
 
@@ -73,7 +118,8 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
               accessibilityRole="button"
               accessibilityLabel={`一键回复: ${reply}`}
             >
-              <Text style={txt.chip}>{reply}</Text>
+              <Ionicons name={quickReplyIcon(reply)} size={14} color={c.labelSecondary} />
+              <Text style={txt.chip}>{formatQuickReplyLabel(reply)}</Text>
             </Pressable>
           ))}
         </View>
@@ -87,34 +133,62 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     wrap: {
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.lg,
-      gap: spacing.sm,
+      gap: spacing.xs,
     },
     card: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'stretch',
       gap: spacing.sm,
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 2,
-      backgroundColor: c.brandLight,
-      borderRadius: radii.md,
-      borderWidth: isDark ? StyleSheet.hairlineWidth : 0,
-      borderColor: c.fill,
+      paddingVertical: spacing.md,
+      backgroundColor: c.bgCard,
+      borderRadius: radii.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: isDark ? c.fill : c.separator,
+      ...shadows.subtle,
     },
     cardPressed: { opacity: 0.7 },
-    iconWrap: {
-      width: 24, height: 24, borderRadius: 12,
-      backgroundColor: c.bgPrimary,
-      alignItems: 'center', justifyContent: 'center',
+    accent: {
+      width: 3,
+      borderRadius: 3,
+      backgroundColor: c.brand,
+      opacity: 0.75,
     },
     textWrap: { flex: 1 },
-    chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.xs,
+    },
+    sourcePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radii.full,
+      backgroundColor: c.brandLight,
+    },
+    chevronWrap: {
+      alignSelf: 'center',
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.bgPrimary,
+    },
+    chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingLeft: spacing.sm },
     chip: {
-      paddingHorizontal: spacing.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: spacing.sm + 2,
       paddingVertical: 6,
       backgroundColor: c.bgCard,
       borderRadius: radii.full,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.fill,
+      borderColor: c.separator,
     },
     chipPressed: { opacity: 0.6 },
   });
@@ -122,15 +196,21 @@ function createStyles(c: ColorPalette, isDark: boolean) {
 
 function createTxt(c: ColorPalette) {
   return {
+    source: {
+      fontSize: 11,
+      color: c.brand,
+      fontWeight: '700',
+    } as TextStyle,
     body: {
-      fontSize: 14,
-      lineHeight: 20,
+      fontSize: 15,
+      lineHeight: 21,
       color: c.labelPrimary,
-      fontWeight: '500',
+      fontWeight: '600',
     } as TextStyle,
     chip: {
       fontSize: 13,
-      color: c.labelPrimary,
+      color: c.labelSecondary,
+      fontWeight: '600',
     } as TextStyle,
   };
 }
