@@ -34,7 +34,6 @@ import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
 import TrajectorySnapshotPanel from '../../components/dashboard/TrajectorySnapshotPanel';
-import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { EvidenceRefsRow } from '../../components/knowledge';
 import { pushChatWithContext } from '../../utils/agentContext';
@@ -302,9 +301,6 @@ export default function TodayScreen() {
 
         {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
         <EnvironmentCard />
-
-        {/* 数据完整度 — Agent 准确率的因, 缺数据时一目了然该补哪几项 */}
-        <DataFreshnessPanel />
 
         {isLoading && (
           <View style={styles.loading}>
