@@ -4,9 +4,10 @@
   "documents_reviewed": 10,
   "eval_cases_reviewed": 0,
   "from_status": "draft",
+  "orphan_entities_resolved": 27,
   "protocols_reviewed": 10,
-  "relations_reviewed": 155,
-  "reviewed_at": "2026-05-22T08:38:16.195443+00:00",
+  "relations_reviewed": 187,
+  "reviewed_at": "2026-05-22T09:05:00+00:00",
   "reviewer": "codex-2026-05-22",
   "to_status": "reviewed"
 }

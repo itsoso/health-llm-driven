@@ -1,5 +1,5 @@
 {
-  "compiled_at": "2026-05-22T08:37:09.778001+00:00",
+  "compiled_at": "2026-05-22T09:05:00+00:00",
   "counts": {
     "claims": 384,
     "contraindications": 0,
@@ -7,7 +7,7 @@
     "eval_cases": 0,
     "pages": 61,
     "protocols": 10,
-    "relations": 2963
+    "relations": 2995
   },
   "diff": {
     "claims_added": 0,
@@ -15,7 +15,7 @@
     "entities_added": 0,
     "pages_added": 0,
     "protocols_added": 10,
-    "relations_added": 155
+    "relations_added": 187
   },
   "down_dedao_wiki": {
     "compiled_at": "2026-05-19T00:34:54.758003+00:00",
@@ -567,6 +567,12 @@
     ]
   },
   "license_scope": "internal_transformed_claims",
+  "orphan_entity_linker": {
+    "compiled_at": "2026-05-22T09:05:00+00:00",
+    "orphan_entities_resolved": 27,
+    "pipeline": "system_kb_orphan_entity_linker_v1",
+    "relations_added": 32
+  },
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "protocol": "akbp",
   "protocol_compiler": {

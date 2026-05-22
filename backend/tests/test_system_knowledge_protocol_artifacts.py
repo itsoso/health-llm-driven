@@ -4,10 +4,19 @@ from datetime import UTC, datetime
 from app.models.system_knowledge import KBDocument
 from app.services.system_knowledge_importer import import_system_kb_artifacts
 from app.services.system_knowledge_ingest import IngestResult, write_reviewed_artifacts
+from app.services.system_knowledge_service import lint_knowledge_base
 
 
 def _jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_seed_artifacts_do_not_leave_orphan_entities(db):
+    import_system_kb_artifacts(db, "data/system_kb_v2_seed", actor="test")
+
+    report = lint_knowledge_base(db)
+
+    assert report["issues"]["orphan_entities"] == []
 
 
 def test_import_system_kb_protocol_artifacts_preserves_contract_metadata(tmp_path, db):
