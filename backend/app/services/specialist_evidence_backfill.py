@@ -143,6 +143,8 @@ def _infer_patch_for_finding(
 ) -> dict[str, Any] | None:
     if _finding_refs(finding):
         return None
+    if _finding_has_terminal_non_advice_status(finding):
+        return None
 
     text = _finding_text(finding)
     lowered = text.lower()
@@ -169,6 +171,25 @@ def _infer_patch_for_finding(
     if any(token in lowered for token in _DATA_SUMMARY_TOKENS):
         return _status_patch("data_summary")
     return None
+
+
+def _finding_has_terminal_non_advice_status(finding: dict[str, Any]) -> bool:
+    data = finding.get("data") if isinstance(finding.get("data"), dict) else {}
+    resolution = data.get("evidence_resolution") if isinstance(data.get("evidence_resolution"), dict) else {}
+    status = (
+        finding.get("support_status")
+        or data.get("support_status")
+        or resolution.get("support_status")
+    )
+    if str(status or "").strip().lower() not in {"data_gap", "data_summary", "not_applicable"}:
+        return False
+
+    unsupported = finding.get("unsupported")
+    if unsupported is None:
+        unsupported = data.get("unsupported")
+    if unsupported is None:
+        unsupported = resolution.get("unsupported")
+    return unsupported is False
 
 
 def _status_patch(status: str) -> dict[str, Any]:

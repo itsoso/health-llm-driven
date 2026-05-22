@@ -97,10 +97,14 @@ def test_backfill_specialist_evidence_refs_attaches_refs_and_marks_data_gap(db):
     db.commit()
 
     result = backfill_specialist_evidence_refs(db, dry_run=False)
+    second_result = backfill_specialist_evidence_refs(db, dry_run=True)
 
     assert result["audit_logs_updated"] == 1
     assert result["findings_with_refs"] == 3
     assert result["findings_not_applicable"] == 1
+    assert second_result["audit_logs_updated"] == 0
+    assert second_result["findings_with_refs"] == 0
+    assert second_result["findings_not_applicable"] == 0
 
     coverage = get_knowledge_coverage_report(db)["specialist_findings"]
     assert coverage["total"] == 4
