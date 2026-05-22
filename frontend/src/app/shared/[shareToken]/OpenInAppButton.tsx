@@ -30,22 +30,20 @@ export function openSharedInApp(
 
 export default function OpenInAppButton({ shareToken }: { shareToken: string }) {
   const [attempted, setAttempted] = useState(false);
-  const primaryLink = buildSharedDeepLinks(shareToken)[0];
 
   return (
-    <a
-      href={primaryLink}
-      onClick={(event) => {
-        event.preventDefault();
+    <button
+      type="button"
+      onClick={() => {
         setAttempted(true);
         openSharedInApp(shareToken);
       }}
-      className="flex items-center justify-between rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800 shadow-sm hover:bg-teal-100"
+      className="flex w-full cursor-pointer items-center justify-between rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-left text-sm text-teal-800 shadow-sm hover:bg-teal-100"
     >
       <span className="font-medium">
         {attempted ? '正在打开 App...' : '在 App 里打开,体验完整健康助理'}
       </span>
       <span aria-hidden className="text-base">→</span>
-    </a>
+    </button>
   );
 }

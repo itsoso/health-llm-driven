@@ -1,9 +1,18 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest';
-import { buildSharedDeepLinks, openSharedInApp } from './OpenInAppButton';
+import { render, screen } from '@testing-library/react';
+import OpenInAppButton, { buildSharedDeepLinks, openSharedInApp } from './OpenInAppButton';
 
 describe('OpenInAppButton deep links', () => {
+  it('renders without custom-scheme links until the user clicks', () => {
+    render(<OpenInAppButton shareToken="token123" />);
+
+    expect(screen.getByRole('button', { name: /在 App 里打开/ })).toHaveAttribute('type', 'button');
+    expect(document.querySelector('a[href^="health://"]')).toBeNull();
+    expect(document.querySelector('a[href^="mobile://"]')).toBeNull();
+  });
+
   it('uses app schemes first and the universal link as the final fallback', () => {
     expect(buildSharedDeepLinks('abc123')).toEqual([
       'health://shared/abc123',
