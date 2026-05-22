@@ -751,7 +751,7 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/health_db
 1. 检查 `.env` 配置
 2. 推送代码到 GitHub
 3. SSH 到服务器拉取代码
-4. 同步根目录 `.env` 到服务器 `backend/.env`
+4. 同步根目录 `.env` 到服务器 `backend/.env` 前，先在服务器同目录备份为 `.env.backup.YYYYMMDD_HHMMSS`
 5. 安装依赖
 6. 重启服务
 
@@ -766,6 +766,8 @@ vim .env
 # 同步到服务器并重启
 ./deploy.sh -e
 ```
+
+同步前 `deploy.sh` 会自动备份服务器当前 `backend/.env`，并保留最近 20 份同目录备份。长期密钥管理策略见 `docs/ops/secrets-management.md`。
 
 ### 8.6 注意事项
 

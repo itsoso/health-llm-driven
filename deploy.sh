@@ -228,10 +228,33 @@ validate_langbridge_env() {
     fi
 }
 
+# 备份服务器当前 backend/.env，避免环境变量同步覆盖后无法回退
+backup_remote_env() {
+    print_step "备份服务器 backend/.env..."
+
+    ssh "$SERVER" "REMOTE_BACKEND='$REMOTE_PATH/backend' bash -s" <<'REMOTE_ENV_BACKUP'
+set -e
+cd "$REMOTE_BACKEND"
+
+if [ -f .env ]; then
+    BACKUP_TS=$(date +%Y%m%d_%H%M%S)
+    cp -p .env ".env.backup.${BACKUP_TS}"
+    chmod 600 ".env.backup.${BACKUP_TS}" 2>/dev/null || true
+    ls -t .env.backup.* 2>/dev/null | tail -n +21 | xargs -r rm || true
+    echo "已备份: backend/.env.backup.${BACKUP_TS}"
+else
+    echo "服务器 backend/.env 不存在，跳过备份"
+fi
+REMOTE_ENV_BACKUP
+
+    print_success "服务器环境变量备份检查完成"
+}
+
 # 同步环境变量到服务器
 sync_env() {
     print_step "同步 .env 到服务器..."
     validate_langbridge_env
+    backup_remote_env
 
     # 创建临时文件，过滤掉部署配置
     TEMP_ENV=$(mktemp)
