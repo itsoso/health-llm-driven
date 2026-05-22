@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
+import { Keyboard } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
@@ -27,6 +28,10 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     loadLatestConversation: jest.fn(),
     loadConversation: jest.fn(),
   }),
+}));
+
+jest.mock('@react-navigation/bottom-tabs', () => ({
+  useBottomTabBarHeight: () => 83,
 }));
 
 jest.mock('../../../services/chat', () => ({
@@ -214,6 +219,27 @@ describe('ChatScreen', () => {
       expect(getByText('解读我最近一次体检（关注: LDL-C）')).toBeTruthy();
     });
     expect(getByText('帮我提升补剂依从率（近7天完成率 42.9%）')).toBeTruthy();
+  });
+
+  it('moves the chat composer above the iOS keyboard using the keyboard height', async () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+
+    const { getByTestId } = render(<ChatScreen />);
+    await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
+
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 83 });
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
   });
 
   it('refreshes dynamic starter suggestions when starting a new chat', async () => {

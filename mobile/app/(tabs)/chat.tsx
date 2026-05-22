@@ -1,10 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  KeyboardAvoidingView, Platform, TextStyle,
+  Platform, TextStyle,
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
@@ -87,6 +88,7 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -208,11 +210,15 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates?.height || 0);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
@@ -358,7 +364,10 @@ export default function ChatScreen() {
   ), [selectedMessageIds, selectionMode, toggleMessageSelection]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const kbOffset = 0;
+  const tabBarHeight = useBottomTabBarHeight();
+  const bottomSpacerHeight = keyboardVisible
+    ? (Platform.OS === 'ios' ? keyboardHeight : 0)
+    : tabBarHeight;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
@@ -433,7 +442,7 @@ export default function ChatScreen() {
         )}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={kbOffset}>
+      <View style={{ flex: 1 }}>
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -528,8 +537,8 @@ export default function ChatScreen() {
           </View>
         )}
         <ChatInputBar onSend={handleSend} isStreaming={isStreaming} initialText={initialInput} conversationId={conversationId} />
-        {!keyboardVisible && <View style={{ height: 83 }} />}
-      </KeyboardAvoidingView>
+        <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
+      </View>
 
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
