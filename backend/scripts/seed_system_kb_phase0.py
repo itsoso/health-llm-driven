@@ -116,6 +116,11 @@ def _seed_documents() -> list[dict]:
         _entity("gene", "ALDH2", "ALDH2", "乙醛代谢相关基因，影响饮酒反应和健康风险沟通。"),
         _entity("biomarker", "Hcy", "同型半胱氨酸", "一碳代谢和心血管风险沟通中的临床锚点。"),
         _entity("supplement", "5-MTHF", "5-MTHF", "活性叶酸形式，需结合 B12 与 Hcy 结果谨慎使用。"),
+        _entity("intervention", "training-readiness", "训练恢复就绪度", "用于把睡眠、HRV、恢复时间和训练负荷纳入当日训练强度决策。"),
+        _entity("intervention", "training-load", "训练负荷", "急性/慢性训练负荷用于识别脱训、恢复不足和过载风险。"),
+        _entity("intervention", "hydration-target", "饮水目标", "饮水进度用于解释运动与日常补水，不替代医学补液建议。"),
+        _entity("intervention", "protein-target", "蛋白目标", "蛋白目标用于支持训练恢复、减脂和瘦体重保护。"),
+        _entity("condition", "allergic-rhinitis", "过敏性鼻炎", "鼻炎管理应结合症状、环境暴露、用药依从性和冲洗记录。"),
     ]
     claims = [
         _claim(
@@ -170,6 +175,66 @@ def _seed_documents() -> list[dict]:
             ["entity:behavior:alcohol-avoidance"],
             ["system:phase0-curated"],
         ),
+        _claim(
+            "c_training_readiness_high_load_boundary",
+            "intervention",
+            "training-readiness",
+            "Readiness 高分只支持在安全边界内上调训练",
+            "训练就绪度高可以支持较高强度训练，但仍需同时检查近期训练负荷、睡眠、HRV、疼痛和安全告警。",
+            ["twin.wearable.training_readiness_score >= 80"],
+            ["entity:intervention:training-load", "entity:intervention:zone2-training"],
+            ["dedao:exercise-science-recovery", "pubmed:26701923"],
+            confidence=0.74,
+            evidence_level="B",
+        ),
+        _claim(
+            "c_acwr_training_load_boundary",
+            "intervention",
+            "training-load",
+            "ACWR 只作为训练负荷调节信号",
+            "急性/慢性训练负荷比可以帮助调整训练量；偏低提示逐步恢复训练，偏高提示降低强度或增加恢复，但不能单独决定伤病诊断。",
+            ["twin.behavioral.acute_chronic_ratio is not null"],
+            ["entity:intervention:training-readiness"],
+            ["dedao:exercise-science-recovery", "pubmed:26701923"],
+            confidence=0.73,
+            evidence_level="B",
+        ),
+        _claim(
+            "c_hydration_progress_boundary",
+            "intervention",
+            "hydration-target",
+            "饮水进度用于日常补水提示",
+            "饮水量明显低于个人目标时，可以给出分时补水提醒；运动、出汗、气温和肾心疾病边界需要单独考虑。",
+            ["twin.behavioral.water_progress_pct < 90"],
+            ["entity:intervention:hydration-target"],
+            ["dedao:exercise-science-sports-nutrition", "pubmed:17277604"],
+            confidence=0.72,
+            evidence_level="B",
+        ),
+        _claim(
+            "c_protein_target_training_boundary",
+            "intervention",
+            "protein-target",
+            "蛋白目标应结合训练与肾功能边界",
+            "训练或减脂人群的蛋白目标可用于支持恢复和瘦体重保护；若存在肾功能异常或痛风风险，应先做安全边界检查。",
+            ["twin.behavioral.diet_protein_g_today is not null"],
+            ["entity:intervention:protein-target", "entity:biomarker:eGFR"],
+            ["dedao:fengxue-weight-loss", "pubmed:28642676"],
+            confidence=0.75,
+            evidence_level="B",
+        ),
+        _claim(
+            "c_allergic_rhinitis_symptom_tracking_boundary",
+            "condition",
+            "allergic-rhinitis",
+            "鼻炎状态应结合症状和冲洗依从性",
+            "过敏性鼻炎状态提示应结合喷嚏、鼻塞、环境暴露、鼻腔冲洗和用药依从性；不要仅凭单日症状调整处方剂量。",
+            ["twin.conditions.rhinitis.active == true"],
+            ["entity:condition:allergic-rhinitis"],
+            ["dedao:pipi-mama-allergy", "pubmed:29932206"],
+            confidence=0.73,
+            evidence_level="B",
+        ),
     ]
     return entities + claims
 
@@ -182,7 +247,7 @@ def _seed_edges() -> list[dict]:
         ("ACTN3", "claim:c_actn3_training_phenotype_boundary"),
         ("ALDH2", "claim:c_aldh2_alcohol_boundary"),
     ]
-    return [
+    edges = [
         {
             "src_doc_id": f"entity:gene:{gene}",
             "dst_doc_id": claim_id,
@@ -192,6 +257,46 @@ def _seed_edges() -> list[dict]:
         }
         for gene, claim_id in claim_ids
     ]
+    edges.extend(
+        [
+            {
+                "src_doc_id": "entity:intervention:training-readiness",
+                "dst_doc_id": "claim:c_training_readiness_high_load_boundary",
+                "relation": "has_claim",
+                "confidence": 0.9,
+                "source_claim_id": "claim:c_training_readiness_high_load_boundary",
+            },
+            {
+                "src_doc_id": "entity:intervention:training-load",
+                "dst_doc_id": "claim:c_acwr_training_load_boundary",
+                "relation": "has_claim",
+                "confidence": 0.9,
+                "source_claim_id": "claim:c_acwr_training_load_boundary",
+            },
+            {
+                "src_doc_id": "entity:intervention:hydration-target",
+                "dst_doc_id": "claim:c_hydration_progress_boundary",
+                "relation": "has_claim",
+                "confidence": 0.9,
+                "source_claim_id": "claim:c_hydration_progress_boundary",
+            },
+            {
+                "src_doc_id": "entity:intervention:protein-target",
+                "dst_doc_id": "claim:c_protein_target_training_boundary",
+                "relation": "has_claim",
+                "confidence": 0.9,
+                "source_claim_id": "claim:c_protein_target_training_boundary",
+            },
+            {
+                "src_doc_id": "entity:condition:allergic-rhinitis",
+                "dst_doc_id": "claim:c_allergic_rhinitis_symptom_tracking_boundary",
+                "relation": "has_claim",
+                "confidence": 0.9,
+                "source_claim_id": "claim:c_allergic_rhinitis_symptom_tracking_boundary",
+            },
+        ]
+    )
+    return edges
 
 
 if __name__ == "__main__":

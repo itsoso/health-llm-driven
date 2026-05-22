@@ -1126,6 +1126,8 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
 
     labs = getattr(twin, "labs", None)
     physiological = getattr(twin, "physiological", None)
+    behavioral = getattr(twin, "behavioral", None)
+    chronic = getattr(twin, "chronic", None)
     medication = getattr(twin, "medication", None)
     supplement = getattr(twin, "supplement", None)
     goals_state = getattr(twin, "goals", None)
@@ -1160,6 +1162,30 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
             "sleep_duration_hours": getattr(physiological, "sleep_duration_h_latest", None),
             "hrv_latest": getattr(physiological, "hrv_latest", None),
             "resting_hr": getattr(physiological, "resting_hr", None),
+            "training_readiness_score": getattr(physiological, "training_readiness_score", None),
+            "training_readiness_level": getattr(physiological, "training_readiness_level", None),
+        },
+        "behavioral": {
+            "diet_calories_today": getattr(behavioral, "diet_calories_today", None),
+            "diet_protein_g_today": getattr(behavioral, "diet_protein_g_today", None),
+            "water_ml_today": getattr(behavioral, "water_ml_today", None),
+            "water_goal_ml": getattr(behavioral, "water_goal_ml", None),
+            "water_progress_pct": getattr(behavioral, "water_progress_pct", None),
+            "training_load_7d": getattr(behavioral, "training_load_7d", None),
+            "acute_chronic_ratio": getattr(behavioral, "acute_chronic_ratio", None),
+            "acwr_zone": getattr(behavioral, "acwr_zone", None),
+        },
+        "conditions": {
+            "active": getattr(chronic, "active_conditions", []) if chronic is not None else [],
+            "rhinitis": {
+                "active": bool(
+                    (getattr(chronic, "rhinitis_today", None) if chronic is not None else None)
+                    or any(
+                        "rhinitis" in str(condition).lower() or "鼻炎" in str(condition)
+                        for condition in (getattr(chronic, "active_conditions", []) if chronic is not None else [])
+                    )
+                ),
+            },
         },
         "medications": getattr(medication, "active_meds", []) if medication is not None else [],
         "supplements": getattr(supplement, "active_supplements", []) if supplement is not None else [],
@@ -1357,13 +1383,13 @@ def _claim_matches_finding_terms(claim: dict[str, Any], finding_terms: set[str])
 def _specialist_domain_keywords(specialist: str, category: str) -> list[str]:
     text = f"{specialist} {category}"
     if "fuel" in text or "nutrition" in text:
-        return ["nutrition", "metabolic", "fiber", "protein"]
+        return ["nutrition", "metabolic", "fiber", "protein", "hydration", "water"]
     if "supplement" in text:
         return ["supplement", "genetic", "biomarker", "metabolic"]
     if "movement" in text:
         return ["movement", "training", "recovery", "metabolic"]
     if "recovery" in text:
-        return ["sleep", "recovery"]
+        return ["sleep", "recovery", "readiness", "training"]
     if "safety" in text:
         return ["safety", "medication", "gene", "biomarker"]
     if "metabolic" in text:

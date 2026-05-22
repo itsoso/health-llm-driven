@@ -132,12 +132,21 @@ def test_system_kb_twin_payload_maps_pharmacogenomic_variants():
     twin = Obj()
     twin.labs = Obj()
     twin.physiological = Obj()
+    twin.behavioral = Obj()
+    twin.chronic = Obj()
     twin.medication = Obj()
     twin.supplement = Obj()
     twin.goals = Obj()
     twin.goals.active_goals = []
     twin.medication.active_meds = []
     twin.supplement.active_supplements = []
+    twin.physiological.training_readiness_score = 92
+    twin.physiological.training_readiness_level = "high"
+    twin.behavioral.acute_chronic_ratio = 0.72
+    twin.behavioral.water_progress_pct = 25
+    twin.behavioral.diet_protein_g_today = 80
+    twin.chronic.active_conditions = ["allergic rhinitis"]
+    twin.chronic.rhinitis_today = {"sneeze_count": 1}
     twin.genetic = Obj()
     twin.genetic.risk_variants = []
     twin.genetic.protective_variants = []
@@ -162,11 +171,19 @@ def test_system_kb_twin_payload_maps_pharmacogenomic_variants():
         },
     ]
 
-    genetics = system_kb_twin_payload_from_health_twin(twin)["genetics"]
+    payload = system_kb_twin_payload_from_health_twin(twin)
+    genetics = payload["genetics"]
 
     assert genetics["CYP2C19"] == "*2/*2"
     assert genetics["CYP2C19_phenotype"] == "poor"
     assert genetics["SLCO1B1_rs4149056"] == "CT"
+    assert payload["wearable"]["training_readiness_score"] == 92
+    assert payload["wearable"]["training_readiness_level"] == "high"
+    assert payload["behavioral"]["acute_chronic_ratio"] == 0.72
+    assert payload["behavioral"]["water_progress_pct"] == 25
+    assert payload["behavioral"]["diet_protein_g_today"] == 80
+    assert payload["conditions"]["rhinitis"]["active"] is True
+    assert payload["conditions"]["active"] == ["allergic rhinitis"]
 
 
 def test_lookup_for_twin_promotes_contextualized_entity_claims(db):
