@@ -20,7 +20,6 @@ backend/htmlcov
 # Environment files (secrets)
 .env
 .env.local
-.env-online
 backend/.env
 frontend/.env.local
 

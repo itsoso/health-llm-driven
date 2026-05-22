@@ -1677,7 +1677,6 @@ git commit -m "feat: add Docker Compose for one-click deployment"
 *.md
 docs/
 .env
-.env-online
 .env.local
 .claude/
 

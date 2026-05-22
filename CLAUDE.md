@@ -203,7 +203,7 @@ python server.py     # See mcp-server/README.md for tool list
 ./deploy.sh -f   # Frontend only (most common)
 ./deploy.sh -b   # Backend only (also syncs Skills, restarts Celery worker+beat, does DB backup)
 ./deploy.sh -a   # Both (same as no flags)
-./deploy.sh -e   # Sync .env-online to server and restart
+./deploy.sh -e   # Sync .env to server and restart
 ./deploy.sh -r   # Restart services without pulling code
 ./deploy.sh -p   # Push code to GitHub without deploying
 ./deploy.sh -s   # Check service status
@@ -457,7 +457,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | 处理敏感数据（基因、化验、CGM、消息） | `§5 数据安全与隐私` |
 | 写 commit / 发 PR | `§6 代码提交规范` |
 
-本文件范围内只记与架构相关的一条：所有后端路由挂在 `/api/v1` 下;生产密钥在 `.env-online`(不入库,`deploy.sh` 同步)。
+本文件范围内只记与架构相关的一条：所有后端路由挂在 `/api/v1` 下;生产密钥在 `.env`(不入库,`deploy.sh` 同步)。
 
 ## Complexity Budget (复杂度预算)
 

@@ -16,18 +16,18 @@ sentry.io → New Project → 选 `python` (或 fastapi) → 项目名 → 复�
 
 ### 3. 注入到生产服务器
 
-SSH 改 `.env-online`:
+SSH 改 `.env`:
 
 ```bash
 ssh root@39.98.206.178
 cd /opt/health-app/backend
-nano .env-online   # 加入:
+nano .env   # 加入:
 # SENTRY_DSN=https://xxxxx@o123456.ingest.sentry.io/7654321
 # SENTRY_ENVIRONMENT=production
 # SENTRY_TRACES_SAMPLE_RATE=0.05
 ```
 
-或者本地改 `.env-online` 然后 `./deploy.sh -e` 同步.
+或者本地改 `.env` 然后 `./deploy.sh -e` 同步.
 
 ### 4. 重启
 

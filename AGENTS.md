@@ -707,14 +707,14 @@ cat /etc/passwd | awk -F: '$3 == 0 {print}'
 
 ### 8.2 线上配置管理
 
-**配置文件: `.env-online`**
+**配置文件: `.env`**
 
 - 位置: 项目根目录
 - 管理方式: 本地管理，**不被 git 追踪**
 - 用途: 存储线上环境的所有敏感配置
 
 ```bash
-# .env-online 结构示例
+# .env 结构示例
 # -------------------------------------------
 # 服务器信息 (deploy.sh 使用)
 # -------------------------------------------
@@ -748,10 +748,10 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/health_db
 ```
 
 **部署脚本执行流程:**
-1. 检查 `.env-online` 配置
+1. 检查 `.env` 配置
 2. 推送代码到 GitHub
 3. SSH 到服务器拉取代码
-4. 同步 `.env-online` 到服务器 `backend/.env`
+4. 同步根目录 `.env` 到服务器 `backend/.env`
 5. 安装依赖
 6. 重启服务
 
@@ -760,8 +760,8 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/health_db
 当仅修改配置而不需要更新代码时:
 
 ```bash
-# 编辑本地 .env-online
-vim .env-online
+# 编辑本地 .env
+vim .env
 
 # 同步到服务器并重启
 ./deploy.sh -e
@@ -770,9 +770,9 @@ vim .env-online
 ### 8.6 注意事项
 
 - ❌ **禁止** 直接在服务器上修改 `.env` 文件 (会被下次部署覆盖)
-- ❌ **禁止** 将 `.env-online` 提交到 git
+- ❌ **禁止** 将 `.env` 提交到 git
 - ✅ **必须** 通过 `deploy.sh` 进行所有部署操作
-- ✅ **必须** 在本地维护 `.env-online` 的备份
+- ✅ **必须** 在本地维护 `.env` 的备份
 
 ---
 
@@ -794,7 +794,7 @@ vim .env-online
 ### 9.2 连接配置
 
 ```bash
-# .env 或 .env-online 配置
+# .env 配置
 DATABASE_URL=postgresql://user:password@host:5432/health_db
 
 # 示例（本地开发）
@@ -873,7 +873,7 @@ class ExampleModel(Base):
 | 版本 | 日期 | 更新内容 |
 |------|------|---------|
 | 1.2 | 2026-01-25 | 新增数据库规范章节，明确使用 PostgreSQL，废弃 SQLite |
-| 1.1 | 2026-01-25 | 新增部署规范章节，明确 deploy.sh 和 .env-online 使用规范 |
+| 1.1 | 2026-01-25 | 新增部署规范章节，明确 deploy.sh 和 .env 使用规范 |
 | 1.0 | 2026-01-17 | 初始版本，包含安全、日志、测试、性能、数据安全规范 |
 
 ---

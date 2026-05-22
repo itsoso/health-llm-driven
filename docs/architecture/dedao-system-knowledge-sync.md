@@ -212,7 +212,7 @@ python scripts/import_system_kb_v2_artifacts.py
 1. 推送代码
 2. 备份 PostgreSQL
 3. 服务器拉取 main
-4. 同步 .env-online 到 backend/.env
+4. 同步 .env 到 backend/.env
 5. 安装依赖
 6. python scripts/apply_managed_migrations.py
 7. python scripts/seed_system_kb_phase0.py

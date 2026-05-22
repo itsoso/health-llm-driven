@@ -3,8 +3,8 @@
 # ===========================================
 # 健康应用部署脚本
 #
-# 配置文件: .env-online (本地管理，不被 git 追踪)
-# 服务器配置从 .env-online 读取
+# 配置文件: .env (本地管理，不被 git 追踪)
+# 服务器配置从 .env 读取
 # ===========================================
 
 set -e  # 遇到错误立即退出
@@ -18,25 +18,25 @@ NC='\033[0m' # No Color
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_ONLINE_FILE="$SCRIPT_DIR/.env-online"
+ENV_FILE="$SCRIPT_DIR/.env"
 
-# 检查 .env-online 文件是否存在
-if [[ ! -f "$ENV_ONLINE_FILE" ]]; then
-    echo -e "${RED}✗${NC} 错误: .env-online 文件不存在"
-    echo "请创建 .env-online 文件并配置以下内容:"
+# 检查 .env 文件是否存在
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo -e "${RED}✗${NC} 错误: .env 文件不存在"
+    echo "请创建 .env 文件并配置以下内容:"
     echo "  DEPLOY_SERVER=root@your-server-ip"
     echo "  DEPLOY_PATH=/opt/health-app"
     echo "  以及其他环境变量..."
     exit 1
 fi
 
-# 从 .env-online 读取服务器配置
-SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_ONLINE_FILE" | cut -d'=' -f2)
-REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_ONLINE_FILE" | cut -d'=' -f2)
+# 从 .env 读取服务器配置
+SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
+REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
 
 # 验证必要配置
 if [[ -z "$SERVER" || -z "$REMOTE_PATH" ]]; then
-    echo -e "${RED}✗${NC} 错误: .env-online 中缺少必要配置"
+    echo -e "${RED}✗${NC} 错误: .env 中缺少必要配置"
     echo "请确保配置了 DEPLOY_SERVER 和 DEPLOY_PATH"
     exit 1
 fi
@@ -66,7 +66,7 @@ show_help() {
     echo "  -a, --all       部署前端和后端 (默认)"
     echo "  -f, --frontend  仅部署前端"
     echo "  -b, --backend   仅部署后端"
-    echo "  -e, --env       仅同步 .env-online 到服务器"
+    echo "  -e, --env       仅同步 .env 到服务器"
     echo "  -r, --restart   仅重启服务 (不拉取代码)"
     echo "  -p, --push      仅推送代码到 GitHub (不部署)"
     echo "  -s, --status    查看服务器服务状态"
@@ -74,7 +74,7 @@ show_help() {
     echo "  -y, --yes       跳过 mobile/ drift 交互确认"
     echo "  -h, --help      显示此帮助信息"
     echo ""
-    echo "配置文件: .env-online (本地管理，不被 git 追踪)"
+    echo "配置文件: .env (本地管理，不被 git 追踪)"
     echo "  - DEPLOY_SERVER: 服务器地址 (当前: $SERVER)"
     echo "  - DEPLOY_PATH: 部署路径 (当前: $REMOTE_PATH)"
     echo ""
@@ -194,9 +194,9 @@ wait_for_skills_manifest() {
     fi
 }
 
-get_env_online_value() {
+get_env_value() {
     local key="$1"
-    grep -m1 "^${key}=" "$ENV_ONLINE_FILE" 2>/dev/null | cut -d'=' -f2-
+    grep -m1 "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-
 }
 
 validate_langbridge_env() {
@@ -214,28 +214,28 @@ validate_langbridge_env() {
     local missing=()
     local base_url
     local api_key
-    base_url="$(get_env_online_value "LANGBRIDGE_GATEWAY_BASE_URL")"
-    api_key="$(get_env_online_value "LANGBRIDGE_GATEWAY_API_KEY")"
+    base_url="$(get_env_value "LANGBRIDGE_GATEWAY_BASE_URL")"
+    api_key="$(get_env_value "LANGBRIDGE_GATEWAY_API_KEY")"
 
     [[ -n "$base_url" ]] || missing+=("LANGBRIDGE_GATEWAY_BASE_URL")
     [[ -n "$api_key" ]] || missing+=("LANGBRIDGE_GATEWAY_API_KEY")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        print_error ".env-online 缺少 LangBridge Gateway 配置: ${missing[*]}"
+        print_error ".env 缺少 LangBridge Gateway 配置: ${missing[*]}"
         echo "当前代码启用了 langbridge-proxy 商用模型；缺少这些变量会导致 mobile 模型选项被后端过滤。"
-        echo "请在 .env-online 补齐后重新部署。确实要禁用商用模型时，可临时设置 ALLOW_MISSING_LANGBRIDGE_ENV=1。"
+        echo "请在 .env 补齐后重新部署。确实要禁用商用模型时，可临时设置 ALLOW_MISSING_LANGBRIDGE_ENV=1。"
         exit 1
     fi
 }
 
 # 同步环境变量到服务器
 sync_env() {
-    print_step "同步 .env-online 到服务器..."
+    print_step "同步 .env 到服务器..."
     validate_langbridge_env
 
     # 创建临时文件，过滤掉部署配置
     TEMP_ENV=$(mktemp)
-    grep -v "^DEPLOY_SERVER=" "$ENV_ONLINE_FILE" | grep -v "^DEPLOY_PATH=" | grep -v "^#.*服务器信息" | grep -v "^# -.*deploy.sh" > "$TEMP_ENV"
+    grep -v "^DEPLOY_SERVER=" "$ENV_FILE" | grep -v "^DEPLOY_PATH=" | grep -v "^#.*服务器信息" | grep -v "^# -.*deploy.sh" > "$TEMP_ENV"
 
     # 上传到服务器
     scp "$TEMP_ENV" "$SERVER:$REMOTE_PATH/backend/.env"

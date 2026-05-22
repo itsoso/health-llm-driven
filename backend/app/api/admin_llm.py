@@ -184,7 +184,7 @@ def llm_switch(
     临时切换 LLM provider (改进程内 settings + 重置 factory 单例).
     重启进程后会回退到 .env 的 LLM_PROVIDER.
 
-    生产场景永久切换请改 .env-online + 重启服务.
+    生产场景永久切换请改 .env + 重启服务.
     """
     valid = {"openai", "openclaw", "ollama", "tokenplan"}
     if req.provider not in valid:
@@ -208,7 +208,7 @@ def llm_switch(
         "ok": True,
         "from": old,
         "to": req.provider,
-        "note": "进程内切换. 永久切换请改 .env-online 并重启服务",
+        "note": "进程内切换. 永久切换请改 .env 并重启服务",
     }
 
 

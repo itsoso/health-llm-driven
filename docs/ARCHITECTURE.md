@@ -444,13 +444,13 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 - `providers/openclaw_provider.py` — 内部 OpenClaw 网关
 - `usage_tracker.py` — wrap provider, 记录 token 用量
 
-可选模型 (当前 `.env-online`):
+可选模型 (当前 `.env`):
 - **OpenAI proxy**: gpt-4o-mini (fast), gpt-4o (balanced)
 - **TokenPlan (阿里百炼套餐)**: qwen3.6-plus (reasoning), deepseek-v3.2, glm-5, MiniMax-M2.5
 - **Moonshot (需独立 key)**: kimi-k2
 - **OpenClaw**: openclaw-main
 
-切换: `POST /admin/llm/select-model {model_id}` (admin, 进程内, 重启失效; 永久改 `.env-online`)。
+切换: `POST /admin/llm/select-model {model_id}` (admin, 进程内, 重启失效; 永久改 `.env`)。
 
 Admin UI: `mobile/app/admin-llm.tsx` 含 benchmark 按钮 (`/admin/llm/benchmark/{id}?runs=3`), 显示 3 次延迟 + 平均。
 
@@ -520,7 +520,7 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
     │
     ├─ git push (GitHub + kuaishou GitLab 双推)
     ├─ DB 备份 (保留最近 10 份)
-    ├─ 同步 .env-online (scp)
+    ├─ 同步 .env (scp)
     ├─ ssh 服务器 → git pull + pip install
     ├─ python scripts/apply_managed_migrations.py
     ├─ 重启 systemd (health-backend) + Celery worker/beat
@@ -606,7 +606,7 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 
 ## 十四、配置与秘钥
 
-### 14.1 核心 env (.env-online)
+### 14.1 核心 env (.env)
 
 ```
 SECRET_KEY=<32+ chars>

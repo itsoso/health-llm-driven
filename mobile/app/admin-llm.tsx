@@ -173,7 +173,7 @@ export default function AdminLlmScreen() {
               style={[styles.modelCard, m.is_active && styles.modelCardActive, !m.available && styles.modelCardDisabled]}
               onPress={() => {
                 if (!m.available) {
-                  Alert.alert('不可用', '该模型缺少 API Key, 请先在 .env-online 配置');
+                  Alert.alert('不可用', '该模型缺少 API Key, 请先在 .env 配置');
                   return;
                 }
                 if (m.is_active) return;

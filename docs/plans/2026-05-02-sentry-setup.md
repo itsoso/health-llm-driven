@@ -13,11 +13,11 @@
    - **`health-mobile`** — Platform 选 React Native
 4. 每个项目创建后会显示一个 **DSN** (`https://xxx@o000.ingest.sentry.io/0000000`), 复制保存两个
 
-### 步骤 2: 后端 DSN 写入 `.env-online`
+### 步骤 2: 后端 DSN 写入 `.env`
 
 ```bash
 # 本地编辑 (仓库根)
-vi .env-online
+vi .env
 # 或你平时怎么改
 ```
 
@@ -32,7 +32,7 @@ SENTRY_TRACES_SAMPLE_RATE=0.1
 
 ```bash
 cd /Users/liqiuhua/work/personal/health-llm-driven
-./deploy.sh -e   # 只同步 .env-online 到服务器 + 重启 backend (不拉代码)
+./deploy.sh -e   # 只同步 .env 到服务器 + 重启 backend (不拉代码)
 ```
 
 ### 步骤 4: 验证生效
@@ -70,7 +70,7 @@ Mobile Sentry SDK 已安装但 **DSN 注入需要 EAS build** (不是 OTA 能带
    ```
 2. 下次 `eas build --profile production` 时会 bake 进包
 
-**不要** 把 DSN commit 进 git (它相当于 public API key 但泄露还是不优雅). 放在 `.env-online` / `eas secret` 里.
+**不要** 把 DSN commit 进 git (它相当于 public API key 但泄露还是不优雅). 放在 `.env` / `eas secret` 里.
 
 ## 验收
 
