@@ -376,17 +376,30 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
     """按类别分组的基因变异。"""
     try:
         from app.models.genetic_data import GeneticVariant
+        from app.services.genetic_report import _resolve_active_profile
+        from app.services.genetic_risk import clinical_status, effective_risk_level
 
+        profile = _resolve_active_profile(db, user_id)
+        if profile is None:
+            return {"total": 0, "drug_sensitivity": [], "risk": [], "protective": []}
         variants = (
             db.query(GeneticVariant)
-            .filter(GeneticVariant.user_id == user_id)
+            .filter(
+                GeneticVariant.user_id == user_id,
+                GeneticVariant.profile_id == profile.id,
+            )
+            .order_by(GeneticVariant.id.asc())
             .all()
         )
 
-        # 按 gene_name + variant_name 去重，保留首条（risk_level desc 排序后优先高风险）
+        # 按 rsid 优先去重；老数据无 rsid 时退回 gene + variant + category。
+        # 只读取活跃 profile，避免历史上传结果污染 Agent/Twin。
         seen = {}
         for v in variants:
-            key = (v.gene_name, getattr(v, "variant_name", None))
+            key = (
+                (getattr(v, "rsid", None) or "").lower()
+                or f"{v.gene_name}:{getattr(v, 'variant_name', None)}:{getattr(v, 'category', None)}"
+            )
             if key not in seen:
                 seen[key] = v
         unique_variants = list(seen.values())
@@ -400,13 +413,29 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
         }
 
         for v in unique_variants:
+            raw_risk = getattr(v, "risk_level", None) or "info"
+            display_risk = effective_risk_level(
+                raw_risk,
+                getattr(v, "category", None),
+                getattr(v, "evidence_level", None),
+                getattr(v, "health_implications", None),
+            )
             item = {
+                "rsid": getattr(v, "rsid", None),
                 "gene_name": v.gene_name,
                 "variant_name": getattr(v, "variant_name", None),
                 "genotype": getattr(v, "genotype", None),
                 "result_label": getattr(v, "result_label", None),
-                "risk_level": getattr(v, "risk_level", None),
+                "risk_level": display_risk,
+                "raw_risk_level": raw_risk,
                 "category": getattr(v, "category", None),
+                "evidence_level": getattr(v, "evidence_level", None),
+                "mapping_source": getattr(v, "mapping_source", None),
+                "clinical_status": clinical_status(
+                    getattr(v, "category", None),
+                    getattr(v, "evidence_level", None),
+                    getattr(v, "health_implications", None),
+                ),
             }
             category = (getattr(v, "category", "") or "").lower()
             nature = (getattr(v, "variant_nature", "") or "").lower()

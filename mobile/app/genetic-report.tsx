@@ -425,7 +425,7 @@ function SnpCard({
   c: any;
 }) {
   const isMiss = !item.hit;
-  const riskColor = item.risk_level ? RISK_COLORS[item.risk_level] : null;
+  const riskColor = getRiskBadge(item);
 
   return (
     <TouchableOpacity
@@ -507,6 +507,13 @@ function SnpCard({
       )}
     </TouchableOpacity>
   );
+}
+
+function getRiskBadge(item: GeneticReportItem) {
+  if (item.clinical_status === 'requires_confirmation') {
+    return { bg: '#E0F2FE', text: '#075985', label: '待确认' };
+  }
+  return item.risk_level ? RISK_COLORS[item.risk_level] : null;
 }
 
 // G-W3 Why 面板里单条建议行 — 显示 title + outcome chip + effect_size

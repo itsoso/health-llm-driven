@@ -562,33 +562,67 @@ def _build_context(db: Session, user_id: int) -> str:
     # ── 13. 基因特征（区分风险/优势/用药安全）────────────────
     try:
         from app.models.genetic_data import GeneticVariant
-        genetic_variants = db.query(GeneticVariant).filter(
-            GeneticVariant.user_id == user_id
-        ).order_by(
-            # 用药安全基因最优先，然后风险基因，最后优势/中性
-            case(
-                (GeneticVariant.category == "drug_sensitivity", 0),
-                (GeneticVariant.variant_nature == "risk", 1),
-                (GeneticVariant.variant_nature == "neutral", 2),
-                (GeneticVariant.variant_nature == "protective", 3),
-                else_=4,
-            )
-        ).limit(12).all()
+        from app.services.genetic_report import _resolve_active_profile
+        from app.services.genetic_risk import clinical_status, effective_risk_level
 
-        if genetic_variants:
+        active_profile = _resolve_active_profile(db, user_id)
+        genetic_variants = []
+        if active_profile is not None:
+            genetic_variants = db.query(GeneticVariant).filter(
+                GeneticVariant.user_id == user_id,
+                GeneticVariant.profile_id == active_profile.id,
+            ).order_by(
+                # 用药安全基因最优先，然后风险基因，最后优势/中性
+                case(
+                    (GeneticVariant.category == "drug_sensitivity", 0),
+                    (GeneticVariant.variant_nature == "risk", 1),
+                    (GeneticVariant.variant_nature == "neutral", 2),
+                    (GeneticVariant.variant_nature == "protective", 3),
+                    else_=4,
+                ),
+                GeneticVariant.id.asc(),
+            ).limit(12).all()
+
+        seen_gene_keys = set()
+        unique_variants = []
+        for v in genetic_variants:
+            key = (
+                (getattr(v, "rsid", None) or "").lower()
+                or f"{v.gene_name}:{getattr(v, 'variant_name', None)}:{getattr(v, 'category', None)}"
+            )
+            if key in seen_gene_keys:
+                continue
+            seen_gene_keys.add(key)
+            unique_variants.append(v)
+
+        if unique_variants:
             drug_genes = []
             risk_genes = []
             protective_genes = []
-            for v in genetic_variants:
+            confirmation_genes = []
+            for v in unique_variants:
                 nature = getattr(v, "variant_nature", "neutral") or "neutral"
+                effective_risk = effective_risk_level(
+                    getattr(v, "risk_level", None),
+                    getattr(v, "category", None),
+                    getattr(v, "evidence_level", None),
+                    getattr(v, "health_implications", None),
+                )
+                status = clinical_status(
+                    getattr(v, "category", None),
+                    getattr(v, "evidence_level", None),
+                    getattr(v, "health_implications", None),
+                )
                 label = f"{v.gene_name} {v.genotype}({v.result_label})"
                 if v.category == "drug_sensitivity":
                     drug_genes.append(label)
+                elif status == "requires_confirmation":
+                    confirmation_genes.append(label)
                 elif nature == "risk":
                     risk_genes.append(label)
                 elif nature == "protective":
                     protective_genes.append(f"{v.gene_name} {v.genotype}[优势]({v.result_label})")
-                else:
+                elif effective_risk in {"high", "medium"}:
                     risk_genes.append(label)  # neutral 归入普通展示
 
             gene_parts = []
@@ -596,9 +630,12 @@ def _build_context(db: Session, user_id: int) -> str:
                 gene_parts.append(f"⚠️用药安全: {' | '.join(drug_genes)}")
             if risk_genes:
                 gene_parts.append(f"风险基因: {' | '.join(risk_genes)}")
+            if confirmation_genes:
+                gene_parts.append(f"待确认筛查: {' | '.join(confirmation_genes)}")
             if protective_genes:
                 gene_parts.append(f"优势基因: {' | '.join(protective_genes)}")
-            parts.append("基因特征:\n" + "\n".join(gene_parts))
+            if gene_parts:
+                parts.append("基因特征:\n" + "\n".join(gene_parts))
     except Exception:
         pass
 

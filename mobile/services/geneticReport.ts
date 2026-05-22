@@ -27,7 +27,10 @@ export interface GeneticReportItem {
   genotype: string | null;
   result_label: string | null;
   risk_level: 'high' | 'medium' | 'low' | 'info' | null;
+  raw_risk_level?: 'high' | 'medium' | 'low' | 'info' | null;
   variant_nature: 'protective' | 'risk' | 'neutral' | null;
+  evidence_level?: string | null;
+  clinical_status?: 'requires_confirmation' | 'pharmacogenomic_screening' | 'screening' | string | null;
   related_cards: RelatedCard[];
   evidence_refs?: string[];
 }
@@ -117,7 +120,9 @@ export interface GeneticPredictions {
       genotype: string | null;
       result_label: string | null;
       risk_level: 'high' | 'medium' | 'low' | 'info';
+      raw_risk_level?: 'high' | 'medium' | 'low' | 'info';
       evidence_level: string;
+      clinical_status?: string;
       message: string;
     }[];
   };

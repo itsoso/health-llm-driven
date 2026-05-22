@@ -303,6 +303,33 @@ def test_clusters_aggregate_hits_per_category(db):
     assert exercise["hits"] == 1
 
 
+def test_requires_confirmation_disease_is_not_counted_as_high_risk(db):
+    """Rare disease screening hits need confirmation, so they must not inflate high-risk counts."""
+    user = _make_user(db, "confirm_disease")[0]
+    p = _make_profile(db, user.id)
+    _make_variant(
+        db,
+        p,
+        gene="CFTR",
+        variant_name="CFTR 相关疾病筛查位点",
+        rsid="rs121908763",
+        category="disease_risk",
+        genotype="GG",
+        result_label="CFTR 风险等位纯合筛查阳性，需临床测序/汗氯确认",
+        risk_level="high",
+        evidence_level="requires_confirmation",
+    )
+
+    r = genetic_report.build_report(db, user.id)
+    cftr = next(it for it in r["items"] if it["rsid"] == "rs121908763")
+    disease_cluster = next(cl for cl in r["clusters"] if cl["category"] == "disease_risk")
+
+    assert cftr["raw_risk_level"] == "high"
+    assert cftr["risk_level"] == "info"
+    assert cftr["clinical_status"] == "requires_confirmation"
+    assert disease_cluster["high_count"] == 0
+
+
 def test_clusters_sorted_by_high_then_medium(db):
     """有 high 命中的 cluster 排前面."""
     user = _make_user(db, "clusters_sort")[0]

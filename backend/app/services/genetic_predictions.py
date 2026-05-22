@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.genetic_data import GeneticVariant
 from app.models.genetic_data import GeneticProfile
 from app.services.genetic_report import _resolve_active_profile
+from app.services.genetic_risk import clinical_status, effective_risk_level
 
 
 _RISK_WEIGHT = {"high": 0, "medium": 1, "low": 2, "info": 3}
@@ -136,14 +137,22 @@ LEARNING_RULES: tuple[Dict[str, Any], ...] = (
 
 
 def _variant_to_risk(v: GeneticVariant) -> Dict[str, Any]:
+    raw_risk = v.risk_level or "info"
     return {
         "rsid": v.rsid,
         "gene": v.gene_name,
         "variant_name": v.variant_name,
         "genotype": v.genotype,
         "result_label": v.result_label,
-        "risk_level": v.risk_level or "info",
+        "risk_level": effective_risk_level(
+            raw_risk,
+            v.category,
+            v.evidence_level,
+            v.health_implications,
+        ),
+        "raw_risk_level": raw_risk,
         "evidence_level": v.evidence_level or "screening",
+        "clinical_status": clinical_status(v.category, v.evidence_level, v.health_implications),
         "message": "筛查级遗传相关性提示；请结合体检、家族史、症状和医生判断。",
     }
 
@@ -372,9 +381,18 @@ def build_genetic_predictions(db: Session, user_id: int) -> Dict[str, Any]:
         )
     disease_variants = [
         v for v in variants
-        if v.category == "disease_risk" and (v.risk_level or "info") in {"high", "medium"}
+        if v.category == "disease_risk"
+        and effective_risk_level(v.risk_level, v.category, v.evidence_level, v.health_implications)
+        in {"high", "medium"}
     ]
-    disease_variants.sort(key=lambda v: (_RISK_WEIGHT.get(v.risk_level or "info", 3), v.gene_name, v.rsid or ""))
+    disease_variants.sort(key=lambda v: (
+        _RISK_WEIGHT.get(
+            effective_risk_level(v.risk_level, v.category, v.evidence_level, v.health_implications),
+            3,
+        ),
+        v.gene_name,
+        v.rsid or "",
+    ))
 
     return {
         "profile": {

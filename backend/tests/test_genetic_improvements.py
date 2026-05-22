@@ -168,6 +168,91 @@ def test_genetic_predictions_height_disease_and_education_guard(client, db, auth
     assert body["disease_risk"]["top_risks"][0]["risk_level"] == "high"
 
 
+def test_genetic_predictions_excludes_confirmation_only_monogenic_hits(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    profile = _profile(db, user.id)
+    _variant(
+        db,
+        profile,
+        rsid="rs121908763",
+        category="disease_risk",
+        gene_name="CFTR",
+        variant_name="CFTR 相关疾病筛查位点",
+        genotype="GG",
+        result_label="CFTR 风险等位纯合筛查阳性，需临床测序/汗氯确认",
+        risk_level="high",
+        evidence_level="requires_confirmation",
+    )
+    _variant(
+        db,
+        profile,
+        rsid="rs380390",
+        category="disease_risk",
+        gene_name="AMD",
+        variant_name="年龄相关黄斑变性 GWAS 位点",
+        genotype="CC",
+        result_label="年龄相关黄斑变性遗传关联信号显著升高",
+        risk_level="high",
+        evidence_level="screening",
+    )
+
+    res = client.get("/api/v1/genetic/predictions/me", headers=headers)
+
+    assert res.status_code == 200, res.text
+    genes = [item["gene"] for item in res.json()["disease_risk"]["top_risks"]]
+    assert genes == ["AMD"]
+
+
+def test_twin_genetic_collector_uses_active_profile_and_deduplicates(db, auth_user_and_headers):
+    from app.twin._collectors import fetch_genetic_variants_categorized
+
+    user, _headers = auth_user_and_headers
+    old_profile = _profile(db, user.id, provider="old")
+    active_profile = _profile(db, user.id, provider="new")
+    _variant(
+        db,
+        old_profile,
+        rsid="rs1801133",
+        category="nutrition",
+        gene_name="MTHFR",
+        variant_name="C677T",
+        genotype="CT",
+        result_label="旧档案中度",
+        risk_level="medium",
+        variant_nature="risk",
+    )
+    _variant(
+        db,
+        active_profile,
+        rsid="rs1801133",
+        category="nutrition",
+        gene_name="MTHFR",
+        variant_name="C677T",
+        genotype="TT",
+        result_label="当前档案显著减弱",
+        risk_level="high",
+        variant_nature="risk",
+    )
+    _variant(
+        db,
+        active_profile,
+        rsid="rs1801133",
+        category="nutrition",
+        gene_name="MTHFR",
+        variant_name="C677T",
+        genotype="TT",
+        result_label="当前档案重复记录",
+        risk_level="high",
+        variant_nature="risk",
+    )
+
+    result = fetch_genetic_variants_categorized(db, user.id)
+
+    assert result["total"] == 1
+    assert result["risk"][0]["genotype"] == "TT"
+    assert result["risk"][0]["result_label"] == "当前档案显著减弱"
+
+
 def test_genetic_predictions_reports_exploratory_height_and_education_markers(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     profile = _profile(db, user.id)

@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from app.models.action_card import ActionCard
 from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.genetic_data import GeneticProfile, GeneticVariant
+from app.services.genetic_risk import clinical_status, effective_risk_level
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +352,13 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
 
         if v is not None:
             hits += 1
+            raw_risk = v.risk_level or "info"
+            risk_level = effective_risk_level(
+                raw_risk,
+                v.category,
+                getattr(v, "evidence_level", None),
+                v.health_implications,
+            )
             # G-W3: 关联建议
             keys = _gene_to_card_match_keys(gene, variant_label)
             related = [c for c in user_cards if _card_matches_gene(c, keys)][:_RELATED_CARDS_LIMIT]
@@ -364,10 +372,16 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
                 "genotype": v.genotype,
                 "raw_genotype": getattr(v, "raw_genotype", None),
                 "result_label": v.result_label,
-                "risk_level": v.risk_level or "info",
+                "risk_level": risk_level,
+                "raw_risk_level": raw_risk,
                 "variant_nature": v.variant_nature or "neutral",
                 "mapping_source": getattr(v, "mapping_source", None),
                 "evidence_level": getattr(v, "evidence_level", None),
+                "clinical_status": clinical_status(
+                    v.category,
+                    getattr(v, "evidence_level", None),
+                    v.health_implications,
+                ),
                 "health_implications": v.health_implications,
                 "related_cards": [_card_to_dict(c) for c in related],
             })
@@ -383,9 +397,11 @@ def build_report(db: Session, user_id: int) -> Dict[str, Any]:
                 "raw_genotype": None,
                 "result_label": None,
                 "risk_level": None,
+                "raw_risk_level": None,
                 "variant_nature": None,
                 "mapping_source": None,
                 "evidence_level": None,
+                "clinical_status": None,
                 "health_implications": None,
                 "related_cards": [],
             })
@@ -693,8 +709,10 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
         "raw_genotype": None,
         "result_label": None,
         "risk_level": None,
+        "raw_risk_level": None,
         "mapping_source": None,
         "evidence_level": None,
+        "clinical_status": None,
         "health_implications": None,
     }
     related_cards: List[Dict[str, Any]] = []
@@ -708,14 +726,26 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
         )
         v = _match_variant_for_snp(variants, snp_static)
         if v is not None:
+            raw_risk = v.risk_level or "info"
             user_item = {
                 "hit": True,
                 "genotype": v.genotype,
                 "raw_genotype": getattr(v, "raw_genotype", None),
                 "result_label": v.result_label,
-                "risk_level": v.risk_level or "info",
+                "risk_level": effective_risk_level(
+                    raw_risk,
+                    v.category,
+                    getattr(v, "evidence_level", None),
+                    v.health_implications,
+                ),
+                "raw_risk_level": raw_risk,
                 "mapping_source": getattr(v, "mapping_source", None),
                 "evidence_level": getattr(v, "evidence_level", None),
+                "clinical_status": clinical_status(
+                    v.category,
+                    getattr(v, "evidence_level", None),
+                    v.health_implications,
+                ),
                 "health_implications": v.health_implications,
             }
             user_cards = _fetch_related_cards(db, user_id)
