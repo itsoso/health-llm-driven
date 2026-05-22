@@ -129,6 +129,72 @@ def test_gene_knowledge_audit_next_action_names_remaining_tierx_gaps():
     assert not any("CFTR/ATP7B" in action for action in report["next_actions"])
 
 
+def test_gene_knowledge_audit_next_action_names_remaining_tier0_gaps():
+    payload = {
+        "version": "tier0-test",
+        "compiled_at": "2026-05-22T12:00:00+08:00",
+        "entities": {
+            "gene": {
+                gene: {"entity_id": gene, "sources": ["cpic:test"]}
+                for gene in (
+                    "HLA-A*31:01",
+                    "HLA-B*15:02",
+                    "HLA-B*58:01",
+                    "CYP2C19",
+                    "CYP2D6",
+                    "CYP2C9",
+                    "SLCO1B1",
+                )
+            }
+        },
+        "claims": [
+            {
+                "claim_id": f"c_{gene.lower().replace('*', '').replace(':', '')}",
+                "entity_id": gene,
+                "title": f"{gene} 用药边界",
+                "sources": ["cpic:test"],
+                "applies_when": [f"twin.genetics.{gene} == 'positive'"],
+                "drug_rules": {"phenotype": "positive", "avoid": [{"drug": "example"}]},
+                "body": "处方决策必须由医生完成。边界：不替代医生。",
+            }
+            for gene in (
+                "HLA-A*31:01",
+                "HLA-B*15:02",
+                "HLA-B*58:01",
+                "CYP2C19",
+                "CYP2D6",
+                "CYP2C9",
+                "SLCO1B1",
+            )
+        ],
+        "gene_rules": {
+            gene: {"positive": {"avoid": [{"drug": "example"}]}}
+            for gene in (
+                "HLA-A*31:01",
+                "HLA-B*15:02",
+                "HLA-B*58:01",
+                "CYP2C19",
+                "CYP2D6",
+                "CYP2C9",
+                "SLCO1B1",
+            )
+        },
+        "snp_registry": {},
+    }
+
+    report = audit_gene_knowledge(payload)
+
+    assert report["tiers"]["tier0_pharmacogenomics"]["missing_rule_genes"] == [
+        "VKORC1",
+        "G6PD",
+        "DPYD",
+        "TPMT",
+        "NUDT15",
+    ]
+    assert any("VKORC1/G6PD/DPYD/TPMT/NUDT15" in action for action in report["next_actions"])
+    assert not any("HLA-B*58:01/HLA-B*15:02" in action for action in report["next_actions"])
+
+
 def test_audit_gene_knowledge_cli_writes_markdown_report(tmp_path):
     source = tmp_path / "gene_knowledge.json"
     output = tmp_path / "report.md"

@@ -259,8 +259,9 @@ def audit_gene_knowledge(payload: dict[str, Any]) -> dict[str, Any]:
     tier0 = report["tiers"]["tier0_pharmacogenomics"]
     tierx = report["tiers"]["tierx_confirmation_only"]
     if tier0["missing_rule_genes"]:
+        missing_tier0 = "/".join(tier0["missing_rule_genes"])
         report["next_actions"].append(
-            "补齐 Tier 0 用药安全规则，优先 HLA-B*58:01/HLA-B*15:02/CYP2D6/DPYD/TPMT/NUDT15。"
+            f"补齐 Tier 0 用药安全规则：{missing_tier0}。"
         )
     if tierx["missing_claim_genes"]:
         missing_tierx = "/".join(tierx["missing_claim_genes"])

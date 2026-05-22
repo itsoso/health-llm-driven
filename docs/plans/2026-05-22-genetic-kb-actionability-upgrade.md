@@ -16,17 +16,17 @@ Generated report: `docs/reports/2026-05-22-gene-knowledge-audit.md`
 
 Current `down-dedao/artifacts/gene_knowledge.json`:
 
-- Gene entities: 16
+- Gene entities: 19
 - SNP registry entries: 26
-- Claims: 20
-- Gene rules: 10
-- Tier 0 drug-safety coverage: 4/12
+- Claims: 23
+- Gene rules: 13
+- Tier 0 drug-safety coverage: 7/12
 - Tier 1 gene + lab loop coverage: 7/7
 - Tier X confirmation-only coverage: 2/4
 
 Main gaps:
 
-- Missing Tier 0 rules: `HLA-A*31:01`, `HLA-B*15:02`, `HLA-B*58:01`, `VKORC1`, `G6PD`, `DPYD`, `TPMT`, `NUDT15`
+- Missing Tier 0 rules: `VKORC1`, `G6PD`, `DPYD`, `TPMT`, `NUDT15`
 - Missing confirmation-only boundaries: `BRCA1`, `BRCA2`
 - Current quality gates pass for existing claims: no missing `applies_when`, no missing boundary text, no drug claim missing clinician boundary
 
@@ -76,12 +76,17 @@ Status: `CFTR` and `ATP7B` completed on 2026-05-22. Remaining Tier X gaps are `B
 
 ## Task 3: Add Highest-Value HLA Medication Rules
 
+Status: completed on 2026-05-22 for `HLA-A*31:01`, `HLA-B*15:02`, and `HLA-B*58:01`.
+
 **Source files in `down-dedao`:**
 
-- Create: `wiki/entities/gene/HLA-A*31:01.md`
-- Create: `wiki/entities/gene/HLA-B*15:02.md`
-- Create: `wiki/entities/gene/HLA-B*58:01.md`
-- Create claims for carbamazepine and allopurinol safety boundaries.
+- Created: `wiki/entities/gene/HLA-A*31:01.md`
+- Created: `wiki/entities/gene/HLA-B*15:02.md`
+- Created: `wiki/entities/gene/HLA-B*58:01.md`
+- Created: `wiki/claims/c_hla_a3101_carbamazepine_boundary.md`
+- Created: `wiki/claims/c_hla_b1502_carbamazepine_oxcarbazepine_boundary.md`
+- Created: `wiki/claims/c_hla_b5801_allopurinol_boundary.md`
+- Created drug entities for `carbamazepine`, `oxcarbazepine`, `allopurinol`, and `febuxostat`.
 
 **Rules:**
 
