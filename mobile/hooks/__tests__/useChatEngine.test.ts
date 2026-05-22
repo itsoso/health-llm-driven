@@ -4,6 +4,7 @@ const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
 const mockDeleteConversation = jest.fn();
+let mockAsyncStorage: Record<string, string> = {};
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (cb: any) => {
@@ -17,6 +18,12 @@ jest.mock('../../services/chat', () => ({
   getConversations: (...args: any[]) => mockGetConversations(...args),
   getConversationMessages: (...args: any[]) => mockGetConversationMessages(...args),
   deleteConversation: (...args: any[]) => mockDeleteConversation(...args),
+}));
+
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  getItem: jest.fn(async (key: string) => mockAsyncStorage[key] ?? null),
+  setItem: jest.fn(async (key: string, value: string) => { mockAsyncStorage[key] = value; }),
+  removeItem: jest.fn(async (key: string) => { delete mockAsyncStorage[key]; }),
 }));
 
 jest.mock('../../components/chat/cards', () => ({
@@ -49,9 +56,39 @@ async function* streamStartThenWait() {
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAsyncStorage = {};
     finishStream = undefined;
     mockGetConversations.mockResolvedValue([]);
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
+  });
+
+  it('restores the last active conversation after the chat page is remounted', async () => {
+    mockAsyncStorage['chat:last_conversation_id:v1'] = '321';
+    mockGetConversationMessages.mockResolvedValueOnce({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '上一轮问题', created_at: '2026-05-22T10:00:00Z' },
+        { id: 2, role: 'assistant', content: '上一轮回答', created_at: '2026-05-22T10:00:10Z' },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.loadLatestConversation();
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversationId).toBe(321);
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'assistant', content: '上一轮回答' }),
+        ]),
+      );
+    });
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { days: 7 });
+    expect(mockGetConversations).not.toHaveBeenCalledWith('每日健康简报');
   });
 
   it('keeps the local streaming assistant bubble when conversation id arrives mid-stream', async () => {

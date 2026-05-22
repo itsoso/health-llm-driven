@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import api, { BASE_URL } from '../services/api';
@@ -103,6 +104,46 @@ interface UseChatEngineOptions {
 
 const BRIEFING_CONVERSATION_TITLE = '每日健康简报';
 const DEFAULT_WINDOW_DAYS = 7;
+const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
+const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
+const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
+
+async function readStoredConversationId(): Promise<number | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_CONVERSATION_ID_KEY);
+    const id = raw ? Number(raw) : NaN;
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function rememberConversationId(id: number | undefined | null): Promise<void> {
+  if (!id) return;
+  try { await AsyncStorage.setItem(LAST_CONVERSATION_ID_KEY, String(id)); } catch {}
+}
+
+async function forgetConversationId(): Promise<void> {
+  try { await AsyncStorage.removeItem(LAST_CONVERSATION_ID_KEY); } catch {}
+}
+
+async function markPendingStream(): Promise<void> {
+  try { await AsyncStorage.setItem(PENDING_STREAM_STARTED_AT_KEY, String(Date.now())); } catch {}
+}
+
+async function clearPendingStream(): Promise<void> {
+  try { await AsyncStorage.removeItem(PENDING_STREAM_STARTED_AT_KEY); } catch {}
+}
+
+async function hasFreshPendingStream(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_STREAM_STARTED_AT_KEY);
+    const startedAt = raw ? Number(raw) : NaN;
+    return Number.isFinite(startedAt) && Date.now() - startedAt < PENDING_STREAM_TTL_MS;
+  } catch {
+    return false;
+  }
+}
 
 export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -173,13 +214,35 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
   }, []);
 
+  const loadConversationFromServer = useCallback(async (id: number, idPrefix: string = 'hist') => {
+    const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
+    setWindowDays(DEFAULT_WINDOW_DAYS);
+    setHasMoreHistory(total_messages > msgs.length);
+    if (msgs.length === 0 && total_messages === 0) return false;
+
+    setConversationId(id);
+    void rememberConversationId(id);
+    const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, idPrefix);
+    setMessages(restored);
+    restoreCards(restored);
+    return true;
+  }, [restoreCards]);
+
   const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
     if (streamingRef.current) return;
     try {
       const preferBriefing = options?.preferBriefing ?? true;
+      const storedConversationId = await readStoredConversationId();
+      if (storedConversationId) {
+        const restoredStoredConversation = await loadConversationFromServer(storedConversationId, 'hist');
+        if (restoredStoredConversation || streamingRef.current) return;
+        await forgetConversationId();
+      }
+
+      const shouldPreferRecent = await hasFreshPendingStream();
       // 默认进入 chat tab 时优先打开"每日健康简报"；但从后台/其它 tab 恢复未完成新会话时,
       // 必须按真实最近对话找，否则会被旧简报抢走，导致用户看不到刚才那次 Agent 回复。
-      let convs = preferBriefing ? await getConversations(BRIEFING_CONVERSATION_TITLE) : [];
+      let convs = preferBriefing && !shouldPreferRecent ? await getConversations(BRIEFING_CONVERSATION_TITLE) : [];
       if (convs.length === 0) convs = await getConversations();
       convs = [...convs].sort((a: any, b: any) =>
         ((b as any).updated_at || b.created_at || '').localeCompare(
@@ -190,18 +253,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (streamingRef.current) return;
 
       const latestId = convs[0].id;
-      setConversationId(latestId);
-      const { messages: msgs, total_messages } = await getConversationMessages(latestId, { days: DEFAULT_WINDOW_DAYS });
-      if (streamingRef.current) return;
-      setWindowDays(DEFAULT_WINDOW_DAYS);
-      setHasMoreHistory(total_messages > msgs.length);
-      if (msgs.length > 0) {
-        const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
-        setMessages(restored);
-        restoreCards(restored);
-      }
+      await loadConversationFromServer(latestId, 'hist');
     } catch { console.warn('Failed to load latest conversation'); }
-  }, [restoreCards]);
+  }, [loadConversationFromServer]);
 
   // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
   // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 stream 到 OpenClaw 后端
@@ -242,16 +296,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   );
 
   const loadConversation = useCallback(async (id: number) => {
-    setConversationId(id);
     try {
-      const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
-      setWindowDays(DEFAULT_WINDOW_DAYS);
-      setHasMoreHistory(total_messages > msgs.length);
-      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'h');
-      setMessages(restored);
-      restoreCards(restored);
+      const loaded = await loadConversationFromServer(id, 'h');
+      if (!loaded) throw new Error('加载对话失败');
     } catch { throw new Error('加载对话失败'); }
-  }, [restoreCards]);
+  }, [loadConversationFromServer]);
 
   const loadMoreHistory = useCallback(async () => {
     if (!conversationId || !hasMoreHistory) return;
@@ -302,6 +351,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setMessages(prev => [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
     streamingRef.current = true;
+    void markPendingStream();
 
     const ac = new AbortController();
     abortRef.current = ac;
@@ -318,14 +368,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       let sawDone = false;
       for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'start') {
-          if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
+          if (evt.conversationId) {
+            if (!conversationId) setConversationId(evt.conversationId);
+            void rememberConversationId(evt.conversationId);
+          }
         } else if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
           sawDone = true;
-          if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
+          if (evt.conversationId) {
+            if (!conversationId) setConversationId(evt.conversationId);
+            void rememberConversationId(evt.conversationId);
+          }
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
@@ -383,6 +439,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       clearTimeout(slowTimer);
       abortRef.current = null;
       streamingRef.current = false;
+      void clearPendingStream();
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }
@@ -391,6 +448,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const newChat = useCallback(() => {
     setMessages([]);
     setConversationId(undefined);
+    void forgetConversationId();
+    void clearPendingStream();
     briefingInjected.current = false;
   }, []);
 
