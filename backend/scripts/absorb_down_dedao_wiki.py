@@ -33,8 +33,18 @@ def main() -> int:
         compile_down_dedao_wiki_artifacts,
         write_down_dedao_wiki_artifacts,
     )
+    from app.services.gene_knowledge_audit import audit_gene_knowledge
 
     result = compile_down_dedao_wiki_artifacts(args.source_root, args.artifact_dir)
+    gene_knowledge_path = Path(args.source_root).expanduser() / "artifacts" / "gene_knowledge.json"
+    gene_knowledge_audit = None
+    quality_issue_count = 0
+    if gene_knowledge_path.exists():
+        payload = json.loads(gene_knowledge_path.read_text(encoding="utf-8"))
+        gene_knowledge_audit = audit_gene_knowledge(payload)
+        gates = gene_knowledge_audit.get("quality_gates") or {}
+        quality_issue_count = sum(len(value or []) for value in gates.values())
+
     counts = None
     if args.write:
         counts = write_down_dedao_wiki_artifacts(result, args.artifact_dir)
@@ -44,12 +54,13 @@ def main() -> int:
         "diff": result.diff,
         "counts": counts,
         "skipped_private": result.skipped_private,
+        "gene_knowledge_audit": gene_knowledge_audit,
     }
     if args.json_summary:
         print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     else:
         print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0
+    return 1 if quality_issue_count else 0
 
 
 if __name__ == "__main__":

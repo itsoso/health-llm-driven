@@ -16,18 +16,18 @@ Generated report: `docs/reports/2026-05-22-gene-knowledge-audit.md`
 
 Current `down-dedao/artifacts/gene_knowledge.json`:
 
-- Gene entities: 19
+- Gene entities: 24
 - SNP registry entries: 26
-- Claims: 23
-- Gene rules: 13
-- Tier 0 drug-safety coverage: 7/12
+- Claims: 28
+- Gene rules: 18
+- Tier 0 drug-safety coverage: 12/12
 - Tier 1 gene + lab loop coverage: 7/7
 - Tier X confirmation-only coverage: 2/4
 
 Main gaps:
 
-- Missing Tier 0 rules: `VKORC1`, `G6PD`, `DPYD`, `TPMT`, `NUDT15`
 - Missing confirmation-only boundaries: `BRCA1`, `BRCA2`
+- Missing Tier 2 lifestyle claims: `COMT`, `VDR`
 - Current quality gates pass for existing claims: no missing `applies_when`, no missing boundary text, no drug claim missing clinician boundary
 
 Do not edit `down-dedao` blindly right now: its worktree already has many user/generated changes. First use the audit report as the shared checklist, then modify source wiki files in small batches.
@@ -102,12 +102,21 @@ Status: completed on 2026-05-22 for `HLA-A*31:01`, `HLA-B*15:02`, and `HLA-B*58:
 
 ## Task 4: Add Core PGx Expansion
 
+Status: completed on 2026-05-22. Tier 0 drug-safety coverage is now 12/12.
+
 **Source files in `down-dedao`:**
 
-- `VKORC1` + warfarin dose boundary
-- `G6PD` + oxidant drugs / hemolysis boundary
-- `DPYD` + fluoropyrimidine toxicity boundary
-- `TPMT` and `NUDT15` + thiopurine myelosuppression boundary
+- Created: `wiki/entities/gene/VKORC1.md`
+- Created: `wiki/entities/gene/G6PD.md`
+- Created: `wiki/entities/gene/DPYD.md`
+- Created: `wiki/entities/gene/TPMT.md`
+- Created: `wiki/entities/gene/NUDT15.md`
+- Created: `wiki/claims/c_vkorc1_warfarin_inr_boundary.md`
+- Created: `wiki/claims/c_g6pd_oxidant_drug_hemolysis_boundary.md`
+- Created: `wiki/claims/c_dpyd_fluoropyrimidine_toxicity_boundary.md`
+- Created: `wiki/claims/c_tpmt_thiopurine_myelosuppression_boundary.md`
+- Created: `wiki/claims/c_nudt15_thiopurine_myelosuppression_boundary.md`
+- Created drug entities for `rasburicase`, `primaquine`, `dapsone`, `fluorouracil`, `capecitabine`, `tegafur`, `azathioprine`, `mercaptopurine`, and `thioguanine`.
 
 **Rules:**
 
@@ -122,6 +131,8 @@ Status: completed on 2026-05-22 for `HLA-A*31:01`, `HLA-B*15:02`, and `HLA-B*58:
 
 ## Task 5: Wire Audit Into Promotion Workflow
 
+Status: completed on 2026-05-22. `absorb_down_dedao_wiki.py` now includes the gene knowledge audit in its summary and exits non-zero when quality gates fail.
+
 **Files:**
 
 - Modify: `backend/scripts/absorb_down_dedao_wiki.py`
@@ -131,7 +142,7 @@ Status: completed on 2026-05-22 for `HLA-A*31:01`, `HLA-B*15:02`, and `HLA-B*58:
 
 - After absorbing down-dedao gene artifacts, run gene knowledge audit.
 - Fail only on quality-gate violations by default.
-- Print Tier 0/Tier X gaps as warnings until coverage is complete.
+- Include Tier 0/Tier X gaps in the emitted audit summary until coverage is complete.
 
 **Verification:**
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -332,3 +334,50 @@ def test_write_down_dedao_wiki_artifacts_is_idempotent(tmp_path):
     assert len(_jsonl(output / "claims.jsonl")) == 1
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["down_dedao_wiki"]["skipped_private"] == []
+
+
+def test_absorb_down_dedao_wiki_cli_blocks_gene_claim_quality_gate_violations(tmp_path):
+    source_root = tmp_path / "down-dedao"
+    _write_json(
+        source_root / "artifacts" / "gene_knowledge.json",
+        {
+            "id": "gene_knowledge_v2",
+            "version": "bad-claim",
+            "entities": {"gene": {"CYP2D6": {"entity_id": "CYP2D6"}}},
+            "claims": [
+                {
+                    "claim_id": "c_bad_cyp2d6_claim",
+                    "entity_id": "CYP2D6",
+                    "title": "CYP2D6 loose claim",
+                    "body": "这是一个缺少适用条件和临床限制的 loose claim。",
+                }
+            ],
+            "gene_rules": {},
+            "snp_registry": {},
+        },
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/absorb_down_dedao_wiki.py",
+            "--source-root",
+            str(source_root),
+            "--artifact-dir",
+            str(tmp_path / "seed"),
+            "--json-summary",
+        ],
+        cwd=".",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    summary = json.loads(result.stdout)
+    assert summary["gene_knowledge_audit"]["quality_gates"]["claims_missing_applies_when"] == [
+        "c_bad_cyp2d6_claim"
+    ]
+    assert summary["gene_knowledge_audit"]["quality_gates"]["claims_missing_boundary"] == [
+        "c_bad_cyp2d6_claim"
+    ]
