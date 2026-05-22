@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import { normalizeSharedAgentContent } from './contentNormalizer';
 import OpenInAppButton from './OpenInAppButton';
+import { buildSharedMetadata, isSensitiveSharedConversation } from './sharePrivacy';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,8 +30,12 @@ function apiBaseUrl() {
   return `${backend.replace(/\/$/, '')}/api/v1`;
 }
 
-async function loadSharedConversation(shareToken: string): Promise<SharedConversation | null> {
-  const res = await fetch(`${apiBaseUrl()}/shared/${shareToken}`, { cache: 'no-store' });
+async function loadSharedConversation(
+  shareToken: string,
+  { countView = true }: { countView?: boolean } = {},
+): Promise<SharedConversation | null> {
+  const params = countView ? '' : '?count_view=false';
+  const res = await fetch(`${apiBaseUrl()}/shared/${shareToken}${params}`, { cache: 'no-store' });
   if (res.status === 404 || res.status === 410) return null;
   if (!res.ok) throw new Error(`load shared conversation failed: ${res.status}`);
   return res.json();
@@ -45,31 +50,44 @@ function roleLabel(role: string) {
 export async function generateMetadata(
   { params }: { params: { shareToken: string } },
 ): Promise<Metadata> {
-  const data = await loadSharedConversation(params.shareToken).catch(() => null);
+  const data = await loadSharedConversation(params.shareToken, { countView: false }).catch(() => null);
   const title = data?.title || '健康分享';
-  const description = data?.messages?.[0]?.content?.slice(0, 120) || '来自健康 Agent 的分享';
+  const sharedMetadata = buildSharedMetadata({
+    title,
+    sensitive: data ? isSensitiveSharedConversation(data) : false,
+    firstMessage: data?.messages?.[0]?.content,
+  });
   return {
     title,
-    description,
+    description: sharedMetadata.description,
     robots: { index: false, follow: false },
     openGraph: {
       title,
-      description,
+      description: sharedMetadata.description,
       type: 'article',
-      images: [{ url: '/logo-512.png', width: 512, height: 512, alt: title }],
+      images: [{ url: sharedMetadata.imageUrl, width: 512, height: 512, alt: title }],
     },
     twitter: {
       card: 'summary',
       title,
-      description,
-      images: ['/logo-512.png'],
+      description: sharedMetadata.description,
+      images: [sharedMetadata.imageUrl],
     },
   };
 }
 
-export default async function SharedPage({ params }: { params: { shareToken: string } }) {
-  const data = await loadSharedConversation(params.shareToken);
+export default async function SharedPage({
+  params,
+  searchParams,
+}: {
+  params: { shareToken: string };
+  searchParams?: { reveal?: string };
+}) {
+  const revealSensitiveContent = searchParams?.reveal === '1';
+  const data = await loadSharedConversation(params.shareToken, { countView: !revealSensitiveContent });
   if (!data) notFound();
+
+  const isSensitive = isSensitiveSharedConversation(data);
 
   return (
     <main className="min-h-screen bg-[#F5F7FA] px-4 py-6 text-slate-900">
@@ -83,26 +101,41 @@ export default async function SharedPage({ params }: { params: { shareToken: str
           </div>
         </div>
 
-        <div className="space-y-3">
-          {data.messages.map((m, idx) => (
-            <article
-              key={`${m.role}-${idx}`}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        {isSensitive && !revealSensitiveContent ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950 shadow-sm">
+            <div className="text-base font-semibold">这条分享可能包含健康敏感信息</div>
+            <p className="mt-2">
+              内容可能涉及基因、检查、疾病、用药或心理健康信息。请确认你信任分享来源，并避免继续转发给无关人员。
+            </p>
+            <a
+              href={`/shared/${params.shareToken}?reveal=1`}
+              className="mt-4 inline-flex rounded-lg bg-amber-900 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800"
             >
-              <div className="mb-2 text-xs font-semibold text-teal-700">{roleLabel(m.role)}</div>
-              <div className="text-[15px] leading-7 text-slate-800">
-                {m.role === 'user' ? (
-                  <div className="whitespace-pre-wrap">{m.content}</div>
-                ) : (
-                  <MarkdownRenderer content={normalizeSharedAgentContent(m.content)} variant="light" />
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
+              确认查看内容
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {data.messages.map((m, idx) => (
+              <article
+                key={`${m.role}-${idx}`}
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <div className="mb-2 text-xs font-semibold text-teal-700">{roleLabel(m.role)}</div>
+                <div className="text-[15px] leading-7 text-slate-800">
+                  {m.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  ) : (
+                    <MarkdownRenderer content={normalizeSharedAgentContent(m.content)} variant="light" />
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
         <footer className="mt-6 space-y-3">
-          <OpenInAppButton shareToken={params.shareToken} />
+          {(!isSensitive || revealSensitiveContent) && <OpenInAppButton shareToken={params.shareToken} />}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500">
             本页面是用户主动分享的健康管理内容, 不构成诊断、治疗或用药建议。出现明显异常指标或不适症状时, 请咨询医生。
           </div>

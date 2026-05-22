@@ -21,6 +21,7 @@ def test_create_text_share_returns_public_web_url(client, db, auth_user_and_head
     assert shared.messages_snapshot == [
         {"role": "assistant", "content": "今晚吃鱼 + 米饭", "created_at": None}
     ]
+    assert shared.expires_at is not None
 
 
 def test_create_text_share_rejects_empty_message(client, auth_user_and_headers):
@@ -33,3 +34,19 @@ def test_create_text_share_rejects_empty_message(client, auth_user_and_headers):
     )
 
     assert resp.status_code == 400
+
+
+def test_shared_metadata_fetch_can_skip_view_count(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    create_resp = client.post(
+        "/api/v1/shared/create-text",
+        headers=headers,
+        json={"title": "健康分享", "message": "基因报告解读"},
+    )
+    share_token = create_resp.json()["share_token"]
+
+    metadata_resp = client.get(f"/api/v1/shared/{share_token}?count_view=false")
+
+    assert metadata_resp.status_code == 200
+    shared = db.query(SharedConversation).filter_by(user_id=user.id).one()
+    assert shared.view_count == 0

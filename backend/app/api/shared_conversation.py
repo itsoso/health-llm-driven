@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from app.database import get_db
 from app.models.user import User
@@ -29,6 +30,7 @@ class TextShareRequest(BaseModel):
 class ShareResponse(BaseModel):
     share_token: str
     share_url: str
+    expires_at: Optional[str] = None
 
 
 class SharedMessageOut(BaseModel):
@@ -52,6 +54,16 @@ def _public_site_base_url() -> str:
 
 def _share_url(share_token: str) -> str:
     return f"{_public_site_base_url()}/shared/{share_token}"
+
+
+def _default_expires_at() -> datetime:
+    return datetime.now(UTC) + timedelta(days=30)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _masked_display_name(user: User) -> Optional[str]:
@@ -116,8 +128,10 @@ def create_share(
         # 更新快照（对话可能有新消息）
         existing.messages_snapshot = messages_snapshot
         existing.title = conv.title or "分享的对话"
+        existing.expires_at = _default_expires_at()
         db.commit()
         share_token = existing.share_token
+        expires_at = existing.expires_at
     else:
         shared = SharedConversation(
             user_id=current_user.id,
@@ -126,15 +140,21 @@ def create_share(
             title=conv.title or "分享的对话",
             messages_snapshot=messages_snapshot,
             sharer_name=_masked_display_name(current_user),
+            expires_at=_default_expires_at(),
         )
         db.add(shared)
         db.commit()
         db.refresh(shared)
         share_token = shared.share_token
+        expires_at = shared.expires_at
 
     share_url = _share_url(share_token)
     logger.info(f"[分享] 用户 {current_user.id} 分享对话 {req.source_type}:{req.conversation_id} -> {share_token}")
-    return ShareResponse(share_token=share_token, share_url=share_url)
+    return ShareResponse(
+        share_token=share_token,
+        share_url=share_url,
+        expires_at=expires_at.isoformat() if expires_at else None,
+    )
 
 
 @router.post("/create-text", response_model=ShareResponse)
@@ -158,18 +178,24 @@ def create_text_share(
             {"role": "assistant", "content": message, "created_at": None}
         ],
         sharer_name=_masked_display_name(current_user),
+        expires_at=_default_expires_at(),
     )
     db.add(shared)
     db.commit()
     db.refresh(shared)
 
     logger.info(f"[分享] 用户 {current_user.id} 创建文本分享 -> {shared.share_token}")
-    return ShareResponse(share_token=shared.share_token, share_url=_share_url(shared.share_token))
+    return ShareResponse(
+        share_token=shared.share_token,
+        share_url=_share_url(shared.share_token),
+        expires_at=shared.expires_at.isoformat() if shared.expires_at else None,
+    )
 
 
 @router.get("/{share_token}", response_model=SharedConversationOut)
 def get_shared_conversation(
     share_token: str,
+    count_view: bool = True,
     db: Session = Depends(get_db),
 ):
     """公开访问分享的对话（无需登录）"""
@@ -182,13 +208,13 @@ def get_shared_conversation(
 
     # 检查过期
     if shared.expires_at:
-        from datetime import UTC, datetime
-        if datetime.now(UTC) > shared.expires_at:
+        if datetime.now(UTC) > _as_utc(shared.expires_at):
             raise HTTPException(status_code=410, detail="分享链接已过期")
 
     # 更新浏览计数
-    shared.view_count = (shared.view_count or 0) + 1
-    db.commit()
+    if count_view:
+        shared.view_count = (shared.view_count or 0) + 1
+        db.commit()
 
     messages = [
         SharedMessageOut(
