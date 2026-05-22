@@ -506,6 +506,25 @@ def test_attach_system_knowledge_evidence_marks_record_findings_not_applicable(d
     assert finding.raw["unsupported_reason"] is None
 
 
+def test_attach_system_knowledge_evidence_marks_data_gap_findings_not_applicable(db):
+    finding = SpecialistFinding(
+        specialist_name="longitudinal_analyst",
+        category="longitudinal",
+        summary="6 个月趋势 · 长期数据暂缺",
+        findings=[{"type": "data_gap", "title": "长期数据暂缺"}],
+        raw={"data_gap": True},
+    )
+
+    result = attach_system_knowledge_evidence(db, {}, [finding])
+
+    assert result["findings_updated"] == 0
+    assert finding.evidence_refs == []
+    assert finding.raw["evidence_resolution"]["support_status"] == "not_applicable"
+    assert finding.raw["evidence_resolution"]["unsupported"] is False
+    assert finding.raw["unsupported"] is False
+    assert finding.raw["unsupported_reason"] is None
+
+
 def test_attach_system_knowledge_evidence_does_not_fallback_to_unrelated_twin_claim(db):
     db.add(
         KBDocument(

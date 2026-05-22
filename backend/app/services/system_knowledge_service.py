@@ -2318,7 +2318,25 @@ def _extract_finding_evidence_refs(finding: dict[str, Any]) -> list[Any]:
 
 def _finding_is_unsupported(finding: dict[str, Any], refs: list[Any]) -> bool:
     data = finding.get("data") if isinstance(finding.get("data"), dict) else {}
-    return bool(finding.get("unsupported") or data.get("unsupported") or not refs)
+    evidence_resolution = data.get("evidence_resolution") if isinstance(data.get("evidence_resolution"), dict) else {}
+    explicit_status = (
+        finding.get("support_status")
+        or data.get("support_status")
+        or evidence_resolution.get("support_status")
+    )
+    non_advice_statuses = {"not_applicable", "data_gap", "data_summary"}
+    if explicit_status and str(explicit_status).strip().lower() in non_advice_statuses:
+        return False
+
+    explicit_unsupported = finding.get("unsupported")
+    if explicit_unsupported is None:
+        explicit_unsupported = data.get("unsupported")
+    if explicit_unsupported is None:
+        explicit_unsupported = evidence_resolution.get("unsupported")
+    if explicit_unsupported is not None:
+        return bool(explicit_unsupported)
+
+    return not refs
 
 
 def _finding_support_status(

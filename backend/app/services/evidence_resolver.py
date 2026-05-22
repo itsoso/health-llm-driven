@@ -120,6 +120,7 @@ _NON_ADVICE_ITEM_TYPES = {
     "record",
     "logged",
     "log",
+    "data_gap",
     "data_summary",
     "summary",
     "trend_report",
@@ -151,6 +152,8 @@ def _finding_is_evidence_not_applicable(finding: Any) -> bool:
             return True
         if raw.get("data_summary") is True:
             return True
+        if raw.get("data_gap") is True:
+            return True
 
     items = getattr(finding, "findings", None) or []
     if not items:
@@ -164,7 +167,10 @@ def _finding_is_evidence_not_applicable(finding: Any) -> bool:
         return True
 
     text = f"{getattr(finding, 'summary', '')} {getattr(finding, 'category', '')}".lower()
-    if any(token in text for token in ("已记录", "已删除", "已更新", "记录完成")):
+    if any(
+        token in text
+        for token in ("已记录", "已删除", "已更新", "记录完成", "数据暂缺", "数据不足")
+    ):
         return True
 
     return False

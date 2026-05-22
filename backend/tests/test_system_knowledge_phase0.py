@@ -550,6 +550,16 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
                             "category": "movement",
                             "data": {"unsupported": True, "support_status": "model_inference"},
                         },
+                        {
+                            "summary": "data gap",
+                            "specialist": "longitudinal_analyst",
+                            "category": "longitudinal",
+                            "data": {
+                                "support_status": "not_applicable",
+                                "unsupported": False,
+                                "evidence_refs": [],
+                            },
+                        },
                     ]
                 },
             ),
@@ -619,10 +629,10 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["documents"]["by_origin"]["unknown"] == 1
     assert payload["documents"]["by_review_status"]["reviewed"] == 1
     assert payload["documents"]["by_review_status"]["draft"] == 1
-    assert payload["specialist_findings"]["total"] == 3
+    assert payload["specialist_findings"]["total"] == 4
     assert payload["specialist_findings"]["with_evidence_refs"] == 1
     assert payload["specialist_findings"]["unsupported"] == 2
-    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.3333
+    assert payload["specialist_findings"]["evidence_ref_rate"] == 0.25
     assert payload["specialist_findings"]["target_evidence_ref_rate"] == 0.85
     assert payload["specialist_findings"]["meets_target"] is False
     assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["total"] == 2
@@ -630,8 +640,10 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["specialist_findings"]["by_specialist"]["fuel_strategist"]["unsupported_rate"] == 0.5
     assert payload["specialist_findings"]["by_category"]["nutrition"]["total"] == 2
     assert payload["specialist_findings"]["by_category"]["movement"]["unsupported"] == 1
+    assert payload["specialist_findings"]["by_category"]["longitudinal"]["unsupported"] == 0
     assert payload["specialist_findings"]["by_support_status"]["supported"] == 1
     assert payload["specialist_findings"]["by_support_status"]["model_inference"] == 2
+    assert payload["specialist_findings"]["by_support_status"]["not_applicable"] == 1
     assert payload["external_evidence"]["claim_total"] == 2
     assert payload["external_evidence"]["claims_with_external_sources"] == 1
     assert payload["external_evidence"]["external_source_rate"] == 0.5
