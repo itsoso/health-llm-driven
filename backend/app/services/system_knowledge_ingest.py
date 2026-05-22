@@ -1924,7 +1924,6 @@ def _source_chapters_for_template(template: ClaimTemplate, lessons: list[dict[st
             matched.append(
                 {
                     "title": lesson.get("title", ""),
-                    "path": lesson.get("path", ""),
                 }
             )
         if len(matched) >= 3:
@@ -1934,7 +1933,7 @@ def _source_chapters_for_template(template: ClaimTemplate, lessons: list[dict[st
     if not lessons:
         return []
     first = lessons[0]
-    return [{"title": first.get("title", ""), "path": first.get("path", "")}]
+    return [{"title": first.get("title", "")}]
 
 
 def _entity_for_doc_id(doc_id: str, now: datetime) -> dict[str, Any]:

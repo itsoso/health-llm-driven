@@ -1,17 +1,21 @@
 {
-  "compiled_at": "2026-05-18T03:58:39.545161+00:00",
+  "compiled_at": "2026-05-22T08:37:09.778001+00:00",
   "counts": {
     "claims": 384,
+    "contraindications": 0,
     "entities": 159,
+    "eval_cases": 0,
     "pages": 61,
-    "relations": 2808
+    "protocols": 10,
+    "relations": 2963
   },
   "diff": {
-    "claims_added": 11,
+    "claims_added": 0,
     "claims_superseded": 0,
     "entities_added": 0,
     "pages_added": 0,
-    "relations_added": 204
+    "protocols_added": 10,
+    "relations_added": 155
   },
   "down_dedao_wiki": {
     "compiled_at": "2026-05-19T00:34:54.758003+00:00",
@@ -24,7 +28,7 @@
     },
     "pipeline": "down_dedao_llm_wiki_bridge_v1",
     "skipped_private": [],
-    "source_root": "/Users/liqiuhua/work/personal/down-dedao"
+    "source_root": "~/work/personal/down-dedao"
   },
   "ingest": {
     "pipeline": "deterministic_topic_template_v1",
@@ -565,6 +569,17 @@
   "license_scope": "internal_transformed_claims",
   "policy": "No full paid-course text is served. Claims are synthesized, short, and boundary-marked.",
   "protocol": "akbp",
+  "protocol_compiler": {
+    "compiled_at": "2026-05-22T08:37:09.778001+00:00",
+    "diff": {
+      "protocols_added": 10,
+      "relations_added": 155
+    },
+    "paid_source_policy": "transformed_summary_only",
+    "pipeline": "deterministic_protocol_candidate_v1",
+    "source_count": 46,
+    "source_root": "~/work/personal/down-dedao"
+  },
   "review": {
     "documents_reviewed": 443,
     "from_status": "draft",
@@ -573,6 +588,6 @@
     "reviewer": "owner-reviewed-2026-05-18",
     "status": "reviewed"
   },
-  "source_root": "/Users/liqiuhua/work/personal/down-dedao",
+  "source_root": "~/work/personal/down-dedao",
   "version": "2.1"
 }
