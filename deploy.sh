@@ -103,6 +103,31 @@ if [[ ! "$SERVER" =~ ^[A-Za-z0-9._@:-]+$ ||
     exit 1
 fi
 
+# Preflight: 如果代码里启用了 LangBridge 商用模型 entry, .env-online 必须含
+# 非空的 gateway base + key, 否则生产 backend 会从可用模型列表里把它们隐藏掉
+# (LLM_VISION 选项一夜消失就是这么造成的, 2026-05-22)
+#
+# 触发条件: model_registry.py 含 provider="langbridge-proxy" entry.
+# 解除方式 (任选其一):
+#   1. 在 .env-online 里补 LANGBRIDGE_GATEWAY_BASE_URL + LANGBRIDGE_GATEWAY_API_KEY
+#   2. 从 model_registry.py 移除商用 entry, 不发布给用户
+REGISTRY_FILE="$SCRIPT_DIR/backend/app/services/llm/model_registry.py"
+if [[ -f "$REGISTRY_FILE" ]] && grep -q "langbridge-proxy" "$REGISTRY_FILE"; then
+    LB_BASE=$(grep -E "^LANGBRIDGE_GATEWAY_BASE_URL=.+" "$ENV_ONLINE_FILE" | head -1)
+    LB_KEY=$(grep -E "^LANGBRIDGE_GATEWAY_API_KEY=.+" "$ENV_ONLINE_FILE" | head -1)
+    if [[ -z "$LB_BASE" || -z "$LB_KEY" ]]; then
+        echo -e "${RED}✗${NC} preflight 失败: model_registry.py 启用了 langbridge-proxy 商用模型,"
+        echo -e "${RED} ${NC} 但 .env-online 缺 LANGBRIDGE_GATEWAY_BASE_URL 或 LANGBRIDGE_GATEWAY_API_KEY。"
+        echo -e "${RED} ${NC} 如果继续部署, 生产 backend 会从可用模型列表里隐藏 claude-opus-4.7 /"
+        echo -e "${RED} ${NC} gpt-5.5 / gemini-3.1-pro, mobile / web 选不到。"
+        echo -e "${YELLOW} ${NC} 修复: 把这两行补到 .env-online:"
+        echo "      LANGBRIDGE_GATEWAY_BASE_URL=https://base.executor.life/api/llm"
+        echo "      LANGBRIDGE_GATEWAY_API_KEY=<browser-llm-orchestrator 的 LLM_GATEWAY_TOKEN>"
+        echo -e "${YELLOW} ${NC} 或: 从 model_registry.py 移除 provider=\"langbridge-proxy\" 的 entry。"
+        exit 1
+    fi
+fi
+
 # 打印带颜色的消息
 print_step() {
     echo -e "${BLUE}==>${NC} $1"
