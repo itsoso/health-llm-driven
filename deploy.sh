@@ -194,9 +194,44 @@ wait_for_skills_manifest() {
     fi
 }
 
+get_env_online_value() {
+    local key="$1"
+    grep -m1 "^${key}=" "$ENV_ONLINE_FILE" 2>/dev/null | cut -d'=' -f2-
+}
+
+validate_langbridge_env() {
+    local registry_file="$SCRIPT_DIR/backend/app/services/llm/model_registry.py"
+
+    if [[ "${ALLOW_MISSING_LANGBRIDGE_ENV:-0}" -eq 1 ]]; then
+        print_warning "跳过 LangBridge 环境变量检查 (ALLOW_MISSING_LANGBRIDGE_ENV=1)"
+        return 0
+    fi
+
+    if [[ ! -f "$registry_file" ]] || ! grep -q 'provider="langbridge-proxy"' "$registry_file"; then
+        return 0
+    fi
+
+    local missing=()
+    local base_url
+    local api_key
+    base_url="$(get_env_online_value "LANGBRIDGE_GATEWAY_BASE_URL")"
+    api_key="$(get_env_online_value "LANGBRIDGE_GATEWAY_API_KEY")"
+
+    [[ -n "$base_url" ]] || missing+=("LANGBRIDGE_GATEWAY_BASE_URL")
+    [[ -n "$api_key" ]] || missing+=("LANGBRIDGE_GATEWAY_API_KEY")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        print_error ".env-online 缺少 LangBridge Gateway 配置: ${missing[*]}"
+        echo "当前代码启用了 langbridge-proxy 商用模型；缺少这些变量会导致 mobile 模型选项被后端过滤。"
+        echo "请在 .env-online 补齐后重新部署。确实要禁用商用模型时，可临时设置 ALLOW_MISSING_LANGBRIDGE_ENV=1。"
+        exit 1
+    fi
+}
+
 # 同步环境变量到服务器
 sync_env() {
     print_step "同步 .env-online 到服务器..."
+    validate_langbridge_env
 
     # 创建临时文件，过滤掉部署配置
     TEMP_ENV=$(mktemp)
