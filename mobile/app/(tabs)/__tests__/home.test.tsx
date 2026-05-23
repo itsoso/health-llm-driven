@@ -196,6 +196,7 @@ describe('TodayScreen', () => {
     expect(getByText('Agent 运行中')).toBeTruthy();
     expect(getByText('后台运行中')).toBeTruthy();
     expect(getByText('监测 4 类数据')).toBeTruthy();
+    expect(getByText('证据链')).toBeTruthy();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
     expect(queryByText('Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。')).toBeNull();
     expect(getAllByText('基因').length).toBeGreaterThan(0);
@@ -209,6 +210,7 @@ describe('TodayScreen', () => {
 
     expect(getByText('后台运行中')).toBeTruthy();
     expect(getByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeTruthy();
+    expect(getByText('5 域干预')).toBeTruthy();
     expect(queryByText('长期任务')).toBeNull();
   });
 

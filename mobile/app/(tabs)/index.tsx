@@ -650,13 +650,13 @@ function AgentWorkspacePanel({
   const sourceItems = [
     {
       label: '基因',
-      value: geneticHits != null ? `${geneticHits} 位点` : '已纳入',
+      value: geneticHits != null ? String(geneticHits) : '已纳入',
       color: c.purple,
       bg: c.tintPurple,
     },
     {
       label: '表观',
-      value: progressTotal != null ? `${progressTotal} 轨迹` : '生活',
+      value: progressTotal != null ? String(progressTotal) : '生活',
       color: c.orange,
       bg: c.tintOrange,
     },
@@ -706,6 +706,10 @@ function AgentWorkspacePanel({
         </View>
 
         <View style={styles.sourceRail}>
+          <View style={[styles.sourceRailLabel, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+            <Ionicons name="layers-outline" size={12} color={c.brand} />
+            <Text style={[styles.sourceRailLabelText, { color: c.brand }]}>证据链</Text>
+          </View>
           {sourceItems.map(item => (
             <View key={item.label} style={[styles.sourceChip, { backgroundColor: item.bg }]}>
               <Text style={[styles.sourceLabel, { color: item.color }]}>{item.label}</Text>
@@ -721,9 +725,15 @@ function AgentWorkspacePanel({
               <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>饮食 / 睡眠 / 运动 / 补剂 / 情绪</Text>
               <Text style={[styles.workspaceInterventionSummary, { color: c.brand }]}>{interventionSummary}</Text>
             </View>
-            <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.brandLight }]}>
-              <Ionicons name="repeat-outline" size={14} color={c.brand} />
-              <Text style={[styles.workspaceInterventionBadgeText, { color: c.brand }]}>验证指标</Text>
+            <View style={styles.workspaceInterventionBadges}>
+              <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+                <Ionicons name="grid-outline" size={13} color={c.brand} />
+                <Text style={[styles.workspaceInterventionBadgeText, { color: c.brand }]}>5 域干预</Text>
+              </View>
+              <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.brandLight, borderColor: 'transparent' }]}>
+                <Ionicons name="repeat-outline" size={13} color={c.brand} />
+                <Text style={[styles.workspaceInterventionBadgeText, { color: c.brand }]}>验证指标</Text>
+              </View>
             </View>
           </View>
           <View style={styles.interventionGrid}>
@@ -1456,7 +1466,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     padding: spacing.md,
-    gap: spacing.sm,
+    gap: 10,
   },
   workspaceTop: {
     flexDirection: 'row',
@@ -1484,21 +1494,36 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   workspaceAskText: { fontSize: 13, fontWeight: '800' },
-  sourceRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  sourceRail: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs },
+  sourceRailLabel: {
+    minHeight: 28,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sourceRailLabelText: { fontSize: 11, fontWeight: '800' },
   sourceChip: {
     flexGrow: 1,
-    flexBasis: '23%',
-    minWidth: 66,
-    borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    flexBasis: '19%',
+    minWidth: 54,
+    minHeight: 28,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
   },
-  sourceLabel: { fontSize: 11, fontWeight: '800' },
-  sourceValue: { fontSize: 10, fontWeight: '600', marginTop: 1 },
+  sourceLabel: { fontSize: 10, fontWeight: '800' },
+  sourceValue: { fontSize: 9, fontWeight: '700', flexShrink: 1 },
   workspaceInterventionBlock: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: spacing.sm,
-    gap: spacing.sm,
+    paddingTop: 9,
+    gap: 8,
   },
   workspaceInterventionHeader: {
     flexDirection: 'row',
@@ -1510,15 +1535,20 @@ const styles = StyleSheet.create({
   workspaceInterventionTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
   workspaceInterventionHint: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
   workspaceInterventionSummary: { fontSize: 12, lineHeight: 16, fontWeight: '800' },
+  workspaceInterventionBadges: {
+    alignItems: 'flex-end',
+    gap: 5,
+  },
   workspaceInterventionBadge: {
-    minHeight: 30,
+    minHeight: 25,
     borderRadius: radii.full,
-    paddingHorizontal: 9,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  workspaceInterventionBadgeText: { fontSize: 12, fontWeight: '800' },
+  workspaceInterventionBadgeText: { fontSize: 11, fontWeight: '800' },
   interventionGrid: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
@@ -1529,26 +1559,26 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 1,
     minWidth: 0,
-    minHeight: 46,
+    minHeight: 38,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: 3,
-    paddingVertical: 6,
+    paddingVertical: 5,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
   interventionDomainIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
+    width: 19,
+    height: 19,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
   interventionDomainText: { alignItems: 'center', minWidth: 0 },
-  interventionDomainLabel: { fontSize: 11, fontWeight: '800', textAlign: 'center' },
-  interventionDomainStatus: { fontSize: 9, fontWeight: '700', marginTop: 1, textAlign: 'center' },
+  interventionDomainLabel: { fontSize: 10, fontWeight: '800', textAlign: 'center' },
+  interventionDomainStatus: { fontSize: 8, fontWeight: '700', marginTop: 1, textAlign: 'center' },
   nextActionCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
