@@ -181,13 +181,13 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('干预闭环'));
     expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈'));
-    expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.indexOf('本周建议'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈 · 本轮干预结果'));
+    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeLessThan(textFlow.indexOf('本周建议'));
     expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
@@ -234,9 +234,9 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈 · 本轮干预结果'));
   });
 
   it('prioritizes outcome feedback before trajectory and environment details', () => {
@@ -255,11 +255,12 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('本轮干预看这些结果')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
+    expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
     expect(textFlow.indexOf('健康轨迹')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境反馈')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.indexOf('健康轨迹'));
+    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeLessThan(textFlow.indexOf('健康轨迹'));
     expect(textFlow.indexOf('健康轨迹')).toBeLessThan(textFlow.indexOf('环境反馈'));
   });
 

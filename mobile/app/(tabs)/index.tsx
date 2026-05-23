@@ -432,7 +432,6 @@ export default function TodayScreen() {
         )}
 
         <View style={styles.section}>
-          <SectionHeader title="指标反馈" subtitle="今日行动影响的长期结果" />
           {criticalAlerts.length > 0 && (
             <>
             <SectionHeader title="需要立即处理" subtitle={`${criticalAlerts.length} 条高优先级`} />
@@ -856,9 +855,9 @@ function OutcomeFeedbackPanel({
           <Ionicons name="analytics-outline" size={16} color={c.brand} />
         </View>
         <View style={styles.outcomeHeaderText}>
-          <Text style={[styles.outcomeTitle, { color: c.labelPrimary }]}>本轮干预看这些结果</Text>
+          <Text style={[styles.outcomeTitle, { color: c.labelPrimary }]}>指标反馈 · 本轮干预结果</Text>
           <Text style={[styles.outcomeSubtitle, { color: c.labelTertiary }]}>
-            从可穿戴和体成分验证行动是否有效
+            用可穿戴、体成分和检查验证行动是否有效
           </Text>
         </View>
       </View>
