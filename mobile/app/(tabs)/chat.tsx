@@ -464,8 +464,8 @@ export default function ChatScreen() {
                 />
               )}
               <View style={styles.welcome}>
-                <BrandCircle size={72} style={{ marginBottom: 16 }}>
-                  <Ionicons name="sparkles" size={32} color="#fff" />
+                <BrandCircle size={56} style={{ marginBottom: 12 }}>
+                  <Ionicons name="sparkles" size={26} color="#fff" />
                 </BrandCircle>
                 <Text style={txt.welcomeTitle}>健康 Agent</Text>
                 <Text style={txt.welcomeSub}>
@@ -473,11 +473,28 @@ export default function ChatScreen() {
                     ? '或者问我别的'
                     : '我可以帮你分析数据、解答疑问、提供建议'}
                 </Text>
+                <View style={styles.suggestionHeader}>
+                  <View>
+                    <Text style={txt.suggestionTitle}>直接开始</Text>
+                    <Text style={txt.suggestionSub}>会带上你的健康上下文</Text>
+                  </View>
+                  <Ionicons name="pulse-outline" size={18} color={c.brand} />
+                </View>
                 <View style={styles.sugGrid}>
                   {starterSuggestions.map(s => (
-                    <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => handleSend(s.text, null)} activeOpacity={0.7}>
-                      <Ionicons name={s.icon} size={18} color={c.brand} />
-                      <Text style={txt.sugText}>{s.text}</Text>
+                    <TouchableOpacity
+                      key={s.text}
+                      style={styles.sugCard}
+                      onPress={() => handleSend(s.text, null)}
+                      activeOpacity={0.72}
+                      accessibilityRole="button"
+                      accessibilityLabel={`向健康 Agent 提问: ${s.text}`}
+                    >
+                      <View style={styles.sugIconWrap}>
+                        <Ionicons name={s.icon} size={17} color={c.brand} />
+                      </View>
+                      <Text style={txt.sugText} numberOfLines={2}>{s.text}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -726,11 +743,36 @@ function createStyles(c: ColorPalette) {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: c.separator,
   },
-  welcome: { alignItems: 'center', paddingTop: 60 },
-  sugGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xxl, paddingHorizontal: spacing.lg },
+  welcome: { alignItems: 'center', paddingTop: 28 },
+  suggestionHeader: {
+    width: '100%',
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sugGrid: { width: '100%', gap: spacing.sm, marginTop: spacing.sm, paddingHorizontal: spacing.lg },
   sugCard: {
-    width: '47%', backgroundColor: c.bgCard, borderRadius: radii.md,
-    padding: spacing.md, gap: 6, ...shadows.subtle,
+    minHeight: 58,
+    backgroundColor: c.bgCard,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    gap: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    ...shadows.subtle,
+  },
+  sugIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: c.brandLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -772,7 +814,9 @@ function createTxt(c: ColorPalette) {
   headerMeta: { fontSize: 12, color: c.labelTertiary, marginTop: 2, fontWeight: '600' } as TextStyle,
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
-  sugText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
+  suggestionTitle: { fontSize: 15, color: c.labelPrimary, fontWeight: '800' } as TextStyle,
+  suggestionSub: { fontSize: 12, color: c.labelTertiary, marginTop: 2, fontWeight: '600' } as TextStyle,
+  sugText: { fontSize: 14, color: c.labelPrimary, lineHeight: 19, fontWeight: '600', flex: 1 } as TextStyle,
   contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
   historyAction: { fontSize: 12, color: c.labelSecondary, fontWeight: '600' } as TextStyle,
   memoryLabel: { fontSize: 11, color: c.labelTertiary, fontWeight: '700' } as TextStyle,

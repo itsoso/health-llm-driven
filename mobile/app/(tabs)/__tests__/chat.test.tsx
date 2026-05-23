@@ -225,6 +225,15 @@ describe('ChatScreen', () => {
     expect(getByText('帮我提升补剂依从率（近7天完成率 42.9%）')).toBeTruthy();
   });
 
+  it('frames empty chat suggestions as direct next actions with health context', async () => {
+    const { getByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('直接开始')).toBeTruthy();
+    });
+    expect(getByText('会带上你的健康上下文')).toBeTruthy();
+  });
+
   it('moves the chat composer above the iOS keyboard using the keyboard height', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
