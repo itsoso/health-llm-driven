@@ -6,6 +6,7 @@ replaying every mobile screen request one by one.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Literal
 
@@ -18,10 +19,11 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.action_card import ActionCard
 from app.models.blood_pressure import BloodPressureRecord
-from app.models.daily_health import DietRecord, GarminData, WaterIntake
+from app.models.daily_health import DietRecord, GarminData, SupplementIntake, WaterIntake
 from app.models.desktop_job import DesktopJob
 from app.models.memory_fact import MemoryFact
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.weight import WeightRecord
@@ -82,7 +84,8 @@ def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
 
 def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
     today = date.today()
-    since = today - timedelta(days=29)
+    since_30 = today - timedelta(days=29)
+    since_7 = today - timedelta(days=6)
     diet_records = (
         db.query(DietRecord)
         .filter(DietRecord.user_id == user_id, DietRecord.record_date == today)
@@ -92,7 +95,7 @@ def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
         db.query(DietRecord)
         .filter(
             DietRecord.user_id == user_id,
-            DietRecord.record_date >= since,
+            DietRecord.record_date >= since_30,
             DietRecord.record_date <= today,
         )
         .all()
@@ -106,7 +109,7 @@ def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
         db.query(WaterIntake)
         .filter(
             WaterIntake.user_id == user_id,
-            WaterIntake.record_date >= since,
+            WaterIntake.record_date >= since_30,
             WaterIntake.record_date <= today,
         )
         .all()
@@ -130,25 +133,180 @@ def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
         .first()
     )
 
+    diet_summary = _diet_summary(diet_records, diet_30d, today=today)
+    water_summary = _water_summary(water_records, water_30d, today=today)
+    supplement_summary = _supplement_summary(db, user_id, today=today)
+
     return {
         "date": today.isoformat(),
-        "range_days": 30,
-        "diet": {
-            "today_count": len(diet_records),
-            "today_calories": round(sum(r.calories or 0 for r in diet_records), 1),
-            "last_30_count": len(diet_30d),
-            "last_30_calories": round(sum(r.calories or 0 for r in diet_30d), 1),
-        },
-        "water": {
-            "today_count": len(water_records),
-            "today_total_ml": sum(r.amount_ml or 0 for r in water_records),
-            "last_30_count": len(water_30d),
-            "last_30_total_ml": sum(r.amount_ml or 0 for r in water_30d),
-        },
+        "range_days": 7,
+        "available_ranges": [7, 30],
+        "diet": diet_summary,
+        "water": water_summary,
+        "supplements": supplement_summary,
         "latest_weight": _latest_weight_to_dict(latest_weight),
         "latest_blood_pressure": _latest_blood_pressure_to_dict(latest_bp),
         "latest_garmin": _latest_garmin_to_dict(latest_garmin),
         "recent_records": _recent_records_list(diet_30d, water_30d, latest_weight, latest_bp),
+    }
+
+
+def _date_window(today: date, days: int) -> list[date]:
+    start = today - timedelta(days=days - 1)
+    return [start + timedelta(days=offset) for offset in range(days)]
+
+
+def _sum_calories(records: list[DietRecord]) -> float:
+    return round(sum(record.calories or 0 for record in records), 1)
+
+
+def _diet_daily(records: list[DietRecord], *, today: date, days: int) -> list[dict[str, Any]]:
+    by_date: dict[date, list[DietRecord]] = {day: [] for day in _date_window(today, days)}
+    for record in records:
+        if record.record_date in by_date:
+            by_date[record.record_date].append(record)
+    return [
+        {
+            "date": day.isoformat(),
+            "count": len(rows),
+            "calories": _sum_calories(rows),
+        }
+        for day, rows in by_date.items()
+    ]
+
+
+def _diet_summary(today_records: list[DietRecord], records_30d: list[DietRecord], *, today: date) -> dict[str, Any]:
+    since_7 = today - timedelta(days=6)
+    records_7d = [record for record in records_30d if record.record_date and record.record_date >= since_7]
+    last_7_calories = _sum_calories(records_7d)
+    last_30_calories = _sum_calories(records_30d)
+    return {
+        "today_count": len(today_records),
+        "today_calories": _sum_calories(today_records),
+        "last_7_count": len(records_7d),
+        "last_7_calories": last_7_calories,
+        "last_7_avg_calories": round(last_7_calories / 7, 1),
+        "last_30_count": len(records_30d),
+        "last_30_calories": last_30_calories,
+        "last_30_avg_calories": round(last_30_calories / 30, 1),
+        "daily_7": _diet_daily(records_7d, today=today, days=7),
+        "daily_30": _diet_daily(records_30d, today=today, days=30),
+    }
+
+
+def _water_daily(records: list[WaterIntake], *, today: date, days: int) -> list[dict[str, Any]]:
+    by_date: dict[date, list[WaterIntake]] = {day: [] for day in _date_window(today, days)}
+    for record in records:
+        if record.record_date in by_date:
+            by_date[record.record_date].append(record)
+    return [
+        {
+            "date": day.isoformat(),
+            "count": len(rows),
+            "total_ml": sum(record.amount_ml or 0 for record in rows),
+        }
+        for day, rows in by_date.items()
+    ]
+
+
+def _water_summary(today_records: list[WaterIntake], records_30d: list[WaterIntake], *, today: date) -> dict[str, Any]:
+    since_7 = today - timedelta(days=6)
+    records_7d = [record for record in records_30d if record.record_date and record.record_date >= since_7]
+    today_total_ml = sum(record.amount_ml or 0 for record in today_records)
+    last_7_total_ml = sum(record.amount_ml or 0 for record in records_7d)
+    last_30_total_ml = sum(record.amount_ml or 0 for record in records_30d)
+    return {
+        "today_count": len(today_records),
+        "today_total_ml": today_total_ml,
+        "last_7_count": len(records_7d),
+        "last_7_total_ml": last_7_total_ml,
+        "last_7_avg_ml": round(last_7_total_ml / 7, 1),
+        "last_30_count": len(records_30d),
+        "last_30_total_ml": last_30_total_ml,
+        "last_30_avg_ml": round(last_30_total_ml / 30, 1),
+        "daily_7": _water_daily(records_7d, today=today, days=7),
+        "daily_30": _water_daily(records_30d, today=today, days=30),
+    }
+
+
+def _supplement_summary(db: Session, user_id: int, *, today: date) -> dict[str, Any]:
+    since_30 = today - timedelta(days=29)
+    since_7 = today - timedelta(days=6)
+    active_defs = (
+        db.query(SupplementDefinition)
+        .filter(
+            SupplementDefinition.user_id == user_id,
+            SupplementDefinition.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    definition_names = {definition.id: definition.name for definition in active_defs}
+    records_30d = (
+        db.query(SupplementRecord)
+        .filter(
+            SupplementRecord.user_id == user_id,
+            SupplementRecord.record_date >= since_30,
+            SupplementRecord.record_date <= today,
+            SupplementRecord.taken == True,  # noqa: E712
+        )
+        .all()
+    )
+    intake_30d = (
+        db.query(SupplementIntake)
+        .filter(
+            SupplementIntake.user_id == user_id,
+            SupplementIntake.record_date >= since_30,
+            SupplementIntake.record_date <= today,
+        )
+        .all()
+    )
+    records_7d = [record for record in records_30d if record.record_date and record.record_date >= since_7]
+    intake_7d = [record for record in intake_30d if record.record_date and record.record_date >= since_7]
+    active_count = len(active_defs)
+
+    def daily(days: int, supplement_records: list[SupplementRecord], intake_records: list[SupplementIntake]) -> list[dict[str, Any]]:
+        by_date = {day: 0 for day in _date_window(today, days)}
+        for record in supplement_records:
+            if record.record_date in by_date:
+                by_date[record.record_date] += 1
+        for record in intake_records:
+            if record.record_date in by_date:
+                by_date[record.record_date] += 1
+        return [{"date": day.isoformat(), "count": count} for day, count in by_date.items()]
+
+    name_counter: Counter[str] = Counter()
+    for record in records_30d:
+        name_counter[definition_names.get(record.supplement_id, "补剂")] += 1
+    for record in intake_30d:
+        name_counter[record.supplement_name or "补剂"] += 1
+
+    count_7 = len(records_7d) + len(intake_7d)
+    count_30 = len(records_30d) + len(intake_30d)
+    adherence_7_pct = (
+        round((len(records_7d) / (active_count * 7)) * 100, 1)
+        if active_count
+        else None
+    )
+    adherence_30_pct = (
+        round((len(records_30d) / (active_count * 30)) * 100, 1)
+        if active_count
+        else None
+    )
+    return {
+        "active_count": active_count,
+        "today_count": sum(item["count"] for item in daily(1, records_7d, intake_7d)),
+        "last_7_count": count_7,
+        "last_7_avg_per_day": round(count_7 / 7, 1),
+        "last_30_count": count_30,
+        "last_30_avg_per_day": round(count_30 / 30, 1),
+        "adherence_7_pct": adherence_7_pct,
+        "adherence_30_pct": adherence_30_pct,
+        "daily_7": daily(7, records_7d, intake_7d),
+        "daily_30": daily(30, records_30d, intake_30d),
+        "top_items": [
+            {"name": name, "count": count}
+            for name, count in name_counter.most_common(5)
+        ],
     }
 
 

@@ -5,6 +5,10 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
     public let heroSubtitle: String
     public let heroMetrics: [DesktopDashboardMetric]
     public let primaryMetrics: [DesktopDashboardMetric]
+    public let sevenDayMetrics: [DesktopDashboardMetric]
+    public let thirtyDayMetrics: [DesktopDashboardMetric]
+    public let sevenDayTrends: [DesktopDashboardTrend]
+    public let thirtyDayTrends: [DesktopDashboardTrend]
     public let wearableMetrics: [DesktopDashboardMetric]
     public let focusChips: [String]
     public let actionRows: [DesktopDashboardRow]
@@ -17,7 +21,11 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         self.heroTitle = bootstrap.user.name?.isEmpty == false ? bootstrap.user.name! : "Health Agent"
         self.heroSubtitle = DesktopDashboardPresentation.subtitle(for: bootstrap)
         self.heroMetrics = DesktopDashboardPresentation.heroMetrics(from: summary)
-        self.primaryMetrics = DesktopDashboardPresentation.primaryMetrics(from: summary)
+        self.sevenDayMetrics = DesktopDashboardPresentation.rangeMetrics(from: summary, days: 7)
+        self.thirtyDayMetrics = DesktopDashboardPresentation.rangeMetrics(from: summary, days: 30)
+        self.sevenDayTrends = DesktopDashboardPresentation.trends(from: summary, days: 7)
+        self.thirtyDayTrends = DesktopDashboardPresentation.trends(from: summary, days: 30)
+        self.primaryMetrics = self.sevenDayMetrics
         self.wearableMetrics = DesktopDashboardPresentation.wearableMetrics(from: summary.latestGarmin)
         self.focusChips = Array((bootstrap.trajectory.focusDomains ?? []).prefix(5))
         self.actionRows = bootstrap.dailyPlan.actions.prefix(4).map {
@@ -85,39 +93,106 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         ]
     }
 
-    private static func primaryMetrics(from summary: RecentRecordsSummary) -> [DesktopDashboardMetric] {
-        [
-            .init(
-                id: "diet",
-                titleKey: "Diet 30d",
-                value: "\(formatNumber(summary.diet?.last30Calories ?? summary.diet?.todayCalories ?? 0)) kcal",
-                detail: "\(summary.diet?.last30Count ?? summary.diet?.todayCount ?? 0) records",
+    private static func rangeMetrics(from summary: RecentRecordsSummary, days: Int) -> [DesktopDashboardMetric] {
+        let dietValue: Double = days == 7
+            ? (summary.diet?.last7Calories ?? summary.diet?.last30Calories ?? summary.diet?.todayCalories ?? 0)
+            : (summary.diet?.last30Calories ?? summary.diet?.last7Calories ?? summary.diet?.todayCalories ?? 0)
+        let dietCount: Int = days == 7
+            ? (summary.diet?.last7Count ?? summary.diet?.last30Count ?? summary.diet?.todayCount ?? 0)
+            : (summary.diet?.last30Count ?? summary.diet?.last7Count ?? summary.diet?.todayCount ?? 0)
+        let dietAverage: Double = days == 7
+            ? (summary.diet?.last7AvgCalories ?? dietValue / 7)
+            : (summary.diet?.last30AvgCalories ?? dietValue / 30)
+
+        let waterValue: Int = days == 7
+            ? (summary.water?.last7TotalMl ?? summary.water?.last30TotalMl ?? summary.water?.todayTotalMl ?? 0)
+            : (summary.water?.last30TotalMl ?? summary.water?.last7TotalMl ?? summary.water?.todayTotalMl ?? 0)
+        let waterCount: Int = days == 7
+            ? (summary.water?.last7Count ?? summary.water?.last30Count ?? summary.water?.todayCount ?? 0)
+            : (summary.water?.last30Count ?? summary.water?.last7Count ?? summary.water?.todayCount ?? 0)
+        let waterAverage: Double = days == 7
+            ? (summary.water?.last7AvgMl ?? Double(waterValue) / 7)
+            : (summary.water?.last30AvgMl ?? Double(waterValue) / 30)
+
+        let supplementValue: Int = days == 7
+            ? (summary.supplements?.last7Count ?? summary.supplements?.todayCount ?? 0)
+            : (summary.supplements?.last30Count ?? summary.supplements?.last7Count ?? summary.supplements?.todayCount ?? 0)
+        let supplementAverage: Double = days == 7
+            ? (summary.supplements?.last7AvgPerDay ?? Double(supplementValue) / 7)
+            : (summary.supplements?.last30AvgPerDay ?? Double(supplementValue) / 30)
+        let supplementAdherence = days == 7
+            ? summary.supplements?.adherence7Pct
+            : summary.supplements?.adherence30Pct
+        let supplementDetail: String
+        if let supplementAdherence {
+            supplementDetail = "Avg \(formatNumber(supplementAverage))/day · Adherence \(formatNumber(supplementAdherence))%"
+        } else {
+            supplementDetail = "Avg \(formatNumber(supplementAverage))/day · \(summary.supplements?.activeCount ?? 0) active"
+        }
+
+        let dietMetric = DesktopDashboardMetric(
+            id: "diet",
+            titleKey: days == 7 ? "Diet 7d" : "Diet 30d",
+            value: "\(formatNumber(dietValue)) kcal",
+            detail: "Avg \(formatNumber(dietAverage))/day · \(dietCount) records",
+            tone: "orange",
+            systemImage: "fork.knife"
+        )
+        let waterMetric = DesktopDashboardMetric(
+            id: "water",
+            titleKey: days == 7 ? "Water 7d" : "Water 30d",
+            value: "\(formatNumber(Double(waterValue))) ml",
+            detail: "Avg \(formatNumber(waterAverage))/day · \(waterCount) records",
+            tone: "cyan",
+            systemImage: "drop.fill"
+        )
+        let supplementMetric = DesktopDashboardMetric(
+            id: "supplements",
+            titleKey: days == 7 ? "Supplements 7d" : "Supplements 30d",
+            value: String(supplementValue),
+            detail: supplementDetail,
+            tone: "teal",
+            systemImage: "pills.fill"
+        )
+        let bloodPressureMetric = DesktopDashboardMetric(
+            id: "bp",
+            titleKey: "Latest BP",
+            value: summary.latestBloodPressure?.displayValue ?? "—",
+            detail: summary.latestBloodPressure?.category ?? summary.latestBloodPressure?.recordDate ?? "No record",
+            tone: "pink",
+            systemImage: "heart.text.square.fill"
+        )
+        return [dietMetric, waterMetric, supplementMetric, bloodPressureMetric]
+    }
+
+    private static func trends(from summary: RecentRecordsSummary, days: Int) -> [DesktopDashboardTrend] {
+        let dietPoints = (days == 7 ? summary.diet?.daily7 : summary.diet?.daily30) ?? []
+        let waterPoints = (days == 7 ? summary.water?.daily7 : summary.water?.daily30) ?? []
+        let supplementPoints = (days == 7 ? summary.supplements?.daily7 : summary.supplements?.daily30) ?? []
+        return [
+            DesktopDashboardTrend(
+                id: "diet-trend-\(days)",
+                titleKey: "Diet Trend",
+                unit: "kcal",
                 tone: "orange",
-                systemImage: "fork.knife"
+                averageLabel: "Avg \(formatNumber(days == 7 ? (summary.diet?.last7AvgCalories ?? 0) : (summary.diet?.last30AvgCalories ?? 0)))/day",
+                points: dietPoints.map { .init(date: $0.date, value: $0.calories) }
             ),
-            .init(
-                id: "water",
-                titleKey: "Water 30d",
-                value: "\(formatNumber(Double(summary.water?.last30TotalMl ?? summary.water?.todayTotalMl ?? 0))) ml",
-                detail: "\(summary.water?.last30Count ?? summary.water?.todayCount ?? 0) records",
+            DesktopDashboardTrend(
+                id: "water-trend-\(days)",
+                titleKey: "Water Trend",
+                unit: "ml",
                 tone: "cyan",
-                systemImage: "drop.fill"
+                averageLabel: "Avg \(formatNumber(days == 7 ? (summary.water?.last7AvgMl ?? 0) : (summary.water?.last30AvgMl ?? 0)))/day",
+                points: waterPoints.map { .init(date: $0.date, value: Double($0.totalMl)) }
             ),
-            .init(
-                id: "weight",
-                titleKey: "Latest Weight",
-                value: summary.latestWeight?.displayValue ?? "—",
-                detail: summary.latestWeight?.recordDate ?? "No record",
-                tone: "green",
-                systemImage: "scalemass.fill"
-            ),
-            .init(
-                id: "bp",
-                titleKey: "Latest BP",
-                value: summary.latestBloodPressure?.displayValue ?? "—",
-                detail: summary.latestBloodPressure?.category ?? summary.latestBloodPressure?.recordDate ?? "No record",
-                tone: "pink",
-                systemImage: "heart.text.square.fill"
+            DesktopDashboardTrend(
+                id: "supplement-trend-\(days)",
+                titleKey: "Supplement Trend",
+                unit: "x",
+                tone: "teal",
+                averageLabel: "Avg \(formatNumber(days == 7 ? (summary.supplements?.last7AvgPerDay ?? 0) : (summary.supplements?.last30AvgPerDay ?? 0)))/day",
+                points: supplementPoints.map { .init(date: $0.date, value: Double($0.count)) }
             )
         ]
     }
@@ -175,6 +250,22 @@ public struct DesktopDashboardMetric: Equatable, Identifiable, Sendable {
     public let detail: String
     public let tone: String
     public let systemImage: String
+}
+
+public struct DesktopDashboardTrend: Equatable, Identifiable, Sendable {
+    public let id: String
+    public let titleKey: String
+    public let unit: String
+    public let tone: String
+    public let averageLabel: String
+    public let points: [DesktopDashboardTrendPoint]
+}
+
+public struct DesktopDashboardTrendPoint: Equatable, Identifiable, Sendable {
+    public let date: String
+    public let value: Double
+
+    public var id: String { date }
 }
 
 public struct DesktopDashboardRow: Equatable, Identifiable, Sendable {

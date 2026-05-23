@@ -88,8 +88,10 @@ public struct MemoryFactSummary: Decodable, Equatable, Identifiable, Sendable {
 public struct RecentRecordsSummary: Decodable, Equatable, Sendable {
     public let date: String?
     public let rangeDays: Int?
+    public let availableRanges: [Int]?
     public let diet: DietRecordSummary?
     public let water: WaterRecordSummary?
+    public let supplements: SupplementRecordSummary?
     public let latestWeight: DesktopRecordMetric?
     public let latestBloodPressure: DesktopRecordMetric?
     public let latestGarmin: GarminMetricSummary?
@@ -100,15 +102,19 @@ public struct RecentRecordsSummary: Decodable, Equatable, Sendable {
         water: WaterRecordSummary? = nil,
         date: String? = nil,
         rangeDays: Int? = nil,
+        availableRanges: [Int]? = nil,
         latestWeight: DesktopRecordMetric? = nil,
         latestBloodPressure: DesktopRecordMetric? = nil,
         latestGarmin: GarminMetricSummary? = nil,
-        recentRecords: [DesktopRecordMetric]? = nil
+        recentRecords: [DesktopRecordMetric]? = nil,
+        supplements: SupplementRecordSummary? = nil
     ) {
         self.date = date
         self.rangeDays = rangeDays
+        self.availableRanges = availableRanges
         self.diet = diet
         self.water = water
+        self.supplements = supplements
         self.latestWeight = latestWeight
         self.latestBloodPressure = latestBloodPressure
         self.latestGarmin = latestGarmin
@@ -118,8 +124,10 @@ public struct RecentRecordsSummary: Decodable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case date
         case rangeDays = "range_days"
+        case availableRanges = "available_ranges"
         case diet
         case water
+        case supplements
         case latestWeight = "latest_weight"
         case latestBloodPressure = "latest_blood_pressure"
         case latestGarmin = "latest_garmin"
@@ -130,52 +138,212 @@ public struct RecentRecordsSummary: Decodable, Equatable, Sendable {
 public struct DietRecordSummary: Decodable, Equatable, Sendable {
     public let todayCount: Int?
     public let todayCalories: Double?
+    public let last7Count: Int?
+    public let last7Calories: Double?
+    public let last7AvgCalories: Double?
     public let last30Count: Int?
     public let last30Calories: Double?
+    public let last30AvgCalories: Double?
+    public let daily7: [DietDailyPoint]?
+    public let daily30: [DietDailyPoint]?
 
     public init(
         todayCount: Int? = nil,
         todayCalories: Double? = nil,
+        last7Count: Int? = nil,
+        last7Calories: Double? = nil,
+        last7AvgCalories: Double? = nil,
         last30Count: Int? = nil,
-        last30Calories: Double? = nil
+        last30Calories: Double? = nil,
+        last30AvgCalories: Double? = nil,
+        daily7: [DietDailyPoint]? = nil,
+        daily30: [DietDailyPoint]? = nil
     ) {
         self.todayCount = todayCount
         self.todayCalories = todayCalories
+        self.last7Count = last7Count
+        self.last7Calories = last7Calories
+        self.last7AvgCalories = last7AvgCalories
         self.last30Count = last30Count
         self.last30Calories = last30Calories
+        self.last30AvgCalories = last30AvgCalories
+        self.daily7 = daily7
+        self.daily30 = daily30
     }
 
     enum CodingKeys: String, CodingKey {
         case todayCount = "today_count"
         case todayCalories = "today_calories"
+        case last7Count = "last_7_count"
+        case last7Calories = "last_7_calories"
+        case last7AvgCalories = "last_7_avg_calories"
         case last30Count = "last_30_count"
         case last30Calories = "last_30_calories"
+        case last30AvgCalories = "last_30_avg_calories"
+        case daily7 = "daily_7"
+        case daily30 = "daily_30"
     }
 }
 
 public struct WaterRecordSummary: Decodable, Equatable, Sendable {
     public let todayCount: Int?
     public let todayTotalMl: Int?
+    public let last7Count: Int?
+    public let last7TotalMl: Int?
+    public let last7AvgMl: Double?
     public let last30Count: Int?
     public let last30TotalMl: Int?
+    public let last30AvgMl: Double?
+    public let daily7: [WaterDailyPoint]?
+    public let daily30: [WaterDailyPoint]?
 
     public init(
         todayCount: Int? = nil,
         todayTotalMl: Int? = nil,
+        last7Count: Int? = nil,
+        last7TotalMl: Int? = nil,
+        last7AvgMl: Double? = nil,
         last30Count: Int? = nil,
-        last30TotalMl: Int? = nil
+        last30TotalMl: Int? = nil,
+        last30AvgMl: Double? = nil,
+        daily7: [WaterDailyPoint]? = nil,
+        daily30: [WaterDailyPoint]? = nil
     ) {
         self.todayCount = todayCount
         self.todayTotalMl = todayTotalMl
+        self.last7Count = last7Count
+        self.last7TotalMl = last7TotalMl
+        self.last7AvgMl = last7AvgMl
         self.last30Count = last30Count
         self.last30TotalMl = last30TotalMl
+        self.last30AvgMl = last30AvgMl
+        self.daily7 = daily7
+        self.daily30 = daily30
     }
 
     enum CodingKeys: String, CodingKey {
         case todayCount = "today_count"
         case todayTotalMl = "today_total_ml"
+        case last7Count = "last_7_count"
+        case last7TotalMl = "last_7_total_ml"
+        case last7AvgMl = "last_7_avg_ml"
         case last30Count = "last_30_count"
         case last30TotalMl = "last_30_total_ml"
+        case last30AvgMl = "last_30_avg_ml"
+        case daily7 = "daily_7"
+        case daily30 = "daily_30"
+    }
+}
+
+public struct DietDailyPoint: Decodable, Equatable, Identifiable, Sendable {
+    public let date: String
+    public let count: Int
+    public let calories: Double
+
+    public var id: String { date }
+
+    public init(date: String, count: Int, calories: Double) {
+        self.date = date
+        self.count = count
+        self.calories = calories
+    }
+}
+
+public struct WaterDailyPoint: Decodable, Equatable, Identifiable, Sendable {
+    public let date: String
+    public let count: Int
+    public let totalMl: Int
+
+    public var id: String { date }
+
+    public init(date: String, count: Int, totalMl: Int) {
+        self.date = date
+        self.count = count
+        self.totalMl = totalMl
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case count
+        case totalMl = "total_ml"
+    }
+}
+
+public struct SupplementRecordSummary: Decodable, Equatable, Sendable {
+    public let activeCount: Int?
+    public let todayCount: Int?
+    public let last7Count: Int?
+    public let last7AvgPerDay: Double?
+    public let last30Count: Int?
+    public let last30AvgPerDay: Double?
+    public let adherence7Pct: Double?
+    public let adherence30Pct: Double?
+    public let daily7: [SupplementDailyPoint]?
+    public let daily30: [SupplementDailyPoint]?
+    public let topItems: [SupplementTopItem]?
+
+    public init(
+        activeCount: Int? = nil,
+        todayCount: Int? = nil,
+        last7Count: Int? = nil,
+        last7AvgPerDay: Double? = nil,
+        last30Count: Int? = nil,
+        last30AvgPerDay: Double? = nil,
+        adherence7Pct: Double? = nil,
+        adherence30Pct: Double? = nil,
+        daily7: [SupplementDailyPoint]? = nil,
+        daily30: [SupplementDailyPoint]? = nil,
+        topItems: [SupplementTopItem]? = nil
+    ) {
+        self.activeCount = activeCount
+        self.todayCount = todayCount
+        self.last7Count = last7Count
+        self.last7AvgPerDay = last7AvgPerDay
+        self.last30Count = last30Count
+        self.last30AvgPerDay = last30AvgPerDay
+        self.adherence7Pct = adherence7Pct
+        self.adherence30Pct = adherence30Pct
+        self.daily7 = daily7
+        self.daily30 = daily30
+        self.topItems = topItems
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case activeCount = "active_count"
+        case todayCount = "today_count"
+        case last7Count = "last_7_count"
+        case last7AvgPerDay = "last_7_avg_per_day"
+        case last30Count = "last_30_count"
+        case last30AvgPerDay = "last_30_avg_per_day"
+        case adherence7Pct = "adherence_7_pct"
+        case adherence30Pct = "adherence_30_pct"
+        case daily7 = "daily_7"
+        case daily30 = "daily_30"
+        case topItems = "top_items"
+    }
+}
+
+public struct SupplementDailyPoint: Decodable, Equatable, Identifiable, Sendable {
+    public let date: String
+    public let count: Int
+
+    public var id: String { date }
+
+    public init(date: String, count: Int) {
+        self.date = date
+        self.count = count
+    }
+}
+
+public struct SupplementTopItem: Decodable, Equatable, Identifiable, Sendable {
+    public let name: String
+    public let count: Int
+
+    public var id: String { name }
+
+    public init(name: String, count: Int) {
+        self.name = name
+        self.count = count
     }
 }
 

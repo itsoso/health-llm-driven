@@ -227,6 +227,7 @@ struct LoginView: View {
 struct TodayView: View {
     @Bindable var viewModel: TodayViewModel
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @State private var dashboardRange: DashboardRange = .sevenDays
 
     var body: some View {
         ZStack {
@@ -312,7 +313,10 @@ struct TodayView: View {
     }
 
     private func dashboardHero(_ presentation: DesktopDashboardPresentation) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+        let rangeMetrics = dashboardRange == .sevenDays ? presentation.sevenDayMetrics : presentation.thirtyDayMetrics
+        let rangeTrends = dashboardRange == .sevenDays ? presentation.sevenDayTrends : presentation.thirtyDayTrends
+
+        return VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(appText("Health Dashboard", appLanguageRaw))
                     .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -351,8 +355,21 @@ struct TodayView: View {
 
             Divider()
 
+            HStack(spacing: 12) {
+                Label(appText("Nutrition & Intake", appLanguageRaw), systemImage: "chart.xyaxis.line")
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Picker("", selection: $dashboardRange) {
+                    ForEach(DashboardRange.allCases) { range in
+                        Text(appText(range.titleKey, appLanguageRaw)).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+            }
+
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
-                ForEach(presentation.primaryMetrics) { metric in
+                ForEach(rangeMetrics) { metric in
                     SummaryMetricStrip(
                         metric: metric,
                         title: localizedMetricTitle(metric.titleKey),
@@ -360,6 +377,12 @@ struct TodayView: View {
                     )
                 }
             }
+
+            TrendSparklineGrid(
+                trends: rangeTrends,
+                localizedTitle: localizedMetricTitle,
+                localizedDetail: localizedMetricDetail
+            )
 
             if let error = viewModel.errorMessage {
                 HStack(spacing: 8) {
@@ -516,6 +539,10 @@ struct TodayView: View {
             .replacingOccurrences(of: "No wearable data", with: appText("No wearable data", appLanguageRaw))
             .replacingOccurrences(of: "Readiness", with: appText("Readiness", appLanguageRaw))
             .replacingOccurrences(of: "wearable", with: appText("wearable", appLanguageRaw))
+            .replacingOccurrences(of: "Avg", with: appText("Avg", appLanguageRaw))
+            .replacingOccurrences(of: "/day", with: appText("/day", appLanguageRaw))
+            .replacingOccurrences(of: "Adherence", with: appText("Adherence", appLanguageRaw))
+            .replacingOccurrences(of: "active", with: appText("active", appLanguageRaw))
     }
 
     private func localizedSubtitle(_ subtitle: String) -> String {
@@ -523,6 +550,20 @@ struct TodayView: View {
             .replacingOccurrences(of: "cards", with: appText("cards", appLanguageRaw))
             .replacingOccurrences(of: "memories", with: appText("memories", appLanguageRaw))
             .replacingOccurrences(of: "recent records", with: appText("recent records", appLanguageRaw))
+    }
+}
+
+private enum DashboardRange: String, CaseIterable, Identifiable {
+    case sevenDays
+    case thirtyDays
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .sevenDays: "7 days"
+        case .thirtyDays: "30 days"
+        }
     }
 }
 
@@ -588,6 +629,78 @@ private struct SummaryMetricStrip: View {
         }
         .padding(12)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+}
+
+private struct TrendSparklineGrid: View {
+    let trends: [DesktopDashboardTrend]
+    let localizedTitle: (String) -> String
+    let localizedDetail: (String) -> String
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
+            ForEach(trends) { trend in
+                TrendSparklineCard(
+                    trend: trend,
+                    title: localizedTitle(trend.titleKey),
+                    detail: localizedDetail(trend.averageLabel)
+                )
+            }
+        }
+    }
+}
+
+private struct TrendSparklineCard: View {
+    let trend: DesktopDashboardTrend
+    let title: String
+    let detail: String
+
+    private var maxValue: Double {
+        max(trend.points.map(\.value).max() ?? 0, 1)
+    }
+
+    private var latestValue: Double {
+        trend.points.last?.value ?? 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(formatted(latestValue))
+                    .font(.title3.weight(.bold).monospacedDigit())
+                Text(trend.unit)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(trend.points) { point in
+                    Capsule()
+                        .fill(toneColor(trend.tone).opacity(point.value > 0 ? 0.72 : 0.16))
+                        .frame(height: max(6, CGFloat(point.value / maxValue) * 42))
+                        .frame(maxWidth: .infinity)
+                        .help("\(point.date): \(formatted(point.value)) \(trend.unit)")
+                }
+            }
+            .frame(height: 46, alignment: .bottom)
+        }
+        .padding(12)
+        .background(toneColor(trend.tone).opacity(0.07), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private func formatted(_ value: Double) -> String {
+        value.formatted(.number.grouping(.automatic).precision(.fractionLength(0...1)))
     }
 }
 

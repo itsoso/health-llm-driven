@@ -20,10 +20,47 @@ final class DesktopDashboardPresentationTests: XCTestCase {
                 MemoryFactSummary(id: 9, objectValue: "注意事项：有肝病时慎用对乙酰氨基酚。")
             ],
             recentRecordsSummary: RecentRecordsSummary(
-                diet: DietRecordSummary(todayCount: 0, todayCalories: 0, last30Count: 113, last30Calories: 47661),
-                water: WaterRecordSummary(todayCount: 0, todayTotalMl: 0, last30Count: 137, last30TotalMl: 35650),
+                diet: DietRecordSummary(
+                    todayCount: 0,
+                    todayCalories: 0,
+                    last7Count: 16,
+                    last7Calories: 3450,
+                    last7AvgCalories: 492.9,
+                    last30Count: 113,
+                    last30Calories: 47661,
+                    last30AvgCalories: 1588.7,
+                    daily7: [
+                        DietDailyPoint(date: "2026-05-17", count: 2, calories: 600),
+                        DietDailyPoint(date: "2026-05-18", count: 2, calories: 450),
+                        DietDailyPoint(date: "2026-05-19", count: 3, calories: 700),
+                        DietDailyPoint(date: "2026-05-20", count: 3, calories: 520),
+                        DietDailyPoint(date: "2026-05-21", count: 2, calories: 530),
+                        DietDailyPoint(date: "2026-05-22", count: 4, calories: 650),
+                        DietDailyPoint(date: "2026-05-23", count: 0, calories: 0)
+                    ]
+                ),
+                water: WaterRecordSummary(
+                    todayCount: 0,
+                    todayTotalMl: 0,
+                    last7Count: 18,
+                    last7TotalMl: 7900,
+                    last7AvgMl: 1128.6,
+                    last30Count: 137,
+                    last30TotalMl: 35650,
+                    last30AvgMl: 1188.3,
+                    daily7: [
+                        WaterDailyPoint(date: "2026-05-17", count: 2, totalMl: 900),
+                        WaterDailyPoint(date: "2026-05-18", count: 2, totalMl: 1200),
+                        WaterDailyPoint(date: "2026-05-19", count: 3, totalMl: 1300),
+                        WaterDailyPoint(date: "2026-05-20", count: 3, totalMl: 1100),
+                        WaterDailyPoint(date: "2026-05-21", count: 2, totalMl: 1400),
+                        WaterDailyPoint(date: "2026-05-22", count: 6, totalMl: 2000),
+                        WaterDailyPoint(date: "2026-05-23", count: 0, totalMl: 0)
+                    ]
+                ),
                 date: "2026-05-23",
-                rangeDays: 30,
+                rangeDays: 7,
+                availableRanges: [7, 30],
                 latestWeight: DesktopRecordMetric(
                     id: 49,
                     type: "weight",
@@ -57,7 +94,27 @@ final class DesktopDashboardPresentationTests: XCTestCase {
                 recentRecords: [
                     DesktopRecordMetric(id: 625, type: "diet", title: "晚餐", value: .double(650), unit: "kcal", category: nil, recordDate: "2026-05-22"),
                     DesktopRecordMetric(id: 626, type: "water", title: "饮水", value: .int(500), unit: "ml", category: nil, recordDate: "2026-05-22")
-                ]
+                ],
+                supplements: SupplementRecordSummary(
+                    activeCount: 4,
+                    todayCount: 0,
+                    last7Count: 6,
+                    last7AvgPerDay: 0.9,
+                    last30Count: 22,
+                    last30AvgPerDay: 0.7,
+                    adherence7Pct: 21.4,
+                    adherence30Pct: 18.3,
+                    daily7: [
+                        SupplementDailyPoint(date: "2026-05-17", count: 1),
+                        SupplementDailyPoint(date: "2026-05-18", count: 1),
+                        SupplementDailyPoint(date: "2026-05-19", count: 1),
+                        SupplementDailyPoint(date: "2026-05-20", count: 1),
+                        SupplementDailyPoint(date: "2026-05-21", count: 1),
+                        SupplementDailyPoint(date: "2026-05-22", count: 1),
+                        SupplementDailyPoint(date: "2026-05-23", count: 0)
+                    ],
+                    topItems: [SupplementTopItem(name: "鱼油", count: 6)]
+                )
             ),
             activeJobs: []
         )
@@ -66,7 +123,9 @@ final class DesktopDashboardPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.heroTitle, "baokun")
         XCTAssertEqual(presentation.heroMetrics.map(\.value), ["971", "89", "93%", "70.5 kg"])
-        XCTAssertEqual(presentation.primaryMetrics.map(\.value), ["47,661 kcal", "35,650 ml", "70.5 kg", "119/75 mmHg"])
+        XCTAssertEqual(presentation.primaryMetrics.map(\.value), ["3,450 kcal", "7,900 ml", "6", "119/75 mmHg"])
+        XCTAssertEqual(presentation.thirtyDayMetrics.map(\.value), ["47,661 kcal", "35,650 ml", "22", "119/75 mmHg"])
+        XCTAssertEqual(presentation.sevenDayTrends.map(\.points.count), [7, 7, 7])
         XCTAssertEqual(presentation.wearableMetrics.map(\.value), ["971", "89", "93%", "48"])
         XCTAssertEqual(presentation.focusChips, ["血脂", "血糖", "睡眠"])
         XCTAssertEqual(presentation.recentRecordRows.map(\.value), ["650 kcal", "500 ml"])
