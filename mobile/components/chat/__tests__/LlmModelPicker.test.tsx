@@ -40,4 +40,23 @@ describe('Mobile LlmModelPicker', () => {
 
     expect(onSelect).toHaveBeenCalledWith('minimax-m25');
   });
+
+  it('stays openable while a reply is streaming', () => {
+    const onSelect = jest.fn();
+    const { getByLabelText, getByText } = render(
+      <LlmModelPicker
+        currentLabel="Qwen Max"
+        currentModelId="qwen-max"
+        options={options}
+        savingModelId={null}
+        disabled
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen Max'));
+    fireEvent.press(getByText('MiniMax M2.5'));
+
+    expect(onSelect).toHaveBeenCalledWith('minimax-m25');
+  });
 });

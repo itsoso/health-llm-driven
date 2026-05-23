@@ -20,6 +20,31 @@ def test_completion_status_marks_stop_finish_reason_as_complete():
 
 
 @pytest.mark.asyncio
+async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(db, auth_user_and_headers, monkeypatch):
+    """Empty no-tool retry must not send tools=[] to OpenAI-compatible gateways."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    captured_kwargs = []
+
+    class FakeProvider:
+        async def chat(self, **kwargs):
+            captured_kwargs.append(kwargs)
+            return {"content": "ok", "finish_reason": "stop"}
+
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda _user_id, _db: FakeProvider(),
+    )
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+
+    await executor._call_llm([{"role": "user", "content": "请直接回答"}], [])
+
+    assert "tools" not in captured_kwargs[0]
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)

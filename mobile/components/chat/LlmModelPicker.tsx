@@ -41,7 +41,6 @@ export default function LlmModelPicker({
   currentModelId,
   options,
   savingModelId,
-  disabled,
   error,
   onSelect,
 }: {
@@ -66,9 +65,8 @@ export default function LlmModelPicker({
   return (
     <View style={styles.root}>
       <TouchableOpacity
-        style={[styles.trigger, disabled && styles.triggerDisabled]}
+        style={styles.trigger}
         onPress={() => setVisible(true)}
-        disabled={disabled}
         activeOpacity={0.75}
         accessibilityRole="button"
         accessibilityLabel={`切换 AI 模型，当前 ${currentLabel}`}
@@ -180,7 +178,6 @@ function createStyles(c: ColorPalette) {
       backgroundColor: c.bgCard,
       ...shadows.subtle,
     },
-    triggerDisabled: { opacity: 0.55 },
     backdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.36)',

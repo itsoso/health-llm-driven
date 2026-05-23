@@ -1012,14 +1012,22 @@ class AgentExecutor:
         else:
             from app.services.llm.factory import get_llm_provider
             provider = get_llm_provider()
-        # OpenClaw 不吃 tools 字段; wrap_provider 是 in-place patch, isinstance 仍可识别
+        # OpenClaw 不吃 tools 字段; wrap_provider 是 in-place patch, isinstance 仍可识别.
+        # Some OpenAI-compatible gateways treat an explicit empty tools array as
+        # a tool-mode request and can return content="" with finish_reason="stop".
         from app.services.llm.providers.openclaw_provider import OpenClawProvider
         pass_tools = None if isinstance(provider, OpenClawProvider) else tools
-        return await provider.chat(
-            messages=messages, model=None,
-            temperature=0.3, max_tokens=4000, stream=False, tools=pass_tools,
-            return_metadata=True,
-        )
+        chat_kwargs = {
+            "messages": messages,
+            "model": None,
+            "temperature": 0.3,
+            "max_tokens": 4000,
+            "stream": False,
+            "return_metadata": True,
+        }
+        if pass_tools:
+            chat_kwargs["tools"] = pass_tools
+        return await provider.chat(**chat_kwargs)
 
     async def _call_llm_direct(
         self, messages: List[Dict], tools: List[Dict],
