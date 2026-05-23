@@ -57,6 +57,58 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(emptyMatches.map(\.id), commands.map(\.id))
     }
 
+    func testWorkspaceContextFactoryBuildsHealthRecordContext() {
+        let record = DesktopRecordMetric(
+            id: 625,
+            type: "diet",
+            title: "晚餐",
+            value: .int(650),
+            unit: "kcal",
+            category: "nutrition",
+            recordDate: "2026-05-23"
+        )
+
+        let item = DesktopWorkspaceContextFactory.contextItem(for: record)
+
+        XCTAssertEqual(item.sourceID, "health_record:625")
+        XCTAssertEqual(item.sourceKind, "health_record")
+        XCTAssertEqual(item.title, "晚餐")
+        XCTAssertEqual(item.payload["type"], "diet")
+        XCTAssertEqual(item.payload["display_value"], "650 kcal")
+    }
+
+    func testWorkspaceContextFactoryBuildsKnowledgeDocumentAndJobContext() {
+        let document = KnowledgeDocumentSummary(
+            docID: "dedao:100-ecc79a079a92",
+            docType: "claim",
+            title: "LDL-C/ApoB 轨迹",
+            summary: "血脂风险以 LDL-C/ApoB 轨迹为锚点",
+            evidenceLevel: "B",
+            confidence: 0.77,
+            sources: ["dedao", "pubmed:30586774"]
+        )
+        let job = DesktopJobSummary(
+            id: 91,
+            jobType: "system_kb_rebuild",
+            status: "running",
+            progress: 40,
+            sourceKind: "dedao_folder",
+            sourceName: "down-dedao",
+            sourceHash: "sha256:abc"
+        )
+
+        let documentItem = DesktopWorkspaceContextFactory.contextItem(for: document)
+        let jobItem = DesktopWorkspaceContextFactory.contextItem(for: job)
+
+        XCTAssertEqual(documentItem.sourceID, "knowledge_document:dedao:100-ecc79a079a92")
+        XCTAssertEqual(documentItem.sourceKind, "knowledge_document")
+        XCTAssertEqual(documentItem.payload["evidence_level"], "B")
+        XCTAssertEqual(documentItem.payload["sources"], "dedao, pubmed:30586774")
+        XCTAssertEqual(jobItem.sourceID, "desktop_job:91")
+        XCTAssertEqual(jobItem.sourceKind, "desktop_job")
+        XCTAssertEqual(jobItem.payload["progress"], "40")
+    }
+
     func testFileIntakeClassifiesAndHashesGenomeAndDedaoSources() async throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)

@@ -1627,23 +1627,30 @@ struct WorkspaceOverviewView: View {
     }
 
     private func dataRecordRow(_ record: DesktopRecordMetric) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: workspaceRecordIcon(record.type))
-                .foregroundStyle(workspaceRecordColor(record.type))
-                .frame(width: 30, height: 30)
-                .background(workspaceRecordColor(record.type).opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(record.title)
-                    .font(.callout.weight(.semibold))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: workspaceRecordIcon(record.type))
+                    .foregroundStyle(workspaceRecordColor(record.type))
+                    .frame(width: 30, height: 30)
+                    .background(workspaceRecordColor(record.type).opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(record.title)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                    Text(record.recordDate ?? appText("No record", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(record.displayValue)
+                    .font(.callout.weight(.bold).monospacedDigit())
                     .lineLimit(1)
-                Text(record.recordDate ?? appText("No record", appLanguageRaw))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Spacer()
-            Text(record.displayValue)
-                .font(.callout.weight(.bold).monospacedDigit())
-                .lineLimit(1)
+
+            contextActionBar(
+                item: DesktopWorkspaceContextFactory.contextItem(for: record),
+                prompt: DesktopWorkspaceContextFactory.prompt(for: record)
+            )
         }
         .padding(11)
         .background(Color.secondary.opacity(0.065), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1910,30 +1917,37 @@ struct WorkspaceOverviewView: View {
                 if let documents = summary.knowledgeSummary?.recentDocuments, !documents.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(documents.prefix(8)) { document in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: document.docType == "claim" ? "checkmark.seal.fill" : "doc.text.fill")
-                                    .foregroundStyle(document.docType == "claim" ? .teal : .blue)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(document.title ?? document.docID)
-                                        .font(.callout.weight(.semibold))
-                                        .lineLimit(1)
-                                    Text(document.summary ?? document.docID)
-                                        .font(.caption)
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: document.docType == "claim" ? "checkmark.seal.fill" : "doc.text.fill")
+                                        .foregroundStyle(document.docType == "claim" ? .teal : .blue)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(document.title ?? document.docID)
+                                            .font(.callout.weight(.semibold))
+                                            .lineLimit(1)
+                                        Text(document.summary ?? document.docID)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                        HStack(spacing: 8) {
+                                            Text(document.docType)
+                                            if let level = document.evidenceLevel {
+                                                Text("Level \(level)")
+                                            }
+                                            if let firstSource = document.sources.first {
+                                                Text(firstSource)
+                                            }
+                                        }
+                                        .font(.caption2)
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                    HStack(spacing: 8) {
-                                        Text(document.docType)
-                                        if let level = document.evidenceLevel {
-                                            Text("Level \(level)")
-                                        }
-                                        if let firstSource = document.sources.first {
-                                            Text(firstSource)
-                                        }
                                     }
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    Spacer(minLength: 0)
                                 }
-                                Spacer(minLength: 0)
+
+                                contextActionBar(
+                                    item: DesktopWorkspaceContextFactory.contextItem(for: document),
+                                    prompt: DesktopWorkspaceContextFactory.prompt(for: document)
+                                )
                             }
                             .padding(.vertical, 6)
                             if document.id != documents.prefix(8).last?.id {
@@ -1974,18 +1988,24 @@ struct WorkspaceOverviewView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(summary.jobs) { job in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(job.sourceName ?? job.jobType)
-                                .font(.headline)
-                            Text("#\(job.id) \(job.jobType)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(job.sourceName ?? job.jobType)
+                                    .font(.headline)
+                                Text("#\(job.id) \(job.jobType)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(job.status)
+                            ProgressView(value: Double(job.progress), total: 100)
+                                .frame(width: 140)
                         }
-                        Spacer()
-                        Text(job.status)
-                        ProgressView(value: Double(job.progress), total: 100)
-                            .frame(width: 140)
+                        contextActionBar(
+                            item: DesktopWorkspaceContextFactory.contextItem(for: job),
+                            prompt: DesktopWorkspaceContextFactory.prompt(for: job)
+                        )
                     }
                     Divider()
                 }
@@ -2011,6 +2031,32 @@ struct WorkspaceOverviewView: View {
                             Divider()
                         }
                     }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contextActionBar(item: AgentContextItem, prompt: String) -> some View {
+        if onAskAgent != nil || onAddContext != nil {
+            HStack(spacing: 8) {
+                if let onAddContext {
+                    Button {
+                        onAddContext(item)
+                    } label: {
+                        Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                if let onAskAgent {
+                    Button {
+                        onAskAgent(prompt, item)
+                    } label: {
+                        Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
             }
         }
