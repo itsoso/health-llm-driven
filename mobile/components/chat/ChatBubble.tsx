@@ -51,6 +51,14 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
   const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
+  const structuredSummary = useMemo(
+    () => (!isUser && !item.streaming ? parseStructuredHealthSummary(displayText) : null),
+    [displayText, isUser, item.streaming],
+  );
+  const visibleMarkdown = useMemo(
+    () => (structuredSummary ? stripStructuredHealthSummary(displayText) : displayText),
+    [displayText, structuredSummary],
+  );
   const images = item.imageUris;
 
   const clearSpeechTimeout = useCallback(() => {
@@ -258,9 +266,12 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             accessibilityLabel={`AI: ${item.content}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
-            {displayText ? (
-              <Markdown style={mdStyles}>{displayText}</Markdown>
-            ) : !item.streaming ? (
+            {structuredSummary ? (
+              <StructuredSummaryCard summary={structuredSummary} c={c} />
+            ) : null}
+            {visibleMarkdown ? (
+              <Markdown style={mdStyles}>{visibleMarkdown}</Markdown>
+            ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
             {/* P4: 显式归因 chips — 仅当 LLM 在回答里加了"(基于你的 X)" 等 marker 才渲染.
@@ -397,8 +408,249 @@ function stripMarkdownForSpeech(s: string): string {
     .trim();
 }
 
+interface StructuredMetricRow {
+  label: string;
+  value: string;
+  status?: string;
+}
+
+interface StructuredHealthSummary {
+  metrics: StructuredMetricRow[];
+  advice: string[];
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(cell => cell.trim())
+    .filter(Boolean);
+}
+
+function parseStructuredHealthSummary(text: string): StructuredHealthSummary | null {
+  const lines = text.split('\n');
+  const metrics: StructuredMetricRow[] = [];
+
+  for (let i = 0; i < lines.length - 2; i += 1) {
+    const header = splitMarkdownTableRow(lines[i]);
+    const divider = lines[i + 1]?.trim() ?? '';
+    const looksLikeMetricTable = header.includes('指标')
+      && header.includes('数值')
+      && /\|?\s*:?-{3,}:?\s*\|/.test(divider);
+    if (!looksLikeMetricTable) continue;
+
+    for (let j = i + 2; j < lines.length; j += 1) {
+      if (!lines[j].trim().startsWith('|')) break;
+      const cells = splitMarkdownTableRow(lines[j]);
+      if (cells.length < 2) continue;
+      metrics.push({
+        label: cells[0],
+        value: cells[1],
+        status: cells[2],
+      });
+      if (metrics.length >= 4) break;
+    }
+    break;
+  }
+
+  const advice: string[] = [];
+  const adviceStart = lines.findIndex(line => /今日建议|建议/.test(line));
+  if (adviceStart >= 0) {
+    for (const line of lines.slice(adviceStart + 1)) {
+      const cleaned = line
+        .replace(/^\s*(?:[-*]|\d+[.)、])\s*/, '')
+        .trim();
+      if (!cleaned) {
+        if (advice.length > 0) break;
+        continue;
+      }
+      if (/^\|/.test(cleaned)) continue;
+      advice.push(cleaned);
+      if (advice.length >= 3) break;
+    }
+  }
+
+  if (metrics.length === 0 && advice.length === 0) return null;
+  return { metrics, advice };
+}
+
+function isMetricTableStart(lines: string[], index: number): boolean {
+  const header = splitMarkdownTableRow(lines[index]);
+  const divider = lines[index + 1]?.trim() ?? '';
+  return header.includes('指标')
+    && header.includes('数值')
+    && /\|?\s*:?-{3,}:?\s*\|/.test(divider);
+}
+
+function stripStructuredHealthSummary(text: string): string {
+  const lines = text.split('\n');
+  const kept: string[] = [];
+  let skipTable = false;
+  let skipAdvice = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (isMetricTableStart(lines, i)) {
+      skipTable = true;
+      i += 1;
+      continue;
+    }
+    if (skipTable) {
+      if (trimmed.startsWith('|')) continue;
+      skipTable = false;
+    }
+
+    if (/今日建议|建议/.test(trimmed)) {
+      skipAdvice = true;
+      continue;
+    }
+    if (skipAdvice) {
+      if (!trimmed) {
+        skipAdvice = false;
+        continue;
+      }
+      if (/^(?:[-*]|\d+[.)、])\s*/.test(trimmed)) continue;
+      skipAdvice = false;
+    }
+
+    kept.push(line);
+  }
+
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function statusTone(status?: string): string {
+  if (!status) return '#8E8E93';
+  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return '#FF9F0A';
+  if (/❌|严重|急|失败/.test(status)) return '#FF453A';
+  if (/✅|正常|优秀|良好|充沛/.test(status)) return '#30D158';
+  return '#8E8E93';
+}
+
+function StructuredSummaryCard({
+  summary,
+  c,
+}: {
+  summary: StructuredHealthSummary;
+  c: ColorPalette;
+}) {
+  return (
+    <View style={[summaryStyles.card, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+      {summary.metrics.length > 0 ? (
+        <>
+          <View style={summaryStyles.header}>
+            <Ionicons name="analytics-outline" size={14} color={c.brand} />
+            <Text style={[summaryStyles.title, { color: c.labelPrimary }]}>指标摘要</Text>
+          </View>
+          <View style={summaryStyles.metrics}>
+            {summary.metrics.map(metric => (
+              <View key={`${metric.label}-${metric.value}`} style={summaryStyles.metricRow}>
+                <Text style={[summaryStyles.metricLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                  {metric.label}
+                </Text>
+                <Text style={[summaryStyles.metricValue, { color: c.labelPrimary }]} numberOfLines={1}>
+                  {metric.value}
+                </Text>
+                {metric.status ? (
+                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(metric.status) }]} />
+                ) : null}
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      {summary.advice.length > 0 ? (
+        <View style={[summaryStyles.adviceBlock, summary.metrics.length > 0 && { borderTopColor: c.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
+          <View style={summaryStyles.header}>
+            <Ionicons name="pin-outline" size={14} color={c.brand} />
+            <Text style={[summaryStyles.title, { color: c.labelPrimary }]}>今日建议</Text>
+          </View>
+          {summary.advice.map((item, index) => (
+            <View key={`${index}-${item}`} style={summaryStyles.adviceRow}>
+              <Text style={[summaryStyles.adviceIndex, { color: c.brand }]}>{index + 1}</Text>
+              <Text style={[summaryStyles.adviceText, { color: c.labelSecondary }]} numberOfLines={2}>
+                {item}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const ChatBubble = React.memo(ChatBubbleInner);
 export default ChatBubble;
+
+const summaryStyles = StyleSheet.create({
+  card: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  title: {
+    fontSize: 12,
+    fontWeight: '800',
+  } as TextStyle,
+  metrics: {
+    gap: 6,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metricLabel: {
+    width: 58,
+    fontSize: 12,
+    fontWeight: '700',
+  } as TextStyle,
+  metricValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  adviceBlock: {
+    paddingTop: 8,
+  },
+  adviceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+    marginTop: 5,
+  },
+  adviceIndex: {
+    width: 18,
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
+  } as TextStyle,
+  adviceText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  } as TextStyle,
+});
 
 function createStyles(c: ColorPalette, isDark: boolean) {
   return StyleSheet.create({
