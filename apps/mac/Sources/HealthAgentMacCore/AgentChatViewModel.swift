@@ -24,6 +24,7 @@ public final class AgentChatViewModel {
     public var isStreaming = false
     public var selectedModelID: String?
     public var webSearchEnabled = false
+    public var attachments: [FileIntakeItem] = []
     public var conversationID: Int?
     public var messages: [AgentChatMessage] = []
     public var errorMessage: String?
@@ -49,6 +50,16 @@ public final class AgentChatViewModel {
 
     public func canSubmit(_ text: String) -> Bool {
         !isStreaming && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public func addAttachment(_ item: FileIntakeItem) {
+        if !attachments.contains(where: { $0.sha256 == item.sha256 }) {
+            attachments.append(item)
+        }
+    }
+
+    public func removeAttachment(_ item: FileIntakeItem) {
+        attachments.removeAll { $0.id == item.id }
     }
 
     public func send(_ text: String) async {
@@ -92,6 +103,9 @@ public final class AgentChatViewModel {
         if messages[assistantIndex].content.isEmpty, let errorMessage {
             messages[assistantIndex].content = errorMessage
         }
+        if errorMessage == nil {
+            attachments = []
+        }
         isStreaming = false
     }
 
@@ -102,6 +116,15 @@ public final class AgentChatViewModel {
         }
         if webSearchEnabled {
             context["web_search_requested"] = true
+        }
+        if !attachments.isEmpty {
+            context["attachments"] = attachments.map {
+                [
+                    "name": $0.name,
+                    "source_kind": $0.sourceKind.rawValue,
+                    "source_hash": $0.sha256,
+                ]
+            }
         }
         guard !context.isEmpty else {
             return nil

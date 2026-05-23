@@ -16,6 +16,13 @@ public struct FileIntakeItem: Equatable, Identifiable, Sendable {
     public let sha256: String
 
     public var id: String { sha256 }
+
+    public init(url: URL, name: String, sourceKind: FileSourceKind, sha256: String) {
+        self.url = url
+        self.name = name
+        self.sourceKind = sourceKind
+        self.sha256 = sha256
+    }
 }
 
 public enum FileIntakeService {

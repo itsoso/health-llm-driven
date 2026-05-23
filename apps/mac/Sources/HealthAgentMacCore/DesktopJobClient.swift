@@ -5,12 +5,20 @@ public struct DesktopJobCreateRequest: Encodable, Equatable, Sendable {
     public let sourceKind: String
     public let sourceName: String
     public let sourceHash: String?
+    public let requestPayload: [String: JSONValue]
 
-    public init(jobType: String, sourceKind: String, sourceName: String, sourceHash: String?) {
+    public init(
+        jobType: String,
+        sourceKind: String,
+        sourceName: String,
+        sourceHash: String?,
+        requestPayload: [String: JSONValue] = [:]
+    ) {
         self.jobType = jobType
         self.sourceKind = sourceKind
         self.sourceName = sourceName
         self.sourceHash = sourceHash
+        self.requestPayload = requestPayload
     }
 
     enum CodingKeys: String, CodingKey {
@@ -18,6 +26,7 @@ public struct DesktopJobCreateRequest: Encodable, Equatable, Sendable {
         case sourceKind = "source_kind"
         case sourceName = "source_name"
         case sourceHash = "source_hash"
+        case requestPayload = "request_payload"
     }
 }
 
@@ -34,6 +43,10 @@ public final class DesktopJobClient: Sendable {
 
     public func listJobs() async throws -> [DesktopJobSummary] {
         try await apiClient.get("desktop/jobs")
+    }
+
+    public func getJob(id: Int) async throws -> DesktopJobSummary {
+        try await apiClient.get("desktop/jobs/\(id)")
     }
 
     public func retryJob(id: Int) async throws -> DesktopJobSummary {

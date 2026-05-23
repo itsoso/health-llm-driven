@@ -21,23 +21,46 @@ public struct ConversationTrace: Decodable, Equatable, Sendable {
 public struct TraceConversation: Decodable, Equatable, Sendable {
     public let id: Int
     public let title: String?
+    public let createdAt: String?
+    public let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
 }
 
 public struct TraceMessage: Decodable, Equatable, Identifiable, Sendable {
     public let id: Int
     public let role: String
     public let content: String
+    public let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case role
+        case content
+        case createdAt = "created_at"
+    }
 }
 
 public struct TraceAssistantMessage: Decodable, Equatable, Sendable {
     public let id: Int?
     public let model: String?
+    public let elapsedMs: Int?
+    public let llmMs: Int?
+    public let llmRounds: Int?
     public let finishReason: String?
     public let completionStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case model
+        case elapsedMs = "elapsed_ms"
+        case llmMs = "llm_ms"
+        case llmRounds = "llm_rounds"
         case finishReason = "finish_reason"
         case completionStatus = "completion_status"
     }

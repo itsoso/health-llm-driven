@@ -115,11 +115,67 @@ public struct DesktopJobSummary: Decodable, Equatable, Identifiable, Sendable {
     public let jobType: String
     public let status: String
     public let progress: Int
+    public let sourceKind: String?
+    public let sourceName: String?
+    public let sourceHash: String?
+    public let requestPayload: [String: JSONValue]?
+    public let resultPayload: [String: JSONValue]?
+    public let errorMessage: String?
+    public let retryOfJobID: Int?
+    public let createdAt: String?
+    public let updatedAt: String?
+    public let startedAt: String?
+    public let completedAt: String?
+
+    public init(
+        id: Int,
+        jobType: String,
+        status: String,
+        progress: Int,
+        sourceKind: String? = nil,
+        sourceName: String? = nil,
+        sourceHash: String? = nil,
+        requestPayload: [String: JSONValue]? = nil,
+        resultPayload: [String: JSONValue]? = nil,
+        errorMessage: String? = nil,
+        retryOfJobID: Int? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil,
+        startedAt: String? = nil,
+        completedAt: String? = nil
+    ) {
+        self.id = id
+        self.jobType = jobType
+        self.status = status
+        self.progress = progress
+        self.sourceKind = sourceKind
+        self.sourceName = sourceName
+        self.sourceHash = sourceHash
+        self.requestPayload = requestPayload
+        self.resultPayload = resultPayload
+        self.errorMessage = errorMessage
+        self.retryOfJobID = retryOfJobID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
         case jobType = "job_type"
         case status
         case progress
+        case sourceKind = "source_kind"
+        case sourceName = "source_name"
+        case sourceHash = "source_hash"
+        case requestPayload = "request_payload"
+        case resultPayload = "result_payload"
+        case errorMessage = "error_message"
+        case retryOfJobID = "retry_of_job_id"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
     }
 }

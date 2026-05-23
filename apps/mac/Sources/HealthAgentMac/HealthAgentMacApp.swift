@@ -6,18 +6,48 @@ struct HealthAgentMacApp: App {
     @State private var appServices = AppServices()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             AppRootView(services: appServices)
         }
         MenuBarExtra("Health Agent", systemImage: "heart.text.square") {
-            MenuBarRootView(viewModel: appServices.todayViewModel)
+            MenuBarRootView(
+                viewModel: appServices.todayViewModel,
+                navigation: appServices.navigation
+            )
+        }
+        .commands {
+            CommandMenu("Health Agent") {
+                Button("Today") { appServices.navigation.selection = .today }
+                    .keyboardShortcut("1", modifiers: [.command])
+                Button("Ask Agent") { appServices.navigation.selection = .agent }
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+                Button("Record") { appServices.navigation.selection = .record }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Import") { appServices.navigation.selection = .genetics }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("Jobs") { appServices.navigation.selection = .jobs }
+                    .keyboardShortcut("j", modifiers: [.command, .shift])
+            }
         }
     }
 }
 
 @MainActor
+@Observable
+final class AppNavigationState {
+    var selection: SidebarDestination? = .today
+    var traceConversationID: Int?
+
+    func openTrace(conversationID: Int) {
+        traceConversationID = conversationID
+        selection = .trace
+    }
+}
+
+@MainActor
 struct AppServices {
-    let tokenProvider = KeychainTokenStore()
+    let tokenProvider: KeychainTokenStore
+    let navigation = AppNavigationState()
     let apiClient: APIClient
     let todayViewModel: TodayViewModel
     let agentViewModel: AgentChatViewModel
@@ -27,12 +57,15 @@ struct AppServices {
 
     init() {
         let tokenProvider = KeychainTokenStore()
-        self.apiClient = APIClient(tokenProvider: tokenProvider)
+        self.tokenProvider = tokenProvider
+        let baseURL = UserDefaults.standard.string(forKey: "apiBaseURL")
+            .flatMap(URL.init(string:)) ?? APIEndpoint.defaultBaseURL
+        self.apiClient = APIClient(baseURL: baseURL, tokenProvider: tokenProvider)
         self.todayViewModel = TodayViewModel(
             service: DesktopBootstrapService(apiClient: apiClient)
         )
         self.agentViewModel = AgentChatViewModel(
-            streamService: AgentStreamClient(tokenProvider: tokenProvider)
+            streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider)
         )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
@@ -42,17 +75,22 @@ struct AppServices {
 
 struct AppRootView: View {
     let services: AppServices
-    @State private var selection: SidebarDestination? = .today
+    @Bindable private var navigation: AppNavigationState
+
+    init(services: AppServices) {
+        self.services = services
+        self.navigation = services.navigation
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarDestination.allCases, selection: $selection) { destination in
+            List(SidebarDestination.allCases, selection: $navigation.selection) { destination in
                 Label(destination.title, systemImage: destination.systemImage)
                     .tag(destination)
             }
             .navigationTitle("Health Agent")
         } detail: {
-            switch selection ?? .today {
+            switch navigation.selection ?? .today {
             case .today:
                 TodayView(viewModel: services.todayViewModel)
             case .agent:
@@ -60,13 +98,17 @@ struct AppRootView: View {
             case .record:
                 RecordHubView(client: services.recordClient)
             case .jobs:
-                JobListView(client: services.desktopJobClient)
+                JobListView(client: services.desktopJobClient) { conversationID in
+                    navigation.openTrace(conversationID: conversationID)
+                }
             case .trace:
-                TraceLookupView(client: services.traceClient)
+                TraceLookupView(client: services.traceClient, navigation: navigation)
             case .genetics, .knowledge:
                 ImportCenterView(jobClient: services.desktopJobClient)
+            case .settings:
+                SettingsView(tokenStore: services.tokenProvider)
             default:
-                ContentPlaceholder(destination: selection ?? .today)
+                ContentPlaceholder(destination: navigation.selection ?? .today)
             }
         }
         .frame(minWidth: 980, minHeight: 680)
@@ -184,6 +226,8 @@ struct ContentPlaceholder: View {
 
 struct MenuBarRootView: View {
     @Bindable var viewModel: TodayViewModel
+    @Bindable var navigation: AppNavigationState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -200,9 +244,18 @@ struct MenuBarRootView: View {
                 }
             }
             Divider()
-            Button("Open Today") {}
-            Button("Ask Agent") {}
-            Button("Import File") {}
+            Button("Open Today") {
+                navigation.selection = .today
+                openWindow(id: "main")
+            }
+            Button("Ask Agent") {
+                navigation.selection = .agent
+                openWindow(id: "main")
+            }
+            Button("Import File") {
+                navigation.selection = .genetics
+                openWindow(id: "main")
+            }
         }
         .task {
             if viewModel.bootstrap == nil {

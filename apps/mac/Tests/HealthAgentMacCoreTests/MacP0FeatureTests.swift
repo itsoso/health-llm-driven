@@ -76,33 +76,48 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(result.success)
     }
 
-    func testDesktopJobClientCreatesListsAndRetriesJobs() async throws {
+    func testDesktopJobClientCreatesListsDetailsAndRetriesJobs() async throws {
         var call = 0
         URLProtocolStub.handler = { request in
             call += 1
             if call == 1 {
                 XCTAssertEqual(request.url?.path, "/api/v1/desktop/import-jobs")
-                let data = #"{"id":1,"job_type":"gene_reanalysis","status":"queued","progress":0}"#.data(using: .utf8)!
+                let data = #"{"id":1,"job_type":"gene_reanalysis","status":"queued","progress":0,"source_kind":"genome_txt","source_name":"wegene.txt","source_hash":"sha256:abc","request_payload":{"raw_upload_confirmed":true},"result_payload":{},"error_message":null}"#.data(using: .utf8)!
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
             }
             if call == 2 {
                 XCTAssertEqual(request.url?.path, "/api/v1/desktop/jobs")
-                let data = #"[{"id":1,"job_type":"gene_reanalysis","status":"queued","progress":0}]"#.data(using: .utf8)!
+                let data = #"[{"id":1,"job_type":"gene_reanalysis","status":"queued","progress":0,"source_kind":"genome_txt","source_name":"wegene.txt","source_hash":"sha256:abc","request_payload":{},"result_payload":{},"error_message":null}]"#.data(using: .utf8)!
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+            }
+            if call == 3 {
+                XCTAssertEqual(request.url?.path, "/api/v1/desktop/jobs/1")
+                let data = #"{"id":1,"job_type":"gene_reanalysis","status":"running","progress":35,"source_kind":"genome_txt","source_name":"wegene.txt","source_hash":"sha256:abc","request_payload":{},"result_payload":{"conversation_id":9},"error_message":null}"#.data(using: .utf8)!
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
             }
             XCTAssertEqual(request.url?.path, "/api/v1/desktop/jobs/1/retry")
-            let data = #"{"id":2,"job_type":"gene_reanalysis","status":"queued","progress":0}"#.data(using: .utf8)!
+            let data = #"{"id":2,"job_type":"gene_reanalysis","status":"queued","progress":0,"source_kind":"genome_txt","source_name":"wegene.txt","source_hash":"sha256:abc","request_payload":{},"result_payload":{},"error_message":null}"#.data(using: .utf8)!
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
         }
         let api = APIClient(baseURL: URL(string: "https://example.test/api/v1")!, tokenProvider: StaticTokenProvider(token: nil), session: URLSession(configuration: .ephemeralWithStub))
         let client = DesktopJobClient(apiClient: api)
 
-        let created = try await client.createJob(.init(jobType: "gene_reanalysis", sourceKind: "genome_txt", sourceName: "wegene.txt", sourceHash: "sha256:abc"))
+        let created = try await client.createJob(.init(
+            jobType: "gene_reanalysis",
+            sourceKind: "genome_txt",
+            sourceName: "wegene.txt",
+            sourceHash: "sha256:abc",
+            requestPayload: ["raw_upload_confirmed": true]
+        ))
         let listed = try await client.listJobs()
+        let detail = try await client.getJob(id: 1)
         let retry = try await client.retryJob(id: 1)
 
         XCTAssertEqual(created.id, 1)
         XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(detail.status, "running")
+        XCTAssertEqual(detail.sourceName, "wegene.txt")
+        XCTAssertEqual(detail.resultPayload?["conversation_id"]?.intValue, 9)
         XCTAssertEqual(retry.id, 2)
     }
 
@@ -113,7 +128,7 @@ final class MacP0FeatureTests: XCTestCase {
             {
               "conversation": {"id": 7, "title": "Trace"},
               "messages": [{"id": 1, "role": "user", "content": "hi"}],
-              "assistant_message": {"id": 2, "model": "commercial/Claude-Opus-4.7", "finish_reason": "stop", "completion_status": "complete"},
+              "assistant_message": {"id": 2, "model": "commercial/Claude-Opus-4.7", "elapsed_ms": 7100, "llm_ms": 5800, "llm_rounds": 2, "finish_reason": "stop", "completion_status": "complete"},
               "sources_used": ["系统知识库"],
               "tool_calls": [{"name": "knowledge_search"}],
               "evidence_cards": [{"title": "HbA1c"}],
@@ -128,6 +143,9 @@ final class MacP0FeatureTests: XCTestCase {
 
         XCTAssertEqual(trace.conversation.id, 7)
         XCTAssertEqual(trace.assistantMessage.model, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(trace.assistantMessage.elapsedMs, 7100)
+        XCTAssertEqual(trace.assistantMessage.llmMs, 5800)
+        XCTAssertEqual(trace.assistantMessage.llmRounds, 2)
         XCTAssertEqual(trace.sourcesUsed, ["系统知识库"])
         XCTAssertEqual(trace.toolCalls.first?.name, "knowledge_search")
     }

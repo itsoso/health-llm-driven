@@ -108,6 +108,31 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(model.lastModel, "commercial/Claude-Opus-4.7")
         XCTAssertEqual(model.lastSourcesUsed, ["系统知识库"])
     }
+
+    @MainActor
+    func testAgentChatViewModelIncludesAttachmentsAndWebSearchInExtraContext() async throws {
+        let service = CapturingAgentStreamService()
+        let model = AgentChatViewModel(streamService: service)
+        model.webSearchEnabled = true
+        model.selectModel("commercial/Gemini-3.1-Pro-Preview")
+        model.addAttachment(.init(
+            url: URL(fileURLWithPath: "/tmp/wegene.txt"),
+            name: "wegene.txt",
+            sourceKind: .genomeText,
+            sha256: "sha256:abc"
+        ))
+
+        await model.send("基于这个文件分析")
+
+        let context = try XCTUnwrap(service.extraContext)
+        let data = try XCTUnwrap(context.data(using: .utf8))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["model_id"] as? String, "commercial/Gemini-3.1-Pro-Preview")
+        XCTAssertEqual(json["web_search_requested"] as? Bool, true)
+        let attachments = try XCTUnwrap(json["attachments"] as? [[String: Any]])
+        XCTAssertEqual(attachments.first?["source_kind"] as? String, "genome_txt")
+        XCTAssertEqual(attachments.first?["source_hash"] as? String, "sha256:abc")
+    }
 }
 
 private struct StaticAgentStreamService: AgentStreamServicing {
@@ -115,5 +140,23 @@ private struct StaticAgentStreamService: AgentStreamServicing {
 
     func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         stream
+    }
+}
+
+private final class CapturingAgentStreamService: AgentStreamServicing, @unchecked Sendable {
+    nonisolated(unsafe) var extraContext: String?
+
+    func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+        self.extraContext = extraContext
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.done(
+                conversationID: conversationID,
+                messageID: 1,
+                completionStatus: "complete",
+                model: nil,
+                sourcesUsed: []
+            ))
+            continuation.finish()
+        }
     }
 }
