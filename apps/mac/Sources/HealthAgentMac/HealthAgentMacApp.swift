@@ -95,7 +95,7 @@ final class AppNavigationState {
 
 @MainActor
 struct AppServices {
-    let tokenProvider: KeychainTokenStore
+    let tokenProvider: UserDefaultsTokenStore
     let navigation = AppNavigationState()
     let apiClient: APIClient
     let todayViewModel: TodayViewModel
@@ -106,7 +106,7 @@ struct AppServices {
     let authClient: AuthClient
 
     init() {
-        let tokenProvider = KeychainTokenStore()
+        let tokenProvider = UserDefaultsTokenStore()
         self.tokenProvider = tokenProvider
         let baseURL = APIEndpoint.resolvedBaseURL()
         self.apiClient = APIClient(baseURL: baseURL, tokenProvider: tokenProvider)

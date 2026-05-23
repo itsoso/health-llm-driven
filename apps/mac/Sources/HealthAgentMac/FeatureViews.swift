@@ -1198,7 +1198,7 @@ struct TraceLookupView: View {
 
 struct SettingsView: View {
     let authClient: AuthClient
-    let tokenStore: KeychainTokenStore
+    let tokenStore: any AuthTokenStoring
     let onLogout: () -> Void
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @AppStorage(APIEndpoint.baseURLDefaultsKey) private var apiBaseURL = APIEndpoint.defaultBaseURL.absoluteString
