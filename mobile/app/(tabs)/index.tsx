@@ -678,15 +678,14 @@ function AgentWorkspacePanel({
 
   return (
     <View style={styles.section}>
-      <SectionHeader title="Agent 工作台" subtitle="后台任务与长期干预" />
       <View style={[styles.workspaceCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         <View style={styles.workspaceTop}>
           <View style={[styles.workspaceStatusIcon, { backgroundColor: c.brandLight }]}>
             <Ionicons name="pulse-outline" size={17} color={c.brand} />
           </View>
           <View style={styles.workspaceTitleBlock}>
-            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>后台运行中</Text>
-            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>监测 {sourceItems.length} 类数据</Text>
+            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>Agent 工作台 · 后台运行中</Text>
+            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>实时诊断 {sourceItems.length} 类数据</Text>
             <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]} numberOfLines={1}>
               {riskSummary} · {executionSummary} · 长期干预
             </Text>
