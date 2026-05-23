@@ -47,6 +47,18 @@ interface TwinSnapshot {
 }
 
 type NextActionCompletionState = 'idle' | 'sending' | 'completed' | 'error';
+type InterventionDomainKey = 'diet' | 'sleep' | 'movement' | 'supplement' | 'emotion';
+
+interface InterventionDomainStatus {
+  key: InterventionDomainKey;
+  label: string;
+  detail: string;
+  activeCount: number;
+  icon: keyof typeof Ionicons.glyphMap;
+  colorName: 'orange' | 'purple' | 'green' | 'teal' | 'blue';
+  tintName: 'tintOrange' | 'tintPurple' | 'tintGreen' | 'tintTeal' | 'tintBlue';
+  route: '/diet-plan' | '/sleep' | '/movement-plan' | '/(tabs)/chat';
+}
 
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
@@ -70,6 +82,54 @@ function pickTwinSnapshot(twin: any): TwinSnapshot {
     spo2_avg: phys.spo2_avg ?? phys.spo2_min_overnight ?? null,
   };
 }
+
+const INTERVENTION_DOMAINS: Omit<InterventionDomainStatus, 'activeCount'>[] = [
+  {
+    key: 'diet',
+    label: '饮食',
+    detail: '蛋白 / 热量 / 饮水',
+    icon: 'restaurant-outline',
+    colorName: 'orange',
+    tintName: 'tintOrange',
+    route: '/diet-plan',
+  },
+  {
+    key: 'sleep',
+    label: '睡眠',
+    detail: '节律 / 血氧 / 恢复',
+    icon: 'moon-outline',
+    colorName: 'purple',
+    tintName: 'tintPurple',
+    route: '/sleep',
+  },
+  {
+    key: 'movement',
+    label: '运动',
+    detail: 'VO2max / 体脂 / HRV',
+    icon: 'walk-outline',
+    colorName: 'green',
+    tintName: 'tintGreen',
+    route: '/movement-plan',
+  },
+  {
+    key: 'supplement',
+    label: '补剂',
+    detail: '剂量 / 时机 / 反应',
+    icon: 'medkit-outline',
+    colorName: 'teal',
+    tintName: 'tintTeal',
+    route: '/diet-plan',
+  },
+  {
+    key: 'emotion',
+    label: '情绪',
+    detail: '压力 / 呼吸 / 体感',
+    icon: 'cloudy-outline',
+    colorName: 'blue',
+    tintName: 'tintBlue',
+    route: '/(tabs)/chat',
+  },
+];
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -187,6 +247,7 @@ export default function TodayScreen() {
   const nextActionKey = nextAction?.action_key || nextAction?.title || null;
   const visibleNextActionState: NextActionCompletionState =
     nextActionCompletion.actionKey === nextActionKey ? nextActionCompletion.state : 'idle';
+  const interventionDomains = buildInterventionDomainStatuses(dailyPlanQuery.data?.actions ?? []);
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -270,6 +331,11 @@ export default function TodayScreen() {
           progressTotal={progressStatsQuery.data?.total}
           twinSnapshot={twinSnap}
           onOpenAgent={() => router.push('/(tabs)/chat' as any)}
+        />
+
+        <InterventionLoopPanel
+          domains={interventionDomains}
+          onPressDomain={(domain) => router.push(domain.route as any)}
         />
 
         <View style={styles.section}>
@@ -660,6 +726,87 @@ function PipelineStep({
   );
 }
 
+function InterventionLoopPanel({
+  domains,
+  onPressDomain,
+}: {
+  domains: InterventionDomainStatus[];
+  onPressDomain: (domain: InterventionDomainStatus) => void;
+}) {
+  const { c } = useTheme();
+  const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
+  const summary = activeDomainCount > 0 ? `${activeDomainCount} 个域待执行` : '等待 Agent 编排';
+
+  return (
+    <View style={styles.section}>
+      <SectionHeader title="干预闭环" subtitle="饮食、睡眠、运动、补剂和情绪一起追踪" />
+      <View style={[styles.interventionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+        <View style={styles.interventionTop}>
+          <View style={styles.interventionTopText}>
+            <Text style={[styles.interventionEyebrow, { color: c.brand }]}>长期任务</Text>
+            <Text style={[styles.interventionTitle, { color: c.labelPrimary }]}>{summary}</Text>
+          </View>
+          <View style={[styles.interventionBadge, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="repeat-outline" size={14} color={c.brand} />
+            <Text style={[styles.interventionBadgeText, { color: c.brand }]}>验证指标</Text>
+          </View>
+        </View>
+        <View style={styles.interventionGrid}>
+          {domains.map(domain => (
+            <InterventionDomainButton
+              key={domain.key}
+              domain={domain}
+              onPress={() => onPressDomain(domain)}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function InterventionDomainButton({
+  domain,
+  onPress,
+}: {
+  domain: InterventionDomainStatus;
+  onPress: () => void;
+}) {
+  const { c } = useTheme();
+  const active = domain.activeCount > 0;
+  const color = c[domain.colorName];
+  const bg = c[domain.tintName];
+  const status = active ? `${domain.activeCount} 个任务` : '观察中';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.interventionDomain,
+        {
+          backgroundColor: active ? bg : c.bgPrimary,
+          borderColor: active ? `${color}55` : c.separator,
+          opacity: pressed ? 0.72 : 1,
+        },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`打开${domain.label}干预`}
+    >
+      <View style={[styles.interventionDomainIcon, { backgroundColor: active ? c.bgCard : bg }]}>
+        <Ionicons name={domain.icon} size={15} color={color} />
+      </View>
+      <View style={styles.interventionDomainText}>
+        <Text style={[styles.interventionDomainLabel, { color: c.labelPrimary }]} numberOfLines={1}>
+          {domain.label}
+        </Text>
+        <Text style={[styles.interventionDomainStatus, { color: active ? color : c.labelTertiary }]} numberOfLines={1}>
+          {status}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function CompactShortcutSection({
   shortcuts,
   onOpenAll,
@@ -867,6 +1014,35 @@ function isBodyMeasurementAction(action: DailyPlanAction): boolean {
   return /体重|腰围|weight|waist|bmi/.test(haystack);
 }
 
+function buildInterventionDomainStatuses(actions: DailyPlanAction[]): InterventionDomainStatus[] {
+  const counts = INTERVENTION_DOMAINS.reduce<Record<InterventionDomainKey, number>>((acc, domain) => {
+    acc[domain.key] = 0;
+    return acc;
+  }, {} as Record<InterventionDomainKey, number>);
+
+  for (const action of actions) {
+    const key = classifyInterventionDomain(action);
+    if (key) counts[key] += 1;
+  }
+
+  return INTERVENTION_DOMAINS.map(domain => ({
+    ...domain,
+    activeCount: counts[domain.key],
+  }));
+}
+
+function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {
+  const haystack = `${action.domain ?? ''} ${action.action_key ?? ''} ${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
+
+  if (/supplement|补剂|镁|维生素|鱼油|益生菌/.test(haystack)) return 'supplement';
+  if (/mood|emotion|mental|stress|breath|情绪|压力|呼吸|焦虑|冥想/.test(haystack)) return 'emotion';
+  if (/sleep|bed|睡眠|入睡|上床|血氧|spo2|hrv|恢复/.test(haystack)) return 'sleep';
+  if (/movement|exercise|workout|walk|run|zone|运动|训练|步行|跑|vo2|max|体脂/.test(haystack)) return 'movement';
+  if (/nutrition|diet|meal|protein|water|food|饮食|蛋白|热量|饮水|午餐|晚餐|早餐/.test(haystack)) return 'diet';
+
+  return null;
+}
+
 function AlertRow({ alert, onPress }: { alert: SafetyAlert; onPress: () => void }) {
   const { c } = useTheme();
   const sev = getSeverityKey(alert.severity);
@@ -1072,6 +1248,58 @@ const styles = StyleSheet.create({
   },
   sourceLabel: { fontSize: 11, fontWeight: '800' },
   sourceValue: { fontSize: 10, fontWeight: '600', marginTop: 1 },
+  interventionCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  interventionTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  interventionTopText: { flex: 1, minWidth: 0, gap: 2 },
+  interventionEyebrow: { fontSize: 12, fontWeight: '800' },
+  interventionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800' },
+  interventionBadge: {
+    minHeight: 30,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  interventionBadgeText: { fontSize: 12, fontWeight: '800' },
+  interventionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  interventionDomain: {
+    flexBasis: '31%',
+    flexGrow: 1,
+    minWidth: 96,
+    minHeight: 56,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  interventionDomainIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  interventionDomainText: { flex: 1, minWidth: 0 },
+  interventionDomainLabel: { fontSize: 13, fontWeight: '800' },
+  interventionDomainStatus: { fontSize: 11, fontWeight: '700', marginTop: 1 },
   nextActionCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,

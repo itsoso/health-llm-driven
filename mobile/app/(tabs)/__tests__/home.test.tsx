@@ -157,16 +157,18 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
-  it('groups the home feed into agent workspace, action, feedback, weekly, and entry sections', () => {
+  it('groups the home feed into agent workspace, action, intervention loop, feedback, weekly, and entry sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('Agent 工作台')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('今日行动'));
+    expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('干预闭环'));
+    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动'));
     expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('身体反馈'));
     expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('本周建议'));
     expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
@@ -195,6 +197,35 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('今日行动'));
     expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('身体反馈'));
+  });
+
+  it('shows the lifestyle intervention loop across diet, sleep, movement, supplements, and emotion', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+      { action_key: 'supplement.magnesium', domain: 'nutrition', title: '晚间补剂' },
+      { action_key: 'mood.breathing', domain: 'mental', title: '睡前呼吸练习' },
+    ];
+
+    const { getAllByText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('干预闭环')).toBeTruthy();
+    expect(getAllByText('饮食').length).toBeGreaterThan(0);
+    expect(getAllByText('睡眠').length).toBeGreaterThan(0);
+    expect(getAllByText('运动').length).toBeGreaterThan(0);
+    expect(getByText('补剂')).toBeTruthy();
+    expect(getByText('情绪')).toBeTruthy();
+    expect(getByText('4 个域待执行')).toBeTruthy();
+  });
+
+  it('opens the matching intervention surface from the lifestyle loop', () => {
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('打开睡眠干预'));
+    expect(mockPush).toHaveBeenCalledWith('/sleep');
+
+    fireEvent.press(getByLabelText('打开情绪干预'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/chat');
   });
 
   it('keeps the primary action out of the remaining daily plan list', () => {
