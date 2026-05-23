@@ -275,6 +275,13 @@ export default function TodayScreen() {
           onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
         />
 
+        <TodayPlanPanel
+          plan={dailyPlanQuery.data}
+          loading={dailyPlanQuery.isLoading}
+          onPressAction={openPlanAction}
+          onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
+        />
+
         <CompactShortcutSection
           shortcuts={[
             {
@@ -311,13 +318,6 @@ export default function TodayScreen() {
             },
           ]}
           onOpenAll={() => router.push('/(tabs)/record' as any)}
-        />
-
-        <TodayPlanPanel
-          plan={dailyPlanQuery.data}
-          loading={dailyPlanQuery.isLoading}
-          onPressAction={openPlanAction}
-          onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
         />
 
         <TrajectorySnapshotPanel

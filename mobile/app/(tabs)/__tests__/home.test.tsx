@@ -96,7 +96,12 @@ jest.mock('../../../utils/agentContext', () => ({
   pushChatWithContext: jest.fn(),
 }));
 
-jest.mock('../../../components/dashboard/TodayPlanPanel', () => 'TodayPlanPanel');
+jest.mock('../../../components/dashboard/TodayPlanPanel', () => {
+  const { Text } = require('react-native');
+  const MockTodayPlanPanel = () => <Text>今日操作计划</Text>;
+  MockTodayPlanPanel.displayName = 'MockTodayPlanPanel';
+  return MockTodayPlanPanel;
+});
 jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => 'TrajectorySnapshotPanel');
 jest.mock('../../../components/dashboard/EnvironmentCard', () => 'EnvironmentCard');
 jest.mock('../../../components/dashboard/DataFreshnessPanel', () => {
@@ -112,6 +117,13 @@ jest.mock('../../../components/knowledge', () => ({
 }));
 
 import TodayScreen from '../index';
+
+function flattenText(node: any): string[] {
+  if (node == null || typeof node === 'boolean') return [];
+  if (typeof node === 'string' || typeof node === 'number') return [String(node)];
+  if (Array.isArray(node)) return node.flatMap(flattenText);
+  return flattenText(node.children);
+}
 
 describe('TodayScreen', () => {
   beforeEach(() => {
@@ -131,6 +143,15 @@ describe('TodayScreen', () => {
     expect(queryByText('今天先做 0 件事')).toBeNull();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('高频入口')).toBeTruthy();
+  });
+
+  it('places the operation plan before shortcut entries in the home feed', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('今日操作计划')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('高频入口')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('高频入口'));
   });
 
   it('shows the active plan count when today has actions', () => {
