@@ -44,4 +44,16 @@ swift test
 swift run HealthAgentMac
 ```
 
-When distribution work starts, create an Xcode macOS App project or workspace target that points at the same `Sources/` tree.
+## Double-Click App Bundle
+
+Build a local double-clickable app:
+
+```bash
+cd apps/mac
+scripts/package-app.sh
+open dist/HealthAgentMac.app
+```
+
+The script builds the SwiftPM executable, wraps it in `HealthAgentMac.app`, writes a macOS `Info.plist`, and applies local ad-hoc signing. The generated bundle lives under `apps/mac/dist/` and is not committed.
+
+When formal distribution starts, create an Xcode macOS App project or workspace target that points at the same `Sources/` tree and replace ad-hoc signing with Developer ID/TestFlight signing.
