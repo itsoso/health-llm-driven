@@ -1058,6 +1058,7 @@ struct WorkspaceOverviewView: View {
     @Bindable var viewModel: TodayViewModel
     let kind: DesktopWorkspaceKind
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @State private var dataRange = "7d"
 
     var body: some View {
         ScrollView {
@@ -1091,6 +1092,18 @@ struct WorkspaceOverviewView: View {
             }
             .padding(28)
         }
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(nsColor: .windowBackgroundColor),
+                    (kind == .data ? Color.cyan : Color.accentColor).opacity(0.045),
+                    Color(nsColor: .windowBackgroundColor)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
         .task {
             if viewModel.bootstrap == nil {
                 await viewModel.refresh()
@@ -1104,87 +1117,23 @@ struct WorkspaceOverviewView: View {
 
     @ViewBuilder
     private func workspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
-            ForEach(summary.metrics) { metric in
-                WorkspaceMetricCard(metric: metric)
-            }
-        }
-
-        SectionPanel(title: appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
-                ForEach(summary.guidanceRows) { row in
-                    WorkspaceGuidanceCard(row: row)
-                }
-            }
-        }
-
         if kind == .data {
-            SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
-                if summary.actionCards.isEmpty {
-                    Text(appText("No actions loaded yet.", appLanguageRaw))
-                        .foregroundStyle(.secondary)
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
-                        ForEach(summary.actionCards.prefix(6)) { card in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "checkmark.seal.fill")
-                                    .foregroundStyle(.teal)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(card.title)
-                                        .font(.callout.weight(.semibold))
-                                        .lineLimit(2)
-                                    HStack(spacing: 6) {
-                                        if let status = card.status {
-                                            Text(status)
-                                        }
-                                        if let priority = card.priority {
-                                            Text("P\(priority)")
-                                        }
-                                    }
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(12)
-                            .background(Color.teal.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
+            dataWorkspaceSummary(summary)
+        } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
+                ForEach(summary.metrics) { metric in
+                    WorkspaceMetricCard(metric: metric)
+                }
+            }
+
+            SectionPanel(title: appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                    ForEach(summary.guidanceRows) { row in
+                        WorkspaceGuidanceCard(row: row)
                     }
                 }
             }
 
-            SectionPanel(title: appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg") {
-                if summary.recentRecords.isEmpty {
-                    Text(appText("No recent health records loaded.", appLanguageRaw))
-                        .foregroundStyle(.secondary)
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
-                        ForEach(summary.recentRecords) { record in
-                            HStack(spacing: 10) {
-                                Image(systemName: workspaceRecordIcon(record.type))
-                                    .foregroundStyle(workspaceRecordColor(record.type))
-                                    .frame(width: 28, height: 28)
-                                    .background(workspaceRecordColor(record.type).opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(record.title)
-                                        .font(.callout.weight(.semibold))
-                                        .lineLimit(1)
-                                    Text(record.recordDate ?? appText("No record", appLanguageRaw))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(record.displayValue)
-                                    .font(.callout.weight(.semibold).monospacedDigit())
-                                    .lineLimit(1)
-                            }
-                            .padding(12)
-                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                    }
-                }
-            }
-        } else {
             SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
                 if summary.actionCards.isEmpty {
                     Text(appText("No actions loaded yet.", appLanguageRaw))
@@ -1193,7 +1142,7 @@ struct WorkspaceOverviewView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
                         ForEach(summary.actionCards.prefix(6)) { card in
                             HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: kind == .genetics ? "dna" : "books.vertical.fill")
+                                Image(systemName: kind == .genetics ? "atom" : "books.vertical.fill")
                                     .foregroundStyle(kind == .genetics ? .purple : .teal)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(card.title)
@@ -1213,7 +1162,287 @@ struct WorkspaceOverviewView: View {
             }
         }
 
-        if kind == .genetics {
+        if kind != .data {
+            if kind == .genetics {
+                geneticsWorkspaceDetails(summary)
+            }
+            if kind == .knowledge {
+                knowledgeWorkspaceDetails(summary)
+            }
+        }
+
+        workspaceSideSections(summary)
+    }
+
+    @ViewBuilder
+    private func dataWorkspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .center) {
+                Label(appText("Health Data Command Center", appLanguageRaw), systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.title3.bold())
+                Spacer()
+                Picker(appText("Range", appLanguageRaw), selection: $dataRange) {
+                    Text(appText("7 days", appLanguageRaw)).tag("7d")
+                    Text(appText("30 days", appLanguageRaw)).tag("30d")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 205), spacing: 12)], spacing: 12) {
+                ForEach(dataMetrics(summary)) { metric in
+                    WorkspaceMetricCard(metric: metric)
+                }
+            }
+
+            dataTrendPanel
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) {
+                    dataGuidancePanel(summary)
+                        .frame(minWidth: 520, maxWidth: .infinity, alignment: .topLeading)
+                    dataRecordsPanel(summary)
+                        .frame(width: 430, alignment: .topLeading)
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    dataGuidancePanel(summary)
+                    dataRecordsPanel(summary)
+                }
+            }
+
+            dataActionPanel(summary)
+        }
+    }
+
+    private func dataMetrics(_ summary: DesktopWorkspaceSummary) -> [DesktopWorkspaceMetric] {
+        guard let recordsSummary = viewModel.bootstrap?.recentRecordsSummary else {
+            return summary.metrics
+        }
+        let days = dataRange == "30d" ? 30 : 7
+        let dietCalories = days == 30
+            ? (recordsSummary.diet?.last30Calories ?? recordsSummary.diet?.last7Calories ?? recordsSummary.diet?.todayCalories ?? 0)
+            : (recordsSummary.diet?.last7Calories ?? recordsSummary.diet?.last30Calories ?? recordsSummary.diet?.todayCalories ?? 0)
+        let waterMl = days == 30
+            ? (recordsSummary.water?.last30TotalMl ?? recordsSummary.water?.last7TotalMl ?? recordsSummary.water?.todayTotalMl ?? 0)
+            : (recordsSummary.water?.last7TotalMl ?? recordsSummary.water?.last30TotalMl ?? recordsSummary.water?.todayTotalMl ?? 0)
+        let supplements = days == 30
+            ? (recordsSummary.supplements?.last30Count ?? recordsSummary.supplements?.last7Count ?? recordsSummary.supplements?.todayCount ?? 0)
+            : (recordsSummary.supplements?.last7Count ?? recordsSummary.supplements?.last30Count ?? recordsSummary.supplements?.todayCount ?? 0)
+        return [
+            .init(id: "diet_calories", title: days == 30 ? "Diet 30d" : "Diet 7d", value: "\(formatCompactNumber(dietCalories)) kcal"),
+            .init(id: "water_ml", title: days == 30 ? "Water 30d" : "Water 7d", value: "\(formatCompactNumber(Double(waterMl))) ml"),
+            .init(id: "supplements", title: days == 30 ? "Supplements 30d" : "Supplements 7d", value: "\(supplements)"),
+            .init(id: "latest_weight", title: "Latest Weight", value: recordsSummary.latestWeight?.displayValue ?? "—"),
+            .init(id: "latest_bp", title: "Latest BP", value: recordsSummary.latestBloodPressure?.displayValue ?? "—"),
+            .init(id: "steps", title: "Steps", value: recordsSummary.latestGarmin?.steps.map { formatCompactNumber(Double($0)) } ?? "—")
+        ]
+    }
+
+    private var dataTrendPanel: some View {
+        let summary = viewModel.bootstrap?.recentRecordsSummary
+        let is30Days = dataRange == "30d"
+        let dietPoints = (is30Days ? summary?.diet?.daily30 : summary?.diet?.daily7) ?? []
+        let waterPoints = (is30Days ? summary?.water?.daily30 : summary?.water?.daily7) ?? []
+        let supplementPoints = (is30Days ? summary?.supplements?.daily30 : summary?.supplements?.daily7) ?? []
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(appText("Trends", appLanguageRaw), systemImage: "chart.xyaxis.line")
+                    .font(.headline)
+                Spacer()
+                Text(appText(is30Days ? "30 days" : "7 days", appLanguageRaw))
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                DataTrendCard(
+                    title: appText("Diet Trend", appLanguageRaw),
+                    value: trendAverageLabel(
+                        value: is30Days ? summary?.diet?.last30AvgCalories : summary?.diet?.last7AvgCalories,
+                        unit: "kcal"
+                    ),
+                    color: .orange,
+                    points: dietPoints.map(\.calories)
+                )
+                DataTrendCard(
+                    title: appText("Water Trend", appLanguageRaw),
+                    value: trendAverageLabel(
+                        value: is30Days ? summary?.water?.last30AvgMl : summary?.water?.last7AvgMl,
+                        unit: "ml"
+                    ),
+                    color: .cyan,
+                    points: waterPoints.map { Double($0.totalMl) }
+                )
+                DataTrendCard(
+                    title: appText("Supplement Trend", appLanguageRaw),
+                    value: trendAverageLabel(
+                        value: is30Days ? summary?.supplements?.last30AvgPerDay : summary?.supplements?.last7AvgPerDay,
+                        unit: "/day"
+                    ),
+                    color: .teal,
+                    points: supplementPoints.map { Double($0.count) }
+                )
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func trendAverageLabel(value: Double?, unit: String) -> String {
+        "\(appText("Avg", appLanguageRaw)) \(formatCompactNumber(value ?? 0))\(appText(unit, appLanguageRaw))"
+    }
+
+    private func formatCompactNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = value.rounded() == value ? 0 : 1
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private func dataGuidancePanel(_ summary: DesktopWorkspaceSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars")
+                .font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 10)], spacing: 10) {
+                ForEach(summary.guidanceRows) { row in
+                    WorkspaceGuidanceCard(row: row)
+                }
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func dataActionPanel(_ summary: DesktopWorkspaceSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(appText("Priority Actions", appLanguageRaw), systemImage: "checklist")
+                    .font(.headline)
+                Spacer()
+                Text("\(summary.actionCards.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+            }
+            if summary.actionCards.isEmpty {
+                Text(appText("No actions loaded yet.", appLanguageRaw))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 90, alignment: .center)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 10)], spacing: 10) {
+                    ForEach(summary.actionCards.prefix(8)) { card in
+                        dataActionCard(card)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func dataActionCard(_ card: ActionCardSummary) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.callout)
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Color.teal.opacity(0.85), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(card.title)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(2)
+                HStack(spacing: 8) {
+                    if let status = card.status {
+                        Text(status)
+                    }
+                    if let priority = card.priority {
+                        Text("P\(priority)")
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.teal.opacity(0.075), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func dataRecordsPanel(_ summary: DesktopWorkspaceSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg")
+                    .font(.headline)
+                Spacer()
+                Text("\(summary.recentRecords.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+            }
+            if summary.recentRecords.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.secondary)
+                    Text(appText("No recent health records loaded.", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(summary.recentRecords.prefix(8)) { record in
+                        dataRecordRow(record)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func dataRecordRow(_ record: DesktopRecordMetric) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: workspaceRecordIcon(record.type))
+                .foregroundStyle(workspaceRecordColor(record.type))
+                .frame(width: 30, height: 30)
+                .background(workspaceRecordColor(record.type).opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.title)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Text(record.recordDate ?? appText("No record", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(record.displayValue)
+                .font(.callout.weight(.bold).monospacedDigit())
+                .lineLimit(1)
+        }
+        .padding(11)
+        .background(Color.secondary.opacity(0.065), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func geneticsWorkspaceDetails(_ summary: DesktopWorkspaceSummary) -> some View {
             SectionPanel(title: appText("Genetic Risk Summary", appLanguageRaw), systemImage: "dna") {
                 if let genomic = summary.genomicSummary, genomic.recordCount > 0 {
                     VStack(alignment: .leading, spacing: 14) {
@@ -1347,9 +1576,10 @@ struct WorkspaceOverviewView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        }
+    }
 
-        if kind == .knowledge {
+    @ViewBuilder
+    private func knowledgeWorkspaceDetails(_ summary: DesktopWorkspaceSummary) -> some View {
             SectionPanel(title: appText("Knowledge Coverage", appLanguageRaw), systemImage: "books.vertical.fill") {
                 if let knowledge = summary.knowledgeSummary, knowledge.documentCount > 0 {
                     VStack(alignment: .leading, spacing: 14) {
@@ -1450,8 +1680,10 @@ struct WorkspaceOverviewView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        }
+    }
 
+    @ViewBuilder
+    private func workspaceSideSections(_ summary: DesktopWorkspaceSummary) -> some View {
         SectionPanel(title: appText("Focus Domains", appLanguageRaw), systemImage: "scope") {
             if summary.focusDomains.isEmpty {
                 Text(appText("No focus domains loaded.", appLanguageRaw))
@@ -1651,6 +1883,52 @@ private struct WorkspaceMetricCard: View {
         case "memory": .indigo
         default: .accentColor
         }
+    }
+}
+
+private struct DataTrendCard: View {
+    let title: String
+    let value: String
+    let color: Color
+    let points: [Double]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.callout.weight(.semibold))
+                    Text(value)
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chart.bar.fill")
+                    .foregroundStyle(color)
+            }
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(Array(normalizedPoints.enumerated()), id: \.offset) { _, point in
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(color.opacity(0.75))
+                        .frame(height: 10 + CGFloat(point) * 38)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52, alignment: .bottom)
+        }
+        .padding(14)
+        .background(color.opacity(0.075), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(color.opacity(0.13), lineWidth: 1)
+        }
+    }
+
+    private var normalizedPoints: [Double] {
+        let values = points.suffix(12)
+        guard let maxValue = values.max(), maxValue > 0 else {
+            return Array(repeating: 0.12, count: max(points.count, 7))
+        }
+        return values.map { max(0.08, $0 / maxValue) }
     }
 }
 
