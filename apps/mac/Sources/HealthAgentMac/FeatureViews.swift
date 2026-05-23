@@ -1067,6 +1067,7 @@ struct SettingsView: View {
     private func clearToken() async {
         await tokenStore.clearToken()
         statusMessage = "Token cleared."
+        onLogout()
     }
 
     private func signOut() async {

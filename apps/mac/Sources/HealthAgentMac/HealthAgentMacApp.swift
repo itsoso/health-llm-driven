@@ -112,7 +112,7 @@ struct AppRootView: View {
         .frame(minWidth: 980, minHeight: 680)
         .task {
             guard !hasCheckedAuth else { return }
-            isAuthenticated = await services.authClient.hasToken()
+            isAuthenticated = await services.authClient.hasValidSession()
             hasCheckedAuth = true
         }
     }

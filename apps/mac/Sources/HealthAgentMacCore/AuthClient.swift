@@ -46,10 +46,28 @@ public final class AuthClient: Sendable {
         await tokenStore.clearToken()
     }
 
+    public func currentUser() async throws -> AuthUser {
+        try await apiClient.get("auth/me")
+    }
+
     public func hasToken() async -> Bool {
         guard let token = await tokenStore.getToken() else {
             return false
         }
         return !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public func hasValidSession() async -> Bool {
+        guard await hasToken() else {
+            return false
+        }
+        do {
+            _ = try await currentUser()
+            return true
+        } catch APIError.unauthorized {
+            return false
+        } catch {
+            return true
+        }
     }
 }
