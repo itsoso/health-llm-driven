@@ -24,6 +24,7 @@ from app.models.goal import Goal, GoalProgress
 from app.models.daily_recommendation import DailyRecommendation
 from app.models.daily_insight import DailyInsight
 from app.models.user_judgment_feedback import UserJudgmentFeedback
+from app.models.desktop_job import DesktopJob
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.models.supplement import SupplementProduct, SupplementDefinition, SupplementRecord
 # HabitDefinition/HabitRecord — DEPRECATED: router disabled, models retained for DB compat only
@@ -124,6 +125,7 @@ __all__ = [
     "Goal",
     "GoalProgress",
     "DailyRecommendation",
+    "DesktopJob",
     "HealthAnalysisCache",
     "SupplementProduct",
     "SupplementDefinition",
