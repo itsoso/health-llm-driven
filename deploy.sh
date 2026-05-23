@@ -369,7 +369,7 @@ deploy_backend() {
         cd $REMOTE_PATH && \
         echo '暂存服务器本地改动...' && \
         git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
-        (git pull || (echo 'git pull 失败, 使用上传的 deploy bundle...' && git fetch /tmp/health-app-deploy.bundle main && git checkout FETCH_HEAD)) && \
+        (git pull || (echo 'git pull 失败, 使用上传的 deploy bundle...' && git fetch /tmp/health-app-deploy.bundle HEAD && git checkout FETCH_HEAD)) && \
         cd backend && \
         echo '激活虚拟环境...' && \
         source venv/bin/activate && \
