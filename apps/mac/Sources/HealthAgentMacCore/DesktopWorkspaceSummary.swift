@@ -30,6 +30,14 @@ public struct DesktopWorkspaceMetric: Equatable, Identifiable, Sendable {
     public let value: String
 }
 
+public struct DesktopWorkspaceGuidanceRow: Equatable, Identifiable, Sendable {
+    public let id: String
+    public let title: String
+    public let detail: String
+    public let systemImage: String
+    public let tone: String
+}
+
 public struct DesktopWorkspaceSummary: Equatable, Sendable {
     public let kind: DesktopWorkspaceKind
     public let title: String
@@ -39,6 +47,7 @@ public struct DesktopWorkspaceSummary: Equatable, Sendable {
     public let recentMemory: [MemoryFactSummary]
     public let recentRecords: [DesktopRecordMetric]
     public let actionCards: [ActionCardSummary]
+    public let guidanceRows: [DesktopWorkspaceGuidanceRow]
     public let jobs: [DesktopJobSummary]
 }
 
@@ -53,6 +62,7 @@ public extension DesktopBootstrap {
             recentMemory: recentMemory.filter { !$0.objectValue.isLowSignalWorkspaceMemory },
             recentRecords: recentRecords(for: kind),
             actionCards: actionCards(for: kind),
+            guidanceRows: guidanceRows(for: kind),
             jobs: jobs(for: kind)
         )
     }
@@ -73,14 +83,16 @@ public extension DesktopBootstrap {
             return [
                 .init(id: "gene_jobs", title: "Gene Jobs", value: "\(jobs(for: .genetics).count)"),
                 .init(id: "running", title: "Running", value: "\(running)"),
-                .init(id: "memory", title: "Memory", value: "\(recentMemory.count)")
+                .init(id: "action_cards", title: "Action Cards", value: "\(actionCards(for: .genetics).count)"),
+                .init(id: "memory", title: "Memory", value: "\(recentMemory.filter { !$0.objectValue.isLowSignalWorkspaceMemory }.count)")
             ]
         case .knowledge:
             let running = jobs(for: .knowledge).filter { $0.status == "queued" || $0.status == "running" }.count
             return [
                 .init(id: "kb_jobs", title: "KB Jobs", value: "\(jobs(for: .knowledge).count)"),
                 .init(id: "running", title: "Running", value: "\(running)"),
-                .init(id: "sources", title: "Sources", value: "\(recentMemory.count)")
+                .init(id: "focus_domains", title: "Focus", value: "\(trajectory.focusDomains?.count ?? 0)"),
+                .init(id: "memory", title: "Memory", value: "\(recentMemory.filter { !$0.objectValue.isLowSignalWorkspaceMemory }.count)")
             ]
         }
     }
@@ -95,6 +107,9 @@ public extension DesktopBootstrap {
         case .data:
             return actionCards.filter { card in
                 let haystack = card.title.lowercased()
+                if haystack.contains("基因") || haystack.contains("gene") {
+                    return false
+                }
                 return haystack.contains("hba1c")
                     || haystack.contains("血")
                     || haystack.contains("体重")
@@ -106,7 +121,37 @@ public extension DesktopBootstrap {
         case .genetics:
             return actionCards.filter { $0.title.lowercased().contains("基因") || $0.title.lowercased().contains("gene") }
         case .knowledge:
-            return []
+            return actionCards.filter { card in
+                let haystack = card.title.lowercased()
+                return haystack.contains("知识")
+                    || haystack.contains("得到")
+                    || haystack.contains("dedao")
+                    || haystack.contains("kb")
+                    || haystack.contains("source")
+            }
+        }
+    }
+
+    private func guidanceRows(for kind: DesktopWorkspaceKind) -> [DesktopWorkspaceGuidanceRow] {
+        switch kind {
+        case .data:
+            return [
+                .init(id: "refresh_data", title: "Refresh recent health data", detail: "Update labs, records, wearable trajectory, and medical imports before analysis.", systemImage: "arrow.clockwise", tone: "blue"),
+                .init(id: "review_intake", title: "Review weekly intake", detail: "Use the 7-day diet, water, and supplement baseline before making daily decisions.", systemImage: "chart.xyaxis.line", tone: "teal"),
+                .init(id: "medical_import", title: "Create medical import", detail: "Register lab PDFs or Apple Health exports as auditable desktop jobs.", systemImage: "doc.badge.plus", tone: "orange")
+            ]
+        case .genetics:
+            return [
+                .init(id: "import_genome", title: "Import genome file", detail: "Drop WeGene, 23andMe, or other raw genotype txt files to create a reanalysis job.", systemImage: "dna", tone: "purple"),
+                .init(id: "risk_reanalysis", title: "Run risk reanalysis", detail: "Rebuild risk calls with source hashes, confidence, and uncertainty boundaries.", systemImage: "waveform.path.ecg.rectangle", tone: "teal"),
+                .init(id: "clinical_boundary", title: "Keep clinical boundary", detail: "Treat genetic results as risk stratification, not diagnosis or medication decisions.", systemImage: "exclamationmark.shield.fill", tone: "orange")
+            ]
+        case .knowledge:
+            return [
+                .init(id: "import_dedao", title: "Import Dedao folder", detail: "Use the local down-dedao health courses and ebooks as source material.", systemImage: "folder.badge.plus", tone: "blue"),
+                .init(id: "rebuild_kb", title: "Rebuild system KB", detail: "Compile claims, evidence refs, and source coverage for safer Agent answers.", systemImage: "books.vertical.fill", tone: "teal"),
+                .init(id: "audit_sources", title: "Audit source coverage", detail: "Check whether answers cite enough dedao, pubmed, and system evidence.", systemImage: "checklist.checked", tone: "indigo")
+            ]
         }
     }
 

@@ -214,7 +214,11 @@ final class MacP0FeatureTests: XCTestCase {
           "model_preference": {"llm_model_id": "commercial/GPT-5.5"},
           "daily_plan": {"plan_date": "2026-05-23", "actions": [{"action_key": "walk", "title": "散步", "domain": "运动"}]},
           "trajectory": {"focus_domains": ["血脂", "血糖"]},
-          "action_cards": [{"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90}],
+          "action_cards": [
+            {"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90},
+            {"id": 2, "title": "MTHFR 基因补剂闭环", "status": "active", "priority": 80},
+            {"id": 3, "title": "得到课程知识库重建", "status": "active", "priority": 70}
+          ],
           "recent_memory": [
             {"id": 1, "object_value": "补剂依从率偏低"},
             {"id": 2, "object_value": "4"}
@@ -258,8 +262,15 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(dataSummary.recentRecords.map(\.title), ["血压", "体重"])
         XCTAssertEqual(dataSummary.actionCards.map(\.title), ["HbA1c 复查"])
         XCTAssertEqual(dataSummary.recentMemory.map(\.objectValue), ["补剂依从率偏低"])
+        XCTAssertEqual(dataSummary.guidanceRows.map(\.title), ["Refresh recent health data", "Review weekly intake", "Create medical import"])
         XCTAssertEqual(dataSummary.jobs.map(\.id), [3])
+        XCTAssertEqual(geneticsSummary.metrics.map(\.title), ["Gene Jobs", "Running", "Action Cards", "Memory"])
+        XCTAssertEqual(geneticsSummary.actionCards.map(\.title), ["MTHFR 基因补剂闭环"])
+        XCTAssertEqual(geneticsSummary.guidanceRows.map(\.title), ["Import genome file", "Run risk reanalysis", "Keep clinical boundary"])
         XCTAssertEqual(geneticsSummary.jobs.map(\.id), [1])
+        XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["KB Jobs", "Running", "Focus", "Memory"])
+        XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建"])
+        XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.title), ["Import Dedao folder", "Rebuild system KB", "Audit source coverage"])
         XCTAssertEqual(knowledgeSummary.jobs.map(\.id), [2])
     }
 }

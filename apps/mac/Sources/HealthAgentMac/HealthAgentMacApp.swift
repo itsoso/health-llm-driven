@@ -1024,6 +1024,14 @@ struct WorkspaceOverviewView: View {
             }
         }
 
+        SectionPanel(title: appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                ForEach(summary.guidanceRows) { row in
+                    WorkspaceGuidanceCard(row: row)
+                }
+            }
+        }
+
         if kind == .data {
             SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
                 if summary.actionCards.isEmpty {
@@ -1086,6 +1094,33 @@ struct WorkspaceOverviewView: View {
                             }
                             .padding(12)
                             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
+                }
+            }
+        } else {
+            SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
+                if summary.actionCards.isEmpty {
+                    Text(appText("No actions loaded yet.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                        ForEach(summary.actionCards.prefix(6)) { card in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: kind == .genetics ? "dna" : "books.vertical.fill")
+                                    .foregroundStyle(kind == .genetics ? .purple : .teal)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(card.title)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(2)
+                                    Text(card.status ?? appText("Ready", appLanguageRaw))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(12)
+                            .background((kind == .genetics ? Color.purple : Color.teal).opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                     }
                 }
@@ -1218,6 +1253,12 @@ private struct WorkspaceMetricCard: View {
         case "latest_weight": "scalemass.fill"
         case "latest_bp": "heart.text.square.fill"
         case "steps": "figure.walk"
+        case "gene_jobs": "dna"
+        case "kb_jobs": "books.vertical.fill"
+        case "running": "clock.arrow.circlepath"
+        case "action_cards": "checkmark.seal.fill"
+        case "focus_domains": "scope"
+        case "memory": "brain.head.profile"
         default: "chart.bar.fill"
         }
     }
@@ -1230,6 +1271,51 @@ private struct WorkspaceMetricCard: View {
         case "latest_weight": .green
         case "latest_bp": .pink
         case "steps": .blue
+        case "gene_jobs": .purple
+        case "kb_jobs": .teal
+        case "running": .blue
+        case "action_cards": .orange
+        case "focus_domains": .cyan
+        case "memory": .indigo
+        default: .accentColor
+        }
+    }
+}
+
+private struct WorkspaceGuidanceCard: View {
+    let row: DesktopWorkspaceGuidanceRow
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: row.systemImage)
+                .font(.headline)
+                .foregroundStyle(color)
+                .frame(width: 32, height: 32)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(appText(row.title, appLanguageRaw))
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Text(appText(row.detail, appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var color: Color {
+        switch row.tone {
+        case "purple": .purple
+        case "teal": .teal
+        case "orange": .orange
+        case "indigo": .indigo
+        case "blue": .blue
         default: .accentColor
         }
     }

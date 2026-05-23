@@ -952,18 +952,35 @@ struct JobListView: View {
             }
 
             HSplitView {
-                Table(jobs) {
-                    TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
-                    TableColumn(appText("Type", appLanguageRaw), value: \.jobType)
-                    TableColumn(appText("Status", appLanguageRaw), value: \.status)
-                    TableColumn(appText("Progress", appLanguageRaw)) { job in
-                        ProgressView(value: Double(job.progress), total: 100)
+                VStack(alignment: .leading, spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
+                        JobStatCard(title: appText("Total", appLanguageRaw), value: "\(jobs.count)", systemImage: "tray.full.fill", color: .blue)
+                        JobStatCard(title: appText("Running", appLanguageRaw), value: "\(jobs.filter { $0.status == "queued" || $0.status == "running" }.count)", systemImage: "clock.arrow.circlepath", color: .teal)
+                        JobStatCard(title: appText("Failed", appLanguageRaw), value: "\(jobs.filter { $0.status == "failed" }.count)", systemImage: "exclamationmark.triangle.fill", color: .orange)
                     }
-                    TableColumn(appText("Action", appLanguageRaw)) { job in
-                        HStack {
-                            Button(appText("Details", appLanguageRaw)) { Task { await loadDetail(job.id) } }
-                            Button(appText("Retry", appLanguageRaw)) { Task { await retry(job) } }
-                                .disabled(job.status != "failed")
+
+                    if jobs.isEmpty {
+                        ContentUnavailableView(
+                            appText("No desktop jobs yet", appLanguageRaw),
+                            systemImage: "clock.arrow.circlepath",
+                            description: Text(appText("Create import or reanalysis jobs from Data, Genetics, or Knowledge tabs.", appLanguageRaw))
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 260)
+                    } else {
+                        Table(jobs) {
+                            TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
+                            TableColumn(appText("Type", appLanguageRaw), value: \.jobType)
+                            TableColumn(appText("Status", appLanguageRaw), value: \.status)
+                            TableColumn(appText("Progress", appLanguageRaw)) { job in
+                                ProgressView(value: Double(job.progress), total: 100)
+                            }
+                            TableColumn(appText("Action", appLanguageRaw)) { job in
+                                HStack {
+                                    Button(appText("Details", appLanguageRaw)) { Task { await loadDetail(job.id) } }
+                                    Button(appText("Retry", appLanguageRaw)) { Task { await retry(job) } }
+                                        .disabled(job.status != "failed")
+                                }
+                            }
                         }
                     }
                 }
@@ -1009,6 +1026,32 @@ struct JobListView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct JobStatCard: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+                .frame(width: 30, height: 30)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.title3.weight(.bold).monospacedDigit())
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
