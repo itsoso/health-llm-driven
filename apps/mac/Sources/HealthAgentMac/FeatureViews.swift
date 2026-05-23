@@ -455,6 +455,30 @@ struct AgentChatView: View {
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
 
+            if !viewModel.contextItems.isEmpty {
+                Divider()
+
+                HStack {
+                    Label(appText("Selected Context", appLanguageRaw), systemImage: "tray.full")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Button(appText("Clear", appLanguageRaw)) {
+                        viewModel.clearContextItems()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(viewModel.contextItems) { item in
+                        AgentContextItemCard(item: item) {
+                            viewModel.removeContextItem(item)
+                        }
+                    }
+                }
+            }
+
             Divider()
 
             Label(appText("Evidence", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
@@ -585,6 +609,62 @@ struct AgentChatView: View {
             }
         }
         return accepted
+    }
+}
+
+private struct AgentContextItemCard: View {
+    let item: AgentContextItem
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: iconName)
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(Color.accentColor.opacity(0.82), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(2)
+                    Text(item.sourceKind)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            if !item.summary.isEmpty {
+                Text(item.summary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding(10)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    private var iconName: String {
+        switch item.sourceKind {
+        case "genomic_finding", "genomic_category":
+            "atom"
+        case "health_record":
+            "waveform.path.ecg"
+        case "knowledge_document":
+            "books.vertical.fill"
+        default:
+            "doc.text.magnifyingglass"
+        }
     }
 }
 

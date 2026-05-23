@@ -147,6 +147,8 @@ public enum L10n {
         "Use the default 3-model panel.": "使用默认 3 模型面板。",
         "Evidence": "证据",
         "Context": "上下文",
+        "Selected Context": "已选上下文",
+        "Add Context": "加入上下文",
         "Files": "文件",
         "Web": "联网",
         "Route": "路由",

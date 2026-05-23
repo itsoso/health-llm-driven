@@ -18,6 +18,30 @@ public struct AgentChatMessage: Equatable, Identifiable, Sendable {
     }
 }
 
+public struct AgentContextItem: Equatable, Identifiable, Sendable {
+    public let sourceID: String
+    public let sourceKind: String
+    public let title: String
+    public let summary: String
+    public let payload: [String: String]
+
+    public var id: String { "\(sourceKind):\(sourceID)" }
+
+    public init(
+        sourceID: String,
+        sourceKind: String,
+        title: String,
+        summary: String,
+        payload: [String: String] = [:]
+    ) {
+        self.sourceID = sourceID
+        self.sourceKind = sourceKind
+        self.title = title
+        self.summary = summary
+        self.payload = payload
+    }
+}
+
 public enum AgentRunState: String, Equatable, Sendable {
     case idle
     case preparing
@@ -43,6 +67,7 @@ public final class AgentChatViewModel {
     public var lastSourcesUsed: [String] = []
     public var lastPrompt: String?
     public var preparedDraft: String?
+    public var contextItems: [AgentContextItem] = []
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
@@ -88,6 +113,20 @@ public final class AgentChatViewModel {
 
     public func removeAttachment(_ item: FileIntakeItem) {
         attachments.removeAll { $0.id == item.id }
+    }
+
+    public func addContextItem(_ item: AgentContextItem) {
+        if !contextItems.contains(where: { $0.id == item.id }) {
+            contextItems.append(item)
+        }
+    }
+
+    public func removeContextItem(_ item: AgentContextItem) {
+        contextItems.removeAll { $0.id == item.id }
+    }
+
+    public func clearContextItems() {
+        contextItems = []
     }
 
     public func send(_ text: String) async {
@@ -168,6 +207,17 @@ public final class AgentChatViewModel {
                     "source_kind": $0.sourceKind.rawValue,
                     "source_hash": $0.sha256,
                 ]
+            }
+        }
+        if !contextItems.isEmpty {
+            context["context_items"] = contextItems.map {
+                [
+                    "source_id": $0.sourceID,
+                    "source_kind": $0.sourceKind,
+                    "title": $0.title,
+                    "summary": $0.summary,
+                    "payload": $0.payload
+                ] as [String: Any]
             }
         }
         guard !context.isEmpty else {

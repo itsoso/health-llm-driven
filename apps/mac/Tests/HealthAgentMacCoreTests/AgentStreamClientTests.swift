@@ -202,6 +202,40 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(attachments.first?["source_kind"] as? String, "genome_txt")
         XCTAssertEqual(attachments.first?["source_hash"] as? String, "sha256:abc")
     }
+
+    @MainActor
+    func testAgentChatViewModelIncludesSelectedContextItemsInExtraContext() async throws {
+        let service = CapturingAgentStreamService()
+        let model = AgentChatViewModel(streamService: service)
+        let item = AgentContextItem(
+            sourceID: "genomic:rs10572724",
+            sourceKind: "genomic_finding",
+            title: "9p21 心血管风险",
+            summary: "rs10572724 AA screening",
+            payload: [
+                "rsid": "rs10572724",
+                "genotype": "AA",
+                "risk_level": "high"
+            ]
+        )
+
+        model.addContextItem(item)
+        model.addContextItem(item)
+
+        await model.send("基于已选上下文分析")
+
+        XCTAssertEqual(model.contextItems.count, 1)
+        let context = try XCTUnwrap(service.extraContext)
+        let data = try XCTUnwrap(context.data(using: .utf8))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let contextItems = try XCTUnwrap(json["context_items"] as? [[String: Any]])
+        XCTAssertEqual(contextItems.count, 1)
+        XCTAssertEqual(contextItems.first?["source_id"] as? String, "genomic:rs10572724")
+        XCTAssertEqual(contextItems.first?["source_kind"] as? String, "genomic_finding")
+        XCTAssertEqual(contextItems.first?["title"] as? String, "9p21 心血管风险")
+        let payload = try XCTUnwrap(contextItems.first?["payload"] as? [String: String])
+        XCTAssertEqual(payload["risk_level"], "high")
+    }
 }
 
 private struct StaticAgentStreamService: AgentStreamServicing {

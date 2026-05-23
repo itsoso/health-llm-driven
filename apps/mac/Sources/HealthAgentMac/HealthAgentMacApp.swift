@@ -267,25 +267,46 @@ struct AppRootView: View {
         case .trace:
             TraceLookupView(client: services.traceClient, navigation: navigation)
         case .data:
-            WorkspaceOverviewView(viewModel: services.todayViewModel, kind: .data)
+            WorkspaceOverviewView(
+                viewModel: services.todayViewModel,
+                kind: .data,
+                onAskAgent: askAgentWithContext,
+                onAddContext: addAgentContext
+            )
         case .genetics:
             ImportWorkspaceView(
                 viewModel: services.todayViewModel,
                 jobClient: services.desktopJobClient,
                 kind: .genetics,
-                onAskAgent: { prompt in
-                    services.agentViewModel.prepareDraft(prompt)
-                    navigation.selection = .agent
-                }
+                onAskAgent: askAgentWithContext,
+                onAddContext: addAgentContext
             )
         case .knowledge:
-            ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .knowledge)
+            ImportWorkspaceView(
+                viewModel: services.todayViewModel,
+                jobClient: services.desktopJobClient,
+                kind: .knowledge,
+                onAskAgent: askAgentWithContext,
+                onAddContext: addAgentContext
+            )
         case .settings:
             SettingsView(authClient: services.authClient, tokenStore: services.tokenProvider) {
                 isAuthenticated = false
                 navigation.selection = .today
             }
         }
+    }
+
+    private func askAgentWithContext(_ prompt: String, _ item: AgentContextItem?) {
+        if let item {
+            services.agentViewModel.addContextItem(item)
+        }
+        services.agentViewModel.prepareDraft(prompt)
+        navigation.selection = .agent
+    }
+
+    private func addAgentContext(_ item: AgentContextItem) {
+        services.agentViewModel.addContextItem(item)
     }
 }
 
@@ -1065,7 +1086,8 @@ struct ContentPlaceholder: View {
 struct WorkspaceOverviewView: View {
     @Bindable var viewModel: TodayViewModel
     let kind: DesktopWorkspaceKind
-    var onAskAgent: ((String) -> Void)?
+    var onAskAgent: ((String, AgentContextItem?) -> Void)?
+    var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dataRange = "7d"
     @State private var selectedGenomicDetail: GenomicDetailRoute?
@@ -1124,16 +1146,22 @@ struct WorkspaceOverviewView: View {
             case .finding(let finding):
                 GenomicFindingDetailSheet(
                     finding: finding,
+                    onAddContext: onAddContext.map { add in
+                        { add(genomicFindingContext(finding)) }
+                    },
                     onAskAgent: onAskAgent.map { ask in
-                        { ask(genomicFindingPrompt(finding)) }
+                        { ask(genomicFindingPrompt(finding), genomicFindingContext(finding)) }
                     }
                 )
             case .category(let category):
                 GenomicCategoryDetailSheet(
                     category: category,
                     findings: summary?.genomicSummary?.topFindings.filter { $0.category == category.category } ?? [],
+                    onAddContext: onAddContext.map { add in
+                        { add(genomicCategoryContext(category)) }
+                    },
                     onAskAgent: onAskAgent.map { ask in
-                        { ask(genomicCategoryPrompt(category)) }
+                        { ask(genomicCategoryPrompt(category), genomicCategoryContext(category)) }
                     }
                 )
             }
@@ -1572,11 +1600,20 @@ struct WorkspaceOverviewView: View {
                                         .controlSize(.small)
                                         if let onAskAgent {
                                             Button {
-                                                onAskAgent(genomicCategoryPrompt(category))
+                                                onAskAgent(genomicCategoryPrompt(category), genomicCategoryContext(category))
                                             } label: {
                                                 Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
                                             }
                                             .buttonStyle(.borderedProminent)
+                                            .controlSize(.small)
+                                        }
+                                        if let onAddContext {
+                                            Button {
+                                                onAddContext(genomicCategoryContext(category))
+                                            } label: {
+                                                Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                                            }
+                                            .buttonStyle(.bordered)
                                             .controlSize(.small)
                                         }
                                     }
@@ -1639,11 +1676,20 @@ struct WorkspaceOverviewView: View {
                                     .controlSize(.small)
                                     if let onAskAgent {
                                         Button {
-                                            onAskAgent(genomicFindingPrompt(finding))
+                                            onAskAgent(genomicFindingPrompt(finding), genomicFindingContext(finding))
                                         } label: {
                                             Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
                                         }
                                         .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
+                                    }
+                                    if let onAddContext {
+                                        Button {
+                                            onAddContext(genomicFindingContext(finding))
+                                        } label: {
+                                            Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                                        }
+                                        .buttonStyle(.bordered)
                                         .controlSize(.small)
                                     }
                                     Spacer(minLength: 0)
@@ -1862,6 +1908,48 @@ struct WorkspaceOverviewView: View {
         """
     }
 
+    private func genomicFindingContext(_ finding: GenomicFindingSummary) -> AgentContextItem {
+        AgentContextItem(
+            sourceID: "genomic_finding:\(finding.id)",
+            sourceKind: "genomic_finding",
+            title: finding.displayTitle,
+            summary: [
+                finding.rsid,
+                finding.genotype,
+                finding.riskLevel,
+                finding.evidenceLevel,
+                finding.description
+            ].compactMap { $0 }.joined(separator: " · "),
+            payload: [
+                "id": "\(finding.id)",
+                "gene_name": finding.geneName,
+                "variant_name": finding.variantName ?? "",
+                "rsid": finding.rsid ?? "",
+                "genotype": finding.genotype ?? "",
+                "result_label": finding.resultLabel ?? "",
+                "risk_level": finding.riskLevel ?? "",
+                "evidence_level": finding.evidenceLevel ?? "",
+                "category": finding.category ?? "",
+                "variant_nature": finding.variantNature ?? ""
+            ]
+        )
+    }
+
+    private func genomicCategoryContext(_ category: GenomicCategorySummary) -> AgentContextItem {
+        AgentContextItem(
+            sourceID: "genomic_category:\(category.category)",
+            sourceKind: "genomic_category",
+            title: category.category,
+            summary: "\(category.count) variants · H \(category.highRiskCount) · M \(category.mediumRiskCount)",
+            payload: [
+                "category": category.category,
+                "count": "\(category.count)",
+                "high_risk_count": "\(category.highRiskCount)",
+                "medium_risk_count": "\(category.mediumRiskCount)"
+            ]
+        )
+    }
+
     private func workspaceRecordIcon(_ type: String) -> String {
         switch type {
         case "diet": "fork.knife"
@@ -2000,6 +2088,7 @@ private struct WorkspaceMetricCard: View {
 
 private struct GenomicFindingDetailSheet: View {
     let finding: GenomicFindingSummary
+    let onAddContext: (() -> Void)?
     let onAskAgent: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -2048,6 +2137,14 @@ private struct GenomicFindingDetailSheet: View {
                 Button(appText("Close", appLanguageRaw)) {
                     dismiss()
                 }
+                if let onAddContext {
+                    Button {
+                        onAddContext()
+                    } label: {
+                        Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
                 if let onAskAgent {
                     Button {
                         onAskAgent()
@@ -2091,6 +2188,7 @@ private struct GenomicFindingDetailSheet: View {
 private struct GenomicCategoryDetailSheet: View {
     let category: GenomicCategorySummary
     let findings: [GenomicFindingSummary]
+    let onAddContext: (() -> Void)?
     let onAskAgent: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -2148,6 +2246,14 @@ private struct GenomicCategoryDetailSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if let onAddContext {
+                    Button {
+                        onAddContext()
+                    } label: {
+                        Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
                 if let onAskAgent {
                     Button {
                         onAskAgent()
@@ -2266,12 +2372,18 @@ struct ImportWorkspaceView: View {
     @Bindable var viewModel: TodayViewModel
     let jobClient: DesktopJobClient
     let kind: DesktopWorkspaceKind
-    var onAskAgent: ((String) -> Void)?
+    var onAskAgent: ((String, AgentContextItem?) -> Void)?
+    var onAddContext: ((AgentContextItem) -> Void)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                WorkspaceOverviewView(viewModel: viewModel, kind: kind, onAskAgent: onAskAgent)
+                WorkspaceOverviewView(
+                    viewModel: viewModel,
+                    kind: kind,
+                    onAskAgent: onAskAgent,
+                    onAddContext: onAddContext
+                )
                     .frame(minHeight: 420)
                 Divider()
                 ImportCenterView(jobClient: jobClient)
