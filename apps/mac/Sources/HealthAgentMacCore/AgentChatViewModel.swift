@@ -42,6 +42,7 @@ public final class AgentChatViewModel {
     public var lastModel: String?
     public var lastSourcesUsed: [String] = []
     public var lastPrompt: String?
+    public var preparedDraft: String?
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
@@ -61,6 +62,18 @@ public final class AgentChatViewModel {
 
     public func selectModel(_ id: String?) {
         selectedModelID = id
+    }
+
+    public func prepareDraft(_ text: String) {
+        preparedDraft = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public func consumePreparedDraft() -> String? {
+        defer { preparedDraft = nil }
+        guard let preparedDraft, !preparedDraft.isEmpty else {
+            return nil
+        }
+        return preparedDraft
     }
 
     public func canSubmit(_ text: String) -> Bool {

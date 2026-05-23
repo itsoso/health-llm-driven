@@ -82,6 +82,16 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelPreparesAndConsumesDraft() {
+        let model = AgentChatViewModel()
+
+        model.prepareDraft("  基于 9p21 给我行动建议  ")
+
+        XCTAssertEqual(model.consumePreparedDraft(), "基于 9p21 给我行动建议")
+        XCTAssertNil(model.consumePreparedDraft())
+    }
+
+    @MainActor
     func testAgentChatViewModelStreamsAssistantReply() async {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 77))

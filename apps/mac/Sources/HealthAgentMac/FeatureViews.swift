@@ -58,7 +58,11 @@ struct AgentChatView: View {
             .ignoresSafeArea()
         )
         .onAppear {
+            ingestPreparedDraft()
             editorFocusToken += 1
+        }
+        .onChange(of: viewModel.preparedDraft) { _, _ in
+            ingestPreparedDraft()
         }
     }
 
@@ -540,6 +544,14 @@ struct AgentChatView: View {
         guard viewModel.canSubmit(text) else { return }
         draft = ""
         await viewModel.send(text)
+        editorFocusToken += 1
+    }
+
+    private func ingestPreparedDraft() {
+        guard let preparedDraft = viewModel.consumePreparedDraft() else {
+            return
+        }
+        draft = preparedDraft
         editorFocusToken += 1
     }
 
