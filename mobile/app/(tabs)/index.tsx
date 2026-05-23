@@ -1,13 +1,10 @@
 /**
- * 今日 Tab —— Phase 2 重做 (2026-05-11).
+ * 今日 Tab —— Agent 工作台 (2026-05-23).
  *
  * 设计 (Agent Native Mobile First):
- *   1. Critical/High 告警卡片 (0 条不显示)
- *   2. 本周建议队列 (source_type='weekly_advisor', 3-5 条)
- *   3. Twin 摘要 (4 个数, 折叠)
- *
- * 旧 10+ 组件 (HomeHeader / AgentSurface / TodayCoachPanel / ...) 全部先沉默,
- * 备份在 index.legacy.tsx.bak. 数据观察 1-2 周后决定保留或删.
+ *   1. 首屏先回答 Agent 正在后台做什么.
+ *   2. 再给出今天最该执行的一步.
+ *   3. 最后下沉身体反馈、本周建议和更多入口.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -265,6 +262,16 @@ export default function TodayScreen() {
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
         />
 
+        <AgentWorkspacePanel
+          criticalCount={criticalAlerts.length}
+          planCount={activePlanCount}
+          refreshing={isRefreshing}
+          geneticHits={geneticStatsQuery.data?.hits}
+          progressTotal={progressStatsQuery.data?.total}
+          twinSnapshot={twinSnap}
+          onOpenAgent={() => router.push('/(tabs)/chat' as any)}
+        />
+
         <View style={styles.section}>
           <SectionHeader title="今日行动" subtitle="先处理一件，再看余下计划" />
           <NextBestActionCard
@@ -292,7 +299,7 @@ export default function TodayScreen() {
         )}
 
         <View style={styles.section}>
-          <SectionHeader title="状态概览" subtitle="风险、轨迹和实时环境" />
+          <SectionHeader title="身体反馈" subtitle="可穿戴、环境和长期轨迹" />
           {criticalAlerts.length > 0 && (
             <>
             <SectionHeader title="需要立即处理" subtitle={`${criticalAlerts.length} 条高优先级`} />
@@ -364,6 +371,28 @@ export default function TodayScreen() {
           </View>
         </View>
 
+        <View style={styles.section}>
+          <SectionHeader
+            title="本周建议"
+            subtitle={weeklyAdvice.length > 0 ? `${weeklyAdvice.length} 个待处理` : '等待 Agent 生成'}
+          />
+          {weeklyAdvice.length === 0 ? (
+            <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
+              <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
+                本周尚无 Agent 主动建议. 周日晚 21:07 自动生成.
+              </Text>
+            </View>
+          ) : (
+            weeklyAdvice.map(card => (
+              <SuggestionRow
+                key={card.id}
+                card={card}
+                onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
+              />
+            ))
+          )}
+        </View>
+
         <CompactShortcutSection
           shortcuts={[
             {
@@ -401,28 +430,6 @@ export default function TodayScreen() {
           ]}
           onOpenAll={() => router.push('/(tabs)/record' as any)}
         />
-
-        <View style={styles.section}>
-          <SectionHeader
-            title="本周建议"
-            subtitle={weeklyAdvice.length > 0 ? `${weeklyAdvice.length} 个待处理` : '等待 Agent 生成'}
-          />
-          {weeklyAdvice.length === 0 ? (
-            <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
-              <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
-                本周尚无 Agent 主动建议. 周日晚 21:07 自动生成.
-              </Text>
-            </View>
-          ) : (
-            weeklyAdvice.map(card => (
-              <SuggestionRow
-                key={card.id}
-                card={card}
-                onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
-              />
-            ))
-          )}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -447,7 +454,7 @@ function HomeCommandHeader({
   const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
   const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
-  const headline = planCount > 0 ? `今天先做 ${planCount} 件事` : '保持记录节奏';
+  const headline = planCount > 0 ? `${planCount} 个干预待执行` : '保持记录节奏';
   const focusText = criticalCount > 0
     ? '先看风险，再处理计划'
     : planCount > 0
@@ -464,7 +471,7 @@ function HomeCommandHeader({
         <View style={styles.commandTop}>
           <View style={styles.commandTitleBlock}>
             <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
+            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>健康 Agent 正在运行</Text>
             <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
               {headline}
             </Text>
@@ -477,6 +484,7 @@ function HomeCommandHeader({
         </View>
 
         <View style={styles.commandMetaRow}>
+          <MetaChip icon="radio-outline" label="后台运行" />
           <MetaChip icon="compass-outline" label={`${planCount} 个计划`} />
           <MetaChip icon="sync-outline" label={refreshing ? '同步中' : '已同步'} />
         </View>
@@ -508,6 +516,146 @@ function HomeCommandHeader({
           <Text style={[styles.secondaryActionText, { color: c.labelPrimary }]}>记录</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+function AgentWorkspacePanel({
+  criticalCount,
+  planCount,
+  refreshing,
+  geneticHits,
+  progressTotal,
+  twinSnapshot,
+  onOpenAgent,
+}: {
+  criticalCount: number;
+  planCount: number;
+  refreshing: boolean;
+  geneticHits?: number | null;
+  progressTotal?: number | null;
+  twinSnapshot: TwinSnapshot;
+  onOpenAgent: () => void;
+}) {
+  const { c } = useTheme();
+  const wearableReady = Boolean(
+    twinSnapshot.hrv
+    || twinSnapshot.sleep_score
+    || twinSnapshot.resting_hr
+    || twinSnapshot.spo2_avg,
+  );
+  const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
+  const sourceItems = [
+    {
+      label: '基因',
+      value: geneticHits != null ? `${geneticHits} 位点` : '已纳入',
+      color: c.purple,
+      bg: c.tintPurple,
+    },
+    {
+      label: '表观',
+      value: progressTotal != null ? `${progressTotal} 轨迹` : '生活',
+      color: c.orange,
+      bg: c.tintOrange,
+    },
+    {
+      label: '体检',
+      value: clinicalReady ? '指标' : '待补',
+      color: c.pink,
+      bg: c.tintPink,
+    },
+    {
+      label: '穿戴',
+      value: wearableReady ? '实时' : refreshing ? '同步' : '待同步',
+      color: c.blue,
+      bg: c.tintBlue,
+    },
+  ];
+
+  return (
+    <View style={styles.section}>
+      <SectionHeader title="Agent 工作台" subtitle="把长期画像变成今天能执行的一步" />
+      <View style={[styles.workspaceCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+        <View style={styles.workspaceTop}>
+          <View style={styles.workspaceTitleBlock}>
+            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>后台任务</Text>
+            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>持续监测 → 诊断推理 → 干预执行</Text>
+            <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]}>
+              Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。
+            </Text>
+          </View>
+          <Pressable
+            onPress={onOpenAgent}
+            style={({ pressed }) => [
+              styles.workspaceAskButton,
+              { backgroundColor: c.brandLight, opacity: pressed ? 0.7 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="让 Agent 解释当前判断"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+            <Text style={[styles.workspaceAskText, { color: c.brand }]}>解释</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.pipelineRow}>
+          <PipelineStep
+            icon="scan-outline"
+            title="持续监测"
+            detail={wearableReady ? '穿戴反馈在线' : '等待最新穿戴'}
+            color={c.blue}
+            bg={c.tintBlue}
+          />
+          <PipelineStep
+            icon="analytics-outline"
+            title="诊断推理"
+            detail={criticalCount > 0 ? `${criticalCount} 个风险` : '风险稳定'}
+            color={criticalCount > 0 ? c.red : c.green}
+            bg={criticalCount > 0 ? c.tintRed : c.tintGreen}
+          />
+          <PipelineStep
+            icon="checkmark-done-outline"
+            title="干预执行"
+            detail={planCount > 0 ? `${planCount} 个任务` : '等待记录'}
+            color={c.teal}
+            bg={c.tintTeal}
+          />
+        </View>
+
+        <View style={styles.sourceRail}>
+          {sourceItems.map(item => (
+            <View key={item.label} style={[styles.sourceChip, { backgroundColor: item.bg }]}>
+              <Text style={[styles.sourceLabel, { color: item.color }]}>{item.label}</Text>
+              <Text style={[styles.sourceValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function PipelineStep({
+  icon,
+  title,
+  detail,
+  color,
+  bg,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  detail: string;
+  color: string;
+  bg: string;
+}) {
+  const { c } = useTheme();
+  return (
+    <View style={styles.pipelineStep}>
+      <View style={[styles.pipelineIcon, { backgroundColor: bg }]}>
+        <Ionicons name={icon} size={15} color={color} />
+      </View>
+      <Text style={[styles.pipelineTitle, { color: c.labelPrimary }]} numberOfLines={1}>{title}</Text>
+      <Text style={[styles.pipelineDetail, { color: c.labelTertiary }]} numberOfLines={1}>{detail}</Text>
     </View>
   );
 }
@@ -820,15 +968,15 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
-    padding: spacing.lg,
-    gap: spacing.md,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  commandFocusArea: { gap: spacing.md },
-  commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandFocusArea: { gap: spacing.sm },
+  commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   commandTitleBlock: { flex: 1, gap: 4 },
   commandDate: { fontSize: 12, fontWeight: '700' },
   commandFocusLabel: { fontSize: 12, fontWeight: '800' },
-  commandTitle: { fontSize: 26, fontWeight: '800', lineHeight: 32, letterSpacing: 0 },
+  commandTitle: { fontSize: 24, fontWeight: '800', lineHeight: 29, letterSpacing: 0 },
   commandHint: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
   statusPill: {
     flexDirection: 'row',
@@ -853,7 +1001,7 @@ const styles = StyleSheet.create({
   commandActions: { flexDirection: 'row', gap: spacing.sm },
   primaryAction: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 42,
     borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -862,7 +1010,7 @@ const styles = StyleSheet.create({
   },
   primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 44,
+    minHeight: 42,
     minWidth: 102,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
@@ -872,6 +1020,58 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   secondaryActionText: { fontSize: 15, fontWeight: '700' },
+  workspaceCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  workspaceTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  workspaceTitleBlock: { flex: 1, minWidth: 0, gap: 3 },
+  workspaceEyebrow: { fontSize: 12, fontWeight: '800' },
+  workspaceTitle: { fontSize: 17, fontWeight: '800', lineHeight: 22 },
+  workspaceCopy: { fontSize: 13, lineHeight: 18 },
+  workspaceAskButton: {
+    minHeight: 36,
+    borderRadius: radii.full,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  workspaceAskText: { fontSize: 13, fontWeight: '800' },
+  pipelineRow: { flexDirection: 'row', gap: spacing.sm },
+  pipelineStep: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  pipelineIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pipelineTitle: { fontSize: 12, fontWeight: '800' },
+  pipelineDetail: { fontSize: 11, fontWeight: '600' },
+  sourceRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  sourceChip: {
+    flexGrow: 1,
+    flexBasis: '23%',
+    minWidth: 66,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  sourceLabel: { fontSize: 11, fontWeight: '800' },
+  sourceValue: { fontSize: 10, fontWeight: '600', marginTop: 1 },
   nextActionCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,

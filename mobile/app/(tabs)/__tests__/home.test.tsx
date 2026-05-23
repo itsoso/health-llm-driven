@@ -157,17 +157,44 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
-  it('groups the home feed into action, status, more entry, and weekly sections', () => {
+  it('groups the home feed into agent workspace, action, feedback, weekly, and entry sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
+    expect(textFlow.indexOf('Agent 工作台')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('状态概览')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('状态概览'));
-    expect(textFlow.indexOf('状态概览')).toBeLessThan(textFlow.indexOf('更多入口'));
-    expect(textFlow.indexOf('更多入口')).toBeLessThan(textFlow.indexOf('本周建议'));
+    expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('今日行动'));
+    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('身体反馈'));
+    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('本周建议'));
+    expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
+  });
+
+  it('frames the home feed as a background health agent workspace', () => {
+    const { getAllByText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('健康 Agent 正在运行')).toBeTruthy();
+    expect(getByText('后台任务')).toBeTruthy();
+    expect(getByText('持续监测')).toBeTruthy();
+    expect(getByText('诊断推理')).toBeTruthy();
+    expect(getByText('干预执行')).toBeTruthy();
+    expect(getAllByText('基因').length).toBeGreaterThan(0);
+    expect(getByText('表观')).toBeTruthy();
+    expect(getByText('体检')).toBeTruthy();
+    expect(getByText('穿戴')).toBeTruthy();
+  });
+
+  it('puts the agent workspace before action and body feedback sections', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('Agent 工作台')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('今日行动'));
+    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('身体反馈'));
   });
 
   it('keeps the primary action out of the remaining daily plan list', () => {
@@ -199,7 +226,7 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('今天先做 2 件事')).toBeTruthy();
+    expect(getByText('2 个干预待执行')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
