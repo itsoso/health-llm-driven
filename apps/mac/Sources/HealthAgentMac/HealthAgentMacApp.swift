@@ -58,8 +58,7 @@ struct AppServices {
     init() {
         let tokenProvider = KeychainTokenStore()
         self.tokenProvider = tokenProvider
-        let baseURL = UserDefaults.standard.string(forKey: "apiBaseURL")
-            .flatMap(URL.init(string:)) ?? APIEndpoint.defaultBaseURL
+        let baseURL = APIEndpoint.resolvedBaseURL()
         self.apiClient = APIClient(baseURL: baseURL, tokenProvider: tokenProvider)
         self.todayViewModel = TodayViewModel(
             service: DesktopBootstrapService(apiClient: apiClient)

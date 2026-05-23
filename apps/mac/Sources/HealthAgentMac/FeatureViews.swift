@@ -984,7 +984,7 @@ struct TraceLookupView: View {
 
 struct SettingsView: View {
     let tokenStore: KeychainTokenStore
-    @AppStorage("apiBaseURL") private var apiBaseURL = APIEndpoint.defaultBaseURL.absoluteString
+    @AppStorage(APIEndpoint.baseURLDefaultsKey) private var apiBaseURL = APIEndpoint.defaultBaseURL.absoluteString
     @AppStorage("preferredVoice") private var preferredVoice = "private_female"
     @AppStorage("allowFileHashing") private var allowFileHashing = true
     @State private var token = ""

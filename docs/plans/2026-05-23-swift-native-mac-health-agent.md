@@ -1,5 +1,7 @@
 # Swift Native Mac Health Agent Implementation Plan
 
+**Status on 2026-05-23:** P0 backend APIs and the Swift Package based Mac client have landed. The current app covers Today, Agent, Record, Import, Jobs, Trace, Settings, menu-bar routing, file drag-and-drop, job detail, and trace handoff. Remaining work is release packaging, richer data/genetics/knowledge detail screens, and a raw-file upload path beyond source metadata/hash registration.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Build a Swift-native macOS client that has the core daily operating capabilities of the mobile app, while keeping the backend orchestrator, Twin, knowledge base, and database as the single source of truth.
@@ -497,17 +499,17 @@ swift test
 
 ## 6. Open Questions Before Implementation
 
-These should be resolved during Task 4, not before writing backend tests:
+Resolved during P0 implementation:
 
 1. Should the first Swift project be created manually in Xcode or generated from a CLI template?
 2. Should local cache use Core Data from day one, or start with file-backed JSON plus Keychain and move to Core Data when data views need offline mode?
 3. Should desktop import jobs upload raw files to the existing upload endpoint or create a new presigned/object-storage path?
 4. Which user role can see full traces: current user only for own conversation, or admin-only for low-level provider diagnostics?
 
-Default decisions for P0:
+P0 decisions:
 
-- Xcode project is acceptable if created manually, but all source files live under `apps/mac/`.
+- The first client is a Swift Package under `apps/mac/`; an Xcode project can be added for signing/distribution.
 - Use native frameworks only.
-- Use current user auth for all user data; admin diagnostics can come later.
-- Prefer structured metadata upload before raw file upload.
-
+- Use current user auth for all user data and trace access; admin diagnostics can come later.
+- Prefer structured metadata/hash registration before raw file upload.
+- Use Keychain for token storage and UserDefaults for simple local preferences. Core Data remains deferred until offline data views need it.

@@ -24,4 +24,19 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "https://health.executor.life/api/v1"
         )
     }
+
+    func testAPIEndpointResolvesStoredBaseURLAndFallsBackForInvalidValue() {
+        let suiteName = "HealthAgentMacCoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("https://staging.example.test/api/v1", forKey: APIEndpoint.baseURLDefaultsKey)
+        XCTAssertEqual(
+            APIEndpoint.resolvedBaseURL(defaults: defaults).absoluteString,
+            "https://staging.example.test/api/v1"
+        )
+
+        defaults.set("not a url", forKey: APIEndpoint.baseURLDefaultsKey)
+        XCTAssertEqual(APIEndpoint.resolvedBaseURL(defaults: defaults), APIEndpoint.defaultBaseURL)
+    }
 }
