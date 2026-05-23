@@ -399,6 +399,7 @@ export default function ChatScreen() {
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
+  const headerLlmLabel = isStreaming ? '正在回复' : compactLlmHeaderLabel(activeLlmLabel);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -406,7 +407,7 @@ export default function ChatScreen() {
         <View style={styles.chatTitleBlock}>
           <Text style={txt.headerTitle}>健康 Agent</Text>
           <Text style={txt.headerMeta} numberOfLines={1}>
-            {isStreaming ? '正在回复' : activeLlmLabel}
+            {headerLlmLabel}
           </Text>
         </View>
         <View style={{ flex: 1 }} />
@@ -622,6 +623,13 @@ export default function ChatScreen() {
       />
     </SafeAreaView>
   );
+}
+
+function compactLlmHeaderLabel(label: string): string {
+  return label
+    .split(' · ')[0]
+    .replace(/\s+(推理|均衡|快速)$/u, '')
+    .trim();
 }
 
 function ToolMenuRow({

@@ -13,6 +13,7 @@ const mockRecordCardDecision = jest.fn();
 const mockNewChat = jest.fn();
 const mockSetParams = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
+let mockLlmPreference: any = { model_id: null, options: [] };
 
 jest.mock('expo-router', () => ({
   router: { push: mockPush, setParams: mockSetParams },
@@ -61,7 +62,7 @@ jest.mock('../../../services/memoryOpener', () => ({
 }));
 
 jest.mock('../../../services/llmPreference', () => ({
-  getLlmPreference: jest.fn().mockResolvedValue({ model_id: null, options: [] }),
+  getLlmPreference: jest.fn(() => Promise.resolve(mockLlmPreference)),
   updateLlmPreference: jest.fn(),
 }));
 
@@ -114,6 +115,7 @@ describe('ChatScreen', () => {
     mockRecordCardAdherence.mockResolvedValue({});
     mockRecordCardDecision.mockResolvedValue({});
     mockRouteParams = {};
+    mockLlmPreference = { model_id: null, options: [] };
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -132,6 +134,29 @@ describe('ChatScreen', () => {
     });
 
     expect(mockOpenHistory).toHaveBeenCalled();
+  });
+
+  it('uses a short readable model label in the chat header', async () => {
+    mockLlmPreference = {
+      model_id: 'qwen3.6-plus',
+      options: [
+        {
+          id: 'qwen3.6-plus',
+          label: 'Qwen3.6 Plus 推理 · 阿里',
+          provider: '阿里',
+          model: 'qwen3.6-plus',
+          speed_tier: 'reasoning',
+          note: '',
+        },
+      ],
+    };
+
+    const { getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('Qwen3.6 Plus')).toBeTruthy();
+    });
+    expect(queryByText('Qwen3.6 Plus 推理 · 阿里')).toBeNull();
   });
 
   it('sends opener quick replies with the opener context so verification has a target', async () => {
