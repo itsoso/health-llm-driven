@@ -370,12 +370,9 @@ export default function TodayScreen() {
           geneticHits={geneticStatsQuery.data?.hits}
           progressTotal={progressStatsQuery.data?.total}
           twinSnapshot={twinSnap}
-          onOpenAgent={openWorkspaceChat}
-        />
-
-        <InterventionLoopPanel
           domains={interventionDomains}
           onPressDomain={(domain) => router.push(domain.route as any)}
+          onOpenAgent={openWorkspaceChat}
         />
 
         <View style={styles.section}>
@@ -633,6 +630,8 @@ function AgentWorkspacePanel({
   geneticHits,
   progressTotal,
   twinSnapshot,
+  domains,
+  onPressDomain,
   onOpenAgent,
 }: {
   criticalCount: number;
@@ -641,9 +640,13 @@ function AgentWorkspacePanel({
   geneticHits?: number | null;
   progressTotal?: number | null;
   twinSnapshot: TwinSnapshot;
+  domains: InterventionDomainStatus[];
+  onPressDomain: (domain: InterventionDomainStatus) => void;
   onOpenAgent: () => void;
 }) {
   const { c } = useTheme();
+  const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
+  const interventionSummary = activeDomainCount > 0 ? `${activeDomainCount} 个域待执行` : '等待 Agent 编排';
   const wearableReady = Boolean(
     twinSnapshot.hrv
     || twinSnapshot.sleep_score
@@ -684,7 +687,7 @@ function AgentWorkspacePanel({
       <View style={[styles.workspaceCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         <View style={styles.workspaceTop}>
           <View style={styles.workspaceTitleBlock}>
-            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>后台任务</Text>
+            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>后台任务 · 长期干预</Text>
             <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>持续监测 → 诊断推理 → 干预执行</Text>
             <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]}>
               Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。
@@ -736,6 +739,29 @@ function AgentWorkspacePanel({
             </View>
           ))}
         </View>
+
+        <View style={[styles.workspaceInterventionBlock, { borderTopColor: c.separator }]}>
+          <View style={styles.workspaceInterventionHeader}>
+            <View style={styles.workspaceInterventionTitleBlock}>
+              <Text style={[styles.workspaceInterventionTitle, { color: c.labelPrimary }]}>干预闭环</Text>
+              <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>饮食、睡眠、运动、补剂和情绪一起追踪</Text>
+              <Text style={[styles.workspaceInterventionSummary, { color: c.brand }]}>{interventionSummary}</Text>
+            </View>
+            <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.brandLight }]}>
+              <Ionicons name="repeat-outline" size={14} color={c.brand} />
+              <Text style={[styles.workspaceInterventionBadgeText, { color: c.brand }]}>验证指标</Text>
+            </View>
+          </View>
+          <View style={styles.interventionGrid}>
+            {domains.map(domain => (
+              <InterventionDomainButton
+                key={domain.key}
+                domain={domain}
+                onPress={() => onPressDomain(domain)}
+              />
+            ))}
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -762,45 +788,6 @@ function PipelineStep({
       </View>
       <Text style={[styles.pipelineTitle, { color: c.labelPrimary }]} numberOfLines={1}>{title}</Text>
       <Text style={[styles.pipelineDetail, { color: c.labelTertiary }]} numberOfLines={1}>{detail}</Text>
-    </View>
-  );
-}
-
-function InterventionLoopPanel({
-  domains,
-  onPressDomain,
-}: {
-  domains: InterventionDomainStatus[];
-  onPressDomain: (domain: InterventionDomainStatus) => void;
-}) {
-  const { c } = useTheme();
-  const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
-  const summary = activeDomainCount > 0 ? `${activeDomainCount} 个域待执行` : '等待 Agent 编排';
-
-  return (
-    <View style={styles.section}>
-      <SectionHeader title="干预闭环" subtitle="饮食、睡眠、运动、补剂和情绪一起追踪" />
-      <View style={[styles.interventionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-        <View style={styles.interventionTop}>
-          <View style={styles.interventionTopText}>
-            <Text style={[styles.interventionEyebrow, { color: c.brand }]}>长期任务</Text>
-            <Text style={[styles.interventionTitle, { color: c.labelPrimary }]}>{summary}</Text>
-          </View>
-          <View style={[styles.interventionBadge, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="repeat-outline" size={14} color={c.brand} />
-            <Text style={[styles.interventionBadgeText, { color: c.brand }]}>验证指标</Text>
-          </View>
-        </View>
-        <View style={styles.interventionGrid}>
-          {domains.map(domain => (
-            <InterventionDomainButton
-              key={domain.key}
-              domain={domain}
-              onPress={() => onPressDomain(domain)}
-            />
-          ))}
-        </View>
-      </View>
     </View>
   );
 }
@@ -1333,22 +1320,22 @@ const styles = StyleSheet.create({
   },
   sourceLabel: { fontSize: 11, fontWeight: '800' },
   sourceValue: { fontSize: 10, fontWeight: '600', marginTop: 1 },
-  interventionCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: spacing.md,
+  workspaceInterventionBlock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.sm,
     gap: spacing.sm,
   },
-  interventionTop: {
+  workspaceInterventionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  interventionTopText: { flex: 1, minWidth: 0, gap: 2 },
-  interventionEyebrow: { fontSize: 12, fontWeight: '800' },
-  interventionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800' },
-  interventionBadge: {
+  workspaceInterventionTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  workspaceInterventionTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  workspaceInterventionHint: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  workspaceInterventionSummary: { fontSize: 12, lineHeight: 16, fontWeight: '800' },
+  workspaceInterventionBadge: {
     minHeight: 30,
     borderRadius: radii.full,
     paddingHorizontal: 9,
@@ -1356,35 +1343,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  interventionBadgeText: { fontSize: 12, fontWeight: '800' },
+  workspaceInterventionBadgeText: { fontSize: 12, fontWeight: '800' },
   interventionGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+    flexWrap: 'nowrap',
+    gap: spacing.xs,
   },
   interventionDomain: {
-    flexBasis: '31%',
-    flexGrow: 1,
-    minWidth: 96,
-    minHeight: 56,
+    width: '18.5%',
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 0,
+    minHeight: 46,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 9,
-    flexDirection: 'row',
+    paddingHorizontal: 3,
+    paddingVertical: 6,
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 4,
   },
   interventionDomainIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
+    width: 22,
+    height: 22,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  interventionDomainText: { flex: 1, minWidth: 0 },
-  interventionDomainLabel: { fontSize: 13, fontWeight: '800' },
-  interventionDomainStatus: { fontSize: 11, fontWeight: '700', marginTop: 1 },
+  interventionDomainText: { alignItems: 'center', minWidth: 0 },
+  interventionDomainLabel: { fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  interventionDomainStatus: { fontSize: 9, fontWeight: '700', marginTop: 1, textAlign: 'center' },
   nextActionCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,

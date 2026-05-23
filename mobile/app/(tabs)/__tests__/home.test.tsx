@@ -158,7 +158,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
-  it('groups the home feed into agent workspace, action, intervention loop, feedback, weekly, and entry sections', () => {
+  it('groups the home feed into agent workspace, action, feedback, weekly, and entry sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
@@ -179,7 +179,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getByText('健康 Agent 正在运行')).toBeTruthy();
-    expect(getByText('后台任务')).toBeTruthy();
+    expect(getByText('后台任务 · 长期干预')).toBeTruthy();
     expect(getByText('持续监测')).toBeTruthy();
     expect(getByText('诊断推理')).toBeTruthy();
     expect(getByText('干预执行')).toBeTruthy();
@@ -187,6 +187,24 @@ describe('TodayScreen', () => {
     expect(getByText('表观')).toBeTruthy();
     expect(getByText('体检')).toBeTruthy();
     expect(getByText('穿戴')).toBeTruthy();
+  });
+
+  it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('后台任务 · 长期干预')).toBeTruthy();
+    expect(getByText('饮食、睡眠、运动、补剂和情绪一起追踪')).toBeTruthy();
+    expect(queryByText('长期任务')).toBeNull();
+  });
+
+  it('summarizes lifestyle intervention domains as a compact status rail', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动'));
+    expect(screen.getByText('验证指标')).toBeTruthy();
   });
 
   it('puts the agent workspace before action and body feedback sections', () => {
