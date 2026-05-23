@@ -3,7 +3,7 @@
   "type": "gene_knowledge_v2",
   "schema_id": "llm-wiki-v2-gene-knowledge",
   "version": "dd1cad7",
-  "compiled_at": "2026-05-18T13:10:16.693543+00:00",
+  "compiled_at": "2026-05-23T01:44:15.375730+00:00",
   "source": "ak-kbase",
   "description": "Unified gene knowledge: entities, atomic claims, derived gene_rules, SNP registry. Compiled from wiki/entities/ and wiki/claims/.",
   "entities": {
@@ -43,6 +43,24 @@
         "gene": null,
         "body": "# ACTN3\n\n运动表现相关基因，常用于力量/耐力倾向沟通。\n\n## 相关事实\n\n- [[../claims/c_actn3_training_phenotype_boundary|ACTN3 与训练倾向边界]]"
       },
+      "ADORA2A": {
+        "entity_id": "ADORA2A",
+        "entity_type": "gene",
+        "title": "ADORA2A",
+        "aliases": [
+          "adenosine A2A receptor",
+          "腺苷A2A受体"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# ADORA2A\n\nADORA2A 与咖啡因敏感性、焦虑感受和睡眠反应讨论有关。系统知识库把它作为个体化咖啡因窗口建议的解释锚点，而不是确定性诊断标签。\n\n当用户有相关基因结果或明显咖啡因睡眠反应时，健康助理应引导用户做摄入时间、剂量和睡眠指标的观察。"
+      },
       "ALDH2": {
         "entity_id": "ALDH2",
         "entity_type": "gene",
@@ -76,6 +94,107 @@
         "gene": null,
         "body": "# APOE\n\n脂质代谢和阿尔茨海默病风险沟通中常见的基因。系统第一阶段只把它用于代谢健康风险解释。\n\n## 相关事实\n\n- [[../claims/c_apoe_ldl_diet_boundary|APOE 与 LDL-C 管理边界]]"
       },
+      "ATP7B": {
+        "entity_id": "ATP7B",
+        "entity_type": "gene",
+        "title": "ATP7B",
+        "aliases": [
+          "copper-transporting ATPase 2",
+          "Wilson disease gene",
+          "威尔逊病相关基因"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "gene_reviews:wilson-disease",
+          "clinvar:ATP7B"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# ATP7B\n\nATP7B 与威尔逊病相关。威尔逊病诊断需要临床表现、生化指标和/或临床级分子检测综合判断，不能由消费级基因 TXT 中的单个位点直接诊断。\n\n## 使用边界\n\n- 不基于单个 ATP7B rs 位点建议限铜、螯合治疗或锌治疗。\n- 若 DTC/芯片结果提示 ATP7B 风险位点，先复核原始基因型、链方向和版本，再由医生决定是否做 ATP7B 临床测序。\n- 可建议建立铜代谢化验基线：铜蓝蛋白、血清铜、24 小时尿铜、肝功能；异常时转消化肝病科或遗传咨询。"
+      },
+      "BRCA1": {
+        "entity_id": "BRCA1",
+        "entity_type": "gene",
+        "title": "BRCA1",
+        "aliases": [
+          "breast cancer gene 1",
+          "hereditary breast and ovarian cancer gene",
+          "遗传性乳腺卵巢癌相关基因"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "gene_reviews:brca1-brca2-hboc",
+          "cdc:hboc-genetic-testing",
+          "nci:brca1-brca2-pdq"
+        ],
+        "last_confirmed": "2026-05-23",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# BRCA1\n\nBRCA1 致病变异与遗传性乳腺卵巢癌风险相关。消费级基因 TXT、芯片报告或单个位点提示只能作为遗传咨询和临床级检测复核线索。\n\n## 使用边界\n\n- 不把 DTC/芯片结果直接解释为“已经患癌”或“必然患癌”。\n- 不根据单个位点建议筛查频率、预防性手术、药物或生育决策。\n- 若报告提示 BRCA1 致病/疑似致病变异，建议带原始结果咨询遗传咨询师或肿瘤/乳腺专科，由临床级检测确认。"
+      },
+      "BRCA2": {
+        "entity_id": "BRCA2",
+        "entity_type": "gene",
+        "title": "BRCA2",
+        "aliases": [
+          "breast cancer gene 2",
+          "hereditary breast and ovarian cancer gene",
+          "遗传性乳腺卵巢癌相关基因"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "gene_reviews:brca1-brca2-hboc",
+          "cdc:hboc-genetic-testing",
+          "nci:brca1-brca2-pdq"
+        ],
+        "last_confirmed": "2026-05-23",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# BRCA2\n\nBRCA2 致病变异与遗传性乳腺卵巢癌风险相关，也可涉及男性乳腺癌、前列腺癌、胰腺癌等风险沟通。消费级基因 TXT、芯片报告或单个位点提示只能作为遗传咨询和临床级检测复核线索。\n\n## 使用边界\n\n- 不把 DTC/芯片结果直接解释为“已经患癌”或“必然患癌”。\n- 不根据单个位点建议筛查频率、预防性手术、药物或生育决策。\n- 若报告提示 BRCA2 致病/疑似致病变异，建议带原始结果咨询遗传咨询师或肿瘤/乳腺专科，由临床级检测确认。"
+      },
+      "CFTR": {
+        "entity_id": "CFTR",
+        "entity_type": "gene",
+        "title": "CFTR",
+        "aliases": [
+          "cystic fibrosis transmembrane conductance regulator",
+          "囊性纤维化跨膜电导调节因子"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "gene_reviews:cystic-fibrosis",
+          "clinvar:CFTR"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# CFTR\n\nCFTR 与囊性纤维化和 CFTR-related disorders 相关，但消费级基因 TXT 或单个位点命中只能作为复核线索。\n\n## 使用边界\n\n- 不把 CFTR 单个位点或芯片结果直接解释为“已患病”。\n- 若命中疑似致病位点，优先建议临床级分子检测复核；有慢性咳嗽、支气管扩张、反复胰腺炎、不育/少精等表型时再结合专科评估。\n- 可提示医生考虑汗氯测试、CFTR 测序和删除/重复分析，但具体检查由临床医生决定。"
+      },
+      "COMT": {
+        "entity_id": "COMT",
+        "entity_type": "gene",
+        "title": "COMT",
+        "aliases": [
+          "catechol-O-methyltransferase",
+          "Val158Met",
+          "儿茶酚-O-甲基转移酶"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "medgen:CN379739",
+          "pubmed:23799032"
+        ],
+        "last_confirmed": "2026-05-23",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# COMT\n\nCOMT 参与多巴胺、去甲肾上腺素等儿茶酚胺代谢。rs4680 Val158Met 可影响 COMT 酶活，因此适合用于解释压力恢复、刺激物耐受和睡眠反应倾向。\n\n## 使用边界\n\n- 不把 COMT 单个位点解释为焦虑、抑郁、ADHD 或任何精神疾病诊断。\n- 涉及咖啡因、训练强度、甲基供体或镁等建议时，必须结合睡眠、焦虑感、心率、HRV 和用户真实反馈。\n- 若存在持续焦虑、失眠、惊恐、抑郁或功能受损，应提示就医或心理/精神专科评估。"
+      },
       "CYP2C19": {
         "entity_id": "CYP2C19",
         "entity_type": "gene",
@@ -96,6 +215,26 @@
         "gene": null,
         "body": "# CYP2C19\n\n代谢质子泵抑制剂 (奥美拉唑/兰索拉唑) 和氯吡格雷激活的关键酶。东亚 *2/*3 失活等位频率高 (~30%)，PM 比例显著高于欧美。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c19_ppi_substitution|CYP2C19 PM 与 PPI 选择]]\n- [[../../claims/c_cyp2c19_clopidogrel_boundary|CYP2C19 PM 与氯吡格雷无效边界]]\n\n## 关键变异\n\n- [[../snp/rs4244285|rs4244285 (CYP2C19 *2)]]\n\n## 边界\n\n氯吡格雷替换为替格瑞洛/普拉格雷属于心血管科决策；本知识仅用于风险提示。"
       },
+      "CYP2C9": {
+        "entity_id": "CYP2C9",
+        "entity_type": "gene",
+        "title": "CYP2C9",
+        "aliases": [
+          "CYP2C9",
+          "cytochrome P450 2C9"
+        ],
+        "confidence": 0.8,
+        "evidence_level": "A",
+        "sources": [
+          "system:phase0-curated",
+          "cpic:guideline-cyp2c9-warfarin",
+          "cpic:guideline-cyp2c9-nsaid"
+        ],
+        "last_confirmed": "2026-05-18",
+        "decay_rate": "slow",
+        "gene": null,
+        "body": "# CYP2C9\n\n代谢华法林、NSAIDs (布洛芬/塞来昔布)、磺脲类降糖药等狭窄治疗窗药物。*2/*3 等失活等位携带者需要更精细的剂量调整。\n\n## 相关事实\n\n- [[../../claims/c_cyp2c9_warfarin_dose_boundary|CYP2C9 与华法林剂量边界]]\n- [[../../claims/c_cyp2c9_nsaid_gi_boundary|CYP2C9 慢代谢与 NSAIDs 胃肠风险]]\n\n## 边界\n\n华法林剂量必须由抗凝门诊基于 INR 调整，遗传信息只是辅助起始剂量参考。"
+      },
       "CYP2D6": {
         "entity_id": "CYP2D6",
         "entity_type": "gene",
@@ -115,6 +254,27 @@
         "decay_rate": "slow",
         "gene": null,
         "body": "# CYP2D6\n\n肝脏 P450 家族关键酶，代谢约 25% 临床常用药物 (可待因/曲马多/某些抗抑郁药/β受体阻滞剂/他莫昔芬)。表型分四类：PM (慢) / IM (中间) / NM (正常) / UM (超快)。东亚人群 IM/PM 比例显著高于欧美。\n\n## 相关事实\n\n- [[../../claims/c_cyp2d6_pm_opioid_boundary|CYP2D6 PM 与可待因/曲马多无效边界]]\n- [[../../claims/c_cyp2d6_pm_antihistamine_substitution|CYP2D6 PM 与抗组胺药替换]]\n\n## 关键变异\n\n- [[../snp/rs5030655|rs5030655 (CYP2D6 *6)]]\n- [[../snp/rs1065852|rs1065852 (CYP2D6 *10，东亚常见 IM)]]\n\n## 边界\n\n表型推断需要测多个 star allele 才准确；商业单点检测仅作风险提示，不替代专业药物基因组检测。"
+      },
+      "DPYD": {
+        "entity_id": "DPYD",
+        "entity_type": "gene",
+        "title": "DPYD",
+        "aliases": [
+          "dihydropyrimidine dehydrogenase",
+          "DPD",
+          "二氢嘧啶脱氢酶"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:fluoropyrimidines-dpyd-2017",
+          "cpic:fluoropyrimidines-dpyd-2024-update",
+          "pubmed:29152729"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# DPYD\n\nDPYD 低功能或无功能变异会增加氟嘧啶类药物严重甚至致命毒性风险，主要涉及 5-FU、卡培他滨和替加氟。\n\n## 使用边界\n\n- DTC/芯片结果不能替代肿瘤治疗前的临床 DPYD 检测和医生剂量决策。\n- 系统只应提示“用药前必须告知肿瘤科医生并复核 DPYD/DPD 状态”。\n- 剂量降低、避免用药或替代方案由肿瘤科医生决定。"
       },
       "FADS1": {
         "entity_id": "FADS1",
@@ -149,6 +309,103 @@
         "decay_rate": "slow",
         "gene": null,
         "body": "# FTO\n\n体重和食欲调节相关的常见遗传风险位点集合。用于解释倾向，不用于预测命运。\n\n## 相关事实\n\n- [[../claims/c_fto_weight_risk_boundary|FTO 与体重管理边界]]"
+      },
+      "G6PD": {
+        "entity_id": "G6PD",
+        "entity_type": "gene",
+        "title": "G6PD",
+        "aliases": [
+          "glucose-6-phosphate dehydrogenase",
+          "葡萄糖-6-磷酸脱氢酶"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:g6pd-2022",
+          "pubmed:36049896"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# G6PD\n\nG6PD 缺乏会增加氧化应激相关溶血风险，部分药物需要在处方前确认 G6PD 状态。\n\n## 使用边界\n\n- DTC/芯片结果不能替代临床 G6PD 酶活或临床基因检测。\n- 涉及拉布立酶、伯氨喹、达普森等高风险药物时，应由医生确认 G6PD 状态。\n- 不建议用户自行扩大“禁用药物清单”；具体风险按药物和临床场景分层。"
+      },
+      "HFE": {
+        "entity_id": "HFE",
+        "entity_type": "gene",
+        "title": "HFE",
+        "aliases": [
+          "hereditary hemochromatosis gene",
+          "血色病相关基因"
+        ],
+        "confidence": 0.76,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# HFE\n\nHFE 是铁代谢和遗传性铁过载风险讨论中的关键基因。系统知识库用它连接铁蛋白、转铁蛋白饱和度、肝功能和铁剂补充边界。\n\n健康助理可以提示用户整理化验和家族史线索，涉及铁过载风险时应建议医生评估，不应自行建议放血、停药或补铁剂量调整。"
+      },
+      "HLA-A*31:01": {
+        "entity_id": "HLA-A*31:01",
+        "entity_type": "gene",
+        "title": "HLA-A*31:01",
+        "aliases": [
+          "HLA-A31:01",
+          "HLA-A 31:01",
+          "carbamazepine hypersensitivity allele"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:carbamazepine-hla-2017",
+          "ncbi_mgs:carbamazepine-hla"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# HLA-A*31:01\n\nHLA-A*31:01 是卡马西平相关皮肤不良反应的重要药物安全位点。它应作为用药前安全边界，而不是疾病易感风险。\n\n## 使用边界\n\n- 若用户未使用过卡马西平，命中 HLA-A*31:01 时应提示医生优先选择替代药物。\n- 若医生认为无替代方案，需由医生决定是否使用并加强皮疹、DRESS、SJS/TEN 等皮肤不良反应监测。\n- 不建议用户自行停药、换药或调整剂量。"
+      },
+      "HLA-B*15:02": {
+        "entity_id": "HLA-B*15:02",
+        "entity_type": "gene",
+        "title": "HLA-B*15:02",
+        "aliases": [
+          "HLA-B15:02",
+          "HLA-B 15:02",
+          "carbamazepine SJS/TEN allele"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:carbamazepine-hla-2017",
+          "ncbi_mgs:carbamazepine-hla"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# HLA-B*15:02\n\nHLA-B*15:02 是卡马西平相关 SJS/TEN 的强药物安全位点。它应作为用药前红线，而不是疾病风险标签。\n\n## 使用边界\n\n- 卡马西平初用者若 HLA-B*15:02 阳性，应提示医生避免卡马西平。\n- 奥卡西平也需谨慎处理，替代抗癫痫/神经痛方案由医生决定。\n- 不建议用户自行停药、换药或调整剂量。"
+      },
+      "HLA-B*58:01": {
+        "entity_id": "HLA-B*58:01",
+        "entity_type": "gene",
+        "title": "HLA-B*58:01",
+        "aliases": [
+          "HLA-B58:01",
+          "HLA-B 58:01",
+          "allopurinol hypersensitivity allele"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:allopurinol-hla-b-2015",
+          "ncbi_mgs:allopurinol-hla-b"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# HLA-B*58:01\n\nHLA-B*58:01 是别嘌醇相关严重皮肤不良反应的重要药物安全位点。它应作为用药前红线，而不是痛风或高尿酸诊断。\n\n## 使用边界\n\n- 别嘌醇初用者若 HLA-B*58:01 阳性，应提示医生避免别嘌醇并考虑替代方案。\n- 肾功能、起始剂量和利尿剂合用也会影响风险，需要医生综合判断。\n- 不建议用户自行停药、换药或调整剂量。"
       },
       "LCT": {
         "entity_id": "LCT",
@@ -189,6 +446,25 @@
         "gene": null,
         "body": "# MTHFR\n\n一碳代谢相关基因，常用于叶酸转化、同型半胱氨酸和 B 族维生素状态的风险沟通。\n\n## 相关事实\n\n- [[../claims/c_mthfr_c677t_hcy_folate_boundary|MTHFR C677T 与叶酸转化边界]]\n\n## 边界\n\nMTHFR 不能单独决定补剂方案；应结合 Hcy、B12、叶酸、饮食和医生建议。"
       },
+      "NUDT15": {
+        "entity_id": "NUDT15",
+        "entity_type": "gene",
+        "title": "NUDT15",
+        "aliases": [
+          "nudix hydrolase 15",
+          "硫嘌呤不耐受相关基因"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:thiopurines-tpmt-nudt15-2025",
+          "pubmed:41618934"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# NUDT15\n\nNUDT15 低功能或无功能变异会增加硫嘌呤类药物骨髓抑制风险，在东亚人群中尤其重要。\n\n## 使用边界\n\n- DTC/芯片结果不能直接生成硫嘌呤剂量。\n- 使用硫嘌呤前，应由医生结合 TPMT/NUDT15 临床药物基因组学结果和血常规监测决策。\n- 已经在用药者不应自行停药或改剂量。"
+      },
       "SLCO1B1": {
         "entity_id": "SLCO1B1",
         "entity_type": "gene",
@@ -208,6 +484,64 @@
         "decay_rate": "slow",
         "gene": null,
         "body": "# SLCO1B1\n\n肝脏阴离子转运蛋白，控制他汀类药物 (尤其辛伐他汀) 进入肝细胞的速度。*5 (rs4149056 C 等位) 携带者血浆他汀暴露上升，肌病/横纹肌溶解风险显著增高。\n\n## 相关事实\n\n- [[../../claims/c_slco1b1_statin_myopathy_boundary|SLCO1B1 与他汀肌病风险边界]]\n\n## 关键变异\n\n- [[../snp/rs4149056|rs4149056 (SLCO1B1 *5)]]\n\n## 边界\n\nCC 型并非禁用他汀，而是优先选择对 SLCO1B1 不敏感的瑞舒伐他汀/匹伐他汀或低剂量起始，需医生决策。"
+      },
+      "TPMT": {
+        "entity_id": "TPMT",
+        "entity_type": "gene",
+        "title": "TPMT",
+        "aliases": [
+          "thiopurine S-methyltransferase",
+          "硫嘌呤甲基转移酶"
+        ],
+        "confidence": 0.9,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:thiopurines-tpmt-nudt15-2025",
+          "pubmed:41618934"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# TPMT\n\nTPMT 低活性或无活性变异会增加硫嘌呤类药物骨髓抑制风险，涉及巯嘌呤、硫唑嘌呤和硫鸟嘌呤。\n\n## 使用边界\n\n- DTC/芯片结果不能直接生成硫嘌呤剂量。\n- 使用硫嘌呤前，应由医生结合 TPMT/NUDT15 临床药物基因组学结果和血常规监测决策。\n- 已经在用药者不应自行停药或改剂量。"
+      },
+      "VDR": {
+        "entity_id": "VDR",
+        "entity_type": "gene",
+        "title": "VDR",
+        "aliases": [
+          "vitamin D receptor",
+          "维生素D受体"
+        ],
+        "confidence": 0.68,
+        "evidence_level": "C",
+        "sources": [
+          "pubmed:35057541",
+          "pmc:PMC8780067",
+          "ncbi_books:endotext-vitamin-d"
+        ],
+        "last_confirmed": "2026-05-23",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# VDR\n\nVDR 编码维生素 D 受体。常见 VDR 多态性可作为维生素 D 状态管理的解释线索，但不能直接决定补充剂剂量。\n\n## 使用边界\n\n- 不仅凭 VDR 单个位点建议长期高剂量维生素 D。\n- 补充建议应优先锚定 25(OH)D、血钙、肾功能、结石史、日晒和膳食摄入。\n- 若有肾结石、高钙血症、慢性肾病或正在使用影响钙磷代谢的药物，剂量和监测由医生决定。"
+      },
+      "VKORC1": {
+        "entity_id": "VKORC1",
+        "entity_type": "gene",
+        "title": "VKORC1",
+        "aliases": [
+          "vitamin K epoxide reductase complex subunit 1",
+          "华法林敏感性相关基因"
+        ],
+        "confidence": 0.88,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:warfarin-2017",
+          "pubmed:28198005"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# VKORC1\n\nVKORC1 编码华法林作用靶点，常与 CYP2C9、CYP4F2 和临床因素一起用于华法林起始剂量估算。\n\n## 使用边界\n\n- VKORC1 结果不能单独决定华法林剂量。\n- 华法林处方和剂量调整必须由医生结合适应证、年龄、体重、合并用药、肝肾功能和 INR 完成。\n- DTC/芯片结果只能提示“需临床药物基因组学复核和 INR 闭环”。"
       }
     },
     "snp": {
@@ -264,6 +598,25 @@
         "gene": "9p21",
         "body": "# rs10757274\n\n9p21 区域 tag SNP，AA 冠心病 OR≈1.3。机制涉及 ANRIL 调控 CDKN2A/B。\n\n## 相关事实\n\n- [[../../claims/c_9p21_cardiovascular_risk|c_9p21_cardiovascular_risk]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
       },
+      "rs121908763": {
+        "entity_id": "rs121908763",
+        "entity_type": "snp",
+        "title": "rs121908763",
+        "aliases": [
+          "rs121908763",
+          "CFTR review site"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "clinvar:rs121908763",
+          "gene_reviews:cystic-fibrosis"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": "CFTR",
+        "body": "# rs121908763\n\n用户报告中出现的 CFTR 复核位点。该位点在消费级 TXT 中命中时只触发 confirmation-only 流程。\n\n## 相关事实\n\n- [[../../claims/c_cftr_dtc_confirmation_boundary|c_cftr_dtc_confirmation_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、临床级检测和医生建议。"
+      },
       "rs1229984": {
         "entity_id": "rs1229984",
         "entity_type": "snp",
@@ -281,6 +634,44 @@
         "decay_rate": "slow",
         "gene": "ADH1B",
         "body": "# rs1229984\n\nADH1B 快代谢等位 (东亚 TT 常见)，乙醇→乙醛加快；与 ALDH2*2 共存时不适反应更强。\n\n## 相关事实\n\n- [[../../claims/c_aldh2_alcohol_boundary|c_aldh2_alcohol_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs137853280": {
+        "entity_id": "rs137853280",
+        "entity_type": "snp",
+        "title": "rs137853280",
+        "aliases": [
+          "rs137853280",
+          "ATP7B review site"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "clinvar:rs137853280",
+          "gene_reviews:wilson-disease"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": "ATP7B",
+        "body": "# rs137853280\n\n用户报告中出现的 ATP7B 复核位点。该位点在消费级 TXT 中命中时只触发 confirmation-only 流程。\n\n## 相关事实\n\n- [[../../claims/c_atp7b_dtc_confirmation_boundary|c_atp7b_dtc_confirmation_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、临床级检测、铜代谢化验和医生建议。"
+      },
+      "rs149790377": {
+        "entity_id": "rs149790377",
+        "entity_type": "snp",
+        "title": "rs149790377",
+        "aliases": [
+          "rs149790377",
+          "CFTR review site"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "clinvar:rs149790377",
+          "gene_reviews:cystic-fibrosis"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": "CFTR",
+        "body": "# rs149790377\n\n用户报告中出现的 CFTR 复核位点。该位点在消费级 TXT 中命中时只触发 confirmation-only 流程。\n\n## 相关事实\n\n- [[../../claims/c_cftr_dtc_confirmation_boundary|c_cftr_dtc_confirmation_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、临床级检测和医生建议。"
       },
       "rs1544410": {
         "entity_id": "rs1544410",
@@ -407,6 +798,25 @@
         "decay_rate": "slow",
         "gene": "ACTN3",
         "body": "# rs1815739\n\nα-辅肌动蛋白 3 终止突变。TT (XX) 缺失快肌纤维 α-actinin-3，群体偏耐力；CC (RR) 偏爆发力。\n\n## 相关事实\n\n- [[../../claims/c_actn3_training_phenotype_boundary|c_actn3_training_phenotype_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、化验、药物历史和医生建议。"
+      },
+      "rs186045772": {
+        "entity_id": "rs186045772",
+        "entity_type": "snp",
+        "title": "rs186045772",
+        "aliases": [
+          "rs186045772",
+          "CFTR review site"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "B",
+        "sources": [
+          "clinvar:rs186045772",
+          "gene_reviews:cystic-fibrosis"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": "CFTR",
+        "body": "# rs186045772\n\n用户报告中出现的 CFTR 复核位点。该位点在消费级 TXT 中命中时只触发 confirmation-only 流程。\n\n## 相关事实\n\n- [[../../claims/c_cftr_dtc_confirmation_boundary|c_cftr_dtc_confirmation_boundary]]\n\n## 边界\n\n单个位点不能直接决定诊断、治疗或剂量；必须结合表型、临床级检测和医生建议。"
       },
       "rs4149056": {
         "entity_id": "rs4149056",
@@ -611,6 +1021,74 @@
       }
     },
     "drug": {
+      "allopurinol": {
+        "entity_id": "allopurinol",
+        "entity_type": "drug",
+        "title": "Allopurinol",
+        "aliases": [
+          "别嘌醇"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:allopurinol-hla-b-2015"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Allopurinol\n\n别嘌醇与 HLA-B*58:01 相关的严重皮肤不良反应存在明确药物基因组学边界。"
+      },
+      "azathioprine": {
+        "entity_id": "azathioprine",
+        "entity_type": "drug",
+        "title": "Azathioprine",
+        "aliases": [
+          "硫唑嘌呤"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:thiopurines-tpmt-nudt15-2025"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Azathioprine\n\n硫唑嘌呤属于硫嘌呤类药物，TPMT/NUDT15 低功能或无功能会增加骨髓抑制风险。"
+      },
+      "capecitabine": {
+        "entity_id": "capecitabine",
+        "entity_type": "drug",
+        "title": "Capecitabine",
+        "aliases": [
+          "卡培他滨"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:fluoropyrimidines-dpyd-2017"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Capecitabine\n\n卡培他滨是 5-FU 前药，DPYD/DPD 功能降低会显著增加严重毒性风险。"
+      },
+      "carbamazepine": {
+        "entity_id": "carbamazepine",
+        "entity_type": "drug",
+        "title": "Carbamazepine",
+        "aliases": [
+          "卡马西平"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:carbamazepine-hla-2017"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Carbamazepine\n\n卡马西平与 HLA-A*31:01、HLA-B*15:02 相关的严重皮肤不良反应存在明确药物基因组学边界。"
+      },
       "cetirizine": {
         "entity_id": "cetirizine",
         "entity_type": "drug",
@@ -665,6 +1143,23 @@
         "gene": null,
         "body": "# 可待因\n\n弱阿片镇痛/止咳药；前药，需 CYP2D6 转化为吗啡才有效。\n\n## 基因相关注意\n\nPM 无效且代谢物蓄积副作用；UM 转化过度可致呼吸抑制，禁用于哺乳期 UM。"
       },
+      "dapsone": {
+        "entity_id": "dapsone",
+        "entity_type": "drug",
+        "title": "Dapsone",
+        "aliases": [
+          "达普森"
+        ],
+        "confidence": 0.8,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:g6pd-2022"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Dapsone\n\n达普森在 G6PD 缺乏者中需要处方前评估溶血风险，并结合替代方案和监测计划。"
+      },
       "ephedrine": {
         "entity_id": "ephedrine",
         "entity_type": "drug",
@@ -685,6 +1180,41 @@
         "gene": null,
         "body": "# 麻黄碱\n\n拟交感减充血剂；升血压、收缩鼻黏膜血管。\n\n## 基因相关注意\n\n心血管高风险 (含 9p21 AA) 应避免长期使用，监测血压。"
       },
+      "febuxostat": {
+        "entity_id": "febuxostat",
+        "entity_type": "drug",
+        "title": "Febuxostat",
+        "aliases": [
+          "非布司他"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "B",
+        "sources": [
+          "ncbi_mgs:allopurinol-hla-b"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Febuxostat\n\n非布司他可作为别嘌醇不适用时的替代候选之一，但是否适合用户需要医生结合心血管风险、肝肾功能和适应证判断。"
+      },
+      "fluorouracil": {
+        "entity_id": "fluorouracil",
+        "entity_type": "drug",
+        "title": "Fluorouracil",
+        "aliases": [
+          "5-FU",
+          "氟尿嘧啶"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:fluoropyrimidines-dpyd-2017"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Fluorouracil\n\n氟尿嘧啶属于氟嘧啶类药物，DPYD/DPD 功能降低会显著增加严重毒性风险。"
+      },
       "ibuprofen": {
         "entity_id": "ibuprofen",
         "entity_type": "drug",
@@ -704,6 +1234,42 @@
         "gene": null,
         "body": "# 布洛芬\n\n非选择性 NSAID；S-异构体主要由 CYP2C9 代谢。\n\n## 基因相关注意\n\nCYP2C9 PM 血浆浓度升高，胃肠出血/AKI 风险增加，需限量限疗程。"
       },
+      "iron-supplement": {
+        "entity_id": "iron-supplement",
+        "entity_type": "drug",
+        "title": "铁剂",
+        "aliases": [
+          "iron supplement",
+          "补铁"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 铁剂\n\n铁剂用于铁缺乏相关场景，但在 HFE 铁过载风险、铁蛋白偏高或不明原因肝功能异常时，需要谨慎区分“缺乏补充”和“过量风险”。\n\n健康助理可以提醒用户结合铁蛋白、转铁蛋白饱和度、血常规和医生意见核对，不应自行建议加量、停药或长期补铁。"
+      },
+      "lactose-containing-tablet": {
+        "entity_id": "lactose-containing-tablet",
+        "entity_type": "drug",
+        "title": "含乳糖片剂",
+        "aliases": [
+          "lactose containing tablet",
+          "含乳糖辅料药片"
+        ],
+        "confidence": 0.68,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 含乳糖片剂\n\n含乳糖片剂指以乳糖作为辅料的药品或补剂剂型。对乳糖不耐受风险较高、服用后出现腹胀腹泻或肠道不适的人，辅料可能成为解释线索之一。\n\n健康助理只应建议用户记录药品/补剂辅料和症状时间关系，必要时咨询药师或医生确认替代剂型。"
+      },
       "loratadine": {
         "entity_id": "loratadine",
         "entity_type": "drug",
@@ -721,6 +1287,24 @@
         "decay_rate": "slow",
         "gene": null,
         "body": "# 氯雷他定\n\n第二代抗组胺，主要经 CYP3A4/CYP2D6 代谢为活性代谢物。\n\n## 基因相关注意\n\nCYP2D6 PM 蓄积致嗜睡；可换西替利嗪 (肾排泄)。"
+      },
+      "mercaptopurine": {
+        "entity_id": "mercaptopurine",
+        "entity_type": "drug",
+        "title": "Mercaptopurine",
+        "aliases": [
+          "6-MP",
+          "巯嘌呤"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:thiopurines-tpmt-nudt15-2025"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Mercaptopurine\n\n巯嘌呤属于硫嘌呤类药物，TPMT/NUDT15 低功能或无功能会增加骨髓抑制风险。"
       },
       "nitroglycerin": {
         "entity_id": "nitroglycerin",
@@ -759,6 +1343,40 @@
         "gene": null,
         "body": "# 奥美拉唑\n\n质子泵抑制剂，主要由 CYP2C19 代谢失活。\n\n## 基因相关注意\n\nCYP2C19 PM 血浆浓度显著升高、抑酸过度；可换雷贝拉唑。"
       },
+      "oxcarbazepine": {
+        "entity_id": "oxcarbazepine",
+        "entity_type": "drug",
+        "title": "Oxcarbazepine",
+        "aliases": [
+          "奥卡西平"
+        ],
+        "confidence": 0.8,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:carbamazepine-hla-2017"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Oxcarbazepine\n\n奥卡西平与 HLA-B*15:02 相关的皮肤不良反应需要在处方前由医生综合评估。"
+      },
+      "primaquine": {
+        "entity_id": "primaquine",
+        "entity_type": "drug",
+        "title": "Primaquine",
+        "aliases": [
+          "伯氨喹"
+        ],
+        "confidence": 0.8,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:g6pd-2022"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Primaquine\n\n伯氨喹在 G6PD 缺乏者中需要按 G6PD 表型和临床场景严格评估溶血风险。"
+      },
       "rabeprazole": {
         "entity_id": "rabeprazole",
         "entity_type": "drug",
@@ -777,6 +1395,23 @@
         "decay_rate": "slow",
         "gene": null,
         "body": "# 雷贝拉唑\n\n质子泵抑制剂，非酶途径代谢为主，CYP2C19 影响弱。\n\n## 基因相关注意\n\n对 CYP2C19 多态性不敏感，是 PM 患者的优选 PPI。"
+      },
+      "rasburicase": {
+        "entity_id": "rasburicase",
+        "entity_type": "drug",
+        "title": "Rasburicase",
+        "aliases": [
+          "拉布立酶"
+        ],
+        "confidence": 0.84,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:g6pd-2022"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Rasburicase\n\n拉布立酶在 G6PD 缺乏者中可诱发严重溶血和高铁血红蛋白血症，处方前需确认 G6PD 状态。"
       },
       "simvastatin": {
         "entity_id": "simvastatin",
@@ -816,6 +1451,40 @@
         "decay_rate": "normal",
         "gene": null,
         "body": "# Statin\n\n他汀类药物是血脂管理中的常见处方药实体，知识库只用于识别用药安全边界和医生沟通问题。\n\n## 相关事实\n\n- 待补充 reviewed claim。\n\n## 边界\n\nAgent 不启动、停止或调整处方药；涉及肌痛、肝酶异常、妊娠、相互作用或剂量调整时应咨询医生。"
+      },
+      "tegafur": {
+        "entity_id": "tegafur",
+        "entity_type": "drug",
+        "title": "Tegafur",
+        "aliases": [
+          "替加氟"
+        ],
+        "confidence": 0.78,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:fluoropyrimidines-dpyd-2017"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Tegafur\n\n替加氟属于氟嘧啶相关药物，DPYD/DPD 功能降低时需由肿瘤科医生评估严重毒性风险。"
+      },
+      "thioguanine": {
+        "entity_id": "thioguanine",
+        "entity_type": "drug",
+        "title": "Thioguanine",
+        "aliases": [
+          "硫鸟嘌呤"
+        ],
+        "confidence": 0.86,
+        "evidence_level": "A",
+        "sources": [
+          "cpic:thiopurines-tpmt-nudt15-2025"
+        ],
+        "last_confirmed": "2026-05-22",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# Thioguanine\n\n硫鸟嘌呤属于硫嘌呤类药物，TPMT/NUDT15 低功能或无功能会增加骨髓抑制风险。"
       },
       "ticagrelor": {
         "entity_id": "ticagrelor",
@@ -984,6 +1653,26 @@
         "gene": null,
         "body": "# 辅酶 Q10\n\n线粒体电子传递体；他汀使用者可能 CoQ10 降低，可考虑补充。"
       },
+      "EPA+DHA": {
+        "entity_id": "EPA+DHA",
+        "entity_type": "supplement",
+        "title": "EPA+DHA",
+        "aliases": [
+          "EPA-DHA",
+          "omega-3",
+          "欧米伽3",
+          "鱼油"
+        ],
+        "confidence": 0.7,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# EPA+DHA\n\nEPA+DHA 是常见 omega-3 脂肪酸补充形式。系统知识库只把它作为饮食与补剂讨论中的候选实体，用于连接脂肪酸代谢、血脂沟通和补剂安全边界。\n\n健康助理可以提示用户把补剂、剂量、品牌、用药和出血风险线索分开记录。涉及抗凝药、手术前后或出血风险时，应转为医生核对。"
+      },
       "EPA-DHA": {
         "entity_id": "EPA-DHA",
         "entity_type": "supplement",
@@ -1060,6 +1749,24 @@
         "decay_rate": "slow",
         "gene": null,
         "body": "# 血压自我监测\n\n拟交感药物/9p21 高风险背景下，建议家庭血压每日监测。"
+      },
+      "caffeine-cutoff": {
+        "entity_id": "caffeine-cutoff",
+        "entity_type": "intervention",
+        "title": "咖啡因截止时间",
+        "aliases": [
+          "caffeine cutoff",
+          "咖啡截止时间"
+        ],
+        "confidence": 0.72,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 咖啡因截止时间\n\n咖啡因截止时间是睡眠管理中的行为边界：对咖啡因敏感、入睡困难、夜间恢复差或携带 ADORA2A 高敏相关线索的人，应优先观察下午和傍晚咖啡因摄入与入睡潜伏期、夜醒、HRV 和主观恢复的关系。\n\n健康助理可以建议用户记录咖啡因摄入时间和睡眠反应，或尝试把咖啡因窗口前移，但不应把它表达为医疗处方。"
       },
       "lactose-restriction": {
         "entity_id": "lactose-restriction",
@@ -1142,6 +1849,27 @@
         "decay_rate": "normal",
         "gene": null,
         "body": "# Hyperhomocysteinemia\n\n同型半胱氨酸升高是一种临床化验异常，需要结合 B12、叶酸、肾功能、甲状腺、药物和生活方式背景解释。\n\n## 相关事实\n\n- [[../../claims/c_mthfr_c677t_hcy_folate_boundary|MTHFR C677T 与叶酸转化边界]]\n\n## 边界\n\n系统知识库只能提示复查和生活方式/营养讨论方向；诊断和治疗由医生完成。"
+      }
+    },
+    "behavior": {
+      "alcohol-avoidance": {
+        "entity_id": "alcohol-avoidance",
+        "entity_type": "behavior",
+        "title": "避免饮酒",
+        "aliases": [
+          "alcohol avoidance",
+          "戒酒",
+          "少饮酒"
+        ],
+        "confidence": 0.74,
+        "evidence_level": "C",
+        "sources": [
+          "dedao:llm-wiki"
+        ],
+        "last_confirmed": "2026-05-19",
+        "decay_rate": "normal",
+        "gene": null,
+        "body": "# 避免饮酒\n\n避免饮酒是代谢、睡眠、血压、尿酸和肝脏风险管理中的通用行为边界。对 ALDH2 酒精代谢能力下降或饮酒后恢复指标明显变差的人，健康助理应优先给出风险解释、记录建议和替代行为。\n\n该实体用于承接酒精相关知识图谱关系，不用于诊断酒精相关疾病，也不替代医生对戒断风险的处理。"
       }
     }
   },
@@ -1298,6 +2026,132 @@
       "predicate": null,
       "drug_rules": null,
       "body": "APOE E4 携带者可更重视 LDL-C/ApoB 轨迹和饱和脂肪控制，但不能用基因替代血脂指标。"
+    },
+    {
+      "claim_id": "c_atp7b_dtc_confirmation_boundary",
+      "entity_type": "gene",
+      "entity_id": "ATP7B",
+      "title": "ATP7B DTC 位点命中后的确认边界",
+      "confidence": 0.84,
+      "evidence_level": "A",
+      "sources": [
+        "gene_reviews:wilson-disease",
+        "clinvar:ATP7B"
+      ],
+      "applies_when": [
+        "twin.genetics.ATP7B_rs137853280 in ['GG', 'G/G']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:ATP7B",
+        "entity:snp:rs137853280",
+        "entity:biomarker:ceruloplasmin",
+        "entity:biomarker:serum-copper",
+        "entity:biomarker:urine-copper-24h"
+      ],
+      "predicate": "requires_confirmation",
+      "drug_rules": null,
+      "body": "# ATP7B DTC 位点命中后的确认边界\n\n当消费级基因 TXT 或芯片报告命中 rs137853280 等 ATP7B 位点时，系统只应输出“需要确认”的风险预警，不应输出“威尔逊病已诊断”或直接建议限铜、螯合剂、锌治疗。\n\n## 执行建议\n\n- 先复核原始 TXT 的基因型、链方向、基因组版本和导入解析，避免把缺失值、互补链或低质量位点当作纯合风险。\n- 若伴随肝功能异常、神经精神症状、角膜 Kayser-Fleischer 环、溶血线索或明确家族史，建议带结果咨询消化肝病科、神经科或遗传咨询师。\n- 医生可根据情况选择铜蓝蛋白、血清铜、24 小时尿铜、肝功能和 ATP7B 临床级测序；这些检查结果才可进入诊断闭环。\n\n## 边界\n\n这是 confirmation_only 边界：基因 TXT 命中只能触发复核、化验基线和专科咨询，不替代临床诊断，不产生处方、剂量或治疗建议。"
+    },
+    {
+      "claim_id": "c_brca1_dtc_confirmation_boundary",
+      "entity_type": "gene",
+      "entity_id": "BRCA1",
+      "title": "BRCA1 DTC/芯片结果命中后的确认边界",
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "sources": [
+        "gene_reviews:brca1-brca2-hboc",
+        "cdc:hboc-genetic-testing",
+        "nci:brca1-brca2-pdq"
+      ],
+      "applies_when": [
+        "twin.genetics.BRCA1 is not null",
+        "twin.genetics.BRCA1_variant_class in ['pathogenic', 'likely_pathogenic', 'risk_flag']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:BRCA1",
+        "entity:specialty:genetic-counseling",
+        "entity:specialty:oncology"
+      ],
+      "predicate": "requires_confirmation",
+      "drug_rules": null,
+      "body": "# BRCA1 DTC/芯片结果命中后的确认边界\n\n当消费级基因 TXT、芯片或第三方报告提示 BRCA1 致病/疑似致病变异时，系统只应输出“需要遗传咨询和临床级检测确认”的风险预警，不应输出癌症诊断或确定筛查/手术方案。\n\n## 执行建议\n\n- 先复核原始结果、检测平台、变异命名、基因组版本和 ClinVar/临床实验室解释，避免把 VUS、良性多态或导入错误当作致病变异。\n- 建议整理个人史、三代家族史和既往检查结果，带报告咨询遗传咨询师或肿瘤/乳腺专科。\n- 筛查频率、MRI/钼靶、预防性手术、药物预防和生育决策必须由临床团队基于确认结果和个人风险制定。\n\n## 边界\n\n这是 confirmation_only 边界：DTC/芯片结果只能触发复核和遗传咨询，不替代临床诊断，不产生处方、筛查频率或手术建议。"
+    },
+    {
+      "claim_id": "c_brca2_dtc_confirmation_boundary",
+      "entity_type": "gene",
+      "entity_id": "BRCA2",
+      "title": "BRCA2 DTC/芯片结果命中后的确认边界",
+      "confidence": 0.86,
+      "evidence_level": "A",
+      "sources": [
+        "gene_reviews:brca1-brca2-hboc",
+        "cdc:hboc-genetic-testing",
+        "nci:brca1-brca2-pdq"
+      ],
+      "applies_when": [
+        "twin.genetics.BRCA2 is not null",
+        "twin.genetics.BRCA2_variant_class in ['pathogenic', 'likely_pathogenic', 'risk_flag']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:BRCA2",
+        "entity:specialty:genetic-counseling",
+        "entity:specialty:oncology"
+      ],
+      "predicate": "requires_confirmation",
+      "drug_rules": null,
+      "body": "# BRCA2 DTC/芯片结果命中后的确认边界\n\n当消费级基因 TXT、芯片或第三方报告提示 BRCA2 致病/疑似致病变异时，系统只应输出“需要遗传咨询和临床级检测确认”的风险预警，不应输出癌症诊断或确定筛查/手术方案。\n\n## 执行建议\n\n- 先复核原始结果、检测平台、变异命名、基因组版本和 ClinVar/临床实验室解释，避免把 VUS、良性多态或导入错误当作致病变异。\n- 建议整理个人史、三代家族史和既往检查结果，带报告咨询遗传咨询师或肿瘤/乳腺专科。\n- 筛查频率、MRI/钼靶、前列腺/胰腺风险管理、预防性手术、药物预防和生育决策必须由临床团队基于确认结果和个人风险制定。\n\n## 边界\n\n这是 confirmation_only 边界：DTC/芯片结果只能触发复核和遗传咨询，不替代临床诊断，不产生处方、筛查频率或手术建议。"
+    },
+    {
+      "claim_id": "c_cftr_dtc_confirmation_boundary",
+      "entity_type": "gene",
+      "entity_id": "CFTR",
+      "title": "CFTR DTC 位点命中后的确认边界",
+      "confidence": 0.84,
+      "evidence_level": "A",
+      "sources": [
+        "gene_reviews:cystic-fibrosis",
+        "clinvar:CFTR"
+      ],
+      "applies_when": [
+        "twin.genetics.CFTR_rs121908763 in ['GG', 'G/G']",
+        "twin.genetics.CFTR_rs149790377 in ['AA', 'A/A']",
+        "twin.genetics.CFTR_rs186045772 in ['AA', 'A/A']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:CFTR",
+        "entity:snp:rs121908763",
+        "entity:snp:rs149790377",
+        "entity:snp:rs186045772"
+      ],
+      "predicate": "requires_confirmation",
+      "drug_rules": null,
+      "body": "# CFTR DTC 位点命中后的确认边界\n\n当消费级基因 TXT 或芯片报告命中 rs121908763、rs149790377、rs186045772 等 CFTR 位点时，系统只应输出“需要确认”的风险预警，不应输出“囊性纤维化已诊断”或“必须治疗”。\n\n## 执行建议\n\n- 先复核原始 TXT 的基因型、链方向、基因组版本和导入解析，避免把缺失值、互补链或低质量位点当作纯合风险。\n- 若有慢性湿咳、反复肺炎、支气管扩张、慢性鼻窦炎、反复胰腺炎、不育/少精，或有生育规划，建议带结果咨询医生或遗传咨询师。\n- 医生可根据表型选择汗氯测试、CFTR 临床级测序和删除/重复分析；这些检查结果才可进入诊断闭环。\n\n## 边界\n\n这是 confirmation_only 边界：基因 TXT 命中只能触发复核和专科咨询，不替代临床诊断，不产生处方、剂量或治疗建议。"
+    },
+    {
+      "claim_id": "c_comt_stress_caffeine_boundary",
+      "entity_type": "gene",
+      "entity_id": "COMT",
+      "title": "COMT Val158Met 与压力/咖啡因反应边界",
+      "confidence": 0.68,
+      "evidence_level": "C",
+      "sources": [
+        "medgen:CN379739",
+        "pubmed:23799032"
+      ],
+      "applies_when": [
+        "twin.genetics.COMT is not null",
+        "twin.genetics.COMT_rs4680 is not null"
+      ],
+      "recommends_lookup": [
+        "entity:gene:COMT",
+        "entity:snp:rs4680",
+        "entity:intervention:caffeine-cutoff",
+        "entity:condition:sleep-recovery"
+      ],
+      "predicate": "requires_boundary",
+      "drug_rules": null,
+      "body": "# COMT Val158Met 与压力/咖啡因反应边界\n\nCOMT rs4680 可用于解释压力下儿茶酚胺清除和刺激物耐受差异，但只能作为生活方式观察线索。系统可建议记录咖啡因摄入时间、睡眠、焦虑感、HRV 和训练负荷反应。\n\n## 执行建议\n\n- 若用户反馈咖啡因后心悸、焦虑或入睡延迟，优先调整摄入时间和剂量，而不是直接归因于 COMT。\n- 涉及甲基叶酸、SAMe、高剂量 B 族或兴奋性补剂时，先看睡眠和焦虑反馈；出现不适则降低刺激负荷并咨询医生。\n- 压力、睡眠或情绪问题持续存在时，建议做临床评估，不用基因解释替代心理或精神健康诊断。\n\n## 边界\n\n仅用于健康管理提示，不替代专业诊断、处方、心理治疗或精神科用药决策。"
     },
     {
       "claim_id": "c_cyp2c19_clopidogrel_boundary",
@@ -1500,6 +2354,51 @@
       "body": "CYP2D6 PM 患者使用可待因或曲马多时镇痛效果差且代谢物蓄积；应优先选择非 CYP2D6 依赖镇痛方案 (对乙酰氨基酚、布洛芬等)。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
     },
     {
+      "claim_id": "c_dpyd_fluoropyrimidine_toxicity_boundary",
+      "entity_type": "gene",
+      "entity_id": "DPYD",
+      "title": "DPYD 与氟嘧啶严重毒性边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:fluoropyrimidines-dpyd-2017",
+        "cpic:fluoropyrimidines-dpyd-2024-update",
+        "pubmed:29152729"
+      ],
+      "applies_when": [
+        "twin.genetics.DPYD_phenotype in ['intermediate_metabolizer', 'poor_metabolizer']",
+        "twin.genetics.DPD_activity_score in ['0', '0.5', '1', '1.5']",
+        "twin.medications intersects ['fluorouracil', 'capecitabine', 'tegafur']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:DPYD",
+        "entity:drug:fluorouracil",
+        "entity:drug:capecitabine",
+        "entity:drug:tegafur"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "decreased_or_no_function",
+        "avoid": [
+          {
+            "drug": "fluorouracil",
+            "reason": "DPYD poor metabolizer/完全 DPD 缺乏时，氟尿嘧啶严重甚至致命毒性风险升高；是否避免由肿瘤科医生基于临床检测决定。"
+          },
+          {
+            "drug": "capecitabine",
+            "reason": "DPYD poor metabolizer/完全 DPD 缺乏时，卡培他滨严重甚至致命毒性风险升高；是否避免由肿瘤科医生基于临床检测决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "fluoropyrimidines",
+            "action": "DPYD intermediate metabolizer 需肿瘤科医生考虑起始剂量降低、剂量滴定和毒性监测。"
+          }
+        ]
+      },
+      "body": "# DPYD 与氟嘧啶严重毒性边界\n\nDPYD 低功能或无功能变异可显著增加 5-FU、卡培他滨、替加氟等氟嘧啶严重毒性风险。系统应在用药前提示临床复核，不直接给出化疗剂量。\n\n## 边界\n\n这是处方安全边界：DTC/芯片结果不替代肿瘤治疗前临床 DPYD 检测；不建议用户自行拒用、停用或调整任何化疗药物。"
+    },
+    {
       "claim_id": "c_fads1_omega3_supplementation",
       "entity_type": "gene",
       "entity_id": "FADS1",
@@ -1549,6 +2448,50 @@
       "body": "FTO 风险位点适合用来解释体重管理倾向，但行动仍应落在蛋白、纤维、睡眠和运动闭环。"
     },
     {
+      "claim_id": "c_g6pd_oxidant_drug_hemolysis_boundary",
+      "entity_type": "gene",
+      "entity_id": "G6PD",
+      "title": "G6PD 缺乏与氧化性药物溶血边界",
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:g6pd-2022",
+        "pubmed:36049896"
+      ],
+      "applies_when": [
+        "twin.genetics.G6PD == 'deficient'",
+        "twin.genetics.G6PD_phenotype in ['deficient', 'variable']",
+        "twin.labs.G6PD_activity == 'low'"
+      ],
+      "recommends_lookup": [
+        "entity:gene:G6PD",
+        "entity:drug:rasburicase",
+        "entity:drug:primaquine",
+        "entity:drug:dapsone"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "deficient_or_variable",
+        "avoid": [
+          {
+            "drug": "rasburicase",
+            "reason": "G6PD 缺乏者使用拉布立酶有严重溶血和高铁血红蛋白血症风险；处方前需确认 G6PD 状态。"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "primaquine",
+            "action": "伯氨喹需按 G6PD 表型和感染场景由医生决定是否可用、剂量和监测。"
+          },
+          {
+            "drug": "dapsone",
+            "action": "达普森需由医生评估溶血风险、替代方案和血象/溶血指标监测。"
+          }
+        ]
+      },
+      "body": "# G6PD 缺乏与氧化性药物溶血边界\n\nG6PD 缺乏会增加某些氧化性药物诱发急性溶血的风险。系统应把它作为用药安全红线，而不是把所有药物或食物泛化为禁忌。\n\n## 边界\n\n这是处方安全边界：DTC/芯片结果不替代临床 G6PD 酶活或临床基因检测；不建议用户自行扩大禁药清单、停药或换药。"
+    },
+    {
       "claim_id": "c_hfe_iron_overload_boundary",
       "entity_type": "gene",
       "entity_id": "HFE",
@@ -1584,6 +2527,131 @@
         ]
       },
       "body": "HFE C282Y 纯合是遗传性血色病主要致病基因型，需要主动监测铁蛋白避免无症状铁蓄积。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_hla_a3101_carbamazepine_boundary",
+      "entity_type": "gene",
+      "entity_id": "HLA-A*31:01",
+      "title": "HLA-A*31:01 与卡马西平皮肤不良反应边界",
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:carbamazepine-hla-2017",
+        "ncbi_mgs:carbamazepine-hla"
+      ],
+      "applies_when": [
+        "twin.genetics.HLA_A_31_01 == 'positive'",
+        "twin.genetics.HLA-A*31:01 == 'positive'",
+        "twin.genetics.rs1061235 in ['AA', 'A/A']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:HLA-A*31:01",
+        "entity:drug:carbamazepine"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "positive",
+        "avoid": [
+          {
+            "drug": "carbamazepine",
+            "reason": "HLA-A*31:01 阳性与卡马西平相关 SJS/TEN、DRESS、MPE 风险升高有关；初用者如有替代药物，应由医生避免使用卡马西平。"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "cutaneous-adverse-reaction",
+            "action": "若医生判断无替代方案，应加强皮疹、发热、黏膜损害、嗜酸细胞增多等反应监测。"
+          }
+        ]
+      },
+      "body": "# HLA-A*31:01 与卡马西平皮肤不良反应边界\n\nHLA-A*31:01 阳性时，卡马西平初用者发生 SJS/TEN、DRESS 或斑丘疹等皮肤不良反应的风险升高。系统应把它作为用药安全红线，而不是疾病诊断。\n\n## 边界\n\n这是处方安全边界：不替代医生，不建议用户自行停药、换药或调整剂量；已经长期耐受卡马西平的情况也必须由医生结合病史判断。"
+    },
+    {
+      "claim_id": "c_hla_b1502_carbamazepine_oxcarbazepine_boundary",
+      "entity_type": "gene",
+      "entity_id": "HLA-B*15:02",
+      "title": "HLA-B*15:02 与卡马西平/奥卡西平 SJS/TEN 边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:carbamazepine-hla-2017",
+        "ncbi_mgs:carbamazepine-hla"
+      ],
+      "applies_when": [
+        "twin.genetics.HLA_B_15_02 == 'positive'",
+        "twin.genetics.HLA-B*15:02 == 'positive'"
+      ],
+      "recommends_lookup": [
+        "entity:gene:HLA-B*15:02",
+        "entity:drug:carbamazepine",
+        "entity:drug:oxcarbazepine"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "positive",
+        "avoid": [
+          {
+            "drug": "carbamazepine",
+            "reason": "HLA-B*15:02 阳性与卡马西平诱发 SJS/TEN 风险显著升高有关；初用者应由医生避免使用卡马西平。"
+          },
+          {
+            "drug": "oxcarbazepine",
+            "reason": "HLA-B*15:02 阳性也需要对奥卡西平保持用药安全警惕，具体替代方案由医生决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "cutaneous-adverse-reaction",
+            "action": "如医生在特殊情况下继续相关芳香族抗癫痫药，应加强早期皮肤和黏膜反应监测。"
+          }
+        ]
+      },
+      "body": "# HLA-B*15:02 与卡马西平/奥卡西平 SJS/TEN 边界\n\nHLA-B*15:02 阳性时，卡马西平初用者发生 SJS/TEN 的风险显著升高。系统应把它作为用药安全红线，而不是疾病诊断。\n\n## 边界\n\n这是处方安全边界：不替代医生，不建议用户自行停药、换药或调整剂量；替代抗癫痫、神经痛或精神科用药方案必须由医生决定。"
+    },
+    {
+      "claim_id": "c_hla_b5801_allopurinol_boundary",
+      "entity_type": "gene",
+      "entity_id": "HLA-B*58:01",
+      "title": "HLA-B*58:01 与别嘌醇严重皮肤不良反应边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:allopurinol-hla-b-2015",
+        "ncbi_mgs:allopurinol-hla-b"
+      ],
+      "applies_when": [
+        "twin.genetics.HLA_B_58_01 == 'positive'",
+        "twin.genetics.HLA-B*58:01 == 'positive'"
+      ],
+      "recommends_lookup": [
+        "entity:gene:HLA-B*58:01",
+        "entity:drug:allopurinol",
+        "entity:drug:febuxostat"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "positive",
+        "avoid": [
+          {
+            "drug": "allopurinol",
+            "reason": "HLA-B*58:01 阳性与别嘌醇相关严重皮肤不良反应风险显著升高有关；初用者应由医生避免使用别嘌醇。"
+          }
+        ],
+        "substitute": [
+          {
+            "from": "allopurinol",
+            "to": "febuxostat-or-other-urate-lowering-therapy",
+            "reason": "替代降尿酸方案需由医生结合心血管风险、肾功能、适应证和既往反应决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "renal-function-and-cutaneous-adverse-reaction",
+            "action": "肾功能受损、较高起始剂量和合用利尿剂会影响风险，需医生综合评估。"
+          }
+        ]
+      },
+      "body": "# HLA-B*58:01 与别嘌醇严重皮肤不良反应边界\n\nHLA-B*58:01 阳性时，别嘌醇相关严重皮肤不良反应风险显著升高。系统应把它作为用药安全红线，而不是痛风、高尿酸或肾病诊断。\n\n## 边界\n\n这是处方安全边界：不替代医生，不建议用户自行停药、换药或调整剂量；若已在用别嘌醇且耐受，也应由医生结合用药时长和病史判断。"
     },
     {
       "claim_id": "c_lct_lactose_intolerance",
@@ -1640,6 +2708,47 @@
       "body": "C677T CT/TT 用户可优先关注同型半胱氨酸、B12 与活性叶酸；补剂建议应结合化验结果。\n\n边界：仅用于健康管理提示，不用于诊断、治疗或用药决策。"
     },
     {
+      "claim_id": "c_nudt15_thiopurine_myelosuppression_boundary",
+      "entity_type": "gene",
+      "entity_id": "NUDT15",
+      "title": "NUDT15 与硫嘌呤骨髓抑制边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:thiopurines-tpmt-nudt15-2025",
+        "pubmed:41618934"
+      ],
+      "applies_when": [
+        "twin.genetics.NUDT15_phenotype in ['intermediate_metabolizer', 'poor_metabolizer']",
+        "twin.genetics.NUDT15_function in ['decreased_function', 'no_function']",
+        "twin.medications intersects ['azathioprine', 'mercaptopurine', 'thioguanine']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:TPMT",
+        "entity:gene:NUDT15",
+        "entity:drug:azathioprine",
+        "entity:drug:mercaptopurine",
+        "entity:drug:thioguanine"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "intermediate_or_poor_metabolizer",
+        "monitor": [
+          {
+            "drug": "thiopurines",
+            "action": "使用硫嘌呤前应由医生结合 TPMT + NUDT15 临床 PGx 结果决定起始剂量、替代方案和血常规监测。"
+          }
+        ],
+        "avoid": [
+          {
+            "drug": "standard-dose-thiopurines",
+            "reason": "NUDT15 poor metabolizer 使用常规剂量硫嘌呤有严重骨髓抑制风险；是否避免或大幅减量由医生决定。"
+          }
+        ]
+      },
+      "body": "# NUDT15 与硫嘌呤骨髓抑制边界\n\nNUDT15 intermediate/poor metabolizer 使用硫嘌呤时骨髓抑制风险升高。系统应提示处方前临床 PGx 和血常规闭环，不直接给出剂量。\n\n## 边界\n\n这是处方安全边界：DTC/芯片结果不替代临床 TPMT/NUDT15 检测；不建议用户自行停用、启动或调整硫嘌呤药物。"
+    },
+    {
       "claim_id": "c_slco1b1_statin_myopathy_boundary",
       "entity_type": "gene",
       "entity_id": "SLCO1B1",
@@ -1667,6 +2776,111 @@
         ]
       },
       "body": "SLCO1B1 521 CC 型辛伐他汀肌病 OR≈4.5；FDA 建议 80mg 辛伐他汀禁用。\n\n边界：仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_tpmt_thiopurine_myelosuppression_boundary",
+      "entity_type": "gene",
+      "entity_id": "TPMT",
+      "title": "TPMT 与硫嘌呤骨髓抑制边界",
+      "confidence": 0.9,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:thiopurines-tpmt-nudt15-2025",
+        "pubmed:41618934"
+      ],
+      "applies_when": [
+        "twin.genetics.TPMT_phenotype in ['intermediate_metabolizer', 'poor_metabolizer']",
+        "twin.genetics.TPMT_activity in ['low', 'absent']",
+        "twin.medications intersects ['azathioprine', 'mercaptopurine', 'thioguanine']"
+      ],
+      "recommends_lookup": [
+        "entity:gene:TPMT",
+        "entity:gene:NUDT15",
+        "entity:drug:azathioprine",
+        "entity:drug:mercaptopurine",
+        "entity:drug:thioguanine"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "intermediate_or_poor_metabolizer",
+        "monitor": [
+          {
+            "drug": "thiopurines",
+            "action": "使用硫嘌呤前应由医生结合 TPMT + NUDT15 临床 PGx 结果决定起始剂量、替代方案和血常规监测。"
+          }
+        ],
+        "avoid": [
+          {
+            "drug": "standard-dose-thiopurines",
+            "reason": "TPMT poor metabolizer 使用常规剂量硫嘌呤有严重骨髓抑制风险；是否避免或大幅减量由医生决定。"
+          }
+        ]
+      },
+      "body": "# TPMT 与硫嘌呤骨髓抑制边界\n\nTPMT intermediate/poor metabolizer 使用硫嘌呤时骨髓抑制风险升高。系统应提示处方前临床 PGx 和血常规闭环，不直接给出剂量。\n\n## 边界\n\n这是处方安全边界：DTC/芯片结果不替代临床 TPMT/NUDT15 检测；不建议用户自行停用、启动或调整硫嘌呤药物。"
+    },
+    {
+      "claim_id": "c_vdr_vitamin_d_dosing",
+      "entity_type": "gene",
+      "entity_id": "VDR",
+      "title": "VDR 多态性与维生素 D 补充边界",
+      "confidence": 0.64,
+      "evidence_level": "C",
+      "sources": [
+        "pubmed:35057541",
+        "pmc:PMC8780067",
+        "ncbi_books:endotext-vitamin-d"
+      ],
+      "applies_when": [
+        "twin.genetics.VDR is not null",
+        "twin.genetics.VDR_rs1544410 is not null"
+      ],
+      "recommends_lookup": [
+        "entity:gene:VDR",
+        "entity:snp:rs1544410",
+        "entity:biomarker:25-oh-vitamin-d",
+        "entity:biomarker:serum-calcium"
+      ],
+      "predicate": "requires_lab_anchor",
+      "drug_rules": null,
+      "body": "# VDR 多态性与维生素 D 补充边界\n\nVDR 多态性可作为维生素 D 状态管理的解释因素，但不能单独决定补充剂剂量。系统建议应优先锚定 25(OH)D、血钙、肾功能、日晒、膳食摄入和既往结石史。\n\n## 执行建议\n\n- 若 25(OH)D 偏低，可建议补充和复查闭环；剂量强度应按化验和安全边界调整。\n- 若用户有肾结石、高钙血症、慢性肾病或正在使用噻嗪类利尿剂、活性维 D、钙剂等，避免自动给出高剂量方案。\n- 复查应关注 25(OH)D、血钙、尿钙或肾功能等指标，避免长期无监测补充。\n\n## 边界\n\n仅用于健康管理提示，不替代专业诊断、处方或剂量调整。"
+    },
+    {
+      "claim_id": "c_vkorc1_warfarin_inr_boundary",
+      "entity_type": "gene",
+      "entity_id": "VKORC1",
+      "title": "VKORC1 与华法林起始剂量/INR 闭环边界",
+      "confidence": 0.88,
+      "evidence_level": "A",
+      "sources": [
+        "cpic:warfarin-2017",
+        "pubmed:28198005"
+      ],
+      "applies_when": [
+        "twin.genetics.VKORC1_rs9923231 in ['AA', 'A/A', 'AG', 'A/G']",
+        "twin.genetics.VKORC1_1639G_A in ['AA', 'A/A', 'AG', 'A/G']",
+        "twin.medications has 'warfarin'"
+      ],
+      "recommends_lookup": [
+        "entity:gene:VKORC1",
+        "entity:gene:CYP2C9",
+        "entity:drug:warfarin",
+        "entity:biomarker:INR"
+      ],
+      "predicate": "medication_safety_boundary",
+      "drug_rules": {
+        "phenotype": "warfarin_sensitive",
+        "monitor": [
+          {
+            "drug": "warfarin",
+            "action": "起始剂量需由医生使用 CYP2C9 + VKORC1 + 临床因素算法估算，并用 INR 滴定。"
+          },
+          {
+            "metric": "INR",
+            "action": "华法林启动和调整阶段必须建立 INR 监测闭环。"
+          }
+        ]
+      },
+      "body": "# VKORC1 与华法林起始剂量/INR 闭环边界\n\nVKORC1 -1639G>A 与华法林剂量需求有关，但不能单独决定剂量。系统应提示“华法林处方前需要 PGx + INR 闭环”，不直接给出毫克剂量。\n\n## 边界\n\n这是处方安全边界：不替代医生，不建议用户自行启停华法林或调整剂量；最终维持剂量必须由 INR、出血/血栓风险、合并用药和医生判断决定。"
     }
   ],
   "gene_rules": {
@@ -1770,6 +2984,26 @@
         ]
       }
     },
+    "DPYD": {
+      "decreased_or_no_function": {
+        "avoid": [
+          {
+            "drug": "fluorouracil",
+            "reason": "DPYD poor metabolizer/完全 DPD 缺乏时，氟尿嘧啶严重甚至致命毒性风险升高；是否避免由肿瘤科医生基于临床检测决定。"
+          },
+          {
+            "drug": "capecitabine",
+            "reason": "DPYD poor metabolizer/完全 DPD 缺乏时，卡培他滨严重甚至致命毒性风险升高；是否避免由肿瘤科医生基于临床检测决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "fluoropyrimidines",
+            "action": "DPYD intermediate metabolizer 需肿瘤科医生考虑起始剂量降低、剂量滴定和毒性监测。"
+          }
+        ]
+      }
+    },
     "FADS1": {
       "low_conversion": {
         "supplement": [
@@ -1777,6 +3011,26 @@
             "item": "EPA+DHA",
             "dose": "1–2g/天 (总 EPA+DHA)",
             "reason": "ALA→EPA/DHA 转化效率低，需要直接补充海产 ω-3"
+          }
+        ]
+      }
+    },
+    "G6PD": {
+      "deficient_or_variable": {
+        "avoid": [
+          {
+            "drug": "rasburicase",
+            "reason": "G6PD 缺乏者使用拉布立酶有严重溶血和高铁血红蛋白血症风险；处方前需确认 G6PD 状态。"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "primaquine",
+            "action": "伯氨喹需按 G6PD 表型和感染场景由医生决定是否可用、剂量和监测。"
+          },
+          {
+            "drug": "dapsone",
+            "action": "达普森需由医生评估溶血风险、替代方案和血象/溶血指标监测。"
           }
         ]
       }
@@ -1800,6 +3054,65 @@
         ]
       }
     },
+    "HLA-A*31:01": {
+      "positive": {
+        "avoid": [
+          {
+            "drug": "carbamazepine",
+            "reason": "HLA-A*31:01 阳性与卡马西平相关 SJS/TEN、DRESS、MPE 风险升高有关；初用者如有替代药物，应由医生避免使用卡马西平。"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "cutaneous-adverse-reaction",
+            "action": "若医生判断无替代方案，应加强皮疹、发热、黏膜损害、嗜酸细胞增多等反应监测。"
+          }
+        ]
+      }
+    },
+    "HLA-B*15:02": {
+      "positive": {
+        "avoid": [
+          {
+            "drug": "carbamazepine",
+            "reason": "HLA-B*15:02 阳性与卡马西平诱发 SJS/TEN 风险显著升高有关；初用者应由医生避免使用卡马西平。"
+          },
+          {
+            "drug": "oxcarbazepine",
+            "reason": "HLA-B*15:02 阳性也需要对奥卡西平保持用药安全警惕，具体替代方案由医生决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "cutaneous-adverse-reaction",
+            "action": "如医生在特殊情况下继续相关芳香族抗癫痫药，应加强早期皮肤和黏膜反应监测。"
+          }
+        ]
+      }
+    },
+    "HLA-B*58:01": {
+      "positive": {
+        "avoid": [
+          {
+            "drug": "allopurinol",
+            "reason": "HLA-B*58:01 阳性与别嘌醇相关严重皮肤不良反应风险显著升高有关；初用者应由医生避免使用别嘌醇。"
+          }
+        ],
+        "substitute": [
+          {
+            "from": "allopurinol",
+            "to": "febuxostat-or-other-urate-lowering-therapy",
+            "reason": "替代降尿酸方案需由医生结合心血管风险、肾功能、适应证和既往反应决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "metric": "renal-function-and-cutaneous-adverse-reaction",
+            "action": "肾功能受损、较高起始剂量和合用利尿剂会影响风险，需医生综合评估。"
+          }
+        ]
+      }
+    },
     "LCT": {
       "lactase_non_persistence": {
         "avoid": [
@@ -1813,12 +3126,58 @@
         ]
       }
     },
+    "NUDT15": {
+      "intermediate_or_poor_metabolizer": {
+        "avoid": [
+          {
+            "drug": "standard-dose-thiopurines",
+            "reason": "NUDT15 poor metabolizer 使用常规剂量硫嘌呤有严重骨髓抑制风险；是否避免或大幅减量由医生决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "thiopurines",
+            "action": "使用硫嘌呤前应由医生结合 TPMT + NUDT15 临床 PGx 结果决定起始剂量、替代方案和血常规监测。"
+          }
+        ]
+      }
+    },
     "SLCO1B1": {
       "decreased_function": {
         "monitor": [
           {
             "drug": "simvastatin",
             "action": "辛伐他汀 ≤20mg；高剂量改瑞舒伐他汀/匹伐他汀"
+          }
+        ]
+      }
+    },
+    "TPMT": {
+      "intermediate_or_poor_metabolizer": {
+        "avoid": [
+          {
+            "drug": "standard-dose-thiopurines",
+            "reason": "TPMT poor metabolizer 使用常规剂量硫嘌呤有严重骨髓抑制风险；是否避免或大幅减量由医生决定。"
+          }
+        ],
+        "monitor": [
+          {
+            "drug": "thiopurines",
+            "action": "使用硫嘌呤前应由医生结合 TPMT + NUDT15 临床 PGx 结果决定起始剂量、替代方案和血常规监测。"
+          }
+        ]
+      }
+    },
+    "VKORC1": {
+      "warfarin_sensitive": {
+        "monitor": [
+          {
+            "drug": "warfarin",
+            "action": "起始剂量需由医生使用 CYP2C9 + VKORC1 + 临床因素算法估算，并用 INR 滴定。"
+          },
+          {
+            "metric": "INR",
+            "action": "华法林启动和调整阶段必须建立 INR 监测闭环。"
           }
         ]
       }
@@ -1859,6 +3218,19 @@
         "c_9p21_cardiovascular_risk"
       ]
     },
+    "rs121908763": {
+      "rsid": "rs121908763",
+      "gene": "CFTR",
+      "aliases": [
+        "rs121908763",
+        "CFTR review site"
+      ],
+      "confidence": 0.72,
+      "evidence_level": "B",
+      "claims": [
+        "c_cftr_dtc_confirmation_boundary"
+      ]
+    },
     "rs1229984": {
       "rsid": "rs1229984",
       "gene": "ADH1B",
@@ -1870,6 +3242,32 @@
       "evidence_level": "B",
       "claims": []
     },
+    "rs137853280": {
+      "rsid": "rs137853280",
+      "gene": "ATP7B",
+      "aliases": [
+        "rs137853280",
+        "ATP7B review site"
+      ],
+      "confidence": 0.72,
+      "evidence_level": "B",
+      "claims": [
+        "c_atp7b_dtc_confirmation_boundary"
+      ]
+    },
+    "rs149790377": {
+      "rsid": "rs149790377",
+      "gene": "CFTR",
+      "aliases": [
+        "rs149790377",
+        "CFTR review site"
+      ],
+      "confidence": 0.72,
+      "evidence_level": "B",
+      "claims": [
+        "c_cftr_dtc_confirmation_boundary"
+      ]
+    },
     "rs1544410": {
       "rsid": "rs1544410",
       "gene": "VDR",
@@ -1879,7 +3277,9 @@
       ],
       "confidence": 0.66,
       "evidence_level": "C",
-      "claims": []
+      "claims": [
+        "c_vdr_vitamin_d_dosing"
+      ]
     },
     "rs174547": {
       "rsid": "rs174547",
@@ -1951,6 +3351,19 @@
       "evidence_level": "B",
       "claims": []
     },
+    "rs186045772": {
+      "rsid": "rs186045772",
+      "gene": "CFTR",
+      "aliases": [
+        "rs186045772",
+        "CFTR review site"
+      ],
+      "confidence": 0.72,
+      "evidence_level": "B",
+      "claims": [
+        "c_cftr_dtc_confirmation_boundary"
+      ]
+    },
     "rs4149056": {
       "rsid": "rs4149056",
       "gene": "SLCO1B1",
@@ -1996,7 +3409,9 @@
       ],
       "confidence": 0.74,
       "evidence_level": "B",
-      "claims": []
+      "claims": [
+        "c_comt_stress_caffeine_boundary"
+      ]
     },
     "rs4986893": {
       "rsid": "rs4986893",
@@ -2083,17 +3498,18 @@
   },
   "stats": {
     "entity_counts": {
-      "gene": 11,
-      "snp": 22,
-      "drug": 14,
+      "gene": 28,
+      "snp": 26,
+      "drug": 29,
       "biomarker": 4,
-      "supplement": 4,
-      "intervention": 4,
+      "supplement": 5,
+      "intervention": 5,
       "nutrient": 1,
-      "condition": 1
+      "condition": 1,
+      "behavior": 1
     },
-    "claim_count": 18,
-    "gene_count": 10,
-    "snp_count": 22
+    "claim_count": 32,
+    "gene_count": 18,
+    "snp_count": 26
   }
 }

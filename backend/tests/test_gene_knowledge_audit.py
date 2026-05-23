@@ -228,3 +228,18 @@ def test_audit_gene_knowledge_cli_writes_markdown_report(tmp_path):
     assert result.returncode == 0
     assert "wrote gene knowledge audit" in result.stdout
     assert "# Gene Knowledge Audit" in output.read_text(encoding="utf-8")
+
+
+def test_repository_gene_knowledge_mirror_has_no_tier_claim_gaps():
+    """Runtime mirror should not lag behind the curated down-dedao gene KB."""
+    with open("data/gene_knowledge.json", encoding="utf-8") as fh:
+        payload = json.load(fh)
+
+    report = audit_gene_knowledge(payload)
+
+    assert report["summary"]["claims"] >= 32
+    assert report["summary"]["gene_rules"] >= 18
+    assert report["tiers"]["tier2_lifestyle"]["missing_claim_genes"] == []
+    assert report["tiers"]["tierx_confirmation_only"]["missing_claim_genes"] == []
+    assert report["quality_gates"]["claims_missing_applies_when"] == []
+    assert report["quality_gates"]["claims_missing_boundary"] == []

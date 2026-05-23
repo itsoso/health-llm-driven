@@ -1,13 +1,13 @@
 {
   "compiled_at": "2026-05-22T09:45:00+00:00",
   "counts": {
-    "claims": 396,
+    "claims": 410,
     "contraindications": 0,
-    "entities": 173,
+    "entities": 212,
     "eval_cases": 0,
     "pages": 61,
     "protocols": 10,
-    "relations": 3009
+    "relations": 3145
   },
   "diff": {
     "claims_added": 12,
@@ -18,17 +18,17 @@
     "relations_added": 201
   },
   "down_dedao_wiki": {
-    "compiled_at": "2026-05-19T00:34:54.758003+00:00",
+    "compiled_at": "2026-05-23T01:44:15.959623+00:00",
     "diff": {
-      "claims_added": 9,
-      "entities_added": 8,
+      "claims_added": 0,
+      "entities_added": 0,
       "pages_added": 0,
       "private_skipped": 0,
-      "relations_added": 34
+      "relations_added": 0
     },
     "pipeline": "down_dedao_llm_wiki_bridge_v1",
     "skipped_private": [],
-    "source_root": "~/work/personal/down-dedao"
+    "source_root": "/Users/liqiuhua/work/personal/down-dedao"
   },
   "external_evidence_enrichment": {
     "claims_updated": 24,
