@@ -2277,6 +2277,10 @@ struct MenuBarRootView: View {
                 navigation.selection = .genetics
                 openWindow(id: "main")
             }
+            Divider()
+            Button(appText("Quit", appLanguageRaw), role: .destructive) {
+                NSApplication.shared.terminate(nil)
+            }
         }
         .task {
             if viewModel.bootstrap == nil {

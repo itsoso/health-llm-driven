@@ -52,6 +52,7 @@ public enum L10n {
         "Reset Font Size": "重置字体大小",
         "Import File": "导入文件",
         "Open Today": "打开今日",
+        "Quit": "退出",
         "Checking login...": "正在检查登录状态...",
         "Sign in with your executor.life account.": "使用 executor.life 账号登录。",
         "Username or email": "用户名或邮箱",
