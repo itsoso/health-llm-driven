@@ -102,12 +102,14 @@ struct AppRootView: View {
                 }
             case .trace:
                 TraceLookupView(client: services.traceClient, navigation: navigation)
-            case .genetics, .knowledge:
-                ImportCenterView(jobClient: services.desktopJobClient)
+            case .data:
+                WorkspaceOverviewView(viewModel: services.todayViewModel, kind: .data)
+            case .genetics:
+                ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .genetics)
+            case .knowledge:
+                ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .knowledge)
             case .settings:
                 SettingsView(tokenStore: services.tokenProvider)
-            default:
-                ContentPlaceholder(destination: navigation.selection ?? .today)
             }
         }
         .frame(minWidth: 980, minHeight: 680)
@@ -220,6 +222,145 @@ struct ContentPlaceholder: View {
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+struct WorkspaceOverviewView: View {
+    @Bindable var viewModel: TodayViewModel
+    let kind: DesktopWorkspaceKind
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summary?.title ?? kind.title)
+                            .font(.largeTitle.bold())
+                        Text(summary?.subtitle ?? kind.subtitle)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Refresh") {
+                        Task { await viewModel.refresh() }
+                    }
+                }
+
+                if viewModel.isLoading {
+                    ProgressView("Loading workspace...")
+                }
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .foregroundStyle(.red)
+                }
+
+                if let summary {
+                    workspaceSummary(summary)
+                } else {
+                    ContentUnavailableView("No workspace data loaded", systemImage: "square.grid.2x2")
+                }
+            }
+            .padding(28)
+        }
+        .task {
+            if viewModel.bootstrap == nil {
+                await viewModel.refresh()
+            }
+        }
+    }
+
+    private var summary: DesktopWorkspaceSummary? {
+        viewModel.bootstrap?.workspaceSummary(for: kind)
+    }
+
+    @ViewBuilder
+    private func workspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+            ForEach(summary.metrics) { metric in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(metric.title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(metric.value)
+                        .font(.title2.bold())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+
+        SectionPanel(title: "Focus Domains", systemImage: "scope") {
+            if summary.focusDomains.isEmpty {
+                Text("No focus domains loaded.")
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(summary.focusDomains, id: \.self) { domain in
+                        Text(domain)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+
+        SectionPanel(title: "Relevant Jobs", systemImage: "clock.arrow.circlepath") {
+            if summary.jobs.isEmpty {
+                Text("No active jobs for this workspace.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(summary.jobs) { job in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(job.sourceName ?? job.jobType)
+                                .font(.headline)
+                            Text("#\(job.id) \(job.jobType)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(job.status)
+                        ProgressView(value: Double(job.progress), total: 100)
+                            .frame(width: 140)
+                    }
+                    Divider()
+                }
+            }
+        }
+
+        SectionPanel(title: "Recent Memory", systemImage: "brain.head.profile") {
+            if summary.recentMemory.isEmpty {
+                Text("No recent memory loaded.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(summary.recentMemory.prefix(5)) { memory in
+                    Text(memory.objectValue)
+                        .lineLimit(2)
+                    Divider()
+                }
+            }
+        }
+    }
+}
+
+struct ImportWorkspaceView: View {
+    @Bindable var viewModel: TodayViewModel
+    let jobClient: DesktopJobClient
+    let kind: DesktopWorkspaceKind
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                WorkspaceOverviewView(viewModel: viewModel, kind: kind)
+                    .frame(minHeight: 420)
+                Divider()
+                ImportCenterView(jobClient: jobClient)
+                    .frame(minHeight: 460)
+            }
+        }
     }
 }
 

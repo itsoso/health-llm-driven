@@ -149,4 +149,36 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(trace.sourcesUsed, ["系统知识库"])
         XCTAssertEqual(trace.toolCalls.first?.name, "knowledge_search")
     }
+
+    func testDesktopBootstrapBuildsWorkspaceSummaries() throws {
+        let data = """
+        {
+          "user": {"id": 3, "name": "itsoso", "email": "i@example.com"},
+          "model_preference": {"llm_model_id": "commercial/GPT-5.5"},
+          "daily_plan": {"plan_date": "2026-05-23", "actions": [{"action_key": "walk", "title": "散步", "domain": "运动"}]},
+          "trajectory": {"focus_domains": ["血脂", "血糖"]},
+          "action_cards": [{"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90}],
+          "recent_memory": [{"id": 1, "object_value": "补剂依从率偏低"}],
+          "recent_records_summary": {
+            "diet": {"today_count": 2, "today_calories": 1350.5},
+            "water": {"today_count": 3, "today_total_ml": 900}
+          },
+          "active_jobs": [
+            {"id": 1, "job_type": "gene_reanalysis", "status": "running", "progress": 40, "source_kind": "genome_txt", "source_name": "wegene.txt", "source_hash": "sha256:a", "request_payload": {}, "result_payload": {}, "error_message": null},
+            {"id": 2, "job_type": "dedao_compile", "status": "queued", "progress": 0, "source_kind": "dedao_folder", "source_name": "down-dedao", "source_hash": "sha256:b", "request_payload": {}, "result_payload": {}, "error_message": null},
+            {"id": 3, "job_type": "medical_import", "status": "queued", "progress": 0, "source_kind": "medical_file", "source_name": "lab.pdf", "source_hash": "sha256:c", "request_payload": {}, "result_payload": {}, "error_message": null}
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let bootstrap = try JSONDecoder().decode(DesktopBootstrap.self, from: data)
+        let dataSummary = bootstrap.workspaceSummary(for: .data)
+        let geneticsSummary = bootstrap.workspaceSummary(for: .genetics)
+        let knowledgeSummary = bootstrap.workspaceSummary(for: .knowledge)
+
+        XCTAssertEqual(dataSummary.metrics.map(\.value), ["1350.5 kcal", "900 ml", "2"])
+        XCTAssertEqual(dataSummary.jobs.map(\.id), [3])
+        XCTAssertEqual(geneticsSummary.jobs.map(\.id), [1])
+        XCTAssertEqual(knowledgeSummary.jobs.map(\.id), [2])
+    }
 }
