@@ -267,7 +267,11 @@ struct AppRootView: View {
     private var detailView: some View {
         switch navigation.selection ?? .today {
         case .today:
-            TodayView(viewModel: services.todayViewModel)
+            TodayView(
+                viewModel: services.todayViewModel,
+                onAskAgent: askAgentWithContext,
+                onAddContext: addAgentContext
+            )
         case .agent:
             AgentChatView(viewModel: services.agentViewModel)
         case .record:
@@ -526,6 +530,8 @@ struct LoginView: View {
 
 struct TodayView: View {
     @Bindable var viewModel: TodayViewModel
+    var onAskAgent: ((String, AgentContextItem?) -> Void)?
+    var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dashboardRange: DashboardRange = .sevenDays
 
@@ -540,6 +546,7 @@ struct TodayView: View {
                         HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 18) {
                                 dashboardHero(presentation)
+                                inputInboxPanel(presentation.inputInboxEvents)
                                 actionPanel(presentation.actionRows)
                                 recentRecordsPanel(presentation.recentRecordRows)
                             }
@@ -758,6 +765,31 @@ struct TodayView: View {
                     ForEach(actions) { row in
                         DashboardRowView(row: row)
                         if row.id != actions.last?.id { Divider().padding(.leading, 34) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func inputInboxPanel(_ events: [DesktopInputInboxEvent]) -> some View {
+        card {
+            HStack(alignment: .center) {
+                sectionHeader(title: appText("Input Inbox", appLanguageRaw), systemImage: "tray.full")
+                Spacer()
+                Text(appText("Silent capture, review when needed.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if events.isEmpty {
+                EmptyStateText(text: appText("No input events loaded.", appLanguageRaw))
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                    ForEach(events) { event in
+                        InputInboxEventCard(
+                            event: event,
+                            onAddContext: onAddContext,
+                            onAskAgent: onAskAgent
+                        )
                     }
                 }
             }
@@ -1130,6 +1162,113 @@ private struct DashboardRowView: View {
             }
         }
         .padding(.vertical, 9)
+    }
+}
+
+private struct InputInboxEventCard: View {
+    let event: DesktopInputInboxEvent
+    let onAddContext: ((AgentContextItem) -> Void)?
+    let onAskAgent: ((String, AgentContextItem?) -> Void)?
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: event.systemImage)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(toneColor(event.tone).opacity(0.86), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(event.title)
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(1)
+                        Text(appText(sourceText, appLanguageRaw))
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(toneColor(event.tone).opacity(0.12), in: Capsule())
+                            .foregroundStyle(toneColor(event.tone))
+                    }
+                    Text(event.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if !event.detail.isEmpty {
+                        Text(event.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+                stateBadge
+            }
+
+            HStack(spacing: 8) {
+                if let onAddContext {
+                    Button {
+                        onAddContext(event.contextItem)
+                    } label: {
+                        Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                if let onAskAgent {
+                    Button {
+                        onAskAgent(event.prompt, event.contextItem)
+                    } label: {
+                        Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+        .background(toneColor(event.tone).opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(toneColor(event.tone).opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    private var stateBadge: some View {
+        Text(appText(stateText, appLanguageRaw))
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(stateColor)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(stateColor.opacity(0.12), in: Capsule())
+    }
+
+    private var sourceText: String {
+        switch event.source {
+        case .device: "Device"
+        case .voice: "Voice"
+        case .image: "Image"
+        case .manual: "Manual"
+        case .imported: "Import"
+        }
+    }
+
+    private var stateText: String {
+        switch event.state {
+        case .autoSaved: "Auto Saved"
+        case .needsReview: "Needs Review"
+        case .confirmed: "Confirmed"
+        }
+    }
+
+    private var stateColor: Color {
+        switch event.state {
+        case .autoSaved: .teal
+        case .needsReview: .orange
+        case .confirmed: .green
+        }
     }
 }
 

@@ -116,7 +116,16 @@ final class DesktopDashboardPresentationTests: XCTestCase {
                     topItems: [SupplementTopItem(name: "鱼油", count: 6)]
                 )
             ),
-            activeJobs: []
+            activeJobs: [
+                DesktopJobSummary(
+                    id: 91,
+                    jobType: "medical_import",
+                    status: "running",
+                    progress: 40,
+                    sourceKind: "apple_health_export",
+                    sourceName: "export.zip"
+                )
+            ]
         )
 
         let presentation = DesktopDashboardPresentation(bootstrap: bootstrap)
@@ -132,5 +141,8 @@ final class DesktopDashboardPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.memoryRows.count, 2)
         XCTAssertFalse(presentation.memoryRows.map(\.title).contains("4"))
         XCTAssertEqual(presentation.actionRows.map(\.title), ["晨起记录体重和腰围", "今天蛋白质目标 113g"])
+        XCTAssertEqual(presentation.inputInboxEvents.map(\.source), [.device, .manual, .manual, .imported])
+        XCTAssertEqual(presentation.inputInboxEvents.first?.state, .autoSaved)
+        XCTAssertEqual(presentation.inputInboxEvents.last?.state, .needsReview)
     }
 }

@@ -15,6 +15,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
     public let recentRecordRows: [DesktopDashboardRow]
     public let memoryRows: [DesktopDashboardRow]
     public let activeJobRows: [DesktopDashboardRow]
+    public let inputInboxEvents: [DesktopInputInboxEvent]
 
     public init(bootstrap: DesktopBootstrap) {
         let summary = bootstrap.recentRecordsSummary
@@ -75,6 +76,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
                 progress: Double($0.progress) / 100
             )
         }
+        self.inputInboxEvents = DesktopDashboardPresentation.inputInboxEvents(from: bootstrap)
     }
 
     private static func subtitle(for bootstrap: DesktopBootstrap) -> String {
@@ -206,6 +208,99 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         ]
     }
 
+    private static func inputInboxEvents(from bootstrap: DesktopBootstrap) -> [DesktopInputInboxEvent] {
+        var events: [DesktopInputInboxEvent] = []
+        let summary = bootstrap.recentRecordsSummary
+
+        if let garmin = summary.latestGarmin {
+            events.append(
+                DesktopInputInboxEvent(
+                    id: "device-garmin-\(garmin.id)",
+                    source: .device,
+                    state: .autoSaved,
+                    title: garmin.title ?? "Garmin",
+                    subtitle: garmin.recordDate ?? "wearable sync",
+                    detail: [
+                        garmin.steps.map { "steps \($0)" },
+                        garmin.sleepScore.map { "sleep \($0)" },
+                        garmin.spo2Avg.map { "SpO2 \(formatNumber($0))%" }
+                    ].compactMap { $0 }.joined(separator: " · "),
+                    systemImage: "sensor.tag.radiowaves.forward",
+                    tone: "blue",
+                    contextItem: garminContextItem(garmin),
+                    prompt: garminPrompt(garmin)
+                )
+            )
+        }
+
+        for record in (summary.recentRecords ?? []).prefix(4) {
+            events.append(
+                DesktopInputInboxEvent(
+                    id: "record-\(record.id)",
+                    source: .manual,
+                    state: .autoSaved,
+                    title: record.title,
+                    subtitle: record.recordDate ?? record.type,
+                    detail: record.displayValue,
+                    systemImage: icon(forRecordType: record.type),
+                    tone: tone(forRecordType: record.type),
+                    contextItem: DesktopWorkspaceContextFactory.contextItem(for: record),
+                    prompt: DesktopWorkspaceContextFactory.prompt(for: record)
+                )
+            )
+        }
+
+        for job in bootstrap.activeJobs.prefix(4) {
+            events.append(
+                DesktopInputInboxEvent(
+                    id: "job-\(job.id)",
+                    source: .imported,
+                    state: job.status == "completed" ? .autoSaved : .needsReview,
+                    title: job.sourceName ?? job.jobType,
+                    subtitle: "#\(job.id) \(job.jobType)",
+                    detail: "\(job.status) · \(job.progress)%",
+                    systemImage: "tray.and.arrow.down.fill",
+                    tone: job.status == "failed" ? "red" : "indigo",
+                    contextItem: DesktopWorkspaceContextFactory.contextItem(for: job),
+                    prompt: DesktopWorkspaceContextFactory.prompt(for: job)
+                )
+            )
+        }
+
+        return Array(events.prefix(8))
+    }
+
+    private static func garminContextItem(_ garmin: GarminMetricSummary) -> AgentContextItem {
+        AgentContextItem(
+            sourceID: "device_sync:garmin:\(garmin.id)",
+            sourceKind: "device_sync",
+            title: garmin.title ?? "Garmin",
+            summary: [
+                garmin.recordDate,
+                garmin.steps.map { "steps \($0)" },
+                garmin.sleepScore.map { "sleep \($0)" },
+                garmin.spo2Avg.map { "SpO2 \(formatNumber($0))%" },
+                garmin.restingHeartRate.map { "RHR \($0)" },
+                garmin.hrv.map { "HRV \(formatNumber($0))" }
+            ].compactMap { $0 }.joined(separator: " · "),
+            payload: [
+                "id": "\(garmin.id)",
+                "source": "garmin",
+                "record_date": garmin.recordDate ?? "",
+                "steps": garmin.steps.map { "\($0)" } ?? "",
+                "sleep_score": garmin.sleepScore.map { "\($0)" } ?? "",
+                "spo2_avg": garmin.spo2Avg.map { "\($0)" } ?? "",
+                "resting_heart_rate": garmin.restingHeartRate.map { "\($0)" } ?? "",
+                "hrv": garmin.hrv.map { "\($0)" } ?? "",
+                "training_readiness_score": garmin.trainingReadinessScore.map { "\($0)" } ?? ""
+            ]
+        )
+    }
+
+    private static func garminPrompt(_ garmin: GarminMetricSummary) -> String {
+        "请基于这条设备同步数据，结合我最近记录、基因和知识库上下文，判断今天是否需要调整饮食、运动、补剂或恢复计划。设备：Garmin，日期：\(garmin.recordDate ?? "unknown")。"
+    }
+
     private static func formatNumber(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -266,6 +361,33 @@ public struct DesktopDashboardTrendPoint: Equatable, Identifiable, Sendable {
     public let value: Double
 
     public var id: String { date }
+}
+
+public enum DesktopInputSource: Equatable, Sendable {
+    case device
+    case voice
+    case image
+    case manual
+    case imported
+}
+
+public enum DesktopInputReviewState: Equatable, Sendable {
+    case autoSaved
+    case needsReview
+    case confirmed
+}
+
+public struct DesktopInputInboxEvent: Equatable, Identifiable, Sendable {
+    public let id: String
+    public let source: DesktopInputSource
+    public let state: DesktopInputReviewState
+    public let title: String
+    public let subtitle: String
+    public let detail: String
+    public let systemImage: String
+    public let tone: String
+    public let contextItem: AgentContextItem
+    public let prompt: String
 }
 
 public struct DesktopDashboardRow: Equatable, Identifiable, Sendable {
