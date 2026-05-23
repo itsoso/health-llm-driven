@@ -573,23 +573,26 @@ function HomeCommandHeader({
       >
         <View style={styles.commandTop}>
           <View style={styles.commandTitleBlock}>
-            <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>健康 Agent 正在运行</Text>
-            <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-              {headline}
-            </Text>
-            <Text style={[styles.commandHint, { color: c.labelSecondary }]}>{focusText}</Text>
+            <View style={styles.commandStatusLine}>
+              <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
+              <View style={[styles.agentRunningPill, { backgroundColor: c.brandLight }]}>
+                <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
+                <Text style={[styles.agentRunningText, { color: c.brand }]}>Agent 运行中</Text>
+              </View>
+              <Text style={[styles.commandSyncText, { color: c.labelTertiary }]}>{refreshing ? '同步中' : '已同步'}</Text>
+            </View>
+            <View style={styles.commandFocusRow}>
+              <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
+              <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+                {headline}
+              </Text>
+            </View>
+            <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={1}>{focusText}</Text>
           </View>
           <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
             <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
           </View>
-        </View>
-
-        <View style={styles.commandMetaRow}>
-          <MetaChip icon="radio-outline" label="后台运行" />
-          <MetaChip icon="compass-outline" label={`${planCount} 个计划`} />
-          <MetaChip icon="sync-outline" label={refreshing ? '同步中' : '已同步'} />
         </View>
       </Pressable>
 
@@ -876,16 +879,6 @@ function CompactShortcutSection({
           </Pressable>
         ))}
       </View>
-    </View>
-  );
-}
-
-function MetaChip({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
-  const { c } = useTheme();
-  return (
-    <View style={[styles.metaChip, { backgroundColor: c.bgPrimary }]}>
-      <Ionicons name={icon} size={13} color={c.labelSecondary} />
-      <Text style={[styles.metaChipText, { color: c.labelSecondary }]}>{label}</Text>
     </View>
   );
 }
@@ -1215,51 +1208,54 @@ const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
-    padding: spacing.md,
-    gap: spacing.sm,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
   },
-  commandFocusArea: { gap: spacing.sm },
-  commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  commandTitleBlock: { flex: 1, gap: 4 },
+  commandFocusArea: { gap: spacing.xs },
+  commandTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  commandTitleBlock: { flex: 1, gap: 3, minWidth: 0 },
+  commandStatusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   commandDate: { fontSize: 12, fontWeight: '700' },
+  agentRunningPill: {
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  agentRunningText: { fontSize: 12, fontWeight: '800' },
+  commandSyncText: { fontSize: 11, fontWeight: '700' },
+  commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 12, fontWeight: '800' },
-  commandTitle: { fontSize: 24, fontWeight: '800', lineHeight: 29, letterSpacing: 0 },
-  commandHint: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  commandTitle: { flex: 1, minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
+  commandHint: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-  },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12, fontWeight: '800' },
-  commandMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: radii.full,
   },
-  metaChipText: { fontSize: 12, fontWeight: '600' },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 12, fontWeight: '800' },
   commandActions: { flexDirection: 'row', gap: spacing.sm },
   primaryAction: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 34,
     borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 7,
   },
-  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  primaryActionText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 42,
-    minWidth: 102,
+    minHeight: 34,
+    minWidth: 86,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -1267,7 +1263,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  secondaryActionText: { fontSize: 15, fontWeight: '700' },
+  secondaryActionText: { fontSize: 14, fontWeight: '700' },
   workspaceCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,

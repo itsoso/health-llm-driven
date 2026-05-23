@@ -145,6 +145,9 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('今天先做 0 件事')).toBeNull();
+    expect(queryByText('健康 Agent 正在运行')).toBeNull();
+    expect(getByText('Agent 运行中')).toBeTruthy();
+    expect(getByText('今日重点')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('更多入口')).toBeTruthy();
   });
@@ -178,7 +181,7 @@ describe('TodayScreen', () => {
   it('frames the home feed as a background health agent workspace', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('健康 Agent 正在运行')).toBeTruthy();
+    expect(getByText('Agent 运行中')).toBeTruthy();
     expect(getByText('后台任务 · 长期干预')).toBeTruthy();
     expect(getByText('持续监测')).toBeTruthy();
     expect(getByText('诊断推理')).toBeTruthy();
