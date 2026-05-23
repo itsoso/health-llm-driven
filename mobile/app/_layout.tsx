@@ -126,7 +126,6 @@ function AppContent() {
         <Stack.Screen name="location" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="voice-style" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="doctor-loop" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="goals" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="monthly-reports" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="ai-profile" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="admin-llm" options={{ headerShown: false, presentation: 'modal' }} />
