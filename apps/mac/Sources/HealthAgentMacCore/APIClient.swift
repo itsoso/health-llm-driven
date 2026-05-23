@@ -62,6 +62,12 @@ public final class APIClient: @unchecked Sendable {
         return try await decode(data: data, response: response)
     }
 
+    public func delete(_ path: String) async throws {
+        let request = try await makeRequest(path: path, method: "DELETE")
+        let (data, response) = try await session.data(for: request)
+        try await validate(data: data, response: response)
+    }
+
     private func makeRequest(path: String, method: String) async throws -> URLRequest {
         let normalizedBaseURL = baseURL.absoluteString.hasSuffix("/")
             ? baseURL
@@ -79,6 +85,11 @@ public final class APIClient: @unchecked Sendable {
     }
 
     private func decode<T: Decodable>(data: Data, response: URLResponse) async throws -> T {
+        try await validate(data: data, response: response)
+        return try decoder.decode(T.self, from: data)
+    }
+
+    private func validate(data: Data, response: URLResponse) async throws {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.emptyResponse
         }
@@ -89,7 +100,6 @@ public final class APIClient: @unchecked Sendable {
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.httpStatus(http.statusCode, Self.errorMessage(from: data))
         }
-        return try decoder.decode(T.self, from: data)
     }
 
     private static func errorMessage(from data: Data) -> String? {

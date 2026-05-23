@@ -469,7 +469,9 @@ struct RecordHubView: View {
     @State private var symptom = ""
     @State private var recentRecords: [String] = []
     @State private var resultMessage: String?
+    @State private var lastSavedRecord: QuickRecordResult?
     @State private var isSubmitting = false
+    @State private var isUndoing = false
 
     var body: some View {
         ScrollView {
@@ -517,6 +519,10 @@ struct RecordHubView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if let lastSavedRecord {
+                    savedRecordCard(lastSavedRecord)
+                }
+
                 SectionPanel(title: appText("Recent Local Records", appLanguageRaw), systemImage: "clock") {
                     if recentRecords.isEmpty {
                         Text(appText("Recent saved commands in this Mac session will appear here.", appLanguageRaw))
@@ -535,6 +541,29 @@ struct RecordHubView: View {
                 }
             }
             .padding(28)
+        }
+    }
+
+    private func savedRecordCard(_ record: QuickRecordResult) -> some View {
+        SectionPanel(title: appText("Saved", appLanguageRaw), systemImage: "checkmark.circle.fill") {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.message)
+                        .font(.headline)
+                    if let recordID = record.recordID {
+                        Text("#\(recordID) · \(record.type)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if let undoPath = record.undoPath {
+                    Button(appText(isUndoing ? "Undoing..." : "Undo", appLanguageRaw)) {
+                        Task { await undoSavedRecord(path: undoPath) }
+                    }
+                    .disabled(isUndoing)
+                }
+            }
         }
     }
 
@@ -646,10 +675,24 @@ struct RecordHubView: View {
     private func handleRecordResult(_ result: QuickRecordResult, fallbackText: String) {
         resultMessage = result.message
         if result.success {
+            lastSavedRecord = result.undoPath == nil ? nil : result
             quickText = ""
             recentRecords.removeAll { $0 == fallbackText }
             recentRecords.insert(fallbackText, at: 0)
             recentRecords = Array(recentRecords.prefix(8))
+        }
+    }
+
+    private func undoSavedRecord(path: String) async {
+        guard !isUndoing else { return }
+        isUndoing = true
+        defer { isUndoing = false }
+        do {
+            try await client.undoSavedRecord(path: path)
+            lastSavedRecord = nil
+            resultMessage = appText("Record undone.", appLanguageRaw)
+        } catch {
+            resultMessage = "\(appText("Undo failed", appLanguageRaw)): \(error.localizedDescription)"
         }
     }
 

@@ -4,6 +4,24 @@ public struct QuickRecordResult: Decodable, Equatable, Sendable {
     public let type: String
     public let message: String
     public let success: Bool
+    public let recordID: Int?
+    public let undoPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case message
+        case success
+        case recordID = "record_id"
+        case undoPath = "undo_path"
+    }
+
+    init(type: String, message: String, success: Bool, recordID: Int? = nil, undoPath: String? = nil) {
+        self.type = type
+        self.message = message
+        self.success = success
+        self.recordID = recordID
+        self.undoPath = undoPath
+    }
 }
 
 private struct QuickRecordRequest: Encodable {
@@ -94,7 +112,7 @@ public final class RecordClient: Sendable {
     }
 
     public func recordDiet(foodItems: String, calories: Double?, protein: Double?) async throws -> QuickRecordResult {
-        let _: SavedRecordResponse = try await apiClient.post(
+        let saved: SavedRecordResponse = try await apiClient.post(
             "diet/records",
             body: DietRecordRequest(
                 recordDate: Self.todayString(),
@@ -104,11 +122,17 @@ public final class RecordClient: Sendable {
                 protein: protein
             )
         )
-        return QuickRecordResult(type: "diet", message: "已记录饮食：\(foodItems)", success: true)
+        return QuickRecordResult(
+            type: "diet",
+            message: "已记录饮食：\(foodItems)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "diet/records", recordID: saved.id)
+        )
     }
 
     public func recordWater(amountMl: Int) async throws -> QuickRecordResult {
-        let _: SavedRecordResponse = try await apiClient.post(
+        let saved: SavedRecordResponse = try await apiClient.post(
             "water/records",
             body: WaterRecordRequest(
                 userID: 0,
@@ -117,11 +141,17 @@ public final class RecordClient: Sendable {
                 drinkType: "水"
             )
         )
-        return QuickRecordResult(type: "water", message: "已记录饮水 \(amountMl)ml", success: true)
+        return QuickRecordResult(
+            type: "water",
+            message: "已记录饮水 \(amountMl)ml",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "water/records", recordID: saved.id)
+        )
     }
 
     public func recordWeight(weightKg: Double) async throws -> QuickRecordResult {
-        let _: SavedRecordResponse = try await apiClient.post(
+        let saved: SavedRecordResponse = try await apiClient.post(
             "weight/records",
             body: WeightRecordRequest(
                 recordDate: Self.todayString(),
@@ -129,11 +159,17 @@ public final class RecordClient: Sendable {
                 notes: "mac_structured_record"
             )
         )
-        return QuickRecordResult(type: "weight", message: "已记录体重 \(weightKg)kg", success: true)
+        return QuickRecordResult(
+            type: "weight",
+            message: "已记录体重 \(weightKg)kg",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "weight/records", recordID: saved.id)
+        )
     }
 
     public func recordBloodPressure(systolic: Int, diastolic: Int) async throws -> QuickRecordResult {
-        let _: SavedRecordResponse = try await apiClient.post(
+        let saved: SavedRecordResponse = try await apiClient.post(
             "blood-pressure/records",
             body: BloodPressureRecordRequest(
                 userID: 0,
@@ -142,11 +178,17 @@ public final class RecordClient: Sendable {
                 diastolic: diastolic
             )
         )
-        return QuickRecordResult(type: "bp", message: "已记录血压 \(systolic)/\(diastolic) mmHg", success: true)
+        return QuickRecordResult(
+            type: "bp",
+            message: "已记录血压 \(systolic)/\(diastolic) mmHg",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "blood-pressure/records", recordID: saved.id)
+        )
     }
 
     public func recordSymptom(description: String) async throws -> QuickRecordResult {
-        let _: SavedRecordResponse = try await apiClient.post(
+        let saved: SavedRecordResponse = try await apiClient.post(
             "symptoms",
             body: SymptomRecordRequest(
                 bodyPart: "other",
@@ -154,7 +196,24 @@ public final class RecordClient: Sendable {
                 source: "manual"
             )
         )
-        return QuickRecordResult(type: "symptom", message: "已记录症状：\(description)", success: true)
+        return QuickRecordResult(
+            type: "symptom",
+            message: "已记录症状：\(description)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "symptoms", recordID: saved.id)
+        )
+    }
+
+    public func undoSavedRecord(path: String) async throws {
+        try await apiClient.delete(path)
+    }
+
+    private func undoPath(prefix: String, recordID: Int?) -> String? {
+        guard let recordID else {
+            return nil
+        }
+        return "\(prefix)/\(recordID)"
     }
 
     private static func todayString() -> String {

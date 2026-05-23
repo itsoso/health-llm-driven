@@ -97,6 +97,23 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(result.type, "weight")
         XCTAssertTrue(result.success)
         XCTAssertEqual(result.message, "已记录体重 70.2kg")
+        XCTAssertEqual(result.recordID, 12)
+        XCTAssertEqual(result.undoPath, "weight/records/12")
+    }
+
+    func testRecordClientDeletesSavedStructuredRecordUsingUndoPath() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/weight/records/12")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        try await RecordClient(apiClient: client).undoSavedRecord(path: "weight/records/12")
     }
 
     func testStructuredRecordDraftRequiresValidWeightBeforeSubmitting() {
