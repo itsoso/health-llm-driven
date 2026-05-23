@@ -5,6 +5,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRecordDailyPlanActionEvent = jest.fn();
+const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: string }) => {
+  const { Text } = require('react-native');
+  return <Text>{title}</Text>;
+});
 let mockDailyPlanActions: unknown[] = [];
 
 jest.mock('expo-router', () => ({
@@ -97,8 +101,7 @@ jest.mock('../../../utils/agentContext', () => ({
 }));
 
 jest.mock('../../../components/dashboard/TodayPlanPanel', () => {
-  const { Text } = require('react-native');
-  const MockTodayPlanPanel = () => <Text>今日操作计划</Text>;
+  const MockTodayPlanPanel = (props: { title?: string }) => mockTodayPlanPanel(props);
   MockTodayPlanPanel.displayName = 'MockTodayPlanPanel';
   return MockTodayPlanPanel;
 });
@@ -142,7 +145,7 @@ describe('TodayScreen', () => {
 
     expect(queryByText('今天先做 0 件事')).toBeNull();
     expect(getByText('保持记录节奏')).toBeTruthy();
-    expect(getByText('高频入口')).toBeTruthy();
+    expect(getByText('更多入口')).toBeTruthy();
   });
 
   it('places the operation plan before shortcut entries in the home feed', () => {
@@ -150,8 +153,42 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('今日操作计划')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('高频入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('高频入口'));
+    expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('更多入口'));
+  });
+
+  it('groups the home feed into action, status, more entry, and weekly sections', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('状态概览')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('状态概览'));
+    expect(textFlow.indexOf('状态概览')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('更多入口')).toBeLessThan(textFlow.indexOf('本周建议'));
+  });
+
+  it('keeps the primary action out of the remaining daily plan list', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+      {
+        action_key: 'nutrition.protein_target',
+        domain: 'nutrition',
+        title: '今天蛋白质目标',
+      },
+    ];
+
+    render(<TodayScreen />);
+
+    expect(mockTodayPlanPanel).toHaveBeenCalledWith(expect.objectContaining({
+      excludeActionKey: 'measurement.weight_waist_morning',
+    }));
   });
 
   it('shows the active plan count when today has actions', () => {

@@ -26,17 +26,22 @@ const DOMAIN_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 export default function TodayPlanPanel({
   plan,
   loading,
+  excludeActionKey,
   onPressAction,
   onActionEvent,
 }: {
   plan?: DailyOperatingPlan | null;
   loading?: boolean;
+  excludeActionKey?: string | null;
   onPressAction?: (action: DailyPlanAction) => void;
   onActionEvent?: () => void;
 }) {
   const { c } = useTheme();
   const [eventByAction, setEventByAction] = React.useState<Record<string, DailyPlanActionEventType | 'sending' | 'error'>>({});
-  const actions = pickTopPlanActions(plan?.actions ?? [], 3);
+  const visiblePlanActions = excludeActionKey
+    ? (plan?.actions ?? []).filter(action => (action.action_key || action.title) !== excludeActionKey)
+    : (plan?.actions ?? []);
+  const actions = pickTopPlanActions(visiblePlanActions, 3);
   const state = plan?.state_summary ?? {};
   const waist = state.waist_cm as number | undefined;
   const bp = state.blood_pressure as string | undefined;

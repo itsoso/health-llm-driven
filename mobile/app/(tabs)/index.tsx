@@ -265,69 +265,25 @@ export default function TodayScreen() {
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
         />
 
-        <NextBestActionCard
-          action={nextAction}
-          loading={dailyPlanQuery.isLoading}
-          completionState={visibleNextActionState}
-          onStart={openPlanAction}
-          onComplete={completeNextAction}
-          onFallbackRecord={() => router.push('/(tabs)/record' as any)}
-          onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
-        />
-
-        <TodayPlanPanel
-          plan={dailyPlanQuery.data}
-          loading={dailyPlanQuery.isLoading}
-          onPressAction={openPlanAction}
-          onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
-        />
-
-        <CompactShortcutSection
-          shortcuts={[
-            {
-              label: '基因',
-              icon: 'git-branch-outline',
-              value: geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—',
-              color: c.purple,
-              bg: c.tintPurple,
-              onPress: () => router.push('/genetic-report' as any),
-            },
-            {
-              label: '进度',
-              icon: 'trending-up-outline',
-              value: progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—',
-              color: c.blue,
-              bg: c.tintBlue,
-              onPress: () => router.push('/my-progress' as any),
-            },
-            {
-              label: '运动',
-              icon: 'walk-outline',
-              value: '处方',
-              color: c.pink,
-              bg: c.tintPink,
-              onPress: () => router.push('/movement-plan' as any),
-            },
-            {
-              label: '饮食',
-              icon: 'restaurant-outline',
-              value: '方案',
-              color: c.orange,
-              bg: c.tintOrange,
-              onPress: () => router.push('/diet-plan' as any),
-            },
-          ]}
-          onOpenAll={() => router.push('/(tabs)/record' as any)}
-        />
-
-        <TrajectorySnapshotPanel
-          snapshot={trajectoryQuery.data}
-          loading={trajectoryQuery.isLoading}
-          onPress={openTrajectoryChat}
-        />
-
-        {/* 环境(天气 + AQI)卡 — 旧首页有, P2 重做漏了, 2026-05-11 补回 */}
-        <EnvironmentCard />
+        <View style={styles.section}>
+          <SectionHeader title="今日行动" subtitle="先处理一件，再看余下计划" />
+          <NextBestActionCard
+            action={nextAction}
+            loading={dailyPlanQuery.isLoading}
+            completionState={visibleNextActionState}
+            onStart={openPlanAction}
+            onComplete={completeNextAction}
+            onFallbackRecord={() => router.push('/(tabs)/record' as any)}
+            onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
+          />
+          <TodayPlanPanel
+            plan={dailyPlanQuery.data}
+            loading={dailyPlanQuery.isLoading}
+            excludeActionKey={nextActionKey}
+            onPressAction={openPlanAction}
+            onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
+          />
+        </View>
 
         {isLoading && (
           <View style={styles.loading}>
@@ -335,9 +291,10 @@ export default function TodayScreen() {
           </View>
         )}
 
-        {/* 1. Critical/High 告警卡 */}
-        {criticalAlerts.length > 0 && (
-          <View style={styles.section}>
+        <View style={styles.section}>
+          <SectionHeader title="状态概览" subtitle="风险、轨迹和实时环境" />
+          {criticalAlerts.length > 0 && (
+            <>
             <SectionHeader title="需要立即处理" subtitle={`${criticalAlerts.length} 条高优先级`} />
             {criticalAlerts.slice(0, 3).map(a => (
               <AlertRow
@@ -351,35 +308,14 @@ export default function TodayScreen() {
                 <Text style={[styles.moreText, { color: c.brand }]}>查看全部 {criticalAlerts.length} 条</Text>
               </TouchableOpacity>
             )}
-          </View>
-        )}
-
-        {/* 2. 本周建议队列 */}
-        <View style={styles.section}>
-          <SectionHeader
-            title="本周建议"
-            subtitle={weeklyAdvice.length > 0 ? `${weeklyAdvice.length} 个待处理` : '等待 Agent 生成'}
-          />
-          {weeklyAdvice.length === 0 ? (
-            <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
-              <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
-                本周尚无 Agent 主动建议. 周日晚 21:07 自动生成.
-              </Text>
-            </View>
-          ) : (
-            weeklyAdvice.map(card => (
-              <SuggestionRow
-                key={card.id}
-                card={card}
-                onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
-              />
-            ))
+            </>
           )}
-        </View>
-
-        {/* 3. 身体快照 — 2x2 grid, 默认展开学 VitalsGrid 风格 */}
-        <View style={styles.section}>
-          <SectionHeader title="身体快照" subtitle="恢复、睡眠与生命体征" />
+          <TrajectorySnapshotPanel
+            snapshot={trajectoryQuery.data}
+            loading={trajectoryQuery.isLoading}
+            onPress={openTrajectoryChat}
+          />
+          <EnvironmentCard />
           <View style={styles.gridRow}>
             <HeroTile
               label="HRV"
@@ -426,6 +362,66 @@ export default function TodayScreen() {
               onPress={() => router.push('/sleep-spo2-analysis' as any)}
             />
           </View>
+        </View>
+
+        <CompactShortcutSection
+          shortcuts={[
+            {
+              label: '基因',
+              icon: 'git-branch-outline',
+              value: geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—',
+              color: c.purple,
+              bg: c.tintPurple,
+              onPress: () => router.push('/genetic-report' as any),
+            },
+            {
+              label: '进度',
+              icon: 'trending-up-outline',
+              value: progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—',
+              color: c.blue,
+              bg: c.tintBlue,
+              onPress: () => router.push('/my-progress' as any),
+            },
+            {
+              label: '运动',
+              icon: 'walk-outline',
+              value: '处方',
+              color: c.pink,
+              bg: c.tintPink,
+              onPress: () => router.push('/movement-plan' as any),
+            },
+            {
+              label: '饮食',
+              icon: 'restaurant-outline',
+              value: '方案',
+              color: c.orange,
+              bg: c.tintOrange,
+              onPress: () => router.push('/diet-plan' as any),
+            },
+          ]}
+          onOpenAll={() => router.push('/(tabs)/record' as any)}
+        />
+
+        <View style={styles.section}>
+          <SectionHeader
+            title="本周建议"
+            subtitle={weeklyAdvice.length > 0 ? `${weeklyAdvice.length} 个待处理` : '等待 Agent 生成'}
+          />
+          {weeklyAdvice.length === 0 ? (
+            <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
+              <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
+                本周尚无 Agent 主动建议. 周日晚 21:07 自动生成.
+              </Text>
+            </View>
+          ) : (
+            weeklyAdvice.map(card => (
+              <SuggestionRow
+                key={card.id}
+                card={card}
+                onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
+              />
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -533,7 +529,7 @@ function CompactShortcutSection({
   const { c } = useTheme();
   return (
     <View style={styles.compactSection}>
-      <SectionHeader title="高频入口" subtitle="常用路径" action="全部" onPress={onOpenAll} />
+      <SectionHeader title="更多入口" subtitle="常用路径" action="全部" onPress={onOpenAll} />
       <View style={styles.shortcutRail}>
         {shortcuts.map(item => (
           <Pressable

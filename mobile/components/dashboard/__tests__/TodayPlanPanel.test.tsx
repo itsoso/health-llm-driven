@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
@@ -80,6 +81,36 @@ describe('TodayPlanPanel', () => {
     expect(getByText('强证据')).toBeTruthy();
     expect(getByText('系统证据 1')).toBeTruthy();
     expect(getByText('验证 sleep_score · 7天')).toBeTruthy();
+  });
+
+  it('can exclude the already promoted primary action', () => {
+    const plan: DailyOperatingPlan = {
+      plan_date: '2026-05-18',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [
+        {
+          action_key: 'measurement.weight_waist_morning',
+          domain: 'measurement',
+          title: '晨起记录体重和腰围',
+          why: '同一时间测量噪声更低。',
+        } as any,
+        {
+          action_key: 'nutrition.protein_target',
+          domain: 'nutrition',
+          title: '今天蛋白质目标',
+          why: '优先补齐蛋白质。',
+        } as any,
+      ],
+    };
+
+    const { getByText, queryByText } = render(
+      <TodayPlanPanel plan={plan} excludeActionKey="measurement.weight_waist_morning" />,
+    );
+
+    expect(queryByText('晨起记录体重和腰围')).toBeNull();
+    expect(getByText('今天蛋白质目标')).toBeTruthy();
   });
 
   it('records completed event for a daily plan action', async () => {
