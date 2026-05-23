@@ -35,6 +35,7 @@ export interface ChatContextRouteInput {
   prompt: string;
   context: AgentContextPayload | string;
   badge: string;
+  newChat?: boolean;
 }
 
 export function serializeAgentContext(context: AgentContextPayload | string): string {
@@ -51,6 +52,7 @@ export function buildChatContextRoute(input: ChatContextRouteInput) {
       prompt: input.prompt,
       context: serializeAgentContext(input.context),
       badge: input.badge,
+      newChat: input.newChat === false ? undefined : '1',
     },
   };
 }

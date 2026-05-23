@@ -11,10 +11,12 @@ const mockFetchMemoryOpener = jest.fn();
 const mockRecordCardAdherence = jest.fn();
 const mockRecordCardDecision = jest.fn();
 const mockNewChat = jest.fn();
+const mockSetParams = jest.fn();
+let mockRouteParams: Record<string, string | undefined> = {};
 
 jest.mock('expo-router', () => ({
-  router: { push: mockPush, setParams: jest.fn() },
-  useLocalSearchParams: () => ({}),
+  router: { push: mockPush, setParams: mockSetParams },
+  useLocalSearchParams: () => mockRouteParams,
   useFocusEffect: (cb: any) => cb(),
 }));
 
@@ -111,6 +113,7 @@ describe('ChatScreen', () => {
     mockFetchMemoryOpener.mockResolvedValue([]);
     mockRecordCardAdherence.mockResolvedValue({});
     mockRecordCardDecision.mockResolvedValue({});
+    mockRouteParams = {};
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -282,6 +285,29 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
       expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
+    });
+    expect(mockNewChat).toHaveBeenCalled();
+  });
+
+  it('starts a new conversation when opened from an Agent context entry', async () => {
+    mockRouteParams = {
+      prompt: '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',
+      context: '{"from":"sleep/7d"}',
+      badge: '基于近 7 天睡眠',
+      newChat: '1',
+    };
+
+    render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',
+        null,
+        expect.objectContaining({
+          extraContext: '{"from":"sleep/7d"}',
+          forceNewConversation: true,
+        }),
+      );
     });
     expect(mockNewChat).toHaveBeenCalled();
   });

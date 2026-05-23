@@ -101,6 +101,48 @@ describe('useChatEngine', () => {
     expect(mockGetConversations).not.toHaveBeenCalledWith('每日健康简报');
   });
 
+  it('can force a context entry to start a new server conversation', async () => {
+    mockAsyncStorage['chat:last_conversation_id:v1'] = '321';
+    mockGetConversationMessages.mockResolvedValueOnce({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '上一轮问题', created_at: '2026-05-22T10:00:00Z' },
+        { id: 2, role: 'assistant', content: '上一轮回答', created_at: '2026-05-22T10:00:10Z' },
+      ],
+    });
+    mockStreamChat.mockImplementation(streamStartThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.loadLatestConversation();
+    });
+    await waitFor(() => expect(result.current.conversationId).toBe(321));
+
+    act(() => {
+      void result.current.sendMessage(
+        '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',
+        null,
+        { extraContext: '{"from":"sleep/7d"}', forceNewConversation: true } as any,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mockStreamChat).toHaveBeenCalledWith(
+        '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',
+        undefined,
+        undefined,
+        expect.any(AbortSignal),
+        '{"from":"sleep/7d"}',
+      );
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
   it('keeps the local streaming assistant bubble when conversation id arrives mid-stream', async () => {
     mockStreamChat.mockImplementation(streamStartThenWait);
     mockGetConversationMessages.mockResolvedValue({

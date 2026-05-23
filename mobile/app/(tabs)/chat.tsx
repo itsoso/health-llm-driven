@@ -106,7 +106,7 @@ export default function ChatScreen() {
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
   // context (JSON string) → 注入到 LLM system prompt 作为深化基础, 不展示在 user 消息里
-  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string }>();
+  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const contextConsumed = useRef(false);
@@ -181,20 +181,24 @@ export default function ChatScreen() {
     if (contextConsumed.current) return;
     if (params.prompt || params.badge || params.context) {
       contextConsumed.current = true;
+      const forceNewConversation = params.newChat === '1';
+      if (forceNewConversation) {
+        newChat();
+      }
       if (params.badge) setContextBadge(params.badge);
       if (params.prompt) {
         if (params.autoSend === '1') {
-          sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context });
+          sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context, forceNewConversation });
         } else if (params.context) {
           // 有 context 但不 autoSend: 用户点了"详细聊"入口, prompt 是预填问题, 跟 context 一起发
-          sendMessage(params.prompt, null, { extraContext: params.context });
+          sendMessage(params.prompt, null, { extraContext: params.context, forceNewConversation });
         } else {
           setInitialInput(params.prompt);
         }
       }
-      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined } as any); } catch {}
+      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined, newChat: undefined } as any); } catch {}
     }
-  }, [params.prompt, params.badge, params.autoSend, params.context, sendMessage]);
+  }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, sendMessage]);
 
   useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
 

@@ -22,6 +22,7 @@ export default function AgentFeedbackLink({
   prompt,
   context,
   badge,
+  newChat,
   accessibilityLabel,
   style,
 }: Props) {
@@ -35,6 +36,7 @@ export default function AgentFeedbackLink({
         prompt,
         context: context as AgentContextPayload | string,
         badge,
+        newChat,
       })}
       style={({ pressed }) => [
         styles.link,

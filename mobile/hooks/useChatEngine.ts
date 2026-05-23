@@ -341,7 +341,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const sendMessage = useCallback(async (
     text: string,
     pendingImages?: { uri: string; base64?: string; type?: string }[] | null,
-    sendOpts?: { fromSiri?: boolean; extraContext?: string },
+    sendOpts?: { fromSiri?: boolean; extraContext?: string; forceNewConversation?: boolean },
   ) => {
     const msg = text.trim();
     const hasImages = pendingImages && pendingImages.length > 0;
@@ -365,13 +365,22 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       });
     } catch { /* noop */ }
 
+    const forceNewConversation = !!sendOpts?.forceNewConversation;
+    const targetConversationId = forceNewConversation ? undefined : conversationId;
+    if (forceNewConversation) {
+      setConversationId(undefined);
+      void forgetConversationId();
+      void clearPendingStream();
+      briefingInjected.current = false;
+    }
+
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
     const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
     const aId = nextId();
     const aiMsg: UIMessage = { id: aId, role: 'assistant', content: '', streaming: true };
 
-    setMessages(prev => [...prev, userMsg, aiMsg]);
+    setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
     streamingRef.current = true;
     void markPendingStream();
@@ -386,16 +395,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
     }, 8000);
 
-    let streamConversationId = conversationId;
+    let streamConversationId = targetConversationId;
 
     try {
       const toolsUsed: Set<string> = new Set();
       let sawDone = false;
-      for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
+      for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'start') {
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
-            if (!conversationId) setConversationId(evt.conversationId);
+            if (!targetConversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
@@ -406,7 +415,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           sawDone = true;
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
-            if (!conversationId) setConversationId(evt.conversationId);
+            if (!targetConversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)
