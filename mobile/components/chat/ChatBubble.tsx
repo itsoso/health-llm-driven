@@ -94,7 +94,16 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard({ type: item.cardType, data: item.cardData });
-    if (rendered) return <View style={[styles.msgRow, styles.msgRowAI]}><View style={{ width: 36 }} />{rendered}</View>;
+    if (rendered) {
+      return (
+        <View style={[styles.msgRow, styles.msgRowAI]}>
+          <View style={{ width: 36 }} />
+          <View testID="assistant-card-frame" style={styles.cardFrame}>
+            {rendered}
+          </View>
+        </View>
+      );
+    }
   }
 
   const hasTable = !isUser && /\n\s*\|.+\|\s*\n\s*\|[\s|:\-]+\|\s*\n\s*\|/.test(displayText);
@@ -756,6 +765,7 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
     msgRowUser: { justifyContent: 'flex-end' },
     msgRowAI: { justifyContent: 'flex-start' },
+    cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
     bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
     bubbleUser: { backgroundColor: c.brand, borderBottomRightRadius: 4 },
     bubbleSelected: {

@@ -89,7 +89,7 @@ export function MenuShareCardView(d: MenuShareData) {
         {items.map((it, i) => (
           <View key={i} style={styles.itemRow}>
             <View style={styles.itemDot} />
-            <Text style={txt.itemName} numberOfLines={1}>{it.name}</Text>
+            <Text style={txt.itemName} numberOfLines={1} ellipsizeMode="tail">{it.name}</Text>
             {it.qty ? <Text style={txt.itemQty}>{it.qty}</Text> : null}
             {it.kcal != null ? <Text style={txt.itemKcal}>{Math.round(it.kcal)} kcal</Text> : null}
           </View>
@@ -133,15 +133,15 @@ export const MenuShareCardSpec: CardSpec<MenuShareData> = {
 };
 
 const styles = StyleSheet.create({
-  itemList: { marginTop: 4, gap: 4 },
+  itemList: { marginTop: 4, gap: 4, minWidth: 0 },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FF6723' },
   totalsRow: {
-    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
     marginTop: 8, paddingTop: 6,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.08)',
   },
-  macros: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  macros: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
   macroChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   macroDot: { width: 5, height: 5, borderRadius: 2.5 },
   shareBtn: {
@@ -153,9 +153,9 @@ const styles = StyleSheet.create({
 
 const txt = {
   reason: { fontSize: 12, color: colors.labelSecondary, lineHeight: 17, marginBottom: 4 } as TextStyle,
-  itemName: { flex: 1, fontSize: 13, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
-  itemQty: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  itemKcal: { fontSize: 11, color: '#FF6723', fontWeight: '600', fontVariant: ['tabular-nums'] as const, textAlign: 'right' } as TextStyle,
+  itemName: { flex: 1, minWidth: 0, fontSize: 13, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
+  itemQty: { flexShrink: 0, fontSize: 11, color: colors.labelTertiary } as TextStyle,
+  itemKcal: { flexShrink: 0, fontSize: 11, color: '#FF6723', fontWeight: '600', fontVariant: ['tabular-nums'] as const, textAlign: 'right' } as TextStyle,
   totalKcal: { fontSize: 18, fontWeight: '800', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
   totalKcalUnit: { fontSize: 11, fontWeight: '400', color: colors.labelTertiary } as TextStyle,
   macroLabel: { fontSize: 10, color: colors.labelSecondary } as TextStyle,

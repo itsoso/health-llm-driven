@@ -45,9 +45,14 @@ jest.mock('../AttributionChips', () => {
   MockAttributionChips.displayName = 'MockAttributionChips';
   return MockAttributionChips;
 });
-jest.mock('../cards', () => ({
-  renderCard: jest.fn(() => null),
-}));
+jest.mock('../cards', () => {
+  const React = require('react');
+  const { View, Text } = require('react-native');
+  return {
+    renderCard: jest.fn(() => null),
+    __mockCard: <View><Text>今晚晚餐建议</Text></View>,
+  };
+});
 jest.mock('../../../services/actionCards', () => ({
   createInterventionDraft: jest.fn(),
 }));
@@ -67,6 +72,7 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActions');
+const { renderCard, __mockCard } = require('../cards');
 
 function renderBubble(content: string) {
   const qc = new QueryClient();
@@ -123,6 +129,35 @@ describe('ChatBubble structured summary', () => {
 
     await waitFor(() => {
       expect(saveAssistantReplyAsMemory).toHaveBeenCalledWith('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
+    });
+  });
+
+  it('constrains server-rendered cards inside the assistant column', () => {
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'menu_share',
+      cardData: {
+        title: '今晚晚餐建议',
+        items: [{ name: '白灼虾', qty: '100g', kcal: 90 }],
+      },
+    };
+
+    const { getByTestId, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('今晚晚餐建议')).toBeTruthy();
+    expect(getByTestId('assistant-card-frame')).toHaveStyle({
+      flex: 1,
+      minWidth: 0,
+      maxWidth: '100%',
     });
   });
 });
