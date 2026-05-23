@@ -941,60 +941,64 @@ struct JobListView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text(appText("Jobs", appLanguageRaw))
-                    .font(.largeTitle.bold())
-                Spacer()
-                Button(appText("Refresh", appLanguageRaw)) {
-                    Task { await refresh() }
-                }
-            }
+        ZStack {
+            Color(nsColor: .controlBackgroundColor)
+                .ignoresSafeArea()
 
-            HSplitView {
-                VStack(alignment: .leading, spacing: 12) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
-                        JobStatCard(title: appText("Total", appLanguageRaw), value: "\(jobs.count)", systemImage: "tray.full.fill", color: .blue)
-                        JobStatCard(title: appText("Running", appLanguageRaw), value: "\(jobs.filter { $0.status == "queued" || $0.status == "running" }.count)", systemImage: "clock.arrow.circlepath", color: .teal)
-                        JobStatCard(title: appText("Failed", appLanguageRaw), value: "\(jobs.filter { $0.status == "failed" }.count)", systemImage: "exclamationmark.triangle.fill", color: .orange)
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Text(appText("Jobs", appLanguageRaw))
+                        .font(.largeTitle.bold())
+                    Spacer()
+                    Button(appText("Refresh", appLanguageRaw)) {
+                        Task { await refresh() }
                     }
+                }
 
-                    if jobs.isEmpty {
-                        ContentUnavailableView(
-                            appText("No desktop jobs yet", appLanguageRaw),
-                            systemImage: "clock.arrow.circlepath",
-                            description: Text(appText("Create import or reanalysis jobs from Data, Genetics, or Knowledge tabs.", appLanguageRaw))
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 260)
-                    } else {
-                        Table(jobs) {
-                            TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
-                            TableColumn(appText("Type", appLanguageRaw), value: \.jobType)
-                            TableColumn(appText("Status", appLanguageRaw), value: \.status)
-                            TableColumn(appText("Progress", appLanguageRaw)) { job in
-                                ProgressView(value: Double(job.progress), total: 100)
-                            }
-                            TableColumn(appText("Action", appLanguageRaw)) { job in
-                                HStack {
-                                    Button(appText("Details", appLanguageRaw)) { Task { await loadDetail(job.id) } }
-                                    Button(appText("Retry", appLanguageRaw)) { Task { await retry(job) } }
-                                        .disabled(job.status != "failed")
+                HSplitView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
+                            JobStatCard(title: appText("Total", appLanguageRaw), value: "\(jobs.count)", systemImage: "tray.full.fill", color: .blue)
+                            JobStatCard(title: appText("Running", appLanguageRaw), value: "\(jobs.filter { $0.status == "queued" || $0.status == "running" }.count)", systemImage: "clock.arrow.circlepath", color: .teal)
+                            JobStatCard(title: appText("Failed", appLanguageRaw), value: "\(jobs.filter { $0.status == "failed" }.count)", systemImage: "exclamationmark.triangle.fill", color: .orange)
+                        }
+
+                        if jobs.isEmpty {
+                            EmptyJobState()
+                                .frame(maxWidth: .infinity, minHeight: 260, alignment: .top)
+                        } else {
+                            Table(jobs) {
+                                TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
+                                TableColumn(appText("Type", appLanguageRaw), value: \.jobType)
+                                TableColumn(appText("Status", appLanguageRaw), value: \.status)
+                                TableColumn(appText("Progress", appLanguageRaw)) { job in
+                                    ProgressView(value: Double(job.progress), total: 100)
+                                }
+                                TableColumn(appText("Action", appLanguageRaw)) { job in
+                                    HStack {
+                                        Button(appText("Details", appLanguageRaw)) { Task { await loadDetail(job.id) } }
+                                        Button(appText("Retry", appLanguageRaw)) { Task { await retry(job) } }
+                                            .disabled(job.status != "failed")
+                                    }
                                 }
                             }
                         }
                     }
+                    .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                    JobDetailPanel(job: selectedJob, openTrace: openTrace)
+                        .frame(minWidth: 260, idealWidth: 320, maxHeight: .infinity, alignment: .topLeading)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                JobDetailPanel(job: selectedJob, openTrace: openTrace)
-                    .frame(minWidth: 260, idealWidth: 320)
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
             }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-            }
+            .padding(28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(28)
         .task { await refresh() }
     }
 
@@ -1026,6 +1030,45 @@ struct JobListView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct EmptyJobState: View {
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title2)
+                    .foregroundStyle(.teal)
+                    .frame(width: 42, height: 42)
+                    .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appText("No desktop jobs yet", appLanguageRaw))
+                        .font(.title3.bold())
+                    Text(appText("Create import or reanalysis jobs from Data, Genetics, or Knowledge tabs.", appLanguageRaw))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Label(appText("Data", appLanguageRaw), systemImage: "chart.xyaxis.line")
+                Label(appText("Genetics", appLanguageRaw), systemImage: "dna")
+                Label(appText("Knowledge", appLanguageRaw), systemImage: "books.vertical")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        )
     }
 }
 
