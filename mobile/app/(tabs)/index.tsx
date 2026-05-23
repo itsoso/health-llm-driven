@@ -60,6 +60,17 @@ interface InterventionDomainStatus {
   route: '/diet-plan' | '/sleep' | '/movement-plan' | '/(tabs)/chat';
 }
 
+type ImpactMetricColorName = 'green' | 'blue' | 'purple' | 'orange' | 'teal' | 'pink' | 'red';
+type ImpactMetricTintName = 'tintGreen' | 'tintBlue' | 'tintPurple' | 'tintOrange' | 'tintTeal' | 'tintPink' | 'tintRed';
+
+interface ImpactMetricChip {
+  key: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  colorName: ImpactMetricColorName;
+  tintName: ImpactMetricTintName;
+}
+
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
 }
@@ -912,6 +923,7 @@ function NextBestActionCard({
     : hasAction
       ? (action?.why || action?.when || '先完成这一步，再看后续计划')
       : '没有硬性任务时，先补齐今天会影响建议的数据';
+  const impactMetrics = buildActionImpactMetrics(action);
 
   return (
     <View style={[styles.nextActionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -924,6 +936,22 @@ function NextBestActionCard({
           <Text style={[styles.nextActionTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {title}
           </Text>
+          {impactMetrics.length > 0 ? (
+            <View style={styles.nextActionImpact}>
+              <Text style={[styles.nextActionImpactLabel, { color: c.labelTertiary }]}>影响指标</Text>
+              <View style={styles.nextActionImpactChips}>
+                {impactMetrics.map(metric => {
+                  const color = c[metric.colorName];
+                  return (
+                    <View key={metric.key} style={[styles.nextActionImpactChip, { backgroundColor: c[metric.tintName] }]}>
+                      <Ionicons name={metric.icon} size={12} color={color} />
+                      <Text style={[styles.nextActionImpactText, { color }]}>{metric.label}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           <Text style={[styles.nextActionReason, { color: c.labelSecondary }]} numberOfLines={2}>
             {reason}
           </Text>
@@ -1032,6 +1060,68 @@ function isBodyMeasurementAction(action: DailyPlanAction): boolean {
   if (action.domain !== 'measurement') return false;
   const haystack = `${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
   return /体重|腰围|weight|waist|bmi/.test(haystack);
+}
+
+const IMPACT_METRIC_DEFINITIONS: Record<string, ImpactMetricChip> = {
+  sleep_score: { key: 'sleep_score', label: '睡眠分', icon: 'moon-outline', colorName: 'purple', tintName: 'tintPurple' },
+  hrv: { key: 'hrv', label: 'HRV', icon: 'pulse-outline', colorName: 'teal', tintName: 'tintTeal' },
+  spo2: { key: 'spo2', label: '血氧', icon: 'water-outline', colorName: 'blue', tintName: 'tintBlue' },
+  bmi: { key: 'bmi', label: 'BMI', icon: 'body-outline', colorName: 'green', tintName: 'tintGreen' },
+  body_fat: { key: 'body_fat', label: '体脂', icon: 'fitness-outline', colorName: 'orange', tintName: 'tintOrange' },
+  vo2max: { key: 'vo2max', label: 'VO2max', icon: 'walk-outline', colorName: 'green', tintName: 'tintGreen' },
+  blood_pressure: { key: 'blood_pressure', label: '血压', icon: 'heart-outline', colorName: 'pink', tintName: 'tintPink' },
+  labs: { key: 'labs', label: '血检', icon: 'flask-outline', colorName: 'red', tintName: 'tintRed' },
+  precision: { key: 'precision', label: '建议精度', icon: 'analytics-outline', colorName: 'teal', tintName: 'tintTeal' },
+};
+
+function buildActionImpactMetrics(action?: DailyPlanAction | null): ImpactMetricChip[] {
+  const picked: ImpactMetricChip[] = [];
+  const seen = new Set<string>();
+  const add = (...keys: string[]) => {
+    for (const key of keys) {
+      const metric = IMPACT_METRIC_DEFINITIONS[key];
+      if (!metric || seen.has(metric.key) || picked.length >= 3) continue;
+      seen.add(metric.key);
+      picked.push(metric);
+    }
+  };
+
+  if (!action) {
+    add('precision');
+    return picked;
+  }
+
+  const metricText = `${action.metric_key ?? ''} ${action.verification?.metric ?? ''}`.toLowerCase();
+  const haystack = [
+    action.domain,
+    action.action_key,
+    action.title,
+    action.why,
+    action.when,
+    action.metric_key,
+    action.target_value,
+    action.verification?.metric,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  if (/sleep|sleep_score|睡眠|入睡|上床|bedtime/.test(metricText)) add('sleep_score');
+  if (/hrv|recovery|body_battery|恢复/.test(metricText)) add('hrv');
+  if (/spo2|oxygen|血氧/.test(metricText)) add('spo2');
+  if (/bmi|weight|waist|体重|腰围/.test(metricText)) add('bmi', 'body_fat');
+  if (/body_fat|fat|体脂/.test(metricText)) add('body_fat');
+  if (/vo2|max|cardio|最大摄氧/.test(metricText)) add('vo2max');
+  if (/bp|blood_pressure|pressure|血压/.test(metricText)) add('blood_pressure');
+  if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|lab|blood|血液|血糖|血脂|生化/.test(metricText)) add('labs');
+
+  if (/sleep|bed|睡眠|入睡|上床|节律|夜间|spo2|血氧|hrv|恢复/.test(haystack)) add('sleep_score', 'hrv', 'spo2');
+  if (/mood|emotion|mental|stress|breath|情绪|压力|呼吸|焦虑|冥想/.test(haystack)) add('hrv', 'sleep_score');
+  if (/movement|exercise|workout|walk|run|zone|运动|训练|步行|跑|vo2|max|最大摄氧|有氧/.test(haystack)) add('vo2max', 'hrv', 'body_fat');
+  if (/nutrition|diet|meal|protein|water|food|calorie|饮食|蛋白|热量|饮水|午餐|晚餐|早餐/.test(haystack)) add('body_fat', 'bmi', 'labs');
+  if (/weight|waist|bmi|body fat|体重|腰围|体脂|身材/.test(haystack)) add('bmi', 'body_fat');
+  if (/bp|blood pressure|血压/.test(haystack)) add('blood_pressure');
+  if (/lab|blood|ldl|hdl|tg|hba1c|glucose|alt|ast|血液|血糖|血脂|生化|体检|化验/.test(haystack)) add('labs');
+
+  if (picked.length === 0) add('precision');
+  return picked;
 }
 
 function buildInterventionDomainStatuses(actions: DailyPlanAction[]): InterventionDomainStatus[] {
@@ -1388,6 +1478,18 @@ const styles = StyleSheet.create({
   nextActionEyebrow: { fontSize: 12, fontWeight: '800' },
   nextActionTitle: { fontSize: 18, fontWeight: '800', lineHeight: 23 },
   nextActionReason: { fontSize: 13, lineHeight: 18 },
+  nextActionImpact: { gap: 6 },
+  nextActionImpactLabel: { fontSize: 11, fontWeight: '800' },
+  nextActionImpactChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  nextActionImpactChip: {
+    minHeight: 26,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  nextActionImpactText: { fontSize: 11, fontWeight: '800' },
   nextActionError: {
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm,

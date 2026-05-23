@@ -347,6 +347,41 @@ describe('TodayScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
 
+  it('connects the next best action to the outcome metrics it is meant to improve', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+        metric_key: 'bmi',
+        why: '体重 + 腰围比单看 BMI 更能反映代谢改善。',
+      },
+    ];
+
+    const { getByText } = render(<TodayScreen />);
+
+    expect(getByText('影响指标')).toBeTruthy();
+    expect(getByText('BMI')).toBeTruthy();
+    expect(getByText('体脂')).toBeTruthy();
+  });
+
+  it('infers sleep intervention outcomes for sleep actions', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'sleep.bedtime',
+        domain: 'sleep',
+        title: '23:00 上床',
+        why: '稳定入睡节律，减少夜间恢复波动。',
+      },
+    ];
+
+    const { getAllByText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('睡眠分')).toBeTruthy();
+    expect(getAllByText('HRV').length).toBeGreaterThan(1);
+    expect(getAllByText('血氧').length).toBeGreaterThan(1);
+  });
+
   it('lets the user complete the next best action from the top card', async () => {
     mockRecordDailyPlanActionEvent.mockResolvedValueOnce({
       action_state: 'completed',
