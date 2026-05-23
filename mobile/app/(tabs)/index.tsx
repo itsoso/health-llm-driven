@@ -44,6 +44,9 @@ interface TwinSnapshot {
   diastolic_bp?: number | null;
   spo2_avg?: number | null;
   resting_hr?: number | null;
+  bmi?: number | null;
+  body_fat_pct?: number | null;
+  vo2max?: number | null;
 }
 
 type NextActionCompletionState = 'idle' | 'sending' | 'completed' | 'error';
@@ -71,6 +74,17 @@ interface ImpactMetricChip {
   tintName: ImpactMetricTintName;
 }
 
+interface OutcomeFeedbackMetric {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  colorName: ImpactMetricColorName;
+  tintName: ImpactMetricTintName;
+  route: string;
+}
+
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
 }
@@ -79,6 +93,7 @@ function pickTwinSnapshot(twin: any): TwinSnapshot {
   if (!twin) return {};
   const phys = twin.physiological ?? {};
   const labs = twin.labs ?? {};
+  const body = twin.body_composition ?? {};
   // 字段对齐 backend app/twin/schema.py + builder.py:
   //   PhysiologicalState: hrv_latest / hrv_7d_avg / sleep_score_latest /
   //                       resting_hr_latest / spo2_avg / spo2_min_overnight
@@ -91,6 +106,9 @@ function pickTwinSnapshot(twin: any): TwinSnapshot {
     systolic_bp: labs.blood_pressure_systolic ?? null,
     diastolic_bp: labs.blood_pressure_diastolic ?? null,
     spo2_avg: phys.spo2_avg ?? phys.spo2_min_overnight ?? null,
+    bmi: body.bmi ?? null,
+    body_fat_pct: body.body_fat_pct ?? body.body_fat_percentage ?? null,
+    vo2max: phys.vo2max_latest ?? phys.vo2max ?? null,
   };
 }
 
@@ -415,7 +433,7 @@ export default function TodayScreen() {
         )}
 
         <View style={styles.section}>
-          <SectionHeader title="身体反馈" subtitle="可穿戴、环境和长期轨迹" />
+          <SectionHeader title="指标反馈" subtitle="今日行动影响的长期结果" />
           {criticalAlerts.length > 0 && (
             <>
             <SectionHeader title="需要立即处理" subtitle={`${criticalAlerts.length} 条高优先级`} />
@@ -433,58 +451,17 @@ export default function TodayScreen() {
             )}
             </>
           )}
+          <OutcomeFeedbackPanel
+            twinSnapshot={twinSnap}
+            action={nextAction}
+            onOpenMetric={(route) => router.push(route as any)}
+          />
           <TrajectorySnapshotPanel
             snapshot={trajectoryQuery.data}
             loading={trajectoryQuery.isLoading}
             onPress={openTrajectoryChat}
           />
           <EnvironmentCard />
-          <View style={styles.gridRow}>
-            <HeroTile
-              label="HRV"
-              ionIcon="pulse"
-              value={fmt(twinSnap.hrv)}
-              unit={twinSnap.hrv != null ? ' ms' : ''}
-              sub="压力 & 恢复"
-              color={c.teal}
-              bg={c.tintTeal}
-              onPress={() => router.push('/indicator-history?type=hrv' as any)}
-            />
-            <HeroTile
-              label="睡眠"
-              ionIcon="moon"
-              value={fmt(twinSnap.sleep_score)}
-              unit={twinSnap.sleep_score != null ? ' 分' : ''}
-              sub="昨夜评分"
-              color={c.purple}
-              bg={c.tintPurple}
-              onPress={() => router.push('/sleep' as any)}
-            />
-            <HeroTile
-              label="血压"
-              ionIcon="heart"
-              value={
-                twinSnap.systolic_bp && twinSnap.diastolic_bp
-                  ? `${twinSnap.systolic_bp}/${twinSnap.diastolic_bp}`
-                  : '—'
-              }
-              unit=""
-              sub="收缩 / 舒张"
-              color={c.pink}
-              bg={c.tintPink}
-              onPress={() => router.push('/indicator-history?type=blood_pressure' as any)}
-            />
-            <HeroTile
-              label="血氧"
-              ionIcon="water"
-              value={fmt(twinSnap.spo2_avg)}
-              unit={twinSnap.spo2_avg != null ? ' %' : ''}
-              sub="夜间均值"
-              color={c.blue}
-              bg={c.tintBlue}
-              onPress={() => router.push('/sleep-spo2-analysis' as any)}
-            />
-          </View>
         </View>
 
         <View style={styles.section}>
@@ -852,6 +829,67 @@ function CompactShortcutSection({
   );
 }
 
+function OutcomeFeedbackPanel({
+  twinSnapshot,
+  action,
+  onOpenMetric,
+}: {
+  twinSnapshot: TwinSnapshot;
+  action?: DailyPlanAction | null;
+  onOpenMetric: (route: string) => void;
+}) {
+  const { c } = useTheme();
+  const metrics = buildOutcomeFeedbackMetrics(twinSnapshot, action);
+
+  return (
+    <View style={[styles.outcomeCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.outcomeHeader}>
+        <View style={[styles.outcomeIcon, { backgroundColor: c.brandLight }]}>
+          <Ionicons name="analytics-outline" size={16} color={c.brand} />
+        </View>
+        <View style={styles.outcomeHeaderText}>
+          <Text style={[styles.outcomeTitle, { color: c.labelPrimary }]}>本轮干预看这些结果</Text>
+          <Text style={[styles.outcomeSubtitle, { color: c.labelTertiary }]}>
+            从可穿戴和体成分验证行动是否有效
+          </Text>
+        </View>
+      </View>
+      <View style={styles.outcomeGrid}>
+        {metrics.map(metric => {
+          const color = c[metric.colorName];
+          return (
+            <Pressable
+              key={metric.key}
+              onPress={() => onOpenMetric(metric.route)}
+              style={({ pressed }) => [
+                styles.outcomeMetric,
+                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${metric.label} ${metric.value}`}
+            >
+              <View style={styles.outcomeMetricTop}>
+                <View style={[styles.outcomeMetricIcon, { backgroundColor: c[metric.tintName] }]}>
+                  <Ionicons name={metric.icon} size={14} color={color} />
+                </View>
+                <Text style={[styles.outcomeMetricLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                  {metric.label}
+                </Text>
+              </View>
+              <Text style={[styles.outcomeMetricValue, { color }]} numberOfLines={1}>
+                {metric.value}
+              </Text>
+              <Text style={[styles.outcomeMetricDetail, { color: c.labelTertiary }]} numberOfLines={1}>
+                {metric.detail}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function NextBestActionCard({
   action,
   loading,
@@ -1082,6 +1120,149 @@ function buildActionImpactMetrics(action?: DailyPlanAction | null): ImpactMetric
   return picked;
 }
 
+function buildOutcomeFeedbackMetrics(
+  twinSnapshot: TwinSnapshot,
+  action?: DailyPlanAction | null,
+): OutcomeFeedbackMetric[] {
+  const metrics: OutcomeFeedbackMetric[] = [];
+  const seen = new Set<string>();
+  const add = (key: string) => {
+    const normalizedKey = key === 'bmi' || key === 'body_fat' ? 'body_shape' : key;
+    if (seen.has(normalizedKey) || metrics.length >= 4) return;
+    const metric = buildOutcomeFeedbackMetric(normalizedKey, twinSnapshot);
+    if (!metric) return;
+    seen.add(normalizedKey);
+    metrics.push(metric);
+  };
+
+  const deferredImpactKeys: string[] = [];
+  buildActionImpactMetrics(action).forEach(metric => {
+    if (metric.key === 'labs' || metric.key === 'precision') {
+      deferredImpactKeys.push(metric.key);
+      return;
+    }
+    add(metric.key);
+  });
+  ['sleep_score', 'hrv', 'spo2', 'body_shape', 'blood_pressure'].forEach(add);
+  deferredImpactKeys.forEach(add);
+
+  return metrics.slice(0, 4);
+}
+
+function buildOutcomeFeedbackMetric(
+  key: string,
+  twinSnapshot: TwinSnapshot,
+): OutcomeFeedbackMetric | null {
+  if (key === 'sleep_score') {
+    return {
+      key,
+      label: '睡眠分',
+      value: twinSnapshot.sleep_score != null ? `${fmt(twinSnapshot.sleep_score)} 分` : '待同步',
+      detail: '睡眠干预',
+      icon: 'moon-outline',
+      colorName: 'purple',
+      tintName: 'tintPurple',
+      route: '/sleep',
+    };
+  }
+  if (key === 'hrv') {
+    return {
+      key,
+      label: 'HRV',
+      value: twinSnapshot.hrv != null ? `${fmt(twinSnapshot.hrv)} ms` : '待同步',
+      detail: '恢复弹性',
+      icon: 'pulse-outline',
+      colorName: 'teal',
+      tintName: 'tintTeal',
+      route: '/indicator-history?type=hrv',
+    };
+  }
+  if (key === 'spo2') {
+    return {
+      key,
+      label: '血氧',
+      value: twinSnapshot.spo2_avg != null ? `${fmt(twinSnapshot.spo2_avg)} %` : '待同步',
+      detail: '夜间均值',
+      icon: 'water-outline',
+      colorName: 'blue',
+      tintName: 'tintBlue',
+      route: '/sleep-spo2-analysis',
+    };
+  }
+  if (key === 'body_shape') {
+    const bmi = twinSnapshot.bmi;
+    const bodyFat = twinSnapshot.body_fat_pct;
+    const value = bmi != null && bodyFat != null
+      ? `${fmt(bmi)} / ${fmt(bodyFat)}%`
+      : bmi != null
+        ? `${fmt(bmi)} BMI`
+        : bodyFat != null
+          ? `${fmt(bodyFat)}%`
+          : '待记录';
+    return {
+      key,
+      label: 'BMI/体脂',
+      value,
+      detail: '身材反馈',
+      icon: 'body-outline',
+      colorName: 'green',
+      tintName: 'tintGreen',
+      route: '/body-measurements?focus=morning',
+    };
+  }
+  if (key === 'blood_pressure') {
+    return {
+      key,
+      label: '血压',
+      value: twinSnapshot.systolic_bp && twinSnapshot.diastolic_bp
+        ? `${twinSnapshot.systolic_bp}/${twinSnapshot.diastolic_bp}`
+        : '待记录',
+      detail: '心血管反馈',
+      icon: 'heart-outline',
+      colorName: 'pink',
+      tintName: 'tintPink',
+      route: '/indicator-history?type=blood_pressure',
+    };
+  }
+  if (key === 'vo2max') {
+    return {
+      key,
+      label: 'VO2max',
+      value: twinSnapshot.vo2max != null ? fmt(twinSnapshot.vo2max) : '待估算',
+      detail: '有氧能力',
+      icon: 'walk-outline',
+      colorName: 'green',
+      tintName: 'tintGreen',
+      route: '/movement-plan',
+    };
+  }
+  if (key === 'labs') {
+    return {
+      key,
+      label: '血液/生化',
+      value: '待复盘',
+      detail: '化验指标',
+      icon: 'flask-outline',
+      colorName: 'red',
+      tintName: 'tintRed',
+      route: '/medical-exams',
+    };
+  }
+  if (key === 'precision') {
+    return {
+      key,
+      label: '建议精度',
+      value: '4 源',
+      detail: '画像完整度',
+      icon: 'analytics-outline',
+      colorName: 'teal',
+      tintName: 'tintTeal',
+      route: '/(tabs)/chat',
+    };
+  }
+  return null;
+}
+
 function buildInterventionDomainStatuses(actions: DailyPlanAction[]): InterventionDomainStatus[] {
   const counts = INTERVENTION_DOMAINS.reduce<Record<InterventionDomainKey, number>>((acc, domain) => {
     acc[domain.key] = 0;
@@ -1194,47 +1375,6 @@ function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => voi
         )}
       </View>
       <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-    </TouchableOpacity>
-  );
-}
-
-function HeroTile({
-  label, value, unit, sub, emoji, ionIcon, color, bg, onPress,
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-  sub?: string;
-  emoji?: string;
-  ionIcon?: keyof typeof Ionicons.glyphMap;
-  color: string;
-  bg: string;
-  onPress: () => void;
-}) {
-  const { c } = useTheme();
-  return (
-    <TouchableOpacity
-      style={[styles.tile, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-      onPress={onPress}
-      activeOpacity={0.75}
-      accessibilityLabel={`${label} ${value}${unit ?? ''}`}
-    >
-      <View style={styles.tileHeader}>
-        <View style={[styles.iconDot, { backgroundColor: bg }]}>
-          {emoji ? (
-            <Text style={{ fontSize: 13 }}>{emoji}</Text>
-          ) : ionIcon ? (
-            <Ionicons name={ionIcon} size={14} color={color} />
-          ) : null}
-        </View>
-        <Text style={[styles.tileLabel, { color: c.labelSecondary }]}>{label}</Text>
-        <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} style={{ marginLeft: 'auto' }} />
-      </View>
-      <View style={styles.tileValueRow}>
-        <Text style={[styles.tileValue, { color }]} numberOfLines={1}>{value}</Text>
-        {unit ? <Text style={[styles.tileUnit, { color }]}>{unit}</Text> : null}
-      </View>
-      {sub ? <Text style={[styles.tileSub, { color: c.labelTertiary }]} numberOfLines={1}>{sub}</Text> : null}
     </TouchableOpacity>
   );
 }
@@ -1487,6 +1627,44 @@ const styles = StyleSheet.create({
   sectionSubtitle: { fontSize: 12, fontWeight: '500' },
   sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
   sectionActionText: { fontSize: 13, fontWeight: '700' },
+  outcomeCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  outcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  outcomeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outcomeHeaderText: { flex: 1, gap: 2 },
+  outcomeTitle: { fontSize: 15, fontWeight: '800' },
+  outcomeSubtitle: { fontSize: 12, fontWeight: '500' },
+  outcomeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  outcomeMetric: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    minWidth: 142,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    gap: 5,
+  },
+  outcomeMetricTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  outcomeMetricIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outcomeMetricLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
+  outcomeMetricValue: { fontSize: 19, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: 0 },
+  outcomeMetricDetail: { fontSize: 11, fontWeight: '600' },
   compactSection: { gap: spacing.sm },
   shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   shortcutPill: {
@@ -1537,27 +1715,4 @@ const styles = StyleSheet.create({
   decidedText: { fontSize: 11, color: '#475569', fontWeight: '600' },
   moreLink: { paddingVertical: spacing.xs, alignItems: 'center' },
   moreText: { fontSize: 13, fontWeight: '500' },
-  // 2x2 grid 学健康记录 VitalsGrid 风格
-  gridRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  tile: {
-    flexBasis: '47.5%',
-    flexGrow: 1,
-    minWidth: 150,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: 14,
-  },
-  tileHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  iconDot: {
-    width: 24, height: 24, borderRadius: 7,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  tileLabel: { fontSize: 13, fontWeight: '700' },
-  tileValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
-  tileValue: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: 0 },
-  tileUnit: { fontSize: 13, fontWeight: '500' },
-  tileSub: { fontSize: 11, marginTop: 4 },
 });

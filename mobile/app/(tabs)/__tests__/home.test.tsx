@@ -11,6 +11,7 @@ const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: 
   return <Text>{title}</Text>;
 });
 let mockDailyPlanActions: unknown[] = [];
+let mockTwinData: Record<string, unknown> = {};
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -26,7 +27,7 @@ jest.mock('@tanstack/react-query', () => ({
       return { data: [], isLoading: false, isRefetching: false };
     }
     if (key.includes('twin')) {
-      return { data: {}, isLoading: false, isRefetching: false };
+      return { data: mockTwinData, isLoading: false, isRefetching: false };
     }
     if (key.includes('daily-plan')) {
       return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching: false };
@@ -106,8 +107,18 @@ jest.mock('../../../components/dashboard/TodayPlanPanel', () => {
   MockTodayPlanPanel.displayName = 'MockTodayPlanPanel';
   return MockTodayPlanPanel;
 });
-jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => 'TrajectorySnapshotPanel');
-jest.mock('../../../components/dashboard/EnvironmentCard', () => 'EnvironmentCard');
+jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => {
+  const { Text } = require('react-native');
+  const MockTrajectorySnapshotPanel = () => <Text>健康轨迹</Text>;
+  MockTrajectorySnapshotPanel.displayName = 'MockTrajectorySnapshotPanel';
+  return MockTrajectorySnapshotPanel;
+});
+jest.mock('../../../components/dashboard/EnvironmentCard', () => {
+  const { Text } = require('react-native');
+  const MockEnvironmentCard = () => <Text>环境反馈</Text>;
+  MockEnvironmentCard.displayName = 'MockEnvironmentCard';
+  return MockEnvironmentCard;
+});
 jest.mock('../../../components/dashboard/DataFreshnessPanel', () => {
   const { Text } = require('react-native');
   const MockDataFreshnessPanel = () => <Text>Agent 数据视野</Text>;
@@ -133,6 +144,7 @@ describe('TodayScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDailyPlanActions = [];
+    mockTwinData = {};
   });
 
   it('does not show the low-value Agent data visibility panel on the home feed', () => {
@@ -161,20 +173,20 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('余下计划')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
-  it('groups the home feed into agent workspace, action, feedback, weekly, and entry sections', () => {
+  it('groups the home feed into agent workspace, action, outcome feedback, weekly, and entry sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('Agent 工作台')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('干预闭环'));
     expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动'));
-    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('身体反馈'));
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('本周建议'));
+    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('指标反馈'));
+    expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.indexOf('本周建议'));
     expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
@@ -210,15 +222,72 @@ describe('TodayScreen', () => {
     expect(screen.getByText('验证指标')).toBeTruthy();
   });
 
-  it('puts the agent workspace before action and body feedback sections', () => {
+  it('puts the agent workspace before action and outcome feedback sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('Agent 工作台')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 工作台')).toBeLessThan(textFlow.indexOf('今日行动'));
-    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('身体反馈'));
+    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('指标反馈'));
+  });
+
+  it('prioritizes outcome feedback before trajectory and environment details', () => {
+    mockTwinData = {
+      physiological: {
+        sleep_score_latest: 89,
+        hrv_latest: 62,
+        spo2_avg: 93,
+      },
+      body_composition: {
+        bmi: 24.1,
+        body_fat_pct: 21.8,
+      },
+    };
+
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('本轮干预看这些结果')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康轨迹')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('环境反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.indexOf('健康轨迹'));
+    expect(textFlow.indexOf('健康轨迹')).toBeLessThan(textFlow.indexOf('环境反馈'));
+  });
+
+  it('connects wearable and body composition values to the outcome feedback panel', () => {
+    mockTwinData = {
+      physiological: {
+        sleep_score_latest: 89,
+        hrv_latest: 62,
+        spo2_avg: 93,
+      },
+      body_composition: {
+        bmi: 24.1,
+        body_fat_pct: 21.8,
+      },
+    };
+    mockDailyPlanActions = [
+      {
+        action_key: 'nutrition.protein_target',
+        domain: 'nutrition',
+        title: '今天蛋白质目标',
+        verification: { metric: 'body_fat', window_days: 14 },
+      },
+    ];
+
+    const { getByText } = render(<TodayScreen />);
+
+    expect(getByText('BMI/体脂')).toBeTruthy();
+    expect(getByText('24.1 / 21.8%')).toBeTruthy();
+    expect(getByText('睡眠分')).toBeTruthy();
+    expect(getByText('89 分')).toBeTruthy();
+    expect(getByText('HRV')).toBeTruthy();
+    expect(getByText('62 ms')).toBeTruthy();
+    expect(getByText('血氧')).toBeTruthy();
+    expect(getByText('93 %')).toBeTruthy();
   });
 
   it('shows the lifestyle intervention loop across diet, sleep, movement, supplements, and emotion', () => {
@@ -406,9 +475,9 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getAllByText, getByText } = render(<TodayScreen />);
+    const { getAllByText } = render(<TodayScreen />);
 
-    expect(getByText('睡眠分')).toBeTruthy();
+    expect(getAllByText('睡眠分').length).toBeGreaterThan(1);
     expect(getAllByText('HRV').length).toBeGreaterThan(1);
     expect(getAllByText('血氧').length).toBeGreaterThan(1);
   });
