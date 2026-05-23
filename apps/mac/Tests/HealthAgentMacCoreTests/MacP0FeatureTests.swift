@@ -243,6 +243,8 @@ final class MacP0FeatureTests: XCTestCase {
             "provider": "wegene",
             "test_date": "2026-05-15",
             "report_id": "wg-20260515",
+            "profile_count": 2,
+            "total_variant_count": 3,
             "record_count": 2,
             "high_risk_count": 1,
             "medium_risk_count": 1,
@@ -257,7 +259,11 @@ final class MacP0FeatureTests: XCTestCase {
             "top_findings": [
               {"id": 101, "rsid": "rs1061235", "category": "drug_sensitivity", "gene_name": "HLA-A*31:01", "variant_name": "卡马西平皮肤不良反应", "genotype": "AA", "result_label": "positive", "risk_level": "high", "evidence_level": "screening", "description": "提示用药前需要医生确认。", "variant_nature": "risk"}
             ],
-            "latest_import": {"status": "done", "raw_record_count": 18191, "matched_count": 2, "finished_at": "2026-05-15T10:00:00"}
+            "profile_summaries": [
+              {"profile_id": 7, "provider": "wegene", "test_date": "2026-05-15", "report_id": "wg-20260515", "record_count": 2, "is_active": true, "latest_import": {"status": "done", "raw_record_count": 18191, "known_total": 1200, "matched_count": 2, "duplicate_count": 3, "unknown_count": 11, "unmapped_count": 18176, "missing_count": 1198, "coverage_pct": 0.0, "finished_at": "2026-05-15T10:00:00"}},
+              {"profile_id": 6, "provider": "wegene", "test_date": "2026-04-10", "report_id": "wg-20260410", "record_count": 1, "is_active": false, "latest_import": null}
+            ],
+            "latest_import": {"status": "done", "raw_record_count": 18191, "known_total": 1200, "matched_count": 2, "duplicate_count": 3, "unknown_count": 11, "unmapped_count": 18176, "missing_count": 1198, "coverage_pct": 0.0, "finished_at": "2026-05-15T10:00:00"}
           },
           "knowledge_summary": {
             "document_count": 3,
@@ -265,6 +271,9 @@ final class MacP0FeatureTests: XCTestCase {
             "entity_count": 1,
             "article_count": 1,
             "edge_count": 1,
+            "source_total_count": 2,
+            "doc_type_counts": [{"level": "article", "count": 1}, {"level": "claim", "count": 1}, {"level": "entity", "count": 1}],
+            "entity_type_counts": [{"level": "gene", "count": 2}],
             "evidence_level_counts": [{"level": "B", "count": 1}],
             "source_counts": [{"source": "dedao:qiuzilong-genetics-07", "count": 3}],
             "recent_documents": [
@@ -297,15 +306,18 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(dataSummary.recentMemory.map(\.objectValue), ["补剂依从率偏低"])
         XCTAssertEqual(dataSummary.guidanceRows.map(\.title), ["Refresh recent health data", "Review weekly intake", "Create medical import"])
         XCTAssertEqual(dataSummary.jobs.map(\.id), [3])
-        XCTAssertEqual(geneticsSummary.metrics.map(\.title), ["Variants", "High Risk", "Medium Risk", "Categories"])
-        XCTAssertEqual(geneticsSummary.metrics.map(\.value), ["2", "1", "1", "2"])
+        XCTAssertEqual(geneticsSummary.metrics.map(\.title), ["Active Variants", "All Variants", "Profiles", "High Risk", "Medium Risk", "Categories"])
+        XCTAssertEqual(geneticsSummary.metrics.map(\.value), ["2", "3", "2", "1", "1", "2"])
+        XCTAssertEqual(geneticsSummary.genomicSummary?.profileCount, 2)
+        XCTAssertEqual(geneticsSummary.genomicSummary?.profileSummaries.first?.latestImport?.unmappedCount, 18176)
         XCTAssertEqual(geneticsSummary.genomicSummary?.topFindings.first?.geneName, "HLA-A*31:01")
         XCTAssertEqual(geneticsSummary.genomicSummary?.topCategories.map(\.category), ["disease_risk", "drug_sensitivity"])
         XCTAssertEqual(geneticsSummary.actionCards.map(\.title), ["MTHFR 基因补剂闭环"])
         XCTAssertEqual(geneticsSummary.guidanceRows.map(\.title), ["Import genome file", "Run risk reanalysis", "Keep clinical boundary"])
         XCTAssertEqual(geneticsSummary.jobs.map(\.id), [1])
-        XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["Documents", "Claims", "Sources", "Edges"])
-        XCTAssertEqual(knowledgeSummary.metrics.map(\.value), ["3", "1", "1", "1"])
+        XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["Documents", "Claims", "Sources", "Edges", "Entity Types"])
+        XCTAssertEqual(knowledgeSummary.metrics.map(\.value), ["3", "1", "2", "1", "1"])
+        XCTAssertEqual(knowledgeSummary.knowledgeSummary?.docTypeCounts.map(\.level), ["article", "claim", "entity"])
         XCTAssertEqual(knowledgeSummary.knowledgeSummary?.recentDocuments.first?.docID, "claim:c_mthfr_c677t_hcy_folate_boundary")
         XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建"])
         XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.title), ["Import Dedao folder", "Rebuild system KB", "Audit source coverage"])

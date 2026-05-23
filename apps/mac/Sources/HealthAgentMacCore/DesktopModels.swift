@@ -516,6 +516,8 @@ public struct GenomicSummary: Decodable, Equatable, Sendable {
     public let provider: String?
     public let testDate: String?
     public let reportID: String?
+    public let profileCount: Int
+    public let totalVariantCount: Int
     public let recordCount: Int
     public let highRiskCount: Int
     public let mediumRiskCount: Int
@@ -523,6 +525,7 @@ public struct GenomicSummary: Decodable, Equatable, Sendable {
     public let infoCount: Int
     public let actionableCount: Int
     public let categoryCount: Int
+    public let profileSummaries: [GenomicProfileSummary]
     public let topCategories: [GenomicCategorySummary]
     public let topFindings: [GenomicFindingSummary]
     public let latestImport: GenomicImportSummary?
@@ -532,6 +535,8 @@ public struct GenomicSummary: Decodable, Equatable, Sendable {
         case provider
         case testDate = "test_date"
         case reportID = "report_id"
+        case profileCount = "profile_count"
+        case totalVariantCount = "total_variant_count"
         case recordCount = "record_count"
         case highRiskCount = "high_risk_count"
         case mediumRiskCount = "medium_risk_count"
@@ -539,8 +544,31 @@ public struct GenomicSummary: Decodable, Equatable, Sendable {
         case infoCount = "info_count"
         case actionableCount = "actionable_count"
         case categoryCount = "category_count"
+        case profileSummaries = "profile_summaries"
         case topCategories = "top_categories"
         case topFindings = "top_findings"
+        case latestImport = "latest_import"
+    }
+}
+
+public struct GenomicProfileSummary: Decodable, Equatable, Identifiable, Sendable {
+    public let profileID: Int
+    public let provider: String?
+    public let testDate: String?
+    public let reportID: String?
+    public let recordCount: Int
+    public let isActive: Bool
+    public let latestImport: GenomicImportSummary?
+
+    public var id: Int { profileID }
+
+    enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case provider
+        case testDate = "test_date"
+        case reportID = "report_id"
+        case recordCount = "record_count"
+        case isActive = "is_active"
         case latestImport = "latest_import"
     }
 }
@@ -600,9 +628,13 @@ public struct GenomicImportSummary: Decodable, Equatable, Sendable {
     public let status: String?
     public let sourceType: String?
     public let rawRecordCount: Int?
+    public let knownTotal: Int?
     public let matchedCount: Int?
     public let duplicateCount: Int?
     public let unknownCount: Int?
+    public let unmappedCount: Int?
+    public let missingCount: Int?
+    public let coveragePct: Double?
     public let finishedAt: String?
     public let rawFileHash: String?
 
@@ -610,9 +642,13 @@ public struct GenomicImportSummary: Decodable, Equatable, Sendable {
         case status
         case sourceType = "source_type"
         case rawRecordCount = "raw_record_count"
+        case knownTotal = "known_total"
         case matchedCount = "matched_count"
         case duplicateCount = "duplicate_count"
         case unknownCount = "unknown_count"
+        case unmappedCount = "unmapped_count"
+        case missingCount = "missing_count"
+        case coveragePct = "coverage_pct"
         case finishedAt = "finished_at"
         case rawFileHash = "raw_file_hash"
     }
@@ -624,6 +660,9 @@ public struct KnowledgeSummary: Decodable, Equatable, Sendable {
     public let entityCount: Int
     public let articleCount: Int
     public let edgeCount: Int
+    public let sourceTotalCount: Int
+    public let docTypeCounts: [KnowledgeCount]
+    public let entityTypeCounts: [KnowledgeCount]
     public let evidenceLevelCounts: [KnowledgeCount]
     public let sourceCounts: [KnowledgeSourceCount]
     public let recentDocuments: [KnowledgeDocumentSummary]
@@ -634,6 +673,9 @@ public struct KnowledgeSummary: Decodable, Equatable, Sendable {
         case entityCount = "entity_count"
         case articleCount = "article_count"
         case edgeCount = "edge_count"
+        case sourceTotalCount = "source_total_count"
+        case docTypeCounts = "doc_type_counts"
+        case entityTypeCounts = "entity_type_counts"
         case evidenceLevelCounts = "evidence_level_counts"
         case sourceCounts = "source_counts"
         case recentDocuments = "recent_documents"

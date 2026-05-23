@@ -85,7 +85,9 @@ public extension DesktopBootstrap {
         case .genetics:
             if let genomicSummary, genomicSummary.recordCount > 0 {
                 return [
-                    .init(id: "variants", title: "Variants", value: formatWorkspaceNumber(Double(genomicSummary.recordCount))),
+                    .init(id: "variants", title: "Active Variants", value: formatWorkspaceNumber(Double(genomicSummary.recordCount))),
+                    .init(id: "all_variants", title: "All Variants", value: formatWorkspaceNumber(Double(genomicSummary.totalVariantCount))),
+                    .init(id: "profiles", title: "Profiles", value: formatWorkspaceNumber(Double(genomicSummary.profileCount))),
                     .init(id: "high_risk", title: "High Risk", value: formatWorkspaceNumber(Double(genomicSummary.highRiskCount))),
                     .init(id: "medium_risk", title: "Medium Risk", value: formatWorkspaceNumber(Double(genomicSummary.mediumRiskCount))),
                     .init(id: "categories", title: "Categories", value: formatWorkspaceNumber(Double(genomicSummary.categoryCount)))
@@ -103,8 +105,9 @@ public extension DesktopBootstrap {
                 return [
                     .init(id: "documents", title: "Documents", value: formatWorkspaceNumber(Double(knowledgeSummary.documentCount))),
                     .init(id: "claims", title: "Claims", value: formatWorkspaceNumber(Double(knowledgeSummary.claimCount))),
-                    .init(id: "sources", title: "Sources", value: formatWorkspaceNumber(Double(knowledgeSummary.sourceCounts.count))),
-                    .init(id: "edges", title: "Edges", value: formatWorkspaceNumber(Double(knowledgeSummary.edgeCount)))
+                    .init(id: "sources", title: "Sources", value: formatWorkspaceNumber(Double(knowledgeSummary.sourceTotalCount))),
+                    .init(id: "edges", title: "Edges", value: formatWorkspaceNumber(Double(knowledgeSummary.edgeCount))),
+                    .init(id: "entity_types", title: "Entity Types", value: formatWorkspaceNumber(Double(knowledgeSummary.entityTypeCounts.count)))
                 ]
             }
             let running = jobs(for: .knowledge).filter { $0.status == "queued" || $0.status == "running" }.count

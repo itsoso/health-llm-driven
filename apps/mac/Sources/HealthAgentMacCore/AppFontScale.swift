@@ -35,3 +35,41 @@ public struct AppFontScale: Equatable, Sendable {
         AppFontScale(level: Self.defaultLevel)
     }
 }
+
+public enum AppFontScaleKeyboardShortcut: Equatable, Sendable {
+    case increase
+    case decrease
+    case reset
+
+    public static func action(
+        forKeyEquivalent keyEquivalent: String,
+        command: Bool,
+        shift: Bool = false,
+        option: Bool = false,
+        control: Bool = false
+    ) -> AppFontScaleKeyboardShortcut? {
+        guard command, !option, !control else { return nil }
+
+        switch keyEquivalent {
+        case "+", "=":
+            return .increase
+        case "-":
+            return .decrease
+        case "0":
+            return .reset
+        default:
+            return nil
+        }
+    }
+
+    public func apply(to scale: AppFontScale) -> AppFontScale {
+        switch self {
+        case .increase:
+            scale.increased()
+        case .decrease:
+            scale.decreased()
+        case .reset:
+            scale.reset()
+        }
+    }
+}

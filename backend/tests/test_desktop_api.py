@@ -116,15 +116,22 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
         test_date=date(2026, 5, 15),
         report_id="wg-20260515",
     )
+    older_profile = GeneticProfile(
+        user_id=user.id,
+        test_provider="wegene",
+        test_date=date(2026, 4, 10),
+        report_id="wg-20260410",
+    )
     other_profile = GeneticProfile(
         user_id=other.id,
         test_provider="wegene",
         test_date=date(2026, 5, 15),
         report_id="other",
     )
-    db.add_all([profile, other_profile])
+    db.add_all([profile, older_profile, other_profile])
     db.commit()
     db.refresh(profile)
+    db.refresh(older_profile)
     db.refresh(other_profile)
     db.add_all([
         GeneticVariant(
@@ -154,6 +161,19 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             description="用于风险分层，不构成诊断。",
         ),
         GeneticVariant(
+            user_id=user.id,
+            profile_id=older_profile.id,
+            rsid="rs1801133",
+            category="nutrition",
+            gene_name="MTHFR",
+            variant_name="叶酸代谢",
+            genotype="TT",
+            result_label="风险升高",
+            risk_level="medium",
+            evidence_level="B",
+            description="用于同型半胱氨酸复查闭环。",
+        ),
+        GeneticVariant(
             user_id=other.id,
             profile_id=other_profile.id,
             rsid="rs999",
@@ -164,6 +184,22 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             risk_level="high",
         ),
     ])
+    from app.models.genetic_data import GeneticImportJob
+    db.add(GeneticImportJob(
+        user_id=user.id,
+        profile_id=profile.id,
+        source_type="txt",
+        provider="wegene",
+        status="done",
+        raw_record_count=18191,
+        known_total=1200,
+        matched_count=2,
+        duplicate_count=3,
+        unknown_count=11,
+        unmapped_count=18176,
+        missing_count=1198,
+        coverage_summary={"panel": "desktop-test"},
+    ))
     db.add_all([
         KBDocument(
             doc_id="claim:c_mthfr_c677t_hcy_folate_boundary",
@@ -258,17 +294,33 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     assert body["recent_records_summary"]["latest_weight"]["value"] == 70.2
     assert body["recent_records_summary"]["latest_blood_pressure"]["value"] == "118/76"
     assert body["genomic_summary"]["record_count"] == 2
+    assert body["genomic_summary"]["profile_count"] == 2
+    assert body["genomic_summary"]["total_variant_count"] == 3
     assert body["genomic_summary"]["high_risk_count"] == 1
     assert body["genomic_summary"]["medium_risk_count"] == 1
     assert body["genomic_summary"]["provider"] == "wegene"
     assert body["genomic_summary"]["top_findings"][0]["gene_name"] == "HLA-A*31:01"
     assert body["genomic_summary"]["top_findings"][0]["genotype"] == "AA"
     assert body["genomic_summary"]["top_categories"][0]["category"] == "disease_risk"
+    assert body["genomic_summary"]["profile_summaries"][0]["profile_id"] == profile.id
+    assert body["genomic_summary"]["profile_summaries"][0]["is_active"] is True
+    assert body["genomic_summary"]["profile_summaries"][0]["record_count"] == 2
+    assert body["genomic_summary"]["profile_summaries"][1]["profile_id"] == older_profile.id
+    assert body["genomic_summary"]["latest_import"]["unmapped_count"] == 18176
+    assert body["genomic_summary"]["latest_import"]["missing_count"] == 1198
+    assert body["genomic_summary"]["latest_import"]["coverage_pct"] == 0.2
     assert body["knowledge_summary"]["document_count"] == 3
     assert body["knowledge_summary"]["claim_count"] == 1
     assert body["knowledge_summary"]["entity_count"] == 1
     assert body["knowledge_summary"]["article_count"] == 1
     assert body["knowledge_summary"]["edge_count"] == 1
+    assert body["knowledge_summary"]["doc_type_counts"] == [
+        {"level": "article", "count": 1},
+        {"level": "claim", "count": 1},
+        {"level": "entity", "count": 1},
+    ]
+    assert body["knowledge_summary"]["entity_type_counts"] == [{"level": "gene", "count": 2}]
+    assert body["knowledge_summary"]["source_total_count"] == 2
     assert body["knowledge_summary"]["source_counts"][0] == {"source": "dedao:qiuzilong-genetics-07", "count": 3}
     assert body["knowledge_summary"]["recent_documents"][0]["doc_id"] == "article:dedao:folate"
     recent_types = [record["type"] for record in body["recent_records_summary"]["recent_records"]]

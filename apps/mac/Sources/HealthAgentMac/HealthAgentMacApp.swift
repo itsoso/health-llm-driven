@@ -12,6 +12,7 @@ struct HealthAgentMacApp: App {
         WindowGroup(id: "main") {
             AppRootView(services: appServices)
                 .appFontScale(AppFontScale(level: appFontScaleLevel))
+                .fontScaleKeyboardShortcuts(level: $appFontScaleLevel)
         }
         MenuBarExtra {
             MenuBarRootView(
@@ -19,6 +20,7 @@ struct HealthAgentMacApp: App {
                 navigation: appServices.navigation
             )
             .appFontScale(AppFontScale(level: appFontScaleLevel))
+            .fontScaleKeyboardShortcuts(level: $appFontScaleLevel)
         } label: {
             Label {
                 Text(appText("Health Agent", appLanguageRaw))
@@ -75,6 +77,67 @@ private enum AppBrandIcon {
 private extension View {
     func appFontScale(_ scale: AppFontScale) -> some View {
         modifier(AppFontScaleViewModifier(scale: scale))
+    }
+
+    func fontScaleKeyboardShortcuts(level: Binding<Int>) -> some View {
+        background(FontScaleKeyboardShortcutBridge(level: level).frame(width: 0, height: 0))
+    }
+}
+
+private struct FontScaleKeyboardShortcutBridge: NSViewRepresentable {
+    @Binding var level: Int
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(level: $level)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.install()
+        return NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.level = $level
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class Coordinator {
+        var level: Binding<Int>
+        private var monitor: Any?
+
+        init(level: Binding<Int>) {
+            self.level = level
+        }
+
+        func install() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self,
+                      let key = event.charactersIgnoringModifiers?.lowercased(),
+                      let action = AppFontScaleKeyboardShortcut.action(
+                        forKeyEquivalent: key,
+                        command: event.modifierFlags.contains(.command),
+                        shift: event.modifierFlags.contains(.shift),
+                        option: event.modifierFlags.contains(.option),
+                        control: event.modifierFlags.contains(.control)
+                      ) else {
+                    return event
+                }
+
+                level.wrappedValue = action.apply(to: AppFontScale(level: level.wrappedValue)).level
+                return nil
+            }
+        }
+
+        func uninstall() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
     }
 }
 
@@ -1168,6 +1231,51 @@ struct WorkspaceOverviewView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
+                        if let latestImport = genomic.latestImport {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(appText("Genetic Import Coverage", appLanguageRaw))
+                                    .font(.callout.weight(.semibold))
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
+                                    coverageMetric(title: "Raw", value: latestImport.rawRecordCount.map { "\($0)" } ?? "—", color: .indigo)
+                                    coverageMetric(title: "Coverage", value: latestImport.coveragePct.map { "\($0)%" } ?? "—", color: .blue)
+                                    coverageMetric(title: "Matched", value: latestImport.matchedCount.map { "\($0)" } ?? "—", color: .teal)
+                                    coverageMetric(title: "Unmapped", value: latestImport.unmappedCount.map { "\($0)" } ?? "—", color: .orange)
+                                    coverageMetric(title: "Missing", value: latestImport.missingCount.map { "\($0)" } ?? "—", color: .red)
+                                }
+                            }
+                            .padding(12)
+                            .background(Color.indigo.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+
+                        if !genomic.profileSummaries.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(appText("Genetic Profiles", appLanguageRaw))
+                                    .font(.callout.weight(.semibold))
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 8)], spacing: 8) {
+                                    ForEach(genomic.profileSummaries.prefix(6)) { profile in
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Image(systemName: profile.isActive ? "checkmark.seal.fill" : "doc.text.fill")
+                                                .foregroundStyle(profile.isActive ? .teal : .secondary)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(profile.provider ?? "Profile #\(profile.profileID)")
+                                                    .font(.callout.weight(.semibold))
+                                                    .lineLimit(1)
+                                                Text([profile.testDate, profile.reportID].compactMap { $0 }.joined(separator: " · "))
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer(minLength: 0)
+                                            Text("\(profile.recordCount)")
+                                                .font(.callout.weight(.bold).monospacedDigit())
+                                        }
+                                        .padding(10)
+                                        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    }
+                                }
+                            }
+                        }
+
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
                             ForEach(genomic.topCategories) { category in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -1245,6 +1353,31 @@ struct WorkspaceOverviewView: View {
             SectionPanel(title: appText("Knowledge Coverage", appLanguageRaw), systemImage: "books.vertical.fill") {
                 if let knowledge = summary.knowledgeSummary, knowledge.documentCount > 0 {
                     VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .top, spacing: 12) {
+                            if !knowledge.docTypeCounts.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(appText("Document Types", appLanguageRaw))
+                                        .font(.callout.weight(.semibold))
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
+                                        ForEach(knowledge.docTypeCounts) { item in
+                                            coverageMetric(title: item.level, value: "\(item.count)", color: .blue)
+                                        }
+                                    }
+                                }
+                            }
+                            if !knowledge.entityTypeCounts.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(appText("Entity Coverage", appLanguageRaw))
+                                        .font(.callout.weight(.semibold))
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
+                                        ForEach(knowledge.entityTypeCounts) { item in
+                                            coverageMetric(title: item.level, value: "\(item.count)", color: .teal)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
                             ForEach(knowledge.sourceCounts.prefix(8)) { source in
                                 HStack {
@@ -1405,6 +1538,22 @@ struct WorkspaceOverviewView: View {
         }
     }
 
+    private func coverageMetric(title: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(appText(title, appLanguageRaw))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(value)
+                .font(.callout.weight(.bold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
     private func geneticRiskColor(_ riskLevel: String?) -> Color {
         switch riskLevel?.lowercased() {
         case "high": .red
@@ -1456,6 +1605,8 @@ private struct WorkspaceMetricCard: View {
         case "steps": "figure.walk"
         case "gene_jobs": "dna"
         case "variants": "dna"
+        case "all_variants": "number.square.fill"
+        case "profiles": "rectangle.stack.fill"
         case "high_risk": "exclamationmark.triangle.fill"
         case "medium_risk": "exclamationmark.circle.fill"
         case "categories": "square.grid.2x2.fill"
@@ -1464,6 +1615,7 @@ private struct WorkspaceMetricCard: View {
         case "claims": "checkmark.seal.fill"
         case "sources": "link"
         case "edges": "point.3.connected.trianglepath.dotted"
+        case "entity_types": "tag.fill"
         case "running": "clock.arrow.circlepath"
         case "action_cards": "checkmark.seal.fill"
         case "focus_domains": "scope"
@@ -1482,6 +1634,8 @@ private struct WorkspaceMetricCard: View {
         case "steps": .blue
         case "gene_jobs": .purple
         case "variants": .purple
+        case "all_variants": .indigo
+        case "profiles": .blue
         case "high_risk": .red
         case "medium_risk": .orange
         case "categories": .indigo
@@ -1490,6 +1644,7 @@ private struct WorkspaceMetricCard: View {
         case "claims": .green
         case "sources": .blue
         case "edges": .indigo
+        case "entity_types": .purple
         case "running": .blue
         case "action_cards": .orange
         case "focus_domains": .cyan

@@ -21,7 +21,7 @@ from app.models.action_card import ActionCard
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import DietRecord, GarminData, SupplementIntake, WaterIntake
 from app.models.desktop_job import DesktopJob
-from app.models.genetic_data import GeneticImportJob, GeneticVariant
+from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 from app.models.memory_fact import MemoryFact
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
@@ -404,6 +404,8 @@ def _empty_genomic_summary() -> dict[str, Any]:
         "provider": None,
         "test_date": None,
         "report_id": None,
+        "profile_count": 0,
+        "total_variant_count": 0,
         "record_count": 0,
         "high_risk_count": 0,
         "medium_risk_count": 0,
@@ -411,6 +413,7 @@ def _empty_genomic_summary() -> dict[str, Any]:
         "info_count": 0,
         "actionable_count": 0,
         "category_count": 0,
+        "profile_summaries": [],
         "top_categories": [],
         "top_findings": [],
         "latest_import": None,
@@ -433,12 +436,82 @@ def _variant_to_finding(variant: GeneticVariant) -> dict[str, Any]:
     }
 
 
+def _coverage_pct(
+    matched_count: int | None,
+    raw_record_count: int | None,
+    known_total: int | None = None,
+) -> float | None:
+    denominator = known_total or raw_record_count
+    if not denominator:
+        return None
+    return round(((matched_count or 0) / denominator) * 100, 1)
+
+
+def _import_to_summary(import_job: GeneticImportJob | None) -> dict[str, Any] | None:
+    if not import_job:
+        return None
+    return {
+        "status": import_job.status,
+        "source_type": import_job.source_type,
+        "raw_record_count": import_job.raw_record_count,
+        "known_total": import_job.known_total,
+        "matched_count": import_job.matched_count,
+        "duplicate_count": import_job.duplicate_count,
+        "unknown_count": import_job.unknown_count,
+        "unmapped_count": import_job.unmapped_count,
+        "missing_count": import_job.missing_count,
+        "coverage_pct": _coverage_pct(
+            import_job.matched_count,
+            import_job.raw_record_count,
+            import_job.known_total,
+        ),
+        "coverage_summary": import_job.coverage_summary or {},
+        "finished_at": import_job.finished_at.isoformat() if import_job.finished_at else None,
+        "raw_file_hash": import_job.raw_file_hash,
+    }
+
+
 def _genomic_summary(db: Session, user_id: int) -> dict[str, Any]:
     from app.services.genetic_report import _resolve_active_profile
 
     profile = _resolve_active_profile(db, user_id)
     if not profile:
         return _empty_genomic_summary()
+
+    profiles = (
+        db.query(GeneticProfile)
+        .filter(GeneticProfile.user_id == user_id)
+        .order_by(desc(GeneticProfile.test_date), desc(GeneticProfile.created_at), desc(GeneticProfile.id))
+        .all()
+    )
+    variant_count_rows = (
+        db.query(GeneticVariant.profile_id, func.count(GeneticVariant.id))
+        .filter(GeneticVariant.user_id == user_id)
+        .group_by(GeneticVariant.profile_id)
+        .all()
+    )
+    variant_counts = {profile_id: int(count) for profile_id, count in variant_count_rows}
+    latest_import_rows = (
+        db.query(GeneticImportJob)
+        .filter(GeneticImportJob.user_id == user_id)
+        .order_by(desc(GeneticImportJob.finished_at), desc(GeneticImportJob.created_at), desc(GeneticImportJob.id))
+        .all()
+    )
+    latest_imports_by_profile: dict[int, GeneticImportJob] = {}
+    for import_job in latest_import_rows:
+        latest_imports_by_profile.setdefault(import_job.profile_id, import_job)
+    profile_summaries = [
+        {
+            "profile_id": item.id,
+            "provider": item.test_provider,
+            "test_date": item.test_date.isoformat() if item.test_date else None,
+            "report_id": item.report_id,
+            "record_count": variant_counts.get(item.id, 0),
+            "is_active": item.id == profile.id,
+            "latest_import": _import_to_summary(latest_imports_by_profile.get(item.id)),
+        }
+        for item in profiles
+    ]
 
     variants = (
         db.query(GeneticVariant)
@@ -482,6 +555,8 @@ def _genomic_summary(db: Session, user_id: int) -> dict[str, Any]:
         "provider": profile.test_provider,
         "test_date": profile.test_date.isoformat() if profile.test_date else None,
         "report_id": profile.report_id,
+        "profile_count": len(profiles),
+        "total_variant_count": sum(variant_counts.values()),
         "record_count": len(variants),
         "high_risk_count": risk_counts.get("high", 0),
         "medium_risk_count": risk_counts.get("medium", 0),
@@ -493,17 +568,9 @@ def _genomic_summary(db: Session, user_id: int) -> dict[str, Any]:
             category_counts.values(),
             key=lambda item: (-int(item["count"]), str(item["category"])),
         )[:8],
+        "profile_summaries": profile_summaries[:8],
         "top_findings": [_variant_to_finding(variant) for variant in top_findings],
-        "latest_import": {
-            "status": latest_import.status,
-            "source_type": latest_import.source_type,
-            "raw_record_count": latest_import.raw_record_count,
-            "matched_count": latest_import.matched_count,
-            "duplicate_count": latest_import.duplicate_count,
-            "unknown_count": latest_import.unknown_count,
-            "finished_at": latest_import.finished_at.isoformat() if latest_import.finished_at else None,
-            "raw_file_hash": latest_import.raw_file_hash,
-        } if latest_import else None,
+        "latest_import": _import_to_summary(latest_import),
     }
 
 
@@ -517,11 +584,14 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
     doc_type_counts = Counter(doc.doc_type or "unknown" for doc in docs)
     source_counts: Counter[str] = Counter()
     evidence_counts: Counter[str] = Counter()
+    entity_type_counts: Counter[str] = Counter()
     for doc in docs:
         for source in doc.sources or []:
             source_counts[str(source)] += 1
         if doc.doc_type == "claim" and doc.evidence_level:
             evidence_counts[str(doc.evidence_level)] += 1
+        if doc.entity_type:
+            entity_type_counts[str(doc.entity_type)] += 1
 
     recent_documents = [
         {
@@ -542,6 +612,15 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
         "entity_count": doc_type_counts.get("entity", 0),
         "article_count": doc_type_counts.get("article", 0),
         "edge_count": db.query(func.count(KBEdge.edge_id)).scalar() or 0,
+        "source_total_count": len(source_counts),
+        "doc_type_counts": [
+            {"level": doc_type, "count": count}
+            for doc_type, count in sorted(doc_type_counts.items())
+        ],
+        "entity_type_counts": [
+            {"level": entity_type, "count": count}
+            for entity_type, count in entity_type_counts.most_common(8)
+        ],
         "evidence_level_counts": [
             {"level": level, "count": count}
             for level, count in sorted(evidence_counts.items())
