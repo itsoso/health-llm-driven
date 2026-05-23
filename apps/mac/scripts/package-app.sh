@@ -78,11 +78,16 @@ APP_BUNDLE="${OUTPUT_DIR}/${BUNDLE_NAME}"
 CONTENTS_DIR="${APP_BUNDLE}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
+SOURCE_RESOURCES_DIR="${PROJECT_DIR}/Sources/HealthAgentMac/Resources"
 
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 cp "${EXECUTABLE}" "${MACOS_DIR}/${APP_NAME}"
 chmod 755 "${MACOS_DIR}/${APP_NAME}"
+
+if [[ -d "${SOURCE_RESOURCES_DIR}" ]]; then
+  cp -R "${SOURCE_RESOURCES_DIR}/." "${RESOURCES_DIR}/"
+fi
 
 cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -101,6 +106,8 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <string>6.0</string>
   <key>CFBundleName</key>
   <string>健康 Agent</string>
+  <key>CFBundleIconFile</key>
+  <string>HealthAgentIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

@@ -15,7 +15,10 @@ let package = Package(
         .target(name: "HealthAgentMacCore"),
         .executableTarget(
             name: "HealthAgentMac",
-            dependencies: ["HealthAgentMacCore"]
+            dependencies: ["HealthAgentMacCore"],
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "HealthAgentMacCoreTests",

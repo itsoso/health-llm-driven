@@ -1,4 +1,5 @@
 import HealthAgentMacCore
+import AppKit
 import SwiftUI
 
 @main
@@ -12,12 +13,18 @@ struct HealthAgentMacApp: App {
             AppRootView(services: appServices)
                 .appFontScale(AppFontScale(level: appFontScaleLevel))
         }
-        MenuBarExtra(appText("Health Agent", appLanguageRaw), systemImage: "heart.text.square") {
+        MenuBarExtra {
             MenuBarRootView(
                 viewModel: appServices.todayViewModel,
                 navigation: appServices.navigation
             )
             .appFontScale(AppFontScale(level: appFontScaleLevel))
+        } label: {
+            Label {
+                Text(appText("Health Agent", appLanguageRaw))
+            } icon: {
+                Image(nsImage: AppBrandIcon.statusBarImage)
+            }
         }
         .commands {
             CommandMenu(appText("Health Agent", appLanguageRaw)) {
@@ -46,6 +53,22 @@ struct HealthAgentMacApp: App {
                 .keyboardShortcut("0", modifiers: [.command])
             }
         }
+    }
+}
+
+private enum AppBrandIcon {
+    static var statusBarImage: NSImage {
+        let image: NSImage
+        if let bundledImage = NSImage(named: "StatusBarIconTemplate") {
+            image = bundledImage
+        } else if let resourceURL = Bundle.module.url(forResource: "StatusBarIconTemplate", withExtension: "png"),
+                  let moduleImage = NSImage(contentsOf: resourceURL) {
+            image = moduleImage
+        } else {
+            image = NSImage(systemSymbolName: "heart.text.square", accessibilityDescription: "Health Agent") ?? NSImage()
+        }
+        image.isTemplate = true
+        return image
     }
 }
 
