@@ -50,6 +50,10 @@ node_modules/
 out/
 *.log
 
+# SwiftPM
+.build/
+apps/mac/.build/
+
 # OS
 .DS_Store
 Thumbs.db
