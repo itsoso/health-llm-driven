@@ -504,7 +504,7 @@ struct RecordHubView: View {
                             quickText = structuredText()
                         }
                         Button(appText(isSubmitting ? "Saving..." : "Save Structured", appLanguageRaw)) {
-                            Task { await submit(text: structuredText()) }
+                            Task { await submitStructured() }
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(isSubmitting || structuredText().isEmpty)
@@ -583,6 +583,56 @@ struct RecordHubView: View {
         }
     }
 
+    private func submitStructured() async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result: QuickRecordResult
+            switch recordType {
+            case .diet:
+                let food = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !food.isEmpty else { return }
+                result = try await client.recordDiet(
+                    foodItems: food,
+                    calories: parseDouble(calories),
+                    protein: parseDouble(protein)
+                )
+            case .water:
+                guard let amount = parseInt(waterMl), amount > 0 else {
+                    resultMessage = "请输入有效饮水量。"
+                    return
+                }
+                result = try await client.recordWater(amountMl: amount)
+            case .supplement:
+                let text = [supplementName, supplementDose]
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                guard !text.isEmpty else { return }
+                result = try await client.quickRecord(text: "补剂\(text)")
+            case .weight:
+                guard let weight = parseDouble(weightKg), weight > 0 else {
+                    resultMessage = "请输入有效体重。"
+                    return
+                }
+                result = try await client.recordWeight(weightKg: weight)
+            case .bloodPressure:
+                guard let systolicValue = parseInt(systolic), let diastolicValue = parseInt(diastolic) else {
+                    resultMessage = "请输入有效血压。"
+                    return
+                }
+                result = try await client.recordBloodPressure(systolic: systolicValue, diastolic: diastolicValue)
+            case .symptom:
+                let text = symptom.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                result = try await client.recordSymptom(description: text)
+            }
+            handleRecordResult(result, fallbackText: structuredText())
+        } catch {
+            resultMessage = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
     private func submit(text rawText: String) async {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -590,16 +640,28 @@ struct RecordHubView: View {
         defer { isSubmitting = false }
         do {
             let result = try await client.quickRecord(text: text)
-            resultMessage = result.message
-            if result.success {
-                quickText = ""
-                recentRecords.removeAll { $0 == text }
-                recentRecords.insert(text, at: 0)
-                recentRecords = Array(recentRecords.prefix(8))
-            }
+            handleRecordResult(result, fallbackText: text)
         } catch {
             resultMessage = "Save failed: \(error.localizedDescription)"
         }
+    }
+
+    private func handleRecordResult(_ result: QuickRecordResult, fallbackText: String) {
+        resultMessage = result.message
+        if result.success {
+            quickText = ""
+            recentRecords.removeAll { $0 == fallbackText }
+            recentRecords.insert(fallbackText, at: 0)
+            recentRecords = Array(recentRecords.prefix(8))
+        }
+    }
+
+    private func parseDouble(_ rawValue: String) -> Double? {
+        Double(rawValue.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "."))
+    }
+
+    private func parseInt(_ rawValue: String) -> Int? {
+        Int(rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 

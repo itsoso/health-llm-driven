@@ -1,10 +1,23 @@
 import Foundation
 
-public enum APIError: Error, Equatable {
+public enum APIError: Error, Equatable, LocalizedError {
     case unauthorized
     case invalidURL
-    case httpStatus(Int)
+    case httpStatus(Int, String?)
     case emptyResponse
+
+    public var errorDescription: String? {
+        switch self {
+        case .unauthorized:
+            "登录已过期，请重新登录。"
+        case .invalidURL:
+            "API 地址无效。"
+        case .httpStatus(let status, let message):
+            message.map { "HTTP \(status): \($0)" } ?? "HTTP \(status)"
+        case .emptyResponse:
+            "服务器没有返回有效响应。"
+        }
+    }
 }
 
 public protocol AuthTokenProviding: AnyObject, Sendable {
@@ -74,8 +87,27 @@ public final class APIClient: @unchecked Sendable {
             throw APIError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw APIError.httpStatus(http.statusCode)
+            throw APIError.httpStatus(http.statusCode, Self.errorMessage(from: data))
         }
         return try decoder.decode(T.self, from: data)
+    }
+
+    private static func errorMessage(from data: Data) -> String? {
+        guard !data.isEmpty else {
+            return nil
+        }
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let detail = object["detail"] {
+            if let message = detail as? String {
+                return message
+            }
+            if JSONSerialization.isValidJSONObject(detail),
+               let detailData = try? JSONSerialization.data(withJSONObject: detail),
+               let message = String(data: detailData, encoding: .utf8) {
+                return message
+            }
+            return String(describing: detail)
+        }
+        return String(data: data, encoding: .utf8)
     }
 }

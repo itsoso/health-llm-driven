@@ -76,6 +76,29 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(result.success)
     }
 
+    func testRecordClientPostsStructuredWeightToTypedEndpoint() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/weight/records")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertNotNil(body?["record_date"] as? String)
+            XCTAssertEqual(body?["weight"] as? Double, 70.2)
+            let data = #"{"id":12,"user_id":3,"record_date":"2026-05-23","weight":70.2}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordWeight(weightKg: 70.2)
+
+        XCTAssertEqual(result.type, "weight")
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "已记录体重 70.2kg")
+    }
+
     func testDesktopJobClientCreatesListsDetailsAndRetriesJobs() async throws {
         var call = 0
         URLProtocolStub.handler = { request in

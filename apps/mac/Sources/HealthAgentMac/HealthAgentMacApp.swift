@@ -216,8 +216,8 @@ struct LoginView: View {
             onLogin()
         } catch APIError.unauthorized {
             errorMessage = "用户名或密码错误。"
-        } catch APIError.httpStatus(let status) {
-            errorMessage = "登录失败，HTTP \(status)。"
+        } catch APIError.httpStatus(let status, let message) {
+            errorMessage = message.map { "登录失败，HTTP \(status)：\($0)" } ?? "登录失败，HTTP \(status)。"
         } catch {
             errorMessage = "登录失败：\(error.localizedDescription)"
         }

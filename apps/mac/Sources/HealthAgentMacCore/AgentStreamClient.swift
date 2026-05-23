@@ -118,7 +118,7 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
             throw APIError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw APIError.httpStatus(http.statusCode)
+            throw APIError.httpStatus(http.statusCode, nil)
         }
     }
 

@@ -60,4 +60,24 @@ final class APIClientTests: XCTestCase {
             XCTAssertNil(tokenProvider.token)
         }
     }
+
+    func testAPIClientSurfacesServerDetailOnHTTPError() async throws {
+        URLProtocolStub.handler = { request in
+            let data = #"{"detail":"无法识别体重记录"}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token-123"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        do {
+            let _: DesktopBootstrap = try await client.get("desktop/bootstrap")
+            XCTFail("Expected HTTP status error")
+        } catch APIError.httpStatus(let status, let message) {
+            XCTAssertEqual(status, 400)
+            XCTAssertEqual(message, "无法识别体重记录")
+        }
+    }
 }
