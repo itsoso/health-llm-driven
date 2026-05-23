@@ -37,6 +37,8 @@ public struct DesktopWorkspaceSummary: Equatable, Sendable {
     public let metrics: [DesktopWorkspaceMetric]
     public let focusDomains: [String]
     public let recentMemory: [MemoryFactSummary]
+    public let recentRecords: [DesktopRecordMetric]
+    public let actionCards: [ActionCardSummary]
     public let jobs: [DesktopJobSummary]
 }
 
@@ -48,7 +50,9 @@ public extension DesktopBootstrap {
             subtitle: kind.subtitle,
             metrics: metrics(for: kind),
             focusDomains: trajectory.focusDomains ?? [],
-            recentMemory: recentMemory,
+            recentMemory: recentMemory.filter { !$0.objectValue.isLowSignalWorkspaceMemory },
+            recentRecords: recentRecords(for: kind),
+            actionCards: actionCards(for: kind),
             jobs: jobs(for: kind)
         )
     }
@@ -57,9 +61,12 @@ public extension DesktopBootstrap {
         switch kind {
         case .data:
             return [
-                .init(id: "diet_calories", title: "Diet", value: "\(recentRecordsSummary.diet?.todayCalories ?? 0) kcal"),
-                .init(id: "water_ml", title: "Water", value: "\(recentRecordsSummary.water?.todayTotalMl ?? 0) ml"),
-                .init(id: "focus_domains", title: "Focus", value: "\(trajectory.focusDomains?.count ?? 0)")
+                .init(id: "diet_calories", title: "Diet 7d", value: "\(formatWorkspaceNumber(recentRecordsSummary.diet?.last7Calories ?? recentRecordsSummary.diet?.todayCalories ?? 0)) kcal"),
+                .init(id: "water_ml", title: "Water 7d", value: "\(formatWorkspaceNumber(Double(recentRecordsSummary.water?.last7TotalMl ?? recentRecordsSummary.water?.todayTotalMl ?? 0))) ml"),
+                .init(id: "supplements", title: "Supplements 7d", value: "\(recentRecordsSummary.supplements?.last7Count ?? recentRecordsSummary.supplements?.todayCount ?? 0)"),
+                .init(id: "latest_weight", title: "Latest Weight", value: recentRecordsSummary.latestWeight?.displayValue ?? "—"),
+                .init(id: "latest_bp", title: "Latest BP", value: recentRecordsSummary.latestBloodPressure?.displayValue ?? "—"),
+                .init(id: "steps", title: "Steps", value: recentRecordsSummary.latestGarmin?.steps.map { formatWorkspaceNumber(Double($0)) } ?? "—")
             ]
         case .genetics:
             let running = jobs(for: .genetics).filter { $0.status == "queued" || $0.status == "running" }.count
@@ -78,6 +85,31 @@ public extension DesktopBootstrap {
         }
     }
 
+    private func recentRecords(for kind: DesktopWorkspaceKind) -> [DesktopRecordMetric] {
+        guard kind == .data else { return [] }
+        return Array((recentRecordsSummary.recentRecords ?? []).prefix(8))
+    }
+
+    private func actionCards(for kind: DesktopWorkspaceKind) -> [ActionCardSummary] {
+        switch kind {
+        case .data:
+            return actionCards.filter { card in
+                let haystack = card.title.lowercased()
+                return haystack.contains("hba1c")
+                    || haystack.contains("血")
+                    || haystack.contains("体重")
+                    || haystack.contains("饮")
+                    || haystack.contains("补剂")
+                    || haystack.contains("睡")
+                    || haystack.contains("运动")
+            }
+        case .genetics:
+            return actionCards.filter { $0.title.lowercased().contains("基因") || $0.title.lowercased().contains("gene") }
+        case .knowledge:
+            return []
+        }
+    }
+
     private func jobs(for kind: DesktopWorkspaceKind) -> [DesktopJobSummary] {
         activeJobs.filter { job in
             switch kind {
@@ -90,4 +122,22 @@ public extension DesktopBootstrap {
             }
         }
     }
+}
+
+private extension String {
+    var isLowSignalWorkspaceMemory: Bool {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 4 else { return true }
+        return trimmed.allSatisfy { $0.isNumber || $0 == "." || $0 == "%" }
+    }
+}
+
+private func formatWorkspaceNumber(_ value: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.numberStyle = .decimal
+    formatter.usesGroupingSeparator = true
+    formatter.minimumFractionDigits = 0
+    formatter.maximumFractionDigits = value.rounded() == value ? 0 : 1
+    return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
 }

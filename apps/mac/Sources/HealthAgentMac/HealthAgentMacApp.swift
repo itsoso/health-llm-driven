@@ -1018,18 +1018,77 @@ struct WorkspaceOverviewView: View {
 
     @ViewBuilder
     private func workspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
             ForEach(summary.metrics) { metric in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(metric.title)
-                        .font(.caption)
+                WorkspaceMetricCard(metric: metric)
+            }
+        }
+
+        if kind == .data {
+            SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
+                if summary.actionCards.isEmpty {
+                    Text(appText("No actions loaded yet.", appLanguageRaw))
                         .foregroundStyle(.secondary)
-                    Text(metric.value)
-                        .font(.title2.bold())
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                        ForEach(summary.actionCards.prefix(6)) { card in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundStyle(.teal)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(card.title)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(2)
+                                    HStack(spacing: 6) {
+                                        if let status = card.status {
+                                            Text(status)
+                                        }
+                                        if let priority = card.priority {
+                                            Text("P\(priority)")
+                                        }
+                                    }
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(12)
+                            .background(Color.teal.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            SectionPanel(title: appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg") {
+                if summary.recentRecords.isEmpty {
+                    Text(appText("No recent health records loaded.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                        ForEach(summary.recentRecords) { record in
+                            HStack(spacing: 10) {
+                                Image(systemName: workspaceRecordIcon(record.type))
+                                    .foregroundStyle(workspaceRecordColor(record.type))
+                                    .frame(width: 28, height: 28)
+                                    .background(workspaceRecordColor(record.type).opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(record.title)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(record.recordDate ?? appText("No record", appLanguageRaw))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(record.displayValue)
+                                    .font(.callout.weight(.semibold).monospacedDigit())
+                                    .lineLimit(1)
+                            }
+                            .padding(12)
+                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
+                }
             }
         }
 
@@ -1080,12 +1139,98 @@ struct WorkspaceOverviewView: View {
                 Text(appText("No recent memory loaded.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(summary.recentMemory.prefix(5)) { memory in
-                    Text(memory.objectValue)
-                        .lineLimit(2)
-                    Divider()
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(summary.recentMemory.prefix(6)) { memory in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "brain.head.profile")
+                                .foregroundStyle(.indigo)
+                            Text(memory.objectValue)
+                                .lineLimit(2)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 6)
+                        if memory.id != summary.recentMemory.prefix(6).last?.id {
+                            Divider()
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private func workspaceRecordIcon(_ type: String) -> String {
+        switch type {
+        case "diet": "fork.knife"
+        case "water": "drop.fill"
+        case "weight": "scalemass.fill"
+        case "blood_pressure": "heart.text.square.fill"
+        default: "doc.text.fill"
+        }
+    }
+
+    private func workspaceRecordColor(_ type: String) -> Color {
+        switch type {
+        case "diet": .orange
+        case "water": .cyan
+        case "weight": .green
+        case "blood_pressure": .pink
+        default: .secondary
+        }
+    }
+}
+
+private struct WorkspaceMetricCard: View {
+    let metric: DesktopWorkspaceMetric
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.headline)
+                    .foregroundStyle(color)
+                    .frame(width: 30, height: 30)
+                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Spacer()
+            }
+            Text(appText(metric.title, appLanguageRaw))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(metric.value)
+                .font(.title2.weight(.bold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
+        .padding(14)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(color.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private var icon: String {
+        switch metric.id {
+        case "diet_calories": "fork.knife"
+        case "water_ml": "drop.fill"
+        case "supplements": "pills.fill"
+        case "latest_weight": "scalemass.fill"
+        case "latest_bp": "heart.text.square.fill"
+        case "steps": "figure.walk"
+        default: "chart.bar.fill"
+        }
+    }
+
+    private var color: Color {
+        switch metric.id {
+        case "diet_calories": .orange
+        case "water_ml": .cyan
+        case "supplements": .teal
+        case "latest_weight": .green
+        case "latest_bp": .pink
+        case "steps": .blue
+        default: .accentColor
         }
     }
 }

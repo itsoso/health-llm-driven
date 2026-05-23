@@ -215,12 +215,17 @@ final class MacP0FeatureTests: XCTestCase {
           "daily_plan": {"plan_date": "2026-05-23", "actions": [{"action_key": "walk", "title": "散步", "domain": "运动"}]},
           "trajectory": {"focus_domains": ["血脂", "血糖"]},
           "action_cards": [{"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90}],
-          "recent_memory": [{"id": 1, "object_value": "补剂依从率偏低"}],
+          "recent_memory": [
+            {"id": 1, "object_value": "补剂依从率偏低"},
+            {"id": 2, "object_value": "4"}
+          ],
           "recent_records_summary": {
             "date": "2026-05-23",
-            "range_days": 30,
-            "diet": {"today_count": 2, "today_calories": 1350.5, "last_30_count": 9, "last_30_calories": 8200},
-            "water": {"today_count": 3, "today_total_ml": 900, "last_30_count": 12, "last_30_total_ml": 9600},
+            "range_days": 7,
+            "available_ranges": [7, 30],
+            "diet": {"today_count": 2, "today_calories": 1350.5, "last_7_count": 5, "last_7_calories": 4200, "last_7_avg_calories": 600, "last_30_count": 9, "last_30_calories": 8200},
+            "water": {"today_count": 3, "today_total_ml": 900, "last_7_count": 10, "last_7_total_ml": 7600, "last_7_avg_ml": 1085.7, "last_30_count": 12, "last_30_total_ml": 9600},
+            "supplements": {"active_count": 4, "today_count": 1, "last_7_count": 6, "last_7_avg_per_day": 0.9, "last_30_count": 22, "last_30_avg_per_day": 0.7, "adherence_7_pct": 21.4, "top_items": [{"name": "鱼油", "count": 4}]},
             "latest_weight": {"id": 12, "type": "weight", "title": "体重", "value": 70.2, "unit": "kg", "record_date": "2026-05-22"},
             "latest_blood_pressure": {"id": 13, "type": "blood_pressure", "title": "血压", "value": "118/76", "unit": "mmHg", "category": "正常", "record_date": "2026-05-21"},
             "latest_garmin": {"id": 14, "type": "garmin", "title": "Garmin", "record_date": "2026-05-23", "steps": 6840, "sleep_score": 82, "spo2_avg": 96.4, "resting_heart_rate": 52, "hrv": 46.5, "training_readiness_score": 73},
@@ -248,7 +253,11 @@ final class MacP0FeatureTests: XCTestCase {
         let geneticsSummary = bootstrap.workspaceSummary(for: .genetics)
         let knowledgeSummary = bootstrap.workspaceSummary(for: .knowledge)
 
-        XCTAssertEqual(dataSummary.metrics.map(\.value), ["1350.5 kcal", "900 ml", "2"])
+        XCTAssertEqual(dataSummary.metrics.map(\.title), ["Diet 7d", "Water 7d", "Supplements 7d", "Latest Weight", "Latest BP", "Steps"])
+        XCTAssertEqual(dataSummary.metrics.map(\.value), ["4,200 kcal", "7,600 ml", "6", "70.2 kg", "118/76 mmHg", "6,840"])
+        XCTAssertEqual(dataSummary.recentRecords.map(\.title), ["血压", "体重"])
+        XCTAssertEqual(dataSummary.actionCards.map(\.title), ["HbA1c 复查"])
+        XCTAssertEqual(dataSummary.recentMemory.map(\.objectValue), ["补剂依从率偏低"])
         XCTAssertEqual(dataSummary.jobs.map(\.id), [3])
         XCTAssertEqual(geneticsSummary.jobs.map(\.id), [1])
         XCTAssertEqual(knowledgeSummary.jobs.map(\.id), [2])
