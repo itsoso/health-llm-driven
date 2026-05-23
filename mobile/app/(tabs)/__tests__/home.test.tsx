@@ -210,7 +210,8 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('Agent 工作台 · 后台运行中')).toBeTruthy();
-    expect(getByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeTruthy();
+    expect(getByText('干预状态')).toBeTruthy();
+    expect(queryByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeNull();
     expect(getByText('5 域干预')).toBeTruthy();
     expect(queryByText('长期任务')).toBeNull();
   });
@@ -222,6 +223,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动'));
+    expect(screen.getByText('干预状态')).toBeTruthy();
     expect(screen.getByText('验证指标')).toBeTruthy();
   });
 

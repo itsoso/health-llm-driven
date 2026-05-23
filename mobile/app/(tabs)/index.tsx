@@ -721,7 +721,7 @@ function AgentWorkspacePanel({
           <View style={styles.workspaceInterventionHeader}>
             <View style={styles.workspaceInterventionTitleBlock}>
               <Text style={[styles.workspaceInterventionTitle, { color: c.labelPrimary }]}>干预闭环</Text>
-              <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>饮食 / 睡眠 / 运动 / 补剂 / 情绪</Text>
+              <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>干预状态</Text>
               <Text style={[styles.workspaceInterventionSummary, { color: c.brand }]}>{interventionSummary}</Text>
             </View>
             <View style={styles.workspaceInterventionBadges}>
@@ -778,7 +778,7 @@ function InterventionDomainButton({
       accessibilityLabel={`打开${domain.label}干预`}
     >
       <View style={[styles.interventionDomainIcon, { backgroundColor: active ? c.bgCard : bg }]}>
-        <Ionicons name={domain.icon} size={15} color={color} />
+        <Ionicons name={domain.icon} size={12} color={color} />
       </View>
       <View style={styles.interventionDomainText}>
         <Text style={[styles.interventionDomainLabel, { color: c.labelPrimary }]} numberOfLines={1}>
@@ -1551,32 +1551,31 @@ const styles = StyleSheet.create({
   interventionGrid: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
-    gap: spacing.xs,
+    gap: 5,
   },
   interventionDomain: {
-    width: '18.5%',
-    flexGrow: 0,
+    flex: 1,
     flexShrink: 1,
     minWidth: 0,
-    minHeight: 38,
+    minHeight: 30,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 3,
-    paddingVertical: 5,
-    flexDirection: 'column',
+    borderRadius: radii.full,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
   },
   interventionDomainIcon: {
-    width: 19,
-    height: 19,
-    borderRadius: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  interventionDomainText: { alignItems: 'center', minWidth: 0 },
-  interventionDomainLabel: { fontSize: 10, fontWeight: '800', textAlign: 'center' },
+  interventionDomainText: { alignItems: 'center', minWidth: 0, flexShrink: 1 },
+  interventionDomainLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   interventionDomainStatus: { fontSize: 8, fontWeight: '700', marginTop: 1, textAlign: 'center' },
   nextActionCard: {
     borderWidth: StyleSheet.hairlineWidth,
