@@ -15,6 +15,7 @@ import Markdown from 'react-native-markdown-display';
 import MarkdownIt from 'markdown-it';
 import { createMdStylesCompact, createMdStylesChat } from '../../constants/markdownStyles';
 import { useTheme } from '../../hooks/useTheme';
+import { preprocessMarkdownTables } from '../../utils/markdownTables';
 
 const mdInstance = MarkdownIt('default', {
   typographer: true,
@@ -22,50 +23,6 @@ const mdInstance = MarkdownIt('default', {
   linkify: true,
   html: false,
 });
-
-const isRow = (s: string) => /^\s*\|.*\|\s*$/.test(s);
-const isSep = (s: string) => /^\s*\|[\s\-:|]+\|\s*$/.test(s);
-const splitRow = (s: string) =>
-  s.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
-
-/**
- * GFM 表格 → markdown 列表.
- *   | 时间 | 动作 | 原理 |
- *   |------|------|------|
- *   | 晨起 | 戴口罩 | 防冷空气 |
- * →
- *   **时间 · 动作 · 原理**
- *   - **晨起** · 戴口罩 · 防冷空气
- */
-function preprocessTables(md: string): string {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const next = lines[i + 1];
-    if (isRow(line) && next && isSep(next)) {
-      const headers = splitRow(line);
-      i += 2;
-      const rows: string[][] = [];
-      while (i < lines.length && isRow(lines[i]) && !isSep(lines[i])) {
-        rows.push(splitRow(lines[i]));
-        i++;
-      }
-      out.push('**' + headers.join(' · ') + '**');
-      for (const r of rows) {
-        const first = r[0] ? `**${r[0]}**` : '';
-        const rest = r.slice(1).filter(Boolean).join(' · ');
-        out.push(`- ${first}${first && rest ? ' · ' : ''}${rest}`);
-      }
-      out.push('');
-      continue;
-    }
-    out.push(line);
-    i++;
-  }
-  return out.join('\n');
-}
 
 interface Props {
   children: string;
@@ -78,7 +35,7 @@ export default function MarkdownText({ children, variant = 'compact' }: Props) {
     () => (variant === 'chat' ? createMdStylesChat(c) : createMdStylesCompact(c)),
     [c, variant],
   );
-  const processed = useMemo(() => preprocessTables(children || ''), [children]);
+  const processed = useMemo(() => preprocessMarkdownTables(children || ''), [children]);
   if (!children) return null;
   return <Markdown style={style} markdownit={mdInstance}>{processed}</Markdown>;
 }

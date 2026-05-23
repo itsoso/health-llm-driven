@@ -28,6 +28,7 @@ import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
+import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 
 interface Props {
   item: UIMessage;
@@ -60,6 +61,10 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const visibleMarkdown = useMemo(
     () => (structuredSummary ? stripStructuredHealthSummary(displayText) : displayText),
     [displayText, structuredSummary],
+  );
+  const renderedMarkdown = useMemo(
+    () => preprocessMarkdownTables(visibleMarkdown),
+    [visibleMarkdown],
   );
   const images = item.imageUris;
 
@@ -106,7 +111,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     }
   }
 
-  const hasTable = !isUser && /\n\s*\|.+\|\s*\n\s*\|[\s|:\-]+\|\s*\n\s*\|/.test(displayText);
+  const hasTable = !isUser && containsMarkdownTable(displayText);
 
   const handleCopy = () => {
     Clipboard.setStringAsync(item.content);
@@ -305,7 +310,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
               <StructuredSummaryCard summary={structuredSummary} c={c} />
             ) : null}
             {visibleMarkdown ? (
-              <Markdown style={mdStyles}>{visibleMarkdown}</Markdown>
+              <Markdown style={mdStyles}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}

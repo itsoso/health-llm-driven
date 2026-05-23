@@ -132,6 +132,21 @@ describe('ChatBubble structured summary', () => {
     });
   });
 
+  it('normalizes headerless markdown tables before rendering assistant replies', () => {
+    const { getByText, queryByText } = renderBubble(`
+🟢 第三优先级（第 14-30 天优化）
+
+|---|---|---|
+| 维生素 D3 2000IU | ✅ 继续，VD 已从 18.9→32.3 ng/mL | 2023 缺乏 →2025 达标 |
+| 甘氨酸镁 2 片（睡前） | ✅ 继续，助睡眠 + 肌肉放松 | 睡眠 89 分 |
+`);
+
+    expect(getByText(/维生素 D3 2000IU/)).toBeTruthy();
+    expect(getByText(/甘氨酸镁 2 片/)).toBeTruthy();
+    expect(queryByText(/\|---\|---\|---\|/)).toBeNull();
+    expect(queryByText(/\| 维生素 D3 2000IU \|/)).toBeNull();
+  });
+
   it('constrains server-rendered cards inside the assistant column', () => {
     renderCard.mockReturnValueOnce(__mockCard);
     const qc = new QueryClient();
