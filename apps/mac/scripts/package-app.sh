@@ -10,6 +10,7 @@ OUTPUT_DIR="${PROJECT_DIR}/dist"
 CONFIGURATION="release"
 OPEN_AFTER_BUILD="0"
 SIGN_APP="1"
+SIGN_IDENTITY="${HEALTH_MAC_SIGN_IDENTITY:-}"
 
 usage() {
   cat <<USAGE
@@ -113,7 +114,16 @@ PLIST
 printf 'APPL????' > "${CONTENTS_DIR}/PkgInfo"
 
 if [[ "${SIGN_APP}" == "1" ]] && command -v codesign >/dev/null 2>&1; then
-  codesign --force --sign - --timestamp=none "${APP_BUNDLE}" >/dev/null
+  if [[ -z "${SIGN_IDENTITY}" ]] && command -v security >/dev/null 2>&1; then
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')"
+  fi
+  if [[ -n "${SIGN_IDENTITY}" ]]; then
+    codesign --force --sign "${SIGN_IDENTITY}" --timestamp=none "${APP_BUNDLE}" >/dev/null
+    echo "Signed with ${SIGN_IDENTITY}"
+  else
+    codesign --force --sign - --timestamp=none "${APP_BUNDLE}" >/dev/null
+    echo "Signed ad-hoc"
+  fi
 fi
 
 echo "Packaged ${APP_BUNDLE}"
