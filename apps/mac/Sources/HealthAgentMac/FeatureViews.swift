@@ -728,124 +728,448 @@ struct RecordHubView: View {
     @State private var lastSavedRecord: QuickRecordResult?
     @State private var isSubmitting = false
     @State private var isUndoing = false
+    @State private var quickFocusToken = 0
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(appText("Record", appLanguageRaw))
-                    .font(.largeTitle.bold())
+            VStack(alignment: .leading, spacing: 22) {
+                recordHeader
 
-                SectionPanel(title: appText("Quick Record", appLanguageRaw), systemImage: "bolt.fill") {
-                    HStack {
-                        TextField(appText("Record food, water, supplement, weight, BP, or symptom", appLanguageRaw), text: $quickText)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { Task { await submit(text: quickText) } }
-                        Button(appText(isSubmitting ? "Saving..." : "Save", appLanguageRaw)) {
-                            Task { await submit(text: quickText) }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            quickCaptureCard
+                            structuredCaptureCard
                         }
-                        .disabled(isSubmitting || quickText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .frame(minWidth: 600, maxWidth: .infinity, alignment: .topLeading)
+
+                        VStack(alignment: .leading, spacing: 16) {
+                            saveStatusPanel
+                            recentRecordsPanel
+                        }
+                        .frame(width: 360, alignment: .topLeading)
                     }
-                }
 
-                SectionPanel(title: appText("Structured Form", appLanguageRaw), systemImage: "text.badge.checkmark") {
-                    Picker(appText("Type", appLanguageRaw), selection: $recordType) {
-                        ForEach(StructuredRecordDraftType.allCases) { type in
-                            Label(appText(type.title, appLanguageRaw), systemImage: type.systemImage).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    structuredFields
-
-                    HStack {
-                        Button(appText("Preview", appLanguageRaw)) {
-                            quickText = structuredText()
-                        }
-                        Button(appText(isSubmitting ? "Saving..." : "Save Structured", appLanguageRaw)) {
-                            Task { await submitStructured() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSubmitting || !structuredDraft.canSubmit)
-                        .keyboardShortcut(.return, modifiers: .command)
-                    }
-                }
-
-                if let resultMessage {
-                    Text(resultMessage)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let lastSavedRecord {
-                    savedRecordCard(lastSavedRecord)
-                }
-
-                SectionPanel(title: appText("Recent Local Records", appLanguageRaw), systemImage: "clock") {
-                    if recentRecords.isEmpty {
-                        Text(appText("Recent saved commands in this Mac session will appear here.", appLanguageRaw))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(recentRecords, id: \.self) { record in
-                            HStack {
-                                Text(record)
-                                    .lineLimit(1)
-                                Spacer()
-                                Button(appText("Reuse", appLanguageRaw)) { quickText = record }
-                                Button(appText("Delete", appLanguageRaw)) { recentRecords.removeAll { $0 == record } }
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 16) {
+                        quickCaptureCard
+                        structuredCaptureCard
+                        saveStatusPanel
+                        recentRecordsPanel
                     }
                 }
             }
-            .padding(28)
+            .padding(24)
+        }
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(nsColor: .windowBackgroundColor),
+                    Color.green.opacity(0.05),
+                    Color(nsColor: .windowBackgroundColor)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
+        .onAppear {
+            quickFocusToken += 1
+        }
+    }
+
+    private var recordHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(appText("Record", appLanguageRaw))
+                    .font(.largeTitle.bold())
+                Text(appText("Capture food, water, supplements, vitals, and symptoms without leaving the keyboard.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            recordModeBadge
+        }
+    }
+
+    private var recordModeBadge: some View {
+        Label(appText(isSubmitting ? "Saving..." : "Ready", appLanguageRaw), systemImage: isSubmitting ? "hourglass" : "checkmark.circle")
+            .font(.caption.bold())
+            .foregroundStyle(isSubmitting ? .orange : .green)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background((isSubmitting ? Color.orange : Color.green).opacity(0.12), in: Capsule())
+    }
+
+    private var quickCaptureCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(appText("Natural Language", appLanguageRaw), systemImage: "bolt.fill")
+                    .font(.headline)
+                Text(appText("Best for fast food, water, supplement, or symptom notes.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("⌘↩")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+
+            ZStack(alignment: .topLeading) {
+                PromptCommandTextEditor(text: $quickText, focusToken: quickFocusToken) {
+                    Task { await submit(text: quickText) }
+                }
+                .frame(minHeight: 118, maxHeight: 180)
+
+                if quickText.isEmpty {
+                    Text(appText("Example: dinner had half rice, beef, broccoli; drank 500ml water", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 12)
+                        .padding(.leading, 8)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+            }
+
+            FlowLayout(spacing: 8) {
+                ForEach(quickTemplates, id: \.self) { template in
+                    Button {
+                        quickText = template
+                        quickFocusToken += 1
+                    } label: {
+                        Text(template)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.secondary.opacity(0.09), in: Capsule())
+                    .disabled(isSubmitting)
+                }
+            }
+
+            HStack {
+                Button(appText(isSubmitting ? "Saving..." : "Save Natural", appLanguageRaw)) {
+                    Task { await submit(text: quickText) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSubmitting || quickText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .keyboardShortcut(.return, modifiers: .command)
+
+                Button(appText("Clear", appLanguageRaw)) {
+                    quickText = ""
+                    quickFocusToken += 1
+                }
+                .disabled(quickText.isEmpty || isSubmitting)
+
+                Spacer()
+                Text(appText("Quick parser will infer record type.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var quickTemplates: [String] {
+        [
+            appText("Drank 500ml water", appLanguageRaw),
+            appText("Took fish oil after dinner", appLanguageRaw),
+            appText("Weight 70.2kg this morning", appLanguageRaw),
+            appText("Blood pressure 119/75", appLanguageRaw)
+        ]
+    }
+
+    private var structuredCaptureCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(appText("Structured Form", appLanguageRaw), systemImage: "text.badge.checkmark")
+                    .font(.headline)
+                Text(appText("Use when values must be precise.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            typeSelectorGrid
+            structuredFields
+
+            HStack {
+                Button(appText("Use Preview", appLanguageRaw)) {
+                    quickText = structuredText()
+                    quickFocusToken += 1
+                }
+                .disabled(!structuredDraft.canSubmit)
+
+                Button(appText(isSubmitting ? "Saving..." : "Save Structured", appLanguageRaw)) {
+                    Task { await submitStructured() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSubmitting || !structuredDraft.canSubmit)
+                .keyboardShortcut(.return, modifiers: .command)
+
+                Spacer()
+                Text(appText("Typed endpoint, audit-friendly.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var typeSelectorGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 8)], spacing: 8) {
+            ForEach(StructuredRecordDraftType.allCases) { type in
+                let isSelected = recordType == type
+                Button {
+                    recordType = type
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: type.systemImage)
+                            .foregroundStyle(recordTypeColor(type))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(appText(type.title, appLanguageRaw))
+                                .font(.callout.weight(.semibold))
+                            Text(recordTypeHint(type))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(
+                        isSelected ? recordTypeColor(type).opacity(0.18) : Color.secondary.opacity(0.07),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(isSelected ? recordTypeColor(type).opacity(0.55) : Color.secondary.opacity(0.08), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var saveStatusPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(appText("Current Draft", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(appText("Structured Preview", appLanguageRaw))
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Text(structuredDraft.canSubmit ? structuredText() : appText("Fill structured fields to preview the saved record.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(structuredDraft.canSubmit ? .primary : .secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if let resultMessage {
+                Label(resultMessage, systemImage: lastSavedRecord == nil ? "info.circle" : "checkmark.circle.fill")
+                    .font(.callout)
+                    .foregroundStyle(lastSavedRecord == nil ? Color.secondary : Color.green)
+                    .lineLimit(3)
+            } else {
+                Text(appText("Saved results and undo controls will appear here.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastSavedRecord {
+                savedRecordCard(lastSavedRecord)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var recentRecordsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(appText("Recent Local Records", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                Spacer()
+                Text("\(recentRecords.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+            }
+
+            if recentRecords.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.secondary)
+                    Text(appText("Recent saved commands in this Mac session will appear here.", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                ForEach(recentRecords, id: \.self) { record in
+                    HStack(spacing: 10) {
+                        Image(systemName: "text.badge.checkmark")
+                            .foregroundStyle(.green)
+                            .frame(width: 24, height: 24)
+                            .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(record)
+                            .font(.callout)
+                            .lineLimit(2)
+                        Spacer()
+                        Button {
+                            quickText = record
+                            quickFocusToken += 1
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(appText("Reuse", appLanguageRaw))
+                        Button {
+                            recentRecords.removeAll { $0 == record }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .help(appText("Delete", appLanguageRaw))
+                    }
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
         }
     }
 
     private func savedRecordCard(_ record: QuickRecordResult) -> some View {
-        SectionPanel(title: appText("Saved", appLanguageRaw), systemImage: "checkmark.circle.fill") {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.message)
-                        .font(.headline)
-                    if let recordID = record.recordID {
-                        Text("#\(recordID) · \(record.type)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if let undoPath = record.undoPath {
-                    Button(appText(isUndoing ? "Undoing..." : "Undo", appLanguageRaw)) {
-                        Task { await undoSavedRecord(path: undoPath) }
-                    }
-                    .disabled(isUndoing)
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.message)
+                    .font(.headline)
+                if let recordID = record.recordID {
+                    Text("#\(recordID) · \(record.type)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
+            Spacer()
+            if let undoPath = record.undoPath {
+                Button(appText(isUndoing ? "Undoing..." : "Undo", appLanguageRaw)) {
+                    Task { await undoSavedRecord(path: undoPath) }
+                }
+                .disabled(isUndoing)
+            }
         }
+        .padding(12)
+        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder
     private var structuredFields: some View {
         switch recordType {
         case .diet:
-            TextField(appText("Food name or photo description", appLanguageRaw), text: $foodName)
+            recordTextField(appText("Food name or photo description", appLanguageRaw), text: $foodName)
             HStack {
-                TextField(appText("Calories kcal", appLanguageRaw), text: $calories)
-                TextField(appText("Protein g", appLanguageRaw), text: $protein)
+                recordTextField(appText("Calories kcal", appLanguageRaw), text: $calories)
+                recordTextField(appText("Protein g", appLanguageRaw), text: $protein)
             }
         case .water:
-            TextField(appText("Amount ml", appLanguageRaw), text: $waterMl)
+            recordTextField(appText("Amount ml", appLanguageRaw), text: $waterMl)
         case .supplement:
-            TextField(appText("Supplement", appLanguageRaw), text: $supplementName)
-            TextField(appText("Dose and timing", appLanguageRaw), text: $supplementDose)
+            recordTextField(appText("Supplement", appLanguageRaw), text: $supplementName)
+            recordTextField(appText("Dose and timing", appLanguageRaw), text: $supplementDose)
         case .weight:
-            TextField(appText("Weight kg", appLanguageRaw), text: $weightKg)
+            recordTextField(appText("Weight kg", appLanguageRaw), text: $weightKg)
         case .bloodPressure:
             HStack {
-                TextField(appText("Systolic", appLanguageRaw), text: $systolic)
-                TextField(appText("Diastolic", appLanguageRaw), text: $diastolic)
+                recordTextField(appText("Systolic", appLanguageRaw), text: $systolic)
+                recordTextField(appText("Diastolic", appLanguageRaw), text: $diastolic)
             }
         case .symptom:
-            TextField(appText("Symptom, severity, and context", appLanguageRaw), text: $symptom)
+            recordTextField(appText("Symptom, severity, and context", appLanguageRaw), text: $symptom)
+        }
+    }
+
+    private func recordTextField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            }
+    }
+
+    private func recordTypeHint(_ type: StructuredRecordDraftType) -> String {
+        switch type {
+        case .diet:
+            return appText("food", appLanguageRaw)
+        case .water:
+            return appText("ml", appLanguageRaw)
+        case .supplement:
+            return appText("dose", appLanguageRaw)
+        case .weight:
+            return appText("kg", appLanguageRaw)
+        case .bloodPressure:
+            return appText("mmHg", appLanguageRaw)
+        case .symptom:
+            return appText("context", appLanguageRaw)
+        }
+    }
+
+    private func recordTypeColor(_ type: StructuredRecordDraftType) -> Color {
+        switch type {
+        case .diet:
+            return .orange
+        case .water:
+            return .cyan
+        case .supplement:
+            return .purple
+        case .weight:
+            return .green
+        case .bloodPressure:
+            return .pink
+        case .symptom:
+            return .indigo
         }
     }
 
