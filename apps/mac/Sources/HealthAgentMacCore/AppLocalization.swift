@@ -84,6 +84,7 @@ public enum L10n {
         "Auto Saved": "已自动保存",
         "Needs Review": "待审核",
         "Confirmed": "已确认",
+        "All": "全部",
         "7 days": "7天",
         "30 days": "30天",
         "Avg": "日均",

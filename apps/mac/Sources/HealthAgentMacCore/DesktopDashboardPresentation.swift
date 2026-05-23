@@ -16,6 +16,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
     public let memoryRows: [DesktopDashboardRow]
     public let activeJobRows: [DesktopDashboardRow]
     public let inputInboxEvents: [DesktopInputInboxEvent]
+    public let inputInboxSummary: DesktopInputInboxSummary
 
     public init(bootstrap: DesktopBootstrap) {
         let summary = bootstrap.recentRecordsSummary
@@ -77,6 +78,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
             )
         }
         self.inputInboxEvents = DesktopDashboardPresentation.inputInboxEvents(from: bootstrap)
+        self.inputInboxSummary = DesktopInputInboxSummary(events: self.inputInboxEvents)
     }
 
     private static func subtitle(for bootstrap: DesktopBootstrap) -> String {
@@ -388,6 +390,20 @@ public struct DesktopInputInboxEvent: Equatable, Identifiable, Sendable {
     public let tone: String
     public let contextItem: AgentContextItem
     public let prompt: String
+}
+
+public struct DesktopInputInboxSummary: Equatable, Sendable {
+    public let totalCount: Int
+    public let autoSavedCount: Int
+    public let needsReviewCount: Int
+    public let confirmedCount: Int
+
+    public init(events: [DesktopInputInboxEvent]) {
+        self.totalCount = events.count
+        self.autoSavedCount = events.filter { $0.state == .autoSaved }.count
+        self.needsReviewCount = events.filter { $0.state == .needsReview }.count
+        self.confirmedCount = events.filter { $0.state == .confirmed }.count
+    }
 }
 
 public struct DesktopDashboardRow: Equatable, Identifiable, Sendable {

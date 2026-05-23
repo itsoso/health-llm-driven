@@ -144,5 +144,8 @@ final class DesktopDashboardPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.inputInboxEvents.map(\.source), [.device, .manual, .manual, .imported])
         XCTAssertEqual(presentation.inputInboxEvents.first?.state, .autoSaved)
         XCTAssertEqual(presentation.inputInboxEvents.last?.state, .needsReview)
+        XCTAssertEqual(presentation.inputInboxSummary.totalCount, 4)
+        XCTAssertEqual(presentation.inputInboxSummary.autoSavedCount, 3)
+        XCTAssertEqual(presentation.inputInboxSummary.needsReviewCount, 1)
     }
 }

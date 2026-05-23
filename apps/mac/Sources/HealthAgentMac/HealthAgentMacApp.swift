@@ -534,6 +534,7 @@ struct TodayView: View {
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dashboardRange: DashboardRange = .sevenDays
+    @State private var inputInboxFilter: InputInboxFilter = .all
 
     var body: some View {
         ZStack {
@@ -546,7 +547,10 @@ struct TodayView: View {
                         HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 18) {
                                 dashboardHero(presentation)
-                                inputInboxPanel(presentation.inputInboxEvents)
+                                inputInboxPanel(
+                                    events: presentation.inputInboxEvents,
+                                    summary: presentation.inputInboxSummary
+                                )
                                 actionPanel(presentation.actionRows)
                                 recentRecordsPanel(presentation.recentRecordRows)
                             }
@@ -771,20 +775,41 @@ struct TodayView: View {
         }
     }
 
-    private func inputInboxPanel(_ events: [DesktopInputInboxEvent]) -> some View {
-        card {
-            HStack(alignment: .center) {
-                sectionHeader(title: appText("Input Inbox", appLanguageRaw), systemImage: "tray.full")
+    private func inputInboxPanel(
+        events: [DesktopInputInboxEvent],
+        summary: DesktopInputInboxSummary
+    ) -> some View {
+        let filteredEvents = inputInboxFilter.filter(events)
+        return card {
+            HStack(alignment: .center, spacing: 12) {
+                Label(appText("Input Inbox", appLanguageRaw), systemImage: "tray.full")
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Picker("", selection: $inputInboxFilter) {
+                    ForEach(InputInboxFilter.allCases) { filter in
+                        Text(appText(filter.titleKey, appLanguageRaw)).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+            }
+
+            HStack(spacing: 8) {
+                inputInboxCountChip(title: "All", value: summary.totalCount, color: .secondary)
+                inputInboxCountChip(title: "Needs Review", value: summary.needsReviewCount, color: .orange)
+                inputInboxCountChip(title: "Auto Saved", value: summary.autoSavedCount, color: .teal)
+                inputInboxCountChip(title: "Confirmed", value: summary.confirmedCount, color: .blue)
                 Spacer()
                 Text(appText("Silent capture, review when needed.", appLanguageRaw))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if events.isEmpty {
+
+            if filteredEvents.isEmpty {
                 EmptyStateText(text: appText("No input events loaded.", appLanguageRaw))
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
-                    ForEach(events) { event in
+                    ForEach(filteredEvents) { event in
                         InputInboxEventCard(
                             event: event,
                             onAddContext: onAddContext,
@@ -794,6 +819,19 @@ struct TodayView: View {
                 }
             }
         }
+    }
+
+    private func inputInboxCountChip(title: String, value: Int, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Text(appText(title, appLanguageRaw))
+            Text("\(value)")
+                .font(.caption.weight(.bold).monospacedDigit())
+        }
+        .font(.caption)
+        .foregroundStyle(color)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.10), in: Capsule())
     }
 
     private func recentRecordsPanel(_ records: [DesktopDashboardRow]) -> some View {
@@ -895,6 +933,37 @@ private enum DashboardRange: String, CaseIterable, Identifiable {
         switch self {
         case .sevenDays: "7 days"
         case .thirtyDays: "30 days"
+        }
+    }
+}
+
+private enum InputInboxFilter: String, CaseIterable, Identifiable {
+    case all
+    case needsReview
+    case autoSaved
+    case confirmed
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .all: "All"
+        case .needsReview: "Needs Review"
+        case .autoSaved: "Auto Saved"
+        case .confirmed: "Confirmed"
+        }
+    }
+
+    func filter(_ events: [DesktopInputInboxEvent]) -> [DesktopInputInboxEvent] {
+        switch self {
+        case .all:
+            events
+        case .needsReview:
+            events.filter { $0.state == .needsReview }
+        case .autoSaved:
+            events.filter { $0.state == .autoSaved }
+        case .confirmed:
+            events.filter { $0.state == .confirmed }
         }
     }
 }
