@@ -17,6 +17,26 @@ final class StaticTokenProvider: AuthTokenProviding, @unchecked Sendable {
     }
 }
 
+final class StaticTokenStore: AuthTokenStoring, @unchecked Sendable {
+    var token: String?
+
+    init(token: String?) {
+        self.token = token
+    }
+
+    func setToken(_ token: String) async throws {
+        self.token = token
+    }
+
+    func getToken() async -> String? {
+        token
+    }
+
+    func clearToken() async {
+        token = nil
+    }
+}
+
 final class URLProtocolStub: URLProtocol {
     nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 

@@ -1,0 +1,55 @@
+import Foundation
+
+public struct AuthLoginRequest: Encodable, Equatable, Sendable {
+    public let username: String
+    public let password: String
+}
+
+public struct AuthLoginResponse: Decodable, Equatable, Sendable {
+    public let accessToken: String
+    public let tokenType: String
+    public let user: AuthUser
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+        case user
+    }
+}
+
+public struct AuthUser: Decodable, Equatable, Identifiable, Sendable {
+    public let id: Int
+    public let username: String
+    public let email: String?
+    public let name: String?
+}
+
+public final class AuthClient: Sendable {
+    private let apiClient: APIClient
+    private let tokenStore: AuthTokenStoring
+
+    public init(apiClient: APIClient, tokenStore: AuthTokenStoring) {
+        self.apiClient = apiClient
+        self.tokenStore = tokenStore
+    }
+
+    public func login(username: String, password: String) async throws -> AuthLoginResponse {
+        let response: AuthLoginResponse = try await apiClient.post(
+            "auth/login/json",
+            body: AuthLoginRequest(username: username, password: password)
+        )
+        try await tokenStore.setToken(response.accessToken)
+        return response
+    }
+
+    public func logout() async {
+        await tokenStore.clearToken()
+    }
+
+    public func hasToken() async -> Bool {
+        guard let token = await tokenStore.getToken() else {
+            return false
+        }
+        return !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}

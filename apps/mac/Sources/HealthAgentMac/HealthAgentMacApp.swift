@@ -54,6 +54,7 @@ struct AppServices {
     let recordClient: RecordClient
     let desktopJobClient: DesktopJobClient
     let traceClient: TraceClient
+    let authClient: AuthClient
 
     init() {
         let tokenProvider = KeychainTokenStore()
@@ -69,12 +70,15 @@ struct AppServices {
         self.recordClient = RecordClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
         self.traceClient = TraceClient(apiClient: apiClient)
+        self.authClient = AuthClient(apiClient: apiClient, tokenStore: tokenProvider)
     }
 }
 
 struct AppRootView: View {
     let services: AppServices
     @Bindable private var navigation: AppNavigationState
+    @State private var hasCheckedAuth = false
+    @State private var isAuthenticated = false
 
     init(services: AppServices) {
         self.services = services
@@ -82,37 +86,138 @@ struct AppRootView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(SidebarDestination.allCases, selection: $navigation.selection) { destination in
-                Label(destination.title, systemImage: destination.systemImage)
-                    .tag(destination)
-            }
-            .navigationTitle("Health Agent")
-        } detail: {
-            switch navigation.selection ?? .today {
-            case .today:
-                TodayView(viewModel: services.todayViewModel)
-            case .agent:
-                AgentChatView(viewModel: services.agentViewModel)
-            case .record:
-                RecordHubView(client: services.recordClient)
-            case .jobs:
-                JobListView(client: services.desktopJobClient) { conversationID in
-                    navigation.openTrace(conversationID: conversationID)
+        Group {
+            if !hasCheckedAuth {
+                ProgressView("Checking login...")
+                    .frame(minWidth: 520, minHeight: 360)
+            } else if !isAuthenticated {
+                LoginView(authClient: services.authClient) {
+                    isAuthenticated = true
+                    Task { await services.todayViewModel.refresh() }
                 }
-            case .trace:
-                TraceLookupView(client: services.traceClient, navigation: navigation)
-            case .data:
-                WorkspaceOverviewView(viewModel: services.todayViewModel, kind: .data)
-            case .genetics:
-                ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .genetics)
-            case .knowledge:
-                ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .knowledge)
-            case .settings:
-                SettingsView(tokenStore: services.tokenProvider)
+            } else {
+                NavigationSplitView {
+                    List(SidebarDestination.allCases, selection: $navigation.selection) { destination in
+                        Label(destination.title, systemImage: destination.systemImage)
+                            .tag(destination)
+                    }
+                    .navigationTitle("Health Agent")
+                } detail: {
+                    detailView
+                }
             }
         }
         .frame(minWidth: 980, minHeight: 680)
+        .task {
+            guard !hasCheckedAuth else { return }
+            isAuthenticated = await services.authClient.hasToken()
+            hasCheckedAuth = true
+        }
+    }
+
+    @ViewBuilder
+    private var detailView: some View {
+        switch navigation.selection ?? .today {
+        case .today:
+            TodayView(viewModel: services.todayViewModel)
+        case .agent:
+            AgentChatView(viewModel: services.agentViewModel)
+        case .record:
+            RecordHubView(client: services.recordClient)
+        case .jobs:
+            JobListView(client: services.desktopJobClient) { conversationID in
+                navigation.openTrace(conversationID: conversationID)
+            }
+        case .trace:
+            TraceLookupView(client: services.traceClient, navigation: navigation)
+        case .data:
+            WorkspaceOverviewView(viewModel: services.todayViewModel, kind: .data)
+        case .genetics:
+            ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .genetics)
+        case .knowledge:
+            ImportWorkspaceView(viewModel: services.todayViewModel, jobClient: services.desktopJobClient, kind: .knowledge)
+        case .settings:
+            SettingsView(authClient: services.authClient, tokenStore: services.tokenProvider) {
+                isAuthenticated = false
+                navigation.selection = .today
+            }
+        }
+    }
+}
+
+struct LoginView: View {
+    let authClient: AuthClient
+    let onLogin: () -> Void
+    @State private var username = ""
+    @State private var password = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 8) {
+                Image(systemName: "heart.text.square.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Color.accentColor)
+                Text("Health Agent")
+                    .font(.largeTitle.bold())
+                Text("Sign in with your executor.life account.")
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("Username or email", text: $username)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { submitIfReady() }
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { submitIfReady() }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                Button {
+                    submitIfReady()
+                } label: {
+                    Label(isSubmitting ? "Signing in..." : "Sign In", systemImage: "person.crop.circle.badge.checkmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(isSubmitting || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+            .frame(width: 360)
+        }
+        .padding(36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func submitIfReady() {
+        guard !isSubmitting else { return }
+        let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUsername.isEmpty, !password.isEmpty else { return }
+        Task { await signIn(username: trimmedUsername, password: password) }
+    }
+
+    private func signIn(username: String, password: String) async {
+        isSubmitting = true
+        errorMessage = nil
+        defer { isSubmitting = false }
+        do {
+            _ = try await authClient.login(username: username, password: password)
+            self.password = ""
+            onLogin()
+        } catch APIError.unauthorized {
+            errorMessage = "用户名或密码错误。"
+        } catch APIError.httpStatus(let status) {
+            errorMessage = "登录失败，HTTP \(status)。"
+        } catch {
+            errorMessage = "登录失败：\(error.localizedDescription)"
+        }
     }
 }
 

@@ -983,7 +983,9 @@ struct TraceLookupView: View {
 }
 
 struct SettingsView: View {
+    let authClient: AuthClient
     let tokenStore: KeychainTokenStore
+    let onLogout: () -> Void
     @AppStorage(APIEndpoint.baseURLDefaultsKey) private var apiBaseURL = APIEndpoint.defaultBaseURL.absoluteString
     @AppStorage("preferredVoice") private var preferredVoice = "private_female"
     @AppStorage("allowFileHashing") private var allowFileHashing = true
@@ -1000,6 +1002,9 @@ struct SettingsView: View {
                     }
                     Button("Clear Token") {
                         Task { await clearToken() }
+                    }
+                    Button("Sign Out") {
+                        Task { await signOut() }
                     }
                 }
             }
@@ -1045,6 +1050,12 @@ struct SettingsView: View {
     private func clearToken() async {
         await tokenStore.clearToken()
         statusMessage = "Token cleared."
+    }
+
+    private func signOut() async {
+        await authClient.logout()
+        statusMessage = "Signed out."
+        onLogout()
     }
 }
 
