@@ -88,13 +88,15 @@ describe('SettingsScreen', () => {
     jest.clearAllMocks();
   });
 
-  it('surfaces GPS location as an explicit weather positioning entry', () => {
+  it('surfaces GPS and city positioning as one explicit clickable entry', () => {
     const { getByText } = render(<SettingsScreen />);
 
-    expect(getByText('当前城市')).toBeTruthy();
+    expect(getByText('GPS / 城市定位')).toBeTruthy();
+    expect(getByText('浙江')).toBeTruthy();
+    expect(getByText('GPS 自动')).toBeTruthy();
     expect(getByText('用于天气 / 空气质量 / 户外建议')).toBeTruthy();
-    expect(getByText('去定位')).toBeTruthy();
-    fireEvent.press(getByText('GPS 定位'));
+    expect(() => getByText('定位设置')).toThrow();
+    fireEvent.press(getByText('GPS / 城市定位'));
 
     expect(mockPush).toHaveBeenCalledWith('/location');
   });

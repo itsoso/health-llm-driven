@@ -116,8 +116,7 @@ export default function SettingsScreen() {
 
         {/* Settings items */}
         <View style={styles.card}>
-          <SettingRow icon="location-outline" label="当前城市" value={city} />
-          <GPSLocationRow city={city} useManual={profile?.use_manual_location === true}
+          <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
             onPress={() => router.push('/location' as any)} />
           <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
@@ -199,7 +198,7 @@ function SettingRow({ icon, label, value, onPress }: { icon: any; label: string;
   );
 }
 
-function GPSLocationRow({ city, useManual, onPress }: { city: string; useManual: boolean; onPress: () => void }) {
+function LocationSettingsRow({ city, useManual, onPress }: { city: string; useManual: boolean; onPress: () => void }) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
@@ -207,19 +206,18 @@ function GPSLocationRow({ city, useManual, onPress }: { city: string; useManual:
 
   return (
     <TouchableOpacity style={styles.locationRow} onPress={onPress} activeOpacity={0.72}
-      accessibilityLabel={`GPS 定位, 当前城市 ${city}, ${mode}`}>
+      accessibilityRole="button"
+      accessibilityLabel={`GPS / 城市定位, 当前城市 ${city}, ${mode}`}>
       <View style={styles.locationIconBox}>
-        <Ionicons name="navigate" size={18} color={c.brand} />
+        <Ionicons name="navigate-outline" size={18} color={c.brand} />
       </View>
       <View style={styles.locationCopy}>
-        <View style={styles.locationTitleLine}>
-          <Text style={txt.settingLabel}>GPS 定位</Text>
-          <Text style={txt.locationMode}>{mode}</Text>
-        </View>
+        <Text style={txt.locationTitle} numberOfLines={1}>GPS / 城市定位</Text>
         <Text style={txt.locationHint}>用于天气 / 空气质量 / 户外建议</Text>
       </View>
-      <View style={styles.locationActionPill}>
-        <Text style={txt.locationAction}>去定位</Text>
+      <View style={styles.locationStatus}>
+        <Text style={txt.locationCity} numberOfLines={1}>{city}</Text>
+        <Text style={txt.locationMode} numberOfLines={1}>{mode}</Text>
       </View>
       <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
     </TouchableOpacity>
@@ -300,11 +298,7 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: c.brandLight,
   },
   locationCopy: { flex: 1, minWidth: 0 },
-  locationTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  locationActionPill: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-    backgroundColor: c.fill,
-  },
+  locationStatus: { width: 74, alignItems: 'flex-end', gap: 3 },
   logoutBtn: {
     backgroundColor: c.bgCard, borderRadius: radii.lg,
     paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg,
@@ -318,8 +312,9 @@ const createTxt = (c: ColorPalette) => ({
   email: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   settingLabel: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
   settingValue: { fontSize: 14, color: c.labelTertiary } as TextStyle,
+  locationTitle: { fontSize: 15, fontWeight: '700', color: c.labelPrimary, flexShrink: 1 } as TextStyle,
   locationHint: { fontSize: 12, color: c.labelSecondary, marginTop: 3 } as TextStyle,
   locationMode: { fontSize: 12, fontWeight: '600', color: c.brand } as TextStyle,
-  locationAction: { fontSize: 12, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+  locationCity: { fontSize: 13, fontWeight: '600', color: c.labelSecondary } as TextStyle,
   logoutText: { fontSize: 16, fontWeight: '500', color: '#FF453A' } as TextStyle,
 });
