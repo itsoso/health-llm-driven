@@ -91,7 +91,7 @@ export default function RecordScreen() {
     const missingBody = !weightStats?.current_weight && !bpStats?.average_systolic;
     const missingMeal = meals.length === 0;
 
-    return [
+    const entries: QuickRecordEntry[] = [
       {
         key: 'diet',
         icon: 'nutrition-outline',
@@ -124,7 +124,9 @@ export default function RecordScreen() {
         priority: isPreWorkoutWindow ? 72 : 42,
         onPress: () => router.push('/voice-chat?intent=preworkout&workout_type=running' as any),
       },
-    ].sort((a, b) => b.priority - a.priority);
+    ];
+
+    return entries.sort((a, b) => b.priority - a.priority);
   }, [bpStats?.average_systolic, c.blue, c.green, c.orange, c.teal, meals.length, router, weightStats?.current_weight]);
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
@@ -606,7 +608,7 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },
-  content: { padding: spacing.lg },
+  content: { padding: spacing.lg, paddingBottom: 118 },
   promptStack: { marginBottom: spacing.md },
 
   // Quick navigation

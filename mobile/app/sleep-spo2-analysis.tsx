@@ -22,7 +22,7 @@ import { buildInterventionDraft, type InterventionDraft } from '../services/inte
 import { invalidateQueryKeys, queryKeys } from '../applib/queryKeys';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
-import { createStyles, createTxt } from './sleep-spo2-analysis.styles';
+import { createStyles, createTxt } from '../components/sleep/sleepSpo2AnalysisStyles';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createSleepSpo2AgentContext } from '../utils/agentContext';
 

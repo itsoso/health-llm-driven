@@ -109,7 +109,7 @@ export default function ChatScreen() {
   const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
-  const contextConsumed = useRef(false);
+  const lastContextKey = useRef<string | null>(null);
 
   // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
   // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
@@ -178,9 +178,16 @@ export default function ChatScreen() {
   }, [llmModelId, llmSaving]);
 
   useEffect(() => {
-    if (contextConsumed.current) return;
     if (params.prompt || params.badge || params.context) {
-      contextConsumed.current = true;
+      const contextKey = JSON.stringify({
+        prompt: params.prompt ?? '',
+        badge: params.badge ?? '',
+        autoSend: params.autoSend ?? '',
+        context: params.context ?? '',
+        newChat: params.newChat ?? '',
+      });
+      if (lastContextKey.current === contextKey) return;
+      lastContextKey.current = contextKey;
       const forceNewConversation = params.newChat === '1';
       if (forceNewConversation) {
         newChat();
@@ -197,6 +204,8 @@ export default function ChatScreen() {
         }
       }
       try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined, newChat: undefined } as any); } catch {}
+    } else {
+      lastContextKey.current = null;
     }
   }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, sendMessage]);
 

@@ -311,4 +311,43 @@ describe('ChatScreen', () => {
     });
     expect(mockNewChat).toHaveBeenCalled();
   });
+
+  it('handles a second Agent context entry while the chat tab is already mounted', async () => {
+    mockRouteParams = {
+      prompt: '先分析睡眠。',
+      context: '{"from":"sleep/7d"}',
+      badge: '基于睡眠',
+      newChat: '1',
+    };
+
+    const screen = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        '先分析睡眠。',
+        null,
+        expect.objectContaining({ forceNewConversation: true }),
+      );
+    });
+
+    mockRouteParams = {
+      prompt: '再分析饮食。',
+      context: '{"from":"diet/today"}',
+      badge: '基于今日饮食',
+      newChat: '1',
+    };
+    screen.rerender(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        '再分析饮食。',
+        null,
+        expect.objectContaining({
+          extraContext: '{"from":"diet/today"}',
+          forceNewConversation: true,
+        }),
+      );
+    });
+    expect(mockNewChat).toHaveBeenCalledTimes(2);
+  });
 });

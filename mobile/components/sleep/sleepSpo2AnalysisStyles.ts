@@ -1,6 +1,6 @@
 import { StyleSheet, type TextStyle } from 'react-native';
-import { spacing, radii, shadows } from '../constants/theme';
-import type { ColorPalette } from '../hooks/useTheme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import type { ColorPalette } from '../../hooks/useTheme';
 
 export const createStyles = (c: ColorPalette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },

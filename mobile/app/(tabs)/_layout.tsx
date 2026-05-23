@@ -1,8 +1,7 @@
 import React from 'react';
-import { View, Modal, Text, TouchableOpacity } from 'react-native';
+import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Platform } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
 
@@ -24,7 +23,7 @@ import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
  */
 
 export default function TabLayout() {
-  const { c, isDark } = useTheme();
+  const { c } = useTheme();
   // 用户登录后第一次进 tabs 时, 一次性问一下 GPS 权限. 不再弹.
   const gpsPrompt = useGPSOnboardingPrompt(true);
 
@@ -38,7 +37,7 @@ export default function TabLayout() {
           tabBarLabelStyle: styles.tabLabel,
           tabBarStyle: {
             ...styles.tabBar,
-            backgroundColor: isDark ? 'rgba(28,28,30,0.95)' : 'rgba(255,255,255,0.95)',
+            backgroundColor: c.bgCard,
             borderTopColor: c.separator,
           },
         }}
@@ -127,6 +126,10 @@ const styles = StyleSheet.create({
     height: Platform.OS === 'ios' ? 83 : 60,
     paddingBottom: Platform.OS === 'ios' ? 34 : 8,
     paddingTop: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -4 },
   },
   tabLabel: {
     fontSize: 10,
