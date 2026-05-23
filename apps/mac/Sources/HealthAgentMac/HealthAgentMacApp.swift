@@ -31,7 +31,9 @@ struct AppServices {
         self.todayViewModel = TodayViewModel(
             service: DesktopBootstrapService(apiClient: apiClient)
         )
-        self.agentViewModel = AgentChatViewModel()
+        self.agentViewModel = AgentChatViewModel(
+            streamService: AgentStreamClient(tokenProvider: tokenProvider)
+        )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
         self.traceClient = TraceClient(apiClient: apiClient)

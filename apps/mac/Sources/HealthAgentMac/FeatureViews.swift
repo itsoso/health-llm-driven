@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
     @State private var draft = ""
-    @State private var localMessages: [String] = []
 
     private let modelIDs = [
         "system-default",
@@ -37,19 +36,47 @@ struct AgentChatView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if localMessages.isEmpty {
+                    if viewModel.messages.isEmpty {
                         Text("Ready for desktop chat, file context, and evidence inspection.")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(Array(localMessages.enumerated()), id: \.offset) { _, message in
-                        Text(message)
-                            .padding(12)
-                            .background(.quaternary)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    ForEach(viewModel.messages) { message in
+                        bubbleText(message)
+                            .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+                            .overlay(alignment: .topLeading) {
+                                if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
+            }
+
+            if let status = viewModel.lastCompletionStatus {
+                HStack(spacing: 12) {
+                    Text(status)
+                    if let model = viewModel.lastModel {
+                        Text(model)
+                    }
+                    if !viewModel.lastSourcesUsed.isEmpty {
+                        Text(viewModel.lastSourcesUsed.joined(separator: ", "))
+                    }
+                    Spacer()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
+            }
+
+            if let error = viewModel.errorMessage {
+                Text(error)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
             }
 
             Divider()
@@ -57,19 +84,29 @@ struct AgentChatView: View {
             HStack {
                 TextField("Ask about health data, labs, genes, or records", text: $draft)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit(sendDraft)
-                Button("Send", action: sendDraft)
-                    .keyboardShortcut(.return, modifiers: .command)
+                    .onSubmit { Task { await sendDraft() } }
+                Button(viewModel.isStreaming ? "Sending..." : "Send") {
+                    Task { await sendDraft() }
+                }
+                .disabled(viewModel.isStreaming || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .keyboardShortcut(.return, modifiers: .command)
             }
             .padding(16)
         }
     }
 
-    private func sendDraft() {
+    private func bubbleText(_ message: AgentChatMessage) -> some View {
+        Text(message.content.isEmpty ? " " : message.content)
+            .padding(12)
+            .background(.quaternary)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func sendDraft() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        localMessages.append(text)
         draft = ""
+        await viewModel.send(text)
     }
 }
 

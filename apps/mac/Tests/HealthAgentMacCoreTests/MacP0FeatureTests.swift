@@ -20,7 +20,7 @@ final class MacP0FeatureTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .token("你好"),
-            .done(conversationID: 7, messageID: 9, completionStatus: "complete"),
+            .done(conversationID: 7, messageID: 9, completionStatus: "complete", model: nil, sourcesUsed: []),
             .error("timeout")
         ])
     }
