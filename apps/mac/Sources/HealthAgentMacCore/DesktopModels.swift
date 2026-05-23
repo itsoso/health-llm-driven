@@ -8,7 +8,33 @@ public struct DesktopBootstrap: Decodable, Equatable, Sendable {
     public let actionCards: [ActionCardSummary]
     public let recentMemory: [MemoryFactSummary]
     public let recentRecordsSummary: RecentRecordsSummary
+    public let genomicSummary: GenomicSummary?
+    public let knowledgeSummary: KnowledgeSummary?
     public let activeJobs: [DesktopJobSummary]
+
+    public init(
+        user: DesktopUser,
+        modelPreference: ModelPreference,
+        dailyPlan: DailyOperatingPlan,
+        trajectory: TrajectorySummary,
+        actionCards: [ActionCardSummary],
+        recentMemory: [MemoryFactSummary],
+        recentRecordsSummary: RecentRecordsSummary,
+        genomicSummary: GenomicSummary? = nil,
+        knowledgeSummary: KnowledgeSummary? = nil,
+        activeJobs: [DesktopJobSummary]
+    ) {
+        self.user = user
+        self.modelPreference = modelPreference
+        self.dailyPlan = dailyPlan
+        self.trajectory = trajectory
+        self.actionCards = actionCards
+        self.recentMemory = recentMemory
+        self.recentRecordsSummary = recentRecordsSummary
+        self.genomicSummary = genomicSummary
+        self.knowledgeSummary = knowledgeSummary
+        self.activeJobs = activeJobs
+    }
 
     enum CodingKeys: String, CodingKey {
         case user
@@ -18,6 +44,8 @@ public struct DesktopBootstrap: Decodable, Equatable, Sendable {
         case actionCards = "action_cards"
         case recentMemory = "recent_memory"
         case recentRecordsSummary = "recent_records_summary"
+        case genomicSummary = "genomic_summary"
+        case knowledgeSummary = "knowledge_summary"
         case activeJobs = "active_jobs"
     }
 }
@@ -480,5 +508,170 @@ public struct DesktopJobSummary: Decodable, Equatable, Identifiable, Sendable {
         case updatedAt = "updated_at"
         case startedAt = "started_at"
         case completedAt = "completed_at"
+    }
+}
+
+public struct GenomicSummary: Decodable, Equatable, Sendable {
+    public let profileID: Int?
+    public let provider: String?
+    public let testDate: String?
+    public let reportID: String?
+    public let recordCount: Int
+    public let highRiskCount: Int
+    public let mediumRiskCount: Int
+    public let lowRiskCount: Int
+    public let infoCount: Int
+    public let actionableCount: Int
+    public let categoryCount: Int
+    public let topCategories: [GenomicCategorySummary]
+    public let topFindings: [GenomicFindingSummary]
+    public let latestImport: GenomicImportSummary?
+
+    enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case provider
+        case testDate = "test_date"
+        case reportID = "report_id"
+        case recordCount = "record_count"
+        case highRiskCount = "high_risk_count"
+        case mediumRiskCount = "medium_risk_count"
+        case lowRiskCount = "low_risk_count"
+        case infoCount = "info_count"
+        case actionableCount = "actionable_count"
+        case categoryCount = "category_count"
+        case topCategories = "top_categories"
+        case topFindings = "top_findings"
+        case latestImport = "latest_import"
+    }
+}
+
+public struct GenomicCategorySummary: Decodable, Equatable, Identifiable, Sendable {
+    public let category: String
+    public let count: Int
+    public let highRiskCount: Int
+    public let mediumRiskCount: Int
+
+    public var id: String { category }
+
+    enum CodingKeys: String, CodingKey {
+        case category
+        case count
+        case highRiskCount = "high_risk_count"
+        case mediumRiskCount = "medium_risk_count"
+    }
+}
+
+public struct GenomicFindingSummary: Decodable, Equatable, Identifiable, Sendable {
+    public let id: Int
+    public let rsid: String?
+    public let category: String?
+    public let geneName: String
+    public let variantName: String?
+    public let genotype: String?
+    public let resultLabel: String?
+    public let riskLevel: String?
+    public let evidenceLevel: String?
+    public let description: String?
+    public let variantNature: String?
+
+    public var displayTitle: String {
+        if let variantName, !variantName.isEmpty {
+            return "\(geneName) · \(variantName)"
+        }
+        return geneName
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case rsid
+        case category
+        case geneName = "gene_name"
+        case variantName = "variant_name"
+        case genotype
+        case resultLabel = "result_label"
+        case riskLevel = "risk_level"
+        case evidenceLevel = "evidence_level"
+        case description
+        case variantNature = "variant_nature"
+    }
+}
+
+public struct GenomicImportSummary: Decodable, Equatable, Sendable {
+    public let status: String?
+    public let sourceType: String?
+    public let rawRecordCount: Int?
+    public let matchedCount: Int?
+    public let duplicateCount: Int?
+    public let unknownCount: Int?
+    public let finishedAt: String?
+    public let rawFileHash: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case sourceType = "source_type"
+        case rawRecordCount = "raw_record_count"
+        case matchedCount = "matched_count"
+        case duplicateCount = "duplicate_count"
+        case unknownCount = "unknown_count"
+        case finishedAt = "finished_at"
+        case rawFileHash = "raw_file_hash"
+    }
+}
+
+public struct KnowledgeSummary: Decodable, Equatable, Sendable {
+    public let documentCount: Int
+    public let claimCount: Int
+    public let entityCount: Int
+    public let articleCount: Int
+    public let edgeCount: Int
+    public let evidenceLevelCounts: [KnowledgeCount]
+    public let sourceCounts: [KnowledgeSourceCount]
+    public let recentDocuments: [KnowledgeDocumentSummary]
+
+    enum CodingKeys: String, CodingKey {
+        case documentCount = "document_count"
+        case claimCount = "claim_count"
+        case entityCount = "entity_count"
+        case articleCount = "article_count"
+        case edgeCount = "edge_count"
+        case evidenceLevelCounts = "evidence_level_counts"
+        case sourceCounts = "source_counts"
+        case recentDocuments = "recent_documents"
+    }
+}
+
+public struct KnowledgeCount: Decodable, Equatable, Identifiable, Sendable {
+    public let level: String
+    public let count: Int
+
+    public var id: String { level }
+}
+
+public struct KnowledgeSourceCount: Decodable, Equatable, Identifiable, Sendable {
+    public let source: String
+    public let count: Int
+
+    public var id: String { source }
+}
+
+public struct KnowledgeDocumentSummary: Decodable, Equatable, Identifiable, Sendable {
+    public let docID: String
+    public let docType: String
+    public let title: String?
+    public let summary: String?
+    public let evidenceLevel: String?
+    public let confidence: Double?
+    public let sources: [String]
+
+    public var id: String { docID }
+
+    enum CodingKeys: String, CodingKey {
+        case docID = "doc_id"
+        case docType = "doc_type"
+        case title
+        case summary
+        case evidenceLevel = "evidence_level"
+        case confidence
+        case sources
     }
 }

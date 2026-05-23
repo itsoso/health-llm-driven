@@ -49,6 +49,8 @@ public struct DesktopWorkspaceSummary: Equatable, Sendable {
     public let actionCards: [ActionCardSummary]
     public let guidanceRows: [DesktopWorkspaceGuidanceRow]
     public let jobs: [DesktopJobSummary]
+    public let genomicSummary: GenomicSummary?
+    public let knowledgeSummary: KnowledgeSummary?
 }
 
 public extension DesktopBootstrap {
@@ -63,7 +65,9 @@ public extension DesktopBootstrap {
             recentRecords: recentRecords(for: kind),
             actionCards: actionCards(for: kind),
             guidanceRows: guidanceRows(for: kind),
-            jobs: jobs(for: kind)
+            jobs: jobs(for: kind),
+            genomicSummary: kind == .genetics ? genomicSummary : nil,
+            knowledgeSummary: kind == .knowledge ? knowledgeSummary : nil
         )
     }
 
@@ -79,6 +83,14 @@ public extension DesktopBootstrap {
                 .init(id: "steps", title: "Steps", value: recentRecordsSummary.latestGarmin?.steps.map { formatWorkspaceNumber(Double($0)) } ?? "—")
             ]
         case .genetics:
+            if let genomicSummary, genomicSummary.recordCount > 0 {
+                return [
+                    .init(id: "variants", title: "Variants", value: formatWorkspaceNumber(Double(genomicSummary.recordCount))),
+                    .init(id: "high_risk", title: "High Risk", value: formatWorkspaceNumber(Double(genomicSummary.highRiskCount))),
+                    .init(id: "medium_risk", title: "Medium Risk", value: formatWorkspaceNumber(Double(genomicSummary.mediumRiskCount))),
+                    .init(id: "categories", title: "Categories", value: formatWorkspaceNumber(Double(genomicSummary.categoryCount)))
+                ]
+            }
             let running = jobs(for: .genetics).filter { $0.status == "queued" || $0.status == "running" }.count
             return [
                 .init(id: "gene_jobs", title: "Gene Jobs", value: "\(jobs(for: .genetics).count)"),
@@ -87,6 +99,14 @@ public extension DesktopBootstrap {
                 .init(id: "memory", title: "Memory", value: "\(recentMemory.filter { !$0.objectValue.isLowSignalWorkspaceMemory }.count)")
             ]
         case .knowledge:
+            if let knowledgeSummary, knowledgeSummary.documentCount > 0 {
+                return [
+                    .init(id: "documents", title: "Documents", value: formatWorkspaceNumber(Double(knowledgeSummary.documentCount))),
+                    .init(id: "claims", title: "Claims", value: formatWorkspaceNumber(Double(knowledgeSummary.claimCount))),
+                    .init(id: "sources", title: "Sources", value: formatWorkspaceNumber(Double(knowledgeSummary.sourceCounts.count))),
+                    .init(id: "edges", title: "Edges", value: formatWorkspaceNumber(Double(knowledgeSummary.edgeCount)))
+                ]
+            }
             let running = jobs(for: .knowledge).filter { $0.status == "queued" || $0.status == "running" }.count
             return [
                 .init(id: "kb_jobs", title: "KB Jobs", value: "\(jobs(for: .knowledge).count)"),

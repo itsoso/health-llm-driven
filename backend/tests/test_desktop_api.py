@@ -13,8 +13,10 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     from app.models.action_card import ActionCard
     from app.models.blood_pressure import BloodPressureRecord
     from app.models.daily_health import DietRecord, WaterIntake
+    from app.models.genetic_data import GeneticProfile, GeneticVariant
     from app.models.memory_fact import MemoryFact
     from app.models.supplement import SupplementDefinition, SupplementRecord
+    from app.models.system_knowledge import KBDocument, KBEdge
     from app.models.user import User
     from app.models.user_profile import UserProfile
     from app.models.weight import WeightRecord
@@ -108,6 +110,98 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
         systolic=118,
         diastolic=76,
     ))
+    profile = GeneticProfile(
+        user_id=user.id,
+        test_provider="wegene",
+        test_date=date(2026, 5, 15),
+        report_id="wg-20260515",
+    )
+    other_profile = GeneticProfile(
+        user_id=other.id,
+        test_provider="wegene",
+        test_date=date(2026, 5, 15),
+        report_id="other",
+    )
+    db.add_all([profile, other_profile])
+    db.commit()
+    db.refresh(profile)
+    db.refresh(other_profile)
+    db.add_all([
+        GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            rsid="rs1061235",
+            category="drug_sensitivity",
+            gene_name="HLA-A*31:01",
+            variant_name="卡马西平皮肤不良反应",
+            genotype="AA",
+            result_label="positive",
+            risk_level="high",
+            evidence_level="screening",
+            description="提示用药前需要医生确认的筛查信号。",
+        ),
+        GeneticVariant(
+            user_id=user.id,
+            profile_id=profile.id,
+            rsid="rs380390",
+            category="disease_risk",
+            gene_name="CFH",
+            variant_name="年龄相关黄斑变性",
+            genotype="CC",
+            result_label="风险升高",
+            risk_level="medium",
+            evidence_level="B",
+            description="用于风险分层，不构成诊断。",
+        ),
+        GeneticVariant(
+            user_id=other.id,
+            profile_id=other_profile.id,
+            rsid="rs999",
+            category="disease_risk",
+            gene_name="OTHER",
+            genotype="AA",
+            result_label="不应出现",
+            risk_level="high",
+        ),
+    ])
+    db.add_all([
+        KBDocument(
+            doc_id="claim:c_mthfr_c677t_hcy_folate_boundary",
+            doc_type="claim",
+            entity_type="gene",
+            entity_id="MTHFR",
+            title="MTHFR 叶酸边界",
+            summary="Hcy 和叶酸/B12 用于复查闭环。",
+            body="基因仅用于风险分层。",
+            confidence=0.82,
+            evidence_level="B",
+            sources=["dedao:qiuzilong-genetics-07", "pubmed:123"],
+            is_archived=False,
+        ),
+        KBDocument(
+            doc_id="entity:gene:MTHFR",
+            doc_type="entity",
+            entity_type="gene",
+            entity_id="MTHFR",
+            title="MTHFR",
+            sources=["dedao:qiuzilong-genetics-07"],
+            is_archived=False,
+        ),
+        KBDocument(
+            doc_id="article:dedao:folate",
+            doc_type="article",
+            title="叶酸代谢课程",
+            sources=["dedao:qiuzilong-genetics-07"],
+            is_archived=False,
+        ),
+    ])
+    db.add(KBEdge(
+        src_doc_id="entity:gene:MTHFR",
+        dst_doc_id="claim:c_mthfr_c677t_hcy_folate_boundary",
+        relation="has_claim",
+        confidence=0.8,
+        source_claim_id="claim:c_mthfr_c677t_hcy_folate_boundary",
+    ))
     db.commit()
     supplement = SupplementDefinition(
         user_id=user.id,
@@ -163,6 +257,20 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     assert body["recent_records_summary"]["supplements"]["top_items"] == [{"name": "鱼油", "count": 2}]
     assert body["recent_records_summary"]["latest_weight"]["value"] == 70.2
     assert body["recent_records_summary"]["latest_blood_pressure"]["value"] == "118/76"
+    assert body["genomic_summary"]["record_count"] == 2
+    assert body["genomic_summary"]["high_risk_count"] == 1
+    assert body["genomic_summary"]["medium_risk_count"] == 1
+    assert body["genomic_summary"]["provider"] == "wegene"
+    assert body["genomic_summary"]["top_findings"][0]["gene_name"] == "HLA-A*31:01"
+    assert body["genomic_summary"]["top_findings"][0]["genotype"] == "AA"
+    assert body["genomic_summary"]["top_categories"][0]["category"] == "disease_risk"
+    assert body["knowledge_summary"]["document_count"] == 3
+    assert body["knowledge_summary"]["claim_count"] == 1
+    assert body["knowledge_summary"]["entity_count"] == 1
+    assert body["knowledge_summary"]["article_count"] == 1
+    assert body["knowledge_summary"]["edge_count"] == 1
+    assert body["knowledge_summary"]["source_counts"][0] == {"source": "dedao:qiuzilong-genetics-07", "count": 3}
+    assert body["knowledge_summary"]["recent_documents"][0]["doc_id"] == "article:dedao:folate"
     recent_types = [record["type"] for record in body["recent_records_summary"]["recent_records"]]
     assert "blood_pressure" in recent_types
     assert "weight" in recent_types

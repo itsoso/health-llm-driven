@@ -238,6 +238,39 @@ final class MacP0FeatureTests: XCTestCase {
               {"id": 12, "type": "weight", "title": "体重", "value": 70.2, "unit": "kg", "record_date": "2026-05-22"}
             ]
           },
+          "genomic_summary": {
+            "profile_id": 7,
+            "provider": "wegene",
+            "test_date": "2026-05-15",
+            "report_id": "wg-20260515",
+            "record_count": 2,
+            "high_risk_count": 1,
+            "medium_risk_count": 1,
+            "low_risk_count": 0,
+            "info_count": 0,
+            "actionable_count": 2,
+            "category_count": 2,
+            "top_categories": [
+              {"category": "disease_risk", "count": 1, "high_risk_count": 0, "medium_risk_count": 1},
+              {"category": "drug_sensitivity", "count": 1, "high_risk_count": 1, "medium_risk_count": 0}
+            ],
+            "top_findings": [
+              {"id": 101, "rsid": "rs1061235", "category": "drug_sensitivity", "gene_name": "HLA-A*31:01", "variant_name": "卡马西平皮肤不良反应", "genotype": "AA", "result_label": "positive", "risk_level": "high", "evidence_level": "screening", "description": "提示用药前需要医生确认。", "variant_nature": "risk"}
+            ],
+            "latest_import": {"status": "done", "raw_record_count": 18191, "matched_count": 2, "finished_at": "2026-05-15T10:00:00"}
+          },
+          "knowledge_summary": {
+            "document_count": 3,
+            "claim_count": 1,
+            "entity_count": 1,
+            "article_count": 1,
+            "edge_count": 1,
+            "evidence_level_counts": [{"level": "B", "count": 1}],
+            "source_counts": [{"source": "dedao:qiuzilong-genetics-07", "count": 3}],
+            "recent_documents": [
+              {"doc_id": "claim:c_mthfr_c677t_hcy_folate_boundary", "doc_type": "claim", "title": "MTHFR 叶酸边界", "summary": "Hcy 和叶酸/B12 用于复查闭环。", "evidence_level": "B", "confidence": 0.82, "sources": ["dedao:qiuzilong-genetics-07"]}
+            ]
+          },
           "active_jobs": [
             {"id": 1, "job_type": "gene_reanalysis", "status": "running", "progress": 40, "source_kind": "genome_txt", "source_name": "wegene.txt", "source_hash": "sha256:a", "request_payload": {}, "result_payload": {}, "error_message": null},
             {"id": 2, "job_type": "dedao_compile", "status": "queued", "progress": 0, "source_kind": "dedao_folder", "source_name": "down-dedao", "source_hash": "sha256:b", "request_payload": {}, "result_payload": {}, "error_message": null},
@@ -264,11 +297,16 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(dataSummary.recentMemory.map(\.objectValue), ["补剂依从率偏低"])
         XCTAssertEqual(dataSummary.guidanceRows.map(\.title), ["Refresh recent health data", "Review weekly intake", "Create medical import"])
         XCTAssertEqual(dataSummary.jobs.map(\.id), [3])
-        XCTAssertEqual(geneticsSummary.metrics.map(\.title), ["Gene Jobs", "Running", "Action Cards", "Memory"])
+        XCTAssertEqual(geneticsSummary.metrics.map(\.title), ["Variants", "High Risk", "Medium Risk", "Categories"])
+        XCTAssertEqual(geneticsSummary.metrics.map(\.value), ["2", "1", "1", "2"])
+        XCTAssertEqual(geneticsSummary.genomicSummary?.topFindings.first?.geneName, "HLA-A*31:01")
+        XCTAssertEqual(geneticsSummary.genomicSummary?.topCategories.map(\.category), ["disease_risk", "drug_sensitivity"])
         XCTAssertEqual(geneticsSummary.actionCards.map(\.title), ["MTHFR 基因补剂闭环"])
         XCTAssertEqual(geneticsSummary.guidanceRows.map(\.title), ["Import genome file", "Run risk reanalysis", "Keep clinical boundary"])
         XCTAssertEqual(geneticsSummary.jobs.map(\.id), [1])
-        XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["KB Jobs", "Running", "Focus", "Memory"])
+        XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["Documents", "Claims", "Sources", "Edges"])
+        XCTAssertEqual(knowledgeSummary.metrics.map(\.value), ["3", "1", "1", "1"])
+        XCTAssertEqual(knowledgeSummary.knowledgeSummary?.recentDocuments.first?.docID, "claim:c_mthfr_c677t_hcy_folate_boundary")
         XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建"])
         XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.title), ["Import Dedao folder", "Rebuild system KB", "Audit source coverage"])
         XCTAssertEqual(knowledgeSummary.jobs.map(\.id), [2])

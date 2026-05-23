@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc
+from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -21,9 +21,11 @@ from app.models.action_card import ActionCard
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import DietRecord, GarminData, SupplementIntake, WaterIntake
 from app.models.desktop_job import DesktopJob
+from app.models.genetic_data import GeneticImportJob, GeneticVariant
 from app.models.memory_fact import MemoryFact
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
+from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.weight import WeightRecord
@@ -396,6 +398,162 @@ def _recent_records_list(
     return rows[:8]
 
 
+def _empty_genomic_summary() -> dict[str, Any]:
+    return {
+        "profile_id": None,
+        "provider": None,
+        "test_date": None,
+        "report_id": None,
+        "record_count": 0,
+        "high_risk_count": 0,
+        "medium_risk_count": 0,
+        "low_risk_count": 0,
+        "info_count": 0,
+        "actionable_count": 0,
+        "category_count": 0,
+        "top_categories": [],
+        "top_findings": [],
+        "latest_import": None,
+    }
+
+
+def _variant_to_finding(variant: GeneticVariant) -> dict[str, Any]:
+    return {
+        "id": variant.id,
+        "rsid": variant.rsid,
+        "category": variant.category,
+        "gene_name": variant.gene_name,
+        "variant_name": variant.variant_name,
+        "genotype": variant.genotype,
+        "result_label": variant.result_label,
+        "risk_level": variant.risk_level,
+        "evidence_level": variant.evidence_level,
+        "description": variant.description,
+        "variant_nature": variant.variant_nature,
+    }
+
+
+def _genomic_summary(db: Session, user_id: int) -> dict[str, Any]:
+    from app.services.genetic_report import _resolve_active_profile
+
+    profile = _resolve_active_profile(db, user_id)
+    if not profile:
+        return _empty_genomic_summary()
+
+    variants = (
+        db.query(GeneticVariant)
+        .filter(GeneticVariant.user_id == user_id, GeneticVariant.profile_id == profile.id)
+        .all()
+    )
+    risk_counts = Counter((variant.risk_level or "info").lower() for variant in variants)
+    category_counts: dict[str, dict[str, Any]] = {}
+    for variant in variants:
+        category = variant.category or "uncategorized"
+        bucket = category_counts.setdefault(
+            category,
+            {"category": category, "count": 0, "high_risk_count": 0, "medium_risk_count": 0},
+        )
+        bucket["count"] += 1
+        risk_level = (variant.risk_level or "info").lower()
+        if risk_level == "high":
+            bucket["high_risk_count"] += 1
+        elif risk_level == "medium":
+            bucket["medium_risk_count"] += 1
+
+    risk_rank = {"high": 0, "medium": 1, "low": 2, "info": 3}
+    top_findings = sorted(
+        variants,
+        key=lambda variant: (
+            risk_rank.get((variant.risk_level or "info").lower(), 9),
+            variant.category or "",
+            variant.gene_name or "",
+            variant.rsid or "",
+        ),
+    )[:12]
+    latest_import = (
+        db.query(GeneticImportJob)
+        .filter(GeneticImportJob.user_id == user_id, GeneticImportJob.profile_id == profile.id)
+        .order_by(desc(GeneticImportJob.finished_at), desc(GeneticImportJob.created_at), desc(GeneticImportJob.id))
+        .first()
+    )
+
+    return {
+        "profile_id": profile.id,
+        "provider": profile.test_provider,
+        "test_date": profile.test_date.isoformat() if profile.test_date else None,
+        "report_id": profile.report_id,
+        "record_count": len(variants),
+        "high_risk_count": risk_counts.get("high", 0),
+        "medium_risk_count": risk_counts.get("medium", 0),
+        "low_risk_count": risk_counts.get("low", 0),
+        "info_count": risk_counts.get("info", 0),
+        "actionable_count": risk_counts.get("high", 0) + risk_counts.get("medium", 0),
+        "category_count": len(category_counts),
+        "top_categories": sorted(
+            category_counts.values(),
+            key=lambda item: (-int(item["count"]), str(item["category"])),
+        )[:8],
+        "top_findings": [_variant_to_finding(variant) for variant in top_findings],
+        "latest_import": {
+            "status": latest_import.status,
+            "source_type": latest_import.source_type,
+            "raw_record_count": latest_import.raw_record_count,
+            "matched_count": latest_import.matched_count,
+            "duplicate_count": latest_import.duplicate_count,
+            "unknown_count": latest_import.unknown_count,
+            "finished_at": latest_import.finished_at.isoformat() if latest_import.finished_at else None,
+            "raw_file_hash": latest_import.raw_file_hash,
+        } if latest_import else None,
+    }
+
+
+def _knowledge_summary(db: Session) -> dict[str, Any]:
+    docs = (
+        db.query(KBDocument)
+        .filter(KBDocument.is_archived == False)  # noqa: E712
+        .order_by(asc(KBDocument.doc_id))
+        .all()
+    )
+    doc_type_counts = Counter(doc.doc_type or "unknown" for doc in docs)
+    source_counts: Counter[str] = Counter()
+    evidence_counts: Counter[str] = Counter()
+    for doc in docs:
+        for source in doc.sources or []:
+            source_counts[str(source)] += 1
+        if doc.doc_type == "claim" and doc.evidence_level:
+            evidence_counts[str(doc.evidence_level)] += 1
+
+    recent_documents = [
+        {
+            "doc_id": doc.doc_id,
+            "doc_type": doc.doc_type,
+            "title": doc.title,
+            "summary": doc.summary,
+            "evidence_level": doc.evidence_level,
+            "confidence": doc.confidence,
+            "sources": doc.sources or [],
+        }
+        for doc in docs[:8]
+    ]
+
+    return {
+        "document_count": len(docs),
+        "claim_count": doc_type_counts.get("claim", 0),
+        "entity_count": doc_type_counts.get("entity", 0),
+        "article_count": doc_type_counts.get("article", 0),
+        "edge_count": db.query(func.count(KBEdge.edge_id)).scalar() or 0,
+        "evidence_level_counts": [
+            {"level": level, "count": count}
+            for level, count in sorted(evidence_counts.items())
+        ],
+        "source_counts": [
+            {"source": source, "count": count}
+            for source, count in source_counts.most_common(8)
+        ],
+        "recent_documents": recent_documents,
+    }
+
+
 def _active_desktop_jobs(db: Session, user_id: int) -> list[dict[str, Any]]:
     jobs = (
         db.query(DesktopJob)
@@ -458,6 +616,8 @@ def get_desktop_bootstrap(
         "action_cards": [_action_card_to_dict(card) for card in action_cards],
         "recent_memory": [_memory_fact_to_dict(fact) for fact in memory_facts],
         "recent_records_summary": _recent_records_summary(db, current_user.id),
+        "genomic_summary": _genomic_summary(db, current_user.id),
+        "knowledge_summary": _knowledge_summary(db),
         "active_jobs": _active_desktop_jobs(db, current_user.id),
     }
 

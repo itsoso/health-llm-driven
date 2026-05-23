@@ -1127,6 +1127,175 @@ struct WorkspaceOverviewView: View {
             }
         }
 
+        if kind == .genetics {
+            SectionPanel(title: appText("Genetic Risk Summary", appLanguageRaw), systemImage: "dna") {
+                if let genomic = summary.genomicSummary, genomic.recordCount > 0 {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 10) {
+                            if let provider = genomic.provider {
+                                Text(provider)
+                            }
+                            if let testDate = genomic.testDate {
+                                Text(testDate)
+                            }
+                            if let latestImport = genomic.latestImport?.rawRecordCount {
+                                Text("\(latestImport) raw")
+                            }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
+                            ForEach(genomic.topCategories) { category in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(category.category)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text("\(category.count) variants")
+                                        .font(.title3.weight(.bold).monospacedDigit())
+                                    Text("H \(category.highRiskCount) · M \(category.mediumRiskCount)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                        }
+                    }
+                } else {
+                    Text(appText("No genetic variants loaded yet.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            SectionPanel(title: appText("Top Genetic Findings", appLanguageRaw), systemImage: "exclamationmark.triangle.fill") {
+                if let findings = summary.genomicSummary?.topFindings, !findings.isEmpty {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 10)], spacing: 10) {
+                        ForEach(findings.prefix(8)) { finding in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .top) {
+                                    Text(finding.displayTitle)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(2)
+                                    Spacer(minLength: 8)
+                                    Text((finding.riskLevel ?? "info").uppercased())
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 4)
+                                        .background(geneticRiskColor(finding.riskLevel).opacity(0.16), in: Capsule())
+                                        .foregroundStyle(geneticRiskColor(finding.riskLevel))
+                                }
+                                HStack(spacing: 8) {
+                                    if let rsid = finding.rsid {
+                                        Text(rsid)
+                                    }
+                                    if let genotype = finding.genotype {
+                                        Text(genotype)
+                                    }
+                                    if let evidence = finding.evidenceLevel {
+                                        Text(evidence)
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                if let description = finding.description, !description.isEmpty {
+                                    Text(description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
+                } else {
+                    Text(appText("No high-signal genetic findings loaded.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        if kind == .knowledge {
+            SectionPanel(title: appText("Knowledge Coverage", appLanguageRaw), systemImage: "books.vertical.fill") {
+                if let knowledge = summary.knowledgeSummary, knowledge.documentCount > 0 {
+                    VStack(alignment: .leading, spacing: 14) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
+                            ForEach(knowledge.sourceCounts.prefix(8)) { source in
+                                HStack {
+                                    Text(source.source)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text("\(source.count)")
+                                        .font(.callout.weight(.bold).monospacedDigit())
+                                }
+                                .padding(12)
+                                .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                        }
+                        if !knowledge.evidenceLevelCounts.isEmpty {
+                            HStack(spacing: 8) {
+                                ForEach(knowledge.evidenceLevelCounts) { item in
+                                    Text("\(item.level): \(item.count)")
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.indigo.opacity(0.12), in: Capsule())
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(appText("No knowledge documents loaded yet.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            SectionPanel(title: appText("Recent Knowledge Documents", appLanguageRaw), systemImage: "doc.text.magnifyingglass") {
+                if let documents = summary.knowledgeSummary?.recentDocuments, !documents.isEmpty {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(documents.prefix(8)) { document in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: document.docType == "claim" ? "checkmark.seal.fill" : "doc.text.fill")
+                                    .foregroundStyle(document.docType == "claim" ? .teal : .blue)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(document.title ?? document.docID)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(document.summary ?? document.docID)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                    HStack(spacing: 8) {
+                                        Text(document.docType)
+                                        if let level = document.evidenceLevel {
+                                            Text("Level \(level)")
+                                        }
+                                        if let firstSource = document.sources.first {
+                                            Text(firstSource)
+                                        }
+                                    }
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 6)
+                            if document.id != documents.prefix(8).last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                } else {
+                    Text(appText("No knowledge documents loaded yet.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
         SectionPanel(title: appText("Focus Domains", appLanguageRaw), systemImage: "scope") {
             if summary.focusDomains.isEmpty {
                 Text(appText("No focus domains loaded.", appLanguageRaw))
@@ -1212,6 +1381,15 @@ struct WorkspaceOverviewView: View {
         default: .secondary
         }
     }
+
+    private func geneticRiskColor(_ riskLevel: String?) -> Color {
+        switch riskLevel?.lowercased() {
+        case "high": .red
+        case "medium": .orange
+        case "low": .blue
+        default: .secondary
+        }
+    }
 }
 
 private struct WorkspaceMetricCard: View {
@@ -1254,7 +1432,15 @@ private struct WorkspaceMetricCard: View {
         case "latest_bp": "heart.text.square.fill"
         case "steps": "figure.walk"
         case "gene_jobs": "dna"
+        case "variants": "dna"
+        case "high_risk": "exclamationmark.triangle.fill"
+        case "medium_risk": "exclamationmark.circle.fill"
+        case "categories": "square.grid.2x2.fill"
         case "kb_jobs": "books.vertical.fill"
+        case "documents": "doc.text.fill"
+        case "claims": "checkmark.seal.fill"
+        case "sources": "link"
+        case "edges": "point.3.connected.trianglepath.dotted"
         case "running": "clock.arrow.circlepath"
         case "action_cards": "checkmark.seal.fill"
         case "focus_domains": "scope"
@@ -1272,7 +1458,15 @@ private struct WorkspaceMetricCard: View {
         case "latest_bp": .pink
         case "steps": .blue
         case "gene_jobs": .purple
+        case "variants": .purple
+        case "high_risk": .red
+        case "medium_risk": .orange
+        case "categories": .indigo
         case "kb_jobs": .teal
+        case "documents": .teal
+        case "claims": .green
+        case "sources": .blue
+        case "edges": .indigo
         case "running": .blue
         case "action_cards": .orange
         case "focus_domains": .cyan

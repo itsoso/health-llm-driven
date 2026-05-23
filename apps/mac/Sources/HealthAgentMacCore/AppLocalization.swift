@@ -218,6 +218,13 @@ public enum L10n {
         "Chinese is the default. Language changes apply immediately in most views.": "默认使用中文。大多数界面会立即应用语言切换。",
         "Gene Jobs": "基因任务",
         "KB Jobs": "知识库任务",
+        "Variants": "位点",
+        "High Risk": "高风险",
+        "Medium Risk": "中风险",
+        "Categories": "分类",
+        "Documents": "文档",
+        "Claims": "Claims",
+        "Edges": "关系",
         "Action Cards": "行动卡片",
         "Refresh recent health data": "刷新近期健康数据",
         "Update labs, records, wearable trajectory, and medical imports before analysis.": "分析前更新化验、记录、穿戴轨迹和医疗导入。",
@@ -236,6 +243,13 @@ public enum L10n {
         "Rebuild system KB": "重建系统知识库",
         "Compile claims, evidence refs, and source coverage for safer Agent answers.": "编译 claim、证据引用和来源覆盖，让 Agent 回答更可靠。",
         "Audit source coverage": "审查来源覆盖",
-        "Check whether answers cite enough dedao, pubmed, and system evidence.": "检查回答是否引用了足够的得到、PubMed 和系统证据。"
+        "Check whether answers cite enough dedao, pubmed, and system evidence.": "检查回答是否引用了足够的得到、PubMed 和系统证据。",
+        "Genetic Risk Summary": "基因风险摘要",
+        "Top Genetic Findings": "重点基因发现",
+        "No genetic variants loaded yet.": "还没有加载基因位点。",
+        "No high-signal genetic findings loaded.": "还没有加载高信号基因发现。",
+        "Knowledge Coverage": "知识库覆盖",
+        "Recent Knowledge Documents": "近期知识文档",
+        "No knowledge documents loaded yet.": "还没有加载知识文档。"
     ]
 }
