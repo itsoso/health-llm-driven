@@ -162,6 +162,7 @@ describe('TodayScreen', () => {
     expect(getByText('今日重点')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('更多入口')).toBeTruthy();
+    expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
   it('places the remaining plan before shortcut entries in the home feed', () => {
@@ -178,14 +179,14 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('干预闭环'));
-    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动'));
-    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('指标反馈'));
+    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈'));
     expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.indexOf('本周建议'));
     expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
@@ -221,8 +222,8 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
     expect(screen.getByText('干预状态')).toBeTruthy();
     expect(screen.getByText('验证指标')).toBeTruthy();
   });
@@ -232,10 +233,10 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日行动')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('指标反馈')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动'));
-    expect(textFlow.indexOf('今日行动')).toBeLessThan(textFlow.indexOf('指标反馈'));
+    expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈'));
   });
 
   it('prioritizes outcome feedback before trajectory and environment details', () => {
@@ -444,7 +445,7 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('现在先做')).toBeTruthy();
+    expect(getByText('今日行动 · 现在先做')).toBeTruthy();
     expect(getByText('晨起记录体重和腰围')).toBeTruthy();
 
     fireEvent.press(getByText('开始'));

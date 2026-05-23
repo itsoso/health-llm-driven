@@ -405,7 +405,6 @@ export default function TodayScreen() {
         />
 
         <View style={styles.section}>
-          <SectionHeader title="今日行动" subtitle="先处理一件，再看余下计划" />
           <NextBestActionCard
             action={nextAction}
             loading={dailyPlanQuery.isLoading}
@@ -937,7 +936,7 @@ function NextBestActionCard({
           <Ionicons name="navigate-outline" size={17} color={c.green} />
         </View>
         <View style={styles.nextActionMain}>
-          <Text style={[styles.nextActionEyebrow, { color: c.green }]}>现在先做</Text>
+          <Text style={[styles.nextActionEyebrow, { color: c.green }]}>今日行动 · 现在先做</Text>
           <Text style={[styles.nextActionTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {title}
           </Text>
@@ -1580,8 +1579,8 @@ const styles = StyleSheet.create({
   nextActionCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: spacing.md,
+    padding: spacing.sm,
+    gap: spacing.sm,
   },
   nextActionTop: { flexDirection: 'row', gap: spacing.sm },
   nextActionIcon: {
@@ -1619,7 +1618,7 @@ const styles = StyleSheet.create({
   nextActionButtons: { flexDirection: 'row', gap: spacing.sm },
   nextActionPrimary: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 38,
     borderRadius: radii.md,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1628,7 +1627,7 @@ const styles = StyleSheet.create({
   },
   nextActionPrimaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   nextActionSecondary: {
-    minHeight: 42,
+    minHeight: 38,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
@@ -1639,7 +1638,7 @@ const styles = StyleSheet.create({
   },
   nextActionSecondaryText: { fontSize: 14, fontWeight: '800' },
   nextActionComplete: {
-    minHeight: 42,
+    minHeight: 38,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
