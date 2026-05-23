@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
+const mockRecordDailyPlanActionEvent = jest.fn();
 let mockDailyPlanActions: unknown[] = [];
 
 jest.mock('expo-router', () => ({
@@ -79,6 +80,7 @@ jest.mock('../../../services/actionCards', () => ({
 
 jest.mock('../../../services/dailyPlan', () => ({
   getDailyOperatingPlan: jest.fn(),
+  recordDailyPlanActionEvent: (...args: unknown[]) => mockRecordDailyPlanActionEvent(...args),
 }));
 
 jest.mock('../../../services/trajectory', () => ({
@@ -160,5 +162,30 @@ describe('TodayScreen', () => {
     fireEvent.press(getByText('开始'));
 
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
+  });
+
+  it('lets the user complete the next best action from the top card', async () => {
+    mockRecordDailyPlanActionEvent.mockResolvedValueOnce({
+      action_state: 'completed',
+      payload: {},
+    });
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText } = render(<TodayScreen />);
+
+    fireEvent.press(getByText('完成'));
+
+    await waitFor(() => {
+      expect(mockRecordDailyPlanActionEvent).toHaveBeenCalledWith(
+        'measurement.weight_waist_morning',
+        { event_type: 'completed', payload: { source: 'next_best_action' } },
+      );
+    });
   });
 });

@@ -37,7 +37,7 @@ import TrajectorySnapshotPanel from '../../components/dashboard/TrajectorySnapsh
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { EvidenceRefsRow } from '../../components/knowledge';
 import { pushChatWithContext } from '../../utils/agentContext';
-import { getDailyOperatingPlan, type DailyPlanAction } from '../../services/dailyPlan';
+import { getDailyOperatingPlan, recordDailyPlanActionEvent, type DailyPlanAction } from '../../services/dailyPlan';
 import { getHealthTrajectory } from '../../services/trajectory';
 
 interface TwinSnapshot {
@@ -77,6 +77,7 @@ export default function TodayScreen() {
   const { c } = useTheme();
   const qc = useQueryClient();
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [nextActionState, setNextActionState] = useState<'idle' | 'sending' | 'completed' | 'error'>('idle');
 
   const safetyQuery = useQuery({
     queryKey: ['safety', 'me'],
@@ -196,6 +197,21 @@ export default function TodayScreen() {
     else router.push('/(tabs)/chat' as any);
   }, [router]);
 
+  const completeNextAction = useCallback(async (action: DailyPlanAction) => {
+    if (!action.action_key || nextActionState === 'sending') return;
+    setNextActionState('sending');
+    try {
+      await recordDailyPlanActionEvent(action.action_key, {
+        event_type: 'completed',
+        payload: { source: 'next_best_action' },
+      });
+      setNextActionState('completed');
+      await qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] });
+    } catch {
+      setNextActionState('error');
+    }
+  }, [nextActionState, qc]);
+
   const openTrajectoryChat = useCallback(() => {
     const snapshot = trajectoryQuery.data;
     const contextObject = (value?: Record<string, unknown> | null) => (
@@ -243,7 +259,9 @@ export default function TodayScreen() {
         <NextBestActionCard
           action={nextAction}
           loading={dailyPlanQuery.isLoading}
+          completionState={nextActionState}
           onStart={openPlanAction}
+          onComplete={completeNextAction}
           onFallbackRecord={() => router.push('/(tabs)/record' as any)}
           onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
         />
@@ -539,13 +557,17 @@ function MetaChip({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label
 function NextBestActionCard({
   action,
   loading,
+  completionState,
   onStart,
+  onComplete,
   onFallbackRecord,
   onFallbackAgent,
 }: {
   action?: DailyPlanAction | null;
   loading?: boolean;
+  completionState: 'idle' | 'sending' | 'completed' | 'error';
   onStart: (action: DailyPlanAction) => void;
+  onComplete: (action: DailyPlanAction) => void;
   onFallbackRecord: () => void;
   onFallbackAgent: () => void;
 }) {
@@ -591,6 +613,36 @@ function NextBestActionCard({
           <Ionicons name="play-outline" size={16} color="#FFFFFF" />
           <Text style={styles.nextActionPrimaryText}>开始</Text>
         </Pressable>
+        {hasAction && action?.action_key ? (
+          <Pressable
+            onPress={() => onComplete(action)}
+            disabled={completionState === 'sending' || completionState === 'completed'}
+            style={({ pressed }) => [
+              styles.nextActionComplete,
+              {
+                borderColor: completionState === 'completed' ? c.green : c.separator,
+                backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`完成 ${title}`}
+          >
+            <Ionicons
+              name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={15}
+              color={completionState === 'completed' ? c.green : c.labelSecondary}
+            />
+            <Text
+              style={[
+                styles.nextActionCompleteText,
+                { color: completionState === 'completed' ? c.green : c.labelSecondary },
+              ]}
+            >
+              {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={onFallbackAgent}
           style={({ pressed }) => [
@@ -839,6 +891,17 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   nextActionSecondaryText: { fontSize: 14, fontWeight: '800' },
+  nextActionComplete: {
+    minHeight: 42,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  nextActionCompleteText: { fontSize: 14, fontWeight: '800' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   sectionHeaderText: { flex: 1, gap: 2 },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
