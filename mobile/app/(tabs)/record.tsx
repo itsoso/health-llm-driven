@@ -33,6 +33,15 @@ import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const mealTypeMap: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
+type QuickRecordEntry = {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  priority: number;
+  onPress: () => void;
+};
+
 export default function RecordScreen() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -74,6 +83,49 @@ export default function RecordScreen() {
     [waterData],
   );
   const today = new Date().toISOString().split('T')[0];
+  const highFrequencyRecords = useMemo<QuickRecordEntry[]>(() => {
+    const hour = new Date().getHours();
+    const isMorning = hour >= 5 && hour <= 10;
+    const isMealWindow = (hour >= 11 && hour <= 14) || (hour >= 17 && hour <= 20);
+    const isPreWorkoutWindow = hour >= 16 && hour <= 21;
+    const missingBody = !weightStats?.current_weight && !bpStats?.average_systolic;
+    const missingMeal = meals.length === 0;
+
+    return [
+      {
+        key: 'diet',
+        icon: 'nutrition-outline',
+        label: '饮食',
+        color: c.orange,
+        priority: (isMealWindow && missingMeal) ? 95 : missingMeal ? 62 : 30,
+        onPress: () => router.push('/diet' as any),
+      },
+      {
+        key: 'body',
+        icon: 'body-outline',
+        label: '体重腰围',
+        color: c.teal,
+        priority: (isMorning && missingBody) ? 100 : missingBody ? 70 : 28,
+        onPress: () => router.push('/body-measurements' as any),
+      },
+      {
+        key: 'voice',
+        icon: 'mic-outline',
+        label: '声音笔记',
+        color: c.blue,
+        priority: 48,
+        onPress: () => router.push('/voice-chat?intent=journal' as any),
+      },
+      {
+        key: 'preworkout',
+        icon: 'flash-outline',
+        label: '跑前准备',
+        color: c.green,
+        priority: isPreWorkoutWindow ? 72 : 42,
+        onPress: () => router.push('/voice-chat?intent=preworkout&workout_type=running' as any),
+      },
+    ].sort((a, b) => b.priority - a.priority);
+  }, [bpStats?.average_systolic, c.blue, c.green, c.orange, c.teal, meals.length, router, weightStats?.current_weight]);
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
   const doWater = useCallback(async (amt: number) => {
@@ -121,11 +173,43 @@ export default function RecordScreen() {
               <Text style={txt.sectionHint}>先录入会改变今日建议的数据</Text>
             </View>
           </View>
+          <View style={styles.captureModeRow}>
+            <CaptureModeBtn
+              icon="mic-outline"
+              label="说一句"
+              hint="语音记录"
+              color={c.blue}
+              onPress={() => router.push('/voice-chat?intent=journal' as any)}
+              accessibilityLabel="说一句记录健康状态"
+            />
+            <CaptureModeBtn
+              icon="camera-outline"
+              label="拍一下"
+              hint="餐食照片"
+              color={c.orange}
+              onPress={() => router.push('/diet?capture=photo' as any)}
+              accessibilityLabel="拍一下记录饮食"
+            />
+            <CaptureModeBtn
+              icon="hand-left-outline"
+              label="点一下"
+              hint="快速打卡"
+              color={c.green}
+              onPress={() => router.push('/(tabs)/record' as any)}
+              accessibilityLabel="点一下快速打卡"
+            />
+          </View>
           <View style={styles.quickNav} testID="high-frequency-records">
-            <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
-            <QuickNavBtn icon="body-outline" label="体重腰围" color={c.teal} onPress={() => router.push('/body-measurements' as any)} />
-            <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
-            <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.green} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
+            {highFrequencyRecords.map((entry, index) => (
+              <QuickNavBtn
+                key={entry.key}
+                icon={entry.icon}
+                label={entry.label}
+                color={entry.color}
+                priorityLabel={index === 0 ? `现在优先：${entry.label}` : undefined}
+                onPress={entry.onPress}
+              />
+            ))}
           </View>
           <Text style={txt.moreTitle}>更多记录</Text>
           <View style={styles.moreRecordRow} testID="more-records">
@@ -408,12 +492,64 @@ export default function RecordScreen() {
   );
 }
 
-function QuickNavBtn({ icon, label, color, onPress }: { icon: any; label: string; color: string; onPress: () => void }) {
+function CaptureModeBtn({
+  icon,
+  label,
+  hint,
+  color,
+  accessibilityLabel,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  hint: string;
+  color: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  return (
+    <TouchableOpacity
+      style={[styles.captureModeBtn, { borderColor: c.separator }]}
+      onPress={onPress}
+      activeOpacity={0.72}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <View style={[styles.captureModeIcon, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon} size={17} color={color} />
+      </View>
+      <Text style={txt.captureModeLabel}>{label}</Text>
+      <Text style={txt.captureModeHint}>{hint}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function QuickNavBtn({
+  icon,
+  label,
+  color,
+  priorityLabel,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  priorityLabel?: string;
+  onPress: () => void;
+}) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={label}>
+      {priorityLabel ? (
+        <View style={[styles.priorityBadge, { backgroundColor: `${color}18` }]}>
+          <Text style={[txt.priorityBadge, { color }]}>{priorityLabel}</Text>
+        </View>
+      ) : null}
       <View style={[styles.quickNavIcon, { backgroundColor: `${color}18` }]}>
         <Ionicons name={icon} size={18} color={color} />
       </View>
@@ -486,15 +622,41 @@ function createStyles(c: ColorPalette) {
   quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   quickNavBtn: {
     width: '48.5%',
-    minHeight: 58,
+    minHeight: 72,
     alignItems: 'center',
     gap: 7,
     backgroundColor: c.bgPrimary,
     borderRadius: radii.md,
     paddingVertical: 11,
   },
+  priorityBadge: {
+    alignSelf: 'center',
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginBottom: 1,
+  },
   quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
   moreRecordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  captureModeRow: { flexDirection: 'row', gap: spacing.sm },
+  captureModeBtn: {
+    flex: 1,
+    minHeight: 78,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: c.bgPrimary,
+    paddingHorizontal: 6,
+  },
+  captureModeIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   moreRecordBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -579,7 +741,10 @@ function createStyles(c: ColorPalette) {
 function createTxt(c: ColorPalette) {
   return {
   title: { fontSize: 28, fontWeight: '700', color: c.labelPrimary, marginBottom: spacing.md } as TextStyle,
+  captureModeLabel: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  captureModeHint: { fontSize: 10, color: c.labelTertiary, fontWeight: '600' } as TextStyle,
   quickNavLabel: { fontSize: 11, fontWeight: '500', color: c.labelSecondary } as TextStyle,
+  priorityBadge: { fontSize: 10, fontWeight: '800' } as TextStyle,
   sectionEyebrow: { fontSize: 16, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sectionHint: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   moreTitle: { fontSize: 12, fontWeight: '700', color: c.labelTertiary } as TextStyle,

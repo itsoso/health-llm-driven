@@ -180,6 +180,7 @@ export default function TodayScreen() {
 
   const twinSnap = pickTwinSnapshot(twinQuery.data);
   const activePlanCount = dailyPlanQuery.data?.actions?.length ?? 0;
+  const nextAction = (dailyPlanQuery.data?.actions ?? []).find(action => Boolean(action?.title)) ?? null;
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -237,6 +238,14 @@ export default function TodayScreen() {
           refreshing={isRefreshing}
           onOpenAgent={() => router.push('/(tabs)/chat' as any)}
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
+        />
+
+        <NextBestActionCard
+          action={nextAction}
+          loading={dailyPlanQuery.isLoading}
+          onStart={openPlanAction}
+          onFallbackRecord={() => router.push('/(tabs)/record' as any)}
+          onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
         />
 
         <CompactShortcutSection
@@ -527,6 +536,78 @@ function MetaChip({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label
   );
 }
 
+function NextBestActionCard({
+  action,
+  loading,
+  onStart,
+  onFallbackRecord,
+  onFallbackAgent,
+}: {
+  action?: DailyPlanAction | null;
+  loading?: boolean;
+  onStart: (action: DailyPlanAction) => void;
+  onFallbackRecord: () => void;
+  onFallbackAgent: () => void;
+}) {
+  const { c } = useTheme();
+  const hasAction = Boolean(action?.title);
+  const title = loading
+    ? '正在判断下一步'
+    : hasAction
+      ? action!.title
+      : '补齐今日记录';
+  const reason = loading
+    ? '同步计划后会给出当前最值得做的一件事'
+    : hasAction
+      ? (action?.why || action?.when || '先完成这一步，再看后续计划')
+      : '没有硬性任务时，先补齐今天会影响建议的数据';
+
+  return (
+    <View style={[styles.nextActionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.nextActionTop}>
+        <View style={[styles.nextActionIcon, { backgroundColor: c.tintGreen }]}>
+          <Ionicons name="navigate-outline" size={17} color={c.green} />
+        </View>
+        <View style={styles.nextActionMain}>
+          <Text style={[styles.nextActionEyebrow, { color: c.green }]}>现在先做</Text>
+          <Text style={[styles.nextActionTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+            {title}
+          </Text>
+          <Text style={[styles.nextActionReason, { color: c.labelSecondary }]} numberOfLines={2}>
+            {reason}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.nextActionButtons}>
+        <Pressable
+          onPress={() => (hasAction && action ? onStart(action) : onFallbackRecord())}
+          style={({ pressed }) => [
+            styles.nextActionPrimary,
+            { backgroundColor: c.green, opacity: pressed ? 0.82 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={hasAction ? `开始 ${title}` : '开始记录'}
+        >
+          <Ionicons name="play-outline" size={16} color="#FFFFFF" />
+          <Text style={styles.nextActionPrimaryText}>开始</Text>
+        </Pressable>
+        <Pressable
+          onPress={onFallbackAgent}
+          style={({ pressed }) => [
+            styles.nextActionSecondary,
+            { borderColor: c.separator, opacity: pressed ? 0.7 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="问 Agent 调整下一步"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+          <Text style={[styles.nextActionSecondaryText, { color: c.brand }]}>调整</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function SectionHeader({
   title,
   subtitle,
@@ -718,6 +799,46 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   secondaryActionText: { fontSize: 15, fontWeight: '700' },
+  nextActionCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  nextActionTop: { flexDirection: 'row', gap: spacing.sm },
+  nextActionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextActionMain: { flex: 1, gap: 3 },
+  nextActionEyebrow: { fontSize: 12, fontWeight: '800' },
+  nextActionTitle: { fontSize: 18, fontWeight: '800', lineHeight: 23 },
+  nextActionReason: { fontSize: 13, lineHeight: 18 },
+  nextActionButtons: { flexDirection: 'row', gap: spacing.sm },
+  nextActionPrimary: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  nextActionPrimaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  nextActionSecondary: {
+    minHeight: 42,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  nextActionSecondaryText: { fontSize: 14, fontWeight: '800' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   sectionHeaderText: { flex: 1, gap: 2 },
   sectionTitle: { fontSize: 15, fontWeight: '600' },

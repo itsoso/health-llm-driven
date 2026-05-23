@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -33,6 +33,8 @@ export default function DietScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ capture?: string }>();
+  const captureConsumedRef = useRef(false);
   const qc = useQueryClient();
   const [date, setDate] = useState(todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
@@ -155,6 +157,12 @@ export default function DietScreen() {
       setEstimating(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (params.capture !== 'photo' || captureConsumedRef.current) return;
+    captureConsumedRef.current = true;
+    handlePhoto();
+  }, [handlePhoto, params.capture]);
 
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });

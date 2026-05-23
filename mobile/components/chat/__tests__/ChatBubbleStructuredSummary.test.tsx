@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
@@ -14,6 +14,15 @@ jest.mock('expo-haptics', () => ({
 }));
 jest.mock('../../../services/speakWithUserVoice', () => ({
   speakWithUserVoice: jest.fn(),
+}));
+jest.mock('../../../services/chatResultActions', () => ({
+  saveAssistantReplyAsMemory: jest.fn(),
+}));
+jest.mock('../../../hooks/useToast', () => ({
+  useToast: () => ({ show: jest.fn() }),
+}));
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn() },
 }));
 jest.mock('react-native-markdown-display', () => {
   const React = require('react');
@@ -57,6 +66,7 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 });
 
 const ChatBubble = require('../ChatBubble').default;
+const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActions');
 
 function renderBubble(content: string) {
   const qc = new QueryClient();
@@ -74,6 +84,10 @@ function renderBubble(content: string) {
 }
 
 describe('ChatBubble structured summary', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('summarizes markdown metric tables and today advice for mobile scanning', () => {
     const { getByText, queryByText } = renderBubble(`
 | 指标 | 数值 | 状态 |
@@ -93,5 +107,22 @@ describe('ChatBubble structured summary', () => {
     expect(getByText('今日建议')).toBeTruthy();
     expect(getByText('饮水未达标，上午补充 500ml')).toBeTruthy();
     expect(queryByText(/\| 指标 \| 数值 \| 状态 \|/)).toBeNull();
+  });
+
+  it('shows executable actions for completed assistant replies and can save memory', async () => {
+    saveAssistantReplyAsMemory.mockResolvedValueOnce(undefined);
+
+    const { getByText } = renderBubble('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
+
+    expect(getByText('加入今日计划')).toBeTruthy();
+    expect(getByText('保存记忆')).toBeTruthy();
+    expect(getByText('生成记录')).toBeTruthy();
+    expect(getByText('继续追问')).toBeTruthy();
+
+    fireEvent.press(getByText('保存记忆'));
+
+    await waitFor(() => {
+      expect(saveAssistantReplyAsMemory).toHaveBeenCalledWith('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
+    });
   });
 });

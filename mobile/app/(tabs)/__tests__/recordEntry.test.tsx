@@ -110,6 +110,7 @@ function renderScreen() {
 describe('RecordScreen import shortcuts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
   });
 
   it('keeps high-frequency record shortcuts focused and moves lower-frequency entries into more records', async () => {
@@ -127,5 +128,27 @@ describe('RecordScreen import shortcuts', () => {
 
     fireEvent.press(getByLabelText('导入档案'));
     expect(mockPush).toHaveBeenCalledWith('/import');
+  });
+
+  it('highlights the best record shortcut for the current time and missing data', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-05-23T07:30:00+08:00'));
+
+    const { getByText } = renderScreen();
+
+    await waitFor(() => expect(getByText('现在优先：体重腰围')).toBeTruthy());
+  });
+
+  it('promotes mobile-native voice, photo, and tap capture paths', async () => {
+    const { getByLabelText, getByText } = renderScreen();
+
+    await waitFor(() => expect(getByText('说一句')).toBeTruthy());
+    expect(getByText('拍一下')).toBeTruthy();
+    expect(getByText('点一下')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('说一句记录健康状态'));
+    expect(mockPush).toHaveBeenCalledWith('/voice-chat?intent=journal');
+
+    fireEvent.press(getByLabelText('拍一下记录饮食'));
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
   });
 });

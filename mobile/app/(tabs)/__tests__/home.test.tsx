@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
@@ -140,5 +140,25 @@ describe('TodayScreen', () => {
     const { getByText } = render(<TodayScreen />);
 
     expect(getByText('今天先做 2 件事')).toBeTruthy();
+  });
+
+  it('surfaces the next best action and lets the user start it directly', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+        why: '同一时间测量噪声更低。',
+      },
+    ];
+
+    const { getByText } = render(<TodayScreen />);
+
+    expect(getByText('现在先做')).toBeTruthy();
+    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+
+    fireEvent.press(getByText('开始'));
+
+    expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
 });

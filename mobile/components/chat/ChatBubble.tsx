@@ -6,6 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
@@ -18,6 +19,7 @@ import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
+import { saveAssistantReplyAsMemory } from '../../services/chatResultActions';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import AttributionChips from './AttributionChips';
@@ -120,6 +122,30 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       sourceType: 'chat',
       sourceId: item.id,
     }));
+  };
+
+  const handleSaveMemory = async () => {
+    try {
+      await saveAssistantReplyAsMemory(displayText);
+      await invalidateQueryKeys(qc, [['memory-facts'], ['memory-stats']]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show('已保存到记忆', 'success');
+    } catch {
+      toast.show('保存记忆失败，请稍后重试', 'error');
+    }
+  };
+
+  const handleCreateRecord = () => {
+    router.push('/(tabs)/record' as any);
+  };
+
+  const handleContinueFollowUp = () => {
+    router.push({
+      pathname: '/(tabs)/chat',
+      params: {
+        prompt: '请基于上一条建议，继续细化成今天能执行的步骤。',
+      },
+    } as any);
   };
 
   const submitDraft = async (nextDraft: InterventionDraft) => {
@@ -279,6 +305,34 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {displayText && !item.streaming ? (
               <AttributionChips text={displayText} />
             ) : null}
+            {!item.streaming && displayText ? (
+              <View style={styles.resultActionGrid}>
+                <ResultActionButton
+                  icon="add-circle-outline"
+                  label="加入今日计划"
+                  color={c.brand}
+                  onPress={openDraft}
+                />
+                <ResultActionButton
+                  icon="bookmark-outline"
+                  label="保存记忆"
+                  color={c.purple}
+                  onPress={handleSaveMemory}
+                />
+                <ResultActionButton
+                  icon="create-outline"
+                  label="生成记录"
+                  color={c.teal}
+                  onPress={handleCreateRecord}
+                />
+                <ResultActionButton
+                  icon="chatbubble-ellipses-outline"
+                  label="继续追问"
+                  color={c.blue}
+                  onPress={handleContinueFollowUp}
+                />
+              </View>
+            ) : null}
             {displayText && showActions ? (
               <View style={styles.actionsRow}>
                 <Pressable
@@ -357,6 +411,32 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
         onSubmit={submitDraft}
       />
     </>
+  );
+}
+
+function ResultActionButton({
+  icon,
+  label,
+  color,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [resultActionStyles.button, pressed && resultActionStyles.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={13} color={color} />
+      <Text style={[resultActionStyles.label, { color }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -587,6 +667,25 @@ function StructuredSummaryCard({
 const ChatBubble = React.memo(ChatBubbleInner);
 export default ChatBubble;
 
+const resultActionStyles = StyleSheet.create({
+  button: {
+    width: '48%',
+    minHeight: 32,
+    borderRadius: radii.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(120, 120, 128, 0.12)',
+    paddingHorizontal: 9,
+  },
+  pressed: { opacity: 0.78 },
+  label: {
+    fontSize: 11,
+    fontWeight: '800',
+  } as TextStyle,
+});
+
 const summaryStyles = StyleSheet.create({
   card: {
     borderRadius: 14,
@@ -722,6 +821,15 @@ function createStyles(c: ColorPalette, isDark: boolean) {
       backgroundColor: c.brandLight,
       paddingHorizontal: 10,
       paddingVertical: 6,
+    },
+    resultActionGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 7,
+      marginTop: 10,
+      paddingTop: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.separator,
     },
     actionBtnPressed: { opacity: 0.82 },
     speakBtn: {
