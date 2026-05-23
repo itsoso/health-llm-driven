@@ -227,6 +227,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
                         garmin.sleepScore.map { "sleep \($0)" },
                         garmin.spo2Avg.map { "SpO2 \(formatNumber($0))%" }
                     ].compactMap { $0 }.joined(separator: " · "),
+                    reviewHint: "Synced automatically. Ready for Agent context.",
                     systemImage: "sensor.tag.radiowaves.forward",
                     tone: "blue",
                     contextItem: garminContextItem(garmin),
@@ -244,6 +245,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
                     title: record.title,
                     subtitle: record.recordDate ?? record.type,
                     detail: record.displayValue,
+                    reviewHint: "Already saved. Use it as context or ask for follow-up.",
                     systemImage: icon(forRecordType: record.type),
                     tone: tone(forRecordType: record.type),
                     contextItem: DesktopWorkspaceContextFactory.contextItem(for: record),
@@ -261,6 +263,9 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
                     title: job.sourceName ?? job.jobType,
                     subtitle: "#\(job.id) \(job.jobType)",
                     detail: "\(job.status) · \(job.progress)%",
+                    reviewHint: job.status == "completed"
+                        ? "Import completed. Ready for knowledge or health context."
+                        : "Import is still running. Review before relying on it.",
                     systemImage: "tray.and.arrow.down.fill",
                     tone: job.status == "failed" ? "red" : "indigo",
                     contextItem: DesktopWorkspaceContextFactory.contextItem(for: job),
@@ -386,6 +391,7 @@ public struct DesktopInputInboxEvent: Equatable, Identifiable, Sendable {
     public let title: String
     public let subtitle: String
     public let detail: String
+    public let reviewHint: String
     public let systemImage: String
     public let tone: String
     public let contextItem: AgentContextItem

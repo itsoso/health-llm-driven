@@ -1270,6 +1270,12 @@ private struct InputInboxEventCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
+                    if !event.reviewHint.isEmpty {
+                        Label(appText(event.reviewHint, appLanguageRaw), systemImage: "arrow.triangle.branch")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(stateColor)
+                            .lineLimit(2)
+                    }
                 }
                 Spacer(minLength: 0)
                 stateBadge
