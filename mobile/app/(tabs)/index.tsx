@@ -694,17 +694,22 @@ function AgentWorkspacePanel({
       bg: c.tintBlue,
     },
   ];
+  const riskSummary = criticalCount > 0 ? `${criticalCount} 个风险` : '风险稳定';
+  const executionSummary = planCount > 0 ? `${planCount} 个任务` : '等待记录';
 
   return (
     <View style={styles.section}>
-      <SectionHeader title="Agent 工作台" subtitle="把长期画像变成今天能执行的一步" />
+      <SectionHeader title="Agent 工作台" subtitle="后台任务与长期干预" />
       <View style={[styles.workspaceCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         <View style={styles.workspaceTop}>
+          <View style={[styles.workspaceStatusIcon, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="pulse-outline" size={17} color={c.brand} />
+          </View>
           <View style={styles.workspaceTitleBlock}>
-            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>后台任务 · 长期干预</Text>
-            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>持续监测 → 诊断推理 → 干预执行</Text>
-            <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]}>
-              Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。
+            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>后台运行中</Text>
+            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>监测 {sourceItems.length} 类数据</Text>
+            <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]} numberOfLines={1}>
+              {riskSummary} · {executionSummary} · 长期干预
             </Text>
           </View>
           <Pressable
@@ -721,30 +726,6 @@ function AgentWorkspacePanel({
           </Pressable>
         </View>
 
-        <View style={styles.pipelineRow}>
-          <PipelineStep
-            icon="scan-outline"
-            title="持续监测"
-            detail={wearableReady ? '穿戴反馈在线' : '等待最新穿戴'}
-            color={c.blue}
-            bg={c.tintBlue}
-          />
-          <PipelineStep
-            icon="analytics-outline"
-            title="诊断推理"
-            detail={criticalCount > 0 ? `${criticalCount} 个风险` : '风险稳定'}
-            color={criticalCount > 0 ? c.red : c.green}
-            bg={criticalCount > 0 ? c.tintRed : c.tintGreen}
-          />
-          <PipelineStep
-            icon="checkmark-done-outline"
-            title="干预执行"
-            detail={planCount > 0 ? `${planCount} 个任务` : '等待记录'}
-            color={c.teal}
-            bg={c.tintTeal}
-          />
-        </View>
-
         <View style={styles.sourceRail}>
           {sourceItems.map(item => (
             <View key={item.label} style={[styles.sourceChip, { backgroundColor: item.bg }]}>
@@ -758,7 +739,7 @@ function AgentWorkspacePanel({
           <View style={styles.workspaceInterventionHeader}>
             <View style={styles.workspaceInterventionTitleBlock}>
               <Text style={[styles.workspaceInterventionTitle, { color: c.labelPrimary }]}>干预闭环</Text>
-              <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>饮食、睡眠、运动、补剂和情绪一起追踪</Text>
+              <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>饮食 / 睡眠 / 运动 / 补剂 / 情绪</Text>
               <Text style={[styles.workspaceInterventionSummary, { color: c.brand }]}>{interventionSummary}</Text>
             </View>
             <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.brandLight }]}>
@@ -777,31 +758,6 @@ function AgentWorkspacePanel({
           </View>
         </View>
       </View>
-    </View>
-  );
-}
-
-function PipelineStep({
-  icon,
-  title,
-  detail,
-  color,
-  bg,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  detail: string;
-  color: string;
-  bg: string;
-}) {
-  const { c } = useTheme();
-  return (
-    <View style={styles.pipelineStep}>
-      <View style={[styles.pipelineIcon, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={15} color={color} />
-      </View>
-      <Text style={[styles.pipelineTitle, { color: c.labelPrimary }]} numberOfLines={1}>{title}</Text>
-      <Text style={[styles.pipelineDetail, { color: c.labelTertiary }]} numberOfLines={1}>{detail}</Text>
     </View>
   );
 }
@@ -1362,13 +1318,20 @@ const styles = StyleSheet.create({
   },
   workspaceTop: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.sm,
+  },
+  workspaceStatusIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   workspaceTitleBlock: { flex: 1, minWidth: 0, gap: 3 },
   workspaceEyebrow: { fontSize: 12, fontWeight: '800' },
-  workspaceTitle: { fontSize: 17, fontWeight: '800', lineHeight: 22 },
-  workspaceCopy: { fontSize: 13, lineHeight: 18 },
+  workspaceTitle: { fontSize: 16, fontWeight: '800', lineHeight: 20 },
+  workspaceCopy: { fontSize: 12, lineHeight: 16 },
   workspaceAskButton: {
     minHeight: 36,
     borderRadius: radii.full,
@@ -1379,22 +1342,6 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   workspaceAskText: { fontSize: 13, fontWeight: '800' },
-  pipelineRow: { flexDirection: 'row', gap: spacing.sm },
-  pipelineStep: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: 4,
-    gap: 4,
-  },
-  pipelineIcon: {
-    width: 25,
-    height: 25,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pipelineTitle: { fontSize: 12, fontWeight: '800' },
-  pipelineDetail: { fontSize: 11, fontWeight: '600' },
   sourceRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   sourceChip: {
     flexGrow: 1,
