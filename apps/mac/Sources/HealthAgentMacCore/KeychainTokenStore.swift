@@ -11,23 +11,37 @@ public final class KeychainTokenStore: AuthTokenStoring, @unchecked Sendable {
 
     public init(
         service: String = "life.executor.health.mac",
-        account: String = "auth-token"
+        account: String = "auth-token-v2"
     ) {
         self.service = service
         self.account = account
     }
 
     public func setToken(_ token: String) async throws {
-        await clearToken()
         let data = Data(token.utf8)
-        let query: [String: Any] = [
+        let lookupQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip
         ]
-        let status = SecItemAdd(query as CFDictionary, nil)
+
+        let updateStatus = SecItemUpdate(
+            lookupQuery as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainTokenStoreError.saveFailed(updateStatus)
+        }
+
+        var addQuery = lookupQuery
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainTokenStoreError.saveFailed(status)
         }
@@ -39,7 +53,8 @@ public final class KeychainTokenStore: AuthTokenStoring, @unchecked Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip
         ]
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -53,7 +68,8 @@ public final class KeychainTokenStore: AuthTokenStoring, @unchecked Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip
         ]
         SecItemDelete(query as CFDictionary)
     }

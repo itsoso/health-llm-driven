@@ -3,6 +3,10 @@ import XCTest
 
 final class KeychainTokenStoreTests: XCTestCase {
     func testKeychainTokenStoreSavesReadsAndClearsToken() async throws {
+        guard ProcessInfo.processInfo.environment["HEALTH_RUN_KEYCHAIN_TESTS"] == "1" else {
+            throw XCTSkip("Real macOS keychain tests are opt-in to avoid blocking on GUI authorization prompts.")
+        }
+
         let store = KeychainTokenStore(
             service: "life.executor.health.tests",
             account: "token-\(UUID().uuidString)"
