@@ -144,6 +144,22 @@ describe('TodayScreen', () => {
     expect(getByText('今天先做 2 件事')).toBeTruthy();
   });
 
+  it('opens today plan when the focus header itself is tapped', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('打开今日重点'));
+
+    expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
+  });
+
   it('surfaces the next best action and lets the user start it directly', () => {
     mockDailyPlanActions = [
       {

@@ -260,6 +260,7 @@ export default function TodayScreen() {
           criticalCount={criticalAlerts.length}
           planCount={activePlanCount}
           refreshing={isRefreshing}
+          onOpenFocus={() => (nextAction ? openPlanAction(nextAction) : router.push('/(tabs)/record' as any))}
           onOpenAgent={() => router.push('/(tabs)/chat' as any)}
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
         />
@@ -435,12 +436,14 @@ function HomeCommandHeader({
   criticalCount,
   planCount,
   refreshing,
+  onOpenFocus,
   onOpenAgent,
   onOpenRecord,
 }: {
   criticalCount: number;
   planCount: number;
   refreshing: boolean;
+  onOpenFocus: () => void;
   onOpenAgent: () => void;
   onOpenRecord: () => void;
 }) {
@@ -455,7 +458,15 @@ function HomeCommandHeader({
       ? '按优先级完成今日计划'
       : '暂无硬性任务，保持记录节奏';
   return (
-    <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.commandHeader,
+        { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.92 : 1 },
+      ]}
+      onPress={onOpenFocus}
+      accessibilityRole="button"
+      accessibilityLabel="打开今日重点"
+    >
       <View style={styles.commandTop}>
         <View style={styles.commandTitleBlock}>
           <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
@@ -502,7 +513,7 @@ function HomeCommandHeader({
           <Text style={[styles.secondaryActionText, { color: c.labelPrimary }]}>记录</Text>
         </Pressable>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

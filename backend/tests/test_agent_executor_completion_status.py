@@ -221,6 +221,69 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_empty(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        if len(calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "call_record_diet",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "diet",
+                                "data": {
+                                    "meal_type": "breakfast",
+                                    "food_items": "两个豆腐包子",
+                                },
+                            }, ensure_ascii=False),
+                        },
+                    },
+                ],
+            }
+        return {"content": "", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw)
+        assert tool_name == "health_record"
+        return json.dumps({
+            "message": "已记录早餐：两个豆腐包子",
+            "record_type": args["record_type"],
+            "food_items": args["data"]["food_items"],
+        }, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录饮食 早餐两个豆腐包子",
+            user_auth_token="test-token",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "已记录早餐：两个豆腐包子" in rendered
+    assert "没有收到模型的有效回复" not in rendered
+    assert events[-1]["event"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     db.add(UserProfile(user_id=user.id, llm_model_id="gemini-3.1-pro"))

@@ -112,6 +112,41 @@ def _response_text(response: Any) -> str:
     return str(response or "")
 
 
+def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
+    """Use the latest successful tool result when the model fails synthesis."""
+    for message in reversed(messages):
+        if message.get("role") != "tool":
+            continue
+
+        content = str(message.get("content") or "").strip()
+        if not content or content.startswith("Error"):
+            continue
+
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            payload = None
+
+        if isinstance(payload, dict):
+            tool_message = payload.get("message")
+            if isinstance(tool_message, str) and tool_message.strip():
+                return tool_message.strip()
+
+            for key in ("food_items", "summary", "preview"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return f"已完成记录：{value.strip()}"
+
+            if payload.get("id") or payload.get("record_id"):
+                return "已完成记录。"
+
+        preview = content.replace("\n", " ").strip()
+        if preview:
+            return f"已完成操作：{preview[:120]}"
+
+    return ""
+
+
 # 2026-05-14 #4 可解释性 — tool 名 → 中文标签
 # 用户在 chat bubble 看到 "AI 用了什么数据" 时, 能看懂 (不是 raw tool name).
 _TOOL_TO_SOURCE_LABEL = {
@@ -577,6 +612,8 @@ class AgentExecutor:
                         final_text = _response_text(retry_response)
                         if isinstance(retry_response, dict):
                             final_text = _append_interrupted_notice(final_text, retry_response.get("finish_reason"))
+                        if not final_text.strip():
+                            final_text = _fallback_text_from_tool_results(messages)
                         if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
                     for i in range(0, len(final_text), 20):
