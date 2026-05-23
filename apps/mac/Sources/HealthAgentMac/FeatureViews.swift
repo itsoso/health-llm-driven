@@ -22,69 +22,57 @@ struct AgentChatView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    composer
-                    modelControls
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
 
-                    Divider()
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        composer
+                            .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
+                        contextPanel
+                            .frame(width: 340, alignment: .topLeading)
+                    }
 
-                    HSplitView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            if viewModel.messages.isEmpty {
-                                Text(appText("Ready for desktop chat, file context, and evidence inspection.", appLanguageRaw))
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 20)
-                            }
-                            ForEach(viewModel.messages) { message in
-                                bubbleText(message)
-                                    .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-                                    .overlay(alignment: .topLeading) {
-                                        if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
-                                            ProgressView()
-                                                .controlSize(.small)
-                                        }
-                                    }
-                            }
-                        }
-                        .frame(minWidth: 420, maxWidth: .infinity, alignment: .topLeading)
-
-                        evidencePanel
-                            .frame(minWidth: 220, idealWidth: 260, maxWidth: 320, alignment: .topLeading)
+                    VStack(alignment: .leading, spacing: 16) {
+                        composer
+                        contextPanel
                     }
                 }
-                .padding(24)
+
+                modelControls
+                conversationSection
             }
+            .padding(24)
         }
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(nsColor: .windowBackgroundColor),
+                    Color.accentColor.opacity(0.05),
+                    Color(nsColor: .windowBackgroundColor)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
         .onAppear {
             editorFocusToken += 1
         }
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(appText("Analysis", appLanguageRaw))
-                    .font(.title2.bold())
-                HStack(spacing: 8) {
-                    Label(appText(runStateText(viewModel.runState), appLanguageRaw), systemImage: runStateIcon(viewModel.runState))
-                    if let status = viewModel.lastCompletionStatus {
-                        Text(status)
-                    }
-                    if let model = viewModel.lastModel {
-                        Text(model)
-                    }
-                    if !viewModel.lastSourcesUsed.isEmpty {
-                        Text(viewModel.lastSourcesUsed.joined(separator: ", "))
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(runStateColor(viewModel.runState))
+                    .font(.largeTitle.bold())
+                Text(appText("Turn health context into an answer, plan, or evidence check.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
+            statusChip
             if viewModel.isStreaming {
                 ProgressView()
                     .controlSize(.small)
@@ -93,25 +81,8 @@ struct AgentChatView: View {
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(appText("Title", appLanguageRaw))
-                    .font(.headline)
-                Spacer()
-                Button {
-                    isAttachImporterPresented = true
-                } label: {
-                    Label(appText("Attach", appLanguageRaw), systemImage: "paperclip")
-                }
-                .buttonStyle(.borderless)
-                .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
-                Toggle(appText("Web Search", appLanguageRaw), isOn: $viewModel.webSearchEnabled)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-            }
-
-            Divider()
-
+        VStack(alignment: .leading, spacing: 14) {
+            promptToolbar
             ZStack(alignment: .topLeading) {
                 PromptCommandTextEditor(
                     text: $draft,
@@ -119,15 +90,22 @@ struct AgentChatView: View {
                 ) {
                     Task { await sendDraft() }
                 }
-                    .frame(minHeight: 128, maxHeight: 220)
+                .frame(minHeight: 190, maxHeight: 300)
 
                 if draft.isEmpty {
                     Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
                         .foregroundStyle(.tertiary)
-                        .padding(.top, 8)
-                        .padding(.leading, 5)
+                        .padding(.top, 12)
+                        .padding(.leading, 8)
                         .allowsHitTesting(false)
                 }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
             }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
@@ -141,14 +119,22 @@ struct AgentChatView: View {
                 }
             }
 
-            HStack {
+            promptSuggestions
+
+            HStack(alignment: .center, spacing: 10) {
                 if let error = viewModel.errorMessage {
-                    Text(error)
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
                         .lineLimit(1)
                 }
                 Spacer()
+                Text("⌘↩")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
                 if viewModel.canRetry {
                     Button {
                         Task { await viewModel.retryLastMessage() }
@@ -170,8 +156,12 @@ struct AgentChatView: View {
                 .help("Command-Return")
             }
         }
-        .padding(16)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
         .fileImporter(
             isPresented: $isAttachImporterPresented,
             allowedContentTypes: [.data, .folder],
@@ -187,31 +177,89 @@ struct AgentChatView: View {
         }
     }
 
+    private var promptToolbar: some View {
+        HStack(spacing: 12) {
+            Label(appText("New Analysis", appLanguageRaw), systemImage: "sparkles")
+                .font(.headline)
+            Text(appText("Draft, attach, then run.", appLanguageRaw))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                isAttachImporterPresented = true
+            } label: {
+                Label(appText("Attach", appLanguageRaw), systemImage: "paperclip")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
+            Toggle(isOn: $viewModel.webSearchEnabled) {
+                Label(appText("Web Search", appLanguageRaw), systemImage: "network")
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+        }
+    }
+
+    private var promptSuggestions: some View {
+        FlowLayout(spacing: 8) {
+            ForEach(promptSuggestionTexts, id: \.self) { suggestion in
+                Button {
+                    draft = suggestion
+                    editorFocusToken += 1
+                } label: {
+                    Text(suggestion)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.secondary.opacity(0.09), in: Capsule())
+                .disabled(viewModel.isStreaming)
+            }
+        }
+    }
+
+    private var promptSuggestionTexts: [String] {
+        [
+            appText("Analyze my latest health records and give today priorities.", appLanguageRaw),
+            appText("Create a 30-day plan based on genes, labs, supplements, and exercise.", appLanguageRaw),
+            appText("Check this answer for evidence and uncertainty boundaries.", appLanguageRaw)
+        ]
+    }
+
     private var modelControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(appText("Models", appLanguageRaw))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                Label(appText("Model Routing", appLanguageRaw), systemImage: "slider.horizontal.3")
                     .font(.headline)
+                Text(selectedModelDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Picker(appText("Mode", appLanguageRaw), selection: $modelStrategy) {
                     Text(appText("Auto Select", appLanguageRaw)).tag("auto")
                     Text(appText("Default 3", appLanguageRaw)).tag("default3")
+                    Text(appText("Manual", appLanguageRaw)).tag("manual")
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 190)
+                .frame(width: 270)
                 .onChange(of: modelStrategy) { _, newValue in
-                    if newValue == "auto" {
+                    if newValue == "auto" || newValue == "default3" {
                         viewModel.selectModel(nil)
                     }
                 }
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 148), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], spacing: 10) {
                 ForEach(modelOptions, id: \.id) { option in
                     modelCard(option)
                 }
             }
         }
+        .padding(16)
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func modelCard(_ option: (id: String, title: String, tier: String)) -> some View {
@@ -235,13 +283,28 @@ struct AgentChatView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.vertical, 10)
             .background(
-                isSelected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                isSelected ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor).opacity(0.8),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.secondary.opacity(0.08), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
+    }
+
+    private var selectedModelDescription: String {
+        if let selectedModelID = viewModel.selectedModelID,
+           let option = modelOptions.first(where: { $0.id == selectedModelID }) {
+            return "\(appText("Manual", appLanguageRaw)) · \(option.title)"
+        }
+        if modelStrategy == "default3" {
+            return appText("Use the default 3-model panel.", appLanguageRaw)
+        }
+        return appText("Let the backend choose the best route.", appLanguageRaw)
     }
 
     private func runStateText(_ state: AgentRunState) -> String {
@@ -293,22 +356,105 @@ struct AgentChatView: View {
         }
     }
 
-    private func bubbleText(_ message: AgentChatMessage) -> some View {
-        Text(message.content.isEmpty ? " " : message.content)
-            .padding(12)
-            .background(.quaternary)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    private var conversationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(appText("Result", appLanguageRaw), systemImage: "text.bubble")
+                    .font(.headline)
+                Spacer()
+                if let status = viewModel.lastCompletionStatus {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if viewModel.messages.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 34))
+                        .foregroundStyle(.secondary)
+                    Text(appText("Run an analysis to see the answer stream here.", appLanguageRaw))
+                        .font(.headline)
+                    Text(appText("Sources, model, and file context stay visible while you iterate.", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 170)
+                .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            } else {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(viewModel.messages) { message in
+                        messageBubble(message)
+                    }
+                }
+            }
+        }
     }
 
-    private var evidencePanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(appText("Evidence", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
-                .font(.headline)
-            if viewModel.lastSourcesUsed.isEmpty && viewModel.attachments.isEmpty {
-                Text(appText("Sources, attachments, and evidence refs will appear here.", appLanguageRaw))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private func messageBubble(_ message: AgentChatMessage) -> some View {
+        HStack(alignment: .top) {
+            if message.role == .user {
+                Spacer(minLength: 90)
             }
+            VStack(alignment: .leading, spacing: 6) {
+                Label(
+                    appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
+                    systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
+                )
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                Text(message.content.isEmpty ? " " : message.content)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .padding(14)
+            .background(
+                message.role == .user ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor).opacity(0.92),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(message.role == .user ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.08), lineWidth: 1)
+            }
+            .frame(maxWidth: message.role == .user ? 720 : .infinity, alignment: message.role == .user ? .trailing : .leading)
+            if message.role == .assistant {
+                Spacer(minLength: 70)
+            }
+        }
+    }
+
+    private var contextPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(appText("Context", appLanguageRaw), systemImage: "square.stack.3d.up")
+                .font(.headline)
+            contextMetric(
+                title: appText("Files", appLanguageRaw),
+                value: "\(viewModel.attachments.count)",
+                detail: appText("Drag files here or use Attach.", appLanguageRaw),
+                systemImage: "paperclip"
+            )
+            contextMetric(
+                title: appText("Web", appLanguageRaw),
+                value: appText(viewModel.webSearchEnabled ? "On" : "Off", appLanguageRaw),
+                detail: appText("Use for current facts and external sources.", appLanguageRaw),
+                systemImage: "network"
+            )
+            contextMetric(
+                title: appText("Route", appLanguageRaw),
+                value: routeShortText,
+                detail: selectedModelDescription,
+                systemImage: "point.3.connected.trianglepath.dotted"
+            )
+
+            Divider()
+
+            Label(appText("Evidence", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                .font(.subheadline.bold())
             if !viewModel.attachments.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(appText("Attachments", appLanguageRaw))
@@ -332,10 +478,61 @@ struct AgentChatView: View {
                     }
                 }
             }
+            if viewModel.lastSourcesUsed.isEmpty && viewModel.attachments.isEmpty {
+                Text(appText("Sources, attachments, and evidence refs will appear here.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
         }
-        .padding(12)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var statusChip: some View {
+        Label(appText(runStateText(viewModel.runState), appLanguageRaw), systemImage: runStateIcon(viewModel.runState))
+            .font(.caption.bold())
+            .foregroundStyle(runStateColor(viewModel.runState))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(runStateColor(viewModel.runState).opacity(0.12), in: Capsule())
+    }
+
+    private var routeShortText: String {
+        if viewModel.selectedModelID != nil {
+            return appText("Manual", appLanguageRaw)
+        }
+        return modelStrategy == "default3" ? appText("Default 3", appLanguageRaw) : appText("Auto", appLanguageRaw)
+    }
+
+    private func contextMetric(title: String, value: String, detail: String, systemImage: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.callout)
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Color.accentColor.opacity(0.85), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(value)
+                        .font(.callout.bold())
+                }
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func sendDraft() async {
@@ -403,7 +600,7 @@ private struct AttachmentChip: View {
 
     private var iconName: String {
         switch item.sourceKind {
-        case .genomeText: "helix"
+        case .genomeText: "atom"
         case .dedaoFolder: "folder"
         case .appleHealthExport: "heart.text.square"
         case .medicalFile: "doc.richtext"
