@@ -6,7 +6,7 @@ const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRecordDailyPlanActionEvent = jest.fn();
 const mockPushChatWithContext = jest.fn();
-const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: string }) => {
+const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: string; compact?: boolean }) => {
   const { Text } = require('react-native');
   return <Text>{title}</Text>;
 });
@@ -102,7 +102,7 @@ jest.mock('../../../utils/agentContext', () => ({
 }));
 
 jest.mock('../../../components/dashboard/TodayPlanPanel', () => {
-  const MockTodayPlanPanel = (props: { title?: string }) => mockTodayPlanPanel(props);
+  const MockTodayPlanPanel = (props: { title?: string; compact?: boolean }) => mockTodayPlanPanel(props);
   MockTodayPlanPanel.displayName = 'MockTodayPlanPanel';
   return MockTodayPlanPanel;
 });
@@ -152,13 +152,13 @@ describe('TodayScreen', () => {
     expect(getByText('更多入口')).toBeTruthy();
   });
 
-  it('places the operation plan before shortcut entries in the home feed', () => {
+  it('places the remaining plan before shortcut entries in the home feed', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('今日操作计划')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('余下计划')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日操作计划')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('余下计划')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
   it('groups the home feed into agent workspace, action, feedback, weekly, and entry sections', () => {
@@ -296,7 +296,38 @@ describe('TodayScreen', () => {
     render(<TodayScreen />);
 
     expect(mockTodayPlanPanel).toHaveBeenCalledWith(expect.objectContaining({
+      compact: true,
+      title: '余下计划',
       excludeActionKey: 'measurement.weight_waist_morning',
+    }));
+  });
+
+  it('uses a compact remaining-plan queue instead of a full task-management panel on home', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+      {
+        action_key: 'nutrition.protein_target',
+        domain: 'nutrition',
+        title: '今天蛋白质目标',
+      },
+      {
+        action_key: 'sleep.bedtime',
+        domain: 'sleep',
+        title: '23:00 上床',
+      },
+    ];
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('余下计划')).toBeTruthy();
+    expect(queryByText('今日操作计划')).toBeNull();
+    expect(mockTodayPlanPanel).toHaveBeenCalledWith(expect.objectContaining({
+      compact: true,
+      title: '余下计划',
     }));
   });
 

@@ -113,6 +113,63 @@ describe('TodayPlanPanel', () => {
     expect(getByText('今天蛋白质目标')).toBeTruthy();
   });
 
+  it('renders a compact remaining-plan queue without feedback controls', () => {
+    const onPressAction = jest.fn();
+    const plan: DailyOperatingPlan = {
+      plan_date: '2026-05-18',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [
+        {
+          action_key: 'measurement.weight_waist_morning',
+          domain: 'measurement',
+          title: '晨起记录体重和腰围',
+          why: '同一时间测量噪声更低。',
+        } as any,
+        {
+          action_key: 'nutrition.protein_target',
+          domain: 'nutrition',
+          title: '今天蛋白质目标',
+          why: '减重阶段先保住蛋白和肌肉量。',
+          when: 'meals',
+          verification: { metric: 'body_fat', window_days: 14 },
+        } as any,
+        {
+          action_key: 'sleep.bedtime',
+          domain: 'sleep',
+          title: '23:00 上床',
+          why: '稳定睡眠窗口。',
+        } as any,
+      ],
+    };
+
+    const { getByText, queryByText } = render(
+      <TodayPlanPanel
+        plan={plan}
+        compact
+        title="余下计划"
+        excludeActionKey="measurement.weight_waist_morning"
+        onPressAction={onPressAction}
+      />,
+    );
+
+    expect(getByText('余下计划')).toBeTruthy();
+    expect(getByText('除当前重点外，还有 2 件事')).toBeTruthy();
+    expect(getByText('今天蛋白质目标')).toBeTruthy();
+    expect(getByText('影响 体脂')).toBeTruthy();
+    expect(getByText('今天')).toBeTruthy();
+    expect(queryByText('晨起记录体重和腰围')).toBeNull();
+    expect(queryByText('接受')).toBeNull();
+    expect(queryByText('完成')).toBeNull();
+
+    fireEvent.press(getByText('今天蛋白质目标'));
+
+    expect(onPressAction).toHaveBeenCalledWith(expect.objectContaining({
+      action_key: 'nutrition.protein_target',
+    }));
+  });
+
   it('records completed event for a daily plan action', async () => {
     (api.post as jest.Mock).mockResolvedValueOnce({
       data: {

@@ -400,6 +400,8 @@ export default function TodayScreen() {
           <TodayPlanPanel
             plan={dailyPlanQuery.data}
             loading={dailyPlanQuery.isLoading}
+            compact
+            title="余下计划"
             excludeActionKey={nextActionKey}
             onPressAction={openPlanAction}
             onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
