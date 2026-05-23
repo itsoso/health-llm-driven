@@ -1,6 +1,6 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 
@@ -113,11 +113,13 @@ describe('RecordScreen import shortcuts', () => {
   });
 
   it('keeps high-frequency record shortcuts focused and moves lower-frequency entries into more records', async () => {
-    const { getByLabelText, getByText } = renderScreen();
+    const { getByLabelText, getByText, getByTestId } = renderScreen();
 
     await waitFor(() => expect(getByText('高频记录')).toBeTruthy());
     expect(getByText('更多记录')).toBeTruthy();
-    await waitFor(() => expect(getByText('化验记录')).toBeTruthy());
+    await waitFor(() => expect(getByText('声音笔记')).toBeTruthy());
+    expect(within(getByTestId('high-frequency-records')).queryByText('化验记录')).toBeNull();
+    expect(within(getByTestId('more-records')).getByText('化验记录')).toBeTruthy();
     expect(getByText('导入档案')).toBeTruthy();
 
     fireEvent.press(getByLabelText('化验记录'));

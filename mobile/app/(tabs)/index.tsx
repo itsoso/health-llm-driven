@@ -413,6 +413,7 @@ function HomeCommandHeader({
   const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
   const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
+  const headline = planCount > 0 ? `今天先做 ${planCount} 件事` : '保持记录节奏';
   const focusText = criticalCount > 0
     ? '先看风险，再处理计划'
     : planCount > 0
@@ -424,8 +425,8 @@ function HomeCommandHeader({
         <View style={styles.commandTitleBlock}>
           <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
           <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
-          <Text style={[styles.commandTitle, { color: c.labelPrimary }]}>
-            今天先做 {planCount} 件事
+          <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+            {headline}
           </Text>
           <Text style={[styles.commandHint, { color: c.labelSecondary }]}>{focusText}</Text>
         </View>
@@ -724,23 +725,25 @@ const styles = StyleSheet.create({
   sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
   sectionActionText: { fontSize: 13, fontWeight: '700' },
   compactSection: { gap: spacing.sm },
-  shortcutRail: { flexDirection: 'row', gap: spacing.sm },
+  shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   shortcutPill: {
-    flex: 1,
-    minHeight: 64,
+    width: '48.5%',
+    minHeight: 58,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    gap: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
   },
   shortcutIcon: {
-    width: 26, height: 26, borderRadius: 8,
+    width: 30, height: 30, borderRadius: 9,
     alignItems: 'center', justifyContent: 'center',
   },
-  shortcutTextBlock: { minWidth: 0 },
+  shortcutTextBlock: { flex: 1, minWidth: 0 },
   shortcutLabel: { fontSize: 11, fontWeight: '600' },
-  shortcutValue: { fontSize: 13, fontWeight: '800', marginTop: 1 },
+  shortcutValue: { fontSize: 14, fontWeight: '800', marginTop: 1 },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,

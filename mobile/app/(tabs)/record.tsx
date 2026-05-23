@@ -69,7 +69,10 @@ export default function RecordScreen() {
   const waterData = data?.waterRecords;
   const waterTotal = waterData?.total_amount ?? (Array.isArray(waterData) ? waterData.reduce((s: number, r: any) => s + (r.amount || 0), 0) : 0);
   const waterTarget = waterData?.target_amount ?? 2000;
-  const waterRecords = waterData?.records ?? (Array.isArray(waterData) ? waterData : []);
+  const waterRecords = useMemo(
+    () => waterData?.records ?? (Array.isArray(waterData) ? waterData : []),
+    [waterData],
+  );
   const today = new Date().toISOString().split('T')[0];
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
@@ -118,15 +121,15 @@ export default function RecordScreen() {
               <Text style={txt.sectionHint}>先录入会改变今日建议的数据</Text>
             </View>
           </View>
-          <View style={styles.quickNav}>
+          <View style={styles.quickNav} testID="high-frequency-records">
             <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
             <QuickNavBtn icon="body-outline" label="体重腰围" color={c.teal} onPress={() => router.push('/body-measurements' as any)} />
-            <QuickNavBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
             <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
-            <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.brand} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
+            <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.green} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
           </View>
           <Text style={txt.moreTitle}>更多记录</Text>
-          <View style={styles.moreRecordRow}>
+          <View style={styles.moreRecordRow} testID="more-records">
+            <MoreRecordBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
             <MoreRecordBtn icon="moon-outline" label="睡眠" color={c.purple} onPress={() => router.push('/sleep' as any)} />
             <MoreRecordBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
             <MoreRecordBtn icon="cloud-upload-outline" label="导入档案" color={c.purple} onPress={() => router.push('/import' as any)} />
@@ -179,7 +182,7 @@ export default function RecordScreen() {
             <Text style={styles.runCardTitle}>跑步指导</Text>
             <Text style={styles.runCardSubtitle}>GPS 实时配速 · 规则引擎 · 跑后复盘</Text>
             <View style={{ width: 32, height: 32, backgroundColor: c.tintGreen, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="play" size={18} color="#fff" />
+              <Ionicons name="play" size={18} color={c.green} />
             </View>
           </View>
         </TouchableOpacity>
@@ -481,7 +484,15 @@ function createStyles(c: ColorPalette) {
   },
   entryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  quickNavBtn: { width: '31.5%', alignItems: 'center', gap: 6, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingVertical: 11 },
+  quickNavBtn: {
+    width: '48.5%',
+    minHeight: 58,
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: c.bgPrimary,
+    borderRadius: radii.md,
+    paddingVertical: 11,
+  },
   quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
   moreRecordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   moreRecordBtn: {

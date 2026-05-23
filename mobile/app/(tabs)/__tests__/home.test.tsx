@@ -4,6 +4,7 @@ import { render } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
+let mockDailyPlanActions: unknown[] = [];
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -22,7 +23,7 @@ jest.mock('@tanstack/react-query', () => ({
       return { data: {}, isLoading: false, isRefetching: false };
     }
     if (key.includes('daily-plan')) {
-      return { data: { actions: [] }, isLoading: false, isRefetching: false };
+      return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching: false };
     }
     if (key.includes('trajectory')) {
       return { data: null, isLoading: false, isRefetching: false };
@@ -113,6 +114,7 @@ import TodayScreen from '../index';
 describe('TodayScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDailyPlanActions = [];
   });
 
   it('does not show the low-value Agent data visibility panel on the home feed', () => {
@@ -122,9 +124,21 @@ describe('TodayScreen', () => {
   });
 
   it('frames the home screen around today focus and uses compact quick entries', () => {
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(queryByText('今天先做 0 件事')).toBeNull();
+    expect(getByText('保持记录节奏')).toBeTruthy();
+    expect(getByText('高频入口')).toBeTruthy();
+  });
+
+  it('shows the active plan count when today has actions', () => {
+    mockDailyPlanActions = [
+      { id: '1', title: '晨间记录' },
+      { id: '2', title: '步行 20 分钟' },
+    ];
+
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('今天先做 0 件事')).toBeTruthy();
-    expect(getByText('高频入口')).toBeTruthy();
+    expect(getByText('今天先做 2 件事')).toBeTruthy();
   });
 });
