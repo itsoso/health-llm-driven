@@ -117,6 +117,8 @@ export default function SettingsScreen() {
         {/* Settings items */}
         <View style={styles.card}>
           <SettingRow icon="location-outline" label="当前城市" value={city} />
+          <SettingRow icon="navigate-outline" label="GPS 定位" value="自动城市"
+            onPress={() => router.push('/location' as any)} />
           <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
         </View>
@@ -141,8 +143,6 @@ export default function SettingsScreen() {
             onPress={() => router.push('/monthly-reports' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
             onPress={() => router.push('/doctor-loop' as any)} />
-          <SettingRow icon="location-outline" label="位置设置"
-            onPress={() => router.push('/location' as any)} />
           <SettingRow icon="time-outline" label="健康事件流"
             onPress={() => router.push('/timeline' as any)} />
           <SettingRow icon="medkit-outline" label="用药管理"
