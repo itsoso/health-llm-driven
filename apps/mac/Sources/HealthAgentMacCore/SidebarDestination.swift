@@ -6,6 +6,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     case genetics
     case knowledge
     case jobs
+    case trace
     case settings
 
     public var id: String { rawValue }
@@ -19,6 +20,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .genetics: "Genetics"
         case .knowledge: "Knowledge"
         case .jobs: "Jobs"
+        case .trace: "Trace"
         case .settings: "Settings"
         }
     }
@@ -32,6 +34,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .genetics: "helix"
         case .knowledge: "books.vertical"
         case .jobs: "clock.arrow.circlepath"
+        case .trace: "point.3.connected.trianglepath.dotted"
         case .settings: "gearshape"
         }
     }

@@ -92,3 +92,14 @@ def test_managed_action_cards_graded_at_index_migration(tmp_path: Path):
     assert "20260521_121000_add_action_cards_graded_at_index" in [m.id for m in result.applied]
     indexes = inspect(engine).get_indexes("action_cards")
     assert "idx_action_cards_graded_at_not_null" in [i["name"] for i in indexes]
+
+
+def test_desktop_jobs_has_managed_postgres_migration():
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    postgres_file = migrations_dir / "20260523_120000_create_desktop_jobs.postgresql.sql"
+
+    assert postgres_file.exists()
+    sql = postgres_file.read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS desktop_jobs" in sql
+    assert "idx_desktop_jobs_user_created" in sql
+    assert "idx_desktop_jobs_user_status" in sql

@@ -13,6 +13,7 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "genetics",
             "knowledge",
             "jobs",
+            "trace",
             "settings"
         ])
     }

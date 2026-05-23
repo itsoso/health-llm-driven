@@ -21,6 +21,7 @@ public final class APIClient: @unchecked Sendable {
     private let tokenProvider: AuthTokenProviding
     private let session: URLSession
     private let decoder: JSONDecoder
+    private let encoder: JSONEncoder
 
     public init(
         baseURL: URL = APIEndpoint.defaultBaseURL,
@@ -31,10 +32,19 @@ public final class APIClient: @unchecked Sendable {
         self.tokenProvider = tokenProvider
         self.session = session
         self.decoder = JSONDecoder()
+        self.encoder = JSONEncoder()
     }
 
     public func get<T: Decodable>(_ path: String) async throws -> T {
         let request = try await makeRequest(path: path, method: "GET")
+        let (data, response) = try await session.data(for: request)
+        return try await decode(data: data, response: response)
+    }
+
+    public func post<T: Decodable, Body: Encodable>(_ path: String, body: Body) async throws -> T {
+        var request = try await makeRequest(path: path, method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
         let (data, response) = try await session.data(for: request)
         return try await decode(data: data, response: response)
     }

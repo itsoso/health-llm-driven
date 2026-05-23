@@ -20,6 +20,10 @@ struct AppServices {
     let tokenProvider = KeychainTokenStore()
     let apiClient: APIClient
     let todayViewModel: TodayViewModel
+    let agentViewModel: AgentChatViewModel
+    let recordClient: RecordClient
+    let desktopJobClient: DesktopJobClient
+    let traceClient: TraceClient
 
     init() {
         let tokenProvider = KeychainTokenStore()
@@ -27,6 +31,10 @@ struct AppServices {
         self.todayViewModel = TodayViewModel(
             service: DesktopBootstrapService(apiClient: apiClient)
         )
+        self.agentViewModel = AgentChatViewModel()
+        self.recordClient = RecordClient(apiClient: apiClient)
+        self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
+        self.traceClient = TraceClient(apiClient: apiClient)
     }
 }
 
@@ -45,6 +53,16 @@ struct AppRootView: View {
             switch selection ?? .today {
             case .today:
                 TodayView(viewModel: services.todayViewModel)
+            case .agent:
+                AgentChatView(viewModel: services.agentViewModel)
+            case .record:
+                RecordHubView(client: services.recordClient)
+            case .jobs:
+                JobListView(client: services.desktopJobClient)
+            case .trace:
+                TraceLookupView(client: services.traceClient)
+            case .genetics, .knowledge:
+                ImportCenterView(jobClient: services.desktopJobClient)
             default:
                 ContentPlaceholder(destination: selection ?? .today)
             }

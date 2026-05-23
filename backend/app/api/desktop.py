@@ -20,6 +20,7 @@ from app.models.action_card import ActionCard
 from app.models.daily_health import DietRecord, WaterIntake
 from app.models.desktop_job import DesktopJob
 from app.models.memory_fact import MemoryFact
+from app.models.openclaw import OpenClawConversation, OpenClawMessage
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.services.daily_operating_plan import build_daily_operating_plan
@@ -255,3 +256,64 @@ def retry_desktop_job(
     db.commit()
     db.refresh(retry)
     return retry.to_dict()
+
+
+@router.get("/traces/{conversation_id}")
+def get_desktop_conversation_trace(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Return a desktop-friendly trace summary for one Agent conversation."""
+
+    conv = (
+        db.query(OpenClawConversation)
+        .filter(
+            OpenClawConversation.id == conversation_id,
+            OpenClawConversation.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation trace 不存在")
+
+    messages = (
+        db.query(OpenClawMessage)
+        .filter(OpenClawMessage.conversation_id == conv.id)
+        .order_by(OpenClawMessage.created_at.asc(), OpenClawMessage.id.asc())
+        .all()
+    )
+    assistant_messages = [m for m in messages if m.role == "assistant"]
+    latest_assistant = assistant_messages[-1] if assistant_messages else None
+    meta = dict(latest_assistant.meta or {}) if latest_assistant else {}
+
+    return {
+        "conversation": {
+            "id": conv.id,
+            "title": conv.title,
+            "created_at": conv.created_at.isoformat() if conv.created_at else None,
+            "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
+        },
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in messages
+        ],
+        "assistant_message": {
+            "id": latest_assistant.id if latest_assistant else None,
+            "model": meta.get("model"),
+            "elapsed_ms": meta.get("elapsed_ms"),
+            "llm_ms": meta.get("llm_ms"),
+            "llm_rounds": meta.get("llm_rounds"),
+            "finish_reason": meta.get("finish_reason"),
+            "completion_status": meta.get("completion_status"),
+        },
+        "sources_used": meta.get("sources_used") or [],
+        "tool_calls": meta.get("tool_calls") or [],
+        "evidence_cards": meta.get("cards") or [],
+        "raw_meta": meta,
+    }
