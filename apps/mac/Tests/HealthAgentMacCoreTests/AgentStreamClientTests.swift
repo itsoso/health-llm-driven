@@ -71,6 +71,17 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelSubmitEligibilityTrimsWhitespaceAndStreaming() {
+        let model = AgentChatViewModel()
+
+        XCTAssertFalse(model.canSubmit("   \n  "))
+        XCTAssertTrue(model.canSubmit("如何正确测量腰围?"))
+
+        model.isStreaming = true
+        XCTAssertFalse(model.canSubmit("如何正确测量腰围?"))
+    }
+
+    @MainActor
     func testAgentChatViewModelStreamsAssistantReply() async {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 77))

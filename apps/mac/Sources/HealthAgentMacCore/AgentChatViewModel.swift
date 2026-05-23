@@ -23,6 +23,7 @@ public struct AgentChatMessage: Equatable, Identifiable, Sendable {
 public final class AgentChatViewModel {
     public var isStreaming = false
     public var selectedModelID: String?
+    public var webSearchEnabled = false
     public var conversationID: Int?
     public var messages: [AgentChatMessage] = []
     public var errorMessage: String?
@@ -46,6 +47,10 @@ public final class AgentChatViewModel {
         selectedModelID = id
     }
 
+    public func canSubmit(_ text: String) -> Bool {
+        !isStreaming && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     public func send(_ text: String) async {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, let streamService else {
@@ -62,7 +67,7 @@ public final class AgentChatViewModel {
             for try await event in streamService.stream(
                 message: message,
                 conversationID: conversationID,
-                extraContext: selectedModelID.map { "{\"model_id\":\"\($0)\"}" }
+                extraContext: buildExtraContext()
             ) {
                 switch event {
                 case .start(let id):
@@ -88,5 +93,22 @@ public final class AgentChatViewModel {
             messages[assistantIndex].content = errorMessage
         }
         isStreaming = false
+    }
+
+    private func buildExtraContext() -> String? {
+        var context: [String: Any] = [:]
+        if let selectedModelID {
+            context["model_id"] = selectedModelID
+        }
+        if webSearchEnabled {
+            context["web_search_requested"] = true
+        }
+        guard !context.isEmpty else {
+            return nil
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: context) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }

@@ -5,94 +5,191 @@ import UniformTypeIdentifiers
 struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
     @State private var draft = ""
+    @State private var modelStrategy = "auto"
+    @FocusState private var isDraftFocused: Bool
 
-    private let modelIDs = [
-        "system-default",
-        "commercial/Claude-Opus-4.7",
-        "commercial/Gemini-3.1-Pro-Preview",
-        "commercial/GPT-5.5"
+    private let modelOptions: [(id: String, title: String, tier: String)] = [
+        ("commercial/Claude-Opus-4.7", "Claude Opus 4.7", "Top"),
+        ("commercial/Gemini-3.1-Pro-Preview", "Gemini 3.1 Pro", "Top"),
+        ("commercial/GPT-5.5", "GPT-5.5", "Top"),
+        ("commercial/GPT-5.4", "GPT-5.4", "Top"),
+        ("commercial/GPT-5.1", "GPT-5.1", "Mid"),
+        ("commercial/DeepSeek-R1", "DeepSeek R1", "Mid"),
+        ("commercial/DeepSeek-V3.2", "DeepSeek V3.2", "Mid")
     ]
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Agent")
-                    .font(.largeTitle.bold())
-                Spacer()
-                Picker("Model", selection: Binding(
-                    get: { viewModel.selectedModelID ?? modelIDs[0] },
-                    set: { viewModel.selectModel($0) }
-                )) {
-                    ForEach(modelIDs, id: \.self) { modelID in
-                        Text(modelID).tag(modelID)
-                    }
-                }
-                .pickerStyle(.menu)
-                .disabled(!viewModel.isModelPickerEnabled)
-            }
-            .padding(24)
-
-            Divider()
-
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if viewModel.messages.isEmpty {
-                        Text("Ready for desktop chat, file context, and evidence inspection.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(viewModel.messages) { message in
-                        bubbleText(message)
-                            .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-                            .overlay(alignment: .topLeading) {
-                                if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
-                                    ProgressView()
-                                        .controlSize(.small)
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    composer
+                    modelControls
+
+                    Divider()
+
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if viewModel.messages.isEmpty {
+                            Text("Ready for desktop chat, file context, and evidence inspection.")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 20)
+                        }
+                        ForEach(viewModel.messages) { message in
+                            bubbleText(message)
+                                .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+                                .overlay(alignment: .topLeading) {
+                                    if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    }
                                 }
-                            }
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
+        }
+        .onAppear {
+            isDraftFocused = true
+        }
+    }
 
-            if let status = viewModel.lastCompletionStatus {
-                HStack(spacing: 12) {
-                    Text(status)
-                    if let model = viewModel.lastModel {
-                        Text(model)
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Analysis")
+                    .font(.title2.bold())
+                if let status = viewModel.lastCompletionStatus {
+                    HStack(spacing: 8) {
+                        Text(status)
+                        if let model = viewModel.lastModel {
+                            Text(model)
+                        }
+                        if !viewModel.lastSourcesUsed.isEmpty {
+                            Text(viewModel.lastSourcesUsed.joined(separator: ", "))
+                        }
                     }
-                    if !viewModel.lastSourcesUsed.isEmpty {
-                        Text(viewModel.lastSourcesUsed.joined(separator: ", "))
-                    }
-                    Spacer()
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 8)
             }
+            Spacer()
+            if viewModel.isStreaming {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
 
-            if let error = viewModel.errorMessage {
-                Text(error)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Title")
+                    .font(.headline)
+                Spacer()
+                Toggle("Web Search", isOn: $viewModel.webSearchEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
             }
 
             Divider()
 
-            HStack {
-                TextField("Ask about health data, labs, genes, or records", text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { Task { await sendDraft() } }
-                Button(viewModel.isStreaming ? "Sending..." : "Send") {
-                    Task { await sendDraft() }
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $draft)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .focused($isDraftFocused)
+                    .frame(minHeight: 128, maxHeight: 220)
+
+                if draft.isEmpty {
+                    Text("Ask about health data, labs, genes, records, or a specific execution plan.")
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 8)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
                 }
-                .disabled(viewModel.isStreaming || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .keyboardShortcut(.return, modifiers: .command)
             }
-            .padding(16)
+
+            HStack {
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button {
+                    Task { await sendDraft() }
+                } label: {
+                    Label(viewModel.isStreaming ? "Running" : "Run", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!viewModel.canSubmit(draft))
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Command-Return")
+            }
         }
+        .padding(16)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var modelControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Models")
+                    .font(.headline)
+                Spacer()
+                Picker("Mode", selection: $modelStrategy) {
+                    Text("Auto Select").tag("auto")
+                    Text("Default 3").tag("default3")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 190)
+                .onChange(of: modelStrategy) { _, newValue in
+                    if newValue == "auto" {
+                        viewModel.selectModel(nil)
+                    }
+                }
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 148), spacing: 8)], spacing: 8) {
+                ForEach(modelOptions, id: \.id) { option in
+                    modelCard(option)
+                }
+            }
+        }
+    }
+
+    private func modelCard(_ option: (id: String, title: String, tier: String)) -> some View {
+        let isSelected = viewModel.selectedModelID == option.id
+        return Button {
+            modelStrategy = "manual"
+            viewModel.selectModel(option.id)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.title)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(option.tier)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                isSelected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func bubbleText(_ message: AgentChatMessage) -> some View {
