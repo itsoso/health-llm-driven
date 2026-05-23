@@ -206,7 +206,8 @@ function GPSLocationRow({ city, useManual, onPress }: { city: string; useManual:
   const mode = useManual ? '手动城市' : 'GPS 自动';
 
   return (
-    <TouchableOpacity style={styles.locationRow} onPress={onPress} activeOpacity={0.72}>
+    <TouchableOpacity style={styles.locationRow} onPress={onPress} activeOpacity={0.72}
+      accessibilityLabel={`GPS 定位, 当前城市 ${city}, ${mode}`}>
       <View style={styles.locationIconBox}>
         <Ionicons name="navigate" size={18} color={c.brand} />
       </View>
