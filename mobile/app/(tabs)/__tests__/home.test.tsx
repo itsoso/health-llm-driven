@@ -5,6 +5,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRecordDailyPlanActionEvent = jest.fn();
+const mockPushChatWithContext = jest.fn();
 const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: string }) => {
   const { Text } = require('react-native');
   return <Text>{title}</Text>;
@@ -97,7 +98,7 @@ jest.mock('../../../services/api', () => ({
 }));
 
 jest.mock('../../../utils/agentContext', () => ({
-  pushChatWithContext: jest.fn(),
+  pushChatWithContext: (...args: unknown[]) => mockPushChatWithContext(...args),
 }));
 
 jest.mock('../../../components/dashboard/TodayPlanPanel', () => {
@@ -226,6 +227,35 @@ describe('TodayScreen', () => {
 
     fireEvent.press(getByLabelText('打开情绪干预'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/chat');
+  });
+
+  it('opens Agent explanation with workspace and intervention context', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+    ];
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('让 Agent 解释当前判断'));
+
+    expect(mockPushChatWithContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        badge: '首页工作台',
+        context: expect.objectContaining({
+          from: 'home/agent-workspace',
+          intervention_domains: expect.arrayContaining([
+            expect.objectContaining({ key: 'diet', active_count: 1 }),
+            expect.objectContaining({ key: 'sleep', active_count: 1 }),
+          ]),
+          data_sources: expect.arrayContaining([
+            expect.objectContaining({ key: 'genetic' }),
+            expect.objectContaining({ key: 'wearable' }),
+          ]),
+        }),
+      }),
+    );
   });
 
   it('keeps the primary action out of the remaining daily plan list', () => {

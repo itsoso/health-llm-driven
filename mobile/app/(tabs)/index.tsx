@@ -308,6 +308,46 @@ export default function TodayScreen() {
     });
   }, [router, trajectoryQuery.data]);
 
+  const openWorkspaceChat = useCallback(() => {
+    pushChatWithContext(router, {
+      prompt: '请解释你现在对我健康状态的判断: 正在监测哪些数据, 哪些生活方式干预最重要, 今天为什么优先这些任务?',
+      badge: '首页工作台',
+      context: {
+        from: 'home/agent-workspace',
+        risk_count: criticalAlerts.length,
+        plan_count: activePlanCount,
+        data_sources: buildWorkspaceDataSources({
+          geneticHits: geneticStatsQuery.data?.hits,
+          progressTotal: progressStatsQuery.data?.total,
+          twinSnapshot: twinSnap,
+        }),
+        intervention_domains: interventionDomains.map(domain => ({
+          key: domain.key,
+          label: domain.label,
+          active_count: domain.activeCount,
+          detail: domain.detail,
+        })),
+        wearable_snapshot: {
+          hrv: twinSnap.hrv ?? null,
+          sleep_score: twinSnap.sleep_score ?? null,
+          resting_hr: twinSnap.resting_hr ?? null,
+          spo2_avg: twinSnap.spo2_avg ?? null,
+          blood_pressure: twinSnap.systolic_bp && twinSnap.diastolic_bp
+            ? `${twinSnap.systolic_bp}/${twinSnap.diastolic_bp}`
+            : null,
+        },
+      },
+    });
+  }, [
+    activePlanCount,
+    criticalAlerts.length,
+    geneticStatsQuery.data?.hits,
+    interventionDomains,
+    progressStatsQuery.data?.total,
+    router,
+    twinSnap,
+  ]);
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
       <ScrollView
@@ -330,7 +370,7 @@ export default function TodayScreen() {
           geneticHits={geneticStatsQuery.data?.hits}
           progressTotal={progressStatsQuery.data?.total}
           twinSnapshot={twinSnap}
-          onOpenAgent={() => router.push('/(tabs)/chat' as any)}
+          onOpenAgent={openWorkspaceChat}
         />
 
         <InterventionLoopPanel
@@ -1029,6 +1069,51 @@ function buildInterventionDomainStatuses(actions: DailyPlanAction[]): Interventi
     ...domain,
     activeCount: counts[domain.key],
   }));
+}
+
+function buildWorkspaceDataSources({
+  geneticHits,
+  progressTotal,
+  twinSnapshot,
+}: {
+  geneticHits?: number | null;
+  progressTotal?: number | null;
+  twinSnapshot: TwinSnapshot;
+}) {
+  const wearableReady = Boolean(
+    twinSnapshot.hrv
+    || twinSnapshot.sleep_score
+    || twinSnapshot.resting_hr
+    || twinSnapshot.spo2_avg,
+  );
+  const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
+
+  return [
+    {
+      key: 'genetic',
+      label: '基因',
+      status: geneticHits != null ? 'ready' : 'available',
+      value: geneticHits != null ? `${geneticHits} 位点` : null,
+    },
+    {
+      key: 'epigenetic',
+      label: '表观',
+      status: progressTotal != null ? 'tracked' : 'lifestyle_proxy',
+      value: progressTotal != null ? `${progressTotal} 轨迹` : null,
+    },
+    {
+      key: 'clinical',
+      label: '体检',
+      status: clinicalReady ? 'ready' : 'missing_or_stale',
+      value: clinicalReady ? '指标反馈' : null,
+    },
+    {
+      key: 'wearable',
+      label: '穿戴',
+      status: wearableReady ? 'live' : 'missing_or_stale',
+      value: wearableReady ? '实时回流' : null,
+    },
+  ];
 }
 
 function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {
