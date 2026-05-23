@@ -88,10 +88,12 @@ describe('SettingsScreen', () => {
     jest.clearAllMocks();
   });
 
-  it('surfaces GPS location in the current city section', () => {
+  it('surfaces GPS location as an explicit weather positioning entry', () => {
     const { getByText } = render(<SettingsScreen />);
 
     expect(getByText('当前城市')).toBeTruthy();
+    expect(getByText('用于天气 / 空气质量 / 户外建议')).toBeTruthy();
+    expect(getByText('去定位')).toBeTruthy();
     fireEvent.press(getByText('GPS 定位'));
 
     expect(mockPush).toHaveBeenCalledWith('/location');

@@ -117,7 +117,7 @@ export default function SettingsScreen() {
         {/* Settings items */}
         <View style={styles.card}>
           <SettingRow icon="location-outline" label="当前城市" value={city} />
-          <SettingRow icon="navigate-outline" label="GPS 定位" value="自动城市"
+          <GPSLocationRow city={city} useManual={profile?.use_manual_location === true}
             onPress={() => router.push('/location' as any)} />
           <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
@@ -199,6 +199,32 @@ function SettingRow({ icon, label, value, onPress }: { icon: any; label: string;
   );
 }
 
+function GPSLocationRow({ city, useManual, onPress }: { city: string; useManual: boolean; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  const mode = useManual ? '手动城市' : 'GPS 自动';
+
+  return (
+    <TouchableOpacity style={styles.locationRow} onPress={onPress} activeOpacity={0.72}>
+      <View style={styles.locationIconBox}>
+        <Ionicons name="navigate" size={18} color={c.brand} />
+      </View>
+      <View style={styles.locationCopy}>
+        <View style={styles.locationTitleLine}>
+          <Text style={txt.settingLabel}>GPS 定位</Text>
+          <Text style={txt.locationMode}>{mode}</Text>
+        </View>
+        <Text style={txt.locationHint}>用于天气 / 空气质量 / 户外建议</Text>
+      </View>
+      <View style={styles.locationActionPill}>
+        <Text style={txt.locationAction}>去定位</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
+    </TouchableOpacity>
+  );
+}
+
 function GarminStatusRow({
   status,
   syncing,
@@ -263,6 +289,21 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     paddingHorizontal: spacing.lg, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
+  locationRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: spacing.lg, paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+  },
+  locationIconBox: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: c.brandLight,
+  },
+  locationCopy: { flex: 1, minWidth: 0 },
+  locationTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  locationActionPill: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+    backgroundColor: c.fill,
+  },
   logoutBtn: {
     backgroundColor: c.bgCard, borderRadius: radii.lg,
     paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg,
@@ -276,5 +317,8 @@ const createTxt = (c: ColorPalette) => ({
   email: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   settingLabel: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
   settingValue: { fontSize: 14, color: c.labelTertiary } as TextStyle,
+  locationHint: { fontSize: 12, color: c.labelSecondary, marginTop: 3 } as TextStyle,
+  locationMode: { fontSize: 12, fontWeight: '600', color: c.brand } as TextStyle,
+  locationAction: { fontSize: 12, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   logoutText: { fontSize: 16, fontWeight: '500', color: '#FF453A' } as TextStyle,
 });
