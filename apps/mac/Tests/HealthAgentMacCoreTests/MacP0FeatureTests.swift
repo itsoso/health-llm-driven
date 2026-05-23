@@ -99,6 +99,23 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(result.message, "已记录体重 70.2kg")
     }
 
+    func testStructuredRecordDraftRequiresValidWeightBeforeSubmitting() {
+        XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "abc").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "0").canSubmit)
+        XCTAssertTrue(StructuredRecordDraft(type: .weight, weightKg: "70.2").canSubmit)
+        XCTAssertEqual(StructuredRecordDraft(type: .weight, weightKg: "70.2").previewText, "记录体重 70.2kg")
+    }
+
+    func testStructuredRecordDraftBuildsDietPreviewAndRequiresFoodName() {
+        let emptyFood = StructuredRecordDraft(type: .diet, foodName: "", calories: "650", protein: "30")
+        XCTAssertFalse(emptyFood.canSubmit)
+
+        let draft = StructuredRecordDraft(type: .diet, foodName: "鸡胸肉沙拉", calories: "650", protein: "30")
+        XCTAssertTrue(draft.canSubmit)
+        XCTAssertEqual(draft.previewText, "记录饮食：鸡胸肉沙拉，650kcal，蛋白质30g")
+    }
+
     func testDesktopJobClientCreatesListsDetailsAndRetriesJobs() async throws {
         var call = 0
         URLProtocolStub.handler = { request in

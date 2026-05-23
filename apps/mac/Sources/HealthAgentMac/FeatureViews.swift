@@ -456,7 +456,7 @@ struct RecordHubView: View {
     let client: RecordClient
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var quickText = ""
-    @State private var recordType = StructuredRecordType.diet
+    @State private var recordType = StructuredRecordDraftType.diet
     @State private var foodName = ""
     @State private var calories = ""
     @State private var protein = ""
@@ -491,7 +491,7 @@ struct RecordHubView: View {
 
                 SectionPanel(title: appText("Structured Form", appLanguageRaw), systemImage: "text.badge.checkmark") {
                     Picker(appText("Type", appLanguageRaw), selection: $recordType) {
-                        ForEach(StructuredRecordType.allCases) { type in
+                        ForEach(StructuredRecordDraftType.allCases) { type in
                             Label(appText(type.title, appLanguageRaw), systemImage: type.systemImage).tag(type)
                         }
                     }
@@ -507,7 +507,8 @@ struct RecordHubView: View {
                             Task { await submitStructured() }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(isSubmitting || structuredText().isEmpty)
+                        .disabled(isSubmitting || !structuredDraft.canSubmit)
+                        .keyboardShortcut(.return, modifiers: .command)
                     }
                 }
 
@@ -563,30 +564,32 @@ struct RecordHubView: View {
         }
     }
 
+    private var structuredDraft: StructuredRecordDraft {
+        StructuredRecordDraft(
+            type: recordType,
+            foodName: foodName,
+            calories: calories,
+            protein: protein,
+            waterMl: waterMl,
+            supplementName: supplementName,
+            supplementDose: supplementDose,
+            weightKg: weightKg,
+            systolic: systolic,
+            diastolic: diastolic,
+            symptom: symptom
+        )
+    }
+
     private func structuredText() -> String {
-        switch recordType {
-        case .diet:
-            let parts = [foodName, calories.isEmpty ? "" : "\(calories)kcal", protein.isEmpty ? "" : "蛋白质\(protein)g"]
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            return parts.isEmpty ? "" : "记录饮食：" + parts.joined(separator: "，")
-        case .water:
-            return waterMl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "喝水 \(waterMl)ml"
-        case .supplement:
-            let text = [supplementName, supplementDose].filter { !$0.isEmpty }.joined(separator: " ")
-            return text.isEmpty ? "" : "记录补剂：\(text)"
-        case .weight:
-            return weightKg.isEmpty ? "" : "记录体重 \(weightKg)kg"
-        case .bloodPressure:
-            return systolic.isEmpty || diastolic.isEmpty ? "" : "记录血压 \(systolic)/\(diastolic) mmHg"
-        case .symptom:
-            return symptom.isEmpty ? "" : "记录症状：\(symptom)"
-        }
+        structuredDraft.previewText
     }
 
     private func submitStructured() async {
         isSubmitting = true
         defer { isSubmitting = false }
         do {
+            let draft = structuredDraft
+            guard draft.canSubmit else { return }
             let result: QuickRecordResult
             switch recordType {
             case .diet:
@@ -594,14 +597,11 @@ struct RecordHubView: View {
                 guard !food.isEmpty else { return }
                 result = try await client.recordDiet(
                     foodItems: food,
-                    calories: parseDouble(calories),
-                    protein: parseDouble(protein)
+                    calories: draft.positiveDouble(calories),
+                    protein: draft.positiveDouble(protein)
                 )
             case .water:
-                guard let amount = parseInt(waterMl), amount > 0 else {
-                    resultMessage = "请输入有效饮水量。"
-                    return
-                }
+                guard let amount = draft.positiveInt(waterMl) else { return }
                 result = try await client.recordWater(amountMl: amount)
             case .supplement:
                 let text = [supplementName, supplementDose]
@@ -611,23 +611,20 @@ struct RecordHubView: View {
                 guard !text.isEmpty else { return }
                 result = try await client.quickRecord(text: "补剂\(text)")
             case .weight:
-                guard let weight = parseDouble(weightKg), weight > 0 else {
-                    resultMessage = "请输入有效体重。"
-                    return
-                }
+                guard let weight = draft.positiveDouble(weightKg) else { return }
                 result = try await client.recordWeight(weightKg: weight)
             case .bloodPressure:
-                guard let systolicValue = parseInt(systolic), let diastolicValue = parseInt(diastolic) else {
-                    resultMessage = "请输入有效血压。"
-                    return
-                }
+                guard let systolicValue = draft.positiveInt(systolic), let diastolicValue = draft.positiveInt(diastolic) else { return }
                 result = try await client.recordBloodPressure(systolic: systolicValue, diastolic: diastolicValue)
             case .symptom:
                 let text = symptom.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return }
                 result = try await client.recordSymptom(description: text)
             }
-            handleRecordResult(result, fallbackText: structuredText())
+            handleRecordResult(result, fallbackText: draft.previewText)
+            if result.success {
+                clearStructuredFields()
+            }
         } catch {
             resultMessage = "Save failed: \(error.localizedDescription)"
         }
@@ -656,25 +653,29 @@ struct RecordHubView: View {
         }
     }
 
-    private func parseDouble(_ rawValue: String) -> Double? {
-        Double(rawValue.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "."))
-    }
-
-    private func parseInt(_ rawValue: String) -> Int? {
-        Int(rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    private func clearStructuredFields() {
+        switch recordType {
+        case .diet:
+            foodName = ""
+            calories = ""
+            protein = ""
+        case .water:
+            waterMl = "250"
+        case .supplement:
+            supplementName = ""
+            supplementDose = ""
+        case .weight:
+            weightKg = ""
+        case .bloodPressure:
+            systolic = ""
+            diastolic = ""
+        case .symptom:
+            symptom = ""
+        }
     }
 }
 
-private enum StructuredRecordType: String, CaseIterable, Identifiable {
-    case diet
-    case water
-    case supplement
-    case weight
-    case bloodPressure
-    case symptom
-
-    var id: String { rawValue }
-
+private extension StructuredRecordDraftType {
     var title: String {
         switch self {
         case .diet: "Diet"
