@@ -49,6 +49,8 @@ interface TwinSnapshot {
   resting_hr?: number | null;
 }
 
+type NextActionCompletionState = 'idle' | 'sending' | 'completed' | 'error';
+
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
 }
@@ -77,7 +79,10 @@ export default function TodayScreen() {
   const { c } = useTheme();
   const qc = useQueryClient();
   const [manualRefreshing, setManualRefreshing] = useState(false);
-  const [nextActionState, setNextActionState] = useState<'idle' | 'sending' | 'completed' | 'error'>('idle');
+  const [nextActionCompletion, setNextActionCompletion] = useState<{
+    actionKey: string | null;
+    state: NextActionCompletionState;
+  }>({ actionKey: null, state: 'idle' });
 
   const safetyQuery = useQuery({
     queryKey: ['safety', 'me'],
@@ -182,6 +187,9 @@ export default function TodayScreen() {
   const twinSnap = pickTwinSnapshot(twinQuery.data);
   const activePlanCount = dailyPlanQuery.data?.actions?.length ?? 0;
   const nextAction = (dailyPlanQuery.data?.actions ?? []).find(action => Boolean(action?.title)) ?? null;
+  const nextActionKey = nextAction?.action_key || nextAction?.title || null;
+  const visibleNextActionState: NextActionCompletionState =
+    nextActionCompletion.actionKey === nextActionKey ? nextActionCompletion.state : 'idle';
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -198,19 +206,19 @@ export default function TodayScreen() {
   }, [router]);
 
   const completeNextAction = useCallback(async (action: DailyPlanAction) => {
-    if (!action.action_key || nextActionState === 'sending') return;
-    setNextActionState('sending');
+    if (!action.action_key || nextActionCompletion.state === 'sending') return;
+    setNextActionCompletion({ actionKey: action.action_key, state: 'sending' });
     try {
       await recordDailyPlanActionEvent(action.action_key, {
         event_type: 'completed',
         payload: { source: 'next_best_action' },
       });
-      setNextActionState('completed');
+      setNextActionCompletion({ actionKey: action.action_key, state: 'completed' });
       await qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] });
     } catch {
-      setNextActionState('error');
+      setNextActionCompletion({ actionKey: action.action_key, state: 'error' });
     }
-  }, [nextActionState, qc]);
+  }, [nextActionCompletion.state, qc]);
 
   const openTrajectoryChat = useCallback(() => {
     const snapshot = trajectoryQuery.data;
@@ -259,7 +267,7 @@ export default function TodayScreen() {
         <NextBestActionCard
           action={nextAction}
           loading={dailyPlanQuery.isLoading}
-          completionState={nextActionState}
+          completionState={visibleNextActionState}
           onStart={openPlanAction}
           onComplete={completeNextAction}
           onFallbackRecord={() => router.push('/(tabs)/record' as any)}
@@ -565,7 +573,7 @@ function NextBestActionCard({
 }: {
   action?: DailyPlanAction | null;
   loading?: boolean;
-  completionState: 'idle' | 'sending' | 'completed' | 'error';
+  completionState: NextActionCompletionState;
   onStart: (action: DailyPlanAction) => void;
   onComplete: (action: DailyPlanAction) => void;
   onFallbackRecord: () => void;
@@ -600,6 +608,12 @@ function NextBestActionCard({
           </Text>
         </View>
       </View>
+      {completionState === 'error' ? (
+        <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
+          <Ionicons name="alert-circle-outline" size={14} color={c.red} />
+          <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
+        </View>
+      ) : null}
       <View style={styles.nextActionButtons}>
         <Pressable
           onPress={() => (hasAction && action ? onStart(action) : onFallbackRecord())}
@@ -869,6 +883,15 @@ const styles = StyleSheet.create({
   nextActionEyebrow: { fontSize: 12, fontWeight: '800' },
   nextActionTitle: { fontSize: 18, fontWeight: '800', lineHeight: 23 },
   nextActionReason: { fontSize: 13, lineHeight: 18 },
+  nextActionError: {
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  nextActionErrorText: { fontSize: 12, fontWeight: '800' },
   nextActionButtons: { flexDirection: 'row', gap: spacing.sm },
   nextActionPrimary: {
     flex: 1,

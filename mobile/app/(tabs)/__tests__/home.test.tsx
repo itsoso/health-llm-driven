@@ -188,4 +188,57 @@ describe('TodayScreen', () => {
       );
     });
   });
+
+  it('shows an inline failure when completing the next action fails', async () => {
+    mockRecordDailyPlanActionEvent.mockRejectedValueOnce(new Error('network'));
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText } = render(<TodayScreen />);
+
+    fireEvent.press(getByText('完成'));
+
+    await waitFor(() => {
+      expect(getByText('记录失败，请重试')).toBeTruthy();
+    });
+  });
+
+  it('resets completion state when the next action changes', async () => {
+    mockRecordDailyPlanActionEvent.mockResolvedValueOnce({
+      action_state: 'completed',
+      payload: {},
+    });
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText, queryByText, rerender } = render(<TodayScreen />);
+
+    fireEvent.press(getByText('完成'));
+
+    await waitFor(() => {
+      expect(getByText('已完成')).toBeTruthy();
+    });
+
+    mockDailyPlanActions = [
+      {
+        action_key: 'nutrition.log_lunch',
+        domain: 'nutrition',
+        title: '记录午餐',
+      },
+    ];
+    rerender(<TodayScreen />);
+
+    expect(queryByText('已完成')).toBeNull();
+    expect(getByText('完成')).toBeTruthy();
+  });
 });
