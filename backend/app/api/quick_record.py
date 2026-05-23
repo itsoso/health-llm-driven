@@ -2,6 +2,7 @@
 import re
 import logging
 from datetime import date, datetime
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -26,6 +27,23 @@ class QuickRecordResponse(BaseModel):
     type: str  # diet / water / weight / bp / supplement
     message: str
     success: bool
+    record_id: Optional[int] = None
+    undo_path: Optional[str] = None
+
+
+def _quick_record_response(
+    record_type: str,
+    message: str,
+    record_id: Optional[int] = None,
+    undo_prefix: Optional[str] = None,
+) -> QuickRecordResponse:
+    return QuickRecordResponse(
+        type=record_type,
+        message=message,
+        success=True,
+        record_id=record_id,
+        undo_path=f"{undo_prefix}/{record_id}" if undo_prefix and record_id else None,
+    )
 
 
 # 餐次映射
@@ -213,11 +231,13 @@ def quick_record(
             )
             db.add(record)
             db.commit()
+            db.refresh(record)
             nutrition_msg = f"，约 {nutrition[0]} kcal" if nutrition else ""
-            return QuickRecordResponse(
-                type="diet",
+            return _quick_record_response(
+                record_type="diet",
                 message=f"已记录{data['meal_cn']}：{data['food']}{nutrition_msg}",
-                success=True,
+                record_id=record.id,
+                undo_prefix="diet/records",
             )
 
         elif record_type == "water":
@@ -229,10 +249,12 @@ def quick_record(
             )
             db.add(record)
             db.commit()
-            return QuickRecordResponse(
-                type="water",
+            db.refresh(record)
+            return _quick_record_response(
+                record_type="water",
                 message=f"已记录饮水 {data['amount']}ml",
-                success=True,
+                record_id=record.id,
+                undo_prefix="water/records",
             )
 
         elif record_type == "weight":
@@ -244,10 +266,12 @@ def quick_record(
             )
             db.add(record)
             db.commit()
-            return QuickRecordResponse(
-                type="weight",
+            db.refresh(record)
+            return _quick_record_response(
+                record_type="weight",
                 message=f"已记录体重 {data['weight']}kg",
-                success=True,
+                record_id=record.id,
+                undo_prefix="weight/records",
             )
 
         elif record_type == "bp":
@@ -260,10 +284,12 @@ def quick_record(
             )
             db.add(record)
             db.commit()
-            return QuickRecordResponse(
-                type="bp",
+            db.refresh(record)
+            return _quick_record_response(
+                record_type="bp",
                 message=f"已记录血压 {data['systolic']}/{data['diastolic']} mmHg",
-                success=True,
+                record_id=record.id,
+                undo_prefix="blood-pressure/records",
             )
 
         elif record_type == "supplement":
@@ -297,11 +323,14 @@ def quick_record(
                     taken=True,
                 )
                 db.add(record)
+            else:
+                record = existing
             db.commit()
-            return QuickRecordResponse(
-                type="supplement",
+            db.refresh(record)
+            return _quick_record_response(
+                record_type="supplement",
                 message=f"已打卡补剂：{data['name']}",
-                success=True,
+                record_id=record.id,
             )
 
     except Exception as e:

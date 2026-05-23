@@ -103,6 +103,11 @@ class TestQuickRecordAPI:
         assert data["type"] == "water"
         assert data["success"] is True
         assert "250" in data["message"]
+        assert isinstance(data["record_id"], int)
+        assert data["undo_path"] == f"water/records/{data['record_id']}"
+
+        undo_resp = client.delete(f"/api/v1/{data['undo_path']}", headers=headers)
+        assert undo_resp.status_code == 200
 
     def test_record_diet(self, client, db):
         from tests.conftest import create_authenticated_user
@@ -113,6 +118,44 @@ class TestQuickRecordAPI:
         data = resp.json()
         assert data["type"] == "diet"
         assert data["success"] is True
+        assert isinstance(data["record_id"], int)
+        assert data["undo_path"] == f"diet/records/{data['record_id']}"
+
+    def test_record_weight_returns_undo_path(self, client, db):
+        from tests.conftest import create_authenticated_user
+        user, token = create_authenticated_user(db)
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = client.post("/api/v1/quick-record", json={"text": "体重70.2"}, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "weight"
+        assert data["success"] is True
+        assert isinstance(data["record_id"], int)
+        assert data["undo_path"] == f"weight/records/{data['record_id']}"
+
+    def test_record_blood_pressure_returns_undo_path(self, client, db):
+        from tests.conftest import create_authenticated_user
+        user, token = create_authenticated_user(db)
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = client.post("/api/v1/quick-record", json={"text": "血压120/80"}, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "bp"
+        assert data["success"] is True
+        assert isinstance(data["record_id"], int)
+        assert data["undo_path"] == f"blood-pressure/records/{data['record_id']}"
+
+    def test_record_supplement_returns_record_id_without_undo_path(self, client, db):
+        from tests.conftest import create_authenticated_user
+        user, token = create_authenticated_user(db)
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = client.post("/api/v1/quick-record", json={"text": "吃了维生素D"}, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "supplement"
+        assert data["success"] is True
+        assert isinstance(data["record_id"], int)
+        assert data["undo_path"] is None
 
     def test_record_unrecognized(self, client, db):
         from tests.conftest import create_authenticated_user
