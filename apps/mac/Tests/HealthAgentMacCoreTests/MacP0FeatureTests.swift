@@ -217,8 +217,17 @@ final class MacP0FeatureTests: XCTestCase {
           "action_cards": [{"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90}],
           "recent_memory": [{"id": 1, "object_value": "补剂依从率偏低"}],
           "recent_records_summary": {
-            "diet": {"today_count": 2, "today_calories": 1350.5},
-            "water": {"today_count": 3, "today_total_ml": 900}
+            "date": "2026-05-23",
+            "range_days": 30,
+            "diet": {"today_count": 2, "today_calories": 1350.5, "last_30_count": 9, "last_30_calories": 8200},
+            "water": {"today_count": 3, "today_total_ml": 900, "last_30_count": 12, "last_30_total_ml": 9600},
+            "latest_weight": {"id": 12, "type": "weight", "title": "体重", "value": 70.2, "unit": "kg", "record_date": "2026-05-22"},
+            "latest_blood_pressure": {"id": 13, "type": "blood_pressure", "title": "血压", "value": "118/76", "unit": "mmHg", "category": "正常", "record_date": "2026-05-21"},
+            "latest_garmin": {"id": 14, "type": "garmin", "title": "Garmin", "record_date": "2026-05-23", "steps": 6840, "sleep_score": 82, "spo2_avg": 96.4, "resting_heart_rate": 52, "hrv": 46.5, "training_readiness_score": 73},
+            "recent_records": [
+              {"id": 13, "type": "blood_pressure", "title": "血压", "value": "118/76", "unit": "mmHg", "record_date": "2026-05-21"},
+              {"id": 12, "type": "weight", "title": "体重", "value": 70.2, "unit": "kg", "record_date": "2026-05-22"}
+            ]
           },
           "active_jobs": [
             {"id": 1, "job_type": "gene_reanalysis", "status": "running", "progress": 40, "source_kind": "genome_txt", "source_name": "wegene.txt", "source_hash": "sha256:a", "request_payload": {}, "result_payload": {}, "error_message": null},
@@ -229,6 +238,12 @@ final class MacP0FeatureTests: XCTestCase {
         """.data(using: .utf8)!
 
         let bootstrap = try JSONDecoder().decode(DesktopBootstrap.self, from: data)
+        XCTAssertEqual(bootstrap.recentRecordsSummary.diet?.last30Count, 9)
+        XCTAssertEqual(bootstrap.recentRecordsSummary.water?.last30TotalMl, 9600)
+        XCTAssertEqual(bootstrap.recentRecordsSummary.latestWeight?.displayValue, "70.2 kg")
+        XCTAssertEqual(bootstrap.recentRecordsSummary.latestBloodPressure?.displayValue, "118/76 mmHg")
+        XCTAssertEqual(bootstrap.recentRecordsSummary.latestGarmin?.steps, 6840)
+        XCTAssertEqual(bootstrap.recentRecordsSummary.recentRecords?.map(\.type), ["blood_pressure", "weight"])
         let dataSummary = bootstrap.workspaceSummary(for: .data)
         let geneticsSummary = bootstrap.workspaceSummary(for: .genetics)
         let knowledgeSummary = bootstrap.workspaceSummary(for: .knowledge)

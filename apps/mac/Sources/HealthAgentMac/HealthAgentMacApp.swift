@@ -229,76 +229,312 @@ struct TodayView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(appText("Today", appLanguageRaw))
-                            .font(.largeTitle.bold())
-                        Text(appText("Daily operating plan, feedback, and active desktop jobs.", appLanguageRaw))
-                            .foregroundStyle(.secondary)
+        ZStack {
+            LinearGradient(
+                colors: [Color.teal.opacity(0.10), Color.blue.opacity(0.06), Color.clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+
+                    if viewModel.isLoading {
+                        ProgressView(appText("Loading desktop context...", appLanguageRaw))
                     }
-                    Spacer()
-                    Button(appText("Refresh", appLanguageRaw)) {
-                        Task { await viewModel.refresh() }
+
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                            .foregroundStyle(.red)
                     }
-                }
 
-                if viewModel.isLoading {
-                    ProgressView(appText("Loading desktop context...", appLanguageRaw))
-                }
+                    metricGrid
 
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                        .foregroundStyle(.red)
-                }
-
-                SectionPanel(title: appText("Top Actions", appLanguageRaw), systemImage: "checklist") {
-                    if viewModel.topActions.isEmpty {
-                        Text(appText("No actions loaded yet.", appLanguageRaw))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(viewModel.topActions) { action in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(action.title).font(.headline)
-                                    if let domain = action.domain {
-                                        Text(domain).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer()
-                                Button(appText("Done", appLanguageRaw)) {}
-                                Button(appText("Adjust", appLanguageRaw)) {}
-                            }
-                            Divider()
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            actionPanel
+                            recentRecordsPanel
                         }
-                    }
-                }
+                        .frame(minWidth: 360, maxWidth: .infinity, alignment: .topLeading)
 
-                SectionPanel(title: appText("Active Jobs", appLanguageRaw), systemImage: "clock.arrow.circlepath") {
-                    if viewModel.activeJobs.isEmpty {
-                        Text(appText("No active desktop jobs.", appLanguageRaw))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(viewModel.activeJobs) { job in
-                            HStack {
-                                Text(job.jobType)
-                                Spacer()
-                                Text(job.status)
-                                ProgressView(value: Double(job.progress), total: 100)
-                                    .frame(width: 120)
-                            }
+                        VStack(alignment: .leading, spacing: 16) {
+                            memoryPanel
+                            jobsPanel
                         }
+                        .frame(width: 320, alignment: .topLeading)
                     }
                 }
+                .padding(28)
             }
-            .padding(28)
         }
         .task {
             if viewModel.bootstrap == nil {
                 await viewModel.refresh()
             }
         }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(appText("Health Dashboard", appLanguageRaw))
+                        .font(.largeTitle.bold())
+                    if let name = viewModel.bootstrap?.user.name, !name.isEmpty {
+                        Text(name)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(statusLine)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await viewModel.refresh() }
+            } label: {
+                Label(appText("Refresh", appLanguageRaw), systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var statusLine: String {
+        guard let bootstrap = viewModel.bootstrap else {
+            return appText("Loading your latest health context.", appLanguageRaw)
+        }
+        let recordDate = bootstrap.recentRecordsSummary.date ?? "-"
+        let actionCount = bootstrap.actionCards.count
+        let memoryCount = bootstrap.recentMemory.count
+        return "\(appText("Data date", appLanguageRaw)): \(recordDate) · \(appText("Active cards", appLanguageRaw)): \(actionCount) · \(appText("Memory", appLanguageRaw)): \(memoryCount)"
+    }
+
+    private var metricGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+            ForEach(dashboardMetrics) { metric in
+                DashboardMetricTile(metric: metric)
+            }
+        }
+    }
+
+    private var dashboardMetrics: [DashboardMetric] {
+        let summary = viewModel.bootstrap?.recentRecordsSummary
+        let garmin = summary?.latestGarmin
+        return [
+            DashboardMetric(
+                id: "diet",
+                title: appText("Diet 30d", appLanguageRaw),
+                value: "\(formatNumber(summary?.diet?.last30Calories)) kcal",
+                detail: "\(summary?.diet?.last30Count ?? 0) \(appText("records", appLanguageRaw))",
+                systemImage: "fork.knife",
+                tint: .orange
+            ),
+            DashboardMetric(
+                id: "water",
+                title: appText("Water 30d", appLanguageRaw),
+                value: "\(summary?.water?.last30TotalMl ?? 0) ml",
+                detail: "\(summary?.water?.last30Count ?? 0) \(appText("records", appLanguageRaw))",
+                systemImage: "drop.fill",
+                tint: .cyan
+            ),
+            DashboardMetric(
+                id: "weight",
+                title: appText("Latest Weight", appLanguageRaw),
+                value: summary?.latestWeight?.displayValue ?? "—",
+                detail: summary?.latestWeight?.recordDate ?? appText("No record", appLanguageRaw),
+                systemImage: "scalemass.fill",
+                tint: .green
+            ),
+            DashboardMetric(
+                id: "bp",
+                title: appText("Latest BP", appLanguageRaw),
+                value: summary?.latestBloodPressure?.displayValue ?? "—",
+                detail: summary?.latestBloodPressure?.recordDate ?? appText("No record", appLanguageRaw),
+                systemImage: "heart.text.square.fill",
+                tint: .pink
+            ),
+            DashboardMetric(
+                id: "steps",
+                title: appText("Steps", appLanguageRaw),
+                value: garmin?.steps.map { "\($0)" } ?? "—",
+                detail: garmin?.recordDate ?? appText("No wearable data", appLanguageRaw),
+                systemImage: "figure.walk",
+                tint: .blue
+            ),
+            DashboardMetric(
+                id: "sleep",
+                title: appText("Sleep Score", appLanguageRaw),
+                value: garmin?.sleepScore.map { "\($0)" } ?? "—",
+                detail: garmin?.trainingReadinessScore.map { "\(appText("Readiness", appLanguageRaw)) \($0)" } ?? appText("No wearable data", appLanguageRaw),
+                systemImage: "moon.zzz.fill",
+                tint: .purple
+            )
+        ]
+    }
+
+    private var actionPanel: some View {
+        SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
+            if viewModel.topActions.isEmpty {
+                EmptyStateText(text: appText("No actions loaded yet.", appLanguageRaw))
+            } else {
+                ForEach(viewModel.topActions) { action in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(.teal)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(action.title)
+                                .font(.headline)
+                            if let domain = action.domain {
+                                Text(domain)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var recentRecordsPanel: some View {
+        SectionPanel(title: appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg") {
+            let records = viewModel.bootstrap?.recentRecordsSummary.recentRecords ?? []
+            if records.isEmpty {
+                EmptyStateText(text: appText("No recent health records loaded.", appLanguageRaw))
+            } else {
+                ForEach(records.prefix(6)) { record in
+                    HStack(spacing: 10) {
+                        Image(systemName: icon(for: record.type))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.title)
+                                .font(.callout.weight(.medium))
+                                .lineLimit(1)
+                            Text(record.recordDate ?? "")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(record.displayValue)
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.primary)
+                    }
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var memoryPanel: some View {
+        SectionPanel(title: appText("Recent Memory", appLanguageRaw), systemImage: "brain.head.profile") {
+            let memory = viewModel.bootstrap?.recentMemory ?? []
+            if memory.isEmpty {
+                EmptyStateText(text: appText("No recent memory loaded.", appLanguageRaw))
+            } else {
+                ForEach(memory.prefix(4)) { item in
+                    Text(item.objectValue)
+                        .font(.callout)
+                        .lineLimit(2)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var jobsPanel: some View {
+        SectionPanel(title: appText("Active Jobs", appLanguageRaw), systemImage: "clock.arrow.circlepath") {
+            if viewModel.activeJobs.isEmpty {
+                EmptyStateText(text: appText("No active desktop jobs.", appLanguageRaw))
+            } else {
+                ForEach(viewModel.activeJobs) { job in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(job.jobType)
+                                .font(.callout.weight(.medium))
+                            Spacer()
+                            Text(job.status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: Double(job.progress), total: 100)
+                    }
+                }
+            }
+        }
+    }
+
+    private func formatNumber(_ value: Double?) -> String {
+        guard let value else { return "0" }
+        return value.formatted(.number.precision(.fractionLength(0...1)))
+    }
+
+    private func icon(for type: String) -> String {
+        switch type {
+        case "diet": "fork.knife"
+        case "water": "drop.fill"
+        case "weight": "scalemass.fill"
+        case "blood_pressure": "heart.text.square.fill"
+        default: "doc.text"
+        }
+    }
+}
+
+private struct DashboardMetric: Identifiable {
+    let id: String
+    let title: String
+    let value: String
+    let detail: String
+    let systemImage: String
+    let tint: Color
+}
+
+private struct DashboardMetricTile: View {
+    let metric: DashboardMetric
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: metric.systemImage)
+                    .foregroundStyle(metric.tint)
+                Spacer()
+            }
+            Text(metric.title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(metric.value)
+                .font(.title2.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(metric.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .background(.background.opacity(0.88), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(metric.tint.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct EmptyStateText: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

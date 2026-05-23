@@ -6,7 +6,7 @@ replaying every mobile screen request one by one.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,12 +17,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.action_card import ActionCard
-from app.models.daily_health import DietRecord, WaterIntake
+from app.models.blood_pressure import BloodPressureRecord
+from app.models.daily_health import DietRecord, GarminData, WaterIntake
 from app.models.desktop_job import DesktopJob
 from app.models.memory_fact import MemoryFact
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
 from app.models.user import User
 from app.models.user_profile import UserProfile
+from app.models.weight import WeightRecord
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.health_trajectory import build_health_trajectory_snapshot
 
@@ -80,9 +82,19 @@ def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
 
 def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
     today = date.today()
+    since = today - timedelta(days=29)
     diet_records = (
         db.query(DietRecord)
         .filter(DietRecord.user_id == user_id, DietRecord.record_date == today)
+        .all()
+    )
+    diet_30d = (
+        db.query(DietRecord)
+        .filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date >= since,
+            DietRecord.record_date <= today,
+        )
         .all()
     )
     water_records = (
@@ -90,17 +102,140 @@ def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
         .filter(WaterIntake.user_id == user_id, WaterIntake.record_date == today)
         .all()
     )
+    water_30d = (
+        db.query(WaterIntake)
+        .filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date >= since,
+            WaterIntake.record_date <= today,
+        )
+        .all()
+    )
+    latest_weight = (
+        db.query(WeightRecord)
+        .filter(WeightRecord.user_id == user_id)
+        .order_by(desc(WeightRecord.record_date), desc(WeightRecord.id))
+        .first()
+    )
+    latest_bp = (
+        db.query(BloodPressureRecord)
+        .filter(BloodPressureRecord.user_id == user_id)
+        .order_by(desc(BloodPressureRecord.record_date), desc(BloodPressureRecord.id))
+        .first()
+    )
+    latest_garmin = (
+        db.query(GarminData)
+        .filter(GarminData.user_id == user_id)
+        .order_by(desc(GarminData.record_date), desc(GarminData.id))
+        .first()
+    )
+
     return {
         "date": today.isoformat(),
+        "range_days": 30,
         "diet": {
             "today_count": len(diet_records),
             "today_calories": round(sum(r.calories or 0 for r in diet_records), 1),
+            "last_30_count": len(diet_30d),
+            "last_30_calories": round(sum(r.calories or 0 for r in diet_30d), 1),
         },
         "water": {
             "today_count": len(water_records),
             "today_total_ml": sum(r.amount_ml or 0 for r in water_records),
+            "last_30_count": len(water_30d),
+            "last_30_total_ml": sum(r.amount_ml or 0 for r in water_30d),
         },
+        "latest_weight": _latest_weight_to_dict(latest_weight),
+        "latest_blood_pressure": _latest_blood_pressure_to_dict(latest_bp),
+        "latest_garmin": _latest_garmin_to_dict(latest_garmin),
+        "recent_records": _recent_records_list(diet_30d, water_30d, latest_weight, latest_bp),
     }
+
+
+def _record_date_iso(value: date | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _latest_weight_to_dict(record: WeightRecord | None) -> dict[str, Any] | None:
+    if not record:
+        return None
+    return {
+        "id": record.id,
+        "type": "weight",
+        "title": "体重",
+        "value": round(record.weight, 1),
+        "unit": "kg",
+        "record_date": _record_date_iso(record.record_date),
+    }
+
+
+def _latest_blood_pressure_to_dict(record: BloodPressureRecord | None) -> dict[str, Any] | None:
+    if not record:
+        return None
+    value = f"{record.systolic}/{record.diastolic}"
+    return {
+        "id": record.id,
+        "type": "blood_pressure",
+        "title": "血压",
+        "value": value,
+        "unit": "mmHg",
+        "category": record.category,
+        "record_date": _record_date_iso(record.record_date),
+    }
+
+
+def _latest_garmin_to_dict(record: GarminData | None) -> dict[str, Any] | None:
+    if not record:
+        return None
+    return {
+        "id": record.id,
+        "type": "garmin",
+        "title": "Garmin",
+        "record_date": _record_date_iso(record.record_date),
+        "steps": record.steps,
+        "sleep_score": record.sleep_score,
+        "spo2_avg": record.spo2_avg,
+        "resting_heart_rate": record.resting_heart_rate,
+        "hrv": record.hrv,
+        "training_readiness_score": record.training_readiness_score,
+    }
+
+
+def _recent_records_list(
+    diet_records: list[DietRecord],
+    water_records: list[WaterIntake],
+    latest_weight: WeightRecord | None,
+    latest_bp: BloodPressureRecord | None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    rows.extend(
+        {
+            "id": record.id,
+            "type": "diet",
+            "title": record.food_items or record.food_name or "饮食记录",
+            "value": f"{round(record.calories or 0)} kcal" if record.calories is not None else None,
+            "record_date": _record_date_iso(record.record_date),
+        }
+        for record in diet_records
+    )
+    rows.extend(
+        {
+            "id": record.id,
+            "type": "water",
+            "title": "饮水",
+            "value": f"{record.amount_ml or 0} ml",
+            "record_date": _record_date_iso(record.record_date),
+        }
+        for record in water_records
+    )
+    if latest_weight:
+        rows.append(_latest_weight_to_dict(latest_weight))
+    if latest_bp:
+        rows.append(_latest_blood_pressure_to_dict(latest_bp))
+
+    rows = [row for row in rows if row]
+    rows.sort(key=lambda row: (row.get("record_date") or "", row.get("id") or 0), reverse=True)
+    return rows[:8]
 
 
 def _active_desktop_jobs(db: Session, user_id: int) -> list[dict[str, Any]]:

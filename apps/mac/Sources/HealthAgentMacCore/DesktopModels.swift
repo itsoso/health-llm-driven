@@ -86,27 +86,162 @@ public struct MemoryFactSummary: Decodable, Equatable, Identifiable, Sendable {
 }
 
 public struct RecentRecordsSummary: Decodable, Equatable, Sendable {
+    public let date: String?
+    public let rangeDays: Int?
     public let diet: DietRecordSummary?
     public let water: WaterRecordSummary?
+    public let latestWeight: DesktopRecordMetric?
+    public let latestBloodPressure: DesktopRecordMetric?
+    public let latestGarmin: GarminMetricSummary?
+    public let recentRecords: [DesktopRecordMetric]?
+
+    public init(
+        diet: DietRecordSummary? = nil,
+        water: WaterRecordSummary? = nil,
+        date: String? = nil,
+        rangeDays: Int? = nil,
+        latestWeight: DesktopRecordMetric? = nil,
+        latestBloodPressure: DesktopRecordMetric? = nil,
+        latestGarmin: GarminMetricSummary? = nil,
+        recentRecords: [DesktopRecordMetric]? = nil
+    ) {
+        self.date = date
+        self.rangeDays = rangeDays
+        self.diet = diet
+        self.water = water
+        self.latestWeight = latestWeight
+        self.latestBloodPressure = latestBloodPressure
+        self.latestGarmin = latestGarmin
+        self.recentRecords = recentRecords
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case rangeDays = "range_days"
+        case diet
+        case water
+        case latestWeight = "latest_weight"
+        case latestBloodPressure = "latest_blood_pressure"
+        case latestGarmin = "latest_garmin"
+        case recentRecords = "recent_records"
+    }
 }
 
 public struct DietRecordSummary: Decodable, Equatable, Sendable {
     public let todayCount: Int?
     public let todayCalories: Double?
+    public let last30Count: Int?
+    public let last30Calories: Double?
+
+    public init(
+        todayCount: Int? = nil,
+        todayCalories: Double? = nil,
+        last30Count: Int? = nil,
+        last30Calories: Double? = nil
+    ) {
+        self.todayCount = todayCount
+        self.todayCalories = todayCalories
+        self.last30Count = last30Count
+        self.last30Calories = last30Calories
+    }
 
     enum CodingKeys: String, CodingKey {
         case todayCount = "today_count"
         case todayCalories = "today_calories"
+        case last30Count = "last_30_count"
+        case last30Calories = "last_30_calories"
     }
 }
 
 public struct WaterRecordSummary: Decodable, Equatable, Sendable {
     public let todayCount: Int?
     public let todayTotalMl: Int?
+    public let last30Count: Int?
+    public let last30TotalMl: Int?
+
+    public init(
+        todayCount: Int? = nil,
+        todayTotalMl: Int? = nil,
+        last30Count: Int? = nil,
+        last30TotalMl: Int? = nil
+    ) {
+        self.todayCount = todayCount
+        self.todayTotalMl = todayTotalMl
+        self.last30Count = last30Count
+        self.last30TotalMl = last30TotalMl
+    }
 
     enum CodingKeys: String, CodingKey {
         case todayCount = "today_count"
         case todayTotalMl = "today_total_ml"
+        case last30Count = "last_30_count"
+        case last30TotalMl = "last_30_total_ml"
+    }
+}
+
+public struct DesktopRecordMetric: Decodable, Equatable, Identifiable, Sendable {
+    public let id: Int
+    public let type: String
+    public let title: String
+    public let value: JSONValue?
+    public let unit: String?
+    public let category: String?
+    public let recordDate: String?
+
+    public var displayValue: String {
+        let rawValue: String
+        switch value {
+        case .string(let value):
+            rawValue = value
+        case .int(let value):
+            rawValue = "\(value)"
+        case .double(let value):
+            rawValue = value.formatted(.number.precision(.fractionLength(0...1)))
+        case .bool(let value):
+            rawValue = value ? "true" : "false"
+        case .object, .array, .null, nil:
+            rawValue = "—"
+        }
+        guard let unit, !unit.isEmpty, rawValue != "—" else {
+            return rawValue
+        }
+        return "\(rawValue) \(unit)"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case title
+        case value
+        case unit
+        case category
+        case recordDate = "record_date"
+    }
+}
+
+public struct GarminMetricSummary: Decodable, Equatable, Sendable {
+    public let id: Int
+    public let type: String?
+    public let title: String?
+    public let recordDate: String?
+    public let steps: Int?
+    public let sleepScore: Int?
+    public let spo2Avg: Double?
+    public let restingHeartRate: Int?
+    public let hrv: Double?
+    public let trainingReadinessScore: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case title
+        case recordDate = "record_date"
+        case steps
+        case sleepScore = "sleep_score"
+        case spo2Avg = "spo2_avg"
+        case restingHeartRate = "resting_heart_rate"
+        case hrv
+        case trainingReadinessScore = "training_readiness_score"
     }
 }
 
