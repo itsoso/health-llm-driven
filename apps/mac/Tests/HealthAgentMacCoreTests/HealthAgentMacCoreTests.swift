@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import HealthAgentMacCore
 
@@ -16,6 +17,15 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "trace",
             "settings"
         ])
+    }
+
+    func testSidebarDestinationIconsResolveToAvailableSystemSymbols() {
+        for destination in SidebarDestination.allCases {
+            XCTAssertNotNil(
+                NSImage(systemSymbolName: destination.systemImage, accessibilityDescription: nil),
+                "\(destination.id) uses unavailable SF Symbol \(destination.systemImage)"
+            )
+        }
     }
 
     func testAPIEndpointDefaultsToProductionV1() {

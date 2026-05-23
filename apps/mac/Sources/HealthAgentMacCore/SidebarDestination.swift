@@ -35,7 +35,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .agent: "bubble.left.and.bubble.right"
         case .record: "plus.circle"
         case .data: "chart.line.uptrend.xyaxis"
-        case .genetics: "helix"
+        case .genetics: "atom"
         case .knowledge: "books.vertical"
         case .jobs: "clock.arrow.circlepath"
         case .trace: "point.3.connected.trianglepath.dotted"
