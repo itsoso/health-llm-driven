@@ -1,3 +1,4 @@
+import AppKit
 import HealthAgentMacCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -6,7 +7,7 @@ struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
     @State private var draft = ""
     @State private var modelStrategy = "auto"
-    @FocusState private var isDraftFocused: Bool
+    @State private var editorFocusToken = 0
 
     private let modelOptions: [(id: String, title: String, tier: String)] = [
         ("commercial/Claude-Opus-4.7", "Claude Opus 4.7", "Top"),
@@ -51,7 +52,7 @@ struct AgentChatView: View {
             }
         }
         .onAppear {
-            isDraftFocused = true
+            editorFocusToken += 1
         }
     }
 
@@ -96,10 +97,12 @@ struct AgentChatView: View {
             Divider()
 
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $draft)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .focused($isDraftFocused)
+                PromptCommandTextEditor(
+                    text: $draft,
+                    focusToken: editorFocusToken
+                ) {
+                    Task { await sendDraft() }
+                }
                     .frame(minHeight: 128, maxHeight: 220)
 
                 if draft.isEmpty {
@@ -201,9 +204,92 @@ struct AgentChatView: View {
 
     private func sendDraft() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard viewModel.canSubmit(text) else { return }
         draft = ""
         await viewModel.send(text)
+        editorFocusToken += 1
+    }
+}
+
+private struct PromptCommandTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let focusToken: Int
+    let onCommandReturn: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = CommandReturnTextView()
+        textView.delegate = context.coordinator
+        textView.onCommandReturn = onCommandReturn
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.font = .preferredFont(forTextStyle: .body)
+        textView.textContainerInset = NSSize(width: 0, height: 6)
+        textView.drawsBackground = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.string = text
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        context.coordinator.focusToken = focusToken
+
+        DispatchQueue.main.async {
+            textView.window?.makeFirstResponder(textView)
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = context.coordinator.textView else { return }
+        textView.onCommandReturn = onCommandReturn
+        if textView.string != text {
+            textView.string = text
+        }
+        if context.coordinator.focusToken != focusToken {
+            context.coordinator.focusToken = focusToken
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
+        }
+        _ = scrollView
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        weak var textView: CommandReturnTextView?
+        var focusToken = 0
+
+        init(text: Binding<String>) {
+            self._text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text = textView.string
+        }
+    }
+}
+
+private final class CommandReturnTextView: NSTextView {
+    var onCommandReturn: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+           event.charactersIgnoringModifiers == "\r" {
+            onCommandReturn?()
+            return
+        }
+        super.keyDown(with: event)
     }
 }
 
