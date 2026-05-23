@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 
 interface Props {
   label: string;
@@ -15,28 +16,53 @@ interface Props {
 }
 
 export default function MetricTile({ label, value, unit, subtitle, icon, color, tintColor, onPress }: Props) {
-  const Wrapper = onPress ? Pressable : View;
-  return (
-    <Wrapper
-      style={({ pressed }: any) => [styles.tile, pressed && styles.pressed]}
-      onPress={onPress}
-    >
+  const { c } = useTheme();
+  const styles = React.useMemo(() => createStyles(c), [c]);
+  const txt = React.useMemo(() => createTxt(c), [c]);
+  const content = (
+    <>
       <View style={[styles.iconCircle, { backgroundColor: tintColor }]}>
         <Ionicons name={icon} size={14} color={color} />
       </View>
       <Text style={txt.label}>{label}</Text>
       <View style={styles.valueRow}>
-        <Text style={[txt.value, { color }]}>{value}</Text>
+        <Text
+          style={[txt.value, { color }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
+          {value}
+        </Text>
         {unit ? <Text style={[txt.unit, { color }]}>{unit}</Text> : null}
       </View>
       {subtitle ? <Text style={txt.subtitle}>{subtitle}</Text> : null}
-    </Wrapper>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label} ${value}${unit ? unit : ''}`}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={styles.tile} accessibilityLabel={`${label} ${value}${unit ? unit : ''}`}>
+      {content}
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ColorPalette) => StyleSheet.create({
   tile: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.md,
     width: '48%',
@@ -58,9 +84,9 @@ const styles = StyleSheet.create({
   },
 });
 
-const txt = {
-  label: { fontSize: 11, fontWeight: '500', color: colors.labelSecondary, marginBottom: 2 } as TextStyle,
+const createTxt = (c: ColorPalette) => ({
+  label: { fontSize: 11, fontWeight: '500', color: c.labelSecondary, marginBottom: 2 } as TextStyle,
   value: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] } as TextStyle,
-  unit: { fontSize: 13, color: colors.labelSecondary } as TextStyle,
-  subtitle: { fontSize: 11, fontWeight: '500', color: colors.labelTertiary, marginTop: 2 } as TextStyle,
-};
+  unit: { fontSize: 13, color: c.labelSecondary } as TextStyle,
+  subtitle: { fontSize: 11, fontWeight: '500', color: c.labelTertiary, marginTop: 2 } as TextStyle,
+});

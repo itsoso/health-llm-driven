@@ -458,34 +458,33 @@ function HomeCommandHeader({
       ? '按优先级完成今日计划'
       : '暂无硬性任务，保持记录节奏';
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.commandHeader,
-        { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.92 : 1 },
-      ]}
-      onPress={onOpenFocus}
-      accessibilityRole="button"
-      accessibilityLabel="打开今日重点"
-    >
-      <View style={styles.commandTop}>
-        <View style={styles.commandTitleBlock}>
-          <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-          <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
-          <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-            {headline}
-          </Text>
-          <Text style={[styles.commandHint, { color: c.labelSecondary }]}>{focusText}</Text>
+    <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <Pressable
+        style={({ pressed }) => [styles.commandFocusArea, { opacity: pressed ? 0.82 : 1 }]}
+        onPress={onOpenFocus}
+        accessibilityRole="button"
+        accessibilityLabel="打开今日重点"
+      >
+        <View style={styles.commandTop}>
+          <View style={styles.commandTitleBlock}>
+            <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
+            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
+            <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+              {headline}
+            </Text>
+            <Text style={[styles.commandHint, { color: c.labelSecondary }]}>{focusText}</Text>
+          </View>
+          <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          </View>
         </View>
-        <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
-      </View>
 
-      <View style={styles.commandMetaRow}>
-        <MetaChip icon="compass-outline" label={`${planCount} 个计划`} />
-        <MetaChip icon="sync-outline" label={refreshing ? '同步中' : '已同步'} />
-      </View>
+        <View style={styles.commandMetaRow}>
+          <MetaChip icon="compass-outline" label={`${planCount} 个计划`} />
+          <MetaChip icon="sync-outline" label={refreshing ? '同步中' : '已同步'} />
+        </View>
+      </Pressable>
 
       <View style={styles.commandActions}>
         <Pressable
@@ -513,7 +512,7 @@ function HomeCommandHeader({
           <Text style={[styles.secondaryActionText, { color: c.labelPrimary }]}>记录</Text>
         </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -828,6 +827,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
+  commandFocusArea: { gap: spacing.md },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4 },
   commandDate: { fontSize: 12, fontWeight: '700' },

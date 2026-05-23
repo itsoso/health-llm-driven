@@ -1,20 +1,19 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
-  Modal, Pressable, ActivityIndicator, TextStyle, ScrollView, Dimensions,
+  Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
-import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSpring } from 'react-native-reanimated';
+import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
 import { spacing } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CANCEL_THRESHOLD = 80;
 
 function PulsingRing() {
@@ -109,11 +108,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, convers
       params: conversationId ? { conversation_id: String(conversationId) } : {},
     } as any);
   }, [conversationId]);
-
-  const toggleVoiceMode = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setVoiceMode(v => !v);
-  }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
@@ -266,7 +260,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, convers
       {/* 附件菜单 */}
       <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>
         <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
-          <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
+          <Pressable
+            testID="attachment-menu-sheet"
+            style={styles.menuSheet}
+            onPress={e => e.stopPropagation()}
+          >
             <View style={styles.menuHandle} />
             <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
             <MenuItem icon="image-outline" label="相册" desc="选择多张图片（最多9张）" onPress={handlePickImage} />
@@ -427,7 +425,7 @@ function createStyles(c: ColorPalette) {
   /* ── 附件菜单 ── */
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   menuSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: c.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
   },
   menuHandle: {
