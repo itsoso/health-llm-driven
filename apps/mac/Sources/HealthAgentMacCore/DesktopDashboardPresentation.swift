@@ -3,6 +3,7 @@ import Foundation
 public struct DesktopDashboardPresentation: Equatable, Sendable {
     public let heroTitle: String
     public let heroSubtitle: String
+    public let heroMetrics: [DesktopDashboardMetric]
     public let primaryMetrics: [DesktopDashboardMetric]
     public let wearableMetrics: [DesktopDashboardMetric]
     public let focusChips: [String]
@@ -15,6 +16,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         let summary = bootstrap.recentRecordsSummary
         self.heroTitle = bootstrap.user.name?.isEmpty == false ? bootstrap.user.name! : "Health Agent"
         self.heroSubtitle = DesktopDashboardPresentation.subtitle(for: bootstrap)
+        self.heroMetrics = DesktopDashboardPresentation.heroMetrics(from: summary)
         self.primaryMetrics = DesktopDashboardPresentation.primaryMetrics(from: summary)
         self.wearableMetrics = DesktopDashboardPresentation.wearableMetrics(from: summary.latestGarmin)
         self.focusChips = Array((bootstrap.trajectory.focusDomains ?? []).prefix(5))
@@ -71,6 +73,16 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         let date = bootstrap.recentRecordsSummary.date ?? bootstrap.dailyPlan.planDate
         let recordCount = bootstrap.recentRecordsSummary.recentRecords?.count ?? 0
         return "\(date) · \(bootstrap.actionCards.count) cards · \(bootstrap.recentMemory.count) memories · \(recordCount) recent records"
+    }
+
+    private static func heroMetrics(from summary: RecentRecordsSummary) -> [DesktopDashboardMetric] {
+        let garmin = summary.latestGarmin
+        return [
+            .init(id: "hero_steps", titleKey: "Steps", value: garmin?.steps.map(String.init) ?? "—", detail: garmin?.recordDate ?? "No wearable data", tone: "blue", systemImage: "figure.walk"),
+            .init(id: "hero_sleep", titleKey: "Sleep Score", value: garmin?.sleepScore.map(String.init) ?? "—", detail: garmin?.trainingReadinessScore.map { "Readiness \($0)" } ?? "No wearable data", tone: "purple", systemImage: "moon.zzz.fill"),
+            .init(id: "hero_spo2", titleKey: "SpO2", value: garmin?.spo2Avg.map { "\(formatNumber($0))%" } ?? "—", detail: "wearable", tone: "cyan", systemImage: "lungs.fill"),
+            .init(id: "hero_weight", titleKey: "Latest Weight", value: summary.latestWeight?.displayValue ?? "—", detail: summary.latestWeight?.recordDate ?? "No record", tone: "green", systemImage: "scalemass.fill")
+        ]
     }
 
     private static func primaryMetrics(from summary: RecentRecordsSummary) -> [DesktopDashboardMetric] {

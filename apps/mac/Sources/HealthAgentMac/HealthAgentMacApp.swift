@@ -230,36 +230,35 @@ struct TodayView: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
                 .ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     if let presentation {
-                        dashboardHeader(presentation)
-                        metricGrid(presentation.primaryMetrics)
-
-                        HStack(alignment: .top, spacing: 18) {
+                        HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 18) {
+                                dashboardHero(presentation)
                                 actionPanel(presentation.actionRows)
                                 recentRecordsPanel(presentation.recentRecordRows)
                             }
-                            .frame(minWidth: 520, maxWidth: .infinity, alignment: .topLeading)
+                            .frame(minWidth: 620, maxWidth: .infinity, alignment: .topLeading)
 
                             VStack(alignment: .leading, spacing: 18) {
+                                refreshPanel
                                 wearablePanel(presentation.wearableMetrics)
                                 memoryPanel(presentation.memoryRows)
                                 jobsPanel(presentation.activeJobRows)
                             }
-                            .frame(width: 380, alignment: .topLeading)
+                            .frame(width: 360, alignment: .topLeading)
                         }
                     } else {
                         loadingPanel
                     }
                 }
-                .frame(maxWidth: 1480, alignment: .leading)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
+                .frame(maxWidth: 1220, alignment: .center)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 22)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
         }
@@ -282,23 +281,49 @@ struct TodayView: View {
         }
     }
 
-    private func dashboardHeader(_ presentation: DesktopDashboardPresentation) -> some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Image(systemName: "heart.text.square.fill")
-                        .font(.title2)
-                        .foregroundStyle(.teal)
-                    Text(appText("Health Dashboard", appLanguageRaw))
-                        .font(.system(size: 30, weight: .bold))
-                    Text(presentation.heroTitle)
-                        .font(.headline.weight(.semibold))
+    private var refreshPanel: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(appText("Health Agent", appLanguageRaw))
+                    .font(.headline.weight(.semibold))
+                if viewModel.isLoading {
+                    Text(appText("Loading desktop context...", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(appText("Ready", appLanguageRaw))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Text(localizedSubtitle(presentation.heroSubtitle))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await viewModel.refresh() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.borderedProminent)
+            .help(appText("Refresh", appLanguageRaw))
+        }
+        .padding(14)
+        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(panelStroke(radius: 16))
+    }
 
+    private func dashboardHero(_ presentation: DesktopDashboardPresentation) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(appText("Health Dashboard", appLanguageRaw))
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                HStack(spacing: 8) {
+                    Text(presentation.heroTitle)
+                        .font(.headline.weight(.semibold))
+                    Text(localizedSubtitle(presentation.heroSubtitle))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
                 if !presentation.focusChips.isEmpty {
                     HStack(spacing: 8) {
                         ForEach(presentation.focusChips, id: \.self) { chip in
@@ -314,36 +339,54 @@ struct TodayView: View {
                 }
             }
 
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 8) {
-                Button {
-                    Task { await viewModel.refresh() }
-                } label: {
-                    Label(appText("Refresh", appLanguageRaw), systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-
-                if viewModel.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 340, alignment: .trailing)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
+                ForEach(presentation.heroMetrics) { metric in
+                    HeroMetricTile(
+                        metric: metric,
+                        title: localizedMetricTitle(metric.titleKey),
+                        detail: localizedMetricDetail(metric.detail)
+                    )
                 }
             }
+
+            Divider()
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
+                ForEach(presentation.primaryMetrics) { metric in
+                    SummaryMetricStrip(
+                        metric: metric,
+                        title: localizedMetricTitle(metric.titleKey),
+                        detail: localizedMetricDetail(metric.detail)
+                    )
+                }
+            }
+
+            if let error = viewModel.errorMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text(error)
+                }
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
         }
-        .padding(22)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        )
+        .padding(24)
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.background)
+                .overlay(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.teal.opacity(0.14), Color.blue.opacity(0.07), Color.clear],
+                                startPoint: .topTrailing,
+                                endPoint: .bottomLeading
+                            )
+                        )
+                }
+        }
+        .overlay(panelStroke(radius: 22))
+        .shadow(color: Color.black.opacity(0.045), radius: 18, y: 10)
     }
 
     private func metricGrid(_ metrics: [DesktopDashboardMetric]) -> some View {
@@ -358,8 +401,33 @@ struct TodayView: View {
         }
     }
 
+    private func sectionHeader(title: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.headline.weight(.semibold))
+            Spacer()
+        }
+    }
+
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content()
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(panelStroke(radius: 18))
+    }
+
+    private func panelStroke(radius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+    }
+
     private func actionPanel(_ actions: [DesktopDashboardRow]) -> some View {
-        SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
+        card {
+            sectionHeader(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist")
             if actions.isEmpty {
                 EmptyStateText(text: appText("No actions loaded yet.", appLanguageRaw))
             } else {
@@ -374,7 +442,8 @@ struct TodayView: View {
     }
 
     private func recentRecordsPanel(_ records: [DesktopDashboardRow]) -> some View {
-        SectionPanel(title: appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg") {
+        card {
+            sectionHeader(title: appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg")
             if records.isEmpty {
                 EmptyStateText(text: appText("No recent health records loaded.", appLanguageRaw))
             } else {
@@ -388,10 +457,11 @@ struct TodayView: View {
     }
 
     private func wearablePanel(_ metrics: [DesktopDashboardMetric]) -> some View {
-        SectionPanel(title: appText("Wearable Today", appLanguageRaw), systemImage: "sensor.tag.radiowaves.forward.fill") {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+        card {
+            sectionHeader(title: appText("Wearable Today", appLanguageRaw), systemImage: "sensor.tag.radiowaves.forward.fill")
+            VStack(spacing: 8) {
                 ForEach(metrics) { metric in
-                    MiniMetricTile(
+                    VitalRow(
                         metric: metric,
                         title: localizedMetricTitle(metric.titleKey),
                         detail: localizedMetricDetail(metric.detail)
@@ -402,7 +472,8 @@ struct TodayView: View {
     }
 
     private func memoryPanel(_ memory: [DesktopDashboardRow]) -> some View {
-        SectionPanel(title: appText("Recent Memory", appLanguageRaw), systemImage: "brain.head.profile") {
+        card {
+            sectionHeader(title: appText("Recent Memory", appLanguageRaw), systemImage: "brain.head.profile")
             if memory.isEmpty {
                 EmptyStateText(text: appText("No recent memory loaded.", appLanguageRaw))
             } else {
@@ -417,7 +488,8 @@ struct TodayView: View {
     }
 
     private func jobsPanel(_ jobs: [DesktopDashboardRow]) -> some View {
-        SectionPanel(title: appText("Active Jobs", appLanguageRaw), systemImage: "clock.arrow.circlepath") {
+        card {
+            sectionHeader(title: appText("Active Jobs", appLanguageRaw), systemImage: "clock.arrow.circlepath")
             if jobs.isEmpty {
                 EmptyStateText(text: appText("No active desktop jobs.", appLanguageRaw))
             } else {
@@ -451,6 +523,71 @@ struct TodayView: View {
             .replacingOccurrences(of: "cards", with: appText("cards", appLanguageRaw))
             .replacingOccurrences(of: "memories", with: appText("memories", appLanguageRaw))
             .replacingOccurrences(of: "recent records", with: appText("recent records", appLanguageRaw))
+    }
+}
+
+private struct HeroMetricTile: View {
+    let metric: DesktopDashboardMetric
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: metric.systemImage)
+                    .foregroundStyle(toneColor(metric.tone))
+                Spacer()
+            }
+            Text(metric.value)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+        .background(toneColor(metric.tone).opacity(0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct SummaryMetricStrip: View {
+    let metric: DesktopDashboardMetric
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: metric.systemImage)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(toneColor(metric.tone))
+                .frame(width: 30, height: 30)
+                .background(toneColor(metric.tone).opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(metric.value)
+                    .font(.headline.weight(.bold).monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Spacer(minLength: 6)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
@@ -516,6 +653,37 @@ private struct MiniMetricTile: View {
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
         .background(toneColor(metric.tone).opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct VitalRow: View {
+    let metric: DesktopDashboardMetric
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: metric.systemImage)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(toneColor(metric.tone))
+                .frame(width: 30, height: 30)
+                .background(toneColor(metric.tone).opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Text(metric.value)
+                .font(.title3.weight(.bold).monospacedDigit())
+                .lineLimit(1)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

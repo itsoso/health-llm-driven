@@ -9,12 +9,13 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTPUT_DIR="${PROJECT_DIR}/dist"
 CONFIGURATION="release"
 OPEN_AFTER_BUILD="0"
+INSTALL_AFTER_BUILD="0"
 SIGN_APP="1"
 SIGN_IDENTITY="${HEALTH_MAC_SIGN_IDENTITY:-}"
 
 usage() {
   cat <<USAGE
-Usage: scripts/package-app.sh [--output DIR] [--debug] [--open] [--no-sign]
+Usage: scripts/package-app.sh [--output DIR] [--debug] [--open] [--install] [--no-sign]
 
 Builds a double-clickable macOS app bundle at:
   apps/mac/dist/HealthAgentMac.app
@@ -23,6 +24,7 @@ Options:
   --output DIR  Write the .app bundle into DIR.
   --debug       Build the debug binary instead of release.
   --open        Open the app after packaging.
+  --install     Copy the packaged app to /Applications/健康 Agent.app.
   --no-sign     Skip local ad-hoc codesign.
 USAGE
 }
@@ -39,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --open)
       OPEN_AFTER_BUILD="1"
+      shift
+      ;;
+    --install)
+      INSTALL_AFTER_BUILD="1"
       shift
       ;;
     --no-sign)
@@ -128,6 +134,17 @@ fi
 
 echo "Packaged ${APP_BUNDLE}"
 
+if [[ "${INSTALL_AFTER_BUILD}" == "1" ]]; then
+  INSTALL_APP="/Applications/健康 Agent.app"
+  rm -rf "${INSTALL_APP}"
+  cp -R "${APP_BUNDLE}" "${INSTALL_APP}"
+  echo "Installed ${INSTALL_APP}"
+fi
+
 if [[ "${OPEN_AFTER_BUILD}" == "1" ]]; then
-  open "${APP_BUNDLE}"
+  if [[ "${INSTALL_AFTER_BUILD}" == "1" ]]; then
+    open "/Applications/健康 Agent.app"
+  else
+    open "${APP_BUNDLE}"
+  fi
 fi

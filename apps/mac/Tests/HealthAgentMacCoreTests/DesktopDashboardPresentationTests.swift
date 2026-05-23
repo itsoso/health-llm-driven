@@ -65,6 +65,7 @@ final class DesktopDashboardPresentationTests: XCTestCase {
         let presentation = DesktopDashboardPresentation(bootstrap: bootstrap)
 
         XCTAssertEqual(presentation.heroTitle, "baokun")
+        XCTAssertEqual(presentation.heroMetrics.map(\.value), ["971", "89", "93%", "70.5 kg"])
         XCTAssertEqual(presentation.primaryMetrics.map(\.value), ["47,661 kcal", "35,650 ml", "70.5 kg", "119/75 mmHg"])
         XCTAssertEqual(presentation.wearableMetrics.map(\.value), ["971", "89", "93%", "48"])
         XCTAssertEqual(presentation.focusChips, ["血脂", "血糖", "睡眠"])
