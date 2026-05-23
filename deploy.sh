@@ -141,10 +141,24 @@ rollback_deploy() {
 # 部署后验证（项目的 val_bpb 检查）
 verify_deployment() {
     print_step "部署后健康度检查..."
-    # 等待服务启动 + warmup（冷启动首次请求延迟高）
-    sleep 5
-    ssh $SERVER "curl -s http://localhost:8000/api/v1/health > /dev/null 2>&1" 2>/dev/null
-    sleep 3
+    # 等待服务启动 + warmup。生产后端多 worker 冷启动可能超过固定 sleep,
+    # 因此使用条件轮询，避免服务尚未 ready 时被误判并回滚。
+    HEALTH_READY=0
+    for attempt in $(seq 1 30); do
+        if ssh $SERVER "curl -fsS --max-time 5 http://localhost:8000/api/v1/health > /dev/null" >/dev/null 2>&1; then
+            HEALTH_READY=1
+            break
+        fi
+        echo "  (等待后端健康检查 $attempt/30...)"
+        sleep 2
+    done
+
+    if [[ "$HEALTH_READY" != "1" ]]; then
+        print_error "后端健康检查超时"
+        return 1
+    fi
+
+    sleep 2
 
     SCORE=$(ssh $SERVER "
         cd $REMOTE_PATH/backend && \
