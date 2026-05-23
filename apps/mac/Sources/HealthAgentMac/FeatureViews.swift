@@ -69,19 +69,20 @@ struct AgentChatView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(appText("Analysis", appLanguageRaw))
                     .font(.title2.bold())
-                if let status = viewModel.lastCompletionStatus {
-                    HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Label(appText(runStateText(viewModel.runState), appLanguageRaw), systemImage: runStateIcon(viewModel.runState))
+                    if let status = viewModel.lastCompletionStatus {
                         Text(status)
-                        if let model = viewModel.lastModel {
-                            Text(model)
-                        }
-                        if !viewModel.lastSourcesUsed.isEmpty {
-                            Text(viewModel.lastSourcesUsed.joined(separator: ", "))
-                        }
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    if let model = viewModel.lastModel {
+                        Text(model)
+                    }
+                    if !viewModel.lastSourcesUsed.isEmpty {
+                        Text(viewModel.lastSourcesUsed.joined(separator: ", "))
+                    }
                 }
+                .font(.caption)
+                .foregroundStyle(runStateColor(viewModel.runState))
             }
             Spacer()
             if viewModel.isStreaming {
@@ -148,10 +149,19 @@ struct AgentChatView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                if viewModel.canRetry {
+                    Button {
+                        Task { await viewModel.retryLastMessage() }
+                    } label: {
+                        Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
                 Button {
                     Task { await sendDraft() }
                 } label: {
-                    Label(viewModel.isStreaming ? "Running" : "Run", systemImage: "play.fill")
+                    Label(appText(viewModel.isStreaming ? "Running" : "Run", appLanguageRaw), systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -232,6 +242,55 @@ struct AgentChatView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func runStateText(_ state: AgentRunState) -> String {
+        switch state {
+        case .idle:
+            return "Ready"
+        case .preparing:
+            return "Preparing"
+        case .streaming:
+            return "Generating"
+        case .completed:
+            return "Completed"
+        case .partial:
+            return "Partial"
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    private func runStateIcon(_ state: AgentRunState) -> String {
+        switch state {
+        case .idle:
+            return "circle"
+        case .preparing:
+            return "hourglass"
+        case .streaming:
+            return "waveform"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .partial:
+            return "exclamationmark.circle"
+        case .failed:
+            return "xmark.circle"
+        }
+    }
+
+    private func runStateColor(_ state: AgentRunState) -> Color {
+        switch state {
+        case .idle:
+            return .secondary
+        case .preparing, .streaming:
+            return .accentColor
+        case .completed:
+            return .green
+        case .partial:
+            return .orange
+        case .failed:
+            return .red
+        }
     }
 
     private func bubbleText(_ message: AgentChatMessage) -> some View {

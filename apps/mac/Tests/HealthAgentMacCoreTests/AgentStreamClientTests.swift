@@ -110,6 +110,65 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelMarksPartialWhenStreamFailsAfterTokens() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 77))
+            continuation.yield(.token("已有部分内容"))
+            continuation.finish(throwing: URLError(.timedOut))
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+
+        await model.send("分析今天状态")
+
+        XCTAssertFalse(model.isStreaming)
+        XCTAssertEqual(model.runState, .partial)
+        XCTAssertEqual(model.messages.last?.content, "已有部分内容")
+        XCTAssertTrue(model.canRetry)
+    }
+
+    @MainActor
+    func testAgentChatViewModelMarksFailedWhenStreamReturnsNoAssistantContent() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.finish(throwing: URLError(.notConnectedToInternet))
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+
+        await model.send("分析今天状态")
+
+        XCTAssertFalse(model.isStreaming)
+        XCTAssertEqual(model.runState, .failed)
+        XCTAssertEqual(model.messages.map(\.role), [.user, .assistant])
+        XCTAssertFalse(model.messages.last?.content.isEmpty ?? true)
+        XCTAssertTrue(model.canRetry)
+    }
+
+    @MainActor
+    func testAgentChatViewModelRetriesLastPromptAfterFailure() async {
+        let service = SequencedAgentStreamService(streams: [
+            AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+                continuation.finish(throwing: URLError(.timedOut))
+            },
+            AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+                continuation.yield(.start(conversationID: 91))
+                continuation.yield(.token("重试成功"))
+                continuation.yield(.done(conversationID: 91, messageID: 2, completionStatus: "complete", model: nil, sourcesUsed: []))
+                continuation.finish()
+            }
+        ])
+        let model = AgentChatViewModel(streamService: service)
+
+        await model.send("分析今天状态")
+        XCTAssertEqual(model.runState, .failed)
+
+        await model.retryLastMessage()
+
+        XCTAssertEqual(service.messages, ["分析今天状态", "分析今天状态"])
+        XCTAssertEqual(model.runState, .completed)
+        XCTAssertEqual(model.messages.last?.content, "重试成功")
+        XCTAssertFalse(model.canRetry)
+    }
+
+    @MainActor
     func testAgentChatViewModelIncludesAttachmentsAndWebSearchInExtraContext() async throws {
         let service = CapturingAgentStreamService()
         let model = AgentChatViewModel(streamService: service)
@@ -158,5 +217,22 @@ private final class CapturingAgentStreamService: AgentStreamServicing, @unchecke
             ))
             continuation.finish()
         }
+    }
+}
+
+private final class SequencedAgentStreamService: AgentStreamServicing, @unchecked Sendable {
+    nonisolated(unsafe) var streams: [AsyncThrowingStream<AgentStreamEvent, Error>]
+    nonisolated(unsafe) var messages: [String] = []
+
+    init(streams: [AsyncThrowingStream<AgentStreamEvent, Error>]) {
+        self.streams = streams
+    }
+
+    func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+        messages.append(message)
+        if streams.isEmpty {
+            return AsyncThrowingStream { continuation in continuation.finish() }
+        }
+        return streams.removeFirst()
     }
 }

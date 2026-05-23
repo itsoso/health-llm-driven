@@ -18,10 +18,20 @@ public struct AgentChatMessage: Equatable, Identifiable, Sendable {
     }
 }
 
+public enum AgentRunState: String, Equatable, Sendable {
+    case idle
+    case preparing
+    case streaming
+    case completed
+    case partial
+    case failed
+}
+
 @Observable
 @MainActor
 public final class AgentChatViewModel {
     public var isStreaming = false
+    public var runState: AgentRunState = .idle
     public var selectedModelID: String?
     public var webSearchEnabled = false
     public var attachments: [FileIntakeItem] = []
@@ -31,9 +41,14 @@ public final class AgentChatViewModel {
     public var lastCompletionStatus: String?
     public var lastModel: String?
     public var lastSourcesUsed: [String] = []
+    public var lastPrompt: String?
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
+
+    public var canRetry: Bool {
+        !isStreaming && lastPrompt != nil && (runState == .failed || runState == .partial)
+    }
 
     public var isModelPickerEnabled: Bool {
         true
@@ -70,6 +85,8 @@ public final class AgentChatViewModel {
 
         errorMessage = nil
         isStreaming = true
+        runState = .preparing
+        lastPrompt = message
         messages.append(.init(role: .user, content: message))
         messages.append(.init(role: .assistant, content: ""))
         let assistantIndex = messages.index(before: messages.endIndex)
@@ -84,6 +101,7 @@ public final class AgentChatViewModel {
                 case .start(let id):
                     conversationID = id ?? conversationID
                 case .token(let content):
+                    runState = .streaming
                     messages[assistantIndex].content += content
                 case .tool:
                     break
@@ -92,6 +110,7 @@ public final class AgentChatViewModel {
                     lastCompletionStatus = completionStatus
                     lastModel = model
                     lastSourcesUsed = sourcesUsed
+                    runState = .completed
                 case .error(let message):
                     errorMessage = message
                 }
@@ -103,10 +122,22 @@ public final class AgentChatViewModel {
         if messages[assistantIndex].content.isEmpty, let errorMessage {
             messages[assistantIndex].content = errorMessage
         }
+        if errorMessage != nil {
+            runState = messages[assistantIndex].content == errorMessage ? .failed : .partial
+        } else if runState != .completed {
+            runState = messages[assistantIndex].content.isEmpty ? .failed : .completed
+        }
         if errorMessage == nil {
             attachments = []
         }
         isStreaming = false
+    }
+
+    public func retryLastMessage() async {
+        guard canRetry, let lastPrompt else {
+            return
+        }
+        await send(lastPrompt)
     }
 
     private func buildExtraContext() -> String? {
