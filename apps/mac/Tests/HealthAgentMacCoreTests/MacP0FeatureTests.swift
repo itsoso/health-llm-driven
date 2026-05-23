@@ -36,6 +36,27 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(model.isModelPickerEnabled)
     }
 
+    func testCommandPaletteBuildsCoreDesktopCommands() {
+        let commands = DesktopCommandPalette.defaultCommands(language: .zh)
+
+        XCTAssertTrue(commands.contains { $0.intent == .navigate(.agent) && $0.title == "问助手" })
+        XCTAssertTrue(commands.contains { $0.intent == .navigate(.genetics) && $0.title == "打开基因" })
+        XCTAssertTrue(commands.contains { $0.intent == .quickPrompt && $0.title == "基于当前上下文问助手" })
+    }
+
+    func testCommandPaletteFiltersByTitleSubtitleAndKeywords() {
+        let commands = DesktopCommandPalette.defaultCommands(language: .zh)
+
+        let geneMatches = DesktopCommandPalette.filter(commands, query: "wegene")
+        XCTAssertEqual(geneMatches.first?.intent, .navigate(.genetics))
+
+        let recordMatches = DesktopCommandPalette.filter(commands, query: "饮食")
+        XCTAssertTrue(recordMatches.contains { $0.intent == .navigate(.record) })
+
+        let emptyMatches = DesktopCommandPalette.filter(commands, query: "   ")
+        XCTAssertEqual(emptyMatches.map(\.id), commands.map(\.id))
+    }
+
     func testFileIntakeClassifiesAndHashesGenomeAndDedaoSources() async throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)

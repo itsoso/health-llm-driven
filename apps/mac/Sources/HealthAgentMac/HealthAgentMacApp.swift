@@ -41,6 +41,11 @@ struct HealthAgentMacApp: App {
                 Button(appText("Jobs", appLanguageRaw)) { appServices.navigation.selection = .jobs }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
                 Divider()
+                Button(appText("Command Palette", appLanguageRaw)) {
+                    appServices.navigation.isCommandPalettePresented = true
+                }
+                .keyboardShortcut("k", modifiers: [.command])
+                Divider()
                 Button(appText("Increase Font Size", appLanguageRaw)) {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).increased().level
                 }
@@ -172,6 +177,7 @@ private struct AppFontScaleViewModifier: ViewModifier {
 final class AppNavigationState {
     var selection: SidebarDestination? = .today
     var traceConversationID: Int?
+    var isCommandPalettePresented = false
 
     func openTrace(conversationID: Int) {
         traceConversationID = conversationID
@@ -249,6 +255,12 @@ struct AppRootView: View {
             isAuthenticated = await services.authClient.hasValidSession()
             hasCheckedAuth = true
         }
+        .sheet(isPresented: $navigation.isCommandPalettePresented) {
+            CommandPaletteView(
+                commands: DesktopCommandPalette.defaultCommands(language: AppLanguage(storedValue: appLanguageRaw)),
+                onSelect: handleCommand
+            )
+        }
     }
 
     @ViewBuilder
@@ -307,6 +319,131 @@ struct AppRootView: View {
 
     private func addAgentContext(_ item: AgentContextItem) {
         services.agentViewModel.addContextItem(item)
+    }
+
+    private func handleCommand(_ command: DesktopCommandPaletteCommand) {
+        switch command.intent {
+        case .navigate(let destination):
+            navigation.selection = destination
+        case .quickPrompt:
+            services.agentViewModel.prepareDraft(
+                "请基于我当前已选上下文，结合最近健康记录、基因、知识库证据和不确定性边界，给出可执行建议。"
+            )
+            navigation.selection = .agent
+        case .refresh:
+            Task { await services.todayViewModel.refresh() }
+        }
+    }
+}
+
+private struct CommandPaletteView: View {
+    let commands: [DesktopCommandPaletteCommand]
+    let onSelect: (DesktopCommandPaletteCommand) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @FocusState private var isSearchFocused: Bool
+    @State private var query = ""
+
+    private var filteredCommands: [DesktopCommandPaletteCommand] {
+        DesktopCommandPalette.filter(commands, query: query)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "command")
+                    .foregroundStyle(.secondary)
+                TextField(appText("Search command or action", appLanguageRaw), text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.title3.weight(.semibold))
+                    .focused($isSearchFocused)
+                    .onSubmit { runFirstCommand() }
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(filteredCommands) { command in
+                        Button {
+                            select(command)
+                        } label: {
+                            CommandPaletteRow(command: command)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 420)
+
+            HStack {
+                Text("↩")
+                    .font(.caption.monospaced().weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+                Text(appText("Run first result", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("⌘K")
+                    .font(.caption.monospaced().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .frame(width: 620)
+        .onAppear {
+            isSearchFocused = true
+        }
+    }
+
+    private func runFirstCommand() {
+        guard let command = filteredCommands.first else { return }
+        select(command)
+    }
+
+    private func select(_ command: DesktopCommandPaletteCommand) {
+        onSelect(command)
+        dismiss()
+    }
+}
+
+private struct CommandPaletteRow: View {
+    let command: DesktopCommandPaletteCommand
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: command.systemImage)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Color.accentColor.opacity(0.86), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(command.title)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(command.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(11)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
+        }
     }
 }
 
