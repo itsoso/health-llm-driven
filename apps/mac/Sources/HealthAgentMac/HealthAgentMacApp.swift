@@ -1068,8 +1068,7 @@ struct WorkspaceOverviewView: View {
     var onAskAgent: ((String) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dataRange = "7d"
-    @State private var selectedGenomicFinding: GenomicFindingSummary?
-    @State private var selectedGenomicCategory: GenomicCategorySummary?
+    @State private var selectedGenomicDetail: GenomicDetailRoute?
 
     var body: some View {
         ScrollView {
@@ -1120,22 +1119,38 @@ struct WorkspaceOverviewView: View {
                 await viewModel.refresh()
             }
         }
-        .sheet(item: $selectedGenomicFinding) { finding in
-            GenomicFindingDetailSheet(
-                finding: finding,
-                onAskAgent: onAskAgent.map { ask in
-                    { ask(genomicFindingPrompt(finding)) }
-                }
-            )
+        .sheet(item: $selectedGenomicDetail) { detail in
+            switch detail {
+            case .finding(let finding):
+                GenomicFindingDetailSheet(
+                    finding: finding,
+                    onAskAgent: onAskAgent.map { ask in
+                        { ask(genomicFindingPrompt(finding)) }
+                    }
+                )
+            case .category(let category):
+                GenomicCategoryDetailSheet(
+                    category: category,
+                    findings: summary?.genomicSummary?.topFindings.filter { $0.category == category.category } ?? [],
+                    onAskAgent: onAskAgent.map { ask in
+                        { ask(genomicCategoryPrompt(category)) }
+                    }
+                )
+            }
         }
-        .sheet(item: $selectedGenomicCategory) { category in
-            GenomicCategoryDetailSheet(
-                category: category,
-                findings: summary?.genomicSummary?.topFindings.filter { $0.category == category.category } ?? [],
-                onAskAgent: onAskAgent.map { ask in
-                    { ask(genomicCategoryPrompt(category)) }
-                }
-            )
+    }
+
+    private enum GenomicDetailRoute: Identifiable {
+        case finding(GenomicFindingSummary)
+        case category(GenomicCategorySummary)
+
+        var id: String {
+            switch self {
+            case .finding(let finding):
+                return "finding-\(finding.id)"
+            case .category(let category):
+                return "category-\(category.id)"
+            }
         }
     }
 
@@ -1535,30 +1550,40 @@ struct WorkspaceOverviewView: View {
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
                             ForEach(genomic.topCategories) { category in
-                                Button {
-                                    selectedGenomicCategory = category
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Text(category.category)
-                                                .font(.callout.weight(.semibold))
-                                                .lineLimit(1)
-                                            Spacer()
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption.weight(.bold))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Text("\(category.count) variants")
-                                            .font(.title3.weight(.bold).monospacedDigit())
-                                        Text("H \(category.highRiskCount) · M \(category.mediumRiskCount)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Text(category.category)
+                                            .font(.callout.weight(.semibold))
+                                            .lineLimit(1)
+                                        Spacer()
                                     }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(12)
-                                    .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    Text("\(category.count) variants")
+                                        .font(.title3.weight(.bold).monospacedDigit())
+                                    Text("H \(category.highRiskCount) · M \(category.mediumRiskCount)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            selectedGenomicDetail = .category(category)
+                                        } label: {
+                                            Label(appText("View Detail", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                        if let onAskAgent {
+                                            Button {
+                                                onAskAgent(genomicCategoryPrompt(category))
+                                            } label: {
+                                                Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                            .controlSize(.small)
+                                        }
+                                    }
                                 }
-                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
                         }
                     }
@@ -1572,49 +1597,61 @@ struct WorkspaceOverviewView: View {
                 if let findings = summary.genomicSummary?.topFindings, !findings.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 10)], spacing: 10) {
                         ForEach(findings.prefix(8)) { finding in
-                            Button {
-                                selectedGenomicFinding = finding
-                            } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(alignment: .top) {
-                                        Text(finding.displayTitle)
-                                            .font(.callout.weight(.semibold))
-                                            .lineLimit(2)
-                                        Spacer(minLength: 8)
-                                        Text((finding.riskLevel ?? "info").uppercased())
-                                            .font(.caption2.weight(.bold))
-                                            .padding(.horizontal, 7)
-                                            .padding(.vertical, 4)
-                                            .background(geneticRiskColor(finding.riskLevel).opacity(0.16), in: Capsule())
-                                            .foregroundStyle(geneticRiskColor(finding.riskLevel))
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .top) {
+                                    Text(finding.displayTitle)
+                                        .font(.callout.weight(.semibold))
+                                        .lineLimit(2)
+                                    Spacer(minLength: 8)
+                                    Text((finding.riskLevel ?? "info").uppercased())
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 4)
+                                        .background(geneticRiskColor(finding.riskLevel).opacity(0.16), in: Capsule())
+                                        .foregroundStyle(geneticRiskColor(finding.riskLevel))
+                                }
+                                HStack(spacing: 8) {
+                                    if let rsid = finding.rsid {
+                                        Text(rsid)
                                     }
-                                    HStack(spacing: 8) {
-                                        if let rsid = finding.rsid {
-                                            Text(rsid)
-                                        }
-                                        if let genotype = finding.genotype {
-                                            Text(genotype)
-                                        }
-                                        if let evidence = finding.evidenceLevel {
-                                            Text(evidence)
-                                        }
-                                        Spacer()
-                                        Label(appText("Details", appLanguageRaw), systemImage: "chevron.right")
+                                    if let genotype = finding.genotype {
+                                        Text(genotype)
                                     }
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    if let description = finding.description, !description.isEmpty {
-                                        Text(description)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
+                                    if let evidence = finding.evidenceLevel {
+                                        Text(evidence)
                                     }
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                if let description = finding.description, !description.isEmpty {
+                                    Text(description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                HStack(spacing: 8) {
+                                    Button {
+                                        selectedGenomicDetail = .finding(finding)
+                                    } label: {
+                                        Label(appText("View Detail", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    if let onAskAgent {
+                                        Button {
+                                            onAskAgent(genomicFindingPrompt(finding))
+                                        } label: {
+                                            Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                     }
                 } else {

@@ -304,6 +304,7 @@ public enum L10n {
         "Genetic Profiles": "基因报告",
         "Genetic Finding Detail": "基因发现详情",
         "Genetic Category Detail": "基因分类详情",
+        "View Detail": "查看详情",
         "Ask Agent with Context": "带上下文问助手",
         "Interpretation": "解读",
         "No description loaded.": "还没有加载描述。",
