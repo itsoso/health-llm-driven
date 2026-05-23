@@ -4,28 +4,29 @@ import SwiftUI
 @main
 struct HealthAgentMacApp: App {
     @State private var appServices = AppServices()
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some Scene {
         WindowGroup(id: "main") {
             AppRootView(services: appServices)
         }
-        MenuBarExtra("Health Agent", systemImage: "heart.text.square") {
+        MenuBarExtra(appText("Health Agent", appLanguageRaw), systemImage: "heart.text.square") {
             MenuBarRootView(
                 viewModel: appServices.todayViewModel,
                 navigation: appServices.navigation
             )
         }
         .commands {
-            CommandMenu("Health Agent") {
-                Button("Today") { appServices.navigation.selection = .today }
+            CommandMenu(appText("Health Agent", appLanguageRaw)) {
+                Button(appText("Today", appLanguageRaw)) { appServices.navigation.selection = .today }
                     .keyboardShortcut("1", modifiers: [.command])
-                Button("Ask Agent") { appServices.navigation.selection = .agent }
+                Button(appText("Ask Agent", appLanguageRaw)) { appServices.navigation.selection = .agent }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
-                Button("Record") { appServices.navigation.selection = .record }
+                Button(appText("Record", appLanguageRaw)) { appServices.navigation.selection = .record }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("Import") { appServices.navigation.selection = .genetics }
+                Button(appText("Import", appLanguageRaw)) { appServices.navigation.selection = .genetics }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
-                Button("Jobs") { appServices.navigation.selection = .jobs }
+                Button(appText("Jobs", appLanguageRaw)) { appServices.navigation.selection = .jobs }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
             }
         }
@@ -77,6 +78,7 @@ struct AppServices {
 struct AppRootView: View {
     let services: AppServices
     @Bindable private var navigation: AppNavigationState
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var hasCheckedAuth = false
     @State private var isAuthenticated = false
 
@@ -88,7 +90,7 @@ struct AppRootView: View {
     var body: some View {
         Group {
             if !hasCheckedAuth {
-                ProgressView("Checking login...")
+                ProgressView(appText("Checking login...", appLanguageRaw))
                     .frame(minWidth: 520, minHeight: 360)
             } else if !isAuthenticated {
                 LoginView(authClient: services.authClient) {
@@ -98,10 +100,10 @@ struct AppRootView: View {
             } else {
                 NavigationSplitView {
                     List(SidebarDestination.allCases, selection: $navigation.selection) { destination in
-                        Label(destination.title, systemImage: destination.systemImage)
+                        Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
                             .tag(destination)
                     }
-                    .navigationTitle("Health Agent")
+                    .navigationTitle(appText("Health Agent", appLanguageRaw))
                 } detail: {
                     detailView
                 }
@@ -148,6 +150,7 @@ struct AppRootView: View {
 struct LoginView: View {
     let authClient: AuthClient
     let onLogin: () -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var username = ""
     @State private var password = ""
     @State private var isSubmitting = false
@@ -159,17 +162,17 @@ struct LoginView: View {
                 Image(systemName: "heart.text.square.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(Color.accentColor)
-                Text("Health Agent")
+                Text(appText("Health Agent", appLanguageRaw))
                     .font(.largeTitle.bold())
-                Text("Sign in with your executor.life account.")
+                Text(appText("Sign in with your executor.life account.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                TextField("Username or email", text: $username)
+                TextField(appText("Username or email", appLanguageRaw), text: $username)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { submitIfReady() }
-                SecureField("Password", text: $password)
+                SecureField(appText("Password", appLanguageRaw), text: $password)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { submitIfReady() }
 
@@ -182,7 +185,7 @@ struct LoginView: View {
                 Button {
                     submitIfReady()
                 } label: {
-                    Label(isSubmitting ? "Signing in..." : "Sign In", systemImage: "person.crop.circle.badge.checkmark")
+                    Label(appText(isSubmitting ? "Signing in..." : "Sign In", appLanguageRaw), systemImage: "person.crop.circle.badge.checkmark")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -223,25 +226,26 @@ struct LoginView: View {
 
 struct TodayView: View {
     @Bindable var viewModel: TodayViewModel
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Today")
+                        Text(appText("Today", appLanguageRaw))
                             .font(.largeTitle.bold())
-                        Text("Daily operating plan, feedback, and active desktop jobs.")
+                        Text(appText("Daily operating plan, feedback, and active desktop jobs.", appLanguageRaw))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Refresh") {
+                    Button(appText("Refresh", appLanguageRaw)) {
                         Task { await viewModel.refresh() }
                     }
                 }
 
                 if viewModel.isLoading {
-                    ProgressView("Loading desktop context...")
+                    ProgressView(appText("Loading desktop context...", appLanguageRaw))
                 }
 
                 if let error = viewModel.errorMessage {
@@ -249,9 +253,9 @@ struct TodayView: View {
                         .foregroundStyle(.red)
                 }
 
-                SectionPanel(title: "Top Actions", systemImage: "checklist") {
+                SectionPanel(title: appText("Top Actions", appLanguageRaw), systemImage: "checklist") {
                     if viewModel.topActions.isEmpty {
-                        Text("No actions loaded yet.")
+                        Text(appText("No actions loaded yet.", appLanguageRaw))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(viewModel.topActions) { action in
@@ -263,17 +267,17 @@ struct TodayView: View {
                                     }
                                 }
                                 Spacer()
-                                Button("Done") {}
-                                Button("Adjust") {}
+                                Button(appText("Done", appLanguageRaw)) {}
+                                Button(appText("Adjust", appLanguageRaw)) {}
                             }
                             Divider()
                         }
                     }
                 }
 
-                SectionPanel(title: "Active Jobs", systemImage: "clock.arrow.circlepath") {
+                SectionPanel(title: appText("Active Jobs", appLanguageRaw), systemImage: "clock.arrow.circlepath") {
                     if viewModel.activeJobs.isEmpty {
-                        Text("No active desktop jobs.")
+                        Text(appText("No active desktop jobs.", appLanguageRaw))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(viewModel.activeJobs) { job in
@@ -317,10 +321,11 @@ struct SectionPanel<Content: View>: View {
 
 struct ContentPlaceholder: View {
     let destination: SidebarDestination
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(destination.title, systemImage: destination.systemImage)
+            Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
                 .font(.title.bold())
             Text("Native macOS client surface backed by \(APIEndpoint.defaultBaseURL.absoluteString)")
                 .foregroundStyle(.secondary)
@@ -333,25 +338,26 @@ struct ContentPlaceholder: View {
 struct WorkspaceOverviewView: View {
     @Bindable var viewModel: TodayViewModel
     let kind: DesktopWorkspaceKind
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(summary?.title ?? kind.title)
+                        Text(appText(summary?.title ?? kind.title, appLanguageRaw))
                             .font(.largeTitle.bold())
-                        Text(summary?.subtitle ?? kind.subtitle)
+                        Text(appText(summary?.subtitle ?? kind.subtitle, appLanguageRaw))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Refresh") {
+                    Button(appText("Refresh", appLanguageRaw)) {
                         Task { await viewModel.refresh() }
                     }
                 }
 
                 if viewModel.isLoading {
-                    ProgressView("Loading workspace...")
+                    ProgressView(appText("Loading workspace...", appLanguageRaw))
                 }
                 if let error = viewModel.errorMessage {
                     Text(error)
@@ -361,7 +367,7 @@ struct WorkspaceOverviewView: View {
                 if let summary {
                     workspaceSummary(summary)
                 } else {
-                    ContentUnavailableView("No workspace data loaded", systemImage: "square.grid.2x2")
+                    ContentUnavailableView(appText("No workspace data loaded", appLanguageRaw), systemImage: "square.grid.2x2")
                 }
             }
             .padding(28)
@@ -394,9 +400,9 @@ struct WorkspaceOverviewView: View {
             }
         }
 
-        SectionPanel(title: "Focus Domains", systemImage: "scope") {
+        SectionPanel(title: appText("Focus Domains", appLanguageRaw), systemImage: "scope") {
             if summary.focusDomains.isEmpty {
-                Text("No focus domains loaded.")
+                Text(appText("No focus domains loaded.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 8) {
@@ -412,9 +418,9 @@ struct WorkspaceOverviewView: View {
             }
         }
 
-        SectionPanel(title: "Relevant Jobs", systemImage: "clock.arrow.circlepath") {
+        SectionPanel(title: appText("Relevant Jobs", appLanguageRaw), systemImage: "clock.arrow.circlepath") {
             if summary.jobs.isEmpty {
-                Text("No active jobs for this workspace.")
+                Text(appText("No active jobs for this workspace.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(summary.jobs) { job in
@@ -436,9 +442,9 @@ struct WorkspaceOverviewView: View {
             }
         }
 
-        SectionPanel(title: "Recent Memory", systemImage: "brain.head.profile") {
+        SectionPanel(title: appText("Recent Memory", appLanguageRaw), systemImage: "brain.head.profile") {
             if summary.recentMemory.isEmpty {
-                Text("No recent memory loaded.")
+                Text(appText("No recent memory loaded.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(summary.recentMemory.prefix(5)) { memory in
@@ -473,14 +479,15 @@ struct MenuBarRootView: View {
     @Bindable var viewModel: TodayViewModel
     @Bindable var navigation: AppNavigationState
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Health Agent", systemImage: "heart.text.square")
+            Label(appText("Health Agent", appLanguageRaw), systemImage: "heart.text.square")
                 .font(.headline)
             Divider()
             if viewModel.topActions.isEmpty {
-                Text("No actions loaded")
+                Text(appText("No actions loaded", appLanguageRaw))
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(viewModel.topActions.prefix(3)) { action in
@@ -489,15 +496,15 @@ struct MenuBarRootView: View {
                 }
             }
             Divider()
-            Button("Open Today") {
+            Button(appText("Open Today", appLanguageRaw)) {
                 navigation.selection = .today
                 openWindow(id: "main")
             }
-            Button("Ask Agent") {
+            Button(appText("Ask Agent", appLanguageRaw)) {
                 navigation.selection = .agent
                 openWindow(id: "main")
             }
-            Button("Import File") {
+            Button(appText("Import File", appLanguageRaw)) {
                 navigation.selection = .genetics
                 openWindow(id: "main")
             }

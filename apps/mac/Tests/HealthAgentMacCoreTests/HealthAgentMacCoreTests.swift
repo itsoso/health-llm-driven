@@ -39,4 +39,11 @@ final class HealthAgentMacCoreTests: XCTestCase {
         defaults.set("not a url", forKey: APIEndpoint.baseURLDefaultsKey)
         XCTAssertEqual(APIEndpoint.resolvedBaseURL(defaults: defaults), APIEndpoint.defaultBaseURL)
     }
+
+    func testAppLocalizationDefaultsToChineseAndSupportsEnglish() {
+        XCTAssertEqual(AppLanguage.defaultLanguage, .zh)
+        XCTAssertEqual(AppLanguage(storedValue: "missing"), .zh)
+        XCTAssertEqual(L10n.text("Today", language: .zh), "今日")
+        XCTAssertEqual(L10n.text("Today", language: .en), "Today")
+    }
 }

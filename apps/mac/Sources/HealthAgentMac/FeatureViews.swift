@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var draft = ""
     @State private var modelStrategy = "auto"
     @State private var editorFocusToken = 0
@@ -33,7 +34,7 @@ struct AgentChatView: View {
                     HSplitView {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             if viewModel.messages.isEmpty {
-                                Text("Ready for desktop chat, file context, and evidence inspection.")
+                                Text(appText("Ready for desktop chat, file context, and evidence inspection.", appLanguageRaw))
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.vertical, 20)
@@ -66,7 +67,7 @@ struct AgentChatView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Analysis")
+                Text(appText("Analysis", appLanguageRaw))
                     .font(.title2.bold())
                 if let status = viewModel.lastCompletionStatus {
                     HStack(spacing: 8) {
@@ -93,17 +94,17 @@ struct AgentChatView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Title")
+                Text(appText("Title", appLanguageRaw))
                     .font(.headline)
                 Spacer()
                 Button {
                     isAttachImporterPresented = true
                 } label: {
-                    Label("Attach", systemImage: "paperclip")
+                    Label(appText("Attach", appLanguageRaw), systemImage: "paperclip")
                 }
                 .buttonStyle(.borderless)
                 .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
-                Toggle("Web Search", isOn: $viewModel.webSearchEnabled)
+                Toggle(appText("Web Search", appLanguageRaw), isOn: $viewModel.webSearchEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
             }
@@ -120,7 +121,7 @@ struct AgentChatView: View {
                     .frame(minHeight: 128, maxHeight: 220)
 
                 if draft.isEmpty {
-                    Text("Ask about health data, labs, genes, records, or a specific execution plan.")
+                    Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
                         .foregroundStyle(.tertiary)
                         .padding(.top, 8)
                         .padding(.leading, 5)
@@ -179,12 +180,12 @@ struct AgentChatView: View {
     private var modelControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Models")
+                Text(appText("Models", appLanguageRaw))
                     .font(.headline)
                 Spacer()
-                Picker("Mode", selection: $modelStrategy) {
-                    Text("Auto Select").tag("auto")
-                    Text("Default 3").tag("default3")
+                Picker(appText("Mode", appLanguageRaw), selection: $modelStrategy) {
+                    Text(appText("Auto Select", appLanguageRaw)).tag("auto")
+                    Text(appText("Default 3", appLanguageRaw)).tag("default3")
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 190)
@@ -242,16 +243,16 @@ struct AgentChatView: View {
 
     private var evidencePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Evidence", systemImage: "doc.text.magnifyingglass")
+            Label(appText("Evidence", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
                 .font(.headline)
             if viewModel.lastSourcesUsed.isEmpty && viewModel.attachments.isEmpty {
-                Text("Sources, attachments, and evidence refs will appear here.")
+                Text(appText("Sources, attachments, and evidence refs will appear here.", appLanguageRaw))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             if !viewModel.attachments.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Attachments")
+                    Text(appText("Attachments", appLanguageRaw))
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                     ForEach(viewModel.attachments) { item in
@@ -263,7 +264,7 @@ struct AgentChatView: View {
             }
             if !viewModel.lastSourcesUsed.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Sources")
+                    Text(appText("Sources", appLanguageRaw))
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                     ForEach(viewModel.lastSourcesUsed, id: \.self) { source in
@@ -453,6 +454,7 @@ private final class CommandReturnTextView: NSTextView {
 
 struct RecordHubView: View {
     let client: RecordClient
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var quickText = ""
     @State private var recordType = StructuredRecordType.diet
     @State private var foodName = ""
@@ -472,25 +474,25 @@ struct RecordHubView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Record")
+                Text(appText("Record", appLanguageRaw))
                     .font(.largeTitle.bold())
 
-                SectionPanel(title: "Quick Record", systemImage: "bolt.fill") {
+                SectionPanel(title: appText("Quick Record", appLanguageRaw), systemImage: "bolt.fill") {
                     HStack {
-                        TextField("Record food, water, supplement, weight, BP, or symptom", text: $quickText)
+                        TextField(appText("Record food, water, supplement, weight, BP, or symptom", appLanguageRaw), text: $quickText)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { Task { await submit(text: quickText) } }
-                        Button(isSubmitting ? "Saving..." : "Save") {
+                        Button(appText(isSubmitting ? "Saving..." : "Save", appLanguageRaw)) {
                             Task { await submit(text: quickText) }
                         }
                         .disabled(isSubmitting || quickText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
 
-                SectionPanel(title: "Structured Form", systemImage: "text.badge.checkmark") {
-                    Picker("Type", selection: $recordType) {
+                SectionPanel(title: appText("Structured Form", appLanguageRaw), systemImage: "text.badge.checkmark") {
+                    Picker(appText("Type", appLanguageRaw), selection: $recordType) {
                         ForEach(StructuredRecordType.allCases) { type in
-                            Label(type.title, systemImage: type.systemImage).tag(type)
+                            Label(appText(type.title, appLanguageRaw), systemImage: type.systemImage).tag(type)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -498,10 +500,10 @@ struct RecordHubView: View {
                     structuredFields
 
                     HStack {
-                        Button("Preview") {
+                        Button(appText("Preview", appLanguageRaw)) {
                             quickText = structuredText()
                         }
-                        Button(isSubmitting ? "Saving..." : "Save Structured") {
+                        Button(appText(isSubmitting ? "Saving..." : "Save Structured", appLanguageRaw)) {
                             Task { await submit(text: structuredText()) }
                         }
                         .buttonStyle(.borderedProminent)
@@ -514,9 +516,9 @@ struct RecordHubView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                SectionPanel(title: "Recent Local Records", systemImage: "clock") {
+                SectionPanel(title: appText("Recent Local Records", appLanguageRaw), systemImage: "clock") {
                     if recentRecords.isEmpty {
-                        Text("Recent saved commands in this Mac session will appear here.")
+                        Text(appText("Recent saved commands in this Mac session will appear here.", appLanguageRaw))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(recentRecords, id: \.self) { record in
@@ -524,8 +526,8 @@ struct RecordHubView: View {
                                 Text(record)
                                     .lineLimit(1)
                                 Spacer()
-                                Button("Reuse") { quickText = record }
-                                Button("Delete") { recentRecords.removeAll { $0 == record } }
+                                Button(appText("Reuse", appLanguageRaw)) { quickText = record }
+                                Button(appText("Delete", appLanguageRaw)) { recentRecords.removeAll { $0 == record } }
                             }
                         }
                     }
@@ -539,25 +541,25 @@ struct RecordHubView: View {
     private var structuredFields: some View {
         switch recordType {
         case .diet:
-            TextField("Food name or photo description", text: $foodName)
+            TextField(appText("Food name or photo description", appLanguageRaw), text: $foodName)
             HStack {
-                TextField("Calories kcal", text: $calories)
-                TextField("Protein g", text: $protein)
+                TextField(appText("Calories kcal", appLanguageRaw), text: $calories)
+                TextField(appText("Protein g", appLanguageRaw), text: $protein)
             }
         case .water:
-            TextField("Amount ml", text: $waterMl)
+            TextField(appText("Amount ml", appLanguageRaw), text: $waterMl)
         case .supplement:
-            TextField("Supplement", text: $supplementName)
-            TextField("Dose and timing", text: $supplementDose)
+            TextField(appText("Supplement", appLanguageRaw), text: $supplementName)
+            TextField(appText("Dose and timing", appLanguageRaw), text: $supplementDose)
         case .weight:
-            TextField("Weight kg", text: $weightKg)
+            TextField(appText("Weight kg", appLanguageRaw), text: $weightKg)
         case .bloodPressure:
             HStack {
-                TextField("Systolic", text: $systolic)
-                TextField("Diastolic", text: $diastolic)
+                TextField(appText("Systolic", appLanguageRaw), text: $systolic)
+                TextField(appText("Diastolic", appLanguageRaw), text: $diastolic)
             }
         case .symptom:
-            TextField("Symptom, severity, and context", text: $symptom)
+            TextField(appText("Symptom, severity, and context", appLanguageRaw), text: $symptom)
         }
     }
 
@@ -636,6 +638,7 @@ private enum StructuredRecordType: String, CaseIterable, Identifiable {
 
 struct ImportCenterView: View {
     let jobClient: DesktopJobClient
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var isImporterPresented = false
     @State private var intakeItem: FileIntakeItem?
     @State private var statusText: String?
@@ -646,13 +649,13 @@ struct ImportCenterView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Import")
+                Text(appText("Import", appLanguageRaw))
                     .font(.largeTitle.bold())
                 Spacer()
-                Button("Choose File or Folder") {
+                Button(appText("Choose File or Folder", appLanguageRaw)) {
                     isImporterPresented = true
                 }
-                Button("Create Job") {
+                Button(appText("Create Job", appLanguageRaw)) {
                     Task { await createJob() }
                 }
                 .disabled(intakeItem == nil || isWorking || !rawUploadConfirmed)
@@ -667,14 +670,14 @@ struct ImportCenterView: View {
                     }
                     .frame(minHeight: 140)
 
-                    Toggle("I confirm this raw local file may be registered as a desktop import job.", isOn: $rawUploadConfirmed)
+                    Toggle(appText("I confirm this raw local file may be registered as a desktop import job.", appLanguageRaw), isOn: $rawUploadConfirmed)
                         .toggleStyle(.checkbox)
                 }
             } else {
                 ContentUnavailableView(
-                    "No file selected",
+                    appText("No file selected", appLanguageRaw),
                     systemImage: "tray.and.arrow.down",
-                    description: Text("Select a genome txt, medical file, Apple Health export, or Dedao folder.")
+                    description: Text(appText("Select a genome txt, medical file, Apple Health export, or Dedao folder.", appLanguageRaw))
                 )
             }
 
@@ -767,6 +770,7 @@ struct ImportCenterView: View {
 struct JobListView: View {
     let client: DesktopJobClient
     let openTrace: (Int) -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var jobs: [DesktopJobSummary] = []
     @State private var selectedJob: DesktopJobSummary?
     @State private var errorMessage: String?
@@ -774,26 +778,26 @@ struct JobListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Jobs")
+                Text(appText("Jobs", appLanguageRaw))
                     .font(.largeTitle.bold())
                 Spacer()
-                Button("Refresh") {
+                Button(appText("Refresh", appLanguageRaw)) {
                     Task { await refresh() }
                 }
             }
 
             HSplitView {
                 Table(jobs) {
-                    TableColumn("ID") { job in Text("#\(job.id)") }
-                    TableColumn("Type", value: \.jobType)
-                    TableColumn("Status", value: \.status)
-                    TableColumn("Progress") { job in
+                    TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
+                    TableColumn(appText("Type", appLanguageRaw), value: \.jobType)
+                    TableColumn(appText("Status", appLanguageRaw), value: \.status)
+                    TableColumn(appText("Progress", appLanguageRaw)) { job in
                         ProgressView(value: Double(job.progress), total: 100)
                     }
-                    TableColumn("Action") { job in
+                    TableColumn(appText("Action", appLanguageRaw)) { job in
                         HStack {
-                            Button("Details") { Task { await loadDetail(job.id) } }
-                            Button("Retry") { Task { await retry(job) } }
+                            Button(appText("Details", appLanguageRaw)) { Task { await loadDetail(job.id) } }
+                            Button(appText("Retry", appLanguageRaw)) { Task { await retry(job) } }
                                 .disabled(job.status != "failed")
                         }
                     }
@@ -846,21 +850,22 @@ struct JobListView: View {
 private struct JobDetailPanel: View {
     let job: DesktopJobSummary?
     let openTrace: (Int) -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Job Detail", systemImage: "list.bullet.rectangle")
+            Label(appText("Job Detail", appLanguageRaw), systemImage: "list.bullet.rectangle")
                 .font(.headline)
             if let job {
                 Text("#\(job.id) \(job.jobType)")
                     .font(.title3.bold())
-                LabeledContent("Status", value: job.status)
-                LabeledContent("Progress", value: "\(job.progress)%")
+                LabeledContent(appText("Status", appLanguageRaw), value: job.status)
+                LabeledContent(appText("Progress", appLanguageRaw), value: "\(job.progress)%")
                 if let sourceName = job.sourceName {
-                    LabeledContent("Source", value: sourceName)
+                    LabeledContent(appText("Source", appLanguageRaw), value: sourceName)
                 }
                 if let sourceKind = job.sourceKind {
-                    LabeledContent("Kind", value: sourceKind)
+                    LabeledContent(appText("Kind", appLanguageRaw), value: sourceKind)
                 }
                 if let errorMessage = job.errorMessage, !errorMessage.isEmpty {
                     Text(errorMessage)
@@ -870,18 +875,18 @@ private struct JobDetailPanel: View {
                     Button {
                         openTrace(conversationID)
                     } label: {
-                        Label("Open Trace #\(conversationID)", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label("\(appText("Open Trace", appLanguageRaw)) #\(conversationID)", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                 }
                 if let resultPayload = job.resultPayload, !resultPayload.isEmpty {
-                    Text("Result")
+                    Text(appText("Result", appLanguageRaw))
                         .font(.caption.bold())
                     Text(formatJSON(resultPayload))
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                 }
             } else {
-                Text("Select a job to inspect source, result, error, and trace handoff.")
+                Text(appText("Select a job to inspect source, result, error, and trace handoff.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -894,6 +899,7 @@ private struct JobDetailPanel: View {
 struct TraceLookupView: View {
     let client: TraceClient
     @Bindable var navigation: AppNavigationState
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var conversationID = ""
     @State private var trace: ConversationTrace?
     @State private var errorMessage: String?
@@ -901,13 +907,13 @@ struct TraceLookupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Trace")
+                Text(appText("Trace", appLanguageRaw))
                     .font(.largeTitle.bold())
                 Spacer()
-                TextField("Conversation ID", text: $conversationID)
+                TextField(appText("Conversation ID", appLanguageRaw), text: $conversationID)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 180)
-                Button("Load") {
+                Button(appText("Load", appLanguageRaw)) {
                     Task { await load() }
                 }
             }
@@ -915,27 +921,27 @@ struct TraceLookupView: View {
             if let trace {
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
                     GridRow {
-                        Text("Conversation").foregroundStyle(.secondary)
+                        Text(appText("Conversation", appLanguageRaw)).foregroundStyle(.secondary)
                         Text(trace.conversation.title ?? "#\(trace.conversation.id)")
                     }
                     GridRow {
-                        Text("Model").foregroundStyle(.secondary)
+                        Text(appText("Model", appLanguageRaw)).foregroundStyle(.secondary)
                         Text(trace.assistantMessage.model ?? "Unknown")
                     }
                     GridRow {
-                        Text("Elapsed").foregroundStyle(.secondary)
+                        Text(appText("Elapsed", appLanguageRaw)).foregroundStyle(.secondary)
                         Text(formatDuration(trace.assistantMessage.elapsedMs))
                     }
                     GridRow {
-                        Text("LLM").foregroundStyle(.secondary)
+                        Text(appText("LLM", appLanguageRaw)).foregroundStyle(.secondary)
                         Text("\(formatDuration(trace.assistantMessage.llmMs)) / \(trace.assistantMessage.llmRounds ?? 0) rounds")
                     }
                     GridRow {
-                        Text("Finish").foregroundStyle(.secondary)
+                        Text(appText("Finish", appLanguageRaw)).foregroundStyle(.secondary)
                         Text(trace.assistantMessage.finishReason ?? "Unknown")
                     }
                     GridRow {
-                        Text("Status").foregroundStyle(.secondary)
+                        Text(appText("Status", appLanguageRaw)).foregroundStyle(.secondary)
                         Text(trace.assistantMessage.completionStatus ?? "Unknown")
                     }
                 }
@@ -946,7 +952,7 @@ struct TraceLookupView: View {
                     TraceList(title: "Evidence", rows: trace.evidenceCards.map { $0.title ?? "evidence" } + trace.sourcesUsed)
                 }
             } else {
-                ContentUnavailableView("No trace loaded", systemImage: "point.3.connected.trianglepath.dotted")
+                ContentUnavailableView(appText("No trace loaded", appLanguageRaw), systemImage: "point.3.connected.trianglepath.dotted")
             }
 
             if let errorMessage {
@@ -986,6 +992,7 @@ struct SettingsView: View {
     let authClient: AuthClient
     let tokenStore: KeychainTokenStore
     let onLogout: () -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @AppStorage(APIEndpoint.baseURLDefaultsKey) private var apiBaseURL = APIEndpoint.defaultBaseURL.absoluteString
     @AppStorage("preferredVoice") private var preferredVoice = "private_female"
     @AppStorage("allowFileHashing") private var allowFileHashing = true
@@ -994,37 +1001,47 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Auth") {
-                SecureField("Bearer token", text: $token)
+            Section(appText("Language", appLanguageRaw)) {
+                Picker(appText("Display language", appLanguageRaw), selection: $appLanguageRaw) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.nativeName).tag(language.rawValue)
+                    }
+                }
+                Text(appText("Chinese is the default. Language changes apply immediately in most views.", appLanguageRaw))
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(appText("Auth", appLanguageRaw)) {
+                SecureField(appText("Bearer token", appLanguageRaw), text: $token)
                 HStack {
-                    Button("Save Token") {
+                    Button(appText("Save Token", appLanguageRaw)) {
                         Task { await saveToken() }
                     }
-                    Button("Clear Token") {
+                    Button(appText("Clear Token", appLanguageRaw)) {
                         Task { await clearToken() }
                     }
-                    Button("Sign Out") {
+                    Button(appText("Sign Out", appLanguageRaw)) {
                         Task { await signOut() }
                     }
                 }
             }
 
-            Section("API") {
-                TextField("Base URL", text: $apiBaseURL)
-                Text("Changing the API base URL takes effect after restarting the Mac app.")
+            Section(appText("API", appLanguageRaw)) {
+                TextField(appText("Base URL", appLanguageRaw), text: $apiBaseURL)
+                Text(appText("Changing the API base URL takes effect after restarting the Mac app.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             }
 
-            Section("Voice") {
-                Picker("Output voice", selection: $preferredVoice) {
-                    Text("私享女声").tag("private_female")
-                    Text("系统默认").tag("system_default")
+            Section(appText("Voice", appLanguageRaw)) {
+                Picker(appText("Output voice", appLanguageRaw), selection: $preferredVoice) {
+                    Text(appText("Private Female", appLanguageRaw)).tag("private_female")
+                    Text(appText("System Default", appLanguageRaw)).tag("system_default")
                 }
             }
 
-            Section("Privacy and Files") {
-                Toggle("Allow local file hashing before import", isOn: $allowFileHashing)
-                Text("Files stay local in this P0 client. Import jobs register source metadata and hashes unless a backend upload flow is added later.")
+            Section(appText("Privacy and Files", appLanguageRaw)) {
+                Toggle(appText("Allow local file hashing before import", appLanguageRaw), isOn: $allowFileHashing)
+                Text(appText("Files stay local in this P0 client. Import jobs register source metadata and hashes unless a backend upload flow is added later.", appLanguageRaw))
                     .foregroundStyle(.secondary)
             }
 

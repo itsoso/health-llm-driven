@@ -83,9 +83,9 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
+  <string>zh-Hans</string>
   <key>CFBundleDisplayName</key>
-  <string>Health Agent</string>
+  <string>健康 Agent</string>
   <key>CFBundleExecutable</key>
   <string>${APP_NAME}</string>
   <key>CFBundleIdentifier</key>
@@ -93,7 +93,7 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Health Agent</string>
+  <string>健康 Agent</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

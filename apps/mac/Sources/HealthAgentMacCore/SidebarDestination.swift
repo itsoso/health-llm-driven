@@ -12,16 +12,20 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
 
     public var title: String {
+        title(language: .en)
+    }
+
+    public func title(language: AppLanguage) -> String {
         switch self {
-        case .today: "Today"
-        case .agent: "Agent"
-        case .record: "Record"
-        case .data: "Data"
-        case .genetics: "Genetics"
-        case .knowledge: "Knowledge"
-        case .jobs: "Jobs"
-        case .trace: "Trace"
-        case .settings: "Settings"
+        case .today: L10n.text("Today", language: language)
+        case .agent: L10n.text("Agent", language: language)
+        case .record: L10n.text("Record", language: language)
+        case .data: L10n.text("Data", language: language)
+        case .genetics: L10n.text("Genetics", language: language)
+        case .knowledge: L10n.text("Knowledge", language: language)
+        case .jobs: L10n.text("Jobs", language: language)
+        case .trace: L10n.text("Trace", language: language)
+        case .settings: L10n.text("Settings", language: language)
         }
     }
 
