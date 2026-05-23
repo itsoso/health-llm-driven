@@ -5,16 +5,19 @@ import SwiftUI
 struct HealthAgentMacApp: App {
     @State private var appServices = AppServices()
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
 
     var body: some Scene {
         WindowGroup(id: "main") {
             AppRootView(services: appServices)
+                .appFontScale(AppFontScale(level: appFontScaleLevel))
         }
         MenuBarExtra(appText("Health Agent", appLanguageRaw), systemImage: "heart.text.square") {
             MenuBarRootView(
                 viewModel: appServices.todayViewModel,
                 navigation: appServices.navigation
             )
+            .appFontScale(AppFontScale(level: appFontScaleLevel))
         }
         .commands {
             CommandMenu(appText("Health Agent", appLanguageRaw)) {
@@ -28,7 +31,52 @@ struct HealthAgentMacApp: App {
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 Button(appText("Jobs", appLanguageRaw)) { appServices.navigation.selection = .jobs }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
+                Divider()
+                Button(appText("Increase Font Size", appLanguageRaw)) {
+                    appFontScaleLevel = AppFontScale(level: appFontScaleLevel).increased().level
+                }
+                .keyboardShortcut("+", modifiers: [.command])
+                Button(appText("Decrease Font Size", appLanguageRaw)) {
+                    appFontScaleLevel = AppFontScale(level: appFontScaleLevel).decreased().level
+                }
+                .keyboardShortcut("-", modifiers: [.command])
+                Button(appText("Reset Font Size", appLanguageRaw)) {
+                    appFontScaleLevel = AppFontScale(level: appFontScaleLevel).reset().level
+                }
+                .keyboardShortcut("0", modifiers: [.command])
             }
+        }
+    }
+}
+
+private extension View {
+    func appFontScale(_ scale: AppFontScale) -> some View {
+        modifier(AppFontScaleViewModifier(scale: scale))
+    }
+}
+
+private struct AppFontScaleViewModifier: ViewModifier {
+    let scale: AppFontScale
+
+    func body(content: Content) -> some View {
+        content
+            .dynamicTypeSize(dynamicTypeSize)
+    }
+
+    private var dynamicTypeSize: DynamicTypeSize {
+        switch scale.level {
+        case AppFontScale.minLevel:
+            .small
+        case 1:
+            .large
+        case 2:
+            .xLarge
+        case 3:
+            .xxLarge
+        case AppFontScale.maxLevel:
+            .xxxLarge
+        default:
+            .medium
         }
     }
 }
