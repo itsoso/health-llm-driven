@@ -72,6 +72,10 @@ jest.mock('../../../hooks/useTheme', () => ({
       tintBlue: '#DBEAFE',
       tintGreen: '#DCFCE7',
       tintRed: '#FEE2E2',
+      tintTeal: '#CCFBF1',
+      tintPink: '#FCE7F3',
+      tintPurple: '#EDE9FE',
+      tintOrange: '#FFEDD5',
     },
   }),
 }));
@@ -108,9 +112,11 @@ describe('RecordScreen import shortcuts', () => {
     jest.clearAllMocks();
   });
 
-  it('shows medical exam history and import entries in quick navigation', async () => {
+  it('keeps high-frequency record shortcuts focused and moves lower-frequency entries into more records', async () => {
     const { getByLabelText, getByText } = renderScreen();
 
+    await waitFor(() => expect(getByText('高频记录')).toBeTruthy());
+    expect(getByText('更多记录')).toBeTruthy();
     await waitFor(() => expect(getByText('化验记录')).toBeTruthy());
     expect(getByText('导入档案')).toBeTruthy();
 

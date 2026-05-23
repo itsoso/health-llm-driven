@@ -111,18 +111,27 @@ export default function RecordScreen() {
         <Text style={txt.title}>健康记录</Text>
 
         {/* Quick navigation */}
-        <View style={styles.quickNav}>
-          <QuickNavBtn icon="moon-outline" label="睡眠" color={c.purple} onPress={() => router.push('/sleep' as any)} />
-          <QuickNavBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
-          {/* F 产品改进: 跑前 readiness 对话 — 私享女声给具体建议 */}
-          <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.brand} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
-          {/* I 产品改进: 声音笔记 — AI 开口邀请, 自动归类录入 */}
-          <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
-          <QuickNavBtn icon="body-outline" label="体重腰围" color={c.teal} onPress={() => router.push('/body-measurements' as any)} />
-          <QuickNavBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
-          <QuickNavBtn icon="cloud-upload-outline" label="导入档案" color={c.purple} onPress={() => router.push('/import' as any)} />
-          <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
-          <QuickNavBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
+        <View style={styles.recordEntryPanel}>
+          <View style={styles.entryHeader}>
+            <View>
+              <Text style={txt.sectionEyebrow}>高频记录</Text>
+              <Text style={txt.sectionHint}>先录入会改变今日建议的数据</Text>
+            </View>
+          </View>
+          <View style={styles.quickNav}>
+            <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
+            <QuickNavBtn icon="body-outline" label="体重腰围" color={c.teal} onPress={() => router.push('/body-measurements' as any)} />
+            <QuickNavBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
+            <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
+            <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.brand} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
+          </View>
+          <Text style={txt.moreTitle}>更多记录</Text>
+          <View style={styles.moreRecordRow}>
+            <MoreRecordBtn icon="moon-outline" label="睡眠" color={c.purple} onPress={() => router.push('/sleep' as any)} />
+            <MoreRecordBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
+            <MoreRecordBtn icon="cloud-upload-outline" label="导入档案" color={c.purple} onPress={() => router.push('/import' as any)} />
+            <MoreRecordBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
+          </View>
         </View>
 
         {/* 1. Vitals */}
@@ -410,6 +419,24 @@ function QuickNavBtn({ icon, label, color, onPress }: { icon: any; label: string
   );
 }
 
+function MoreRecordBtn({ icon, label, color, onPress }: { icon: any; label: string; color: string; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  return (
+    <TouchableOpacity
+      style={[styles.moreRecordBtn, { borderColor: c.separator }]}
+      onPress={onPress}
+      activeOpacity={0.72}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={16} color={color} />
+      <Text style={txt.moreRecordLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function NutritionCircle({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -444,9 +471,28 @@ function createStyles(c: ColorPalette) {
   promptStack: { marginBottom: spacing.md },
 
   // Quick navigation
-  quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
-  quickNavBtn: { width: '30.8%', alignItems: 'center', gap: 6, backgroundColor: c.bgCard, borderRadius: radii.md, paddingVertical: 12, ...shadows.subtle },
+  recordEntryPanel: {
+    backgroundColor: c.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadows.subtle,
+  },
+  entryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  quickNavBtn: { width: '31.5%', alignItems: 'center', gap: 6, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingVertical: 11 },
   quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
+  moreRecordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  moreRecordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
 
   // Tabbed card (body + diet)
   tabCard: {
@@ -523,6 +569,10 @@ function createTxt(c: ColorPalette) {
   return {
   title: { fontSize: 28, fontWeight: '700', color: c.labelPrimary, marginBottom: spacing.md } as TextStyle,
   quickNavLabel: { fontSize: 11, fontWeight: '500', color: c.labelSecondary } as TextStyle,
+  sectionEyebrow: { fontSize: 16, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  sectionHint: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
+  moreTitle: { fontSize: 12, fontWeight: '700', color: c.labelTertiary } as TextStyle,
+  moreRecordLabel: { fontSize: 12, fontWeight: '600', color: c.labelSecondary } as TextStyle,
   tabText: { fontSize: 14, fontWeight: '500', color: c.labelTertiary } as TextStyle,
   tabTextActive: { color: c.brand, fontWeight: '600' } as TextStyle,
   nutriVal: { fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,

@@ -114,12 +114,16 @@ describe('ChatScreen', () => {
   });
 
   it('shows a visible history entry on the private coach page', async () => {
-    const { getByText, getByLabelText } = render(<ChatScreen />);
+    const { getAllByText, getByText, getByLabelText } = render(<ChatScreen />);
 
-    expect(getByText('历史')).toBeTruthy();
+    expect(getAllByText('健康 Agent').length).toBeGreaterThan(0);
     await waitFor(() => {
-      expect(getByText('历史')).toBeTruthy();
+      expect(getByLabelText('更多会诊操作')).toBeTruthy();
     });
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
+    expect(getByText('对话历史')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByLabelText('对话历史'));
     });
@@ -259,6 +263,9 @@ describe('ChatScreen', () => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
     });
 
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
     await act(async () => {
       fireEvent.press(getByLabelText('新建对话'));
     });

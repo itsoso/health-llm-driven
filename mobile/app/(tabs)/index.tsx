@@ -239,59 +239,50 @@ export default function TodayScreen() {
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
         />
 
+        <CompactShortcutSection
+          shortcuts={[
+            {
+              label: '基因',
+              icon: 'git-branch-outline',
+              value: geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—',
+              color: c.purple,
+              bg: c.tintPurple,
+              onPress: () => router.push('/genetic-report' as any),
+            },
+            {
+              label: '进度',
+              icon: 'trending-up-outline',
+              value: progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—',
+              color: c.blue,
+              bg: c.tintBlue,
+              onPress: () => router.push('/my-progress' as any),
+            },
+            {
+              label: '运动',
+              icon: 'walk-outline',
+              value: '处方',
+              color: c.pink,
+              bg: c.tintPink,
+              onPress: () => router.push('/movement-plan' as any),
+            },
+            {
+              label: '饮食',
+              icon: 'restaurant-outline',
+              value: '方案',
+              color: c.orange,
+              bg: c.tintOrange,
+              onPress: () => router.push('/diet-plan' as any),
+            },
+          ]}
+          onOpenAll={() => router.push('/(tabs)/record' as any)}
+        />
+
         <TodayPlanPanel
           plan={dailyPlanQuery.data}
           loading={dailyPlanQuery.isLoading}
           onPressAction={openPlanAction}
           onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
         />
-
-        <SectionHeader
-          title="快速入口"
-          subtitle="高频健康任务"
-          action="全部"
-          onPress={() => router.push('/(tabs)/record' as any)}
-        />
-        <View style={styles.gridRow}>
-          <HeroTile
-            label="我的基因"
-            ionIcon="git-branch-outline"
-            value={geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—'}
-            unit={geneticStatsQuery.data?.total != null ? ` / ${geneticStatsQuery.data.total}` : ''}
-            sub="关键位点 · AI 解读"
-            color={c.purple}
-            bg={c.tintPurple}
-            onPress={() => router.push('/genetic-report' as any)}
-          />
-          <HeroTile
-            label="我的进度"
-            ionIcon="trending-up-outline"
-            value={progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—'}
-            unit={progressStatsQuery.data?.total != null ? ` / ${progressStatsQuery.data.total}` : ''}
-            sub="改善闭环 · 30 天"
-            color={c.blue}
-            bg={c.tintBlue}
-            onPress={() => router.push('/my-progress' as any)}
-          />
-          <HeroTile
-            label="我的运动"
-            ionIcon="walk-outline"
-            value="处方"
-            sub="ACWR · 基因偏好"
-            color={c.pink}
-            bg={c.tintPink}
-            onPress={() => router.push('/movement-plan' as any)}
-          />
-          <HeroTile
-            label="我的饮食"
-            ionIcon="restaurant-outline"
-            value="方案"
-            sub="TDEE · 蛋白 · 化验"
-            color={c.orange}
-            bg={c.tintOrange}
-            onPress={() => router.push('/diet-plan' as any)}
-          />
-        </View>
 
         <TrajectorySnapshotPanel
           snapshot={trajectoryQuery.data}
@@ -422,12 +413,21 @@ function HomeCommandHeader({
   const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
   const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
+  const focusText = criticalCount > 0
+    ? '先看风险，再处理计划'
+    : planCount > 0
+      ? '按优先级完成今日计划'
+      : '暂无硬性任务，保持记录节奏';
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandTop}>
         <View style={styles.commandTitleBlock}>
           <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-          <Text style={[styles.commandTitle, { color: c.labelPrimary }]}>今日健康操作台</Text>
+          <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
+          <Text style={[styles.commandTitle, { color: c.labelPrimary }]}>
+            今天先做 {planCount} 件事
+          </Text>
+          <Text style={[styles.commandHint, { color: c.labelSecondary }]}>{focusText}</Text>
         </View>
         <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -465,6 +465,52 @@ function HomeCommandHeader({
           <Ionicons name="add-circle-outline" size={17} color={c.brand} />
           <Text style={[styles.secondaryActionText, { color: c.labelPrimary }]}>记录</Text>
         </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function CompactShortcutSection({
+  shortcuts,
+  onOpenAll,
+}: {
+  shortcuts: {
+    label: string;
+    value: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    color: string;
+    bg: string;
+    onPress: () => void;
+  }[];
+  onOpenAll: () => void;
+}) {
+  const { c } = useTheme();
+  return (
+    <View style={styles.compactSection}>
+      <SectionHeader title="高频入口" subtitle="常用路径" action="全部" onPress={onOpenAll} />
+      <View style={styles.shortcutRail}>
+        {shortcuts.map(item => (
+          <Pressable
+            key={item.label}
+            onPress={item.onPress}
+            style={({ pressed }) => [
+              styles.shortcutPill,
+              { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.label} ${item.value}`}
+          >
+            <View style={[styles.shortcutIcon, { backgroundColor: item.bg }]}>
+              <Ionicons name={item.icon} size={15} color={item.color} />
+            </View>
+            <View style={styles.shortcutTextBlock}>
+              <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]}>{item.label}</Text>
+              <Text style={[styles.shortcutValue, { color: c.labelPrimary }]} numberOfLines={1}>
+                {item.value}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
       </View>
     </View>
   );
@@ -626,7 +672,9 @@ const styles = StyleSheet.create({
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4 },
   commandDate: { fontSize: 12, fontWeight: '700' },
-  commandTitle: { fontSize: 24, fontWeight: '800', lineHeight: 30, letterSpacing: 0 },
+  commandFocusLabel: { fontSize: 12, fontWeight: '800' },
+  commandTitle: { fontSize: 26, fontWeight: '800', lineHeight: 32, letterSpacing: 0 },
+  commandHint: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -675,6 +723,24 @@ const styles = StyleSheet.create({
   sectionSubtitle: { fontSize: 12, fontWeight: '500' },
   sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
   sectionActionText: { fontSize: 13, fontWeight: '700' },
+  compactSection: { gap: spacing.sm },
+  shortcutRail: { flexDirection: 'row', gap: spacing.sm },
+  shortcutPill: {
+    flex: 1,
+    minHeight: 64,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 7,
+  },
+  shortcutIcon: {
+    width: 26, height: 26, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  shortcutTextBlock: { minWidth: 0 },
+  shortcutLabel: { fontSize: 11, fontWeight: '600' },
+  shortcutValue: { fontSize: 13, fontWeight: '800', marginTop: 1 },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,

@@ -120,4 +120,11 @@ describe('TodayScreen', () => {
 
     expect(queryByText('Agent 数据视野')).toBeNull();
   });
+
+  it('frames the home screen around today focus and uses compact quick entries', () => {
+    const { getByText } = render(<TodayScreen />);
+
+    expect(getByText('今天先做 0 件事')).toBeTruthy();
+    expect(getByText('高频入口')).toBeTruthy();
+  });
 });

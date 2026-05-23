@@ -101,6 +101,7 @@ export default function ChatScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
+  const [toolMenuVisible, setToolMenuVisible] = useState(false);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -280,6 +281,7 @@ export default function ChatScreen() {
   }, []);
 
   const openHistory = useCallback(() => {
+    setToolMenuVisible(false);
     setHistoryVisible(true);
     loadConversationHistory();
   }, [loadConversationHistory]);
@@ -290,11 +292,24 @@ export default function ChatScreen() {
   }, []);
 
   const handleNewChat = useCallback(() => {
+    setToolMenuVisible(false);
     exitSelectionMode();
     setContextBadge(null);
     newChat();
     void refreshCoachHomeState();
   }, [exitSelectionMode, newChat, refreshCoachHomeState]);
+
+  const handleDeleteCurrentConversation = useCallback(() => {
+    setToolMenuVisible(false);
+    if (!conversationId) return;
+    Alert.alert('删除对话', '确定删除当前对话？', [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: async () => {
+        await deleteConversation(conversationId);
+        handleNewChat();
+      }},
+    ]);
+  }, [conversationId, handleNewChat]);
 
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
@@ -375,41 +390,13 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <LlmModelPicker
-          currentLabel={activeLlmLabel}
-          currentModelId={llmModelId}
-          options={llmOptions}
-          savingModelId={llmSaving}
-          disabled={isStreaming}
-          error={llmError}
-          onSelect={handleSelectModel}
-        />
+        <View style={styles.chatTitleBlock}>
+          <Text style={txt.headerTitle}>健康 Agent</Text>
+          <Text style={txt.headerMeta} numberOfLines={1}>
+            {isStreaming ? '正在回复' : activeLlmLabel}
+          </Text>
+        </View>
         <View style={{ flex: 1 }} />
-        {messages.some(isShareableChatMessage) && (
-          <TouchableOpacity
-            onPress={() => {
-              if (selectionMode) exitSelectionMode();
-              else setSelectionMode(true);
-            }}
-            hitSlop={8}
-            style={styles.historyAction}
-            accessibilityLabel={selectionMode ? '取消选择分享' : '选择多条分享'}
-            accessibilityRole="button"
-          >
-            <Ionicons name={selectionMode ? 'close' : 'checkbox-outline'} size={19} color={c.labelSecondary} />
-            <Text style={txt.historyAction}>{selectionMode ? '取消' : '多选'}</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          onPress={openHistory}
-          hitSlop={8}
-          style={styles.historyAction}
-          accessibilityLabel="对话历史"
-          accessibilityRole="button"
-        >
-          <Ionicons name="time-outline" size={21} color={c.labelSecondary} />
-          <Text style={txt.historyAction}>历史</Text>
-        </TouchableOpacity>
         {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
             尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
         <TouchableOpacity
@@ -422,24 +409,17 @@ export default function ChatScreen() {
           accessibilityLabel="语音对话"
           accessibilityRole="button"
         >
-          <Ionicons name="mic-circle" size={26} color={c.brand} />
+          <Ionicons name="mic" size={20} color="#FFFFFF" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleNewChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
-          <Ionicons name="create-outline" size={20} color={c.labelSecondary} />
+        <TouchableOpacity
+          onPress={() => setToolMenuVisible(true)}
+          hitSlop={8}
+          style={styles.headerMenuAction}
+          accessibilityLabel="更多会诊操作"
+          accessibilityRole="button"
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color={c.labelSecondary} />
         </TouchableOpacity>
-        {conversationId && messages.length > 0 && (
-          <TouchableOpacity onPress={() => {
-            Alert.alert('删除对话', '确定删除当前对话？', [
-              { text: '取消', style: 'cancel' },
-              { text: '删除', style: 'destructive', onPress: async () => {
-                await deleteConversation(conversationId);
-                handleNewChat();
-              }},
-            ]);
-          }} hitSlop={8} style={{ marginLeft: 12 }} accessibilityLabel="删除当前对话" accessibilityRole="button">
-            <Ionicons name="trash-outline" size={18} color={c.red} />
-          </TouchableOpacity>
-        )}
       </View>
 
       <View style={{ flex: 1 }}>
@@ -550,6 +530,53 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </Pressable>
       </Modal>
+      <Modal visible={toolMenuVisible} transparent animationType="fade" onRequestClose={() => setToolMenuVisible(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setToolMenuVisible(false)}>
+          <Pressable style={styles.toolSheet}>
+            <View style={styles.toolSheetHeader}>
+              <View>
+                <Text style={txt.toolSheetTitle}>会诊工具</Text>
+                <Text style={txt.toolSheetSub}>把低频操作收在这里</Text>
+              </View>
+              <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
+                <Ionicons name="close" size={22} color={c.labelSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.menuModelWrap}>
+              <LlmModelPicker
+                currentLabel={activeLlmLabel}
+                currentModelId={llmModelId}
+                options={llmOptions}
+                savingModelId={llmSaving}
+                disabled={isStreaming}
+                error={llmError}
+                onSelect={handleSelectModel}
+              />
+            </View>
+            <ToolMenuRow icon="time-outline" label="对话历史" onPress={openHistory} />
+            <ToolMenuRow icon="create-outline" label="新建对话" onPress={handleNewChat} />
+            {messages.some(isShareableChatMessage) && (
+              <ToolMenuRow
+                icon={selectionMode ? 'close' : 'checkbox-outline'}
+                label={selectionMode ? '取消多选' : '选择多条分享'}
+                onPress={() => {
+                  setToolMenuVisible(false);
+                  if (selectionMode) exitSelectionMode();
+                  else setSelectionMode(true);
+                }}
+              />
+            )}
+            {conversationId && messages.length > 0 && (
+              <ToolMenuRow
+                icon="trash-outline"
+                label="删除当前对话"
+                destructive
+                onPress={handleDeleteCurrentConversation}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
       <ConversationSheet
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
@@ -567,11 +594,57 @@ export default function ChatScreen() {
   );
 }
 
+function ToolMenuRow({
+  icon,
+  label,
+  destructive,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  destructive?: boolean;
+  onPress: () => void;
+}) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  const color = destructive ? c.red : c.labelPrimary;
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={styles.toolMenuRow}
+      activeOpacity={0.72}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={18} color={color} />
+      <Text style={[txt.toolMenuText, { color }]}>{label}</Text>
+      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} style={{ marginLeft: 'auto' }} />
+    </TouchableOpacity>
+  );
+}
+
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  headerAction: { marginRight: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
+  chatTitleBlock: { flex: 1, minWidth: 0 },
+  headerAction: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.brand,
+  },
+  headerMenuAction: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.bgCard,
+  },
   historyAction: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -622,6 +695,37 @@ function createStyles(c: ColorPalette) {
     justifyContent: 'center', alignItems: 'center',
   },
   imageViewerClose: { position: 'absolute', top: 60, right: 20 },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    justifyContent: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingTop: 82,
+  },
+  toolSheet: {
+    backgroundColor: c.bgPrimary,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    ...shadows.heavy,
+  },
+  toolSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  menuModelWrap: { paddingVertical: spacing.sm },
+  toolMenuRow: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.separator,
+  },
   welcome: { alignItems: 'center', paddingTop: 60 },
   sugGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xxl, paddingHorizontal: spacing.lg },
   sugCard: {
@@ -664,7 +768,8 @@ function createStyles(c: ColorPalette) {
 
 function createTxt(c: ColorPalette) {
   return {
-  headerTitle: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  headerTitle: { fontSize: 20, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  headerMeta: { fontSize: 12, color: c.labelTertiary, marginTop: 2, fontWeight: '600' } as TextStyle,
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
   sugText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
@@ -676,5 +781,8 @@ function createTxt(c: ColorPalette) {
   shareBarTitle: { fontSize: 13, color: c.labelPrimary, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   shareButton: { fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
+  toolSheetTitle: { fontSize: 17, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  toolSheetSub: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
+  toolMenuText: { fontSize: 15, fontWeight: '700' } as TextStyle,
   };
 }
