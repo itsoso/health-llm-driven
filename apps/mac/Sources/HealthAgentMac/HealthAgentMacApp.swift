@@ -1444,6 +1444,7 @@ struct WorkspaceOverviewView: View {
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dataRange = "7d"
+    @State private var selectedHealthTrend: DesktopHealthTrendContext?
     @State private var selectedGenomicDetail: GenomicDetailRoute?
     @State private var selectedKnowledgeDocument: KnowledgeDocumentSummary?
 
@@ -1529,6 +1530,18 @@ struct WorkspaceOverviewView: View {
                 },
                 onAskAgent: onAskAgent.map { ask in
                     { ask(DesktopWorkspaceContextFactory.prompt(for: document), DesktopWorkspaceContextFactory.contextItem(for: document)) }
+                }
+            )
+        }
+        .sheet(item: $selectedHealthTrend) { trend in
+            HealthTrendDetailSheet(
+                context: trend,
+                color: healthTrendColor(trend.kind),
+                onAddContext: onAddContext.map { add in
+                    { add(DesktopWorkspaceContextFactory.contextItem(for: trend)) }
+                },
+                onAskAgent: onAskAgent.map { ask in
+                    { ask(DesktopWorkspaceContextFactory.prompt(for: trend), DesktopWorkspaceContextFactory.contextItem(for: trend)) }
                 }
             )
         }
@@ -1618,7 +1631,17 @@ struct WorkspaceOverviewView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 205), spacing: 12)], spacing: 12) {
                 ForEach(dataMetrics(summary)) { metric in
-                    WorkspaceMetricCard(metric: metric)
+                    if let trend = dataTrendContext(for: metric) {
+                        Button {
+                            selectedHealthTrend = trend
+                        } label: {
+                            WorkspaceMetricCard(metric: metric, showsDisclosure: true)
+                        }
+                        .buttonStyle(.plain)
+                        .help(appText("Click to inspect trend", appLanguageRaw))
+                    } else {
+                        WorkspaceMetricCard(metric: metric)
+                    }
                 }
             }
 
@@ -1666,11 +1689,8 @@ struct WorkspaceOverviewView: View {
     }
 
     private var dataTrendPanel: some View {
-        let summary = viewModel.bootstrap?.recentRecordsSummary
         let is30Days = dataRange == "30d"
-        let dietPoints = (is30Days ? summary?.diet?.daily30 : summary?.diet?.daily7) ?? []
-        let waterPoints = (is30Days ? summary?.water?.daily30 : summary?.water?.daily7) ?? []
-        let supplementPoints = (is30Days ? summary?.supplements?.daily30 : summary?.supplements?.daily7) ?? []
+        let trends = primaryHealthTrendContexts()
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Label(appText("Trends", appLanguageRaw), systemImage: "chart.xyaxis.line")
@@ -1681,33 +1701,21 @@ struct WorkspaceOverviewView: View {
                     .foregroundStyle(.secondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
-                DataTrendCard(
-                    title: appText("Diet Trend", appLanguageRaw),
-                    value: trendAverageLabel(
-                        value: is30Days ? summary?.diet?.last30AvgCalories : summary?.diet?.last7AvgCalories,
-                        unit: "kcal"
-                    ),
-                    color: .orange,
-                    points: dietPoints.map(\.calories)
-                )
-                DataTrendCard(
-                    title: appText("Water Trend", appLanguageRaw),
-                    value: trendAverageLabel(
-                        value: is30Days ? summary?.water?.last30AvgMl : summary?.water?.last7AvgMl,
-                        unit: "ml"
-                    ),
-                    color: .cyan,
-                    points: waterPoints.map { Double($0.totalMl) }
-                )
-                DataTrendCard(
-                    title: appText("Supplement Trend", appLanguageRaw),
-                    value: trendAverageLabel(
-                        value: is30Days ? summary?.supplements?.last30AvgPerDay : summary?.supplements?.last7AvgPerDay,
-                        unit: "/day"
-                    ),
-                    color: .teal,
-                    points: supplementPoints.map { Double($0.count) }
-                )
+                ForEach(trends) { trend in
+                    Button {
+                        selectedHealthTrend = trend
+                    } label: {
+                        DataTrendCard(
+                            title: appText(trend.title, appLanguageRaw),
+                            value: trendAverageLabel(value: trend.average, unit: trend.unit),
+                            color: healthTrendColor(trend.kind),
+                            points: trend.points.map(\.value),
+                            showsDisclosure: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(appText("Click to inspect trend", appLanguageRaw))
+                }
             }
         }
         .padding(18)
@@ -1720,6 +1728,119 @@ struct WorkspaceOverviewView: View {
 
     private func trendAverageLabel(value: Double?, unit: String) -> String {
         "\(appText("Avg", appLanguageRaw)) \(formatCompactNumber(value ?? 0))\(appText(unit, appLanguageRaw))"
+    }
+
+    private var dataRangeDays: Int {
+        dataRange == "30d" ? 30 : 7
+    }
+
+    private func primaryHealthTrendContexts() -> [DesktopHealthTrendContext] {
+        [.diet, .water, .supplements].compactMap { dataTrendContext(for: $0) }
+    }
+
+    private func dataTrendContext(for metric: DesktopWorkspaceMetric) -> DesktopHealthTrendContext? {
+        switch metric.id {
+        case "diet_calories":
+            return dataTrendContext(for: .diet)
+        case "water_ml":
+            return dataTrendContext(for: .water)
+        case "supplements":
+            return dataTrendContext(for: .supplements)
+        case "latest_weight":
+            return dataTrendContext(for: .weight)
+        case "latest_bp":
+            return dataTrendContext(for: .bloodPressure)
+        case "steps":
+            return dataTrendContext(for: .steps)
+        default:
+            return nil
+        }
+    }
+
+    private func dataTrendContext(for kind: DesktopHealthTrendKind) -> DesktopHealthTrendContext? {
+        guard let recordsSummary = viewModel.bootstrap?.recentRecordsSummary else {
+            return nil
+        }
+        let days = dataRangeDays
+        switch kind {
+        case .diet:
+            guard let diet = recordsSummary.diet else { return nil }
+            let points = (days == 30 ? diet.daily30 : diet.daily7) ?? []
+            return DesktopHealthTrendContext(
+                kind: .diet,
+                rangeDays: days,
+                unit: "kcal",
+                total: days == 30 ? diet.last30Calories : diet.last7Calories,
+                average: days == 30 ? diet.last30AvgCalories : diet.last7AvgCalories,
+                recordCount: days == 30 ? diet.last30Count : diet.last7Count,
+                points: points.map { DesktopHealthTrendPoint(date: $0.date, value: $0.calories, count: $0.count) },
+                latestRecord: latestRecord(matching: ["diet", "meal", "food"])
+            )
+        case .water:
+            guard let water = recordsSummary.water else { return nil }
+            let points = (days == 30 ? water.daily30 : water.daily7) ?? []
+            return DesktopHealthTrendContext(
+                kind: .water,
+                rangeDays: days,
+                unit: "ml",
+                total: Double(days == 30 ? (water.last30TotalMl ?? 0) : (water.last7TotalMl ?? 0)),
+                average: days == 30 ? water.last30AvgMl : water.last7AvgMl,
+                recordCount: days == 30 ? water.last30Count : water.last7Count,
+                points: points.map { DesktopHealthTrendPoint(date: $0.date, value: Double($0.totalMl), count: $0.count) },
+                latestRecord: latestRecord(matching: ["water", "drink"])
+            )
+        case .supplements:
+            guard let supplements = recordsSummary.supplements else { return nil }
+            let points = (days == 30 ? supplements.daily30 : supplements.daily7) ?? []
+            let count = days == 30 ? supplements.last30Count : supplements.last7Count
+            return DesktopHealthTrendContext(
+                kind: .supplements,
+                rangeDays: days,
+                unit: "次",
+                total: count.map(Double.init),
+                average: days == 30 ? supplements.last30AvgPerDay : supplements.last7AvgPerDay,
+                recordCount: count,
+                points: points.map { DesktopHealthTrendPoint(date: $0.date, value: Double($0.count), count: $0.count) },
+                latestRecord: latestRecord(matching: ["supplement", "supplements"])
+            )
+        case .weight:
+            guard let latestWeight = recordsSummary.latestWeight else { return nil }
+            return DesktopHealthTrendContext(
+                kind: .weight,
+                rangeDays: days,
+                unit: latestWeight.unit ?? "kg",
+                points: [],
+                latestRecord: latestWeight
+            )
+        case .bloodPressure:
+            guard let latestBloodPressure = recordsSummary.latestBloodPressure else { return nil }
+            return DesktopHealthTrendContext(
+                kind: .bloodPressure,
+                rangeDays: days,
+                unit: latestBloodPressure.unit ?? "mmHg",
+                points: [],
+                latestRecord: latestBloodPressure
+            )
+        case .steps:
+            guard let garmin = recordsSummary.latestGarmin, let steps = garmin.steps else { return nil }
+            return DesktopHealthTrendContext(
+                kind: .steps,
+                rangeDays: days,
+                unit: "步",
+                total: Double(steps),
+                points: [
+                    DesktopHealthTrendPoint(date: garmin.recordDate ?? recordsSummary.date ?? "latest", value: Double(steps), count: nil)
+                ]
+            )
+        }
+    }
+
+    private func latestRecord(matching keywords: [String]) -> DesktopRecordMetric? {
+        viewModel.bootstrap?.recentRecordsSummary.recentRecords?.first { record in
+            let type = record.type.lowercased()
+            let title = record.title.lowercased()
+            return keywords.contains { type.contains($0) || title.contains($0) }
+        }
     }
 
     private func formatCompactNumber(_ value: Double) -> String {
@@ -2383,6 +2504,7 @@ struct WorkspaceOverviewView: View {
 
 private struct WorkspaceMetricCard: View {
     let metric: DesktopWorkspaceMetric
+    var showsDisclosure = false
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
@@ -2394,6 +2516,11 @@ private struct WorkspaceMetricCard: View {
                     .frame(width: 30, height: 30)
                     .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Spacer()
+                if showsDisclosure {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(color.opacity(0.9))
+                }
             }
             Text(appText(metric.title, appLanguageRaw))
                 .font(.caption.weight(.semibold))
@@ -2787,6 +2914,7 @@ private struct DataTrendCard: View {
     let value: String
     let color: Color
     let points: [Double]
+    var showsDisclosure = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2801,6 +2929,11 @@ private struct DataTrendCard: View {
                 Spacer()
                 Image(systemName: "chart.bar.fill")
                     .foregroundStyle(color)
+                if showsDisclosure {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
             }
             HStack(alignment: .bottom, spacing: 4) {
                 ForEach(Array(normalizedPoints.enumerated()), id: \.offset) { _, point in
@@ -2826,6 +2959,206 @@ private struct DataTrendCard: View {
         }
         return values.map { max(0.08, $0 / maxValue) }
     }
+}
+
+private struct HealthTrendDetailSheet: View {
+    let context: DesktopHealthTrendContext
+    let color: Color
+    var onAddContext: (() -> Void)?
+    var onAskAgent: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(appText("Trend Detail", appLanguageRaw))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(appText(context.title, appLanguageRaw))
+                        .font(.title2.bold())
+                    Text("\(context.rangeDays) \(appText("days", appLanguageRaw)) · \(context.unit)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 10)], spacing: 10) {
+                trendSummaryTile(title: "Total", value: summaryValue(context.total))
+                trendSummaryTile(title: "Average", value: summaryValue(context.average))
+                trendSummaryTile(title: "Record Count", value: context.recordCount.map(String.init) ?? "—")
+                trendSummaryTile(title: "Latest Record", value: context.latestRecordText ?? "—")
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label(appText("Detailed Trend Chart", appLanguageRaw), systemImage: "chart.bar.xaxis")
+                        .font(.headline)
+                    Spacer()
+                    Text(appText(context.rangeDays == 30 ? "30 days" : "7 days", appLanguageRaw))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                HealthTrendBarChart(points: context.points, unit: context.unit, color: color)
+            }
+            .padding(14)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(appText("Daily Points", appLanguageRaw), systemImage: "list.bullet.rectangle")
+                    .font(.headline)
+                if context.points.isEmpty {
+                    Text(appText("No trend points loaded.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(context.points.suffix(30)) { point in
+                                HStack {
+                                    Text(point.date)
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("\(formatTrendNumber(point.value)) \(context.unit)")
+                                        .font(.callout.weight(.semibold).monospacedDigit())
+                                    if let count = point.count {
+                                        Text("(\(count))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 7)
+                                Divider()
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 180)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                if let onAddContext {
+                    Button(appText("Add Trend Context", appLanguageRaw)) {
+                        onAddContext()
+                    }
+                }
+                Spacer()
+                if let onAskAgent {
+                    Button {
+                        onAskAgent()
+                        dismiss()
+                    } label: {
+                        Label(appText("Ask Agent about Trend", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 720)
+        .frame(minHeight: 620)
+    }
+
+    private func trendSummaryTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(appText(title, appLanguageRaw))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func summaryValue(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return "\(formatTrendNumber(value)) \(context.unit)"
+    }
+}
+
+private struct HealthTrendBarChart: View {
+    let points: [DesktopHealthTrendPoint]
+    let unit: String
+    let color: Color
+
+    var body: some View {
+        if points.isEmpty {
+            ContentUnavailableView("No trend points loaded.", systemImage: "chart.bar.xaxis")
+                .frame(height: 180)
+        } else {
+            let visiblePoints = Array(points.suffix(30))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .bottom, spacing: 5) {
+                    ForEach(visiblePoints) { point in
+                        VStack(spacing: 6) {
+                            Spacer(minLength: 0)
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(color.gradient)
+                                .frame(height: 12 + CGFloat(normalized(point.value, in: visiblePoints)) * 132)
+                            Text(shortDate(point.date))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(-35))
+                                .frame(height: 24)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 174, alignment: .bottom)
+                        .help("\(point.date): \(formatTrendNumber(point.value)) \(unit)")
+                    }
+                }
+            }
+            .frame(minHeight: 190)
+        }
+    }
+
+    private func normalized(_ value: Double, in points: [DesktopHealthTrendPoint]) -> Double {
+        guard let maxValue = points.map(\.value).max(), maxValue > 0 else { return 0.08 }
+        return max(0.06, value / maxValue)
+    }
+
+    private func shortDate(_ date: String) -> String {
+        let components = date.split(separator: "-").map(String.init)
+        if components.count >= 2 {
+            return components.suffix(2).joined(separator: "/")
+        }
+        return date
+    }
+}
+
+private func healthTrendColor(_ kind: DesktopHealthTrendKind) -> Color {
+    switch kind {
+    case .diet: .orange
+    case .water: .cyan
+    case .supplements: .teal
+    case .weight: .green
+    case .bloodPressure: .pink
+    case .steps: .blue
+    }
+}
+
+private func formatTrendNumber(_ value: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.numberStyle = .decimal
+    formatter.usesGroupingSeparator = true
+    formatter.minimumFractionDigits = 0
+    formatter.maximumFractionDigits = value.rounded() == value ? 0 : 1
+    return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
 }
 
 private struct WorkspaceGuidanceCard: View {

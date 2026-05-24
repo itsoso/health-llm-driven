@@ -77,6 +77,42 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(item.payload["display_value"], "650 kcal")
     }
 
+    func testWorkspaceContextFactoryBuildsTrendContextForAgentHandoff() {
+        let trend = DesktopHealthTrendContext(
+            kind: .diet,
+            rangeDays: 7,
+            unit: "kcal",
+            total: 4200,
+            average: 600,
+            recordCount: 5,
+            points: [
+                DesktopHealthTrendPoint(date: "2026-05-18", value: 500, count: 1),
+                DesktopHealthTrendPoint(date: "2026-05-19", value: 700, count: 2)
+            ],
+            latestRecord: DesktopRecordMetric(
+                id: 625,
+                type: "diet",
+                title: "晚餐",
+                value: .int(650),
+                unit: "kcal",
+                category: "nutrition",
+                recordDate: "2026-05-19"
+            )
+        )
+
+        let item = DesktopWorkspaceContextFactory.contextItem(for: trend)
+        let prompt = DesktopWorkspaceContextFactory.prompt(for: trend)
+
+        XCTAssertEqual(item.sourceID, "health_trend:diet:7d")
+        XCTAssertEqual(item.sourceKind, "health_trend")
+        XCTAssertEqual(item.payload["range_days"], "7")
+        XCTAssertEqual(item.payload["points"], "2026-05-18=500 kcal(count 1); 2026-05-19=700 kcal(count 2)")
+        XCTAssertEqual(item.payload["latest_record"], "晚餐 · 650 kcal · 2026-05-19")
+        XCTAssertTrue(prompt.contains("饮食趋势"))
+        XCTAssertTrue(prompt.contains("7 天"))
+        XCTAssertTrue(prompt.contains("2026-05-18=500 kcal"))
+    }
+
     func testWorkspaceContextFactoryBuildsKnowledgeDocumentAndJobContext() {
         let document = KnowledgeDocumentSummary(
             docID: "dedao:100-ecc79a079a92",
