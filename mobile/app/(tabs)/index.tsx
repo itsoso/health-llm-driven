@@ -551,12 +551,12 @@ function HomeCommandHeader({
       ? improvementFocus.headline
       : '保持记录节奏';
   const focusKicker = criticalCount > 0
-    ? `今日洞察 · ${criticalCount} 个风险`
+    ? `今日优先 · ${criticalCount} 个风险`
     : planCount > 0
-      ? `今日洞察 · ${planCount} 个计划`
+      ? `今日优先 · ${planCount} 个计划`
       : activeDomainCount > 0
-        ? `今日洞察 · ${activeDomainCount} 个干预域`
-      : '今日洞察 · 观察中';
+        ? `今日优先 · ${activeDomainCount} 个干预域`
+      : '今日优先 · 观察中';
   const evidenceSummary = `${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
     hasClinical: clinicalReady,
@@ -618,7 +618,7 @@ function HomeCommandHeader({
               </View>
             </View>
             <View style={styles.commandMetricRail}>
-              <HomeText style={[styles.commandOutcomeLabel, { color: c.labelSecondary }]}>要改善</HomeText>
+              <HomeText style={[styles.commandOutcomeLabel, { color: c.labelSecondary }]}>目标</HomeText>
               {visibleLoopMetrics.map(metric => {
                 const color = c[metric.colorName];
                 return (
@@ -646,14 +646,14 @@ function HomeCommandHeader({
           <View style={styles.commandLoopRail}>
             <View style={styles.commandLoopChip}>
               <Ionicons name="options-outline" size={12} color={decisionColor} />
-              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>策略中</HomeText>
+              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>干预</HomeText>
               <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
                 {strategySummary}
               </HomeText>
             </View>
             <View style={styles.commandLoopChip}>
               <Ionicons name="eye-outline" size={12} color={c.labelTertiary} />
-              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>观察</HomeText>
+              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>验证</HomeText>
               <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
                 {watchSummary}
               </HomeText>
@@ -757,8 +757,8 @@ function HomeBackgroundPanel({
           <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.backgroundTitleBlock}>
-          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>后台运行</HomeText>
-          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>轨迹、反馈、环境、档案</HomeText>
+          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 正在跟踪</HomeText>
+          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>长期任务 / 实时反馈 / 个人档案</HomeText>
         </View>
         <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />

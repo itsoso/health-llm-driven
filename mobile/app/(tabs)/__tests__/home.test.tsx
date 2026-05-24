@@ -111,7 +111,7 @@ jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => {
 jest.mock('../../../components/dashboard/EnvironmentCard', () => {
   const { Text } = require('react-native');
   const MockEnvironmentCard = ({ compact, mode }: { compact?: boolean; mode?: string }) => (
-    <Text>{compact && mode === 'micro' ? '环境影响' : compact ? '环境背景' : '环境反馈'}</Text>
+    <Text>{compact && mode === 'micro' ? '环境证据' : compact ? '环境背景' : '环境反馈'}</Text>
   );
   MockEnvironmentCard.displayName = 'MockEnvironmentCard';
   return MockEnvironmentCard;
@@ -160,9 +160,9 @@ describe('TodayScreen', () => {
     expect(queryByText('健康 Agent 正在运行')).toBeNull();
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getByText('今日洞察 · 观察中')).toBeTruthy();
+    expect(getByText('今日优先 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
-    expect(getByText('要改善')).toBeTruthy();
+    expect(getByText('目标')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('长期档案')).toBeTruthy();
@@ -183,13 +183,13 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.some(text => /策略/.test(text))).toBe(true);
-    expect(textFlow.some(text => /观察/.test(text))).toBe(true);
+    expect(textFlow.some(text => /干预/.test(text))).toBe(true);
+    expect(textFlow.some(text => /验证/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /策略/.test(text)));
-    expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
     expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
@@ -221,9 +221,9 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
-    expect(getByText('今日洞察 · 1 个计划')).toBeTruthy();
-    expect(getByText('要改善')).toBeTruthy();
-    expect(getAllByText('观察').length).toBeGreaterThan(0);
+    expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
+    expect(getByText('目标')).toBeTruthy();
+    expect(getAllByText('验证').length).toBeGreaterThan(0);
     expect(getByText(/血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('表观遗传、穿戴已接入')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
@@ -236,7 +236,7 @@ describe('TodayScreen', () => {
 
     const { getByLabelText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('今日洞察 · 1 个风险')).toBeTruthy();
+    expect(getByText('今日优先 · 1 个风险')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
     expect(getByLabelText('打开下一步')).toBeTruthy();
@@ -246,8 +246,8 @@ describe('TodayScreen', () => {
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
     const { getAllByText, queryByText } = render(<TodayScreen />);
 
-    expect(getAllByText(/策略/).length).toBeGreaterThan(0);
-    expect(getAllByText(/观察/).length).toBeGreaterThan(0);
+    expect(getAllByText(/干预/).length).toBeGreaterThan(0);
+    expect(getAllByText(/验证/).length).toBeGreaterThan(0);
     expect(queryByText('Agent 干预闭环')).toBeNull();
     expect(queryByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeNull();
     expect(queryByText('长期任务')).toBeNull();
@@ -257,11 +257,11 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.some(text => /策略/.test(text))).toBe(true);
+    expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
-    expect(screen.getAllByText(/策略/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/观察/).length).toBeGreaterThan(0);
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
+    expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/验证/).length).toBeGreaterThan(0);
   });
 
   it('puts the agent workspace before action and outcome feedback sections', () => {
@@ -270,9 +270,9 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.some(text => /策略/.test(text))).toBe(true);
-    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /策略/.test(text)));
-    expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
+    expect(textFlow.some(text => /干预/.test(text))).toBe(true);
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
   });
 
   it('prioritizes intervention feedback before the follow-up queue and environment details', () => {
@@ -291,23 +291,23 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.some(text => /策略/.test(text))).toBe(true);
+    expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.indexOf('结果反馈')).toBe(-1);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('环境影响'));
+    expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('环境证据'));
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台运行')).toBeTruthy();
+    expect(getByText('Agent 正在跟踪')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(getByText('运行中')).toBeTruthy();
-    expect(getByText('环境影响')).toBeTruthy();
+    expect(getByText('环境证据')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
     expect(getByText('基因/检查/趋势')).toBeTruthy();
@@ -319,16 +319,16 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('后台运行')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 正在跟踪')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('反馈信号')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台运行')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('Agent 正在跟踪')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('反馈信号'));
-    expect(textFlow.indexOf('反馈信号')).toBeLessThan(textFlow.indexOf('环境影响'));
-    expect(textFlow.indexOf('环境影响')).toBeLessThan(textFlow.indexOf('长期档案'));
+    expect(textFlow.indexOf('反馈信号')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {
@@ -424,8 +424,8 @@ describe('TodayScreen', () => {
 
     const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getAllByText(/策略/).length).toBeGreaterThan(0);
-    expect(getByText('策略中')).toBeTruthy();
+    expect(getAllByText(/干预/).length).toBeGreaterThan(0);
+    expect(getByText('干预')).toBeTruthy();
     expect(getByText(/饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
@@ -532,8 +532,8 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
-    expect(getByText('今日洞察 · 2 个计划')).toBeTruthy();
-    expect(getByText('要改善')).toBeTruthy();
+    expect(getByText('今日优先 · 2 个计划')).toBeTruthy();
+    expect(getByText('目标')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
