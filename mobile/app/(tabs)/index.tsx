@@ -572,12 +572,16 @@ function HomeCommandHeader({
       ? improvementFocus.target
       : improvementFocus.target;
   const liveSignalSummary = buildLiveSignalSummary(twinSnapshot);
-  const agentInsight = `基于 ${evidenceLabel} 和 ${liveSignalSummary}，正在推动${improvementFocus.outcome}`;
-  const loopSummary = [
-    `判断 ${loopStrategy.diagnosisLabel}`,
-    `干预 ${activeDomainSummary || loopStrategy.interventionLabel}`,
-    `验证 ${loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/')}`,
-  ].join(' · ');
+  const evidenceSummary = `${evidenceLabel} · ${liveSignalSummary}`;
+  const agentStepItems = [
+    { key: 'diagnosis', label: '判断', value: loopStrategy.diagnosisLabel },
+    { key: 'intervention', label: '干预', value: activeDomainSummary || loopStrategy.interventionLabel },
+    {
+      key: 'verification',
+      label: '验证',
+      value: loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/'),
+    },
+  ] as const;
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -620,16 +624,25 @@ function HomeCommandHeader({
         </Text>
         <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
         <Text style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
-          {agentInsight}
+          {evidenceSummary}
         </Text>
       </Pressable>
 
       <View style={styles.commandOutcomeBlock}>
-        <View style={styles.commandOutcomeHeader}>
-          <Text style={[styles.commandOutcomeTitle, { color: c.labelPrimary }]}>结果反馈</Text>
-          <Text style={[styles.commandLoopSummary, { color: c.labelTertiary }]} numberOfLines={1}>
-            {loopSummary}
-          </Text>
+        <View style={[styles.agentStepRail, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+          {agentStepItems.map((item, index) => (
+            <React.Fragment key={item.key}>
+              <View style={styles.agentStepSegment}>
+                <Text style={[styles.agentStepLabel, { color: c.labelTertiary }]}>{item.label}</Text>
+                <Text style={[styles.agentStepValue, { color: c.labelPrimary }]} numberOfLines={1}>
+                  {item.value}
+                </Text>
+              </View>
+              {index < agentStepItems.length - 1 ? (
+                <Ionicons name="chevron-forward" size={11} color={c.labelTertiary} />
+              ) : null}
+            </React.Fragment>
+          ))}
         </View>
         <View style={styles.commandMetricGrid}>
           {loopMetrics.map(metric => {
@@ -1739,11 +1752,20 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(120, 120, 128, 0.16)',
     paddingTop: 8,
-    gap: 7,
+    gap: 8,
   },
-  commandOutcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  commandOutcomeTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  commandLoopSummary: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  agentStepRail: {
+    minHeight: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  agentStepSegment: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  agentStepLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  agentStepValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandMetricGrid: { flexDirection: 'row', gap: 6 },
   commandMetricTile: {
     flex: 1,

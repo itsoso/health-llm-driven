@@ -198,7 +198,7 @@ describe('TodayScreen', () => {
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getAllByText(/源画像/).length).toBeGreaterThan(0);
-    expect(getByText(/基于 .*源画像/)).toBeTruthy();
+    expect(getByText(/源画像 ·/)).toBeTruthy();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
     expect(queryByText('Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。')).toBeNull();
@@ -220,7 +220,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
-    expect(getByText(/夜间血氧、睡眠分和 HRV 改善/)).toBeTruthy();
+    expect(getByText('血氧/睡眠分')).toBeTruthy();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
@@ -274,6 +274,7 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.some(text => /判断/.test(text))).toBe(true);
+    expect(textFlow.indexOf('结果反馈')).toBe(-1);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
     expect(textFlow.indexOf('后续关注')).toBeGreaterThanOrEqual(0);
@@ -380,7 +381,8 @@ describe('TodayScreen', () => {
     const { getByText } = render(<TodayScreen />);
 
     expect(getByText(/判断/)).toBeTruthy();
-    expect(getByText(/干预 饮食\/睡眠\/运动 \+2/)).toBeTruthy();
+    expect(getByText('干预')).toBeTruthy();
+    expect(getByText('饮食/睡眠/运动 +2')).toBeTruthy();
   });
 
   it('opens outcome feedback surfaces from the agent summary', () => {
