@@ -219,7 +219,7 @@ describe('TodayScreen', () => {
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
     ];
 
-    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
+    const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
@@ -227,7 +227,7 @@ describe('TodayScreen', () => {
     expect(getAllByText(/验证/).length).toBeGreaterThan(0);
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
-    expect(queryByText(/画像校准/)).toBeNull();
+    expect(getByText(/画像校准/)).toBeTruthy();
   });
 
   it('turns critical risk into a concrete next step instead of only a status badge', () => {
@@ -305,7 +305,7 @@ describe('TodayScreen', () => {
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 正在跟踪')).toBeTruthy();
+    expect(getByText('Agent 后台任务')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(getByText('运行中')).toBeTruthy();
     expect(getByText('判断依据')).toBeTruthy();
@@ -323,14 +323,14 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 正在跟踪')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 后台任务')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('判断依据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 正在跟踪')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('Agent 后台任务')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('判断依据'));
     expect(textFlow.indexOf('判断依据')).toBeLessThan(textFlow.indexOf('身体反馈'));
     expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境证据'));

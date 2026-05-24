@@ -598,7 +598,7 @@ function HomeCommandHeader({
       <Pressable
         style={({ pressed }) => [
           styles.commandDecisionCard,
-          { backgroundColor: c.bgPrimary, borderColor: `${decisionColor}22`, opacity: pressed ? 0.78 : 1 },
+          { backgroundColor: decisionTint, borderColor: `${decisionColor}28`, opacity: pressed ? 0.78 : 1 },
         ]}
         onPress={onOpenFocus}
         accessibilityRole="button"
@@ -619,7 +619,7 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <View style={[styles.commandWorkflowPanel, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+      <View style={[styles.commandWorkflowPanel, { borderColor: c.separator }]}>
         <View style={styles.commandWorkflowRow}>
           <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>证据</HomeText>
           <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
@@ -742,21 +742,20 @@ function HomeBackgroundPanel({
 }) {
   const { c } = useTheme();
   return (
-    <View style={[styles.backgroundPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+    <View style={styles.backgroundPanel}>
       <View style={styles.backgroundHeader}>
         <View style={[styles.backgroundStatusIcon, { backgroundColor: c.brandLight }]}>
           <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.backgroundTitleBlock}>
-          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 正在跟踪</HomeText>
-          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>长期任务 / 实时反馈 / 个人档案</HomeText>
+          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 后台任务</HomeText>
+          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>巡检风险 / 校准证据 / 周期复盘</HomeText>
         </View>
         <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />
           <HomeText style={[styles.backgroundLiveText, { color: c.brand }]}>运行中</HomeText>
         </View>
       </View>
-      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
       <AgentFollowUpQueue
         snapshot={snapshot}
         loading={loading}
@@ -764,12 +763,12 @@ function HomeBackgroundPanel({
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
       />
-      <View style={[styles.evidenceChain, { backgroundColor: c.bgPrimary }]}>
+      <View style={[styles.evidenceChain, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
             <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>判断依据</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              反馈、环境和长期画像解释上方优先级
+              用反馈、环境和画像校准后台任务
             </HomeText>
           </View>
           <Pressable
@@ -1163,7 +1162,10 @@ function AgentFollowUpQueue({
   return (
     <Pressable
       onPress={onOpenQueue}
-      style={({ pressed }) => [styles.followUpCompactRow, { opacity: pressed ? 0.72 : 1 }]}
+      style={({ pressed }) => [
+        styles.followUpCompactRow,
+        { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+      ]}
       accessibilityRole="button"
       accessibilityLabel={queueTitle}
     >
@@ -1665,10 +1667,10 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 9,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1812,33 +1814,32 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandWorkflowPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    gap: 5,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 7,
+    gap: 3,
   },
   commandWorkflowRow: {
-    minHeight: 19,
+    minHeight: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 9,
   },
-  commandWorkflowLabel: { width: 48, fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandWorkflowValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '800' },
+  commandWorkflowLabel: { width: 46, fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandWorkflowValue: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 82,
+    minHeight: 78,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: 10,
+    borderRadius: radii.md,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   commandDecisionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1865,7 +1866,7 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 18, fontWeight: '800', lineHeight: 22, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 24,
     flexDirection: 'row',
@@ -2187,12 +2188,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 43,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 2,
-    paddingHorizontal: 2,
+    gap: 9,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
   },
   followUpHeader: {
     flexDirection: 'row',
@@ -2234,22 +2237,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   followUpRowIcon: {
-    width: 21,
-    height: 21,
-    borderRadius: 7,
+    width: 26,
+    height: 26,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
-  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  followUpRowDetail: { fontSize: 9, lineHeight: 11, fontWeight: '500' },
-  followUpRowRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpRowDetail: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
+  followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   evidenceChain: {
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    gap: 3,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    gap: 4,
   },
   evidenceChainHeader: {
     minHeight: 24,
@@ -2270,11 +2274,11 @@ const styles = StyleSheet.create({
   },
   evidenceAskText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   reviewCadencePanel: {
-    minHeight: 46,
+    minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
@@ -2290,21 +2294,18 @@ const styles = StyleSheet.create({
   reviewCadenceTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   reviewCadenceSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
   backgroundPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    gap: 4,
+    gap: 7,
   },
   backgroundHeader: {
-    minHeight: 34,
+    minHeight: 30,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
+    paddingHorizontal: 2,
   },
   backgroundStatusIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
