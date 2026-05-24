@@ -387,28 +387,16 @@ export default function TodayScreen() {
           criticalCount={criticalAlerts.length}
           planCount={activePlanCount}
           refreshing={isRefreshing}
-          onOpenFocus={() => (nextAction ? openPlanAction(nextAction) : router.push('/(tabs)/record' as any))}
+          riskTitle={criticalAlerts[0]?.title}
+          onOpenFocus={() => (
+            criticalAlerts.length > 0
+              ? router.push('/alerts' as any)
+              : nextAction
+                ? openPlanAction(nextAction)
+                : router.push('/(tabs)/record' as any)
+          )}
           onOpenAgent={() => router.push('/(tabs)/chat' as any)}
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
-        />
-
-        {criticalAlerts.length > 0 && (
-          <PriorityRiskStrip
-            alerts={criticalAlerts}
-            onPress={() => router.push('/alerts' as any)}
-          />
-        )}
-
-        <AgentWorkspacePanel
-          criticalCount={criticalAlerts.length}
-          planCount={activePlanCount}
-          refreshing={isRefreshing}
-          geneticHits={geneticStatsQuery.data?.hits}
-          progressTotal={progressStatsQuery.data?.total}
-          twinSnapshot={twinSnap}
-          domains={interventionDomains}
-          onPressDomain={(domain) => router.push(domain.route as any)}
-          onOpenAgent={openWorkspaceChat}
         />
 
         <View style={styles.section}>
@@ -451,6 +439,18 @@ export default function TodayScreen() {
           />
           <EnvironmentCard />
         </View>
+
+        <AgentWorkspacePanel
+          criticalCount={criticalAlerts.length}
+          planCount={activePlanCount}
+          refreshing={isRefreshing}
+          geneticHits={geneticStatsQuery.data?.hits}
+          progressTotal={progressStatsQuery.data?.total}
+          twinSnapshot={twinSnap}
+          domains={interventionDomains}
+          onPressDomain={(domain) => router.push(domain.route as any)}
+          onOpenAgent={openWorkspaceChat}
+        />
 
         <View style={styles.section}>
           <SectionHeader
@@ -520,6 +520,7 @@ function HomeCommandHeader({
   criticalCount,
   planCount,
   refreshing,
+  riskTitle,
   onOpenFocus,
   onOpenAgent,
   onOpenRecord,
@@ -527,6 +528,7 @@ function HomeCommandHeader({
   criticalCount: number;
   planCount: number;
   refreshing: boolean;
+  riskTitle?: string;
   onOpenFocus: () => void;
   onOpenAgent: () => void;
   onOpenRecord: () => void;
@@ -535,9 +537,16 @@ function HomeCommandHeader({
   const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
   const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
-  const headline = planCount > 0 ? `${planCount} 个干预待执行` : '保持记录节奏';
+  const primaryLabel = criticalCount > 0 ? '查看风险' : '问 Agent';
+  const primaryIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
+  const primaryAction = criticalCount > 0 ? onOpenFocus : onOpenAgent;
+  const headline = criticalCount > 0
+    ? `先处理 ${criticalCount} 个风险`
+    : planCount > 0
+      ? `今天 ${planCount} 件事`
+      : '保持记录节奏';
   const focusText = criticalCount > 0
-    ? '先看风险，再处理计划'
+    ? (riskTitle || '先确认风险，再处理今天的计划')
     : planCount > 0
       ? '按优先级完成今日计划'
       : '暂无硬性任务，保持记录节奏';
@@ -553,19 +562,13 @@ function HomeCommandHeader({
           <View style={styles.commandTitleBlock}>
             <View style={styles.commandStatusLine}>
               <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-              <View style={[styles.agentRunningPill, { backgroundColor: c.brandLight }]}>
-                <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
-                <Text style={[styles.agentRunningText, { color: c.brand }]}>Agent 运行中</Text>
-              </View>
               <Text style={[styles.commandSyncText, { color: c.labelTertiary }]}>{refreshing ? '同步中' : '已同步'}</Text>
             </View>
-            <View style={styles.commandFocusRow}>
-              <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
-              <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-                {headline}
-              </Text>
-            </View>
-            <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={1}>{focusText}</Text>
+            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
+            <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+              {headline}
+            </Text>
+            <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
           </View>
           <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -580,12 +583,12 @@ function HomeCommandHeader({
             styles.primaryAction,
             { backgroundColor: c.brand, opacity: pressed ? 0.86 : 1 },
           ]}
-          onPress={onOpenAgent}
+          onPress={primaryAction}
           accessibilityRole="button"
-          accessibilityLabel="打开健康 Agent"
+          accessibilityLabel={primaryLabel}
         >
-          <Ionicons name="sparkles-outline" size={17} color="#FFFFFF" />
-          <Text style={styles.primaryActionText}>问 Agent</Text>
+          <Ionicons name={primaryIcon} size={17} color="#FFFFFF" />
+          <Text style={styles.primaryActionText}>{primaryLabel}</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [
@@ -1325,39 +1328,6 @@ function classifyInterventionDomain(action: DailyPlanAction): InterventionDomain
   return null;
 }
 
-function PriorityRiskStrip({ alerts, onPress }: { alerts: SafetyAlert[]; onPress: () => void }) {
-  const { c } = useTheme();
-  const first = alerts[0];
-  const sev = getSeverityKey(first?.severity);
-  const color = sev === 'critical' ? c.red : c.amber;
-  return (
-    <TouchableOpacity
-      style={[styles.priorityRiskStrip, { backgroundColor: c.bgCard, borderColor: color }]}
-      onPress={onPress}
-      activeOpacity={0.75}
-      accessibilityRole="button"
-      accessibilityLabel={`查看 ${alerts.length} 条需要处理的风险`}
-    >
-      <View style={[styles.priorityRiskIcon, { backgroundColor: `${color}18` }]}>
-        <Ionicons name="warning-outline" size={18} color={color} />
-      </View>
-      <View style={styles.priorityRiskBody}>
-        <View style={styles.priorityRiskTop}>
-          <Text style={[styles.priorityRiskKicker, { color }]}>需要立即处理</Text>
-          <Text style={[styles.priorityRiskCount, { color }]}>{alerts.length} 条</Text>
-        </View>
-        <Text style={[styles.priorityRiskTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-          {first?.title ?? '查看风险'}
-        </Text>
-        <Text style={[styles.priorityRiskMeta, { color: c.labelSecondary }]} numberOfLines={1}>
-          {first?.message ?? '先确认风险, 再执行今天的计划'}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={color} />
-    </TouchableOpacity>
-  );
-}
-
 function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => void }) {
   const { c } = useTheme();
   const decided = !!card.user_decision;
@@ -1395,19 +1365,18 @@ function formatHomeDate(value: Date): string {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.lg },  // 110 = tab bar 83 + 缓冲
+  content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.md },  // 110 = tab bar 83 + 缓冲
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
   section: { gap: spacing.sm },
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.xs,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
   commandFocusArea: { gap: spacing.xs },
-  commandTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  commandTitleBlock: { flex: 1, gap: 3, minWidth: 0 },
+  commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
   commandStatusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   commandDate: { fontSize: 12, fontWeight: '700' },
   agentRunningPill: {
@@ -1421,15 +1390,15 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 12, fontWeight: '800' },
-  commandTitle: { flex: 1, minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
-  commandHint: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  commandFocusLabel: { fontSize: 13, fontWeight: '900' },
+  commandTitle: { minWidth: 0, fontSize: 24, fontWeight: '900', lineHeight: 30, letterSpacing: 0 },
+  commandHint: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: radii.full,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
@@ -1437,46 +1406,25 @@ const styles = StyleSheet.create({
   commandActions: { flexDirection: 'row', gap: spacing.sm },
   primaryAction: {
     flex: 1,
-    minHeight: 34,
-    borderRadius: radii.md,
+    minHeight: 44,
+    borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 7,
   },
-  primaryActionText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
   secondaryAction: {
-    minHeight: 34,
-    minWidth: 86,
-    borderRadius: radii.md,
+    minHeight: 44,
+    minWidth: 104,
+    borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
   },
-  secondaryActionText: { fontSize: 14, fontWeight: '700' },
-  priorityRiskStrip: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  priorityRiskIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  priorityRiskBody: { flex: 1, minWidth: 0, gap: 2 },
-  priorityRiskTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  priorityRiskKicker: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '800' },
-  priorityRiskCount: { fontSize: 12, fontWeight: '800' },
-  priorityRiskTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
-  priorityRiskMeta: { fontSize: 12, lineHeight: 16 },
+  secondaryActionText: { fontSize: 14, fontWeight: '800' },
   workspaceCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
