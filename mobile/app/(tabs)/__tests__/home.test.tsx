@@ -196,8 +196,9 @@ describe('TodayScreen', () => {
 
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getAllByText(/源画像/).length).toBeGreaterThan(0);
-    expect(getByText(/源画像 ·/)).toBeTruthy();
+    expect(getAllByText(/画像校准/).length).toBeGreaterThan(0);
+    expect(getByText(/画像校准 ·/)).toBeTruthy();
+    expect(queryByText(/源画像/)).toBeNull();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
     expect(queryByText('Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。')).toBeNull();
@@ -220,8 +221,8 @@ describe('TodayScreen', () => {
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
     expect(getByText('血氧/睡眠分')).toBeTruthy();
-    expect(getByText('2 源画像 · 表观/穿戴')).toBeTruthy();
-    expect(queryByText(/源画像 · 睡眠/)).toBeNull();
+    expect(getByText('画像校准 · 表观遗传/穿戴')).toBeTruthy();
+    expect(queryByText(/画像校准 · 睡眠/)).toBeNull();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {

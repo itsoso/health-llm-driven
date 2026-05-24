@@ -529,13 +529,6 @@ function HomeCommandHeader({
     || twinSnapshot.spo2_avg,
   );
   const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
-  const evidenceSourceCount = [
-    geneticHits != null,
-    true,
-    clinicalReady,
-    wearableReady,
-  ].filter(Boolean).length;
-  const evidenceLabel = `${evidenceSourceCount} 源画像`;
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
@@ -569,7 +562,7 @@ function HomeCommandHeader({
     : planCount > 0
       ? improvementFocus.target
       : improvementFocus.target;
-  const evidenceSummary = `${evidenceLabel} · ${buildEvidenceSourceSummary({
+  const evidenceSummary = `画像校准 · ${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
@@ -1601,7 +1594,7 @@ function buildEvidenceSourceSummary({
 }): string {
   const sources = [
     hasGenetic ? '基因' : null,
-    '表观',
+    '表观遗传',
     hasClinical ? '体检' : null,
     hasWearable ? '穿戴' : null,
   ].filter(Boolean);
