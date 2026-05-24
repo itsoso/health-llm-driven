@@ -40,10 +40,29 @@ public final class TodayViewModel {
         do {
             let payload = try await service.fetchBootstrap()
             bootstrap = payload
-            topActions = Array(payload.dailyPlan.actions.prefix(3))
+            topActions = payload.menuBarActions
             activeJobs = payload.activeJobs
         } catch {
             errorMessage = String(describing: error)
         }
+    }
+}
+
+private extension DesktopBootstrap {
+    var menuBarActions: [DailyPlanAction] {
+        let planActions = Array(dailyPlan.actions.prefix(3))
+        if !planActions.isEmpty {
+            return planActions
+        }
+        return actionCards
+            .sorted { ($0.priority ?? 0) > ($1.priority ?? 0) }
+            .prefix(3)
+            .map {
+                DailyPlanAction(
+                    actionKey: "action-card-\($0.id)",
+                    title: $0.title,
+                    domain: "action_card"
+                )
+            }
     }
 }

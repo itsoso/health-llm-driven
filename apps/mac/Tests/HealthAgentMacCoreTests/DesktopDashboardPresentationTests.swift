@@ -151,4 +151,35 @@ final class DesktopDashboardPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.inputInboxSummary.autoSavedCount, 3)
         XCTAssertEqual(presentation.inputInboxSummary.needsReviewCount, 1)
     }
+
+    func testDashboardPresentationFallsBackToActionCardsWhenDailyPlanActionsAreEmpty() {
+        let bootstrap = DesktopBootstrap(
+            user: DesktopUser(id: 3, name: "baokun", email: nil),
+            modelPreference: ModelPreference(llmModelID: "claude-opus-4.7"),
+            dailyPlan: DailyOperatingPlan(planDate: "2026-05-24", actions: []),
+            trajectory: TrajectorySummary(focusDomains: ["metabolic_health"]),
+            actionCards: [
+                ActionCardSummary(id: 24, title: "4–6 周复查血常规", status: "active", priority: 80),
+                ActionCardSummary(id: 26, title: "1 年随访肝血管瘤", status: "active", priority: 40),
+                ActionCardSummary(id: 23, title: "12 周补剂试验：5-MTHF", status: "active", priority: 30),
+                ActionCardSummary(id: 38, title: "7 天 deload：ACWR 1.8 → ≤ 1.0", status: "active", priority: 20),
+                ActionCardSummary(id: 21, title: "5 天睡眠修复", status: "active", priority: 12)
+            ],
+            recentMemory: [],
+            recentRecordsSummary: RecentRecordsSummary(
+                diet: DietRecordSummary(todayCount: 1, todayCalories: 450),
+                water: WaterRecordSummary(todayCount: 1, todayTotalMl: 500)
+            ),
+            activeJobs: []
+        )
+
+        let presentation = DesktopDashboardPresentation(bootstrap: bootstrap)
+
+        XCTAssertEqual(
+            presentation.actionRows.map(\.title),
+            ["4–6 周复查血常规", "1 年随访肝血管瘤", "12 周补剂试验：5-MTHF", "7 天 deload：ACWR 1.8 → ≤ 1.0"]
+        )
+        XCTAssertEqual(presentation.actionRows.map(\.value), ["P80", "P40", "P30", "P20"])
+        XCTAssertEqual(presentation.actionRows.map(\.subtitle), ["active", "active", "active", "active"])
+    }
 }

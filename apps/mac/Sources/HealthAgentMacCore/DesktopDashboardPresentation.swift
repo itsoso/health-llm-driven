@@ -30,17 +30,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         self.primaryMetrics = self.sevenDayMetrics
         self.wearableMetrics = DesktopDashboardPresentation.wearableMetrics(from: summary.latestGarmin)
         self.focusChips = Array((bootstrap.trajectory.focusDomains ?? []).prefix(5))
-        self.actionRows = bootstrap.dailyPlan.actions.prefix(4).map {
-            DesktopDashboardRow(
-                id: $0.id,
-                title: $0.title,
-                subtitle: $0.domain,
-                value: nil,
-                tone: "teal",
-                systemImage: "checkmark.circle.fill",
-                progress: nil
-            )
-        }
+        self.actionRows = DesktopDashboardPresentation.actionRows(from: bootstrap)
         self.recentRecordRows = (summary.recentRecords ?? []).prefix(8).map {
             DesktopDashboardRow(
                 id: "\($0.type)-\($0.id)",
@@ -85,6 +75,38 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         let date = bootstrap.recentRecordsSummary.date ?? bootstrap.dailyPlan.planDate
         let recordCount = bootstrap.recentRecordsSummary.recentRecords?.count ?? 0
         return "\(date) · \(bootstrap.actionCards.count) cards · \(bootstrap.recentMemory.count) memories · \(recordCount) recent records"
+    }
+
+    private static func actionRows(from bootstrap: DesktopBootstrap) -> [DesktopDashboardRow] {
+        let planActions = bootstrap.dailyPlan.actions.prefix(4).map {
+            DesktopDashboardRow(
+                id: $0.id,
+                title: $0.title,
+                subtitle: $0.domain,
+                value: nil,
+                tone: "teal",
+                systemImage: "checkmark.circle.fill",
+                progress: nil
+            )
+        }
+        if !planActions.isEmpty {
+            return Array(planActions)
+        }
+
+        return bootstrap.actionCards
+            .sorted { ($0.priority ?? 0) > ($1.priority ?? 0) }
+            .prefix(4)
+            .map {
+                DesktopDashboardRow(
+                    id: "action-card-\($0.id)",
+                    title: $0.title,
+                    subtitle: $0.status,
+                    value: $0.priority.map { "P\($0)" },
+                    tone: "teal",
+                    systemImage: "checkmark.seal.fill",
+                    progress: nil
+                )
+            }
     }
 
     private static func heroMetrics(from summary: RecentRecordsSummary) -> [DesktopDashboardMetric] {
