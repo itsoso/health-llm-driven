@@ -244,7 +244,7 @@ describe('TodayScreen', () => {
     expect(getByLabelText('问 Agent')).toBeTruthy();
   });
 
-  it('grounds the top diagnosis in this person wearable signals', () => {
+  it('grounds the top diagnosis with scannable personal signal chips', () => {
     mockSafetyAlerts = [
       { severity: 'high', title: '夜间血氧过低' },
     ];
@@ -256,9 +256,16 @@ describe('TodayScreen', () => {
       },
     };
 
-    const { getByText } = render(<TodayScreen />);
+    const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeTruthy();
+    expect(getByText('夜间血氧过低')).toBeTruthy();
+    expect(getByText('血氧')).toBeTruthy();
+    expect(getByText('93%')).toBeTruthy();
+    expect(getByText('睡眠分')).toBeTruthy();
+    expect(getByText('89')).toBeTruthy();
+    expect(getByText('HRV')).toBeTruthy();
+    expect(getByText('62ms')).toBeTruthy();
+    expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {

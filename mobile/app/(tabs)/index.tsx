@@ -96,6 +96,11 @@ interface OutcomeFeedbackMetric {
   route: string;
 }
 
+interface PersonalSignalChip {
+  label: string;
+  value: string;
+}
+
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
 }
@@ -566,7 +571,6 @@ function HomeCommandHeader({
   const primaryVerificationMetric = visibleLoopMetrics[0] ?? null;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
-  const evidenceSourceText = evidenceSummary.replace(/已接入$/, '');
   const interventionSummary = `${strategySummary} · ${nextStepActionText}`;
   const improvementSummary = verificationMetrics || watchSummary;
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
@@ -580,10 +584,8 @@ function HomeCommandHeader({
     || action?.why
     || action?.when
     || (planCount > 0 ? 'Agent 已把今天任务排成执行顺序。' : '补齐今天记录后，Agent 会重新排序干预。');
-  const personalSignalSummary = buildPersonalSignalSummary(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
-  const decisionSupport = personalSignalSummary
-    ? `${baseDecisionSupport} · ${personalSignalSummary}`
-    : baseDecisionSupport;
+  const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
+  const decisionSupport = baseDecisionSupport;
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -605,13 +607,13 @@ function HomeCommandHeader({
       <Pressable
         style={({ pressed }) => [
           styles.commandDecisionCard,
-          { backgroundColor: decisionTint, borderColor: `${decisionColor}28`, opacity: pressed ? 0.78 : 1 },
+          { backgroundColor: 'transparent', borderColor: 'transparent', opacity: pressed ? 0.78 : 1 },
         ]}
         onPress={onOpenFocus}
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <View style={[styles.commandDecisionIcon, { backgroundColor: c.bgCard }]}>
+        <View style={[styles.commandDecisionIcon, { backgroundColor: decisionTint }]}>
           <Ionicons name={decisionIcon} size={18} color={decisionColor} />
         </View>
         <View style={styles.commandDecisionText}>
@@ -622,22 +624,21 @@ function HomeCommandHeader({
           <HomeText style={[styles.commandDecisionSupport, { color: c.labelSecondary }]} numberOfLines={2}>
             {decisionSupport}
           </HomeText>
+          {personalSignalChips.length > 0 ? (
+            <View style={styles.commandSignalChipRail}>
+              {personalSignalChips.map(signal => (
+                <View key={`${signal.label}-${signal.value}`} style={[styles.commandPersonalSignalChip, { backgroundColor: c.bgCard }]}>
+                  <HomeText style={[styles.commandPersonalSignalLabel, { color: decisionColor }]}>{signal.label}</HomeText>
+                  <HomeText style={[styles.commandPersonalSignalValue, { color: c.labelSecondary }]}>{signal.value}</HomeText>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <View style={[styles.commandLoopPanel, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
-        <View style={styles.commandLoopHeaderLine}>
-          <View style={[styles.commandLoopIcon, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="analytics-outline" size={12} color={c.brand} />
-          </View>
-          <View style={styles.commandLoopTitleBlock}>
-            <HomeText style={[styles.commandLoopTitleText, { color: c.labelPrimary }]}>干预闭环</HomeText>
-            <HomeText style={[styles.commandLoopEvidenceText, { color: c.labelTertiary }]} numberOfLines={1}>
-              基于 {evidenceSourceText}
-            </HomeText>
-          </View>
-        </View>
+      <View style={[styles.commandLoopPanel, { backgroundColor: c.bgPrimary }]}>
         <Pressable
           onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
           style={({ pressed }) => [
@@ -649,8 +650,12 @@ function HomeCommandHeader({
             primaryVerificationMetric
               ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
               : '查看验证目标'
-          }
+            }
         >
+          <View style={[styles.commandLoopBadge, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="analytics-outline" size={11} color={c.brand} />
+            <HomeText style={[styles.commandLoopTitleText, { color: c.brand }]}>干预闭环</HomeText>
+          </View>
           <View style={styles.commandLoopSegment}>
             <HomeText style={[styles.commandLoopSegmentLabel, { color: c.green }]}>干预</HomeText>
             <HomeText style={[styles.commandLoopSegmentValue, { color: c.labelSecondary }]} numberOfLines={1}>
@@ -782,7 +787,7 @@ function HomeBackgroundPanel({
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
       />
-      <View style={[styles.evidenceChain, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+      <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
             <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>结果校准</HomeText>
@@ -1433,15 +1438,15 @@ function buildHomeNextStepLabel({
   return '下一步：补齐今天记录，Agent 再排干预';
 }
 
-function buildPersonalSignalSummary(
+function buildPersonalSignalChips(
   twinSnapshot: TwinSnapshot,
   contextText: string,
-): string {
+): PersonalSignalChip[] {
   const context = contextText.toLowerCase();
-  const picked: string[] = [];
+  const picked: PersonalSignalChip[] = [];
   const add = (label: string, value?: string | null) => {
     if (!value || picked.length >= 3) return;
-    picked.push(`${label} ${value}`);
+    picked.push({ label, value });
   };
 
   const sleepSignals = () => {
@@ -1479,7 +1484,7 @@ function buildPersonalSignalSummary(
     pressureSignals();
   }
 
-  return picked.join(' · ');
+  return picked;
 }
 
 function buildOutcomeFeedbackMetric(
@@ -1887,11 +1892,9 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandLoopPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 7,
-    gap: 6,
   },
   commandLoopHeaderLine: {
     minHeight: 22,
@@ -1916,10 +1919,18 @@ const styles = StyleSheet.create({
   commandLoopTitleText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   commandLoopEvidenceText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandLoopStrip: {
-    minHeight: 34,
+    minHeight: 36,
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'center',
     gap: 8,
+  },
+  commandLoopBadge: {
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   commandLoopSegment: {
     flex: 1,
@@ -1930,14 +1941,14 @@ const styles = StyleSheet.create({
   commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 78,
+    minHeight: 72,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
+    paddingHorizontal: 2,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 9,
   },
   commandDecisionIcon: {
     width: 34,
@@ -1948,6 +1959,24 @@ const styles = StyleSheet.create({
   },
   commandDecisionText: { flex: 1, minWidth: 0, gap: 3 },
   commandDecisionSupport: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
+  commandSignalChipRail: {
+    minHeight: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 5,
+    paddingTop: 2,
+  },
+  commandPersonalSignalChip: {
+    minHeight: 20,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
   commandDecisionRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
@@ -2354,9 +2383,9 @@ const styles = StyleSheet.create({
   evidenceChain: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    gap: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    gap: 7,
   },
   evidenceChainHeader: {
     minHeight: 24,
