@@ -14,7 +14,7 @@ import api from '../../services/api';
 import { useTheme } from '../../hooks/useTheme';
 import { spacing, radii } from '../../constants/theme';
 import AgentFeedbackLink from '../agent/AgentFeedbackLink';
-import { createEnvironmentAgentContext } from '../../utils/agentContext';
+import { createEnvironmentAgentContext, pushChatWithContext } from '../../utils/agentContext';
 
 interface WeatherInner {
   available?: boolean;
@@ -53,6 +53,10 @@ interface ProfileLocation {
   detected_location?: { city: string | null; region: string | null } | null;
 }
 
+interface EnvironmentCardProps {
+  compact?: boolean;
+}
+
 function aqiColor(aqi: number | undefined): string {
   if (aqi == null) return '#999';
   if (aqi <= 50) return '#30D158';
@@ -71,7 +75,7 @@ function aqiLabel(aqi: number | undefined): string {
   return '重度';
 }
 
-export default function EnvironmentCard() {
+export default function EnvironmentCard({ compact = false }: EnvironmentCardProps) {
   const router = useRouter();
   const { c } = useTheme();
 
@@ -146,6 +150,81 @@ export default function EnvironmentCard() {
 
   const weatherDesc = w?.weather || '';
   const aqi = a?.aqi;
+  const envContext = createEnvironmentAgentContext({
+    weather: w ?? null,
+    airQuality: a ?? null,
+    forecast: forecastQ.data ?? null,
+    location: loc ?? null,
+  });
+  const locationLabel = loc?.city
+    ? (loc.region && !loc.region.includes(loc.city) ? `${loc.region} · ${loc.city}` : loc.city)
+    : '当前环境';
+  const aqiText = `空气 ${aqiLabel(aqi)}`;
+  const weatherLine = [
+    w?.temperature != null ? `${Math.round(w.temperature)}°` : null,
+    weatherDesc || null,
+    aqiText,
+    w?.humidity != null ? `湿度 ${w.humidity}%` : null,
+  ].filter(Boolean).join(' · ');
+  const caution = aqi != null && aqi > 150 ? '空气差，户外改室内或降低强度' : null;
+
+  if (compact) {
+    return (
+      <View style={[styles.compactCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+        <View style={styles.compactMainRow}>
+          <TouchableOpacity
+            style={styles.compactLocation}
+            onPress={() => router.push('/location' as any)}
+            accessibilityLabel="设置当前位置"
+          >
+            <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
+            <Text style={[styles.compactLocationText, { color: c.labelSecondary }]} numberOfLines={1}>
+              {locationLabel}
+            </Text>
+          </TouchableOpacity>
+          <View
+            style={[
+              styles.compactAqiPill,
+              { backgroundColor: `${aqiColor(aqi)}18`, borderColor: `${aqiColor(aqi)}44` },
+            ]}
+          >
+            <View style={[styles.compactAqiDot, { backgroundColor: aqiColor(aqi) }]} />
+            <Text style={[styles.compactAqiText, { color: aqiColor(aqi) }]}>{aqiText}</Text>
+          </View>
+        </View>
+
+        <View style={styles.compactBodyRow}>
+          <View style={styles.compactSummaryBlock}>
+            <Text style={[styles.compactTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+              环境背景
+            </Text>
+            <Text style={[styles.compactSummary, { color: c.labelSecondary }]} numberOfLines={1}>
+              {caution ?? (weatherLine || '天气和空气质量同步中')}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.compactAgentButton, { backgroundColor: c.brandLight }]}
+            onPress={() => pushChatWithContext(router, {
+              prompt: '请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。',
+              context: envContext,
+              badge: loc?.city ? `${loc.city}环境` : '当前环境',
+            })}
+            accessibilityLabel="让 Agent 调整今天户外安排"
+          >
+            <Ionicons name="sparkles-outline" size={14} color={c.brand} />
+            <Text style={[styles.compactAgentText, { color: c.brand }]}>调整</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.compactRunButton, { borderColor: c.separator, backgroundColor: c.bgPrimary }]}
+            onPress={() => router.push('/live-run' as any)}
+            accessibilityLabel="开始跑步"
+          >
+            <Ionicons name="play-outline" size={15} color={c.labelSecondary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -155,7 +234,7 @@ export default function EnvironmentCard() {
           <TouchableOpacity style={styles.locTouch} onPress={() => router.push('/location' as any)}>
             <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
             <Text style={[styles.locText, { color: c.labelSecondary }]} numberOfLines={1}>
-              {loc.region && !loc.region.includes(loc.city) ? `${loc.region} · ${loc.city}` : loc.city}
+              {locationLabel}
             </Text>
             <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
           </TouchableOpacity>
@@ -217,12 +296,7 @@ export default function EnvironmentCard() {
         label="跟 Agent 调整今天户外安排"
         accessibilityLabel="跟 Agent 调整今天户外安排"
         prompt="请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。"
-        context={createEnvironmentAgentContext({
-          weather: w ?? null,
-          airQuality: a ?? null,
-          forecast: forecastQ.data ?? null,
-          location: loc ?? null,
-        })}
+        context={envContext}
         badge={loc?.city ? `${loc.city}环境` : '当前环境'}
       />
 
@@ -248,6 +322,60 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.md,
     gap: spacing.md,
+  },
+  compactCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 11,
+    gap: 9,
+  },
+  compactMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  compactLocation: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  compactLocationText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '700' },
+  compactAqiPill: {
+    minHeight: 25,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  compactAqiDot: { width: 6, height: 6, borderRadius: 3 },
+  compactAqiText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  compactBodyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  compactSummaryBlock: { flex: 1, minWidth: 0, gap: 2 },
+  compactTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  compactSummary: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  compactAgentButton: {
+    minHeight: 32,
+    borderRadius: radii.full,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  compactAgentText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  compactRunButton: {
+    width: 34,
+    height: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   locRow: {
     flexDirection: 'row', alignItems: 'center', gap: 4,

@@ -443,7 +443,7 @@ export default function TodayScreen() {
             onOpenTrajectory={openTrajectoryChat}
             onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           />
-          <EnvironmentCard />
+          <EnvironmentCard compact />
         </View>
 
         <CompactShortcutSection
@@ -538,7 +538,7 @@ function HomeCommandHeader({
     clinicalReady,
     wearableReady,
   ].filter(Boolean).length;
-  const evidenceLabel = `${evidenceSourceCount}源画像`;
+  const evidenceLabel = `${evidenceSourceCount} 源画像`;
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
@@ -708,8 +708,22 @@ function CompactShortcutSection({
 }) {
   const { c } = useTheme();
   return (
-    <View style={styles.compactSection}>
-      <SectionHeader title="更多入口" subtitle="常用路径" action="全部" onPress={onOpenAll} />
+    <View style={[styles.shortcutCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.shortcutHeader}>
+        <View style={styles.shortcutHeaderText}>
+          <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>更多入口</Text>
+          <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>低频数据先收起</Text>
+        </View>
+        <Pressable
+          onPress={onOpenAll}
+          style={({ pressed }) => [styles.shortcutAllButton, { opacity: pressed ? 0.65 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="查看全部入口"
+        >
+          <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
+          <Ionicons name="chevron-forward" size={13} color={c.brand} />
+        </Pressable>
+      </View>
       <View style={styles.shortcutRail}>
         {shortcuts.map(item => (
           <Pressable
@@ -717,7 +731,7 @@ function CompactShortcutSection({
             onPress={item.onPress}
             style={({ pressed }) => [
               styles.shortcutPill,
-              { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+              { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`${item.label} ${item.value}`}
@@ -967,7 +981,7 @@ function AgentFollowUpQueue({
           <Ionicons name="git-branch-outline" size={17} color={c.purple} />
         </View>
         <View style={styles.followUpTitleBlock}>
-          <Text style={[styles.followUpTitle, { color: c.labelPrimary }]}>Agent 后续队列</Text>
+          <Text style={[styles.followUpTitle, { color: c.labelPrimary }]}>后续关注</Text>
           <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
         </View>
         <View style={[styles.followUpCountPill, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
@@ -1159,39 +1173,6 @@ function FollowUpPlainRow({
   }
 
   return <View style={styles.followUpRow}>{content}</View>;
-}
-
-function SectionHeader({
-  title,
-  subtitle,
-  action,
-  onPress,
-}: {
-  title: string;
-  subtitle?: string;
-  action?: string;
-  onPress?: () => void;
-}) {
-  const { c } = useTheme();
-  return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionHeaderText}>
-        <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>{title}</Text>
-        {subtitle ? <Text style={[styles.sectionSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text> : null}
-      </View>
-      {action && onPress ? (
-        <Pressable
-          onPress={onPress}
-          style={({ pressed }) => [styles.sectionAction, { opacity: pressed ? 0.65 : 1 }]}
-          accessibilityRole="button"
-          accessibilityLabel={action}
-        >
-          <Text style={[styles.sectionActionText, { color: c.brand }]}>{action}</Text>
-          <Ionicons name="chevron-forward" size={13} color={c.brand} />
-        </Pressable>
-      ) : null}
-    </View>
-  );
 }
 
 function isBodyMeasurementAction(action: DailyPlanAction): boolean {
@@ -1725,11 +1706,11 @@ const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.md,
     paddingTop: 11,
-    paddingBottom: spacing.sm,
-    gap: 9,
+    paddingBottom: 10,
+    gap: 8,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1757,32 +1738,34 @@ const styles = StyleSheet.create({
   commandOutcomeBlock: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(120, 120, 128, 0.16)',
-    paddingTop: 9,
-    gap: 8,
+    paddingTop: 8,
+    gap: 7,
   },
   commandOutcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   commandOutcomeTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
   commandLoopSummary: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700' },
-  commandMetricGrid: { flexDirection: 'row', gap: spacing.xs },
+  commandMetricGrid: { flexDirection: 'row', gap: 6 },
   commandMetricTile: {
     flex: 1,
     minWidth: 0,
-    minHeight: 52,
+    minHeight: 38,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    gap: 5,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   commandMetricIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 7,
+    width: 21,
+    height: 21,
+    borderRadius: 10.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandMetricTextBlock: { minWidth: 0, gap: 1 },
-  commandMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandMetricTextBlock: { flex: 1, minWidth: 0, gap: 0 },
+  commandMetricLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandMetricValue: { fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1808,7 +1791,7 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 21, fontWeight: '800', lineHeight: 27, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 20, fontWeight: '800', lineHeight: 26, letterSpacing: 0 },
   commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
   statusPill: {
     flexDirection: 'row',
@@ -1823,7 +1806,7 @@ const styles = StyleSheet.create({
   commandActions: { flexDirection: 'row', gap: spacing.sm },
   primaryAction: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 38,
     borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1832,7 +1815,7 @@ const styles = StyleSheet.create({
   },
   primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 40,
+    minHeight: 38,
     minWidth: 96,
     borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
@@ -2055,12 +2038,6 @@ const styles = StyleSheet.create({
   executionNextText: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontWeight: '800' },
   executionNextMetric: { maxWidth: 52, fontSize: 11, lineHeight: 13, fontWeight: '700' },
   executionEmptyText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  sectionHeaderText: { flex: 1, gap: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: '600' },
-  sectionSubtitle: { fontSize: 12, fontWeight: '500' },
-  sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
-  sectionActionText: { fontSize: 13, fontWeight: '700' },
   loopCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
@@ -2187,21 +2164,37 @@ const styles = StyleSheet.create({
   followUpRowTitle: { flexShrink: 1, fontSize: 14, lineHeight: 18, fontWeight: '800' },
   followUpRowDetail: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
   followUpRowRight: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  compactSection: { gap: spacing.sm },
-  shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  shortcutPill: {
-    width: '48.5%',
-    minHeight: 58,
+  shortcutCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    gap: 10,
+  },
+  shortcutHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  shortcutHeaderText: { flex: 1, minWidth: 0, gap: 2 },
+  shortcutTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
+  shortcutSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  shortcutAllButton: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  shortcutAllText: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  shortcutPill: {
+    width: '48.95%',
+    minHeight: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   shortcutIcon: {
-    width: 30, height: 30, borderRadius: 9,
+    width: 28, height: 28, borderRadius: 9,
     alignItems: 'center', justifyContent: 'center',
   },
   shortcutTextBlock: { flex: 1, minWidth: 0 },

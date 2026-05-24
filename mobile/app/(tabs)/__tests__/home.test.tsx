@@ -110,7 +110,9 @@ jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => {
 });
 jest.mock('../../../components/dashboard/EnvironmentCard', () => {
   const { Text } = require('react-native');
-  const MockEnvironmentCard = () => <Text>环境反馈</Text>;
+  const MockEnvironmentCard = ({ compact }: { compact?: boolean }) => (
+    <Text>{compact ? '环境背景' : '环境反馈'}</Text>
+  );
   MockEnvironmentCard.displayName = 'MockEnvironmentCard';
   return MockEnvironmentCard;
 });
@@ -182,12 +184,12 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.some(text => /验证/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后续关注')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /判断/.test(text)));
     expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
-    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
-    expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('后续关注'));
+    expect(textFlow.indexOf('后续关注')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
   it('frames the home feed as a background health agent workspace', () => {
@@ -274,10 +276,18 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /判断/.test(text))).toBe(true);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
-    expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境反馈')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
-    expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('环境反馈'));
+    expect(textFlow.indexOf('后续关注')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('环境背景')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('后续关注'));
+    expect(textFlow.indexOf('后续关注')).toBeLessThan(textFlow.indexOf('环境背景'));
+  });
+
+  it('uses compact environment and shortcut sections to reduce home card clutter', () => {
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('环境背景')).toBeTruthy();
+    expect(queryByText('环境反馈')).toBeNull();
+    expect(getByText('低频数据先收起')).toBeTruthy();
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {
