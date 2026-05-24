@@ -761,9 +761,9 @@ function HomeBackgroundPanel({
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>指标回流</HomeText>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>正在验证</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              验证干预是否有效
+              这些指标会反馈干预是否有效
             </HomeText>
           </View>
           <Pressable
@@ -793,11 +793,8 @@ function HomeBackgroundPanel({
         weeklyAdvice={weeklyAdvice}
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
-      />
-      <HomeReviewCadencePanel
         feedbackMetrics={feedbackMetrics}
         planCount={planCount}
-        onOpenAgent={onOpenAgent}
       />
     </View>
   );
@@ -894,57 +891,22 @@ function CompactArchiveStrip({
   );
 }
 
-function HomeReviewCadencePanel({
-  feedbackMetrics,
-  planCount,
-  onOpenAgent,
-}: {
-  feedbackMetrics: OutcomeFeedbackMetric[];
-  planCount: number;
-  onOpenAgent: () => void;
-}) {
-  const { c } = useTheme();
-  const reviewTargets = feedbackMetrics
-    .slice(0, 3)
-    .map(metric => metric.label)
-    .join(' / ') || '睡眠 / 血氧 / 体成分';
-  const planLabel = planCount > 0 ? `${planCount} 个干预执行中` : '等待今天记录补齐';
-  return (
-    <Pressable
-      onPress={onOpenAgent}
-      style={({ pressed }) => [
-        styles.reviewCadencePanel,
-        { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.74 : 1 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel="查看下次复盘"
-    >
-      <View style={[styles.reviewCadenceIcon, { backgroundColor: c.brandLight }]}>
-        <Ionicons name="calendar-outline" size={13} color={c.brand} />
-      </View>
-      <View style={styles.reviewCadenceTextBlock}>
-        <HomeText style={[styles.reviewCadenceTitle, { color: c.labelPrimary }]}>下次复盘</HomeText>
-        <HomeText style={[styles.reviewCadenceSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
-          周日晚自动看 {reviewTargets}，当前 {planLabel}
-        </HomeText>
-      </View>
-      <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
-    </Pressable>
-  );
-}
-
 function AgentFollowUpQueue({
   snapshot,
   loading,
   weeklyAdvice,
   onOpenTrajectory,
   onOpenAdvice,
+  feedbackMetrics,
+  planCount,
 }: {
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
   weeklyAdvice: ActionCard[];
   onOpenTrajectory: () => void;
   onOpenAdvice: (card: ActionCard) => void;
+  feedbackMetrics: OutcomeFeedbackMetric[];
+  planCount: number;
 }) {
   const { c } = useTheme();
   const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
@@ -1003,6 +965,11 @@ function AgentFollowUpQueue({
   const onOpenQueue = showPrimaryAdvice && primaryAdvice
     ? () => onOpenAdvice(primaryAdvice)
     : onOpenTrajectory;
+  const reviewTargets = feedbackMetrics
+    .slice(0, 3)
+    .map(metric => metric.label)
+    .join(' / ') || '睡眠 / 血氧 / 体成分';
+  const planLabel = planCount > 0 ? `${planCount} 个干预执行中` : '等待今天记录补齐';
 
   return (
     <Pressable
@@ -1028,6 +995,12 @@ function AgentFollowUpQueue({
         <HomeText style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueDetail}
         </HomeText>
+        <View style={styles.followUpReviewLine}>
+          <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
+          <HomeText style={[styles.followUpReviewText, { color: c.labelTertiary }]} numberOfLines={1}>
+            下次复盘 · 周日晚看 {reviewTargets}，当前 {planLabel}
+          </HomeText>
+        </View>
       </View>
       <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</HomeText>
     </Pressable>
@@ -2086,11 +2059,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 52,
+    minHeight: 68,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
@@ -2145,6 +2118,14 @@ const styles = StyleSheet.create({
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
   followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
   followUpRowDetail: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
+  followUpReviewLine: {
+    minHeight: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: 1,
+  },
+  followUpReviewText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
   followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   evidenceChain: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -2171,26 +2152,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   evidenceAskText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  reviewCadencePanel: {
-    minHeight: 44,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  reviewCadenceIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewCadenceTextBlock: { flex: 1, minWidth: 0, gap: 1 },
-  reviewCadenceTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  reviewCadenceSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
   backgroundPanel: {
     gap: 7,
   },
@@ -2261,13 +2222,16 @@ const styles = StyleSheet.create({
   agentRuntimeLiveDot: { width: 5, height: 5, borderRadius: 2.5 },
   agentRuntimeLiveText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   calibrationContextRail: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
     gap: 6,
   },
   calibrationContextChip: {
+    flex: 1,
     minWidth: 0,
-    minHeight: 38,
+    minHeight: 42,
     borderRadius: radii.md,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 5,
     justifyContent: 'center',
   },
@@ -2279,10 +2243,11 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   shortcutStrip: {
+    flex: 1,
     minWidth: 0,
-    minHeight: 38,
+    minHeight: 42,
     borderRadius: radii.md,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',

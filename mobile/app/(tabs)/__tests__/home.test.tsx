@@ -166,7 +166,7 @@ describe('TodayScreen', () => {
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('个人画像')).toBeTruthy();
-    expect(getByText('下次复盘')).toBeTruthy();
+    expect(getByText(/下次复盘/)).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
@@ -190,13 +190,13 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台观察'));
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
-    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('个人画像'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
+    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
@@ -233,7 +233,7 @@ describe('TodayScreen', () => {
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
     expect(getByText('后台观察')).toBeTruthy();
-    expect(getByText('指标回流')).toBeTruthy();
+    expect(getByText('正在验证')).toBeTruthy();
   });
 
   it('turns critical risk into a concrete next step instead of only a status badge', () => {
@@ -304,11 +304,11 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
     expect(screen.queryByText('结果校准')).toBeNull();
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
-    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
+    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(screen.queryByText('Agent 后台任务')).toBeNull();
   });
 
@@ -399,7 +399,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
@@ -412,8 +412,8 @@ describe('TodayScreen', () => {
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
     expect(getByText('后台观察')).toBeTruthy();
-    expect(getByText('指标回流')).toBeTruthy();
-    expect(getByText('验证干预是否有效')).toBeTruthy();
+    expect(getByText('正在验证')).toBeTruthy();
+    expect(getByText('这些指标会反馈干预是否有效')).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
     expect(getByText('环境证据')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
@@ -434,11 +434,11 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
-    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
+    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
@@ -452,17 +452,18 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('下次复盘')).toBeGreaterThanOrEqual(0);
+    const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
+    expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
-    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
+    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('下次复盘'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(reviewIndex);
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {
