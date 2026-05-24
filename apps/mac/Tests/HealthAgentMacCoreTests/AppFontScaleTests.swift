@@ -26,6 +26,16 @@ final class AppFontScaleTests: XCTestCase {
         XCTAssertNil(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "0", command: true, control: true))
     }
 
+    func testFontScaleKeyboardShortcutsMapMacKeyCodesWhenCharactersAreUnreliable() {
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "", keyCode: 24, command: true), .increase)
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "", keyCode: 69, command: true), .increase)
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "", keyCode: 27, command: true), .decrease)
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "", keyCode: 29, command: true), .reset)
+
+        XCTAssertNil(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "", keyCode: 24, command: false))
+        XCTAssertNil(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "", keyCode: 24, command: true, option: true))
+    }
+
     func testFontScaleKeyboardShortcutAppliesToScale() {
         XCTAssertEqual(AppFontScaleKeyboardShortcut.increase.apply(to: AppFontScale(level: 0)).level, 1)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.decrease.apply(to: AppFontScale(level: 0)).level, -1)

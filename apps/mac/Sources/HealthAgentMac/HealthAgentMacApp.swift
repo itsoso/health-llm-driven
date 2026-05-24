@@ -52,7 +52,7 @@ struct HealthAgentMacApp: App {
                 Button(appText("Increase Font Size", appLanguageRaw)) {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).increased().level
                 }
-                .keyboardShortcut("+", modifiers: [.command])
+                .keyboardShortcut("=", modifiers: [.command])
                 Button(appText("Decrease Font Size", appLanguageRaw)) {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).decreased().level
                 }
@@ -155,6 +155,7 @@ private struct FontScaleKeyboardShortcutBridge: NSViewRepresentable {
                       let key = event.charactersIgnoringModifiers?.lowercased(),
                       let action = AppFontScaleKeyboardShortcut.action(
                         forKeyEquivalent: key,
+                        keyCode: event.keyCode,
                         command: event.modifierFlags.contains(.command),
                         shift: event.modifierFlags.contains(.shift),
                         option: event.modifierFlags.contains(.option),

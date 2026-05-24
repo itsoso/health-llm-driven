@@ -43,6 +43,7 @@ public enum AppFontScaleKeyboardShortcut: Equatable, Sendable {
 
     public static func action(
         forKeyEquivalent keyEquivalent: String,
+        keyCode: UInt16? = nil,
         command: Bool,
         shift: Bool = false,
         option: Bool = false,
@@ -56,6 +57,17 @@ public enum AppFontScaleKeyboardShortcut: Equatable, Sendable {
         case "-":
             return .decrease
         case "0":
+            return .reset
+        default:
+            break
+        }
+
+        switch keyCode {
+        case 24, 69:
+            return .increase
+        case 27, 78:
+            return .decrease
+        case 29, 82:
             return .reset
         default:
             return nil
