@@ -4,7 +4,7 @@
  * 设计 (Agent Native Mobile First):
  *   1. 首屏先回答 Agent 正在后台做什么.
  *   2. 再给出今天最该执行的一步.
- *   3. 最后下沉身体反馈、本周建议和长期档案.
+ *   3. 最后下沉身体反馈、本周建议和个人画像.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -773,12 +773,17 @@ function HomeBackgroundPanel({
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
       />
-      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
-      <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
-      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
-      <EnvironmentCard compact mode="micro" />
-      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
-      <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
+      <View style={[styles.evidenceChain, { backgroundColor: c.bgPrimary }]}>
+        <View style={styles.evidenceChainHeader}>
+          <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>判断依据</HomeText>
+          <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
+            反馈、环境和长期画像解释上方优先级
+          </HomeText>
+        </View>
+        <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
+        <EnvironmentCard compact mode="micro" />
+        <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
+      </View>
     </View>
   );
 }
@@ -805,13 +810,13 @@ function HomeBodyFeedbackPanel({
       onPress={() => onOpenMetric(primaryMetric.route)}
       style={({ pressed }) => [styles.bodyFeedbackCompactRow, { opacity: pressed ? 0.72 : 1 }]}
       accessibilityRole="button"
-      accessibilityLabel={`反馈信号 ${primaryMetric.label} ${primaryMetric.value}`}
+      accessibilityLabel={`身体反馈 ${primaryMetric.label} ${primaryMetric.value}`}
     >
       <View style={[styles.bodyFeedbackIcon, { backgroundColor: c[primaryMetric.tintName] }]}>
         <Ionicons name={primaryMetric.icon} size={13} color={primaryColor} />
       </View>
       <View style={styles.bodyFeedbackTextBlock}>
-        <HomeText style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>反馈信号</HomeText>
+        <HomeText style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>身体反馈</HomeText>
         <HomeText style={[styles.bodyFeedbackSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
           {primaryMetric.label} {primaryMetric.value}{secondarySummary ? ` · ${secondarySummary}` : ''}
         </HomeText>
@@ -839,7 +844,7 @@ function CompactArchiveStrip({
   return (
     <View style={styles.shortcutStrip}>
       <View style={styles.shortcutHeaderText}>
-        <HomeText style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</HomeText>
+        <HomeText style={[styles.shortcutTitle, { color: c.labelPrimary }]}>个人画像</HomeText>
         <HomeText style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</HomeText>
       </View>
       <View style={styles.shortcutRail}>
@@ -868,7 +873,7 @@ function CompactArchiveStrip({
         onPress={onOpenAll}
         style={({ pressed }) => [styles.shortcutAllButton, { opacity: pressed ? 0.65 : 1 }]}
         accessibilityRole="button"
-        accessibilityLabel="查看全部长期档案"
+        accessibilityLabel="查看全部个人画像"
       >
         <HomeText style={[styles.shortcutAllText, { color: c.brand }]}>全部</HomeText>
         <Ionicons name="chevron-forward" size={13} color={c.brand} />
@@ -2179,12 +2184,26 @@ const styles = StyleSheet.create({
   followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   followUpRowDetail: { fontSize: 9, lineHeight: 11, fontWeight: '500' },
   followUpRowRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  evidenceChain: {
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 3,
+  },
+  evidenceChainHeader: {
+    minHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  evidenceChainTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  evidenceChainSubtitle: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '600' },
   backgroundPanel: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     paddingHorizontal: 11,
     paddingVertical: 7,
-    gap: 0,
+    gap: 4,
   },
   backgroundHeader: {
     minHeight: 34,
@@ -2224,7 +2243,7 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   shortcutStrip: {
-    minHeight: 28,
+    minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -2235,7 +2254,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  shortcutHeaderText: { width: 72, minWidth: 72, gap: 1 },
+  shortcutHeaderText: { width: 65, minWidth: 65, gap: 1 },
   shortcutTitle: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   shortcutSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '600' },
   shortcutAllButton: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 1 },
@@ -2271,7 +2290,7 @@ const styles = StyleSheet.create({
   shortcutLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   bodyFeedbackCompactRow: {
-    minHeight: 34,
+    minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,

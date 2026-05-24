@@ -165,7 +165,7 @@ describe('TodayScreen', () => {
     expect(getByText('目标')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
-    expect(getByText('长期档案')).toBeTruthy();
+    expect(getByText('个人画像')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
@@ -174,8 +174,8 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('现在只做一件')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('长期档案'));
+    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('个人画像'));
   });
 
   it('groups the home feed into agent diagnosis, action, follow-up, and entry sections', () => {
@@ -187,11 +187,11 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /验证/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
     expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('长期档案'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('个人画像'));
   });
 
   it('frames the home feed as a background health agent workspace', () => {
@@ -307,6 +307,7 @@ describe('TodayScreen', () => {
     expect(getByText('Agent 正在跟踪')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(getByText('运行中')).toBeTruthy();
+    expect(getByText('判断依据')).toBeTruthy();
     expect(getByText('环境证据')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
@@ -322,13 +323,15 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('Agent 正在跟踪')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('反馈信号')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('判断依据')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 正在跟踪')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('反馈信号'));
-    expect(textFlow.indexOf('反馈信号')).toBeLessThan(textFlow.indexOf('环境证据'));
-    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('长期档案'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('判断依据'));
+    expect(textFlow.indexOf('判断依据')).toBeLessThan(textFlow.indexOf('身体反馈'));
+    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {

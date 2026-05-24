@@ -369,16 +369,6 @@ const styles = StyleSheet.create({
   },
   microTextBlock: { flex: 1, minWidth: 0 },
   microSummaryText: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
-  microAgentButton: {
-    minHeight: 26,
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  microAgentText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   compactCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
