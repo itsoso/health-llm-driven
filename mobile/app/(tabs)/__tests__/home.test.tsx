@@ -186,12 +186,12 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /策略/.test(text))).toBe(true);
     expect(textFlow.some(text => /观察/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台继续看')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /策略/.test(text)));
     expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
-    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('后台继续看'));
-    expect(textFlow.indexOf('后台继续看')).toBeLessThan(textFlow.indexOf('长期档案'));
+    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
 
   it('frames the home feed as a background health agent workspace', () => {
@@ -294,10 +294,10 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('结果反馈')).toBe(-1);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
-    expect(textFlow.indexOf('后台继续看')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('后台继续看'));
-    expect(textFlow.indexOf('后台继续看')).toBeLessThan(textFlow.indexOf('环境影响'));
+    expect(textFlow.findIndex(text => /策略/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('环境影响'));
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
@@ -318,12 +318,12 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('Agent 后台运行')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台继续看')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('反馈信号')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 后台运行')).toBeLessThan(textFlow.indexOf('后台继续看'));
-    expect(textFlow.indexOf('后台继续看')).toBeLessThan(textFlow.indexOf('反馈信号'));
+    expect(textFlow.indexOf('Agent 后台运行')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('反馈信号'));
     expect(textFlow.indexOf('反馈信号')).toBeLessThan(textFlow.indexOf('环境影响'));
     expect(textFlow.indexOf('环境影响')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
@@ -356,7 +356,7 @@ describe('TodayScreen', () => {
     expect(getByText('缺口 2')).toBeTruthy();
     expect(queryByText('恢复轨迹数据不足')).toBeNull();
     expect(queryByText('还有 2 个数据缺口会影响判断')).toBeNull();
-    expect(getByText('后台继续看')).toBeTruthy();
+    expect(getByText('后台巡检')).toBeTruthy();
   });
 
   it('keeps weekly suggestion pending state compact when trajectory risks already occupy the queue', () => {
@@ -374,7 +374,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台继续看')).toBeTruthy();
+    expect(getByText('后台巡检')).toBeTruthy();
     expect(queryByText('周建议排队')).toBeNull();
     expect(queryByText('本周建议待生成')).toBeNull();
   });

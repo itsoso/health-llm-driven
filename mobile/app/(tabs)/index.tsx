@@ -797,47 +797,31 @@ function HomeBodyFeedbackPanel({
   const { c } = useTheme();
   const visibleMetrics = metrics.slice(0, 4);
   if (visibleMetrics.length === 0) return null;
+  const primaryMetric = visibleMetrics[0];
+  const primaryColor = c[primaryMetric.colorName];
+  const secondarySummary = visibleMetrics
+    .slice(1, 3)
+    .map(metric => `${metric.label} ${metric.value}`)
+    .join(' · ');
 
   return (
-    <View style={styles.bodyFeedbackBlock}>
-      <View style={styles.bodyFeedbackInlineLabel}>
-        <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>反馈信号</Text>
-        <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>4 项</Text>
+    <Pressable
+      onPress={() => onOpenMetric(primaryMetric.route)}
+      style={({ pressed }) => [styles.bodyFeedbackCompactRow, { opacity: pressed ? 0.72 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`反馈信号 ${primaryMetric.label} ${primaryMetric.value}`}
+    >
+      <View style={[styles.bodyFeedbackIcon, { backgroundColor: c[primaryMetric.tintName] }]}>
+        <Ionicons name={primaryMetric.icon} size={13} color={primaryColor} />
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.bodyFeedbackRail}
-      >
-        {visibleMetrics.map(metric => {
-          const color = c[metric.colorName];
-          return (
-            <Pressable
-              key={metric.key}
-              onPress={() => onOpenMetric(metric.route)}
-              style={({ pressed }) => [
-                styles.bodyFeedbackSignal,
-                { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${metric.label} ${metric.value}`}
-            >
-              <View style={[styles.bodyFeedbackIcon, { backgroundColor: c[metric.tintName] }]}>
-                <Ionicons name={metric.icon} size={13} color={color} />
-              </View>
-              <View style={styles.bodyFeedbackSignalText}>
-                <Text style={[styles.bodyFeedbackLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                  {metric.label}
-                </Text>
-                <Text style={[styles.bodyFeedbackValue, { color }]} numberOfLines={1}>
-                  {metric.value}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
+      <View style={styles.bodyFeedbackTextBlock}>
+        <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>反馈信号</Text>
+        <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
+          {primaryMetric.label} {primaryMetric.value}{secondarySummary ? ` · ${secondarySummary}` : ''}
+        </Text>
+      </View>
+      <Text style={[styles.bodyFeedbackRight, { color: c.labelTertiary }]}>{visibleMetrics.length} 项</Text>
+    </Pressable>
   );
 }
 
@@ -1147,10 +1131,13 @@ function AgentFollowUpQueue({
         <Ionicons name={queueIcon} size={15} color={queueColor} />
       </View>
       <View style={styles.followUpRowText}>
-        <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台继续看</Text>
-        <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-          {queueTitle}
-        </Text>
+        <View style={styles.followUpRowTitleLine}>
+          <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台巡检</Text>
+          <Text style={[styles.followUpTitleDot, { color: c.labelTertiary }]}>·</Text>
+          <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+            {queueTitle}
+          </Text>
+        </View>
         <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueDetail}
         </Text>
@@ -2156,7 +2143,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 50,
+    minHeight: 43,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -2177,7 +2164,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  followUpTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  followUpTitleDot: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   followUpSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
   followUpCountPill: {
     minHeight: 18,
@@ -2209,8 +2197,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
-  followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0 },
-  followUpRowTitle: { flexShrink: 1, fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
+  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
   followUpRowDetail: { fontSize: 10, lineHeight: 12, fontWeight: '500' },
   followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   backgroundPanel: {
@@ -2298,23 +2286,12 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
-  bodyFeedbackBlock: {
+  bodyFeedbackCompactRow: {
+    minHeight: 34,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  bodyFeedbackInlineLabel: { width: 52, minWidth: 52, gap: 1 },
-  bodyFeedbackTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  bodyFeedbackSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  bodyFeedbackRail: { gap: 7, paddingRight: 2 },
-  bodyFeedbackSignal: {
-    width: 96,
-    minHeight: 38,
-    borderRadius: radii.md,
-    paddingHorizontal: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+    gap: 7,
+    paddingHorizontal: 2,
   },
   bodyFeedbackIcon: {
     width: 21,
@@ -2323,9 +2300,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bodyFeedbackSignalText: { flex: 1, minWidth: 0, gap: 1 },
-  bodyFeedbackLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  bodyFeedbackValue: { fontSize: 11, lineHeight: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bodyFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 1 },
+  bodyFeedbackTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  bodyFeedbackSubtitle: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  bodyFeedbackRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
