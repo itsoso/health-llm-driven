@@ -110,8 +110,8 @@ jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => {
 });
 jest.mock('../../../components/dashboard/EnvironmentCard', () => {
   const { Text } = require('react-native');
-  const MockEnvironmentCard = ({ compact }: { compact?: boolean }) => (
-    <Text>{compact ? '环境背景' : '环境反馈'}</Text>
+  const MockEnvironmentCard = ({ compact, mode }: { compact?: boolean; mode?: string }) => (
+    <Text>{compact && mode === 'micro' ? '环境条' : compact ? '环境背景' : '环境反馈'}</Text>
   );
   MockEnvironmentCard.displayName = 'MockEnvironmentCard';
   return MockEnvironmentCard;
@@ -278,15 +278,16 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
     expect(textFlow.indexOf('后续关注')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境背景')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('环境条')).toBeGreaterThanOrEqual(0);
     expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('后续关注'));
-    expect(textFlow.indexOf('后续关注')).toBeLessThan(textFlow.indexOf('环境背景'));
+    expect(textFlow.indexOf('后续关注')).toBeLessThan(textFlow.indexOf('环境条'));
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('环境背景')).toBeTruthy();
+    expect(getByText('环境条')).toBeTruthy();
+    expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
     expect(getByText('低频数据先收起')).toBeTruthy();
     expect(getByText('基因')).toBeTruthy();

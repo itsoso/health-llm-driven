@@ -443,7 +443,7 @@ export default function TodayScreen() {
             onOpenTrajectory={openTrajectoryChat}
             onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           />
-          <EnvironmentCard compact />
+          <EnvironmentCard compact mode="micro" />
         </View>
 
         <CompactShortcutSection

@@ -55,6 +55,7 @@ interface ProfileLocation {
 
 interface EnvironmentCardProps {
   compact?: boolean;
+  mode?: 'compact' | 'micro';
 }
 
 function aqiColor(aqi: number | undefined): string {
@@ -75,7 +76,7 @@ function aqiLabel(aqi: number | undefined): string {
   return '重度';
 }
 
-export default function EnvironmentCard({ compact = false }: EnvironmentCardProps) {
+export default function EnvironmentCard({ compact = false, mode = 'compact' }: EnvironmentCardProps) {
   const router = useRouter();
   const { c } = useTheme();
 
@@ -166,7 +167,58 @@ export default function EnvironmentCard({ compact = false }: EnvironmentCardProp
     aqiText,
     w?.humidity != null ? `湿度 ${w.humidity}%` : null,
   ].filter(Boolean).join(' · ');
+  const microWeatherLine = [
+    w?.temperature != null ? `${Math.round(w.temperature)}°` : null,
+    aqiText,
+    w?.humidity != null ? `湿度 ${w.humidity}%` : null,
+  ].filter(Boolean).join(' · ');
   const caution = aqi != null && aqi > 150 ? '空气差，户外改室内或降低强度' : null;
+
+  if (compact && mode === 'micro') {
+    return (
+      <View style={[styles.microCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+        <TouchableOpacity
+          style={styles.microMain}
+          onPress={() => router.push('/location' as any)}
+          accessibilityLabel="设置当前位置"
+        >
+          <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
+          <View style={styles.microTextBlock}>
+            <Text style={[styles.microLocationText, { color: c.labelSecondary }]} numberOfLines={1}>
+              {locationLabel}
+            </Text>
+            <Text style={[styles.microSummaryText, { color: c.labelPrimary }]} numberOfLines={1}>
+              {caution ?? (microWeatherLine || '环境同步中')}
+            </Text>
+          </View>
+        </TouchableOpacity>
+        <View
+          style={[
+            styles.microAqiDot,
+            { backgroundColor: aqiColor(aqi) },
+          ]}
+        />
+        <TouchableOpacity
+          style={[styles.microAgentButton, { backgroundColor: c.brandLight }]}
+          onPress={() => pushChatWithContext(router, {
+            prompt: '请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。',
+            context: envContext,
+            badge: loc?.city ? `${loc.city}环境` : '当前环境',
+          })}
+          accessibilityLabel="让 Agent 调整今天户外安排"
+        >
+          <Ionicons name="sparkles-outline" size={15} color={c.brand} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.microRunButton, { borderColor: c.separator, backgroundColor: c.bgPrimary }]}
+          onPress={() => router.push('/live-run' as any)}
+          accessibilityLabel="开始跑步"
+        >
+          <Ionicons name="play-outline" size={15} color={c.labelSecondary} />
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (compact) {
     return (
@@ -322,6 +374,43 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.md,
     gap: spacing.md,
+  },
+  microCard: {
+    minHeight: 54,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  microMain: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  microTextBlock: { flex: 1, minWidth: 0, gap: 2 },
+  microLocationText: { fontSize: 11, lineHeight: 13, fontWeight: '700' },
+  microSummaryText: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  microAqiDot: { width: 7, height: 7, borderRadius: 3.5 },
+  microAgentButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  microRunButton: {
+    width: 34,
+    height: 34,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   compactCard: {
     borderWidth: StyleSheet.hairlineWidth,
