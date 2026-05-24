@@ -188,12 +188,15 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.some(text => /改善/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康指标')).toBe(-1);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBe(-1);
+    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('身体反馈'));
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('个人画像'));
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台观察'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
+    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
@@ -229,7 +232,8 @@ describe('TodayScreen', () => {
     expect(getAllByText(/改善/).length).toBeGreaterThan(0);
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
-    expect(getByText('身体反馈')).toBeTruthy();
+    expect(getByText('后台观察')).toBeTruthy();
+    expect(getByText('指标回流')).toBeTruthy();
   });
 
   it('turns critical risk into a concrete next step instead of only a status badge', () => {
@@ -298,11 +302,13 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBe(-1);
+    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
     expect(screen.queryByText('结果校准')).toBeNull();
-    expect(screen.getByText('重点指标')).toBeTruthy();
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
+    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(screen.queryByText('Agent 后台任务')).toBeNull();
   });
 
@@ -377,7 +383,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
@@ -386,11 +392,12 @@ describe('TodayScreen', () => {
 
     expect(queryByText('健康指标')).toBeNull();
     expect(queryByText('Agent 后台运行')).toBeNull();
-    expect(getByText('后台运行')).toBeTruthy();
+    expect(getByText('运行中')).toBeTruthy();
     expect(queryByText('结果校准')).toBeNull();
-    expect(getByText('身体反馈')).toBeTruthy();
-    expect(getByText('重点指标')).toBeTruthy();
-    expect(getByText('今天先看这几项')).toBeTruthy();
+    expect(queryByText('身体反馈')).toBeNull();
+    expect(getByText('后台观察')).toBeTruthy();
+    expect(getByText('指标回流')).toBeTruthy();
+    expect(getByText('验证干预是否有效')).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
     expect(getByText('环境证据')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
@@ -406,15 +413,16 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBe(-1);
+    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('重点指标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('重点指标'));
-    expect(textFlow.indexOf('重点指标')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
+    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
@@ -424,17 +432,18 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBe(-1);
+    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('重点指标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('指标回流')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('下次复盘')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('重点指标'));
-    expect(textFlow.indexOf('重点指标')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('指标回流'));
+    expect(textFlow.indexOf('指标回流')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('下次复盘'));

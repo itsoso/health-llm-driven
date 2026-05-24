@@ -753,22 +753,22 @@ function HomeBackgroundPanel({
           <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.agentRuntimeTitleBlock}>
-          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>身体反馈</HomeText>
+          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>后台观察</HomeText>
           <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            看干预有没有让指标变好
+            基因、检查、穿戴和环境持续回流
           </HomeText>
         </View>
         <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.agentRuntimeLiveDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>后台运行</HomeText>
+          <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>运行中</HomeText>
         </View>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>重点指标</HomeText>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>指标回流</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              今天先看这几项
+              验证干预是否有效
             </HomeText>
           </View>
           <Pressable
