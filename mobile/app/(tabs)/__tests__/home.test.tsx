@@ -312,8 +312,9 @@ describe('TodayScreen', () => {
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
     expect(getByText('基因/检查/趋势')).toBeTruthy();
-    expect(getByText('基因')).toBeTruthy();
-    expect(getByText('饮食')).toBeTruthy();
+    expect(getByText(/基因待同步/)).toBeTruthy();
+    expect(getByText(/进展待校准/)).toBeTruthy();
+    expect(getByText(/运动\/饮食方案/)).toBeTruthy();
   });
 
   it('keeps background diagnosis, feedback, environment, and archives in one operations panel', () => {

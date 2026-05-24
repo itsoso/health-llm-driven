@@ -841,44 +841,34 @@ function CompactArchiveStrip({
   onOpenAll: () => void;
 }) {
   const { c } = useTheme();
+  const genetic = shortcuts.find(item => item.label === '基因');
+  const progress = shortcuts.find(item => item.label === '进度');
+  const protocols = shortcuts
+    .filter(item => item.label === '运动' || item.label === '饮食')
+    .map(item => item.label)
+    .join('/');
+  const geneticSummary = genetic?.value && genetic.value !== '—' ? `基因 ${genetic.value} 个命中` : '基因待同步';
+  const progressSummary = progress?.value && progress.value !== '—' ? `进展 ${progress.value} 项改善` : '进展待校准';
+  const protocolSummary = protocols ? `${protocols}方案` : '生活方式方案';
   return (
-    <View style={styles.shortcutStrip}>
+    <Pressable
+      onPress={onOpenAll}
+      style={({ pressed }) => [styles.shortcutStrip, { opacity: pressed ? 0.72 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel="查看个人画像"
+    >
       <View style={styles.shortcutHeaderText}>
         <HomeText style={[styles.shortcutTitle, { color: c.labelPrimary }]}>个人画像</HomeText>
         <HomeText style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</HomeText>
       </View>
-      <View style={styles.shortcutRail}>
-        {shortcuts.map((item, index) => (
-          <React.Fragment key={item.label}>
-            <Pressable
-              onPress={item.onPress}
-              style={({ pressed }) => [
-                styles.shortcutTextButton,
-                { opacity: pressed ? 0.58 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.label} ${item.value}`}
-            >
-              <HomeText style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                {item.label}
-              </HomeText>
-            </Pressable>
-            {index < shortcuts.length - 1 ? (
-              <HomeText style={[styles.shortcutSeparatorText, { color: c.labelTertiary }]}>·</HomeText>
-            ) : null}
-          </React.Fragment>
-        ))}
-      </View>
-      <Pressable
-        onPress={onOpenAll}
-        style={({ pressed }) => [styles.shortcutAllButton, { opacity: pressed ? 0.65 : 1 }]}
-        accessibilityRole="button"
-        accessibilityLabel="查看全部个人画像"
-      >
+      <HomeText style={[styles.profileSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
+        {geneticSummary} · {progressSummary} · {protocolSummary}
+      </HomeText>
+      <View style={styles.shortcutAllButton}>
         <HomeText style={[styles.shortcutAllText, { color: c.brand }]}>全部</HomeText>
         <Ionicons name="chevron-forward" size={13} color={c.brand} />
-      </Pressable>
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -2246,7 +2236,7 @@ const styles = StyleSheet.create({
     minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 7,
   },
   shortcutHeader: {
     flexDirection: 'row',
@@ -2259,6 +2249,7 @@ const styles = StyleSheet.create({
   shortcutSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '600' },
   shortcutAllButton: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 1 },
   shortcutAllText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  profileSummaryText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   shortcutRail: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end' },
   shortcutTextButton: {
     minHeight: 24,
