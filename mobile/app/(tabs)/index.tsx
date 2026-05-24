@@ -32,7 +32,6 @@ import EvidenceChip from '../../components/shared/EvidenceChip';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
   getDailyOperatingPlan,
-  pickTopPlanActions,
   recordDailyPlanActionEvent,
   type DailyOperatingPlan,
   type DailyPlanAction,
@@ -422,7 +421,6 @@ export default function TodayScreen() {
             excludeActionKey={nextActionKey}
             onStart={openPlanAction}
             onComplete={completeNextAction}
-            onPressAction={openPlanAction}
             onFallbackRecord={() => router.push('/(tabs)/record' as any)}
             onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
           />
@@ -769,7 +767,6 @@ function TodayExecutionQueue({
   excludeActionKey,
   onStart,
   onComplete,
-  onPressAction,
   onFallbackRecord,
   onFallbackAgent,
 }: {
@@ -780,7 +777,6 @@ function TodayExecutionQueue({
   excludeActionKey?: string | null;
   onStart: (action: DailyPlanAction) => void;
   onComplete: (action: DailyPlanAction) => void;
-  onPressAction: (action: DailyPlanAction) => void;
   onFallbackRecord: () => void;
   onFallbackAgent: () => void;
 }) {
@@ -797,25 +793,30 @@ function TodayExecutionQueue({
       ? (action?.why || action?.when || '先完成这一步，再看后续计划')
       : '没有硬性任务时，先补齐今天会影响建议的数据';
   const impactMetrics = buildActionImpactMetrics(action);
-  const remainingActions = pickTopPlanActions(
-    (plan?.actions ?? []).filter(item => (item.action_key || item.title) !== excludeActionKey),
-    2,
-  );
   const totalActionCount = plan?.actions?.length ?? 0;
+  const remainingActionCount = Math.max(
+    0,
+    (plan?.actions ?? []).filter(item => (item.action_key || item.title) !== excludeActionKey).length,
+  );
   const queueSubtitle = loading
-    ? 'Agent 正在根据实时反馈排序'
+    ? 'Agent 正在排序最小下一步'
     : totalActionCount > 0
-      ? `${totalActionCount} 件事按影响指标排序`
+      ? totalActionCount === 1
+        ? '1 件事正在执行闭环'
+        : `${totalActionCount} 件事后台排队，只露出最该做的一件`
       : '先补齐数据，Agent 再生成干预';
+  const queueSummary = remainingActionCount > 0
+    ? `余下 ${remainingActionCount} 件后台排队，完成后再推送`
+    : '完成后 Agent 会根据新反馈排下一步';
 
   return (
     <View style={[styles.executionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.executionHeader}>
         <View style={[styles.executionIcon, { backgroundColor: c.tintGreen }]}>
-          <Ionicons name="play-circle-outline" size={17} color={c.green} />
+          <Ionicons name="radio-button-on-outline" size={17} color={c.green} />
         </View>
         <View style={styles.executionHeaderText}>
-          <Text style={[styles.executionTitle, { color: c.labelPrimary }]}>执行队列</Text>
+          <Text style={[styles.executionTitle, { color: c.labelPrimary }]}>现在只做一件</Text>
           <Text style={[styles.executionSubtitle, { color: c.labelTertiary }]}>{queueSubtitle}</Text>
         </View>
         <Pressable
@@ -825,7 +826,7 @@ function TodayExecutionQueue({
             { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="问 Agent 调整执行队列"
+          accessibilityLabel="问 Agent 调整后台排队"
         >
           <Ionicons name="chatbubble-ellipses-outline" size={13} color={c.brand} />
           <Text style={[styles.executionAdjustText, { color: c.brand }]}>调整</Text>
@@ -907,44 +908,21 @@ function TodayExecutionQueue({
         </View>
       ) : null}
 
-      <View style={styles.executionNextBlock}>
-        <View style={styles.executionNextHeader}>
-          <Text style={[styles.executionNextTitle, { color: c.labelPrimary }]}>接下来</Text>
-          <Text style={[styles.executionNextMeta, { color: c.labelTertiary }]}>
-            {remainingActions.length > 0 ? `${remainingActions.length} 个排队任务` : '完成后自动生成'}
-          </Text>
-        </View>
-        {remainingActions.length > 0 ? (
-          <View style={styles.executionNextList}>
-            {remainingActions.map((item, index) => (
-              <Pressable
-                key={`${item.action_key || item.title}-${index}`}
-                onPress={() => onPressAction(item)}
-                style={({ pressed }) => [
-                  styles.executionNextRow,
-                  { borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`打开接下来任务 ${item.title}`}
-              >
-                <View style={[styles.executionNextIcon, { backgroundColor: c.fill }]}>
-                  <Ionicons name={getDailyActionIcon(item.domain)} size={13} color={c.brand} />
-                </View>
-                <Text style={[styles.executionNextText, { color: c.labelPrimary }]} numberOfLines={1}>
-                  {item.title}
-                </Text>
-                <Text style={[styles.executionNextMetric, { color: c.labelTertiary }]} numberOfLines={1}>
-                  {getActionQueueMeta(item)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : (
-          <Text style={[styles.executionEmptyText, { color: c.labelTertiary }]}>
-            当前重点完成后，Agent 会根据新反馈排下一步。
-          </Text>
-        )}
-      </View>
+      <Pressable
+        onPress={onFallbackAgent}
+        style={({ pressed }) => [
+          styles.executionQueueSummary,
+          { backgroundColor: c.bgPrimary, opacity: pressed ? 0.68 : 1 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="查看后台排队任务"
+      >
+        <Ionicons name="layers-outline" size={14} color={c.labelSecondary} />
+        <Text style={[styles.executionQueueSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
+          {queueSummary}
+        </Text>
+        <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
+      </Pressable>
     </View>
   );
 }
@@ -1179,37 +1157,6 @@ function isBodyMeasurementAction(action: DailyPlanAction): boolean {
   if (action.domain !== 'measurement') return false;
   const haystack = `${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
   return /体重|腰围|weight|waist|bmi/.test(haystack);
-}
-
-function getDailyActionIcon(domain?: string | null): keyof typeof Ionicons.glyphMap {
-  if (domain === 'nutrition') return 'restaurant-outline';
-  if (domain === 'movement') return 'walk-outline';
-  if (domain === 'sleep') return 'moon-outline';
-  if (domain === 'measurement') return 'analytics-outline';
-  if (domain === 'doctor') return 'medical-outline';
-  return 'checkmark-circle-outline';
-}
-
-function getActionQueueMeta(action: DailyPlanAction): string {
-  const metric = action.verification?.metric || action.metric_key;
-  if (/sleep|sleep_score/.test(metric ?? '')) return '睡眠';
-  if (/hrv/.test(metric ?? '')) return 'HRV';
-  if (/spo2|oxygen/.test(metric ?? '')) return '血氧';
-  if (/bmi|weight|waist/.test(metric ?? '')) return '体成分';
-  if (/body_fat|fat/.test(metric ?? '')) return '体脂';
-  if (/vo2|max|cardio/.test(metric ?? '')) return '有氧';
-  if (/bp|blood_pressure/.test(metric ?? '')) return '血压';
-  if (/lab|blood|glucose|lipid|ldl|hdl|tg/.test(metric ?? '')) return '血检';
-  if (action.when === 'morning') return '早晨';
-  if (action.when === 'meals') return '饮食';
-  if (action.when === 'evening') return '晚间';
-  return action.domain === 'nutrition'
-    ? '饮食'
-    : action.domain === 'movement'
-      ? '运动'
-      : action.domain === 'sleep'
-        ? '睡眠'
-        : '今天';
 }
 
 const IMPACT_METRIC_DEFINITIONS: Record<string, ImpactMetricChip> = {
@@ -2015,37 +1962,15 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   nextActionCompleteText: { fontSize: 12, fontWeight: '800' },
-  executionNextBlock: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(120, 120, 128, 0.14)',
-    paddingTop: 8,
-    gap: 7,
-  },
-  executionNextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  executionNextTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  executionNextMeta: { fontSize: 11, lineHeight: 13, fontWeight: '700' },
-  executionNextList: { flexDirection: 'row', gap: 6 },
-  executionNextRow: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 34,
-    borderWidth: StyleSheet.hairlineWidth,
+  executionQueueSummary: {
+    minHeight: 30,
     borderRadius: radii.md,
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
-  executionNextIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  executionNextText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  executionNextMetric: { maxWidth: 44, fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  executionEmptyText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  executionQueueSummaryText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '700' },
   loopCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,

@@ -84,7 +84,6 @@ jest.mock('../../../services/actionCards', () => ({
 
 jest.mock('../../../services/dailyPlan', () => ({
   getDailyOperatingPlan: jest.fn(),
-  pickTopPlanActions: (actions: any[] = [], limit = 3) => actions.filter(action => Boolean(action?.title)).slice(0, limit),
   recordDailyPlanActionEvent: (...args: unknown[]) => mockRecordDailyPlanActionEvent(...args),
 }));
 
@@ -166,13 +165,13 @@ describe('TodayScreen', () => {
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
-  it('places the execution queue before shortcut entries in the home feed', () => {
+  it('places the single surfaced action before shortcut entries in the home feed', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('执行队列')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('现在只做一件')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('执行队列')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
   it('groups the home feed into agent diagnosis, action, follow-up, and entry sections', () => {
@@ -447,15 +446,16 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getAllByText, getByText } = render(<TodayScreen />);
+    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('执行队列')).toBeTruthy();
-    expect(getByText('接下来')).toBeTruthy();
+    expect(getByText('现在只做一件')).toBeTruthy();
+    expect(getByText('余下 1 件后台排队，完成后再推送')).toBeTruthy();
     expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
-    expect(getAllByText('今天蛋白质目标').length).toBe(1);
+    expect(queryByText('今天蛋白质目标')).toBeNull();
+    expect(queryByText('接下来')).toBeNull();
   });
 
-  it('uses one execution queue instead of a separate task-management panel on home', () => {
+  it('surfaces only one action instead of a task-management panel on home', () => {
     mockDailyPlanActions = [
       {
         action_key: 'measurement.weight_waist_morning',
@@ -476,11 +476,12 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('执行队列')).toBeTruthy();
+    expect(getByText('现在只做一件')).toBeTruthy();
     expect(getByText('现在先做')).toBeTruthy();
-    expect(getByText('接下来')).toBeTruthy();
+    expect(getByText('余下 2 件后台排队，完成后再推送')).toBeTruthy();
     expect(queryByText('今日操作计划')).toBeNull();
     expect(queryByText('余下计划')).toBeNull();
+    expect(queryByText('接下来')).toBeNull();
   });
 
   it('shows the active plan count when today has actions', () => {
