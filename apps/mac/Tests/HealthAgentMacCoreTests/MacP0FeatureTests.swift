@@ -244,6 +244,63 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(jobItem.payload["progress"], "40")
     }
 
+    func testKnowledgeWorkspacePresentationFiltersDocumentsByTypeAndQuery() {
+        let documents = [
+            KnowledgeDocumentSummary(
+                docID: "claim:mthfr",
+                docType: "claim",
+                title: "MTHFR 叶酸边界",
+                summary: "Hcy 和叶酸/B12 用于复查闭环。",
+                evidenceLevel: "B",
+                confidence: 0.82,
+                sources: ["dedao:genetics"]
+            ),
+            KnowledgeDocumentSummary(
+                docID: "article:lipids",
+                docType: "article",
+                title: "ApoB 与血脂轨迹",
+                summary: "LDL-C/ApoB 用于长期风险观察。",
+                evidenceLevel: "A",
+                confidence: 0.91,
+                sources: ["pubmed:30586774"]
+            ),
+            KnowledgeDocumentSummary(
+                docID: "entity:gene:MTHFR",
+                docType: "entity",
+                title: "MTHFR",
+                summary: "叶酸代谢相关基因实体。",
+                evidenceLevel: nil,
+                confidence: nil,
+                sources: ["down-dedao-llm-wiki"]
+            )
+        ]
+
+        XCTAssertEqual(
+            KnowledgeWorkspacePresentation.filteredDocuments(
+                documents,
+                query: "叶酸",
+                filter: .all
+            ).map(\.docID),
+            ["claim:mthfr", "entity:gene:MTHFR"]
+        )
+        XCTAssertEqual(
+            KnowledgeWorkspacePresentation.filteredDocuments(
+                documents,
+                query: "",
+                filter: .claims
+            ).map(\.docID),
+            ["claim:mthfr"]
+        )
+        XCTAssertEqual(
+            KnowledgeWorkspacePresentation.filteredDocuments(
+                documents,
+                query: "apoB",
+                filter: .articles
+            ).map(\.docID),
+            ["article:lipids"]
+        )
+    }
+
     func testFileIntakeClassifiesAndHashesGenomeAndDedaoSources() async throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)

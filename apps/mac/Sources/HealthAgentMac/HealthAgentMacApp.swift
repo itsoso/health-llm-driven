@@ -1581,6 +1581,8 @@ struct WorkspaceOverviewView: View {
     @State private var selectedHealthTrend: DesktopHealthTrendContext?
     @State private var selectedGenomicDetail: GenomicDetailRoute?
     @State private var selectedKnowledgeDocument: KnowledgeDocumentSummary?
+    @State private var knowledgeSearchText = ""
+    @State private var knowledgeDocumentFilter: KnowledgeDocumentFilter = .all
 
     var body: some View {
         ScrollView {
@@ -1703,6 +1705,8 @@ struct WorkspaceOverviewView: View {
     private func workspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
         if kind == .data {
             dataWorkspaceSummary(summary)
+        } else if kind == .knowledge {
+            knowledgeWorkspaceSummary(summary)
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
                 ForEach(summary.metrics) { metric in
@@ -1739,9 +1743,6 @@ struct WorkspaceOverviewView: View {
         if kind != .data {
             if kind == .genetics {
                 geneticsWorkspaceDetails(summary)
-            }
-            if kind == .knowledge {
-                knowledgeWorkspaceDetails(summary)
             }
         }
 
@@ -2421,6 +2422,257 @@ struct WorkspaceOverviewView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+    }
+
+    @ViewBuilder
+    private func knowledgeWorkspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
+        if let knowledge = summary.knowledgeSummary, knowledge.documentCount > 0 {
+            let documents = KnowledgeWorkspacePresentation.filteredDocuments(
+                knowledge.recentDocuments,
+                query: knowledgeSearchText,
+                filter: knowledgeDocumentFilter
+            )
+
+            VStack(alignment: .leading, spacing: 18) {
+                SectionPanel(title: appText("Knowledge Workbench", appLanguageRaw), systemImage: "books.vertical.fill") {
+                    VStack(alignment: .leading, spacing: 16) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                            ForEach(summary.metrics) { metric in
+                                WorkspaceMetricCard(metric: metric)
+                            }
+                        }
+
+                        if let localSource = resolvedLocalKnowledgeSource(knowledge.localSourceSummary) {
+                            localKnowledgeSourcePanel(localSource)
+                        }
+
+                        HStack(spacing: 10) {
+                            Label(appText("Search", appLanguageRaw), systemImage: "magnifyingglass")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            TextField(appText("Search knowledge documents", appLanguageRaw), text: $knowledgeSearchText)
+                                .textFieldStyle(.roundedBorder)
+                            Picker(appText("Type", appLanguageRaw), selection: $knowledgeDocumentFilter) {
+                                ForEach(KnowledgeDocumentFilter.allCases) { filter in
+                                    Text(knowledgeFilterTitle(filter)).tag(filter)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 330)
+                        }
+                    }
+                }
+
+                SectionPanel(title: appText("Knowledge Documents", appLanguageRaw), systemImage: "doc.text.magnifyingglass") {
+                    if documents.isEmpty {
+                        ContentUnavailableView(
+                            appText("No matching knowledge documents", appLanguageRaw),
+                            systemImage: "doc.text.magnifyingglass",
+                            description: Text(appText("Try another keyword or document type.", appLanguageRaw))
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 12)], spacing: 12) {
+                            ForEach(documents.prefix(12)) { document in
+                                knowledgeDocumentCard(document)
+                            }
+                        }
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 16) {
+                    knowledgeCoveragePanel(
+                        title: appText("Document Types", appLanguageRaw),
+                        systemImage: "doc.on.doc.fill",
+                        color: .blue,
+                        counts: knowledge.docTypeCounts
+                    )
+                    knowledgeCoveragePanel(
+                        title: appText("Entity Coverage", appLanguageRaw),
+                        systemImage: "point.3.connected.trianglepath.dotted",
+                        color: .teal,
+                        counts: knowledge.entityTypeCounts
+                    )
+                }
+
+                if !knowledge.sourceCounts.isEmpty || !knowledge.evidenceLevelCounts.isEmpty {
+                    SectionPanel(title: appText("Source Coverage", appLanguageRaw), systemImage: "link.circle.fill") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            if !knowledge.sourceCounts.isEmpty {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
+                                    ForEach(knowledge.sourceCounts.prefix(10)) { source in
+                                        HStack {
+                                            Text(source.source)
+                                                .font(.callout.weight(.semibold))
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                            Spacer()
+                                            Text("\(source.count)")
+                                                .font(.callout.weight(.bold).monospacedDigit())
+                                        }
+                                        .padding(12)
+                                        .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    }
+                                }
+                            }
+                            if !knowledge.evidenceLevelCounts.isEmpty {
+                                HStack(spacing: 8) {
+                                    ForEach(knowledge.evidenceLevelCounts) { item in
+                                        knowledgePill("\(appText("Level", appLanguageRaw)) \(item.level): \(item.count)", color: .indigo)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SectionPanel(title: appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars") {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                        ForEach(summary.guidanceRows) { row in
+                            WorkspaceGuidanceCard(row: row)
+                        }
+                    }
+                }
+
+                SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
+                    if summary.actionCards.isEmpty {
+                        Text(appText("No actions loaded yet.", appLanguageRaw))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                            ForEach(summary.actionCards.prefix(6)) { card in
+                                WorkspaceActionCard(
+                                    card: card,
+                                    color: .teal,
+                                    systemImage: "books.vertical.fill"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            SectionPanel(title: appText("Knowledge Workbench", appLanguageRaw), systemImage: "books.vertical.fill") {
+                ContentUnavailableView(
+                    appText("No knowledge documents loaded yet.", appLanguageRaw),
+                    systemImage: "books.vertical"
+                )
+                .frame(maxWidth: .infinity, minHeight: 220)
+            }
+        }
+    }
+
+    private func knowledgeDocumentCard(_ document: KnowledgeDocumentSummary) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: document.docType == "claim" ? "checkmark.seal.fill" : "doc.text.fill")
+                    .foregroundStyle(document.docType == "claim" ? .teal : .blue)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(document.title ?? document.docID)
+                        .font(.headline)
+                        .lineLimit(2)
+                    Text(document.summary ?? document.docID)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 0)
+                knowledgePill(appText(document.docType, appLanguageRaw), color: .blue)
+            }
+
+            HStack(spacing: 8) {
+                if let level = document.evidenceLevel {
+                    knowledgePill("\(appText("Level", appLanguageRaw)) \(level)", color: .indigo)
+                }
+                if let confidence = document.confidence {
+                    knowledgePill("\(appText("Confidence", appLanguageRaw)) \(Int(confidence * 100))%", color: .teal)
+                }
+                if let firstSource = document.sources.first {
+                    knowledgePill(firstSource, color: .secondary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    selectedKnowledgeDocument = document
+                } label: {
+                    Label(appText("View Detail", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Spacer(minLength: 0)
+
+                if let onAddContext {
+                    Button {
+                        onAddContext(DesktopWorkspaceContextFactory.contextItem(for: document))
+                    } label: {
+                        Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                if let onAskAgent {
+                    Button {
+                        onAskAgent(
+                            DesktopWorkspaceContextFactory.prompt(for: document),
+                            DesktopWorkspaceContextFactory.contextItem(for: document)
+                        )
+                    } label: {
+                        Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func knowledgeCoveragePanel(
+        title: String,
+        systemImage: String,
+        color: Color,
+        counts: [KnowledgeCount]
+    ) -> some View {
+        SectionPanel(title: title, systemImage: systemImage) {
+            if counts.isEmpty {
+                Text(appText("No data loaded yet.", appLanguageRaw))
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
+                    ForEach(counts) { item in
+                        coverageMetric(title: item.level, value: "\(item.count)", color: color)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private func knowledgePill(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private func knowledgeFilterTitle(_ filter: KnowledgeDocumentFilter) -> String {
+        switch filter {
+        case .all:
+            appText("All", appLanguageRaw)
+        case .claims:
+            appText("Claims", appLanguageRaw)
+        case .articles:
+            appText("Articles", appLanguageRaw)
+        case .entities:
+            appText("Entities", appLanguageRaw)
+        }
     }
 
     @ViewBuilder
