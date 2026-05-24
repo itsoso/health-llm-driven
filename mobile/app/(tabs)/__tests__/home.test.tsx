@@ -161,7 +161,7 @@ describe('TodayScreen', () => {
     expect(getByText('后台任务 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('目标：补齐数据，让建议更贴近身体反馈')).toBeTruthy();
-    expect(getByText('更多入口')).toBeTruthy();
+    expect(getByText('长期档案')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
@@ -170,8 +170,8 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('现在只做一件')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
 
   it('groups the home feed into agent diagnosis, action, follow-up, and entry sections', () => {
@@ -184,11 +184,11 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /验证/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /判断/.test(text)));
     expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
     expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('Agent 后台'));
-    expect(textFlow.indexOf('Agent 后台')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('Agent 后台')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
 
   it('frames the home feed as a background health agent workspace', () => {
@@ -290,7 +290,7 @@ describe('TodayScreen', () => {
     expect(getByText('环境条')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
-    expect(getByText('低频数据先收起')).toBeTruthy();
+    expect(getByText('校准判断')).toBeTruthy();
     expect(getByText('基因')).toBeTruthy();
     expect(getByText('饮食')).toBeTruthy();
   });
@@ -384,9 +384,9 @@ describe('TodayScreen', () => {
       { action_key: 'mood.breathing', domain: 'mental', title: '睡前呼吸练习' },
     ];
 
-    const { getByText } = render(<TodayScreen />);
+    const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getByText(/判断/)).toBeTruthy();
+    expect(getAllByText(/判断/).length).toBeGreaterThan(0);
     expect(getByText('干预')).toBeTruthy();
     expect(getByText('饮食/睡眠/运动 +2')).toBeTruthy();
   });

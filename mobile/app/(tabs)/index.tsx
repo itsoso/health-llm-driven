@@ -4,7 +4,7 @@
  * 设计 (Agent Native Mobile First):
  *   1. 首屏先回答 Agent 正在后台做什么.
  *   2. 再给出今天最该执行的一步.
- *   3. 最后下沉身体反馈、本周建议和更多入口.
+ *   3. 最后下沉身体反馈、本周建议和长期档案.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -720,8 +720,8 @@ function CompactShortcutSection({
     <View style={styles.shortcutCard}>
       <View style={styles.shortcutStrip}>
         <View style={styles.shortcutHeaderText}>
-          <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>更多入口</Text>
-          <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>低频数据先收起</Text>
+          <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</Text>
+          <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>校准判断</Text>
         </View>
         <View style={styles.shortcutRail}>
           {shortcuts.map((item, index) => (
@@ -749,7 +749,7 @@ function CompactShortcutSection({
           onPress={onOpenAll}
           style={({ pressed }) => [styles.shortcutAllButton, { opacity: pressed ? 0.65 : 1 }]}
           accessibilityRole="button"
-          accessibilityLabel="查看全部入口"
+          accessibilityLabel="查看全部长期档案"
         >
           <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
           <Ionicons name="chevron-forward" size={13} color={c.brand} />
