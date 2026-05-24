@@ -289,6 +289,8 @@ describe('TodayScreen', () => {
     expect(getByText('环境背景')).toBeTruthy();
     expect(queryByText('环境反馈')).toBeNull();
     expect(getByText('低频数据先收起')).toBeTruthy();
+    expect(getByText('基因')).toBeTruthy();
+    expect(getByText('饮食')).toBeTruthy();
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {
