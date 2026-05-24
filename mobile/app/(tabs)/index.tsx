@@ -27,7 +27,6 @@ import { getActiveCards, pickWeeklySuggestionCards, type ActionCard } from '../.
 import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
-import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
   getDailyOperatingPlan,
@@ -698,9 +697,9 @@ function HomeBackgroundPanel({
           <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.agentRuntimeTitleBlock}>
-          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>后台观察</HomeText>
+          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>Agent 观测中</HomeText>
           <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            基因、检查、穿戴和环境持续回流
+            正在用体征反馈校准今天策略
           </HomeText>
         </View>
         <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
@@ -711,9 +710,9 @@ function HomeBackgroundPanel({
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>正在验证</HomeText>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>验证指标</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              这些指标会反馈干预是否有效
+              这些反馈会影响下一轮干预
             </HomeText>
           </View>
           <Pressable
@@ -730,12 +729,7 @@ function HomeBackgroundPanel({
           </Pressable>
         </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
-        <View style={styles.calibrationContextRail}>
-          <View style={[styles.calibrationContextChip, { backgroundColor: c.bgPrimary }]}>
-            <EnvironmentCard compact mode="micro" />
-          </View>
-          <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
-        </View>
+        <CompactEvidenceStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
       </View>
       <AgentFollowUpQueue
         snapshot={snapshot}
@@ -795,7 +789,7 @@ function HomeBodyFeedbackPanel({
   );
 }
 
-function CompactArchiveStrip({
+function CompactEvidenceStrip({
   shortcuts,
   onOpenAll,
 }: {
@@ -823,19 +817,21 @@ function CompactArchiveStrip({
     <Pressable
       onPress={onOpenAll}
       style={({ pressed }) => [
-        styles.shortcutStrip,
+        styles.runtimeEvidenceStrip,
         { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
       ]}
       accessibilityRole="button"
       accessibilityLabel="查看个人画像"
     >
-      <View style={styles.shortcutHeaderText}>
-        <HomeText style={[styles.shortcutTitle, { color: c.labelPrimary }]}>个人画像</HomeText>
-        <HomeText style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</HomeText>
+      <View style={[styles.runtimeEvidenceIcon, { backgroundColor: c.bgCard }]}>
+        <Ionicons name="git-network-outline" size={12} color={c.brand} />
       </View>
-      <HomeText style={[styles.profileSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
-        {geneticSummary} · {progressSummary} · {protocolSummary}
-      </HomeText>
+      <View style={styles.runtimeEvidenceTextBlock}>
+        <HomeText style={[styles.runtimeEvidenceTitle, { color: c.labelPrimary }]}>证据链</HomeText>
+        <HomeText style={[styles.runtimeEvidenceText, { color: c.labelSecondary }]} numberOfLines={1}>
+          环境 GPS/天气 · {geneticSummary} · {progressSummary} · {protocolSummary}
+        </HomeText>
+      </View>
       <Ionicons name="chevron-forward" size={13} color={c.brand} />
     </Pressable>
   );
@@ -935,13 +931,9 @@ function AgentFollowUpQueue({
         <Ionicons name={queueIcon} size={15} color={queueColor} />
       </View>
       <View style={styles.followUpRowText}>
-        <View style={styles.followUpRowTitleLine}>
-          <HomeText style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台巡检</HomeText>
-          <HomeText style={[styles.followUpTitleDot, { color: c.labelTertiary }]}>·</HomeText>
-          <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-            {queueTitle}
-          </HomeText>
-        </View>
+        <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+          {queueTitle}
+        </HomeText>
         <HomeText style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueDetail}
         </HomeText>
@@ -2016,11 +2008,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 68,
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    paddingVertical: 9,
+    gap: 8,
+    paddingVertical: 7,
     paddingHorizontal: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
@@ -2192,6 +2184,25 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     justifyContent: 'center',
   },
+  runtimeEvidenceStrip: {
+    minHeight: 38,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  runtimeEvidenceIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  runtimeEvidenceTextBlock: { flex: 1, minWidth: 0, gap: 1 },
+  runtimeEvidenceTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  runtimeEvidenceText: { minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   shortcutCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,

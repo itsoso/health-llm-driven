@@ -165,7 +165,7 @@ describe('TodayScreen', () => {
     expect(getByText(/观察目标 ·/)).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
-    expect(getByText('个人画像')).toBeTruthy();
+    expect(getByText('证据链')).toBeTruthy();
     expect(getByText(/下次复盘/)).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
@@ -189,15 +189,16 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /观察目标/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
+    const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
+    expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台观察'));
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
-    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('个人画像'));
-    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('Agent 观测中'));
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
+    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
   it('frames the home feed as a background health agent workspace', () => {
@@ -233,8 +234,8 @@ describe('TodayScreen', () => {
     expect(getByText(/观察目标 ·/)).toBeTruthy();
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
-    expect(getByText('后台观察')).toBeTruthy();
-    expect(getByText('正在验证')).toBeTruthy();
+    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(getByText('验证指标')).toBeTruthy();
   });
 
   it('turns critical risk into a concrete next step instead of only a status badge', () => {
@@ -349,12 +350,13 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
     expect(screen.queryByText('结果校准')).toBeNull();
-    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
-    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
+    expect(reviewIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
+    expect(textFlow.indexOf('验证指标')).toBeLessThan(reviewIndex);
     expect(screen.queryByText('Agent 后台任务')).toBeNull();
   });
 
@@ -446,11 +448,12 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('结果反馈')).toBe(-1);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
-    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('环境证据'));
-    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
+    const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
+    expect(reviewIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
@@ -461,17 +464,33 @@ describe('TodayScreen', () => {
     expect(getByText('运行中')).toBeTruthy();
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
-    expect(getByText('后台观察')).toBeTruthy();
-    expect(getByText('正在验证')).toBeTruthy();
-    expect(getByText('这些指标会反馈干预是否有效')).toBeTruthy();
+    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(getByText('验证指标')).toBeTruthy();
+    expect(getByText('这些反馈会影响下一轮干预')).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
-    expect(getByText('环境证据')).toBeTruthy();
+    expect(getByText('证据链')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
-    expect(getByText('基因/检查/趋势')).toBeTruthy();
+    expect(queryByText('基因/检查/趋势')).toBeNull();
     expect(getByText(/基因待同步/)).toBeTruthy();
     expect(getByText(/进展待校准/)).toBeTruthy();
     expect(getByText(/运动\/饮食方案/)).toBeTruthy();
+  });
+
+  it('compresses evidence and follow-up into quiet runtime summary rows', () => {
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(getByText('正在用体征反馈校准今天策略')).toBeTruthy();
+    expect(getByText('验证指标')).toBeTruthy();
+    expect(getByText('证据链')).toBeTruthy();
+    expect(getByText(/环境 .* · 基因/)).toBeTruthy();
+    expect(getByText(/下次复盘/)).toBeTruthy();
+    expect(queryByText('后台观察')).toBeNull();
+    expect(queryByText('环境证据')).toBeNull();
+    expect(queryByText('个人画像')).toBeNull();
+    expect(queryByText('基因/检查/趋势')).toBeNull();
+    expect(queryByText('后台巡检')).toBeNull();
   });
 
   it('keeps background diagnosis, feedback, environment, and archives in one operations panel', () => {
@@ -480,17 +499,16 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
-    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
-    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('环境证据'));
-    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
-    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
+    const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
+    expect(reviewIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
+    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
   it('collapses background diagnosis, calibration, evidence, and review into one quiet runtime panel', () => {
@@ -499,21 +517,17 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('后台观察')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('正在验证')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
-    expect(textFlow.indexOf('后台观察')).toBeLessThan(textFlow.indexOf('正在验证'));
-    expect(textFlow.indexOf('正在验证')).toBeLessThan(textFlow.indexOf('环境证据'));
-    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
-    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(reviewIndex);
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
+    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {
@@ -544,7 +558,7 @@ describe('TodayScreen', () => {
     expect(getByText('缺口 2')).toBeTruthy();
     expect(queryByText('恢复轨迹数据不足')).toBeNull();
     expect(queryByText('还有 2 个数据缺口会影响判断')).toBeNull();
-    expect(getByText('后台巡检')).toBeTruthy();
+    expect(getByText('代谢健康轨迹需要关注')).toBeTruthy();
   });
 
   it('keeps weekly suggestion pending state compact when trajectory risks already occupy the queue', () => {
@@ -562,7 +576,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台巡检')).toBeTruthy();
+    expect(getByText('代谢健康轨迹需要关注')).toBeTruthy();
     expect(queryByText('周建议排队')).toBeNull();
     expect(queryByText('本周建议待生成')).toBeNull();
   });
