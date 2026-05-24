@@ -1,6 +1,7 @@
 import HealthAgentMacCore
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @main
 struct HealthAgentMacApp: App {
@@ -17,7 +18,8 @@ struct HealthAgentMacApp: App {
         MenuBarExtra {
             MenuBarRootView(
                 viewModel: appServices.todayViewModel,
-                navigation: appServices.navigation
+                navigation: appServices.navigation,
+                recordClient: appServices.recordClient
             )
             .appFontScale(AppFontScale(level: appFontScaleLevel))
             .fontScaleKeyboardShortcuts(level: $appFontScaleLevel)
@@ -1442,6 +1444,7 @@ struct WorkspaceOverviewView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dataRange = "7d"
     @State private var selectedGenomicDetail: GenomicDetailRoute?
+    @State private var selectedKnowledgeDocument: KnowledgeDocumentSummary?
 
     var body: some View {
         ScrollView {
@@ -1516,6 +1519,17 @@ struct WorkspaceOverviewView: View {
                     }
                 )
             }
+        }
+        .sheet(item: $selectedKnowledgeDocument) { document in
+            KnowledgeDocumentDetailSheet(
+                document: document,
+                onAddContext: onAddContext.map { add in
+                    { add(DesktopWorkspaceContextFactory.contextItem(for: document)) }
+                },
+                onAskAgent: onAskAgent.map { ask in
+                    { ask(DesktopWorkspaceContextFactory.prompt(for: document), DesktopWorkspaceContextFactory.contextItem(for: document)) }
+                }
+            )
         }
     }
 
@@ -2158,6 +2172,18 @@ struct WorkspaceOverviewView: View {
                                     Spacer(minLength: 0)
                                 }
 
+                                HStack(spacing: 8) {
+                                    Button {
+                                        selectedKnowledgeDocument = document
+                                    } label: {
+                                        Label(appText("View Detail", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                                    Spacer(minLength: 0)
+                                }
+
                                 contextActionBar(
                                     item: DesktopWorkspaceContextFactory.contextItem(for: document),
                                     prompt: DesktopWorkspaceContextFactory.prompt(for: document)
@@ -2526,6 +2552,18 @@ private struct GenomicFindingDetailSheet: View {
                     .textSelection(.enabled)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text(appText("Clinical Boundary", appLanguageRaw))
+                    .font(.headline)
+                Label(appText("Use genotype as a risk flag, not a diagnosis.", appLanguageRaw), systemImage: "exclamationmark.shield.fill")
+                Label(appText("Confirm high-impact findings with clinical testing before medication or disease decisions.", appLanguageRaw), systemImage: "checkmark.seal")
+                Label(appText("Ask Agent with recent labs, symptoms, supplements, and exercise before changing plans.", appLanguageRaw), systemImage: "sparkles")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(12)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
             HStack {
                 Text(appText("Genetic results are for risk stratification, not diagnosis or medication decisions.", appLanguageRaw))
                     .font(.caption)
@@ -2680,6 +2718,108 @@ private struct GenomicCategoryDetailSheet: View {
     }
 }
 
+private struct KnowledgeDocumentDetailSheet: View {
+    let document: KnowledgeDocumentSummary
+    let onAddContext: (() -> Void)?
+    let onAskAgent: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(appText("Knowledge Document Detail", appLanguageRaw))
+                        .font(.title2.bold())
+                    Text(document.title ?? document.docID)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Button(appText("Close", appLanguageRaw)) {
+                    dismiss()
+                }
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                detailMetric("Document ID", document.docID)
+                detailMetric("Type", document.docType)
+                detailMetric("Evidence", document.evidenceLevel ?? "—")
+                detailMetric("Confidence", document.confidence.map { "\($0)" } ?? "—")
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(appText("Summary", appLanguageRaw))
+                    .font(.headline)
+                Text(document.summary?.isEmpty == false ? document.summary! : appText("No description loaded.", appLanguageRaw))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(appText("Sources", appLanguageRaw))
+                    .font(.headline)
+                if document.sources.isEmpty {
+                    Text(appText("No source refs loaded.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(document.sources, id: \.self) { source in
+                            Label(source, systemImage: "link")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.11), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Text(appText("Use this source with your own data before turning it into an action.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let onAddContext {
+                    Button {
+                        onAddContext()
+                    } label: {
+                        Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                if let onAskAgent {
+                    Button {
+                        onAskAgent()
+                        dismiss()
+                    } label: {
+                        Label(appText("Ask Agent with Context", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 620)
+    }
+
+    private func detailMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(appText(title, appLanguageRaw))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .lineLimit(2)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
 private struct DataTrendCard: View {
     let title: String
     let value: String
@@ -2793,8 +2933,11 @@ struct ImportWorkspaceView: View {
 struct MenuBarRootView: View {
     @Bindable var viewModel: TodayViewModel
     @Bindable var navigation: AppNavigationState
+    let recordClient: RecordClient
     @Environment(\.openWindow) private var openWindow
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @State private var isSavingQuickRecord = false
+    @State private var quickRecordMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2811,8 +2954,38 @@ struct MenuBarRootView: View {
                 }
             }
             Divider()
+            Label(appText("Quick Capture", appLanguageRaw), systemImage: "bolt.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            Button {
+                saveQuickRecord("喝水 200ml")
+            } label: {
+                Label(appText("Record Water 200ml", appLanguageRaw), systemImage: "drop.fill")
+            }
+            .disabled(isSavingQuickRecord)
+            Button {
+                saveQuickRecord("补剂已吃")
+            } label: {
+                Label(appText("Record Supplements Taken", appLanguageRaw), systemImage: "pills.fill")
+            }
+            .disabled(isSavingQuickRecord)
+            if isSavingQuickRecord {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if let quickRecordMessage {
+                Text(quickRecordMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Divider()
             Button(appText("Open Today", appLanguageRaw)) {
                 navigation.selection = .today
+                openWindow(id: "main")
+            }
+            Button(appText("Open Record", appLanguageRaw)) {
+                navigation.selection = .record
                 openWindow(id: "main")
             }
             Button(appText("Ask Agent", appLanguageRaw)) {
@@ -2834,6 +3007,36 @@ struct MenuBarRootView: View {
             }
         }
         .padding(8)
-        .frame(width: 220)
+        .frame(width: 250)
+    }
+
+    private func saveQuickRecord(_ text: String) {
+        guard !isSavingQuickRecord else { return }
+        isSavingQuickRecord = true
+        quickRecordMessage = nil
+        Task {
+            do {
+                let result = try await recordClient.quickRecord(text: text)
+                quickRecordMessage = result.message
+                sendMenuBarNotification(title: appText("Saved", appLanguageRaw), body: result.message)
+                await viewModel.refresh()
+            } catch {
+                quickRecordMessage = error.localizedDescription
+                sendMenuBarNotification(title: appText("Save failed", appLanguageRaw), body: error.localizedDescription)
+            }
+            isSavingQuickRecord = false
+        }
+    }
+
+    private func sendMenuBarNotification(title: String, body: String) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request)
+        }
     }
 }

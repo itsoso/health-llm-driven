@@ -51,6 +51,35 @@ public enum AgentRunState: String, Equatable, Sendable {
     case failed
 }
 
+public enum AgentToolActivityStatus: Equatable, Sendable {
+    case running
+    case succeeded
+    case failed
+}
+
+public struct AgentToolActivity: Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public let name: String
+    public let status: AgentToolActivityStatus
+
+    public var displayTitle: String {
+        switch status {
+        case .running:
+            "\(name) running"
+        case .succeeded:
+            "\(name) succeeded"
+        case .failed:
+            "\(name) failed"
+        }
+    }
+
+    public init(id: UUID = UUID(), name: String, status: AgentToolActivityStatus) {
+        self.id = id
+        self.name = name
+        self.status = status
+    }
+}
+
 @Observable
 @MainActor
 public final class AgentChatViewModel {
@@ -68,6 +97,7 @@ public final class AgentChatViewModel {
     public var lastPrompt: String?
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
+    public var toolActivities: [AgentToolActivity] = []
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
@@ -136,6 +166,7 @@ public final class AgentChatViewModel {
         }
 
         errorMessage = nil
+        toolActivities = []
         isStreaming = true
         runState = .preparing
         lastPrompt = message
@@ -155,8 +186,13 @@ public final class AgentChatViewModel {
                 case .token(let content):
                     runState = .streaming
                     messages[assistantIndex].content += content
-                case .tool:
-                    break
+                case .tool(let name, let success):
+                    toolActivities.append(
+                        AgentToolActivity(
+                            name: name ?? "tool",
+                            status: success.map { $0 ? .succeeded : .failed } ?? .running
+                        )
+                    )
                 case .done(let id, _, let completionStatus, let model, let sourcesUsed):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus

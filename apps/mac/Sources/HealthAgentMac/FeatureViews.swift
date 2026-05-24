@@ -479,6 +479,32 @@ struct AgentChatView: View {
                 }
             }
 
+            if !viewModel.toolActivities.isEmpty {
+                Divider()
+
+                Label(appText("Tool Timeline", appLanguageRaw), systemImage: "wrench.and.screwdriver")
+                    .font(.subheadline.bold())
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(viewModel.toolActivities) { activity in
+                        HStack(spacing: 8) {
+                            Image(systemName: toolActivityIcon(activity.status))
+                                .foregroundStyle(toolActivityColor(activity.status))
+                                .frame(width: 18)
+                            Text(activity.name)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text(appText(toolActivityText(activity.status), appLanguageRaw))
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(toolActivityColor(activity.status))
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                        .background(toolActivityColor(activity.status).opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+                }
+            }
+
             Divider()
 
             Label(appText("Evidence", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
@@ -561,6 +587,30 @@ struct AgentChatView: View {
         }
         .padding(10)
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func toolActivityText(_ status: AgentToolActivityStatus) -> String {
+        switch status {
+        case .running: "Running"
+        case .succeeded: "Succeeded"
+        case .failed: "Failed"
+        }
+    }
+
+    private func toolActivityIcon(_ status: AgentToolActivityStatus) -> String {
+        switch status {
+        case .running: "hourglass"
+        case .succeeded: "checkmark.circle.fill"
+        case .failed: "xmark.circle.fill"
+        }
+    }
+
+    private func toolActivityColor(_ status: AgentToolActivityStatus) -> Color {
+        switch status {
+        case .running: .accentColor
+        case .succeeded: .green
+        case .failed: .red
+        }
     }
 
     private func sendDraft() async {

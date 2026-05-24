@@ -120,6 +120,25 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelTracksToolExecutionTimeline() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 77))
+            continuation.yield(.tool(name: "knowledge_search", success: nil))
+            continuation.yield(.tool(name: "knowledge_search", success: true))
+            continuation.yield(.tool(name: "health_manage", success: false))
+            continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: []))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+
+        await model.send("分析并执行")
+
+        XCTAssertEqual(model.toolActivities.map(\.name), ["knowledge_search", "knowledge_search", "health_manage"])
+        XCTAssertEqual(model.toolActivities.map(\.status), [.running, .succeeded, .failed])
+        XCTAssertEqual(model.toolActivities.last?.displayTitle, "health_manage failed")
+    }
+
+    @MainActor
     func testAgentChatViewModelMarksPartialWhenStreamFailsAfterTokens() async {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 77))
