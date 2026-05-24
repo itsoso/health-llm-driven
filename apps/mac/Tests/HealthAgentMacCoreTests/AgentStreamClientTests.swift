@@ -104,7 +104,12 @@ final class AgentStreamClientTests: XCTestCase {
             sourceID: "genomic:rs10572724",
             sourceKind: "genomic_finding",
             title: "9p21 心血管风险",
-            summary: "rs10572724 AA screening"
+            summary: "rs10572724 AA screening",
+            payload: [
+                "rsid": "rs10572724",
+                "genotype": "AA",
+                "risk_level": "high"
+            ]
         )
 
         model.messages = [
@@ -118,7 +123,12 @@ final class AgentStreamClientTests: XCTestCase {
 
         XCTAssertTrue(model.messages.isEmpty)
         XCTAssertNil(model.conversationID)
-        XCTAssertEqual(model.consumePreparedDraft(), "基于 9p21 给我行动建议")
+        let draft = model.consumePreparedDraft()
+        XCTAssertTrue(draft?.contains("基于 9p21 给我行动建议") == true)
+        XCTAssertTrue(draft?.contains("当前上下文") == true)
+        XCTAssertTrue(draft?.contains("9p21 心血管风险") == true)
+        XCTAssertTrue(draft?.contains("rs10572724 AA screening") == true)
+        XCTAssertTrue(draft?.contains("risk_level=high") == true)
         XCTAssertEqual(model.contextItems.map(\.id), [newContext.id])
     }
 
