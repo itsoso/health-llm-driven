@@ -566,6 +566,10 @@ function HomeCommandHeader({
   const primaryVerificationMetric = visibleLoopMetrics[0] ?? null;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
+  const evidenceSourceText = evidenceSummary.replace(/已接入$/, '');
+  const reasoningSummary = `${evidenceSourceText}合并判断，先处理${headline}`;
+  const interventionSummary = `${strategySummary} · ${nextStepActionText}`;
+  const improvementSummary = verificationMetrics || watchSummary;
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
   const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0
@@ -604,7 +608,7 @@ function HomeCommandHeader({
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <View style={[styles.commandDecisionIcon, { backgroundColor: decisionTint }]}>
+        <View style={[styles.commandDecisionIcon, { backgroundColor: c.bgCard }]}>
           <Ionicons name={decisionIcon} size={18} color={decisionColor} />
         </View>
         <View style={styles.commandDecisionText}>
@@ -621,16 +625,26 @@ function HomeCommandHeader({
 
       <View style={[styles.commandWorkflowPanel, { borderColor: c.separator }]}>
         <View style={styles.commandWorkflowRow}>
-          <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>证据</HomeText>
-          <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
-            {evidenceSummary}
-          </HomeText>
+          <View style={[styles.commandWorkflowIcon, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="analytics-outline" size={13} color={c.brand} />
+          </View>
+          <View style={styles.commandWorkflowCopy}>
+            <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>为什么这样排</HomeText>
+            <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
+              {reasoningSummary}
+            </HomeText>
+          </View>
         </View>
         <View style={styles.commandWorkflowRow}>
-          <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>干预</HomeText>
-          <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
-            {strategySummary} · {nextStepActionText}
-          </HomeText>
+          <View style={[styles.commandWorkflowIcon, { backgroundColor: c.tintGreen }]}>
+            <Ionicons name="leaf-outline" size={13} color={c.green} />
+          </View>
+          <View style={styles.commandWorkflowCopy}>
+            <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>干预策略</HomeText>
+            <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
+              {interventionSummary}
+            </HomeText>
+          </View>
         </View>
         <Pressable
           onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
@@ -642,10 +656,15 @@ function HomeCommandHeader({
               : '查看验证目标'
           }
         >
-          <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>验证目标</HomeText>
-          <HomeText style={[styles.commandWorkflowValue, { color: c.labelPrimary }]} numberOfLines={1}>
-            {verificationMetrics || watchSummary}
-          </HomeText>
+          <View style={[styles.commandWorkflowIcon, { backgroundColor: c.tintBlue }]}>
+            <Ionicons name="trending-up-outline" size={13} color={c.blue} />
+          </View>
+          <View style={styles.commandWorkflowCopy}>
+            <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>验证是否变好</HomeText>
+            <HomeText style={[styles.commandWorkflowValue, { color: c.labelPrimary }]} numberOfLines={1}>
+              {improvementSummary}
+            </HomeText>
+          </View>
           <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
         </Pressable>
       </View>
@@ -748,8 +767,8 @@ function HomeBackgroundPanel({
           <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.backgroundTitleBlock}>
-          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 后台任务</HomeText>
-          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>巡检风险 / 校准证据 / 周期复盘</HomeText>
+          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 自动处理</HomeText>
+          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>长期任务在后台排队，不打断你</HomeText>
         </View>
         <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />
@@ -766,9 +785,9 @@ function HomeBackgroundPanel({
       <View style={[styles.evidenceChain, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>判断依据</HomeText>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>正在校准结果</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              用反馈、环境和画像校准后台任务
+              看血氧、睡眠、身材和检查是否真的变好
             </HomeText>
           </View>
           <Pressable
@@ -1815,17 +1834,25 @@ const styles = StyleSheet.create({
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandWorkflowPanel: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 7,
-    gap: 3,
+    paddingTop: 8,
+    gap: 6,
   },
   commandWorkflowRow: {
-    minHeight: 20,
+    minHeight: 32,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: 8,
   },
-  commandWorkflowLabel: { width: 46, fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandWorkflowValue: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandWorkflowIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandWorkflowCopy: { flex: 1, minWidth: 0, gap: 1 },
+  commandWorkflowLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandWorkflowValue: { minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   commandDecisionCard: {
     minHeight: 78,
     borderWidth: StyleSheet.hairlineWidth,

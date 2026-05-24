@@ -162,7 +162,7 @@ describe('TodayScreen', () => {
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getByText('今日优先 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
-    expect(getByText('验证目标')).toBeTruthy();
+    expect(getByText('验证是否变好')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('个人画像')).toBeTruthy();
@@ -223,11 +223,11 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
-    expect(getByText('验证目标')).toBeTruthy();
+    expect(getByText('验证是否变好')).toBeTruthy();
     expect(getAllByText(/验证/).length).toBeGreaterThan(0);
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
-    expect(getByText(/画像校准/)).toBeTruthy();
+    expect(getByText('正在校准结果')).toBeTruthy();
   });
 
   it('turns critical risk into a concrete next step instead of only a status badge', () => {
@@ -305,10 +305,10 @@ describe('TodayScreen', () => {
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 后台任务')).toBeTruthy();
+    expect(getByText('Agent 自动处理')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(getByText('运行中')).toBeTruthy();
-    expect(getByText('判断依据')).toBeTruthy();
+    expect(getByText('正在校准结果')).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
     expect(getByText('环境证据')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
@@ -323,16 +323,16 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 后台任务')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 自动处理')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('判断依据')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('正在校准结果')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 后台任务')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('判断依据'));
-    expect(textFlow.indexOf('判断依据')).toBeLessThan(textFlow.indexOf('身体反馈'));
+    expect(textFlow.indexOf('Agent 自动处理')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('正在校准结果'));
+    expect(textFlow.indexOf('正在校准结果')).toBeLessThan(textFlow.indexOf('身体反馈'));
     expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
   });
@@ -431,7 +431,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/干预/).length).toBeGreaterThan(0);
-    expect(getByText('干预')).toBeTruthy();
+    expect(getByText('干预策略')).toBeTruthy();
     expect(getByText(/饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
@@ -539,7 +539,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 2 个计划')).toBeTruthy();
-    expect(getByText('验证目标')).toBeTruthy();
+    expect(getByText('验证是否变好')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
