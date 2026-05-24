@@ -604,16 +604,21 @@ function HomeCommandHeader({
           onPress={onOpenFocus}
           style={({ pressed }) => [
             styles.commandInlineNextStep,
-            { backgroundColor: c.brand, opacity: pressed ? 0.82 : 1 },
+            { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
           ]}
           accessibilityRole="button"
           accessibilityLabel="打开下一步"
         >
-          <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
-          <HomeText style={styles.commandInlineNextLabel}>下一步</HomeText>
-          <HomeText style={styles.commandInlineNextText} numberOfLines={1}>
-            {nextStepActionText}
-          </HomeText>
+          <View style={[styles.commandExperimentIcon, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="flask-outline" size={13} color={c.brand} />
+          </View>
+          <View style={styles.commandExperimentTextBlock}>
+            <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>今日实验</HomeText>
+            <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
+              {nextStepActionText}
+            </HomeText>
+          </View>
+          <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
         </Pressable>
         {canComplete && action ? (
           <Pressable
@@ -1607,14 +1612,23 @@ const styles = StyleSheet.create({
   commandInlineNextStep: {
     flex: 1,
     minWidth: 0,
-    minHeight: 34,
-    borderRadius: radii.full,
-    paddingHorizontal: 12,
+    minHeight: 40,
+    borderRadius: radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
+    gap: 8,
   },
+  commandExperimentIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandExperimentTextBlock: { flex: 1, minWidth: 0, gap: 1 },
   commandInlineNextIcon: {
     width: 18,
     height: 18,
@@ -1622,11 +1636,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandInlineNextLabel: { color: '#FFFFFF', fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  commandInlineNextLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandInlineNextText: {
     minWidth: 0,
-    color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11,
     lineHeight: 15,
     fontWeight: '800',
     flexShrink: 1,

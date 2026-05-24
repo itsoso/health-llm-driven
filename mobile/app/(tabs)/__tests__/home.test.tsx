@@ -163,7 +163,7 @@ describe('TodayScreen', () => {
     expect(getByText('Agent 判断')).toBeTruthy();
     expect(getByText('补齐今天记录后，Agent 会重新排序干预。')).toBeTruthy();
     expect(getByText(/观察目标 ·/)).toBeTruthy();
-    expect(getByText('下一步')).toBeTruthy();
+    expect(getByText('今日实验')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('证据链')).toBeTruthy();
     expect(getByText(/下次复盘/)).toBeTruthy();
@@ -173,11 +173,27 @@ describe('TodayScreen', () => {
   it('keeps the no-plan home feed focused on the top next step instead of adding a duplicate execution card', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('下一步')).toBeTruthy();
+    expect(getByText('今日实验')).toBeTruthy();
     expect(getByLabelText('打开下一步')).toBeTruthy();
     expect(queryByText('现在只做一件')).toBeNull();
     expect(queryByText('现在先做')).toBeNull();
     expect(queryByText('没有硬性任务时，先补齐今天会影响建议的数据')).toBeNull();
+  });
+
+  it('renders the primary action as a quiet health experiment strip instead of a large CTA', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('今日实验')).toBeTruthy();
+    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+    expect(queryByText('下一步')).toBeNull();
   });
 
   it('groups the home feed into agent diagnosis, action, health outcomes, evidence, and follow-up sections', () => {
@@ -247,7 +263,7 @@ describe('TodayScreen', () => {
 
     expect(getByText('Agent 判断')).toBeTruthy();
     expect(getByText('夜间血氧持续偏低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('下一步')).toBeTruthy();
+    expect(getByText('今日实验')).toBeTruthy();
     expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
     expect(getByLabelText('打开下一步')).toBeTruthy();
     expect(getByLabelText('问 Agent')).toBeTruthy();
@@ -309,7 +325,7 @@ describe('TodayScreen', () => {
     expect(getByText(/观察目标 ·/)).toBeTruthy();
     expect(getByText(/BMI\/体脂.*睡眠分 90\+/)).toBeTruthy();
     expect(queryByText(/饮食\/睡眠/)).toBeNull();
-    expect(getByText('下一步')).toBeTruthy();
+    expect(getByText('今日实验')).toBeTruthy();
     expect(queryByText('干预闭环')).toBeNull();
     expect(queryByText('验证目标')).toBeNull();
   });
