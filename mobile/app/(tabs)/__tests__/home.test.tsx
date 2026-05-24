@@ -6,10 +6,6 @@ const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRecordDailyPlanActionEvent = jest.fn();
 const mockPushChatWithContext = jest.fn();
-const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: string; compact?: boolean }) => {
-  const { Text } = require('react-native');
-  return <Text>{title}</Text>;
-});
 let mockDailyPlanActions: unknown[] = [];
 let mockTwinData: Record<string, unknown> = {};
 let mockTrajectoryData: any = null;
@@ -88,6 +84,7 @@ jest.mock('../../../services/actionCards', () => ({
 
 jest.mock('../../../services/dailyPlan', () => ({
   getDailyOperatingPlan: jest.fn(),
+  pickTopPlanActions: (actions: any[] = [], limit = 3) => actions.filter(action => Boolean(action?.title)).slice(0, limit),
   recordDailyPlanActionEvent: (...args: unknown[]) => mockRecordDailyPlanActionEvent(...args),
 }));
 
@@ -105,11 +102,6 @@ jest.mock('../../../utils/agentContext', () => ({
   pushChatWithContext: (...args: unknown[]) => mockPushChatWithContext(...args),
 }));
 
-jest.mock('../../../components/dashboard/TodayPlanPanel', () => {
-  const MockTodayPlanPanel = (props: { title?: string; compact?: boolean }) => mockTodayPlanPanel(props);
-  MockTodayPlanPanel.displayName = 'MockTodayPlanPanel';
-  return MockTodayPlanPanel;
-});
 jest.mock('../../../components/dashboard/TrajectorySnapshotPanel', () => {
   const { Text } = require('react-native');
   const MockTrajectorySnapshotPanel = () => <Text>健康轨迹</Text>;
@@ -172,13 +164,13 @@ describe('TodayScreen', () => {
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
-  it('places the remaining plan before shortcut entries in the home feed', () => {
+  it('places the execution queue before shortcut entries in the home feed', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('余下计划')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('执行队列')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('余下计划')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('执行队列')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
   it('groups the home feed into agent diagnosis, action, follow-up, and entry sections', () => {
@@ -189,12 +181,12 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /判断/.test(text))).toBe(true);
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.some(text => /验证/.test(text))).toBe(true);
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /判断/.test(text)));
-    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
+    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
     expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
@@ -245,8 +237,8 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.some(text => /判断/.test(text))).toBe(true);
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
     expect(screen.getAllByText(/判断/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/验证/).length).toBeGreaterThan(0);
@@ -257,10 +249,10 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.some(text => /判断/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /判断/.test(text)));
-    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
   });
 
   it('prioritizes intervention feedback before the follow-up queue and environment details', () => {
@@ -375,7 +367,7 @@ describe('TodayScreen', () => {
     );
   });
 
-  it('keeps the primary action out of the remaining daily plan list', () => {
+  it('keeps the primary action out of the next queue list', () => {
     mockDailyPlanActions = [
       {
         action_key: 'measurement.weight_waist_morning',
@@ -389,16 +381,15 @@ describe('TodayScreen', () => {
       },
     ];
 
-    render(<TodayScreen />);
+    const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(mockTodayPlanPanel).toHaveBeenCalledWith(expect.objectContaining({
-      compact: true,
-      title: '余下计划',
-      excludeActionKey: 'measurement.weight_waist_morning',
-    }));
+    expect(getByText('执行队列')).toBeTruthy();
+    expect(getByText('接下来')).toBeTruthy();
+    expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
+    expect(getAllByText('今天蛋白质目标').length).toBe(1);
   });
 
-  it('uses a compact remaining-plan queue instead of a full task-management panel on home', () => {
+  it('uses one execution queue instead of a separate task-management panel on home', () => {
     mockDailyPlanActions = [
       {
         action_key: 'measurement.weight_waist_morning',
@@ -419,12 +410,11 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('余下计划')).toBeTruthy();
+    expect(getByText('执行队列')).toBeTruthy();
+    expect(getByText('现在先做')).toBeTruthy();
+    expect(getByText('接下来')).toBeTruthy();
     expect(queryByText('今日操作计划')).toBeNull();
-    expect(mockTodayPlanPanel).toHaveBeenCalledWith(expect.objectContaining({
-      compact: true,
-      title: '余下计划',
-    }));
+    expect(queryByText('余下计划')).toBeNull();
   });
 
   it('shows the active plan count when today has actions', () => {
@@ -467,7 +457,7 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('今日行动 · 现在先做')).toBeTruthy();
+    expect(getByText('现在先做')).toBeTruthy();
     expect(getByText('晨起记录体重和腰围')).toBeTruthy();
 
     fireEvent.press(getByText('开始'));
@@ -488,7 +478,6 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('影响指标')).toBeTruthy();
     expect(getByText('BMI')).toBeTruthy();
     expect(getByText('体脂')).toBeTruthy();
   });

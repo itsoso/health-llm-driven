@@ -28,11 +28,16 @@ import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
-import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { EvidenceRefsRow } from '../../components/knowledge';
 import { pushChatWithContext } from '../../utils/agentContext';
-import { getDailyOperatingPlan, recordDailyPlanActionEvent, type DailyPlanAction } from '../../services/dailyPlan';
+import {
+  getDailyOperatingPlan,
+  pickTopPlanActions,
+  recordDailyPlanActionEvent,
+  type DailyOperatingPlan,
+  type DailyPlanAction,
+} from '../../services/dailyPlan';
 import {
   getHealthTrajectory,
   pickPrimaryTrajectoryRisks,
@@ -409,30 +414,20 @@ export default function TodayScreen() {
           onOpenMetric={(route) => router.push(route as any)}
         />
 
-        <View style={styles.section}>
-          {!riskTakesPrimarySlot && (
-            <NextBestActionCard
-              action={nextAction}
-              loading={dailyPlanQuery.isLoading}
-              completionState={visibleNextActionState}
-              onStart={openPlanAction}
-              onComplete={completeNextAction}
-              onFallbackRecord={() => router.push('/(tabs)/record' as any)}
-              onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
-            />
-          )}
-          {(!riskTakesPrimarySlot || activePlanCount > 0) && (
-            <TodayPlanPanel
-              plan={dailyPlanQuery.data}
-              loading={dailyPlanQuery.isLoading}
-              compact
-              title={riskTakesPrimarySlot ? '风险处理后继续' : '余下计划'}
-              excludeActionKey={nextActionKey}
-              onPressAction={openPlanAction}
-              onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
-            />
-          )}
-        </View>
+        {(!riskTakesPrimarySlot || activePlanCount > 0) ? (
+          <TodayExecutionQueue
+            plan={dailyPlanQuery.data}
+            action={riskTakesPrimarySlot ? null : nextAction}
+            loading={dailyPlanQuery.isLoading}
+            completionState={visibleNextActionState}
+            excludeActionKey={nextActionKey}
+            onStart={openPlanAction}
+            onComplete={completeNextAction}
+            onPressAction={openPlanAction}
+            onFallbackRecord={() => router.push('/(tabs)/record' as any)}
+            onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
+          />
+        ) : null}
 
         {isLoading && (
           <View style={styles.loading}>
@@ -743,20 +738,26 @@ function CompactShortcutSection({
   );
 }
 
-function NextBestActionCard({
+function TodayExecutionQueue({
+  plan,
   action,
   loading,
   completionState,
+  excludeActionKey,
   onStart,
   onComplete,
+  onPressAction,
   onFallbackRecord,
   onFallbackAgent,
 }: {
+  plan?: DailyOperatingPlan | null;
   action?: DailyPlanAction | null;
   loading?: boolean;
   completionState: NextActionCompletionState;
+  excludeActionKey?: string | null;
   onStart: (action: DailyPlanAction) => void;
   onComplete: (action: DailyPlanAction) => void;
+  onPressAction: (action: DailyPlanAction) => void;
   onFallbackRecord: () => void;
   onFallbackAgent: () => void;
 }) {
@@ -773,39 +774,66 @@ function NextBestActionCard({
       ? (action?.why || action?.when || '先完成这一步，再看后续计划')
       : '没有硬性任务时，先补齐今天会影响建议的数据';
   const impactMetrics = buildActionImpactMetrics(action);
+  const remainingActions = pickTopPlanActions(
+    (plan?.actions ?? []).filter(item => (item.action_key || item.title) !== excludeActionKey),
+    2,
+  );
+  const totalActionCount = plan?.actions?.length ?? 0;
+  const queueSubtitle = loading
+    ? 'Agent 正在根据实时反馈排序'
+    : totalActionCount > 0
+      ? `${totalActionCount} 件事按影响指标排序`
+      : '先补齐数据，Agent 再生成干预';
 
   return (
-    <View style={[styles.nextActionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.nextActionTop}>
-        <View style={[styles.nextActionIcon, { backgroundColor: c.tintGreen }]}>
-          <Ionicons name="navigate-outline" size={17} color={c.green} />
+    <View style={[styles.executionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.executionHeader}>
+        <View style={[styles.executionIcon, { backgroundColor: c.tintGreen }]}>
+          <Ionicons name="play-circle-outline" size={17} color={c.green} />
         </View>
-        <View style={styles.nextActionMain}>
-          <Text style={[styles.nextActionEyebrow, { color: c.green }]}>今日行动 · 现在先做</Text>
-          <Text style={[styles.nextActionTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+        <View style={styles.executionHeaderText}>
+          <Text style={[styles.executionTitle, { color: c.labelPrimary }]}>执行队列</Text>
+          <Text style={[styles.executionSubtitle, { color: c.labelTertiary }]}>{queueSubtitle}</Text>
+        </View>
+        <Pressable
+          onPress={onFallbackAgent}
+          style={({ pressed }) => [
+            styles.executionAdjustButton,
+            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="问 Agent 调整执行队列"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={13} color={c.brand} />
+          <Text style={[styles.executionAdjustText, { color: c.brand }]}>调整</Text>
+        </Pressable>
+      </View>
+
+      <View style={[styles.executionPrimary, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+        <View style={styles.executionPrimaryTop}>
+          <Text style={[styles.executionEyebrow, { color: c.green }]}>现在先做</Text>
+          <Text style={[styles.executionPrimaryTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {title}
           </Text>
-          {impactMetrics.length > 0 ? (
-            <View style={styles.nextActionImpact}>
-              <Text style={[styles.nextActionImpactLabel, { color: c.labelTertiary }]}>影响指标</Text>
-              <View style={styles.nextActionImpactChips}>
-                {impactMetrics.map(metric => {
-                  const color = c[metric.colorName];
-                  return (
-                    <View key={metric.key} style={[styles.nextActionImpactChip, { backgroundColor: c[metric.tintName] }]}>
-                      <Ionicons name={metric.icon} size={12} color={color} />
-                      <Text style={[styles.nextActionImpactText, { color }]}>{metric.label}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          ) : null}
-          <Text style={[styles.nextActionReason, { color: c.labelSecondary }]} numberOfLines={2}>
-            {reason}
-          </Text>
         </View>
+        <Text style={[styles.executionReason, { color: c.labelSecondary }]} numberOfLines={2}>
+          {reason}
+        </Text>
+        {impactMetrics.length > 0 ? (
+          <View style={styles.executionImpactChips}>
+            {impactMetrics.map(metric => {
+              const color = c[metric.colorName];
+              return (
+                <View key={metric.key} style={[styles.executionImpactChip, { backgroundColor: c[metric.tintName] }]}>
+                  <Ionicons name={metric.icon} size={12} color={color} />
+                  <Text style={[styles.executionImpactText, { color }]}>{metric.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
+
       {completionState === 'error' ? (
         <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
           <Ionicons name="alert-circle-outline" size={14} color={c.red} />
@@ -855,18 +883,45 @@ function NextBestActionCard({
             </Text>
           </Pressable>
         ) : null}
-        <Pressable
-          onPress={onFallbackAgent}
-          style={({ pressed }) => [
-            styles.nextActionSecondary,
-            { borderColor: c.separator, opacity: pressed ? 0.7 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="问 Agent 调整下一步"
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
-          <Text style={[styles.nextActionSecondaryText, { color: c.brand }]}>调整</Text>
-        </Pressable>
+      </View>
+
+      <View style={styles.executionNextBlock}>
+        <View style={styles.executionNextHeader}>
+          <Text style={[styles.executionNextTitle, { color: c.labelPrimary }]}>接下来</Text>
+          <Text style={[styles.executionNextMeta, { color: c.labelTertiary }]}>
+            {remainingActions.length > 0 ? `${remainingActions.length} 个排队任务` : '完成后自动生成'}
+          </Text>
+        </View>
+        {remainingActions.length > 0 ? (
+          <View style={styles.executionNextList}>
+            {remainingActions.map((item, index) => (
+              <Pressable
+                key={`${item.action_key || item.title}-${index}`}
+                onPress={() => onPressAction(item)}
+                style={({ pressed }) => [
+                  styles.executionNextRow,
+                  { borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`打开接下来任务 ${item.title}`}
+              >
+                <View style={[styles.executionNextIcon, { backgroundColor: c.fill }]}>
+                  <Ionicons name={getDailyActionIcon(item.domain)} size={13} color={c.brand} />
+                </View>
+                <Text style={[styles.executionNextText, { color: c.labelPrimary }]} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={[styles.executionNextMetric, { color: c.labelTertiary }]} numberOfLines={1}>
+                  {getActionQueueMeta(item)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.executionEmptyText, { color: c.labelTertiary }]}>
+            当前重点完成后，Agent 会根据新反馈排下一步。
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -1109,6 +1164,37 @@ function isBodyMeasurementAction(action: DailyPlanAction): boolean {
   if (action.domain !== 'measurement') return false;
   const haystack = `${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
   return /体重|腰围|weight|waist|bmi/.test(haystack);
+}
+
+function getDailyActionIcon(domain?: string | null): keyof typeof Ionicons.glyphMap {
+  if (domain === 'nutrition') return 'restaurant-outline';
+  if (domain === 'movement') return 'walk-outline';
+  if (domain === 'sleep') return 'moon-outline';
+  if (domain === 'measurement') return 'analytics-outline';
+  if (domain === 'doctor') return 'medical-outline';
+  return 'checkmark-circle-outline';
+}
+
+function getActionQueueMeta(action: DailyPlanAction): string {
+  const metric = action.verification?.metric || action.metric_key;
+  if (/sleep|sleep_score/.test(metric ?? '')) return '睡眠';
+  if (/hrv/.test(metric ?? '')) return 'HRV';
+  if (/spo2|oxygen/.test(metric ?? '')) return '血氧';
+  if (/bmi|weight|waist/.test(metric ?? '')) return '体成分';
+  if (/body_fat|fat/.test(metric ?? '')) return '体脂';
+  if (/vo2|max|cardio/.test(metric ?? '')) return '有氧';
+  if (/bp|blood_pressure/.test(metric ?? '')) return '血压';
+  if (/lab|blood|glucose|lipid|ldl|hdl|tg/.test(metric ?? '')) return '血检';
+  if (action.when === 'morning') return '早晨';
+  if (action.when === 'meals') return '饮食';
+  if (action.when === 'evening') return '晚间';
+  return action.domain === 'nutrition'
+    ? '饮食'
+    : action.domain === 'movement'
+      ? '运动'
+      : action.domain === 'sleep'
+        ? '睡眠'
+        : '今天';
 }
 
 const IMPACT_METRIC_DEFINITIONS: Record<string, ImpactMetricChip> = {
@@ -1833,36 +1919,53 @@ const styles = StyleSheet.create({
   interventionDomainText: { alignItems: 'center', minWidth: 0, flexShrink: 1 },
   interventionDomainLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   interventionDomainStatus: { fontSize: 8, fontWeight: '700', marginTop: 1, textAlign: 'center' },
-  nextActionCard: {
+  executionCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: spacing.sm,
-    gap: spacing.sm,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    gap: 10,
   },
-  nextActionTop: { flexDirection: 'row', gap: spacing.sm },
-  nextActionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
+  executionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  executionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nextActionMain: { flex: 1, gap: 3 },
-  nextActionEyebrow: { fontSize: 12, fontWeight: '800' },
-  nextActionTitle: { fontSize: 18, fontWeight: '800', lineHeight: 23 },
-  nextActionReason: { fontSize: 13, lineHeight: 18 },
-  nextActionImpact: { gap: 6 },
-  nextActionImpactLabel: { fontSize: 11, fontWeight: '800' },
-  nextActionImpactChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  nextActionImpactChip: {
-    minHeight: 26,
+  executionHeaderText: { flex: 1, minWidth: 0, gap: 2 },
+  executionTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  executionSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  executionAdjustButton: {
+    minHeight: 31,
+    borderRadius: radii.full,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  executionAdjustText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  executionPrimary: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+    gap: 7,
+  },
+  executionPrimaryTop: { gap: 3 },
+  executionEyebrow: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  executionPrimaryTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800' },
+  executionReason: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  executionImpactChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  executionImpactChip: {
+    minHeight: 24,
     borderRadius: radii.full,
     paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  nextActionImpactText: { fontSize: 11, fontWeight: '800' },
+  executionImpactText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   nextActionError: {
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm,
@@ -1876,28 +1979,17 @@ const styles = StyleSheet.create({
   nextActionPrimary: {
     flex: 1,
     minHeight: 38,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   nextActionPrimaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  nextActionSecondary: {
-    minHeight: 38,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  nextActionSecondaryText: { fontSize: 14, fontWeight: '800' },
   nextActionComplete: {
     minHeight: 38,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1905,6 +1997,30 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   nextActionCompleteText: { fontSize: 14, fontWeight: '800' },
+  executionNextBlock: { gap: 7 },
+  executionNextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  executionNextTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  executionNextMeta: { fontSize: 11, lineHeight: 13, fontWeight: '700' },
+  executionNextList: { gap: 6 },
+  executionNextRow: {
+    minHeight: 38,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  executionNextIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  executionNextText: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  executionNextMetric: { maxWidth: 52, fontSize: 11, lineHeight: 13, fontWeight: '700' },
+  executionEmptyText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   sectionHeaderText: { flex: 1, gap: 2 },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
