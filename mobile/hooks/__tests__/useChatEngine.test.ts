@@ -62,6 +62,16 @@ async function* streamStartThenTimeout() {
   throw new Error('请求超时');
 }
 
+async function* streamStartToolThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'tool', toolName: 'weather_context', content: '' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'token', content: '今天户外运动建议先看空气质量。' };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -140,6 +150,73 @@ describe('useChatEngine', () => {
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
+    });
+  });
+
+  it('shows a visible thinking assistant bubble immediately after sending', async () => {
+    mockStreamChat.mockImplementation(streamStartThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('请基于杭州天气调整今天安排');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            streaming: true,
+            content: '⏳ AI 正在思考中...',
+          }),
+        ]),
+      );
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps the thinking bubble while empty tool events arrive before text tokens', async () => {
+    mockStreamChat.mockImplementation(streamStartToolThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('请结合天气、空气质量和日程安排户外活动');
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversationId).toBe(777);
+    });
+
+    expect(result.current.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          streaming: true,
+          content: '⏳ AI 正在思考中...',
+        }),
+      ]),
+    );
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            content: '今天户外运动建议先看空气质量。',
+          }),
+        ]),
+      );
     });
   });
 

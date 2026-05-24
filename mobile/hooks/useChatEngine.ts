@@ -107,6 +107,16 @@ const DEFAULT_WINDOW_DAYS = 7;
 const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
 const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
+const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
+
+function stripThinkingPlaceholder(content: string): string {
+  return content.replace(THINKING_PLACEHOLDER, '');
+}
+
+function mergeAssistantStreamContent(current: string, incoming: string): string {
+  if (!incoming) return current;
+  return stripThinkingPlaceholder(current) + incoming;
+}
 
 async function readStoredConversationId(): Promise<number | null> {
   try {
@@ -378,7 +388,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
     const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
     const aId = nextId();
-    const aiMsg: UIMessage = { id: aId, role: 'assistant', content: '', streaming: true };
+    const aiMsg: UIMessage = { id: aId, role: 'assistant', content: THINKING_PLACEHOLDER, streaming: true };
 
     setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
@@ -391,7 +401,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     let gotFirstToken = false;
     const slowTimer = setTimeout(() => {
       if (!gotFirstToken) {
-        setMessages(prev => prev.map(m => m.id === aId && !m.content ? { ...m, content: '⏳ AI 正在思考中...' } : m));
+        setMessages(prev => prev.map(m => m.id === aId && !m.content ? { ...m, content: THINKING_PLACEHOLDER } : m));
       }
     }, 8000);
 
@@ -408,8 +418,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
-          if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
-          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
+          const incoming = evt.content || '';
+          if (incoming) {
+            if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); }
+            setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, incoming) } : m));
+          }
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
           sawDone = true;
@@ -449,7 +462,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
             completionStatus: 'error',
-            content: m.content + `\n❌ ${errMsg}`,
+            content: stripThinkingPlaceholder(m.content)
+              ? stripThinkingPlaceholder(m.content) + `\n❌ ${errMsg}`
+              : `❌ ${errMsg}`,
           } : m));
         }
       }
@@ -457,8 +472,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         setMessages(prev => prev.map(m => m.id === aId ? {
           ...m,
           completionStatus: 'interrupted',
-          content: m.content
-            ? `${m.content}\n\n[回复中断，已保留已接收内容]`
+          content: stripThinkingPlaceholder(m.content)
+            ? `${stripThinkingPlaceholder(m.content)}\n\n[回复中断，已保留已接收内容]`
             : '[回复中断，请重新提问]',
         } : m));
       }
@@ -471,8 +486,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setMessages(prev => prev.map(m => m.id === aId ? {
         ...m,
         completionStatus: isAbort ? 'interrupted' : 'error',
-        content: m.content
-          ? (isAbort ? m.content + '\n\n[回复中断，已保留已接收内容]' : m.content + `\n❌ ${err?.message || '请求失败'}`)
+        content: stripThinkingPlaceholder(m.content)
+          ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${err?.message || '请求失败'}`)
           : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${err?.message || '请求失败'}`),
       } : m));
     } finally {
