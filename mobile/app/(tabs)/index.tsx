@@ -15,7 +15,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,12 +29,16 @@ import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import TodayPlanPanel from '../../components/dashboard/TodayPlanPanel';
-import TrajectorySnapshotPanel from '../../components/dashboard/TrajectorySnapshotPanel';
 import EvidenceChip from '../../components/shared/EvidenceChip';
 import { EvidenceRefsRow } from '../../components/knowledge';
 import { pushChatWithContext } from '../../utils/agentContext';
 import { getDailyOperatingPlan, recordDailyPlanActionEvent, type DailyPlanAction } from '../../services/dailyPlan';
-import { getHealthTrajectory } from '../../services/trajectory';
+import {
+  getHealthTrajectory,
+  pickPrimaryTrajectoryRisks,
+  type HealthTrajectorySnapshot,
+  type TrajectoryRisk,
+} from '../../services/trajectory';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -420,7 +423,7 @@ export default function TodayScreen() {
             <TodayPlanPanel
               plan={dailyPlanQuery.data}
               loading={dailyPlanQuery.isLoading}
-              compact={riskTakesPrimarySlot}
+              compact
               title={riskTakesPrimarySlot ? '风险处理后继续' : '余下计划'}
               excludeActionKey={nextActionKey}
               onPressAction={openPlanAction}
@@ -444,34 +447,14 @@ export default function TodayScreen() {
         )}
 
         <View style={styles.section}>
-          <TrajectorySnapshotPanel
+          <AgentFollowUpQueue
             snapshot={trajectoryQuery.data}
             loading={trajectoryQuery.isLoading}
-            onPress={openTrajectoryChat}
+            weeklyAdvice={weeklyAdvice}
+            onOpenTrajectory={openTrajectoryChat}
+            onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           />
           <EnvironmentCard />
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader
-            title="本周建议"
-            subtitle={weeklyAdvice.length > 0 ? `${weeklyAdvice.length} 个待处理` : '等待 Agent 生成'}
-          />
-          {weeklyAdvice.length === 0 ? (
-            <View style={[styles.emptyBlock, { borderColor: c.separator }]}>
-              <Text style={[styles.emptyText, { color: c.labelTertiary }]}>
-                本周尚无 Agent 主动建议. 周日晚 21:07 自动生成.
-              </Text>
-            </View>
-          ) : (
-            weeklyAdvice.map(card => (
-              <SuggestionRow
-                key={card.id}
-                card={card}
-                onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
-              />
-            ))
-          )}
         </View>
 
         <CompactShortcutSection
@@ -564,7 +547,7 @@ function HomeCommandHeader({
   ].filter(Boolean).length;
   const evidenceLabel = `${evidenceSourceCount}源画像`;
   const headline = criticalCount > 0
-    ? `先处理 ${criticalCount} 个风险`
+    ? (riskTitle || `${criticalCount} 个风险待处理`)
     : planCount > 0
       ? `今天 ${planCount} 件事`
       : '保持记录节奏';
@@ -574,7 +557,7 @@ function HomeCommandHeader({
       ? `当前重点 · ${activeDomainCount} 个干预域执行中`
       : '当前重点 · 等待新任务';
   const focusText = criticalCount > 0
-    ? (riskTitle || '先确认风险，再处理今天的计划')
+    ? `${criticalCount} 个风险 · 先看解释和处理顺序`
     : planCount > 0
       ? '按优先级完成今日计划'
       : '暂无硬性任务，保持记录节奏';
@@ -727,7 +710,7 @@ function AgentHealthLoopPanel({
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const metrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
-  const visibleDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 4);
+  const visibleDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 5);
 
   return (
     <View style={[styles.loopCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -945,6 +928,206 @@ function NextBestActionCard({
       </View>
     </View>
   );
+}
+
+function AgentFollowUpQueue({
+  snapshot,
+  loading,
+  weeklyAdvice,
+  onOpenTrajectory,
+  onOpenAdvice,
+}: {
+  snapshot?: HealthTrajectorySnapshot | null;
+  loading?: boolean;
+  weeklyAdvice: ActionCard[];
+  onOpenTrajectory: () => void;
+  onOpenAdvice: (card: ActionCard) => void;
+}) {
+  const { c } = useTheme();
+  const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
+  const gapCount = snapshot?.data_gaps?.length ?? 0;
+  const visibleAdvice = weeklyAdvice.slice(0, 2);
+  const queueCount = trajectoryRisks.length + visibleAdvice.length + (weeklyAdvice.length === 0 ? 1 : 0);
+  const subtitle = loading
+    ? '正在整理长期轨迹'
+    : weeklyAdvice.length > 0
+      ? `${trajectoryRisks.length} 条轨迹 · ${weeklyAdvice.length} 条建议`
+      : trajectoryRisks.length > 0
+        ? `${trajectoryRisks.length} 条轨迹 · 周建议待生成`
+        : '先执行上方闭环';
+
+  return (
+    <View style={[styles.followUpCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.followUpHeader}>
+        <View style={[styles.followUpIcon, { backgroundColor: c.tintPurple }]}>
+          <Ionicons name="git-branch-outline" size={17} color={c.purple} />
+        </View>
+        <View style={styles.followUpTitleBlock}>
+          <Text style={[styles.followUpTitle, { color: c.labelPrimary }]}>Agent 后续队列</Text>
+          <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
+        </View>
+        <View style={[styles.followUpCountPill, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+          <Text style={[styles.followUpCountText, { color: c.labelSecondary }]}>{queueCount} 项</Text>
+        </View>
+      </View>
+
+      <View style={styles.followUpList}>
+        {trajectoryRisks.length > 0 ? trajectoryRisks.map(risk => (
+          <TrajectoryQueueRow
+            key={`${risk.domain}-${risk.level}-${risk.title}`}
+            risk={risk}
+            onPress={onOpenTrajectory}
+          />
+        )) : (
+          <FollowUpPlainRow
+            icon="analytics-outline"
+            tint={c.brandLight}
+            color={c.brand}
+            title={loading ? '正在读取 90 天轨迹' : '轨迹暂无新增风险'}
+            detail={loading ? '同步完成后会补上长期判断。' : '继续用睡眠、血氧、体成分和检查数据校准。'}
+            rightLabel={loading ? '同步中' : '观察'}
+            onPress={onOpenTrajectory}
+          />
+        )}
+
+        {visibleAdvice.map(card => (
+          <AdviceQueueRow
+            key={card.id}
+            card={card}
+            onPress={() => onOpenAdvice(card)}
+          />
+        ))}
+
+        {weeklyAdvice.length === 0 ? (
+          <FollowUpPlainRow
+            icon="calendar-outline"
+            tint={c.tintTeal}
+            color={c.brand}
+            title="本周建议待生成"
+            detail="当前先做上方闭环，周日晚 21:07 自动复盘长期建议。"
+            rightLabel="排队"
+          />
+        ) : null}
+
+        {gapCount > 0 ? (
+          <Pressable
+            onPress={onOpenTrajectory}
+            style={({ pressed }) => [
+              styles.followUpGapRow,
+              { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="查看健康轨迹缺口"
+          >
+            <Ionicons name="alert-circle-outline" size={14} color={c.amber} />
+            <Text style={[styles.followUpGapText, { color: c.labelSecondary }]} numberOfLines={1}>
+              还有 {gapCount} 个数据缺口会影响判断
+            </Text>
+            <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function TrajectoryQueueRow({ risk, onPress }: { risk: TrajectoryRisk; onPress: () => void }) {
+  const { c } = useTheme();
+  const color = getTrajectoryLevelColor(risk.level, c);
+  return (
+    <FollowUpPlainRow
+      icon={getTrajectoryRiskIcon(risk.domain)}
+      tint={color.tint}
+      color={color.color}
+      title={risk.title}
+      detail={risk.primary_action || risk.why || 'Agent 会继续观察长期轨迹变化。'}
+      rightLabel={getTrajectoryLevelLabel(risk.level)}
+      onPress={onPress}
+    />
+  );
+}
+
+function AdviceQueueRow({ card, onPress }: { card: ActionCard; onPress: () => void }) {
+  const { c } = useTheme();
+  const decided = !!card.user_decision;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.followUpRow, { opacity: pressed ? 0.72 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={card.title}
+    >
+      <View style={[styles.followUpRowIcon, { backgroundColor: c.tintOrange }]}>
+        <Ionicons name="bulb-outline" size={15} color={c.orange} />
+      </View>
+      <View style={styles.followUpRowText}>
+        <View style={styles.followUpRowTitleLine}>
+          <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+            {card.title}
+          </Text>
+          <EvidenceChip level={card.evidence_level} />
+        </View>
+        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={2}>
+          {card.content}
+        </Text>
+        <EvidenceRefsRow refs={card.evidence_refs} />
+      </View>
+      <Text style={[styles.followUpRowRight, { color: decided ? c.green : c.amber }]}>
+        {decided ? '已决策' : '建议'}
+      </Text>
+    </Pressable>
+  );
+}
+
+function FollowUpPlainRow({
+  icon,
+  tint,
+  color,
+  title,
+  detail,
+  rightLabel,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: string;
+  color: string;
+  title: string;
+  detail: string;
+  rightLabel: string;
+  onPress?: () => void;
+}) {
+  const { c } = useTheme();
+  const content = (
+    <>
+      <View style={[styles.followUpRowIcon, { backgroundColor: tint }]}>
+        <Ionicons name={icon} size={15} color={color} />
+      </View>
+      <View style={styles.followUpRowText}>
+        <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={2}>
+          {detail}
+        </Text>
+      </View>
+      <Text style={[styles.followUpRowRight, { color }]}>{rightLabel}</Text>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.followUpRow, { opacity: pressed ? 0.72 : 1 }]}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={styles.followUpRow}>{content}</View>;
 }
 
 function SectionHeader({
@@ -1385,31 +1568,6 @@ function classifyInterventionDomain(action: DailyPlanAction): InterventionDomain
   return null;
 }
 
-function SuggestionRow({ card, onPress }: { card: ActionCard; onPress: () => void }) {
-  const { c } = useTheme();
-  const decided = !!card.user_decision;
-  return (
-    <TouchableOpacity style={[styles.row, { borderColor: c.separator }]} onPress={onPress}>
-      <View style={styles.rowMain}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={[styles.rowTitle, { color: c.labelPrimary, flex: 1 }]}>{card.title}</Text>
-          <EvidenceChip level={card.evidence_level} />
-        </View>
-        <Text style={[styles.rowSub, { color: c.labelSecondary }]} numberOfLines={2}>
-          {card.content}
-        </Text>
-        <EvidenceRefsRow refs={card.evidence_refs} />
-        {decided && (
-          <View style={styles.decidedTag}>
-            <Text style={styles.decidedText}>{card.user_decision}</Text>
-          </View>
-        )}
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-    </TouchableOpacity>
-  );
-}
-
 function fmt(v?: number | null): string {
   if (v == null || Number.isNaN(v)) return '—';
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
@@ -1418,6 +1576,28 @@ function fmt(v?: number | null): string {
 function formatHomeDate(value: Date): string {
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][value.getDay()];
   return `${value.getMonth() + 1}月${value.getDate()}日 · ${weekday}`;
+}
+
+function getTrajectoryLevelLabel(level: string): string {
+  if (level === 'high') return '高';
+  if (level === 'attention') return '关注';
+  if (level === 'unknown') return '缺数据';
+  if (level === 'ok') return '稳定';
+  return level || '轨迹';
+}
+
+function getTrajectoryRiskIcon(domain: string): keyof typeof Ionicons.glyphMap {
+  if (domain === 'metabolic_health') return 'pulse-outline';
+  if (domain === 'recovery_capacity') return 'battery-charging-outline';
+  if (domain === 'aging_pace') return 'hourglass-outline';
+  return 'analytics-outline';
+}
+
+function getTrajectoryLevelColor(level: string, c: ReturnType<typeof useTheme>['c']) {
+  if (level === 'high') return { tint: c.tintRed, color: c.red };
+  if (level === 'attention') return { tint: c.tintAmber, color: c.amber };
+  if (level === 'ok') return { tint: c.tintGreen, color: c.green };
+  return { tint: c.fill, color: c.labelSecondary };
 }
 
 const styles = StyleSheet.create({
@@ -1429,9 +1609,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
+    paddingTop: 11,
     paddingBottom: spacing.sm,
-    gap: 11,
+    gap: 9,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1457,10 +1637,10 @@ const styles = StyleSheet.create({
   evidenceText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandAgentCopy: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700' },
   commandInsightBox: {
-    minHeight: 36,
+    minHeight: 34,
     borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 7,
@@ -1489,8 +1669,8 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 23, fontWeight: '800', lineHeight: 29, letterSpacing: 0 },
-  commandHint: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  commandTitle: { minWidth: 0, fontSize: 21, fontWeight: '800', lineHeight: 27, letterSpacing: 0 },
+  commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1504,7 +1684,7 @@ const styles = StyleSheet.create({
   commandActions: { flexDirection: 'row', gap: spacing.sm },
   primaryAction: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 40,
     borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1513,8 +1693,8 @@ const styles = StyleSheet.create({
   },
   primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 44,
-    minWidth: 104,
+    minHeight: 40,
+    minWidth: 96,
     borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -1715,8 +1895,8 @@ const styles = StyleSheet.create({
   loopCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
-    padding: spacing.md,
-    gap: spacing.sm,
+    padding: 11,
+    gap: 9,
   },
   loopHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   loopIcon: {
@@ -1732,7 +1912,7 @@ const styles = StyleSheet.create({
   loopPipeline: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingVertical: 8,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1760,23 +1940,83 @@ const styles = StyleSheet.create({
   loopMetricTile: {
     flex: 1,
     minWidth: 0,
-    minHeight: 70,
+    minHeight: 58,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingVertical: 6,
     justifyContent: 'center',
     gap: 4,
   },
   loopMetricIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loopMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  loopMetricValue: { fontSize: 14, lineHeight: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  loopMetricValue: { fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  followUpCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  followUpHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  followUpIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followUpTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  followUpTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  followUpSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  followUpCountPill: {
+    minHeight: 27,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followUpCountText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  followUpList: { gap: 2 },
+  followUpRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 8,
+  },
+  followUpRowIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followUpRowText: { flex: 1, minWidth: 0, gap: 3 },
+  followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0 },
+  followUpRowTitle: { flexShrink: 1, fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  followUpRowDetail: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  followUpRowRight: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpGapRow: {
+    minHeight: 34,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  followUpGapText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '700' },
   compactSection: { gap: spacing.sm },
   shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   shortcutPill: {

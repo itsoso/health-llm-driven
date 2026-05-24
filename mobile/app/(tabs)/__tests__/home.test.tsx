@@ -12,6 +12,8 @@ const mockTodayPlanPanel = jest.fn(({ title = '今日操作计划' }: { title?: 
 });
 let mockDailyPlanActions: unknown[] = [];
 let mockTwinData: Record<string, unknown> = {};
+let mockTrajectoryData: any = null;
+let mockWeeklyAdvice: any[] = [];
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -33,7 +35,7 @@ jest.mock('@tanstack/react-query', () => ({
       return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching: false };
     }
     if (key.includes('trajectory')) {
-      return { data: null, isLoading: false, isRefetching: false };
+      return { data: mockTrajectoryData, isLoading: false, isRefetching: false };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -81,7 +83,7 @@ jest.mock('../../../services/safety', () => ({
 
 jest.mock('../../../services/actionCards', () => ({
   getActiveCards: jest.fn(),
-  pickWeeklySuggestionCards: jest.fn(() => []),
+  pickWeeklySuggestionCards: jest.fn(() => mockWeeklyAdvice),
 }));
 
 jest.mock('../../../services/dailyPlan', () => ({
@@ -91,6 +93,7 @@ jest.mock('../../../services/dailyPlan', () => ({
 
 jest.mock('../../../services/trajectory', () => ({
   getHealthTrajectory: jest.fn(),
+  pickPrimaryTrajectoryRisks: jest.fn((risks = [], limit = 3) => risks.slice(0, limit)),
 }));
 
 jest.mock('../../../services/api', () => ({
@@ -145,6 +148,8 @@ describe('TodayScreen', () => {
     jest.clearAllMocks();
     mockDailyPlanActions = [];
     mockTwinData = {};
+    mockTrajectoryData = null;
+    mockWeeklyAdvice = [];
   });
 
   it('does not show the low-value Agent data visibility panel on the home feed', () => {
@@ -158,8 +163,9 @@ describe('TodayScreen', () => {
 
     expect(queryByText('今天先做 0 件事')).toBeNull();
     expect(queryByText('健康 Agent 正在运行')).toBeNull();
-    expect(getByText('Agent 运行中')).toBeTruthy();
-    expect(getByText('今日重点')).toBeTruthy();
+    expect(getByText('健康 Agent')).toBeTruthy();
+    expect(getByText('后台监测中')).toBeTruthy();
+    expect(getByText('当前重点 · 等待新任务')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('更多入口')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
@@ -174,46 +180,37 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('余下计划')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
-  it('groups the home feed into agent diagnosis, action, outcome feedback, weekly, and entry sections', () => {
+  it('groups the home feed into agent diagnosis, action, intervention loop, follow-up, and entry sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('数据依据')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('干预状态')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 干预闭环')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈 · 本轮干预结果'));
-    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeLessThan(textFlow.indexOf('本周建议'));
-    expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('Agent 干预闭环'));
+    expect(textFlow.indexOf('Agent 干预闭环')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
+    expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
 
   it('frames the home feed as a background health agent workspace', () => {
-    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
+    const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 运行中')).toBeTruthy();
-    expect(getByText('Agent 雷达 · 后台运行中')).toBeTruthy();
-    expect(getByText('4 源诊断 · 5 域干预')).toBeTruthy();
-    expect(getAllByText('数据依据').length).toBeGreaterThan(0);
+    expect(getByText('健康 Agent')).toBeTruthy();
+    expect(getByText('后台监测中')).toBeTruthy();
+    expect(getByText(/源画像/)).toBeTruthy();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
     expect(queryByText('Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。')).toBeNull();
-    expect(getAllByText('基因').length).toBeGreaterThan(0);
-    expect(getByText('表观')).toBeTruthy();
-    expect(getByText('体检')).toBeTruthy();
-    expect(getByText('穿戴')).toBeTruthy();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 雷达 · 后台运行中')).toBeTruthy();
-    expect(getByText('干预状态')).toBeTruthy();
+    expect(getByText('Agent 干预闭环')).toBeTruthy();
     expect(queryByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeNull();
-    expect(getByText('4 源诊断 · 5 域干预')).toBeTruthy();
     expect(queryByText('长期任务')).toBeNull();
   });
 
@@ -221,25 +218,27 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('干预状态')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 干预闭环')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('干预状态')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(screen.getByText('干预状态')).toBeTruthy();
-    expect(screen.getByText(/当前闭环/)).toBeTruthy();
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('Agent 干预闭环'));
+    expect(screen.getByText('Agent 干预闭环')).toBeTruthy();
+    expect(screen.getByText('判断')).toBeTruthy();
+    expect(screen.getByText('干预')).toBeTruthy();
+    expect(screen.getByText('验证')).toBeTruthy();
   });
 
   it('puts the agent workspace before action and outcome feedback sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈 · 本轮干预结果'));
+    expect(textFlow.indexOf('Agent 干预闭环')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('Agent 干预闭环'));
   });
 
-  it('prioritizes outcome feedback before trajectory and environment details', () => {
+  it('prioritizes intervention feedback before the follow-up queue and environment details', () => {
     mockTwinData = {
       physiological: {
         sleep_score_latest: 89,
@@ -255,13 +254,13 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 干预闭环')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
-    expect(textFlow.indexOf('健康轨迹')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境反馈')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeLessThan(textFlow.indexOf('健康轨迹'));
-    expect(textFlow.indexOf('健康轨迹')).toBeLessThan(textFlow.indexOf('环境反馈'));
+    expect(textFlow.indexOf('Agent 干预闭环')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
+    expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('环境反馈'));
   });
 
   it('connects wearable and body composition values to the outcome feedback panel', () => {
@@ -293,27 +292,26 @@ describe('TodayScreen', () => {
     expect(getByText('89 分')).toBeTruthy();
     expect(getByText('HRV')).toBeTruthy();
     expect(getByText('62 ms')).toBeTruthy();
-    expect(getByText('血氧')).toBeTruthy();
-    expect(getByText('93 %')).toBeTruthy();
   });
 
   it('shows the lifestyle intervention loop across diet, sleep, movement, supplements, and emotion', () => {
     mockDailyPlanActions = [
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+      { action_key: 'movement.walk', domain: 'movement', title: '步行 20 分钟' },
       { action_key: 'supplement.magnesium', domain: 'nutrition', title: '晚间补剂' },
       { action_key: 'mood.breathing', domain: 'mental', title: '睡前呼吸练习' },
     ];
 
     const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('干预状态')).toBeTruthy();
+    expect(getByText('Agent 干预闭环')).toBeTruthy();
     expect(getAllByText('饮食').length).toBeGreaterThan(0);
     expect(getAllByText('睡眠').length).toBeGreaterThan(0);
     expect(getAllByText('运动').length).toBeGreaterThan(0);
     expect(getByText('补剂')).toBeTruthy();
     expect(getByText('情绪')).toBeTruthy();
-    expect(getByText(/4 个域待执行/)).toBeTruthy();
+    expect(getByText('5项')).toBeTruthy();
   });
 
   it('opens the matching intervention surface from the lifestyle loop', () => {
@@ -334,7 +332,7 @@ describe('TodayScreen', () => {
 
     const { getByLabelText } = render(<TodayScreen />);
 
-    fireEvent.press(getByLabelText('让 Agent 解释当前判断'));
+    fireEvent.press(getByLabelText('问 Agent'));
 
     expect(mockPushChatWithContext).toHaveBeenCalledWith(
       expect.anything(),
@@ -415,7 +413,7 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('2 个干预待执行')).toBeTruthy();
+    expect(getByText('今天 2 件事')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
