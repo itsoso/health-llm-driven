@@ -175,6 +175,10 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
   const caution = aqi != null && aqi > 150 ? '空气差，户外改室内或降低强度' : null;
 
   if (compact && mode === 'micro') {
+    const microLocationLabel = loc?.city || locationLabel;
+    const microSummary = [microLocationLabel, caution ?? (microWeatherLine || '环境同步中')]
+      .filter(Boolean)
+      .join(' · ');
     return (
       <View style={[styles.microCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         <TouchableOpacity
@@ -182,13 +186,10 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
           onPress={() => router.push('/location' as any)}
           accessibilityLabel="设置当前位置"
         >
-          <Ionicons name="location-outline" size={14} color={c.labelTertiary} />
+          <Ionicons name="location-outline" size={13} color={c.labelTertiary} />
           <View style={styles.microTextBlock}>
-            <Text style={[styles.microLocationText, { color: c.labelSecondary }]} numberOfLines={1}>
-              {locationLabel}
-            </Text>
-            <Text style={[styles.microSummaryText, { color: c.labelPrimary }]} numberOfLines={1}>
-              {caution ?? (microWeatherLine || '环境同步中')}
+            <Text style={[styles.microSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
+              {microSummary}
             </Text>
           </View>
         </TouchableOpacity>
@@ -207,14 +208,14 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
           })}
           accessibilityLabel="让 Agent 调整今天户外安排"
         >
-          <Ionicons name="sparkles-outline" size={15} color={c.brand} />
+          <Ionicons name="sparkles-outline" size={14} color={c.brand} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.microRunButton, { borderColor: c.separator, backgroundColor: c.bgPrimary }]}
           onPress={() => router.push('/live-run' as any)}
           accessibilityLabel="开始跑步"
         >
-          <Ionicons name="play-outline" size={15} color={c.labelSecondary} />
+          <Ionicons name="play-outline" size={14} color={c.labelSecondary} />
         </TouchableOpacity>
       </View>
     );
@@ -376,39 +377,38 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   microCard: {
-    minHeight: 54,
+    minHeight: 42,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  microMain: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 38,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
   },
-  microTextBlock: { flex: 1, minWidth: 0, gap: 2 },
-  microLocationText: { fontSize: 11, lineHeight: 13, fontWeight: '700' },
-  microSummaryText: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  microAqiDot: { width: 7, height: 7, borderRadius: 3.5 },
+  microMain: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  microTextBlock: { flex: 1, minWidth: 0 },
+  microSummaryText: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
+  microAqiDot: { width: 6, height: 6, borderRadius: 3 },
   microAgentButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   microRunButton: {
-    width: 34,
-    height: 34,
+    width: 30,
+    height: 30,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 17,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
