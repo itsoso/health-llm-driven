@@ -562,6 +562,10 @@ function HomeCommandHeader({
   }).replace(/\//g, '、')}已接入`;
   const strategySummary = activeDomainSummary || `${activeCount} 个干预`;
   const watchSummary = loopMetrics.map(metric => metric.label).slice(0, 2).join('/') || '周日晚复盘';
+  const verificationMetrics = visibleLoopMetrics
+    .map(metric => `${metric.label} ${metric.value}`)
+    .join(' / ');
+  const primaryVerificationMetric = visibleLoopMetrics[0] ?? null;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
@@ -617,45 +621,35 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <View style={styles.commandMetricRail}>
-        <HomeText style={[styles.commandOutcomeLabel, { color: c.labelTertiary }]}>目标</HomeText>
-        {visibleLoopMetrics.map(metric => {
-          const color = c[metric.colorName];
-          return (
-            <Pressable
-              key={metric.key}
-              onPress={() => onOpenMetric(metric.route)}
-              style={({ pressed }) => [
-                styles.commandMetricPill,
-                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.62 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${metric.label} ${metric.value}`}
-            >
-              <HomeText style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                {metric.label}
-              </HomeText>
-              <HomeText style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
-                {metric.value}
-              </HomeText>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.commandLoopRail}>
-        <View style={[styles.commandLoopChip, { backgroundColor: c.bgPrimary }]}>
-          <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>干预</HomeText>
-          <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
-            {strategySummary}
+      <View style={[styles.commandWorkflowPanel, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+        <View style={styles.commandWorkflowRow}>
+          <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>证据</HomeText>
+          <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
+            {evidenceSummary}
           </HomeText>
         </View>
-        <View style={[styles.commandLoopChip, { backgroundColor: c.bgPrimary }]}>
-          <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>验证</HomeText>
-          <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
-            {watchSummary}
+        <View style={styles.commandWorkflowRow}>
+          <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>干预</HomeText>
+          <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
+            {strategySummary} · {nextStepActionText}
           </HomeText>
         </View>
+        <Pressable
+          onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
+          style={({ pressed }) => [styles.commandWorkflowRow, { opacity: pressed ? 0.64 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            primaryVerificationMetric
+              ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
+              : '查看验证目标'
+          }
+        >
+          <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>验证目标</HomeText>
+          <HomeText style={[styles.commandWorkflowValue, { color: c.labelPrimary }]} numberOfLines={1}>
+            {verificationMetrics || watchSummary}
+          </HomeText>
+          <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
+        </Pressable>
       </View>
 
       <View style={styles.commandInlineActionRow}>
@@ -1800,6 +1794,21 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandWorkflowPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 5,
+  },
+  commandWorkflowRow: {
+    minHeight: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  commandWorkflowLabel: { width: 48, fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandWorkflowValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '800' },
   commandDecisionCard: {
     minHeight: 82,
     borderWidth: StyleSheet.hairlineWidth,

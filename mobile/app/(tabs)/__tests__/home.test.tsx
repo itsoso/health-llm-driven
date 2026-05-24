@@ -162,7 +162,7 @@ describe('TodayScreen', () => {
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getByText('今日优先 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
-    expect(getByText('目标')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('个人画像')).toBeTruthy();
@@ -223,10 +223,10 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
-    expect(getByText('目标')).toBeTruthy();
-    expect(getAllByText('验证').length).toBeGreaterThan(0);
-    expect(getByText(/血氧\/睡眠分/)).toBeTruthy();
-    expect(getByText('表观遗传、穿戴已接入')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
+    expect(getAllByText(/验证/).length).toBeGreaterThan(0);
+    expect(getByText(/血氧 .*睡眠分/)).toBeTruthy();
+    expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
     expect(queryByText(/画像校准/)).toBeNull();
   });
 
@@ -411,12 +411,12 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('BMI/体脂')).toBeTruthy();
-    expect(getByText('24.1 / 21.8%')).toBeTruthy();
-    expect(getByText('睡眠分')).toBeTruthy();
-    expect(getByText('89 分')).toBeTruthy();
-    expect(getByText('HRV')).toBeTruthy();
-    expect(getByText('62 ms')).toBeTruthy();
+    expect(getByText(/BMI\/体脂/)).toBeTruthy();
+    expect(getByText(/24\.1 \/ 21\.8%/)).toBeTruthy();
+    expect(getByText(/睡眠分/)).toBeTruthy();
+    expect(getByText(/89 分/)).toBeTruthy();
+    expect(getByText(/HRV/)).toBeTruthy();
+    expect(getByText(/62 ms/)).toBeTruthy();
   });
 
   it('shows the lifestyle intervention loop across diet, sleep, movement, supplements, and emotion', () => {
@@ -539,7 +539,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 2 个计划')).toBeTruthy();
-    expect(getByText('目标')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
@@ -591,9 +591,9 @@ describe('TodayScreen', () => {
 
     const { getAllByText } = render(<TodayScreen />);
 
-    expect(getAllByText('BMI/体脂').length).toBeGreaterThan(0);
-    expect(getAllByText('VO2max').length).toBeGreaterThan(0);
-    expect(getAllByText('HRV').length).toBeGreaterThan(0);
+    expect(getAllByText(/BMI\/体脂/).length).toBeGreaterThan(0);
+    expect(getAllByText(/VO2max/).length).toBeGreaterThan(0);
+    expect(getAllByText(/HRV/).length).toBeGreaterThan(0);
   });
 
   it('infers sleep intervention outcomes for sleep actions', () => {
@@ -608,9 +608,9 @@ describe('TodayScreen', () => {
 
     const { getAllByText } = render(<TodayScreen />);
 
-    expect(getAllByText('睡眠分').length).toBeGreaterThan(0);
-    expect(getAllByText('HRV').length).toBeGreaterThan(0);
-    expect(getAllByText('血氧').length).toBeGreaterThan(0);
+    expect(getAllByText(/睡眠分/).length).toBeGreaterThan(0);
+    expect(getAllByText(/HRV/).length).toBeGreaterThan(0);
+    expect(getAllByText(/血氧/).length).toBeGreaterThan(0);
   });
 
   it('lets the user complete the next best action from the top card', async () => {
