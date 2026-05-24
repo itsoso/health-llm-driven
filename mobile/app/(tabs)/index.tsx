@@ -278,7 +278,6 @@ export default function TodayScreen() {
   const activePlanCount = dailyPlanQuery.data?.actions?.length ?? 0;
   const nextAction = (dailyPlanQuery.data?.actions ?? []).find(action => Boolean(action?.title)) ?? null;
   const nextActionKey = nextAction?.action_key || nextAction?.title || null;
-  const riskTakesPrimarySlot = criticalAlerts.length > 0 && !nextAction;
   const visibleNextActionState: NextActionCompletionState =
     nextActionCompletion.actionKey === nextActionKey ? nextActionCompletion.state : 'idle';
   const interventionDomains = buildInterventionDomainStatuses(dailyPlanQuery.data?.actions ?? []);
@@ -410,10 +409,10 @@ export default function TodayScreen() {
           onOpenMetric={(route) => router.push(route as any)}
         />
 
-        {(!riskTakesPrimarySlot || activePlanCount > 0) ? (
+        {(criticalAlerts.length === 0 || activePlanCount > 0) ? (
           <TodayExecutionQueue
             plan={dailyPlanQuery.data}
-            action={riskTakesPrimarySlot ? null : nextAction}
+            action={nextAction}
             loading={dailyPlanQuery.isLoading}
             completionState={visibleNextActionState}
             excludeActionKey={nextActionKey}
@@ -516,9 +515,9 @@ function HomeCommandHeader({
   const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
   const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
-  const primaryLabel = criticalCount > 0 ? '处理风险' : '问 Agent';
-  const primaryIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
-  const primaryAction = criticalCount > 0 ? onOpenFocus : onOpenAgent;
+  const primaryLabel = '问 Agent';
+  const primaryIcon: keyof typeof Ionicons.glyphMap = 'chatbubble-ellipses-outline';
+  const primaryAction = onOpenAgent;
   const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
   const wearableReady = Boolean(
     twinSnapshot.hrv
@@ -578,6 +577,10 @@ function HomeCommandHeader({
     .map(item => `${item.label} ${item.value}`)
     .join(' · ');
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
+  const nextStepActionText = action?.title ? '打开今天第一件事' : nextStepLabel.replace(/^下一步：/, '');
+  const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
+  const decisionColor = criticalCount > 0 ? c.red : c.brand;
+  const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -608,7 +611,8 @@ function HomeCommandHeader({
         style={({ pressed }) => [
           styles.commandDecisionArea,
           {
-            borderLeftColor: c.brand,
+            backgroundColor: c.bgPrimary,
+            borderColor: `${decisionColor}30`,
             opacity: pressed ? 0.78 : 1,
           },
         ]}
@@ -616,78 +620,79 @@ function HomeCommandHeader({
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <Text style={[styles.commandFocusLabel, { color: c.brand }]}>{focusKicker}</Text>
-        <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-          {headline}
-        </Text>
+        <View style={styles.commandDecisionTop}>
+          <View style={[styles.commandDecisionIcon, { backgroundColor: decisionTint }]}>
+            <Ionicons name={decisionIcon} size={18} color={decisionColor} />
+          </View>
+          <View style={styles.commandTitleBlock}>
+            <Text style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</Text>
+            <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+              {headline}
+            </Text>
+          </View>
+        </View>
         <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
-        <View style={[styles.commandLoopLine, { backgroundColor: c.bgPrimary }]}>
-          <Ionicons name="git-compare-outline" size={13} color={c.brand} />
+        <View style={[styles.commandLoopLine, { backgroundColor: c.bgCard }]}>
+          <Ionicons name="git-compare-outline" size={13} color={decisionColor} />
           <Text style={[styles.commandLoopText, { color: c.labelSecondary }]} numberOfLines={1}>
             {agentLoopLine}
           </Text>
         </View>
       </Pressable>
 
-      <View style={[styles.commandOutcomeBlock, { backgroundColor: c.bgPrimary }]}>
-        <Text style={[styles.commandSignalPrefix, { color: c.labelTertiary }]}>影响指标</Text>
-        <View style={styles.commandSignalLine}>
-          {visibleLoopMetrics.map((metric, index) => {
-            const color = c[metric.colorName];
-            return (
-              <React.Fragment key={metric.key}>
-                <Pressable
-                  onPress={() => onOpenMetric(metric.route)}
-                  style={({ pressed }) => [
-                    styles.commandSignalChip,
-                    { opacity: pressed ? 0.72 : 1 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${metric.label} ${metric.value}`}
-                >
-                  <Text style={[styles.commandSignalLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                    {metric.label}
-                  </Text>
-                  <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
-                    {metric.value}
-                  </Text>
-                </Pressable>
-                {index < visibleLoopMetrics.length - 1 ? (
-                  <Text style={[styles.commandSignalSeparator, { color: c.labelTertiary }]}>·</Text>
-                ) : null}
-              </React.Fragment>
-            );
-          })}
-        </View>
+      <View style={styles.commandMetricGrid}>
+        {visibleLoopMetrics.map(metric => {
+          const color = c[metric.colorName];
+          return (
+            <Pressable
+              key={metric.key}
+              onPress={() => onOpenMetric(metric.route)}
+              style={({ pressed }) => [
+                styles.commandMetricCard,
+                { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${metric.label} ${metric.value}`}
+            >
+              <Text style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                {metric.label}
+              </Text>
+              <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                {metric.value}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <Pressable
         onPress={onOpenFocus}
         style={({ pressed }) => [
           styles.commandNextStep,
-          { borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+          { backgroundColor: c.brand, borderColor: c.brand, opacity: pressed ? 0.82 : 1 },
         ]}
         accessibilityRole="button"
         accessibilityLabel="打开下一步"
       >
-        <Ionicons name="arrow-forward-circle-outline" size={16} color={c.brand} />
-        <Text style={[styles.commandNextStepText, { color: c.labelPrimary }]} numberOfLines={1}>
-          {nextStepLabel}
-        </Text>
+        <Ionicons name="arrow-forward-circle-outline" size={18} color="#FFFFFF" />
+        <View style={styles.commandNextStepCopy}>
+          <Text style={styles.commandNextStepLabel}>下一步</Text>
+          <Text style={styles.commandNextStepText} numberOfLines={1}>{nextStepActionText}</Text>
+        </View>
       </Pressable>
 
       <View style={styles.commandActions}>
         <Pressable
           style={({ pressed }) => [
             styles.primaryAction,
-            { backgroundColor: c.brand, borderColor: c.brand, opacity: pressed ? 0.8 : 1 },
+            { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.76 : 1 },
           ]}
           onPress={primaryAction}
           accessibilityRole="button"
           accessibilityLabel={primaryLabel}
         >
-          <Ionicons name={primaryIcon} size={17} color="#FFFFFF" />
-          <Text style={styles.primaryActionText}>{primaryLabel}</Text>
+          <Ionicons name={primaryIcon} size={17} color={c.brand} />
+          <Text style={[styles.primaryActionText, { color: c.labelPrimary }]}>{primaryLabel}</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [
@@ -1553,10 +1558,10 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
-    paddingHorizontal: 13,
-    paddingTop: 12,
+    paddingHorizontal: 12,
+    paddingTop: 11,
     paddingBottom: 12,
-    gap: 10,
+    gap: 9,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1578,6 +1583,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
+  },
+  commandMetricGrid: { flexDirection: 'row', gap: 7 },
+  commandMetricCard: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 48,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    justifyContent: 'center',
+    gap: 2,
   },
   agentStepRail: {
     minHeight: 22,
@@ -1610,15 +1626,17 @@ const styles = StyleSheet.create({
   commandSignalValue: { minWidth: 0, fontSize: 14, lineHeight: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandNextStep: {
-    minHeight: 34,
+    minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
+    borderRadius: radii.lg,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 9,
   },
-  commandNextStepText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandNextStepCopy: { flex: 1, minWidth: 0, gap: 1 },
+  commandNextStepLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandNextStepText: { color: '#FFFFFF', fontSize: 13, lineHeight: 16, fontWeight: '800' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1627,10 +1645,18 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandDecisionArea: {
-    borderLeftWidth: 3,
-    paddingLeft: 10,
-    paddingVertical: 1,
-    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: 10,
+    gap: 7,
+  },
+  commandDecisionTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  commandDecisionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
@@ -1648,13 +1674,13 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 21, fontWeight: '800', lineHeight: 26, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 21, fontWeight: '800', lineHeight: 25, letterSpacing: 0 },
   commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
   commandLoopLine: {
-    minHeight: 26,
+    minHeight: 25,
     alignSelf: 'stretch',
     borderRadius: radii.full,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -1670,10 +1696,10 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '800' },
-  commandActions: { flexDirection: 'row', gap: 9 },
+  commandActions: { flexDirection: 'row', gap: 8 },
   primaryAction: {
     flex: 1,
-    minHeight: 38,
+    minHeight: 36,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -1681,10 +1707,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
   },
-  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  primaryActionText: { fontSize: 14, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 38,
-    minWidth: 82,
+    flex: 1,
+    minHeight: 36,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',

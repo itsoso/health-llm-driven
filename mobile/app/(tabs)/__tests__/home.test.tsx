@@ -163,7 +163,8 @@ describe('TodayScreen', () => {
     expect(getByText('今日洞察 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('目标：补齐数据，让建议更贴近身体反馈')).toBeTruthy();
-    expect(getByText('下一步：补齐今天记录，Agent 再排干预')).toBeTruthy();
+    expect(getByText('下一步')).toBeTruthy();
+    expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('长期档案')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
@@ -222,7 +223,7 @@ describe('TodayScreen', () => {
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日洞察 · 1 个干预域')).toBeTruthy();
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
-    expect(getByText('下一步：23:00 上床')).toBeTruthy();
+    expect(getByText('打开今天第一件事')).toBeTruthy();
     expect(getByText(/观察 血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('依据：表观遗传/穿戴')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
@@ -236,8 +237,10 @@ describe('TodayScreen', () => {
     const { getByLabelText, getByText } = render(<TodayScreen />);
 
     expect(getByText('今日洞察 · 风险优先')).toBeTruthy();
-    expect(getByText('下一步：查看风险原因，调整今晚策略')).toBeTruthy();
-    expect(getByLabelText('处理风险')).toBeTruthy();
+    expect(getByText('下一步')).toBeTruthy();
+    expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
+    expect(getByLabelText('打开下一步')).toBeTruthy();
+    expect(getByLabelText('问 Agent')).toBeTruthy();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
