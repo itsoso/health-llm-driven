@@ -406,7 +406,6 @@ export default function TodayScreen() {
           )}
           onOpenAgent={openWorkspaceChat}
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
-          onPressDomain={(domain) => router.push(domain.route as any)}
           onOpenMetric={(route) => router.push(route as any)}
         />
 
@@ -507,7 +506,6 @@ function HomeCommandHeader({
   onOpenFocus,
   onOpenAgent,
   onOpenRecord,
-  onPressDomain,
   onOpenMetric,
 }: {
   criticalCount: number;
@@ -522,7 +520,6 @@ function HomeCommandHeader({
   onOpenFocus: () => void;
   onOpenAgent: () => void;
   onOpenRecord: () => void;
-  onPressDomain: (domain: InterventionDomainStatus) => void;
   onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
@@ -550,7 +547,12 @@ function HomeCommandHeader({
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
-  const loopDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 3);
+  const activeDomainLabels = domains
+    .filter(domain => domain.activeCount > 0)
+    .map(domain => domain.label);
+  const activeDomainSummary = activeDomainLabels.length > 3
+    ? `${activeDomainLabels.slice(0, 3).join('/')} +${activeDomainLabels.length - 3}`
+    : activeDomainLabels.join('/');
   const improvementFocus = buildImprovementFocus({
     action,
     criticalCount,
@@ -575,7 +577,12 @@ function HomeCommandHeader({
       ? improvementFocus.target
       : improvementFocus.target;
   const liveSignalSummary = buildLiveSignalSummary(twinSnapshot);
-  const agentInsight = `基于 ${evidenceLabel} 和 ${liveSignalSummary}，正在推动${improvementFocus.outcome}。`;
+  const agentInsight = `基于 ${evidenceLabel} 和 ${liveSignalSummary}，正在推动${improvementFocus.outcome}`;
+  const loopSummary = [
+    `判断 ${loopStrategy.diagnosisLabel}`,
+    `干预 ${activeDomainSummary || loopStrategy.interventionLabel}`,
+    `验证 ${loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/')}`,
+  ].join(' · ');
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -617,33 +624,19 @@ function HomeCommandHeader({
           {headline}
         </Text>
         <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
-      </Pressable>
-
-      <View style={[styles.commandInsightBox, { backgroundColor: c.brandLight }]}>
-        <Ionicons name="pulse-outline" size={15} color={c.brand} />
-        <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
+        <Text style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
           {agentInsight}
         </Text>
-      </View>
+      </Pressable>
 
-      <View style={styles.commandLoopDigest}>
-        <View style={[styles.commandLoopSteps, { borderColor: c.separator }]}>
-          {[
-            { label: '判断', value: loopStrategy.diagnosisLabel, icon: 'pulse-outline' as const },
-            { label: '干预', value: loopStrategy.interventionLabel, icon: 'git-network-outline' as const },
-            { label: '验证', value: loopStrategy.verificationLabel || `${loopMetrics.length}项`, icon: 'analytics-outline' as const },
-          ].map(step => (
-            <View key={step.label} style={styles.commandLoopStep}>
-              <Ionicons name={step.icon} size={12} color={c.brand} />
-              <Text style={[styles.commandLoopStepLabel, { color: c.labelTertiary }]}>{step.label}</Text>
-              <Text style={[styles.commandLoopStepValue, { color: c.labelPrimary }]} numberOfLines={1}>
-                {step.value}
-              </Text>
-            </View>
-          ))}
+      <View style={styles.commandOutcomeBlock}>
+        <View style={styles.commandOutcomeHeader}>
+          <Text style={[styles.commandOutcomeTitle, { color: c.labelPrimary }]}>结果反馈</Text>
+          <Text style={[styles.commandLoopSummary, { color: c.labelTertiary }]} numberOfLines={1}>
+            {loopSummary}
+          </Text>
         </View>
-
-        <View style={styles.commandMetricRail}>
+        <View style={styles.commandMetricGrid}>
           {loopMetrics.map(metric => {
             const color = c[metric.colorName];
             return (
@@ -651,47 +644,23 @@ function HomeCommandHeader({
                 key={metric.key}
                 onPress={() => onOpenMetric(metric.route)}
                 style={({ pressed }) => [
-                  styles.commandMetricPill,
+                  styles.commandMetricTile,
                   { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`${metric.label} ${metric.value}`}
               >
-                <Ionicons name={metric.icon} size={12} color={color} />
-                <Text style={[styles.commandMetricLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                  {metric.label}
-                </Text>
-                <Text style={[styles.commandMetricValue, { color }]} numberOfLines={1}>
-                  {metric.value}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.commandDomainRail}>
-          {loopDomains.map(domain => {
-            const color = c[domain.colorName];
-            const active = domain.activeCount > 0;
-            return (
-              <Pressable
-                key={domain.key}
-                onPress={() => onPressDomain(domain)}
-                style={({ pressed }) => [
-                  styles.commandDomainPill,
-                  {
-                    backgroundColor: active ? c[domain.tintName] : c.bgPrimary,
-                    borderColor: active ? `${color}55` : c.separator,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`打开${domain.label}干预`}
-              >
-                <Ionicons name={domain.icon} size={12} color={color} />
-                <Text style={[styles.commandDomainText, { color: c.labelPrimary }]} numberOfLines={1}>
-                  {domain.label}
-                </Text>
+                <View style={[styles.commandMetricIcon, { backgroundColor: c[metric.tintName] }]}>
+                  <Ionicons name={metric.icon} size={13} color={color} />
+                </View>
+                <View style={styles.commandMetricTextBlock}>
+                  <Text style={[styles.commandMetricLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                    {metric.label}
+                  </Text>
+                  <Text style={[styles.commandMetricValue, { color }]} numberOfLines={1}>
+                    {metric.value}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}
@@ -1528,31 +1497,6 @@ function buildAgentLoopStrategy({
   };
 }
 
-function pickPriorityInterventionDomains(
-  domains: InterventionDomainStatus[],
-  riskTitle?: string,
-  action?: DailyPlanAction | null,
-): InterventionDomainStatus[] {
-  const activeDomains = domains.filter(domain => domain.activeCount > 0);
-  if (activeDomains.length > 0) return activeDomains;
-
-  const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
-  let priority: InterventionDomainKey[] = [];
-  if (/spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
-    priority = ['sleep', 'emotion', 'movement'];
-  } else if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
-    priority = ['diet', 'movement', 'sleep'];
-  } else if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
-    priority = ['movement', 'sleep', 'emotion', 'diet'];
-  } else if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
-    priority = ['diet', 'movement', 'supplement', 'sleep'];
-  }
-
-  if (priority.length === 0) return domains;
-  const byKey = new Map(domains.map(domain => [domain.key, domain]));
-  return priority.map(key => byKey.get(key)).filter(Boolean) as InterventionDomainStatus[];
-}
-
 function buildWorkspaceDataSources({
   geneticHits,
   progressTotal,
@@ -1689,59 +1633,37 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   evidenceText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandAgentCopy: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700' },
-  commandInsightBox: {
-    minHeight: 34,
-    borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 7,
+  commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  commandOutcomeBlock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(120, 120, 128, 0.16)',
+    paddingTop: 9,
+    gap: 8,
   },
-  commandLoopDigest: { gap: 7 },
-  commandLoopSteps: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  commandLoopStep: {
+  commandOutcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  commandOutcomeTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  commandLoopSummary: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  commandMetricGrid: { flexDirection: 'row', gap: spacing.xs },
+  commandMetricTile: {
     flex: 1,
     minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  commandLoopStepLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  commandLoopStepValue: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  commandMetricRail: { flexDirection: 'row', gap: spacing.xs },
-  commandMetricPill: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 32,
+    minHeight: 52,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  commandMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  commandMetricValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  commandDomainRail: { flexDirection: 'row', gap: spacing.xs },
-  commandDomainPill: {
-    minHeight: 30,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
     gap: 5,
   },
-  commandDomainText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  commandMetricIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandMetricTextBlock: { minWidth: 0, gap: 1 },
+  commandMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandMetricValue: { fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,

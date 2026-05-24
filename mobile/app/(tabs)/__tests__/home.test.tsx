@@ -186,14 +186,14 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('判断')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('干预')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('验证')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.some(text => /判断/.test(text))).toBe(true);
+    expect(textFlow.some(text => /干预/.test(text))).toBe(true);
+    expect(textFlow.some(text => /验证/.test(text))).toBe(true);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.indexOf('判断'));
-    expect(textFlow.indexOf('判断')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /判断/.test(text)));
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
     expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('更多入口'));
   });
@@ -230,11 +230,11 @@ describe('TodayScreen', () => {
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getAllByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('判断')).toBeTruthy();
-    expect(getByText('干预')).toBeTruthy();
-    expect(getByText('验证')).toBeTruthy();
+    expect(getAllByText(/判断/).length).toBeGreaterThan(0);
+    expect(getAllByText(/干预/).length).toBeGreaterThan(0);
+    expect(getAllByText(/验证/).length).toBeGreaterThan(0);
     expect(queryByText('Agent 干预闭环')).toBeNull();
     expect(queryByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeNull();
     expect(queryByText('长期任务')).toBeNull();
@@ -244,12 +244,12 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('判断')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.some(text => /判断/.test(text))).toBe(true);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('判断')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
-    expect(screen.getByText('判断')).toBeTruthy();
-    expect(screen.getByText('干预')).toBeTruthy();
-    expect(screen.getByText('验证')).toBeTruthy();
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(screen.getAllByText(/判断/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/验证/).length).toBeGreaterThan(0);
   });
 
   it('puts the agent workspace before action and outcome feedback sections', () => {
@@ -258,9 +258,9 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('判断')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.indexOf('判断'));
-    expect(textFlow.indexOf('判断')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.some(text => /判断/.test(text))).toBe(true);
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /判断/.test(text)));
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
   });
 
   it('prioritizes intervention feedback before the follow-up queue and environment details', () => {
@@ -279,12 +279,12 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('判断')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.some(text => /判断/.test(text))).toBe(true);
     expect(textFlow.indexOf('本轮干预看这些结果')).toBe(-1);
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
     expect(textFlow.indexOf('Agent 后续队列')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境反馈')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('判断')).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
+    expect(textFlow.findIndex(text => /判断/.test(text))).toBeLessThan(textFlow.indexOf('Agent 后续队列'));
     expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('环境反馈'));
   });
 
@@ -328,16 +328,13 @@ describe('TodayScreen', () => {
       { action_key: 'mood.breathing', domain: 'mental', title: '睡前呼吸练习' },
     ];
 
-    const { getAllByText, getByText } = render(<TodayScreen />);
+    const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('判断')).toBeTruthy();
-    expect(getAllByText('饮食').length).toBeGreaterThan(0);
-    expect(getAllByText('睡眠').length).toBeGreaterThan(0);
-    expect(getAllByText('运动').length).toBeGreaterThan(0);
-    expect(getByText('5项')).toBeTruthy();
+    expect(getByText(/判断/)).toBeTruthy();
+    expect(getByText(/干预 饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
-  it('opens the matching intervention surface from the lifestyle loop', () => {
+  it('opens outcome feedback surfaces from the agent summary', () => {
     mockDailyPlanActions = [
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
       { action_key: 'mood.breathing', domain: 'mental', title: '睡前呼吸练习' },
@@ -345,11 +342,8 @@ describe('TodayScreen', () => {
 
     const { getByLabelText } = render(<TodayScreen />);
 
-    fireEvent.press(getByLabelText('打开睡眠干预'));
-    expect(mockPush).toHaveBeenCalledWith('/sleep');
-
-    fireEvent.press(getByLabelText('打开情绪干预'));
-    expect(mockPush).toHaveBeenCalledWith('/(tabs)/chat');
+    fireEvent.press(getByLabelText('血氧 待同步'));
+    expect(mockPush).toHaveBeenCalledWith('/sleep-spo2-analysis');
   });
 
   it('opens Agent explanation with workspace and intervention context', () => {
