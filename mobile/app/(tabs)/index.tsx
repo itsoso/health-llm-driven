@@ -978,12 +978,12 @@ function AgentFollowUpQueue({
     + weeklyAdvice.length - (showPrimaryAdvice ? 1 : 0),
   );
   const subtitle = loading
-    ? 'Agent 后台队列 · 整理长期轨迹'
+    ? '整理长期轨迹'
     : weeklyAdvice.length > 0
-      ? `后台队列 · ${trajectoryRisks.length} 轨迹/${weeklyAdvice.length} 建议`
+      ? `${trajectoryRisks.length} 轨迹/${weeklyAdvice.length} 建议`
       : trajectoryRisks.length > 0
-        ? `后台队列 · ${trajectoryRisks.length} 轨迹/周建议排队`
-        : '后台队列 · 先执行上方闭环';
+        ? `${trajectoryRisks.length} 轨迹/周建议排队`
+        : '先执行上方闭环';
 
   return (
     <View style={[styles.followUpCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -992,10 +992,10 @@ function AgentFollowUpQueue({
           <Ionicons name="git-branch-outline" size={17} color={c.purple} />
         </View>
         <View style={styles.followUpTitleBlock}>
-          <Text style={[styles.followUpTitle, { color: c.labelPrimary }]}>后续关注</Text>
+          <Text style={[styles.followUpTitle, { color: c.labelPrimary }]}>后台队列</Text>
           <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
         </View>
-        <View style={[styles.followUpCountPill, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+        <View style={styles.followUpCountPill}>
           <Text style={[styles.followUpCountText, { color: c.labelSecondary }]}>{queueCount} 项</Text>
         </View>
       </View>
@@ -2134,10 +2134,7 @@ const styles = StyleSheet.create({
   followUpTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
   followUpSubtitle: { fontSize: 10, lineHeight: 12, fontWeight: '600' },
   followUpCountPill: {
-    minHeight: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 7,
+    minHeight: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
