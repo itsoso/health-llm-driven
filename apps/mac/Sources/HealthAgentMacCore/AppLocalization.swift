@@ -304,6 +304,7 @@ public enum L10n {
         "No pending job results.": "没有待处理的任务结果。",
         "Status": "状态",
         "Source": "来源",
+        "Metric": "指标",
         "Kind": "类型",
         "Open Trace": "打开追踪",
         "Result": "结果",

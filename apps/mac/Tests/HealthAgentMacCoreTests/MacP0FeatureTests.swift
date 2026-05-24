@@ -345,9 +345,11 @@ final class MacP0FeatureTests: XCTestCase {
           "daily_plan": {"plan_date": "2026-05-23", "actions": [{"action_key": "walk", "title": "散步", "domain": "运动"}]},
           "trajectory": {"focus_domains": ["血脂", "血糖"]},
           "action_cards": [
-            {"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90},
-            {"id": 2, "title": "MTHFR 基因补剂闭环", "status": "active", "priority": 80},
-            {"id": 3, "title": "得到课程知识库重建", "status": "active", "priority": 70}
+            {"id": 1, "title": "HbA1c 复查", "status": "active", "priority": 90, "metric_key": "hba1c"},
+            {"id": 2, "title": "MTHFR 基因补剂闭环", "status": "active", "priority": 80, "source_type": "genetic_analysis", "metric_key": "hcy"},
+            {"id": 3, "title": "得到课程知识库重建", "status": "active", "priority": 70, "source_type": "dedao_kb"},
+            {"id": 4, "title": "12 周补剂试验：5-MTHF", "content": "MTHFR C677T 携带者合成叶酸转化效率降低，建议用 Hcy 和叶酸复查闭环。", "status": "active", "priority": 60, "source_type": "orchestrator", "metric_key": "hcy"},
+            {"id": 5, "title": "来源覆盖审计", "content": "检查得到、PubMed 和系统证据覆盖。", "status": "active", "priority": 50, "source_type": "source_audit"}
           ],
           "recent_memory": [
             {"id": 1, "object_value": "补剂依从率偏低"},
@@ -442,14 +444,14 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(geneticsSummary.genomicSummary?.profileSummaries.first?.latestImport?.unmappedCount, 18176)
         XCTAssertEqual(geneticsSummary.genomicSummary?.topFindings.first?.geneName, "HLA-A*31:01")
         XCTAssertEqual(geneticsSummary.genomicSummary?.topCategories.map(\.category), ["disease_risk", "drug_sensitivity"])
-        XCTAssertEqual(geneticsSummary.actionCards.map(\.title), ["MTHFR 基因补剂闭环"])
+        XCTAssertEqual(geneticsSummary.actionCards.map(\.title), ["MTHFR 基因补剂闭环", "12 周补剂试验：5-MTHF"])
         XCTAssertEqual(geneticsSummary.guidanceRows.map(\.title), ["Import genome file", "Run risk reanalysis", "Keep clinical boundary"])
         XCTAssertEqual(geneticsSummary.jobs.map(\.id), [1])
         XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["Documents", "Claims", "Sources", "Edges", "Entity Types"])
         XCTAssertEqual(knowledgeSummary.metrics.map(\.value), ["3", "1", "2", "1", "1"])
         XCTAssertEqual(knowledgeSummary.knowledgeSummary?.docTypeCounts.map(\.level), ["article", "claim", "entity"])
         XCTAssertEqual(knowledgeSummary.knowledgeSummary?.recentDocuments.first?.docID, "claim:c_mthfr_c677t_hcy_folate_boundary")
-        XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建"])
+        XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建", "来源覆盖审计"])
         XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.title), ["Import Dedao folder", "Rebuild system KB", "Audit source coverage"])
         XCTAssertEqual(knowledgeSummary.jobs.map(\.id), [2])
     }

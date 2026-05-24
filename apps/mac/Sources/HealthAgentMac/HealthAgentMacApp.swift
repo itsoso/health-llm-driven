@@ -1578,21 +1578,11 @@ struct WorkspaceOverviewView: View {
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
                         ForEach(summary.actionCards.prefix(6)) { card in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: kind == .genetics ? "atom" : "books.vertical.fill")
-                                    .foregroundStyle(kind == .genetics ? .purple : .teal)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(card.title)
-                                        .font(.callout.weight(.semibold))
-                                        .lineLimit(2)
-                                    Text(card.status ?? appText("Ready", appLanguageRaw))
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(12)
-                            .background((kind == .genetics ? Color.purple : Color.teal).opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            WorkspaceActionCard(
+                                card: card,
+                                color: kind == .genetics ? .purple : .teal,
+                                systemImage: kind == .genetics ? "atom" : "books.vertical.fill"
+                            )
                         }
                     }
                 }
@@ -1777,7 +1767,7 @@ struct WorkspaceOverviewView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 10)], spacing: 10) {
                     ForEach(summary.actionCards.prefix(8)) { card in
-                        dataActionCard(card)
+                        WorkspaceActionCard(card: card, color: .teal, systemImage: "checkmark.seal.fill")
                     }
                 }
             }
@@ -1788,35 +1778,6 @@ struct WorkspaceOverviewView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
         }
-    }
-
-    private func dataActionCard(_ card: ActionCardSummary) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.callout)
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(Color.teal.opacity(0.85), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 6) {
-                Text(card.title)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(2)
-                HStack(spacing: 8) {
-                    if let status = card.status {
-                        Text(status)
-                    }
-                    if let priority = card.priority {
-                        Text("P\(priority)")
-                    }
-                }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.teal.opacity(0.075), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func dataRecordsPanel(_ summary: DesktopWorkspaceSummary) -> some View {
@@ -2902,6 +2863,80 @@ private struct WorkspaceGuidanceCard: View {
         case "indigo": .indigo
         case "blue": .blue
         default: .accentColor
+        }
+    }
+}
+
+private struct WorkspaceActionCard: View {
+    let card: ActionCardSummary
+    let color: Color
+    let systemImage: String
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(color.opacity(0.86), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(card.title)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(2)
+
+                if let content = card.content?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
+                    Text(content)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        metaChips
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        metaChips
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .background(color.opacity(0.075), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(color.opacity(0.14), lineWidth: 1)
+        }
+    }
+
+    private func actionMetaChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.11), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var metaChips: some View {
+        if let status = card.status, !status.isEmpty {
+            actionMetaChip(status)
+        }
+        if let priority = card.priority {
+            actionMetaChip("P\(priority)")
+        }
+        if let metricKey = card.metricKey, !metricKey.isEmpty {
+            actionMetaChip("\(appText("Metric", appLanguageRaw)): \(metricKey)")
+        }
+        if let sourceType = card.sourceType, !sourceType.isEmpty {
+            actionMetaChip("\(appText("Source", appLanguageRaw)): \(sourceType)")
         }
     }
 }

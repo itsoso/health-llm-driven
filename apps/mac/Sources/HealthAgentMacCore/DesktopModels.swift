@@ -99,8 +99,39 @@ public struct TrajectorySummary: Decodable, Equatable, Sendable {
 public struct ActionCardSummary: Decodable, Equatable, Identifiable, Sendable {
     public let id: Int
     public let title: String
+    public let content: String?
+    public let sourceType: String?
     public let status: String?
     public let priority: Int?
+    public let metricKey: String?
+
+    public init(
+        id: Int,
+        title: String,
+        content: String? = nil,
+        sourceType: String? = nil,
+        status: String? = nil,
+        priority: Int? = nil,
+        metricKey: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.content = content
+        self.sourceType = sourceType
+        self.status = status
+        self.priority = priority
+        self.metricKey = metricKey
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case content
+        case sourceType = "source_type"
+        case status
+        case priority
+        case metricKey = "metric_key"
+    }
 }
 
 public struct MemoryFactSummary: Decodable, Equatable, Identifiable, Sendable {

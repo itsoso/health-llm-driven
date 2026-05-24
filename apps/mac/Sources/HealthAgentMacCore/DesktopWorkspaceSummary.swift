@@ -134,30 +134,11 @@ public extension DesktopBootstrap {
     private func actionCards(for kind: DesktopWorkspaceKind) -> [ActionCardSummary] {
         switch kind {
         case .data:
-            return actionCards.filter { card in
-                let haystack = card.title.lowercased()
-                if haystack.contains("基因") || haystack.contains("gene") {
-                    return false
-                }
-                return haystack.contains("hba1c")
-                    || haystack.contains("血")
-                    || haystack.contains("体重")
-                    || haystack.contains("饮")
-                    || haystack.contains("补剂")
-                    || haystack.contains("睡")
-                    || haystack.contains("运动")
-            }
+            return actionCards.filter { $0.workspaceKind == .data }
         case .genetics:
-            return actionCards.filter { $0.title.lowercased().contains("基因") || $0.title.lowercased().contains("gene") }
+            return actionCards.filter { $0.workspaceKind == .genetics }
         case .knowledge:
-            return actionCards.filter { card in
-                let haystack = card.title.lowercased()
-                return haystack.contains("知识")
-                    || haystack.contains("得到")
-                    || haystack.contains("dedao")
-                    || haystack.contains("kb")
-                    || haystack.contains("source")
-            }
+            return actionCards.filter { $0.workspaceKind == .knowledge }
         }
     }
 
@@ -203,6 +184,57 @@ private extension String {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 4 else { return true }
         return trimmed.allSatisfy { $0.isNumber || $0 == "." || $0 == "%" }
+    }
+}
+
+private extension ActionCardSummary {
+    var workspaceKind: DesktopWorkspaceKind? {
+        let source = (sourceType ?? "").lowercased()
+        let metric = (metricKey ?? "").lowercased()
+        let haystack = [title, content ?? "", source, metric]
+            .joined(separator: " ")
+            .lowercased()
+
+        if source.contains("dedao")
+            || source.contains("knowledge")
+            || haystack.contains("知识")
+            || haystack.contains("得到")
+            || haystack.contains("dedao")
+            || haystack.contains("kb")
+            || haystack.contains("source") {
+            return .knowledge
+        }
+
+        if source.contains("genetic")
+            || haystack.contains("基因")
+            || haystack.contains("gene")
+            || haystack.contains("mthfr")
+            || haystack.contains("5-mthf")
+            || haystack.contains("9p21")
+            || haystack.contains("apoe")
+            || haystack.contains("hla")
+            || haystack.contains("cyp")
+            || haystack.contains("cftr")
+            || haystack.contains("atp7b") {
+            return .genetics
+        }
+
+        if haystack.contains("hba1c")
+            || haystack.contains("血")
+            || haystack.contains("体重")
+            || haystack.contains("饮")
+            || haystack.contains("补剂")
+            || haystack.contains("睡")
+            || haystack.contains("运动")
+            || metric == "hcy"
+            || metric.contains("sleep")
+            || metric.contains("weight")
+            || metric.contains("blood")
+            || metric.contains("spo2") {
+            return .data
+        }
+
+        return nil
     }
 }
 
