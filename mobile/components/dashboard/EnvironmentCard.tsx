@@ -170,13 +170,12 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
   const microWeatherLine = [
     w?.temperature != null ? `${Math.round(w.temperature)}°` : null,
     aqiText,
-    w?.humidity != null ? `湿度 ${w.humidity}%` : null,
   ].filter(Boolean).join(' · ');
   const caution = aqi != null && aqi > 150 ? '空气差，户外改室内或降低强度' : null;
 
   if (compact && mode === 'micro') {
     const microLocationLabel = loc?.city || locationLabel;
-    const microSummary = [microLocationLabel, caution ?? (microWeatherLine || '环境同步中')]
+    const microSummary = ['环境影响', microLocationLabel, caution ?? (microWeatherLine || '同步中')]
       .filter(Boolean)
       .join(' · ');
     return (
@@ -193,14 +192,8 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
             </Text>
           </View>
         </TouchableOpacity>
-        <View
-          style={[
-            styles.microAqiDot,
-            { backgroundColor: aqiColor(aqi) },
-          ]}
-        />
         <TouchableOpacity
-          style={styles.microAgentButton}
+          style={[styles.microAgentButton, { backgroundColor: c.brandLight }]}
           onPress={() => pushChatWithContext(router, {
             prompt: '请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。',
             context: envContext,
@@ -209,13 +202,7 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
           accessibilityLabel="让 Agent 调整今天户外安排"
         >
           <Ionicons name="sparkles-outline" size={14} color={c.brand} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.microRunButton}
-          onPress={() => router.push('/live-run' as any)}
-          accessibilityLabel="开始跑步"
-        >
-          <Ionicons name="play-outline" size={14} color={c.labelSecondary} />
+          <Text style={[styles.microAgentText, { color: c.brand }]}>问 Agent</Text>
         </TouchableOpacity>
       </View>
     );
@@ -394,21 +381,16 @@ const styles = StyleSheet.create({
   },
   microTextBlock: { flex: 1, minWidth: 0 },
   microSummaryText: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
-  microAqiDot: { width: 5, height: 5, borderRadius: 2.5 },
   microAgentButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    minHeight: 26,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
   },
-  microRunButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  microAgentText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   compactCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
