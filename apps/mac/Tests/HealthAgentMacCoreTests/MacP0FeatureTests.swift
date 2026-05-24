@@ -251,6 +251,63 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(retry.id, 2)
     }
 
+    func testDesktopJobOutcomePresentationSummarizesCompletedFailedAndPendingJobs() {
+        let completed = DesktopJobSummary(
+            id: 10,
+            jobType: "gene_reanalysis",
+            status: "completed",
+            progress: 100,
+            sourceKind: "genome_txt",
+            sourceName: "wegene.txt",
+            sourceHash: "sha256:abc",
+            resultPayload: [
+                "conversation_id": 42,
+                "action_cards_created": 3,
+                "records_imported": 18191,
+                "review_required": true
+            ],
+            completedAt: "2026-05-24T08:00:00"
+        )
+        let failed = DesktopJobSummary(
+            id: 11,
+            jobType: "dedao_compile",
+            status: "failed",
+            progress: 20,
+            sourceKind: "dedao_folder",
+            sourceName: "down-dedao",
+            sourceHash: "sha256:def",
+            errorMessage: "source folder missing"
+        )
+        let pending = DesktopJobSummary(
+            id: 12,
+            jobType: "medical_import",
+            status: "running",
+            progress: 45,
+            sourceKind: "medical_file",
+            sourceName: "lab.pdf"
+        )
+
+        let completedPresentation = DesktopJobOutcomePresentation(job: completed)
+        let failedPresentation = DesktopJobOutcomePresentation(job: failed)
+        let pendingPresentation = DesktopJobOutcomePresentation(job: pending)
+
+        XCTAssertEqual(completedPresentation.state, .completed)
+        XCTAssertEqual(completedPresentation.title, "Job completed")
+        XCTAssertTrue(completedPresentation.summaryItems.contains(.init(title: "Action cards", value: "3")))
+        XCTAssertTrue(completedPresentation.summaryItems.contains(.init(title: "Imported records", value: "18,191")))
+        XCTAssertTrue(completedPresentation.nextActions.map(\.title).contains("Review generated results"))
+        XCTAssertEqual(completedPresentation.conversationID, 42)
+
+        XCTAssertEqual(failedPresentation.state, .failed)
+        XCTAssertEqual(failedPresentation.title, "Job failed")
+        XCTAssertTrue(failedPresentation.diagnostic.contains("source folder missing"))
+        XCTAssertTrue(failedPresentation.nextActions.map(\.title).contains("Retry job"))
+
+        XCTAssertEqual(pendingPresentation.state, .pending)
+        XCTAssertEqual(pendingPresentation.title, "Job still running")
+        XCTAssertTrue(pendingPresentation.nextActions.map(\.title).contains("Wait for completion"))
+    }
+
     func testTraceClientDecodesConversationTrace() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.url?.path, "/api/v1/desktop/traces/7")

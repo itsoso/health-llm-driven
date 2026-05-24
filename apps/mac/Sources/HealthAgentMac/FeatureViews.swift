@@ -1886,8 +1886,10 @@ private struct JobDetailPanel: View {
             Label(appText("Job Detail", appLanguageRaw), systemImage: "list.bullet.rectangle")
                 .font(.headline)
             if let job {
+                let outcome = DesktopJobOutcomePresentation(job: job)
                 Text("#\(job.id) \(job.jobType)")
                     .font(.title3.bold())
+                JobOutcomeLandingPanel(job: job, outcome: outcome, openTrace: openTrace)
                 LabeledContent(appText("Status", appLanguageRaw), value: job.status)
                 LabeledContent(appText("Progress", appLanguageRaw), value: "\(job.progress)%")
                 if let sourceName = job.sourceName {
@@ -1922,6 +1924,110 @@ private struct JobDetailPanel: View {
         }
         .padding(14)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct JobOutcomeLandingPanel: View {
+    let job: DesktopJobSummary
+    let outcome: DesktopJobOutcomePresentation
+    let openTrace: (Int) -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: iconName)
+                    .font(.headline)
+                    .foregroundStyle(tint)
+                    .frame(width: 30, height: 30)
+                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appText(outcome.title, appLanguageRaw))
+                        .font(.headline)
+                    Text(diagnosticText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if !outcome.summaryItems.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(outcome.summaryItems, id: \.title) { item in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(appText(item.title, appLanguageRaw))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(item.value)
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                                .lineLimit(1)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(appText("Next Actions", appLanguageRaw))
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                ForEach(outcome.nextActions, id: \.title) { action in
+                    Label(appText(action.title, appLanguageRaw), systemImage: action.systemImage)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                }
+            }
+
+            if let conversationID = outcome.conversationID {
+                Button {
+                    openTrace(conversationID)
+                } label: {
+                    Label("\(appText("Open Trace", appLanguageRaw)) #\(conversationID)", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(tint.opacity(0.16), lineWidth: 1)
+        )
+    }
+
+    private var iconName: String {
+        switch outcome.state {
+        case .completed: "checkmark.seal.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .pending: "clock.arrow.circlepath"
+        case .unknown: "questionmark.diamond"
+        }
+    }
+
+    private var tint: Color {
+        switch outcome.state {
+        case .completed: .teal
+        case .failed: .orange
+        case .pending: .blue
+        case .unknown: .secondary
+        }
+    }
+
+    private var diagnosticText: String {
+        switch outcome.state {
+        case .completed:
+            let source = job.sourceName?.isEmpty == false ? job.sourceName! : job.jobType
+            return "\(source) \(appText("results are ready. Review before using them as Agent context.", appLanguageRaw))"
+        case .failed:
+            return outcome.diagnostic
+        case .pending:
+            return "\(job.progress)% \(appText("complete. Return here from the menu bar when it finishes.", appLanguageRaw))"
+        case .unknown:
+            return appText("Inspect the raw result before acting on it.", appLanguageRaw)
+        }
     }
 }
 

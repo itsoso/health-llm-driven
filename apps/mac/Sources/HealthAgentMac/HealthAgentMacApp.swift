@@ -2970,6 +2970,33 @@ struct MenuBarRootView: View {
                 openWindow(id: "main")
             }
             Divider()
+            Label(appText("Needs Review", appLanguageRaw), systemImage: "tray.full")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            if attentionJobs.isEmpty {
+                Text(appText("No pending job results.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(attentionJobs) { job in
+                    let outcome = DesktopJobOutcomePresentation(job: job)
+                    Button {
+                        navigation.selection = .jobs
+                        openWindow(id: "main")
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(appText(outcome.title, appLanguageRaw))
+                                .font(.caption.weight(.semibold))
+                            Text(job.sourceName ?? job.jobType)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            Divider()
             if viewModel.topActions.isEmpty {
                 Text(appText("No actions loaded", appLanguageRaw))
                     .foregroundStyle(.secondary)
@@ -3042,6 +3069,12 @@ struct MenuBarRootView: View {
 
     private var failedJobCount: Int {
         (viewModel.bootstrap?.activeJobs ?? []).filter { $0.status == "failed" }.count
+    }
+
+    private var attentionJobs: [DesktopJobSummary] {
+        Array((viewModel.bootstrap?.activeJobs ?? [])
+            .filter { $0.status == "failed" || $0.status == "completed" }
+            .prefix(3))
     }
 
     private func menuStatusChip(title: String, value: String, color: Color) -> some View {
