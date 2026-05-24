@@ -624,49 +624,42 @@ function HomeCommandHeader({
       </Pressable>
 
       <View style={[styles.commandWorkflowPanel, { borderColor: c.separator }]}>
-        <View style={styles.commandWorkflowRow}>
-          <View style={[styles.commandWorkflowIcon, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="analytics-outline" size={13} color={c.brand} />
+        <View style={styles.commandInsightLine}>
+          <View style={[styles.commandInsightIcon, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="analytics-outline" size={12} color={c.brand} />
           </View>
-          <View style={styles.commandWorkflowCopy}>
-            <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>为什么这样排</HomeText>
-            <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
-              {reasoningSummary}
-            </HomeText>
-          </View>
+          <HomeText style={[styles.commandInsightText, { color: c.labelSecondary }]} numberOfLines={1}>
+            {reasoningSummary}
+          </HomeText>
         </View>
-        <View style={styles.commandWorkflowRow}>
-          <View style={[styles.commandWorkflowIcon, { backgroundColor: c.tintGreen }]}>
-            <Ionicons name="leaf-outline" size={13} color={c.green} />
-          </View>
-          <View style={styles.commandWorkflowCopy}>
-            <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>干预策略</HomeText>
-            <HomeText style={[styles.commandWorkflowValue, { color: c.labelSecondary }]} numberOfLines={1}>
+        <View style={styles.commandPillRail}>
+          <View style={[styles.commandStatusPill, { backgroundColor: c.tintGreen }]}>
+            <Ionicons name="leaf-outline" size={12} color={c.green} />
+            <HomeText style={[styles.commandStatusLabel, { color: c.green }]}>干预策略</HomeText>
+            <HomeText style={[styles.commandStatusValue, { color: c.green }]} numberOfLines={2}>
               {interventionSummary}
             </HomeText>
           </View>
-        </View>
-        <Pressable
-          onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
-          style={({ pressed }) => [styles.commandWorkflowRow, { opacity: pressed ? 0.64 : 1 }]}
-          accessibilityRole="button"
-          accessibilityLabel={
-            primaryVerificationMetric
-              ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
-              : '查看验证目标'
-          }
-        >
-          <View style={[styles.commandWorkflowIcon, { backgroundColor: c.tintBlue }]}>
-            <Ionicons name="trending-up-outline" size={13} color={c.blue} />
-          </View>
-          <View style={styles.commandWorkflowCopy}>
-            <HomeText style={[styles.commandWorkflowLabel, { color: c.labelTertiary }]}>验证是否变好</HomeText>
-            <HomeText style={[styles.commandWorkflowValue, { color: c.labelPrimary }]} numberOfLines={1}>
+          <Pressable
+            onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
+            style={({ pressed }) => [
+              styles.commandStatusPill,
+              { backgroundColor: c.tintBlue, opacity: pressed ? 0.64 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              primaryVerificationMetric
+                ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
+                : '查看验证目标'
+            }
+          >
+            <Ionicons name="trending-up-outline" size={12} color={c.blue} />
+            <HomeText style={[styles.commandStatusLabel, { color: c.blue }]}>验证是否变好</HomeText>
+            <HomeText style={[styles.commandStatusValue, { color: c.blue }]} numberOfLines={2}>
               {improvementSummary}
             </HomeText>
-          </View>
-          <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
-        </Pressable>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.commandInlineActionRow}>
@@ -1843,24 +1836,39 @@ const styles = StyleSheet.create({
   commandWorkflowPanel: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 8,
-    gap: 6,
+    gap: 7,
   },
-  commandWorkflowRow: {
-    minHeight: 32,
+  commandInsightLine: {
+    minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
-  commandWorkflowIcon: {
-    width: 24,
-    height: 24,
+  commandInsightIcon: {
+    width: 22,
+    height: 22,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandWorkflowCopy: { flex: 1, minWidth: 0, gap: 1 },
-  commandWorkflowLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandWorkflowValue: { minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandInsightText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandPillRail: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 6,
+  },
+  commandStatusPill: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    borderRadius: radii.md,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    gap: 1,
+  },
+  commandStatusLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  commandStatusValue: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
     minHeight: 78,
     borderWidth: StyleSheet.hairlineWidth,
