@@ -220,7 +220,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
-    expect(getByText('血氧/睡眠分')).toBeTruthy();
+    expect(getByText(/验证 血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('画像校准 · 表观遗传/穿戴')).toBeTruthy();
     expect(queryByText(/画像校准 · 睡眠/)).toBeNull();
   });
@@ -320,7 +320,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('另 1 项')).toBeTruthy();
+    expect(queryByText('另 1 项')).toBeNull();
     expect(getByText('缺口 2')).toBeTruthy();
     expect(queryByText('恢复轨迹数据不足')).toBeNull();
     expect(queryByText('还有 2 个数据缺口会影响判断')).toBeNull();
@@ -341,7 +341,8 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('周建议排队')).toBeTruthy();
+    expect(getByText('长期轨迹/周建议')).toBeTruthy();
+    expect(queryByText('周建议排队')).toBeNull();
     expect(queryByText('本周建议待生成')).toBeNull();
   });
 
@@ -388,8 +389,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/判断/).length).toBeGreaterThan(0);
-    expect(getByText('干预')).toBeTruthy();
-    expect(getByText('饮食/睡眠/运动 +2')).toBeTruthy();
+    expect(getByText(/干预 饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
   it('opens outcome feedback surfaces from the agent summary', () => {

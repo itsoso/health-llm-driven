@@ -432,7 +432,7 @@ export default function TodayScreen() {
           </View>
         )}
 
-        <View style={styles.section}>
+        <View style={[styles.section, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
           <AgentFollowUpQueue
             snapshot={trajectoryQuery.data}
             loading={trajectoryQuery.isLoading}
@@ -576,6 +576,10 @@ function HomeCommandHeader({
       value: loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/'),
     },
   ] as const;
+  const agentLoopLine = agentStepItems
+    .filter(item => item.value)
+    .map(item => `${item.label} ${item.value}`)
+    .join(' · ');
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -587,6 +591,9 @@ function HomeCommandHeader({
               {refreshing ? '正在同步新数据' : '后台监测中'}
             </Text>
           </View>
+          <Text style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
+            {evidenceSummary}
+          </Text>
         </View>
         <View style={styles.commandRightMeta}>
           <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
@@ -616,27 +623,15 @@ function HomeCommandHeader({
           {headline}
         </Text>
         <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
-        <Text style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
-          {evidenceSummary}
-        </Text>
+        <View style={[styles.commandLoopLine, { backgroundColor: c.bgPrimary }]}>
+          <Ionicons name="git-compare-outline" size={13} color={c.brand} />
+          <Text style={[styles.commandLoopText, { color: c.labelSecondary }]} numberOfLines={1}>
+            {agentLoopLine}
+          </Text>
+        </View>
       </Pressable>
 
       <View style={styles.commandOutcomeBlock}>
-        <View style={[styles.agentStepRail, { backgroundColor: c.bgPrimary }]}>
-          {agentStepItems.map((item, index) => (
-            <React.Fragment key={item.key}>
-              <View style={styles.agentStepSegment}>
-                <Text style={[styles.agentStepLabel, { color: c.labelTertiary }]}>{item.label}</Text>
-                <Text style={[styles.agentStepValue, { color: c.labelPrimary }]} numberOfLines={1}>
-                  {item.value}
-                </Text>
-              </View>
-              {index < agentStepItems.length - 1 ? (
-                <Text style={[styles.agentStepDivider, { color: c.labelTertiary }]}>/</Text>
-              ) : null}
-            </React.Fragment>
-          ))}
-        </View>
         <View style={styles.commandSignalLine}>
           {visibleLoopMetrics.map(metric => {
             const color = c[metric.colorName];
@@ -646,12 +641,11 @@ function HomeCommandHeader({
                 onPress={() => onOpenMetric(metric.route)}
                 style={({ pressed }) => [
                   styles.commandSignalChip,
-                  { opacity: pressed ? 0.72 : 1 },
+                  { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`${metric.label} ${metric.value}`}
               >
-                <View style={[styles.commandSignalDot, { backgroundColor: color }]} />
                 <Text style={[styles.commandSignalLabel, { color: c.labelSecondary }]} numberOfLines={1}>
                   {metric.label}
                 </Text>
@@ -668,14 +662,14 @@ function HomeCommandHeader({
         <Pressable
           style={({ pressed }) => [
             styles.primaryAction,
-            { backgroundColor: c.brandLight, borderColor: `${c.brand}2E`, opacity: pressed ? 0.76 : 1 },
+            { backgroundColor: c.brand, borderColor: c.brand, opacity: pressed ? 0.8 : 1 },
           ]}
           onPress={primaryAction}
           accessibilityRole="button"
           accessibilityLabel={primaryLabel}
         >
-          <Ionicons name={primaryIcon} size={17} color={c.brand} />
-          <Text style={[styles.primaryActionText, { color: c.brand }]}>{primaryLabel}</Text>
+          <Ionicons name={primaryIcon} size={17} color="#FFFFFF" />
+          <Text style={styles.primaryActionText}>{primaryLabel}</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [
@@ -710,7 +704,7 @@ function CompactShortcutSection({
 }) {
   const { c } = useTheme();
   return (
-    <View style={styles.shortcutCard}>
+    <View style={[styles.shortcutCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.shortcutStrip}>
         <View style={styles.shortcutHeaderText}>
           <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</Text>
@@ -941,8 +935,6 @@ function AgentFollowUpQueue({
   const primaryAdvice = visibleAdvice[0] ?? null;
   const showPrimaryAdvice = !primaryRisk && !!primaryAdvice;
   const showWeeklyPendingRow = weeklyAdvice.length === 0 && trajectoryRisks.length === 0;
-  const showWeeklyPendingPill = weeklyAdvice.length === 0 && trajectoryRisks.length > 0;
-  const queueCount = trajectoryRisks.length + visibleAdvice.length + (showWeeklyPendingRow ? 1 : 0);
   const hiddenCount = Math.max(
     0,
     trajectoryRisks.length - (primaryRisk ? 1 : 0)
@@ -951,9 +943,9 @@ function AgentFollowUpQueue({
   const subtitle = loading
     ? '整理长期轨迹'
     : weeklyAdvice.length > 0
-      ? `${trajectoryRisks.length} 轨迹/${weeklyAdvice.length} 建议`
+      ? '长期轨迹/周建议'
       : trajectoryRisks.length > 0
-        ? `${trajectoryRisks.length} 轨迹/周建议排队`
+        ? '长期轨迹/周建议'
         : '先执行上方闭环';
 
   return (
@@ -967,43 +959,25 @@ function AgentFollowUpQueue({
           <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
         </View>
         <View style={styles.followUpCountPill}>
-          <Text style={[styles.followUpCountText, { color: c.labelSecondary }]}>{queueCount} 项</Text>
+          <Text style={[styles.followUpCountText, { color: c.labelSecondary }]}>
+            {hiddenCount > 0 || gapCount > 0 ? '待关注' : '观察中'}
+          </Text>
         </View>
       </View>
 
-      {(gapCount > 0 || hiddenCount > 0 || showWeeklyPendingPill) ? (
+      {gapCount > 0 ? (
         <View style={styles.followUpSummaryRail}>
-          {hiddenCount > 0 ? (
-            <Pressable
-              onPress={onOpenTrajectory}
-              style={({ pressed }) => [
-                styles.followUpSummaryPill,
-                { opacity: pressed ? 0.62 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="查看更多后续队列"
-            >
-              <Text style={[styles.followUpSummaryText, { color: c.labelSecondary }]}>另 {hiddenCount} 项</Text>
-            </Pressable>
-          ) : null}
-          {showWeeklyPendingPill ? (
-            <View style={styles.followUpSummaryPill}>
-              <Text style={[styles.followUpSummaryText, { color: c.brand }]}>周建议排队</Text>
-            </View>
-          ) : null}
-          {gapCount > 0 ? (
-            <Pressable
-              onPress={onOpenTrajectory}
-              style={({ pressed }) => [
-                styles.followUpSummaryPill,
-                { opacity: pressed ? 0.62 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="查看健康轨迹缺口"
-            >
-              <Text style={[styles.followUpSummaryText, { color: c.amber }]}>缺口 {gapCount}</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            onPress={onOpenTrajectory}
+            style={({ pressed }) => [
+              styles.followUpSummaryPill,
+              { opacity: pressed ? 0.62 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="查看健康轨迹缺口"
+          >
+            <Text style={[styles.followUpSummaryText, { color: c.amber }]}>缺口 {gapCount}</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -1650,14 +1624,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: 110, gap: spacing.md },  // 110 = tab bar 83 + 缓冲
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
-  section: { gap: spacing.sm },
+  section: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: spacing.sm,
+  },
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: 11,
-    paddingTop: 10,
-    paddingBottom: 10,
-    gap: 7,
+    borderRadius: radii.xl,
+    paddingHorizontal: 13,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 10,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1665,14 +1645,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  commandAgentTitleBlock: { flex: 1, minWidth: 0 },
+  commandAgentTitleBlock: { flex: 1, minWidth: 0, gap: 4 },
   commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
-  commandAgentLabel: { fontSize: 13, lineHeight: 17, fontWeight: '800' },
-  commandAgentSubLabel: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  commandAgentLabel: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
   commandRightMeta: { alignItems: 'flex-end', gap: 5 },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
   commandAgentCopy: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
-  commandOutcomeBlock: { gap: 5 },
+  commandOutcomeBlock: { gap: 6 },
   agentStepRail: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -1688,19 +1668,22 @@ const styles = StyleSheet.create({
   commandSignalLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 7,
   },
   commandSignalChip: {
     flex: 1,
     minWidth: 0,
-    minHeight: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    minHeight: 42,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    gap: 3,
   },
   commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
-  commandSignalLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  commandSignalValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandSignalValue: { minWidth: 0, fontSize: 14, lineHeight: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1709,15 +1692,15 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandDecisionArea: {
-    borderLeftWidth: 2,
-    paddingLeft: 8,
-    paddingVertical: 0,
-    gap: 3,
+    borderLeftWidth: 3,
+    paddingLeft: 10,
+    paddingVertical: 1,
+    gap: 5,
   },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
   commandStatusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
-  commandDate: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  commandDate: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   agentRunningPill: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -1729,9 +1712,19 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 10, lineHeight: 13, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
-  commandHint: { fontSize: 11, lineHeight: 14, fontWeight: '600' },
+  commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 22, fontWeight: '800', lineHeight: 27, letterSpacing: 0 },
+  commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  commandLoopLine: {
+    minHeight: 26,
+    alignSelf: 'stretch',
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  commandLoopText: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1742,10 +1735,10 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '800' },
-  commandActions: { flexDirection: 'row', gap: 8 },
+  commandActions: { flexDirection: 'row', gap: 9 },
   primaryAction: {
     flex: 1,
-    minHeight: 32,
+    minHeight: 42,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -1753,10 +1746,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
   },
-  primaryActionText: { fontSize: 14, fontWeight: '800' },
+  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 32,
-    minWidth: 72,
+    minHeight: 42,
+    minWidth: 86,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -2085,6 +2078,10 @@ const styles = StyleSheet.create({
   followUpRowDetail: { fontSize: 10, lineHeight: 12, fontWeight: '500' },
   followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   shortcutCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     gap: 0,
   },
   shortcutStrip: {
