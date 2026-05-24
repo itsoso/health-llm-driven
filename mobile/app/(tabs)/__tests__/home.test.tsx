@@ -178,14 +178,14 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('数据依据')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('干预状态')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('本周建议')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('更多入口')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('干预闭环'));
-    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈 · 本轮干预结果'));
     expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeLessThan(textFlow.indexOf('本周建议'));
     expect(textFlow.indexOf('本周建议')).toBeLessThan(textFlow.indexOf('更多入口'));
@@ -195,9 +195,9 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('Agent 运行中')).toBeTruthy();
-    expect(getByText('Agent 工作台 · 后台运行中')).toBeTruthy();
-    expect(getByText('实时诊断 4 类数据')).toBeTruthy();
-    expect(getByText('证据链')).toBeTruthy();
+    expect(getByText('Agent 雷达 · 后台运行中')).toBeTruthy();
+    expect(getByText('4 源诊断 · 5 域干预')).toBeTruthy();
+    expect(getAllByText('数据依据').length).toBeGreaterThan(0);
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
     expect(queryByText('Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。')).toBeNull();
@@ -210,10 +210,10 @@ describe('TodayScreen', () => {
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 工作台 · 后台运行中')).toBeTruthy();
+    expect(getByText('Agent 雷达 · 后台运行中')).toBeTruthy();
     expect(getByText('干预状态')).toBeTruthy();
     expect(queryByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeNull();
-    expect(getByText('5 域干预')).toBeTruthy();
+    expect(getByText('4 源诊断 · 5 域干预')).toBeTruthy();
     expect(queryByText('长期任务')).toBeNull();
   });
 
@@ -221,21 +221,21 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('干预闭环')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('干预状态')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('干预闭环')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('干预状态')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
     expect(screen.getByText('干预状态')).toBeTruthy();
-    expect(screen.getByText('验证指标')).toBeTruthy();
+    expect(screen.getByText(/当前闭环/)).toBeTruthy();
   });
 
   it('puts the agent workspace before action and outcome feedback sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('指标反馈 · 本轮干预结果')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 工作台 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
+    expect(textFlow.indexOf('Agent 雷达 · 后台运行中')).toBeLessThan(textFlow.indexOf('今日行动 · 现在先做'));
     expect(textFlow.indexOf('今日行动 · 现在先做')).toBeLessThan(textFlow.indexOf('指标反馈 · 本轮干预结果'));
   });
 
@@ -307,13 +307,13 @@ describe('TodayScreen', () => {
 
     const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('干预闭环')).toBeTruthy();
+    expect(getByText('干预状态')).toBeTruthy();
     expect(getAllByText('饮食').length).toBeGreaterThan(0);
     expect(getAllByText('睡眠').length).toBeGreaterThan(0);
     expect(getAllByText('运动').length).toBeGreaterThan(0);
     expect(getByText('补剂')).toBeTruthy();
     expect(getByText('情绪')).toBeTruthy();
-    expect(getByText('4 个域待执行')).toBeTruthy();
+    expect(getByText(/4 个域待执行/)).toBeTruthy();
   });
 
   it('opens the matching intervention surface from the lifestyle loop', () => {

@@ -682,10 +682,12 @@ function AgentWorkspacePanel({
             <Ionicons name="pulse-outline" size={17} color={c.brand} />
           </View>
           <View style={styles.workspaceTitleBlock}>
-            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>Agent 工作台 · 后台运行中</Text>
-            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>实时诊断 {sourceItems.length} 类数据</Text>
+            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>Agent 雷达 · 后台运行中</Text>
+            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>
+              {sourceItems.length} 源诊断 · {domains.length} 域干预
+            </Text>
             <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]} numberOfLines={1}>
-              {riskSummary} · {executionSummary} · 长期干预
+              {riskSummary} · {executionSummary} · 长期闭环
             </Text>
           </View>
           <Pressable
@@ -702,45 +704,34 @@ function AgentWorkspacePanel({
           </Pressable>
         </View>
 
-        <View style={styles.sourceRail}>
-          <View style={[styles.sourceRailLabel, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
-            <Ionicons name="layers-outline" size={12} color={c.brand} />
-            <Text style={[styles.sourceRailLabelText, { color: c.brand }]}>证据链</Text>
-          </View>
-          {sourceItems.map(item => (
-            <View key={item.label} style={[styles.sourceChip, { backgroundColor: item.bg }]}>
-              <Text style={[styles.sourceLabel, { color: item.color }]}>{item.label}</Text>
-              <Text style={[styles.sourceValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+        <View style={[styles.workspaceDetailBlock, { borderTopColor: c.separator }]}>
+          <View style={styles.workspaceDetailGroup}>
+            <View style={styles.workspaceDetailHeader}>
+              <Text style={[styles.workspaceDetailLabel, { color: c.labelTertiary }]}>数据依据</Text>
+              <Text style={[styles.workspaceDetailLabel, { color: c.brand }]} numberOfLines={1}>
+                当前闭环 · {interventionSummary}
+              </Text>
             </View>
-          ))}
-        </View>
-
-        <View style={[styles.workspaceInterventionBlock, { borderTopColor: c.separator }]}>
-          <View style={styles.workspaceInterventionHeader}>
-            <View style={styles.workspaceInterventionTitleBlock}>
-              <Text style={[styles.workspaceInterventionTitle, { color: c.labelPrimary }]}>干预闭环</Text>
-              <Text style={[styles.workspaceInterventionHint, { color: c.labelSecondary }]}>干预状态</Text>
-              <Text style={[styles.workspaceInterventionSummary, { color: c.brand }]}>{interventionSummary}</Text>
-            </View>
-            <View style={styles.workspaceInterventionBadges}>
-              <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
-                <Ionicons name="grid-outline" size={13} color={c.brand} />
-                <Text style={[styles.workspaceInterventionBadgeText, { color: c.brand }]}>5 域干预</Text>
-              </View>
-              <View style={[styles.workspaceInterventionBadge, { backgroundColor: c.brandLight, borderColor: 'transparent' }]}>
-                <Ionicons name="repeat-outline" size={13} color={c.brand} />
-                <Text style={[styles.workspaceInterventionBadgeText, { color: c.brand }]}>验证指标</Text>
-              </View>
+            <View style={styles.sourceRail}>
+              {sourceItems.map(item => (
+                <View key={item.label} style={[styles.sourceChip, { backgroundColor: item.bg }]}>
+                  <Text style={[styles.sourceLabel, { color: item.color }]}>{item.label}</Text>
+                  <Text style={[styles.sourceValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+                </View>
+              ))}
             </View>
           </View>
-          <View style={styles.interventionGrid}>
-            {domains.map(domain => (
-              <InterventionDomainButton
-                key={domain.key}
-                domain={domain}
-                onPress={() => onPressDomain(domain)}
-              />
-            ))}
+          <View style={styles.workspaceDetailGroup}>
+            <Text style={[styles.workspaceDetailLabel, { color: c.labelTertiary }]}>干预状态</Text>
+            <View style={styles.interventionGrid}>
+              {domains.map(domain => (
+                <InterventionDomainButton
+                  key={domain.key}
+                  domain={domain}
+                  onPress={() => onPressDomain(domain)}
+                />
+              ))}
+            </View>
           </View>
         </View>
       </View>
@@ -1462,8 +1453,8 @@ const styles = StyleSheet.create({
   workspaceCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: 10,
+    padding: spacing.sm,
+    gap: 8,
   },
   workspaceTop: {
     flexDirection: 'row',
@@ -1491,32 +1482,27 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   workspaceAskText: { fontSize: 13, fontWeight: '800' },
-  sourceRail: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs },
-  sourceRailLabel: {
-    minHeight: 28,
-    borderRadius: radii.full,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  workspaceDetailBlock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+    gap: 7,
   },
-  sourceRailLabelText: { fontSize: 11, fontWeight: '800' },
+  workspaceDetailGroup: { gap: 5 },
+  workspaceDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
+  workspaceDetailLabel: { fontSize: 10, lineHeight: 13, fontWeight: '800' },
+  sourceRail: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 5 },
   sourceChip: {
-    flexGrow: 1,
-    flexBasis: '19%',
-    minWidth: 54,
-    minHeight: 28,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 26,
     borderRadius: radii.full,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    flexDirection: 'row',
+    paddingHorizontal: 4,
+    paddingVertical: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
   },
   sourceLabel: { fontSize: 10, fontWeight: '800' },
-  sourceValue: { fontSize: 9, fontWeight: '700', flexShrink: 1 },
+  sourceValue: { fontSize: 8, lineHeight: 10, fontWeight: '700', marginTop: 1, textAlign: 'center' },
   workspaceInterventionBlock: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 9,
