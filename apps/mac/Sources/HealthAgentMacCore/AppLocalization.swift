@@ -52,6 +52,7 @@ public enum L10n {
         "Decrease Font Size": "缩小字体",
         "Reset Font Size": "重置字体大小",
         "Import File": "导入文件",
+        "Reopen App": "重新打开 App",
         "Open Today": "打开今日",
         "Quit": "退出",
         "Checking login...": "正在检查登录状态...",

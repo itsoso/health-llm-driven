@@ -3538,21 +3538,26 @@ struct MenuBarRootView: View {
                     .lineLimit(2)
             }
             Divider()
+            Button {
+                reopenMainApp()
+            } label: {
+                Label(appText("Reopen App", appLanguageRaw), systemImage: "macwindow")
+            }
             Button(appText("Open Today", appLanguageRaw)) {
                 navigation.selection = .today
-                openWindow(id: "main")
+                reopenMainApp()
             }
             Button(appText("Open Record", appLanguageRaw)) {
                 navigation.selection = .record
-                openWindow(id: "main")
+                reopenMainApp()
             }
             Button(appText("Ask Agent", appLanguageRaw)) {
                 navigation.selection = .agent
-                openWindow(id: "main")
+                reopenMainApp()
             }
             Button(appText("Import File", appLanguageRaw)) {
                 navigation.selection = .genetics
-                openWindow(id: "main")
+                reopenMainApp()
             }
             Divider()
             Button(appText("Quit", appLanguageRaw), role: .destructive) {
@@ -3566,6 +3571,11 @@ struct MenuBarRootView: View {
         }
         .padding(8)
         .frame(width: 250)
+    }
+
+    private func reopenMainApp() {
+        openWindow(id: "main")
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     private var activeJobCount: Int {

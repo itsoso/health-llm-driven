@@ -55,6 +55,8 @@ final class HealthAgentMacCoreTests: XCTestCase {
         XCTAssertEqual(AppLanguage(storedValue: "missing"), .zh)
         XCTAssertEqual(L10n.text("Today", language: .zh), "今日")
         XCTAssertEqual(L10n.text("Today", language: .en), "Today")
+        XCTAssertEqual(L10n.text("Reopen App", language: .zh), "重新打开 App")
+        XCTAssertEqual(L10n.text("Reopen App", language: .en), "Reopen App")
     }
 
     func testMacAppLifecyclePolicyRequiresSingleInstanceAndQuitOnWindowClose() {
