@@ -280,6 +280,53 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('Agent 后续队列')).toBeLessThan(textFlow.indexOf('环境反馈'));
   });
 
+  it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {
+    mockTrajectoryData = {
+      trajectory_risks: [
+        {
+          domain: 'metabolic_health',
+          level: 'attention',
+          title: '代谢健康轨迹需要关注',
+          why: '围绕腰围、蛋白和睡眠节律继续执行。',
+        },
+        {
+          domain: 'recovery_capacity',
+          level: 'unknown',
+          title: '恢复轨迹数据不足',
+          why: '需要更多 HRV 和睡眠窗口。',
+        },
+      ],
+      data_gaps: [
+        { code: 'labs', label: '血检缺口' },
+        { code: 'waist', label: '腰围缺口' },
+      ],
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('缺口 2')).toBeTruthy();
+    expect(queryByText('还有 2 个数据缺口会影响判断')).toBeNull();
+  });
+
+  it('keeps weekly suggestion pending state compact when trajectory risks already occupy the queue', () => {
+    mockTrajectoryData = {
+      trajectory_risks: [
+        {
+          domain: 'metabolic_health',
+          level: 'attention',
+          title: '代谢健康轨迹需要关注',
+          why: '围绕腰围、蛋白和睡眠节律继续执行。',
+        },
+      ],
+      data_gaps: [],
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('周建议排队')).toBeTruthy();
+    expect(queryByText('本周建议待生成')).toBeNull();
+  });
+
   it('connects wearable and body composition values to the outcome feedback panel', () => {
     mockTwinData = {
       physiological: {

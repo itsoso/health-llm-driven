@@ -943,8 +943,15 @@ function AgentFollowUpQueue({
   const { c } = useTheme();
   const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
   const gapCount = snapshot?.data_gaps?.length ?? 0;
-  const visibleAdvice = weeklyAdvice.slice(0, 2);
-  const queueCount = trajectoryRisks.length + visibleAdvice.length + (weeklyAdvice.length === 0 ? 1 : 0);
+  const visibleAdvice = weeklyAdvice.slice(0, 1);
+  const compactRisks = trajectoryRisks.slice(0, visibleAdvice.length > 0 ? 1 : 2);
+  const showWeeklyPendingRow = weeklyAdvice.length === 0 && trajectoryRisks.length === 0;
+  const showWeeklyPendingPill = weeklyAdvice.length === 0 && trajectoryRisks.length > 0;
+  const queueCount = trajectoryRisks.length + visibleAdvice.length + (showWeeklyPendingRow ? 1 : 0);
+  const hiddenCount = Math.max(
+    0,
+    trajectoryRisks.length - compactRisks.length + weeklyAdvice.length - visibleAdvice.length,
+  );
   const subtitle = loading
     ? '正在整理长期轨迹'
     : weeklyAdvice.length > 0
@@ -968,8 +975,52 @@ function AgentFollowUpQueue({
         </View>
       </View>
 
+      {(gapCount > 0 || hiddenCount > 0 || showWeeklyPendingPill) ? (
+        <View style={styles.followUpSummaryRail}>
+          {hiddenCount > 0 ? (
+            <Pressable
+              onPress={onOpenTrajectory}
+              style={({ pressed }) => [
+                styles.followUpSummaryPill,
+                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="查看更多后续队列"
+            >
+              <Ionicons name="albums-outline" size={12} color={c.labelTertiary} />
+              <Text style={[styles.followUpSummaryText, { color: c.labelSecondary }]}>另 {hiddenCount} 项</Text>
+            </Pressable>
+          ) : null}
+          {showWeeklyPendingPill ? (
+            <View
+              style={[
+                styles.followUpSummaryPill,
+                { backgroundColor: c.tintTeal, borderColor: `${c.brand}33` },
+              ]}
+            >
+              <Ionicons name="calendar-outline" size={12} color={c.brand} />
+              <Text style={[styles.followUpSummaryText, { color: c.brand }]}>周建议排队</Text>
+            </View>
+          ) : null}
+          {gapCount > 0 ? (
+            <Pressable
+              onPress={onOpenTrajectory}
+              style={({ pressed }) => [
+                styles.followUpSummaryPill,
+                { backgroundColor: c.tintAmber, borderColor: `${c.amber}55`, opacity: pressed ? 0.72 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="查看健康轨迹缺口"
+            >
+              <Ionicons name="alert-circle-outline" size={12} color={c.amber} />
+              <Text style={[styles.followUpSummaryText, { color: c.amber }]}>缺口 {gapCount}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.followUpList}>
-        {trajectoryRisks.length > 0 ? trajectoryRisks.map(risk => (
+        {trajectoryRisks.length > 0 ? compactRisks.map(risk => (
           <TrajectoryQueueRow
             key={`${risk.domain}-${risk.level}-${risk.title}`}
             risk={risk}
@@ -995,7 +1046,7 @@ function AgentFollowUpQueue({
           />
         ))}
 
-        {weeklyAdvice.length === 0 ? (
+        {showWeeklyPendingRow ? (
           <FollowUpPlainRow
             icon="calendar-outline"
             tint={c.tintTeal}
@@ -1006,23 +1057,6 @@ function AgentFollowUpQueue({
           />
         ) : null}
 
-        {gapCount > 0 ? (
-          <Pressable
-            onPress={onOpenTrajectory}
-            style={({ pressed }) => [
-              styles.followUpGapRow,
-              { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="查看健康轨迹缺口"
-          >
-            <Ionicons name="alert-circle-outline" size={14} color={c.amber} />
-            <Text style={[styles.followUpGapText, { color: c.labelSecondary }]} numberOfLines={1}>
-              还有 {gapCount} 个数据缺口会影响判断
-            </Text>
-            <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
-          </Pressable>
-        ) : null}
       </View>
     </View>
   );
@@ -2122,6 +2156,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpCountText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  followUpSummaryPill: {
+    minHeight: 26,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  followUpSummaryText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   followUpList: { gap: 2 },
   followUpRow: {
     minHeight: 58,
@@ -2142,16 +2187,6 @@ const styles = StyleSheet.create({
   followUpRowTitle: { flexShrink: 1, fontSize: 14, lineHeight: 18, fontWeight: '800' },
   followUpRowDetail: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
   followUpRowRight: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  followUpGapRow: {
-    minHeight: 34,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  followUpGapText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '700' },
   compactSection: { gap: spacing.sm },
   shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   shortcutPill: {
