@@ -644,7 +644,7 @@ function HomeCommandHeader({
                     onPress={() => onOpenMetric(metric.route)}
                     style={({ pressed }) => [
                       styles.commandMetricPill,
-                      { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+                      { opacity: pressed ? 0.62 : 1 },
                     ]}
                     accessibilityRole="button"
                     accessibilityLabel={`${metric.label} ${metric.value}`}
@@ -1738,17 +1738,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  commandMetricRail: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  commandMetricRail: { minHeight: 21, flexDirection: 'row', alignItems: 'center', gap: 10 },
   commandMetricPill: {
-    flex: 1,
+    flexShrink: 1,
     minWidth: 0,
-    minHeight: 28,
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
+    minHeight: 21,
     flexDirection: 'row',
     alignItems: 'baseline',
-    justifyContent: 'center',
-    gap: 4,
+    justifyContent: 'flex-start',
+    gap: 3,
   },
   agentStepRail: {
     minHeight: 22,
@@ -1778,7 +1776,7 @@ const styles = StyleSheet.create({
   commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
   commandSignalPrefix: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  commandSignalValue: { minWidth: 0, fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalValue: { minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandNextStep: {
     minHeight: 38,
