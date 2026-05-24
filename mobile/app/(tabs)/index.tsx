@@ -116,7 +116,7 @@ const INTERVENTION_DOMAINS: Omit<InterventionDomainStatus, 'activeCount'>[] = [
   {
     key: 'diet',
     label: '饮食',
-    detail: '蛋白 / 热量 / 饮水',
+    detail: 'BMI / 体脂 / 血检',
     icon: 'restaurant-outline',
     colorName: 'orange',
     tintName: 'tintOrange',
@@ -125,7 +125,7 @@ const INTERVENTION_DOMAINS: Omit<InterventionDomainStatus, 'activeCount'>[] = [
   {
     key: 'sleep',
     label: '睡眠',
-    detail: '节律 / 血氧 / 恢复',
+    detail: '睡眠分 / 血氧 / HRV',
     icon: 'moon-outline',
     colorName: 'purple',
     tintName: 'tintPurple',
@@ -143,7 +143,7 @@ const INTERVENTION_DOMAINS: Omit<InterventionDomainStatus, 'activeCount'>[] = [
   {
     key: 'supplement',
     label: '补剂',
-    detail: '剂量 / 时机 / 反应',
+    detail: '血检 / 睡眠 / 炎症',
     icon: 'medkit-outline',
     colorName: 'teal',
     tintName: 'tintTeal',
@@ -152,7 +152,7 @@ const INTERVENTION_DOMAINS: Omit<InterventionDomainStatus, 'activeCount'>[] = [
   {
     key: 'emotion',
     label: '情绪',
-    detail: '压力 / 呼吸 / 体感',
+    detail: 'HRV / 睡眠 / 压力',
     icon: 'cloudy-outline',
     colorName: 'blue',
     tintName: 'tintBlue',
@@ -416,15 +416,17 @@ export default function TodayScreen() {
               onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
             />
           )}
-          <TodayPlanPanel
-            plan={dailyPlanQuery.data}
-            loading={dailyPlanQuery.isLoading}
-            compact={riskTakesPrimarySlot}
-            title={riskTakesPrimarySlot ? '风险处理后继续' : '余下计划'}
-            excludeActionKey={nextActionKey}
-            onPressAction={openPlanAction}
-            onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
-          />
+          {(!riskTakesPrimarySlot || activePlanCount > 0) && (
+            <TodayPlanPanel
+              plan={dailyPlanQuery.data}
+              loading={dailyPlanQuery.isLoading}
+              compact={riskTakesPrimarySlot}
+              title={riskTakesPrimarySlot ? '风险处理后继续' : '余下计划'}
+              excludeActionKey={nextActionKey}
+              onPressAction={openPlanAction}
+              onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
+            />
+          )}
           <InterventionStrategyPanel
             domains={interventionDomains}
             onPressDomain={(domain) => router.push(domain.route as any)}
@@ -600,50 +602,57 @@ function HomeCommandHeader({
   const agentInsight = criticalCount > 0
     ? `正在看 ${liveSignalSummary}，优先解释并处理「${riskTitle || '风险信号'}」。`
     : `正在看 ${liveSignalSummary}，继续调整生活方式干预。`;
+  const sourceText = sourceItems.map(item => `${item.label}${item.value}`).join(' · ');
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
-        <View style={styles.commandAgentIdentity}>
-          <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
-          <Text style={[styles.commandAgentLabel, { color: c.brand }]}>健康 Agent · 后台运行</Text>
-        </View>
-        <Text style={[styles.commandSyncText, { color: c.labelTertiary }]}>{refreshing ? '同步中' : '已同步'}</Text>
-      </View>
-      <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
-        {agentInsight}
-      </Text>
-      <View style={styles.commandSourceRail}>
-        {sourceItems.map(item => (
-          <View key={item.label} style={[styles.commandSourceChip, { backgroundColor: item.bg }]}>
-            <Text style={[styles.commandSourceLabel, { color: item.color }]}>{item.label}</Text>
-            <Text style={[styles.commandSourceValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+        <View style={styles.commandAgentTitleBlock}>
+          <View style={styles.commandAgentIdentity}>
+            <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
+            <Text style={[styles.commandAgentLabel, { color: c.labelPrimary }]}>健康 Agent</Text>
           </View>
-        ))}
+          <Text style={[styles.commandAgentSubLabel, { color: c.labelTertiary }]}>
+            {refreshing ? '正在同步新数据' : '后台监测中'}
+          </Text>
+        </View>
+        <View style={styles.commandRightMeta}>
+          <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
+          <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          </View>
+        </View>
       </View>
+
       <Pressable
         style={({ pressed }) => [
-          styles.commandFocusArea,
-          { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.82 : 1 },
+          styles.commandDecisionArea,
+          { opacity: pressed ? 0.78 : 1 },
         ]}
         onPress={onOpenFocus}
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <View style={styles.commandFocusTop}>
-          <View style={styles.commandTitleBlock}>
-            <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>{focusKicker}</Text>
-            <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-              {headline}
-            </Text>
-            <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
-          </View>
-          <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-          </View>
-        </View>
+        <Text style={[styles.commandFocusLabel, { color: c.brand }]}>{focusKicker}</Text>
+        <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+          {headline}
+        </Text>
+        <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
       </Pressable>
+
+      <View style={[styles.commandInsightBox, { backgroundColor: c.brandLight }]}>
+        <Ionicons name="pulse-outline" size={15} color={c.brand} />
+        <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
+          {agentInsight}
+        </Text>
+      </View>
+
+      <View style={[styles.commandSourceLine, { borderColor: c.separator }]}>
+        <Ionicons name="layers-outline" size={14} color={c.labelTertiary} />
+        <Text style={[styles.commandSourceSentence, { color: c.labelTertiary }]} numberOfLines={1}>
+          {sourceText}
+        </Text>
+      </View>
 
       <View style={styles.commandActions}>
         <Pressable
@@ -762,12 +771,17 @@ function InterventionStrategyPanel({
               accessibilityRole="button"
               accessibilityLabel={`打开${domain.label}干预`}
             >
-              <Ionicons name={domain.icon} size={15} color={color} />
+              <View style={styles.strategyDomainTop}>
+                <Ionicons name={domain.icon} size={15} color={color} />
+                <Text style={[styles.strategyDomainStatus, { color: active ? color : c.labelTertiary }]} numberOfLines={1}>
+                  {active ? `${domain.activeCount} 个任务` : '观察中'}
+                </Text>
+              </View>
               <Text style={[styles.strategyDomainLabel, { color: c.labelPrimary }]} numberOfLines={1}>
                 {domain.label}
               </Text>
-              <Text style={[styles.strategyDomainMeta, { color: active ? color : c.labelTertiary }]} numberOfLines={1}>
-                {active ? `${domain.activeCount} 个` : '观察'}
+              <Text style={[styles.strategyDomainMeta, { color: c.labelTertiary }]} numberOfLines={1}>
+                {domain.detail}
               </Text>
             </Pressable>
           );
@@ -1340,18 +1354,32 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
-    padding: spacing.md,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: 12,
   },
   commandAgentHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
+  commandAgentTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
   commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
-  commandAgentLabel: { fontSize: 14, fontWeight: '900' },
-  commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  commandAgentLabel: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
+  commandRightMeta: { alignItems: 'flex-end', gap: 6 },
+  commandAgentCopy: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  commandInsightBox: {
+    minHeight: 36,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+  },
   commandSourceRail: { flexDirection: 'row', gap: 6 },
   commandSourceChip: {
     flex: 1,
@@ -1361,8 +1389,23 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     alignItems: 'center',
   },
-  commandSourceLabel: { fontSize: 10, lineHeight: 12, fontWeight: '900' },
-  commandSourceValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', marginTop: 2 },
+  commandSourceLine: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  commandSourceItem: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    gap: 2,
+  },
+  commandSourceLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandSourceValue: { fontSize: 11, lineHeight: 13, fontWeight: '900' },
+  commandSourceSentence: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '700' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1370,10 +1413,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandDecisionArea: { gap: 5 },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
   commandStatusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
-  commandDate: { fontSize: 12, fontWeight: '700' },
+  commandDate: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   agentRunningPill: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -1385,15 +1429,15 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 13, fontWeight: '900' },
-  commandTitle: { minWidth: 0, fontSize: 24, fontWeight: '900', lineHeight: 30, letterSpacing: 0 },
-  commandHint: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  commandFocusLabel: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 23, fontWeight: '800', lineHeight: 29, letterSpacing: 0 },
+  commandHint: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     borderRadius: radii.full,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
@@ -1408,7 +1452,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
   },
-  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   secondaryAction: {
     minHeight: 44,
     minWidth: 104,
@@ -1682,22 +1726,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   strategyTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  strategyTitle: { fontSize: 16, lineHeight: 20, fontWeight: '900' },
+  strategyTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
   strategySubtitle: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
   strategyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   strategyDomain: {
-    flexBasis: '31.8%',
+    flexBasis: '48%',
     flexGrow: 1,
-    minHeight: 54,
+    minHeight: 62,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: 9,
     paddingVertical: 8,
     justifyContent: 'center',
-    gap: 3,
+    gap: 4,
   },
-  strategyDomainLabel: { fontSize: 12, lineHeight: 15, fontWeight: '900' },
-  strategyDomainMeta: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  strategyDomainTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
+  strategyDomainLabel: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  strategyDomainMeta: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  strategyDomainStatus: { flex: 1, textAlign: 'right', fontSize: 9, lineHeight: 11, fontWeight: '800' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
