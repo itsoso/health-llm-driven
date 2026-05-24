@@ -77,6 +77,14 @@ struct AgentChatView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button {
+                draft = ""
+                viewModel.startNewConversation()
+                editorFocusToken += 1
+            } label: {
+                Label(appText("New Chat", appLanguageRaw), systemImage: "square.and.pencil")
+            }
+            .buttonStyle(.bordered)
             statusChip
             if viewModel.isStreaming {
                 ProgressView()
@@ -465,6 +473,27 @@ struct AgentChatView: View {
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
 
+            if !viewModel.conversationHistory.isEmpty {
+                Divider()
+
+                Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                    .font(.subheadline.bold())
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(viewModel.conversationHistory.prefix(6)) { conversation in
+                        AgentConversationHistoryRow(
+                            conversation: conversation,
+                            isSelected: conversation.id == viewModel.currentConversationID,
+                            onLoad: {
+                                viewModel.loadConversation(conversation)
+                            },
+                            onDelete: {
+                                viewModel.deleteConversation(conversation)
+                            }
+                        )
+                    }
+                }
+            }
+
             if !viewModel.contextItems.isEmpty {
                 Divider()
 
@@ -851,6 +880,64 @@ private struct MarkdownMessageText: View {
             markdown: sanitized,
             options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
         )
+    }
+}
+
+private struct AgentConversationHistoryRow: View {
+    let conversation: AgentConversationSnapshot
+    let isSelected: Bool
+    let onLoad: () -> Void
+    let onDelete: () -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Button {
+                onLoad()
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "message")
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(conversation.title)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(2)
+                            .foregroundStyle(.primary)
+                        Text(historySubtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(appText("Load Chat", appLanguageRaw))
+
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(appText("Delete", appLanguageRaw))
+        }
+        .padding(10)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.07),
+            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+        )
+    }
+
+    private var historySubtitle: String {
+        let count = conversation.messages.count
+        let date = conversation.updatedAt.formatted(date: .numeric, time: .shortened)
+        if let conversationID = conversation.conversationID {
+            return "#\(conversationID) · \(count) \(appText("messages", appLanguageRaw)) · \(date)"
+        }
+        return "\(count) \(appText("messages", appLanguageRaw)) · \(date)"
     }
 }
 

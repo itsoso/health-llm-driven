@@ -287,6 +287,47 @@ final class AgentStreamClientTests: XCTestCase {
 
         XCTAssertTrue(model.savedContextBundles.isEmpty)
     }
+
+    @MainActor
+    func testAgentChatViewModelPersistsAndRestoresConversationHistory() async {
+        let suiteName = "AgentHistory-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let historyStore = UserDefaultsAgentConversationStore(defaults: defaults)
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 42))
+            continuation.yield(.token("历史回答"))
+            continuation.yield(.done(conversationID: 42, messageID: 8, completionStatus: "complete", model: "claude", sourcesUsed: ["kb"]))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(
+            streamService: StaticAgentStreamService(stream: stream),
+            conversationStore: historyStore
+        )
+
+        await model.send("分析今天")
+
+        XCTAssertEqual(model.conversationHistory.count, 1)
+        XCTAssertEqual(model.conversationHistory.first?.conversationID, 42)
+        XCTAssertEqual(model.conversationHistory.first?.messages.map(\.content), ["分析今天", "历史回答"])
+
+        let restored = AgentChatViewModel(conversationStore: historyStore)
+
+        XCTAssertEqual(restored.messages.map(\.content), ["分析今天", "历史回答"])
+        XCTAssertEqual(restored.conversationID, 42)
+        XCTAssertEqual(restored.conversationHistory.count, 1)
+
+        restored.startNewConversation()
+
+        XCTAssertTrue(restored.messages.isEmpty)
+        XCTAssertNil(restored.conversationID)
+        XCTAssertEqual(restored.conversationHistory.count, 1)
+
+        restored.loadConversation(restored.conversationHistory[0])
+
+        XCTAssertEqual(restored.messages.last?.content, "历史回答")
+        XCTAssertEqual(restored.conversationID, 42)
+    }
 }
 
 private struct StaticAgentStreamService: AgentStreamServicing {

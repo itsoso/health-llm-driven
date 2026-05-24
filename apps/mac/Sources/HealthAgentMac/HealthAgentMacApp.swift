@@ -209,7 +209,8 @@ struct AppServices {
         )
         self.agentViewModel = AgentChatViewModel(
             streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider),
-            contextBundleStore: UserDefaultsAgentContextBundleStore()
+            contextBundleStore: UserDefaultsAgentContextBundleStore(),
+            conversationStore: UserDefaultsAgentConversationStore()
         )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)

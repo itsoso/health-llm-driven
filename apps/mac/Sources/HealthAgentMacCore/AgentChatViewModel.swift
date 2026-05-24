@@ -1,12 +1,12 @@
 import Foundation
 import Observation
 
-public enum AgentChatRole: Equatable, Sendable {
+public enum AgentChatRole: String, Codable, Equatable, Sendable {
     case user
     case assistant
 }
 
-public struct AgentChatMessage: Equatable, Identifiable, Sendable {
+public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let role: AgentChatRole
     public var content: String
@@ -15,6 +15,57 @@ public struct AgentChatMessage: Equatable, Identifiable, Sendable {
         self.id = id
         self.role = role
         self.content = content
+    }
+}
+
+public struct AgentConversationSnapshot: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public let conversationID: Int?
+    public let title: String
+    public let messages: [AgentChatMessage]
+    public let updatedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        conversationID: Int? = nil,
+        title: String,
+        messages: [AgentChatMessage],
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.conversationID = conversationID
+        self.title = title
+        self.messages = messages
+        self.updatedAt = updatedAt
+    }
+}
+
+public protocol AgentConversationStoring: Sendable {
+    func loadConversations() -> [AgentConversationSnapshot]
+    func saveConversations(_ conversations: [AgentConversationSnapshot])
+}
+
+public final class UserDefaultsAgentConversationStore: AgentConversationStoring, @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let key: String
+
+    public init(defaults: UserDefaults = .standard, key: String = "agentConversationHistory") {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    public func loadConversations() -> [AgentConversationSnapshot] {
+        guard let data = defaults.data(forKey: key) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([AgentConversationSnapshot].self, from: data)) ?? []
+    }
+
+    public func saveConversations(_ conversations: [AgentConversationSnapshot]) {
+        guard let data = try? JSONEncoder().encode(conversations) else {
+            return
+        }
+        defaults.set(data, forKey: key)
     }
 }
 
@@ -143,12 +194,17 @@ public final class AgentChatViewModel {
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
     public var savedContextBundles: [AgentContextBundle] = []
+    public var conversationHistory: [AgentConversationSnapshot] = []
     public var toolActivities: [AgentToolActivity] = []
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
     @ObservationIgnored
     private let contextBundleStore: AgentContextBundleStoring?
+    @ObservationIgnored
+    private let conversationStore: AgentConversationStoring?
+    @ObservationIgnored
+    private var currentConversationSnapshotID: UUID?
 
     public var canRetry: Bool {
         !isStreaming && lastPrompt != nil && (runState == .failed || runState == .partial)
@@ -158,15 +214,27 @@ public final class AgentChatViewModel {
         true
     }
 
+    public var currentConversationID: UUID? {
+        currentConversationSnapshotID
+    }
+
     public init(
         selectedModelID: String? = nil,
         streamService: AgentStreamServicing? = nil,
-        contextBundleStore: AgentContextBundleStoring? = nil
+        contextBundleStore: AgentContextBundleStoring? = nil,
+        conversationStore: AgentConversationStoring? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
         self.contextBundleStore = contextBundleStore
+        self.conversationStore = conversationStore
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
+        self.conversationHistory = conversationStore?.loadConversations() ?? []
+        if let latest = conversationHistory.first {
+            self.currentConversationSnapshotID = latest.id
+            self.conversationID = latest.conversationID
+            self.messages = latest.messages
+        }
     }
 
     public func selectModel(_ id: String?) {
@@ -296,7 +364,40 @@ public final class AgentChatViewModel {
         if errorMessage == nil {
             attachments = []
         }
+        persistCurrentConversation()
         isStreaming = false
+    }
+
+    public func startNewConversation() {
+        messages = []
+        conversationID = nil
+        errorMessage = nil
+        lastCompletionStatus = nil
+        lastModel = nil
+        lastSourcesUsed = []
+        lastPrompt = nil
+        toolActivities = []
+        currentConversationSnapshotID = nil
+    }
+
+    public func loadConversation(_ conversation: AgentConversationSnapshot) {
+        currentConversationSnapshotID = conversation.id
+        conversationID = conversation.conversationID
+        messages = conversation.messages
+        errorMessage = nil
+        lastCompletionStatus = nil
+        lastModel = nil
+        lastSourcesUsed = []
+        toolActivities = []
+        lastPrompt = conversation.messages.last(where: { $0.role == .user })?.content
+    }
+
+    public func deleteConversation(_ conversation: AgentConversationSnapshot) {
+        conversationHistory.removeAll { $0.id == conversation.id }
+        conversationStore?.saveConversations(conversationHistory)
+        if currentConversationSnapshotID == conversation.id {
+            startNewConversation()
+        }
     }
 
     public func retryLastMessage() async {
@@ -308,6 +409,34 @@ public final class AgentChatViewModel {
 
     private func persistContextBundles() {
         contextBundleStore?.saveContextBundles(savedContextBundles)
+    }
+
+    private func persistCurrentConversation() {
+        guard !messages.isEmpty else {
+            return
+        }
+        let snapshotID = currentConversationSnapshotID ?? UUID()
+        currentConversationSnapshotID = snapshotID
+        let snapshot = AgentConversationSnapshot(
+            id: snapshotID,
+            conversationID: conversationID,
+            title: conversationTitle(from: messages),
+            messages: messages,
+            updatedAt: Date()
+        )
+        conversationHistory.removeAll { $0.id == snapshot.id }
+        conversationHistory.insert(snapshot, at: 0)
+        conversationHistory = Array(conversationHistory.prefix(30))
+        conversationStore?.saveConversations(conversationHistory)
+    }
+
+    private func conversationTitle(from messages: [AgentChatMessage]) -> String {
+        let firstUserMessage = messages.first(where: { $0.role == .user })?.content ?? "New Analysis"
+        let trimmed = firstUserMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= 28 {
+            return trimmed.isEmpty ? "New Analysis" : trimmed
+        }
+        return "\(trimmed.prefix(28))…"
     }
 
     private func buildExtraContext() -> String? {
