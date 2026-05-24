@@ -750,12 +750,12 @@ function HomeBackgroundPanel({
     <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.agentRuntimeHeader}>
         <View style={[styles.agentRuntimeIcon, { backgroundColor: c.brandLight }]}>
-          <Ionicons name="analytics-outline" size={13} color={c.brand} />
+          <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.agentRuntimeTitleBlock}>
-          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>健康指标</HomeText>
+          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>身体反馈</HomeText>
           <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            Agent 在后台校准干预效果
+            看干预有没有让指标变好
           </HomeText>
         </View>
         <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
@@ -766,9 +766,9 @@ function HomeBackgroundPanel({
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>结果校准</HomeText>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>重点指标</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              身体反馈
+              今天先看这几项
             </HomeText>
           </View>
           <Pressable
@@ -786,7 +786,7 @@ function HomeBackgroundPanel({
         </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
         <View style={styles.calibrationContextRail}>
-          <View style={[styles.calibrationContextChip, { backgroundColor: c.bgCard }]}>
+          <View style={[styles.calibrationContextChip, { backgroundColor: c.bgPrimary }]}>
             <EnvironmentCard compact mode="micro" />
           </View>
           <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
@@ -831,14 +831,20 @@ function HomeBodyFeedbackPanel({
               onPress={() => onOpenMetric(metric.route)}
               style={({ pressed }) => [
                 styles.bodyMetricTile,
-                { backgroundColor: c[metric.tintName], opacity: pressed ? 0.72 : 1 },
+                {
+                  backgroundColor: c.bgPrimary,
+                  borderColor: c.separator,
+                  opacity: pressed ? 0.72 : 1,
+                },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`${metric.label} ${metric.value}`}
             >
-              <Ionicons name={metric.icon} size={14} color={color} />
-              <HomeText style={[styles.bodyMetricLabel, { color }]} numberOfLines={1}>{metric.label}</HomeText>
-              <HomeText style={[styles.bodyMetricValue, { color }]} numberOfLines={1}>{metric.value}</HomeText>
+              <View style={[styles.bodyMetricIconBadge, { backgroundColor: c[metric.tintName] }]}>
+                <Ionicons name={metric.icon} size={13} color={color} />
+              </View>
+              <HomeText style={[styles.bodyMetricLabel, { color: c.labelSecondary }]} numberOfLines={1}>{metric.label}</HomeText>
+              <HomeText style={[styles.bodyMetricValue, { color: c.labelPrimary }]} numberOfLines={1}>{metric.value}</HomeText>
             </Pressable>
           );
         })}
@@ -876,7 +882,7 @@ function CompactArchiveStrip({
       onPress={onOpenAll}
       style={({ pressed }) => [
         styles.shortcutStrip,
-        { backgroundColor: c.bgCard, opacity: pressed ? 0.72 : 1 },
+        { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
       ]}
       accessibilityRole="button"
       accessibilityLabel="查看个人画像"
@@ -2221,9 +2227,9 @@ const styles = StyleSheet.create({
   agentRuntimePanel: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 9,
   },
   agentRuntimeHeader: {
     minHeight: 30,
@@ -2254,17 +2260,14 @@ const styles = StyleSheet.create({
   agentRuntimeLiveDot: { width: 5, height: 5, borderRadius: 2.5 },
   agentRuntimeLiveText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   calibrationContextRail: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
     gap: 6,
   },
   calibrationContextChip: {
-    flex: 1,
     minWidth: 0,
-    minHeight: 46,
+    minHeight: 38,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     justifyContent: 'center',
   },
   shortcutCard: {
@@ -2275,12 +2278,11 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   shortcutStrip: {
-    flex: 1,
     minWidth: 0,
-    minHeight: 46,
+    minHeight: 38,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -2347,15 +2349,23 @@ const styles = StyleSheet.create({
   bodyMetricTile: {
     flex: 1,
     minWidth: 0,
-    minHeight: 36,
+    minHeight: 58,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 7,
     justifyContent: 'center',
-    gap: 1,
+    gap: 3,
   },
-  bodyMetricLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  bodyMetricValue: { fontSize: 10, lineHeight: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bodyMetricIconBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bodyMetricLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  bodyMetricValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
