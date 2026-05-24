@@ -797,8 +797,12 @@ function HomeBackgroundPanel({
           </Pressable>
         </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
-        <EnvironmentCard compact mode="micro" />
-        <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
+        <View style={styles.calibrationContextRail}>
+          <View style={[styles.calibrationContextChip, { backgroundColor: c.bgPrimary }]}>
+            <EnvironmentCard compact mode="micro" />
+          </View>
+          <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
+        </View>
       </View>
       <HomeReviewCadencePanel
         feedbackMetrics={feedbackMetrics}
@@ -882,7 +886,10 @@ function CompactArchiveStrip({
   return (
     <Pressable
       onPress={onOpenAll}
-      style={({ pressed }) => [styles.shortcutStrip, { opacity: pressed ? 0.72 : 1 }]}
+      style={({ pressed }) => [
+        styles.shortcutStrip,
+        { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+      ]}
       accessibilityRole="button"
       accessibilityLabel="查看个人画像"
     >
@@ -893,10 +900,7 @@ function CompactArchiveStrip({
       <HomeText style={[styles.profileSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
         {geneticSummary} · {progressSummary} · {protocolSummary}
       </HomeText>
-      <View style={styles.shortcutAllButton}>
-        <HomeText style={[styles.shortcutAllText, { color: c.brand }]}>全部</HomeText>
-        <Ionicons name="chevron-forward" size={13} color={c.brand} />
-      </View>
+      <Ionicons name="chevron-forward" size={13} color={c.brand} />
     </Pressable>
   );
 }
@@ -2370,6 +2374,20 @@ const styles = StyleSheet.create({
   backgroundDivider: {
     height: StyleSheet.hairlineWidth,
   },
+  calibrationContextRail: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 6,
+  },
+  calibrationContextChip: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 46,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    justifyContent: 'center',
+  },
   shortcutCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
@@ -2378,10 +2396,15 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   shortcutStrip: {
-    minHeight: 24,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 46,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
   shortcutHeader: {
     flexDirection: 'row',
@@ -2389,12 +2412,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  shortcutHeaderText: { width: 65, minWidth: 65, gap: 1 },
+  shortcutHeaderText: { flex: 1, minWidth: 0, gap: 1 },
   shortcutTitle: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   shortcutSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '600' },
   shortcutAllButton: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 1 },
   shortcutAllText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
-  profileSummaryText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  profileSummaryText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
   shortcutRail: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end' },
   shortcutTextButton: {
     minHeight: 24,
