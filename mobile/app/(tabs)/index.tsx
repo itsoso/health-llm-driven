@@ -810,7 +810,11 @@ function HomeBodyFeedbackPanel({
         </View>
       </View>
 
-      <View style={styles.bodyFeedbackGrid}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.bodyFeedbackRail}
+      >
         {visibleMetrics.map(metric => {
           const color = c[metric.colorName];
           return (
@@ -818,16 +822,16 @@ function HomeBodyFeedbackPanel({
               key={metric.key}
               onPress={() => onOpenMetric(metric.route)}
               style={({ pressed }) => [
-                styles.bodyFeedbackTile,
+                styles.bodyFeedbackSignal,
                 { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`${metric.label} ${metric.value}`}
             >
               <View style={[styles.bodyFeedbackIcon, { backgroundColor: c[metric.tintName] }]}>
-                <Ionicons name={metric.icon} size={14} color={color} />
+                <Ionicons name={metric.icon} size={13} color={color} />
               </View>
-              <View style={styles.bodyFeedbackTileText}>
+              <View style={styles.bodyFeedbackSignalText}>
                 <Text style={[styles.bodyFeedbackLabel, { color: c.labelTertiary }]} numberOfLines={1}>
                   {metric.label}
                 </Text>
@@ -835,11 +839,10 @@ function HomeBodyFeedbackPanel({
                   {metric.value}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -2321,26 +2324,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bodyFeedbackBadgeText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
-  bodyFeedbackGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  bodyFeedbackTile: {
-    width: '48.7%',
-    minHeight: 48,
+  bodyFeedbackRail: { gap: 8, paddingRight: 2 },
+  bodyFeedbackSignal: {
+    width: 100,
+    minHeight: 42,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 5,
   },
   bodyFeedbackIcon: {
-    width: 27,
-    height: 27,
-    borderRadius: 9,
+    width: 23,
+    height: 23,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bodyFeedbackTileText: { flex: 1, minWidth: 0, gap: 1 },
+  bodyFeedbackSignalText: { flex: 1, minWidth: 0, gap: 1 },
   bodyFeedbackLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  bodyFeedbackValue: { fontSize: 14, lineHeight: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bodyFeedbackValue: { fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
