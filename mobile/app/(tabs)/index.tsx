@@ -754,18 +754,20 @@ function HomeBackgroundPanel({
 }) {
   const { c } = useTheme();
   return (
-    <View style={styles.backgroundPanel}>
-      <View style={styles.backgroundHeader}>
-        <View style={[styles.backgroundStatusIcon, { backgroundColor: c.brandLight }]}>
+    <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.agentRuntimeHeader}>
+        <View style={[styles.agentRuntimeIcon, { backgroundColor: c.brandLight }]}>
           <Ionicons name="pulse-outline" size={13} color={c.brand} />
         </View>
-        <View style={styles.backgroundTitleBlock}>
-          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 自动处理</HomeText>
-          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>长期任务在后台排队，不打断你</HomeText>
+        <View style={styles.agentRuntimeTitleBlock}>
+          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>Agent 后台任务</HomeText>
+          <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
+            巡检、校准、复盘在后台运行
+          </HomeText>
         </View>
-        <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
-          <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundLiveText, { color: c.brand }]}>运行中</HomeText>
+        <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
+          <View style={[styles.agentRuntimeLiveDot, { backgroundColor: c.brand }]} />
+          <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>运行中</HomeText>
         </View>
       </View>
       <AgentFollowUpQueue
@@ -775,12 +777,12 @@ function HomeBackgroundPanel({
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
       />
-      <View style={[styles.evidenceChain, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={[styles.evidenceChain, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>正在校准结果</HomeText>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>结果校准</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              看血氧、睡眠、身材和检查是否真的变好
+              身体反馈
             </HomeText>
           </View>
           <Pressable
@@ -798,7 +800,7 @@ function HomeBackgroundPanel({
         </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
         <View style={styles.calibrationContextRail}>
-          <View style={[styles.calibrationContextChip, { backgroundColor: c.bgPrimary }]}>
+          <View style={[styles.calibrationContextChip, { backgroundColor: c.bgCard }]}>
             <EnvironmentCard compact mode="micro" />
           </View>
           <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
@@ -827,13 +829,6 @@ function HomeBodyFeedbackPanel({
 
   return (
     <View style={styles.bodyFeedbackBoard}>
-      <View style={styles.bodyFeedbackHeader}>
-        <View style={styles.bodyFeedbackTextBlock}>
-          <HomeText style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>指标看板</HomeText>
-          <HomeText style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>身体反馈</HomeText>
-        </View>
-        <HomeText style={[styles.bodyFeedbackRight, { color: c.labelTertiary }]}>{visibleMetrics.length} 项</HomeText>
-      </View>
       <View style={styles.bodyMetricRail}>
         {boardMetrics.map(metric => {
           const color = c[metric.colorName];
@@ -888,7 +883,7 @@ function CompactArchiveStrip({
       onPress={onOpenAll}
       style={({ pressed }) => [
         styles.shortcutStrip,
-        { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+        { backgroundColor: c.bgCard, opacity: pressed ? 0.72 : 1 },
       ]}
       accessibilityRole="button"
       accessibilityLabel="查看个人画像"
@@ -1188,7 +1183,7 @@ function AgentFollowUpQueue({
       onPress={onOpenQueue}
       style={({ pressed }) => [
         styles.followUpCompactRow,
-        { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+        { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
       ]}
       accessibilityRole="button"
       accessibilityLabel={queueTitle}
@@ -2374,6 +2369,41 @@ const styles = StyleSheet.create({
   backgroundDivider: {
     height: StyleSheet.hairlineWidth,
   },
+  agentRuntimePanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  agentRuntimeHeader: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 1,
+  },
+  agentRuntimeIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agentRuntimeTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
+  agentRuntimeTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  agentRuntimeSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
+  agentRuntimeLiveBadge: {
+    minHeight: 20,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  agentRuntimeLiveDot: { width: 5, height: 5, borderRadius: 2.5 },
+  agentRuntimeLiveText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   calibrationContextRail: {
     flexDirection: 'row',
     alignItems: 'stretch',
@@ -2468,15 +2498,15 @@ const styles = StyleSheet.create({
   bodyMetricTile: {
     flex: 1,
     minWidth: 0,
-    minHeight: 48,
+    minHeight: 36,
     borderRadius: radii.md,
-    paddingHorizontal: 7,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     justifyContent: 'center',
-    gap: 2,
+    gap: 1,
   },
-  bodyMetricLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  bodyMetricValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bodyMetricLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  bodyMetricValue: { fontSize: 10, lineHeight: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
