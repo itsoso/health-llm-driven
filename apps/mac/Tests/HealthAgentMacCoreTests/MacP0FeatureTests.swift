@@ -341,6 +341,51 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(result.success)
     }
 
+    func testSupplementProductLibraryClientSearchesProductsForPickerAutofill() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/supplements/products?search=fish%20oil&limit=10")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token")
+            let data = """
+            {
+              "total": 1,
+              "items": [
+                {
+                  "id": 12,
+                  "brand": "Nordic Naturals",
+                  "name": "Ultimate Omega",
+                  "category": "other",
+                  "description": "High potency omega-3",
+                  "serving_size": "2 softgels",
+                  "price_cny": 268.5,
+                  "rating": 4.8,
+                  "health_tags": ["心血管", "炎症"],
+                  "ingredients": [{"name": "EPA", "amount": "650mg"}],
+                  "currency": "CNY",
+                  "platform": "iherb",
+                  "is_active": true
+                }
+              ]
+            }
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await SupplementProductLibraryClient(apiClient: client).searchProducts(query: "fish oil")
+
+        XCTAssertEqual(result.total, 1)
+        XCTAssertEqual(result.items.first?.id, 12)
+        XCTAssertEqual(result.items.first?.displayName, "Nordic Naturals Ultimate Omega")
+        XCTAssertEqual(result.items.first?.servingSize, "2 softgels")
+        XCTAssertEqual(result.items.first?.priceCny, 268.5)
+        XCTAssertEqual(result.items.first?.healthTags, ["心血管", "炎症"])
+    }
+
     func testRecordClientPostsStructuredWeightToTypedEndpoint() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")

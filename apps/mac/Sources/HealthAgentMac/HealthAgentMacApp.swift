@@ -225,6 +225,7 @@ struct AppServices {
     let todayViewModel: TodayViewModel
     let agentViewModel: AgentChatViewModel
     let recordClient: RecordClient
+    let supplementProductClient: SupplementProductLibraryClient
     let desktopJobClient: DesktopJobClient
     let traceClient: TraceClient
     let authClient: AuthClient
@@ -243,6 +244,7 @@ struct AppServices {
             conversationStore: UserDefaultsAgentConversationStore()
         )
         self.recordClient = RecordClient(apiClient: apiClient)
+        self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
         self.traceClient = TraceClient(apiClient: apiClient)
         self.authClient = AuthClient(apiClient: apiClient, tokenStore: tokenProvider)
@@ -309,7 +311,11 @@ struct AppRootView: View {
         case .agent:
             AgentChatView(viewModel: services.agentViewModel)
         case .record:
-            RecordHubView(client: services.recordClient, viewModel: services.todayViewModel)
+            RecordHubView(
+                client: services.recordClient,
+                productClient: services.supplementProductClient,
+                viewModel: services.todayViewModel
+            )
         case .jobs:
             JobListView(client: services.desktopJobClient) { conversationID in
                 navigation.openTrace(conversationID: conversationID)

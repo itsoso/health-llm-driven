@@ -1301,6 +1301,7 @@ private final class CommandReturnTextView: NSTextView {
 
 struct RecordHubView: View {
     let client: RecordClient
+    let productClient: SupplementProductLibraryClient
     @Bindable var viewModel: TodayViewModel
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var quickText = ""
@@ -1311,6 +1312,12 @@ struct RecordHubView: View {
     @State private var waterMl = "250"
     @State private var supplementName = ""
     @State private var supplementDose = ""
+    @State private var isSupplementLibraryOpen = false
+    @State private var supplementProductSearch = ""
+    @State private var supplementProductResults: [SupplementProductSummary] = []
+    @State private var selectedSupplementProduct: SupplementProductSummary?
+    @State private var isSearchingSupplementProducts = false
+    @State private var supplementProductMessage: String?
     @State private var weightKg = ""
     @State private var systolic = ""
     @State private var diastolic = ""
@@ -1938,8 +1945,7 @@ struct RecordHubView: View {
         case .water:
             recordTextField(appText("Amount ml", appLanguageRaw), text: $waterMl)
         case .supplement:
-            recordTextField(appText("Supplement", appLanguageRaw), text: $supplementName)
-            recordTextField(appText("Dose and timing", appLanguageRaw), text: $supplementDose)
+            supplementFields
         case .weight:
             recordTextField(appText("Weight kg", appLanguageRaw), text: $weightKg)
         case .bloodPressure:
@@ -1962,6 +1968,181 @@ struct RecordHubView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
             }
+    }
+
+    private var supplementFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                recordTextField(appText("Supplement", appLanguageRaw), text: $supplementName)
+                Button {
+                    isSupplementLibraryOpen.toggle()
+                    if isSupplementLibraryOpen && supplementProductSearch.isEmpty {
+                        supplementProductSearch = supplementName
+                    }
+                } label: {
+                    Label(appText("Choose from Supplement Library", appLanguageRaw), systemImage: "books.vertical")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            recordTextField(appText("Dose and timing", appLanguageRaw), text: $supplementDose)
+
+            if let selectedSupplementProduct {
+                HStack(spacing: 8) {
+                    Label(
+                        "\(appText("Linked Product", appLanguageRaw)) #\(selectedSupplementProduct.id)",
+                        systemImage: "checkmark.seal.fill"
+                    )
+                    .foregroundStyle(.green)
+                    Text(selectedSupplementProduct.displayName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button(appText("Clear", appLanguageRaw)) {
+                        self.selectedSupplementProduct = nil
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.green.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+
+            if isSupplementLibraryOpen {
+                supplementLibraryPicker
+            }
+        }
+    }
+
+    private var supplementLibraryPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField(appText("Search brand or product name", appLanguageRaw), text: $supplementProductSearch)
+                    .textFieldStyle(.plain)
+                    .onSubmit {
+                        Task { await searchSupplementProducts() }
+                    }
+                Button(appText("Search", appLanguageRaw)) {
+                    Task { await searchSupplementProducts() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isSearchingSupplementProducts || supplementProductSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            if isSearchingSupplementProducts {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(appText("Searching supplement library...", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let supplementProductMessage {
+                Text(supplementProductMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !supplementProductResults.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(supplementProductResults) { product in
+                        Button {
+                            selectSupplementProduct(product)
+                        } label: {
+                            supplementProductRow(product)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.purple.opacity(0.16), lineWidth: 1)
+        }
+    }
+
+    private func supplementProductRow(_ product: SupplementProductSummary) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "pills.fill")
+                .foregroundStyle(.purple)
+                .frame(width: 26, height: 26)
+                .background(Color.purple.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(product.displayName)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    if let servingSize = product.servingSize, !servingSize.isEmpty {
+                        Text(servingSize)
+                    }
+                    if let category = product.category, !category.isEmpty {
+                        Text(appText(category, appLanguageRaw))
+                    }
+                    if let price = product.priceCny {
+                        Text("¥\(Int(price.rounded()))")
+                            .foregroundStyle(.green)
+                    }
+                    if let rating = product.rating {
+                        Text("★ \(String(format: "%.1f", rating))")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if !product.healthTags.isEmpty {
+                    Text(product.healthTags.prefix(3).joined(separator: " · "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            Image(systemName: "plus.circle.fill")
+                .foregroundStyle(.purple)
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func searchSupplementProducts() async {
+        let query = supplementProductSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            supplementProductResults = []
+            supplementProductMessage = appText("Enter a product keyword first.", appLanguageRaw)
+            return
+        }
+        isSearchingSupplementProducts = true
+        supplementProductMessage = nil
+        defer { isSearchingSupplementProducts = false }
+        do {
+            let response = try await productClient.searchProducts(query: query)
+            supplementProductResults = response.items
+            supplementProductMessage = response.items.isEmpty
+                ? appText("No matching products. You can still enter manually.", appLanguageRaw)
+                : "\(response.total) \(appText("products found", appLanguageRaw))"
+        } catch {
+            supplementProductResults = []
+            supplementProductMessage = "\(appText("Search failed", appLanguageRaw)): \(error.localizedDescription)"
+        }
+    }
+
+    private func selectSupplementProduct(_ product: SupplementProductSummary) {
+        selectedSupplementProduct = product
+        supplementName = product.displayName
+        supplementDose = product.servingSize ?? supplementDose
+        supplementProductSearch = ""
+        supplementProductResults = []
+        supplementProductMessage = nil
+        isSupplementLibraryOpen = false
     }
 
     private func recordTypeHint(_ type: StructuredRecordDraftType) -> String {
@@ -2118,6 +2299,10 @@ struct RecordHubView: View {
         case .supplement:
             supplementName = ""
             supplementDose = ""
+            selectedSupplementProduct = nil
+            supplementProductSearch = ""
+            supplementProductResults = []
+            supplementProductMessage = nil
         case .weight:
             weightKg = ""
         case .bloodPressure:
