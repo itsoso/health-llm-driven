@@ -562,10 +562,10 @@ function HomeCommandHeader({
       ? improvementFocus.headline
       : '保持记录节奏';
   const focusKicker = criticalCount > 0
-    ? 'Agent 正在处理 · 风险优先'
+    ? '后台任务 · 风险优先'
     : activeDomainCount > 0
-      ? `Agent 正在执行 · ${activeDomainCount} 个干预域`
-      : 'Agent 正在观察 · 等待新任务';
+      ? `后台任务 · ${activeDomainCount} 个干预域`
+      : '后台任务 · 观察中';
   const focusText = criticalCount > 0
     ? improvementFocus.target
     : planCount > 0
@@ -597,10 +597,6 @@ function HomeCommandHeader({
         <View style={styles.commandRightMeta}>
           <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
           <View style={styles.commandMetaPills}>
-            <View style={[styles.evidencePill, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
-              <Ionicons name="layers-outline" size={11} color={c.labelTertiary} />
-              <Text style={[styles.evidenceText, { color: c.labelSecondary }]}>{evidenceLabel}</Text>
-            </View>
             <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
               <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
               <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
@@ -1737,16 +1733,6 @@ const styles = StyleSheet.create({
   commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
   commandRightMeta: { alignItems: 'flex-end', gap: 6 },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
-  evidencePill: {
-    minHeight: 24,
-    borderRadius: radii.full,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  evidenceText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '700' },
   commandOutcomeBlock: {
     borderTopWidth: StyleSheet.hairlineWidth,

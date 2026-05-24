@@ -159,7 +159,7 @@ describe('TodayScreen', () => {
     expect(queryByText('健康 Agent 正在运行')).toBeNull();
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getByText('Agent 正在观察 · 等待新任务')).toBeTruthy();
+    expect(getByText('后台任务 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('目标：补齐数据，让建议更贴近身体反馈')).toBeTruthy();
     expect(getByText('更多入口')).toBeTruthy();
