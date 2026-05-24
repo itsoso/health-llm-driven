@@ -562,17 +562,16 @@ function HomeCommandHeader({
     : planCount > 0
       ? improvementFocus.target
       : improvementFocus.target;
-  const evidenceSummary = `画像校准 · ${buildEvidenceSourceSummary({
+  const evidenceSummary = `依据：${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
   })}`;
   const agentStepItems = [
-    { key: 'diagnosis', label: '判断', value: loopStrategy.diagnosisLabel },
-    { key: 'intervention', label: '干预', value: activeDomainSummary || loopStrategy.interventionLabel },
+    { key: 'strategy', label: '策略', value: activeDomainSummary || loopStrategy.interventionLabel },
     {
-      key: 'verification',
-      label: '验证',
+      key: 'watch',
+      label: '观察',
       value: loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/'),
     },
   ] as const;
@@ -729,7 +728,7 @@ function CompactShortcutSection({
       <View style={styles.shortcutStrip}>
         <View style={styles.shortcutHeaderText}>
           <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</Text>
-          <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>校准判断</Text>
+          <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</Text>
         </View>
         <View style={styles.shortcutRail}>
           {shortcuts.map((item, index) => (
