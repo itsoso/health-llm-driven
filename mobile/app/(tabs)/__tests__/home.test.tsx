@@ -166,6 +166,7 @@ describe('TodayScreen', () => {
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('个人画像')).toBeTruthy();
+    expect(getByText('下次复盘')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
@@ -308,6 +309,7 @@ describe('TodayScreen', () => {
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(getByText('运行中')).toBeTruthy();
     expect(getByText('判断依据')).toBeTruthy();
+    expect(getByText('问原因')).toBeTruthy();
     expect(getByText('环境证据')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();

@@ -416,7 +416,6 @@ export default function TodayScreen() {
                 : router.push('/(tabs)/record' as any)
           )}
           onCompleteAction={completeNextAction}
-          onOpenAgent={openWorkspaceChat}
           onOpenMetric={(route) => router.push(route as any)}
         />
 
@@ -448,6 +447,8 @@ export default function TodayScreen() {
           onOpenTrajectory={openTrajectoryChat}
           onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           onOpenMetric={(route) => router.push(route as any)}
+          onOpenAgent={openWorkspaceChat}
+          planCount={activePlanCount}
           shortcuts={[
             {
               label: '基因',
@@ -502,7 +503,6 @@ function HomeCommandHeader({
   completionState,
   onOpenFocus,
   onCompleteAction,
-  onOpenAgent,
   onOpenMetric,
 }: {
   criticalCount: number;
@@ -517,7 +517,6 @@ function HomeCommandHeader({
   completionState: NextActionCompletionState;
   onOpenFocus: () => void;
   onCompleteAction: (action: DailyPlanAction) => void;
-  onOpenAgent: () => void;
   onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
@@ -530,7 +529,6 @@ function HomeCommandHeader({
   );
   const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
-  const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
   const visibleLoopMetrics = loopMetrics.slice(0, 3);
   const activeDomainLabels = domains
@@ -562,11 +560,21 @@ function HomeCommandHeader({
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
   }).replace(/\//g, '、')}已接入`;
-  const strategySummary = activeDomainSummary || loopStrategy.interventionLabel;
-  const watchSummary = loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/');
+  const strategySummary = activeDomainSummary || `${activeCount} 个干预`;
+  const watchSummary = loopMetrics.map(metric => metric.label).slice(0, 2).join('/') || '周日晚复盘';
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
+  const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
+  const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0
+    ? 'alert-circle-outline'
+    : action
+      ? getPlanActionIcon(action.domain)
+      : 'sparkles-outline';
+  const decisionSupport = riskTitle
+    || action?.why
+    || action?.when
+    || (planCount > 0 ? 'Agent 已把今天任务排成执行顺序。' : '补齐今天记录后，Agent 会重新排序干预。');
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -583,139 +591,126 @@ function HomeCommandHeader({
             {evidenceSummary}
           </HomeText>
         </View>
-        <View style={styles.commandRightMeta}>
-          <View style={styles.commandMiniActions}>
+      </View>
+
+      <Pressable
+        style={({ pressed }) => [
+          styles.commandDecisionCard,
+          { backgroundColor: c.bgPrimary, borderColor: `${decisionColor}22`, opacity: pressed ? 0.78 : 1 },
+        ]}
+        onPress={onOpenFocus}
+        accessibilityRole="button"
+        accessibilityLabel="打开今日重点"
+      >
+        <View style={[styles.commandDecisionIcon, { backgroundColor: decisionTint }]}>
+          <Ionicons name={decisionIcon} size={18} color={decisionColor} />
+        </View>
+        <View style={styles.commandDecisionText}>
+          <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</HomeText>
+          <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+            {headline}
+          </HomeText>
+          <HomeText style={[styles.commandDecisionSupport, { color: c.labelSecondary }]} numberOfLines={2}>
+            {decisionSupport}
+          </HomeText>
+        </View>
+        <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
+      </Pressable>
+
+      <View style={styles.commandMetricRail}>
+        <HomeText style={[styles.commandOutcomeLabel, { color: c.labelTertiary }]}>目标</HomeText>
+        {visibleLoopMetrics.map(metric => {
+          const color = c[metric.colorName];
+          return (
             <Pressable
-              onPress={onOpenAgent}
+              key={metric.key}
+              onPress={() => onOpenMetric(metric.route)}
               style={({ pressed }) => [
-                styles.commandMiniAction,
-                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.7 : 1 },
+                styles.commandMetricPill,
+                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.62 : 1 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="问 Agent"
+              accessibilityLabel={`${metric.label} ${metric.value}`}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+              <HomeText style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                {metric.label}
+              </HomeText>
+              <HomeText style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                {metric.value}
+              </HomeText>
             </Pressable>
-          </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.commandLoopRail}>
+        <View style={[styles.commandLoopChip, { backgroundColor: c.bgPrimary }]}>
+          <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>干预</HomeText>
+          <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
+            {strategySummary}
+          </HomeText>
+        </View>
+        <View style={[styles.commandLoopChip, { backgroundColor: c.bgPrimary }]}>
+          <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>验证</HomeText>
+          <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
+            {watchSummary}
+          </HomeText>
         </View>
       </View>
 
-      <View style={styles.commandDecisionShell}>
-        <View style={[styles.commandDecisionRail, { backgroundColor: decisionColor }]} />
-        <View style={styles.commandDecisionArea}>
+      <View style={styles.commandInlineActionRow}>
+        <Pressable
+          onPress={onOpenFocus}
+          style={({ pressed }) => [
+            styles.commandInlineNextStep,
+            { backgroundColor: c.brand, opacity: pressed ? 0.82 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="打开下一步"
+        >
+          <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
+          <HomeText style={styles.commandInlineNextLabel}>下一步</HomeText>
+          <HomeText style={styles.commandInlineNextText} numberOfLines={1}>
+            {nextStepActionText}
+          </HomeText>
+        </Pressable>
+        {canComplete && action ? (
           <Pressable
-            style={({ pressed }) => [styles.commandDecisionSummary, { opacity: pressed ? 0.78 : 1 }]}
-            onPress={onOpenFocus}
+            onPress={() => onCompleteAction(action)}
+            disabled={completionState === 'sending' || completionState === 'completed'}
+            style={({ pressed }) => [
+              styles.commandInlineDoneButton,
+              {
+                backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
+                borderColor: completionState === 'completed' ? c.green : c.separator,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}
             accessibilityRole="button"
-            accessibilityLabel="打开今日重点"
+            accessibilityLabel="完成当前行动"
           >
-            <View style={styles.commandDecisionTop}>
-              <View style={styles.commandTitleBlock}>
-                <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</HomeText>
-                <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-                  {headline}
-                </HomeText>
-              </View>
-            </View>
-            <View style={styles.commandMetricRail}>
-              <HomeText style={[styles.commandOutcomeLabel, { color: c.labelSecondary }]}>目标</HomeText>
-              {visibleLoopMetrics.map(metric => {
-                const color = c[metric.colorName];
-                return (
-                  <Pressable
-                    key={metric.key}
-                    onPress={() => onOpenMetric(metric.route)}
-                    style={({ pressed }) => [
-                      styles.commandMetricPill,
-                      { opacity: pressed ? 0.62 : 1 },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${metric.label} ${metric.value}`}
-                  >
-                    <HomeText style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                      {metric.label}
-                    </HomeText>
-                    <HomeText style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
-                      {metric.value}
-                    </HomeText>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Pressable>
-          <View style={styles.commandLoopRail}>
-            <View style={styles.commandLoopChip}>
-              <Ionicons name="options-outline" size={12} color={decisionColor} />
-              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>干预</HomeText>
-              <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
-                {strategySummary}
-              </HomeText>
-            </View>
-            <View style={styles.commandLoopChip}>
-              <Ionicons name="eye-outline" size={12} color={c.labelTertiary} />
-              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>验证</HomeText>
-              <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
-                {watchSummary}
-              </HomeText>
-            </View>
-          </View>
-          <View style={styles.commandInlineActionRow}>
-            <Pressable
-              onPress={onOpenFocus}
-              style={({ pressed }) => [
-                styles.commandInlineNextStep,
-                { backgroundColor: c.brandLight, borderColor: `${c.brand}28`, opacity: pressed ? 0.78 : 1 },
+            <Ionicons
+              name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={14}
+              color={completionState === 'completed' ? c.green : c.labelSecondary}
+            />
+            <HomeText
+              style={[
+                styles.commandInlineDoneText,
+                { color: completionState === 'completed' ? c.green : c.labelSecondary },
               ]}
-              accessibilityRole="button"
-              accessibilityLabel="打开下一步"
             >
-              <View style={[styles.commandInlineNextIcon, { backgroundColor: c.brand }]}>
-                <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
-              </View>
-              <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>下一步</HomeText>
-              <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
-                {nextStepActionText}
-              </HomeText>
-            </Pressable>
-            {canComplete && action ? (
-              <Pressable
-                onPress={() => onCompleteAction(action)}
-                disabled={completionState === 'sending' || completionState === 'completed'}
-                style={({ pressed }) => [
-                  styles.commandInlineDoneButton,
-                  {
-                    backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
-                    borderColor: completionState === 'completed' ? c.green : c.separator,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="完成当前行动"
-              >
-                <Ionicons
-                  name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                  size={14}
-                  color={completionState === 'completed' ? c.green : c.labelSecondary}
-                />
-                <HomeText
-                  style={[
-                    styles.commandInlineDoneText,
-                    { color: completionState === 'completed' ? c.green : c.labelSecondary },
-                  ]}
-                >
-                  {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
-                </HomeText>
-              </Pressable>
-            ) : null}
-          </View>
-          {completionState === 'error' ? (
-            <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
-              <Ionicons name="alert-circle-outline" size={14} color={c.red} />
-              <HomeText style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</HomeText>
-            </View>
-          ) : null}
-        </View>
+              {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
+            </HomeText>
+          </Pressable>
+        ) : null}
       </View>
+      {completionState === 'error' ? (
+        <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
+          <Ionicons name="alert-circle-outline" size={14} color={c.red} />
+          <HomeText style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</HomeText>
+        </View>
+      ) : null}
 
     </View>
   );
@@ -729,6 +724,8 @@ function HomeBackgroundPanel({
   onOpenTrajectory,
   onOpenAdvice,
   onOpenMetric,
+  onOpenAgent,
+  planCount,
   shortcuts,
   onOpenAll,
 }: {
@@ -739,6 +736,8 @@ function HomeBackgroundPanel({
   onOpenTrajectory: () => void;
   onOpenAdvice: (card: ActionCard) => void;
   onOpenMetric: (route: string) => void;
+  onOpenAgent: () => void;
+  planCount: number;
   shortcuts: {
     label: string;
     value: string;
@@ -775,15 +774,34 @@ function HomeBackgroundPanel({
       />
       <View style={[styles.evidenceChain, { backgroundColor: c.bgPrimary }]}>
         <View style={styles.evidenceChainHeader}>
-          <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>判断依据</HomeText>
-          <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            反馈、环境和长期画像解释上方优先级
-          </HomeText>
+          <View style={styles.evidenceChainTitleBlock}>
+            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>判断依据</HomeText>
+            <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
+              反馈、环境和长期画像解释上方优先级
+            </HomeText>
+          </View>
+          <Pressable
+            onPress={onOpenAgent}
+            style={({ pressed }) => [
+              styles.evidenceAskButton,
+              { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="问 Agent"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={12} color={c.brand} />
+            <HomeText style={[styles.evidenceAskText, { color: c.brand }]}>问原因</HomeText>
+          </Pressable>
         </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
         <EnvironmentCard compact mode="micro" />
         <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
       </View>
+      <HomeReviewCadencePanel
+        feedbackMetrics={feedbackMetrics}
+        planCount={planCount}
+        onOpenAgent={onOpenAgent}
+      />
     </View>
   );
 }
@@ -868,6 +886,45 @@ function CompactArchiveStrip({
         <HomeText style={[styles.shortcutAllText, { color: c.brand }]}>全部</HomeText>
         <Ionicons name="chevron-forward" size={13} color={c.brand} />
       </View>
+    </Pressable>
+  );
+}
+
+function HomeReviewCadencePanel({
+  feedbackMetrics,
+  planCount,
+  onOpenAgent,
+}: {
+  feedbackMetrics: OutcomeFeedbackMetric[];
+  planCount: number;
+  onOpenAgent: () => void;
+}) {
+  const { c } = useTheme();
+  const reviewTargets = feedbackMetrics
+    .slice(0, 3)
+    .map(metric => metric.label)
+    .join(' / ') || '睡眠 / 血氧 / 体成分';
+  const planLabel = planCount > 0 ? `${planCount} 个干预执行中` : '等待今天记录补齐';
+  return (
+    <Pressable
+      onPress={onOpenAgent}
+      style={({ pressed }) => [
+        styles.reviewCadencePanel,
+        { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.74 : 1 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel="查看下次复盘"
+    >
+      <View style={[styles.reviewCadenceIcon, { backgroundColor: c.brandLight }]}>
+        <Ionicons name="calendar-outline" size={13} color={c.brand} />
+      </View>
+      <View style={styles.reviewCadenceTextBlock}>
+        <HomeText style={[styles.reviewCadenceTitle, { color: c.labelPrimary }]}>下次复盘</HomeText>
+        <HomeText style={[styles.reviewCadenceSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
+          周日晚自动看 {reviewTargets}，当前 {planLabel}
+        </HomeText>
+      </View>
+      <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
     </Pressable>
   );
 }
@@ -1470,61 +1527,6 @@ function buildInterventionDomainStatuses(actions: DailyPlanAction[]): Interventi
   }));
 }
 
-function buildAgentLoopStrategy({
-  activeCount,
-  action,
-  riskTitle,
-}: {
-  activeCount: number;
-  action?: DailyPlanAction | null;
-  riskTitle?: string;
-}) {
-  const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
-  const activeLabel = activeCount > 0 ? `${activeCount}项` : null;
-
-  if (/spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
-    return {
-      subtitle: '先稳夜间血氧，再看睡眠分和 HRV 是否回升',
-      diagnosisLabel: '血氧风险',
-      interventionLabel: activeLabel ?? '睡眠优先',
-      verificationLabel: '血氧/睡眠',
-    };
-  }
-  if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
-    return {
-      subtitle: '用饮食和运动干预体成分，再看 BMI/体脂变化',
-      diagnosisLabel: '体成分',
-      interventionLabel: activeLabel ?? '饮食+运动',
-      verificationLabel: 'BMI/体脂',
-    };
-  }
-  if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
-    return {
-      subtitle: '先降低心血管负荷，再跟踪血压、HRV 和睡眠恢复',
-      diagnosisLabel: '血压负荷',
-      interventionLabel: activeLabel ?? '恢复优先',
-      verificationLabel: '血压/HRV',
-    };
-  }
-  if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
-    return {
-      subtitle: '先调整饮食、运动和补剂，再用血液/生化指标复盘',
-      diagnosisLabel: '生化指标',
-      interventionLabel: activeLabel ?? '代谢优先',
-      verificationLabel: '血检/体成分',
-    };
-  }
-
-  return {
-    subtitle: activeCount > 0
-      ? `${activeCount} 个任务用真实反馈校准下一步`
-      : '保持记录节奏，Agent 用关键指标寻找下一轮干预机会',
-    diagnosisLabel: '实时',
-    interventionLabel: activeLabel ?? '观察中',
-    verificationLabel: '',
-  };
-}
-
 function buildWorkspaceDataSources({
   geneticHits,
   progressTotal,
@@ -1621,6 +1623,16 @@ function getTrajectoryRiskIcon(domain: string): keyof typeof Ionicons.glyphMap {
   return 'analytics-outline';
 }
 
+function getPlanActionIcon(domain?: string | null): keyof typeof Ionicons.glyphMap {
+  if (domain === 'diet' || domain === 'nutrition') return 'restaurant-outline';
+  if (domain === 'sleep') return 'moon-outline';
+  if (domain === 'movement' || domain === 'exercise') return 'walk-outline';
+  if (domain === 'supplement') return 'medkit-outline';
+  if (domain === 'emotion' || domain === 'stress') return 'cloudy-outline';
+  if (domain === 'measurement') return 'analytics-outline';
+  return 'sparkles-outline';
+}
+
 function getTrajectoryLevelColor(level: string, c: ReturnType<typeof useTheme>['c']) {
   if (level === 'high') return { tint: c.tintRed, color: c.red };
   if (level === 'attention') return { tint: c.tintAmber, color: c.amber };
@@ -1643,9 +1655,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
-    gap: 5,
+    paddingTop: 10,
+    paddingBottom: 10,
+    gap: 8,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1681,7 +1693,7 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   commandMetricRail: {
-    minHeight: 21,
+    minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
@@ -1690,11 +1702,14 @@ const styles = StyleSheet.create({
   commandMetricPill: {
     flexShrink: 1,
     minWidth: 0,
-    minHeight: 21,
+    minHeight: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'flex-start',
-    gap: 3,
+    gap: 4,
   },
   commandOutcomeLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   agentStepRail: {
@@ -1740,13 +1755,15 @@ const styles = StyleSheet.create({
   commandNextStepLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandNextStepText: { color: '#FFFFFF', fontSize: 13, lineHeight: 16, fontWeight: '800' },
   commandInlineNextStep: {
-    minHeight: 29,
-    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 36,
     borderRadius: radii.full,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    gap: 7,
   },
   commandInlineNextIcon: {
     width: 18,
@@ -1755,14 +1772,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandInlineNextLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandInlineNextText: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '800' },
+  commandInlineNextLabel: { color: '#FFFFFF', fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  commandInlineNextText: {
+    minWidth: 0,
+    color: '#FFFFFF',
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandInlineDoneButton: {
-    minHeight: 29,
+    minHeight: 36,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 9,
+    paddingHorizontal: 11,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1776,6 +1800,24 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandDecisionCard: {
+    minHeight: 82,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  commandDecisionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandDecisionText: { flex: 1, minWidth: 0, gap: 3 },
+  commandDecisionSupport: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
   commandDecisionRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
@@ -1797,9 +1839,9 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 15, fontWeight: '800', lineHeight: 19, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 18, fontWeight: '800', lineHeight: 22, letterSpacing: 0 },
   commandLoopRail: {
-    minHeight: 20,
+    minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -1807,6 +1849,9 @@ const styles = StyleSheet.create({
   commandLoopChip: {
     flex: 1,
     minWidth: 0,
+    minHeight: 24,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -2181,13 +2226,43 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   evidenceChainHeader: {
-    minHeight: 18,
+    minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
+  evidenceChainTitleBlock: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
   evidenceChainTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   evidenceChainSubtitle: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '600' },
+  evidenceAskButton: {
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  evidenceAskText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  reviewCadencePanel: {
+    minHeight: 46,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  reviewCadenceIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewCadenceTextBlock: { flex: 1, minWidth: 0, gap: 1 },
+  reviewCadenceTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  reviewCadenceSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
   backgroundPanel: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
