@@ -482,8 +482,8 @@ describe('TodayScreen', () => {
 
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台排队')).toBeTruthy();
-    expect(getByText('余下 1 件后台排队')).toBeTruthy();
+    expect(queryByText('后台排队')).toBeNull();
+    expect(getByText(/余下 1 件后台排队/)).toBeTruthy();
     expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
     expect(queryByText('今天蛋白质目标')).toBeNull();
     expect(queryByText('接下来')).toBeNull();
@@ -510,8 +510,8 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台排队')).toBeTruthy();
-    expect(getByText('余下 2 件后台排队')).toBeTruthy();
+    expect(queryByText('后台排队')).toBeNull();
+    expect(getByText(/余下 2 件后台排队/)).toBeTruthy();
     expect(queryByText('现在只做一件')).toBeNull();
     expect(queryByText('现在先做')).toBeNull();
     expect(queryByText('今日操作计划')).toBeNull();

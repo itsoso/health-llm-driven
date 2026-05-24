@@ -400,6 +400,7 @@ export default function TodayScreen() {
           twinSnapshot={twinSnap}
           domains={interventionDomains}
           action={nextAction}
+          completionState={visibleNextActionState}
           onOpenFocus={() => (
             criticalAlerts.length > 0
               ? router.push('/alerts' as any)
@@ -407,20 +408,12 @@ export default function TodayScreen() {
                 ? openPlanAction(nextAction)
                 : router.push('/(tabs)/record' as any)
           )}
+          onCompleteAction={completeNextAction}
           onOpenAgent={openWorkspaceChat}
           onOpenMetric={(route) => router.push(route as any)}
         />
 
-        {nextAction ? (
-          <PlanQueueCompactRow
-            plan={dailyPlanQuery.data}
-            action={nextAction}
-            completionState={visibleNextActionState}
-            excludeActionKey={nextActionKey}
-            onComplete={completeNextAction}
-            onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
-          />
-        ) : criticalAlerts.length === 0 ? (
+        {!nextAction && criticalAlerts.length === 0 ? (
           <TodayExecutionQueue
             plan={dailyPlanQuery.data}
             action={null}
@@ -499,7 +492,9 @@ function HomeCommandHeader({
   twinSnapshot,
   domains,
   action,
+  completionState,
   onOpenFocus,
+  onCompleteAction,
   onOpenAgent,
   onOpenMetric,
 }: {
@@ -512,7 +507,9 @@ function HomeCommandHeader({
   twinSnapshot: TwinSnapshot;
   domains: InterventionDomainStatus[];
   action?: DailyPlanAction | null;
+  completionState: NextActionCompletionState;
   onOpenFocus: () => void;
+  onCompleteAction: (action: DailyPlanAction) => void;
   onOpenAgent: () => void;
   onOpenMetric: (route: string) => void;
 }) {
@@ -580,6 +577,13 @@ function HomeCommandHeader({
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
+  const remainingActionCount = Math.max(0, action?.title ? planCount - 1 : planCount);
+  const queueSummary = remainingActionCount > 0
+    ? `余下 ${remainingActionCount} 件后台排队`
+    : action?.title
+      ? '完成后 Agent 再排下一步'
+      : 'Agent 会根据新反馈继续排程';
+  const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -615,72 +619,110 @@ function HomeCommandHeader({
 
       <View style={styles.commandDecisionShell}>
         <View style={[styles.commandDecisionRail, { backgroundColor: decisionColor }]} />
-        <Pressable
-          style={({ pressed }) => [
-            styles.commandDecisionArea,
-            { opacity: pressed ? 0.78 : 1 },
-          ]}
-          onPress={onOpenFocus}
-          accessibilityRole="button"
-          accessibilityLabel="打开今日重点"
-        >
-          <View style={styles.commandDecisionTop}>
-            <View style={styles.commandTitleBlock}>
-              <Text style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</Text>
-              <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-                {headline}
-              </Text>
+        <View style={styles.commandDecisionArea}>
+          <Pressable
+            style={({ pressed }) => [styles.commandDecisionSummary, { opacity: pressed ? 0.78 : 1 }]}
+            onPress={onOpenFocus}
+            accessibilityRole="button"
+            accessibilityLabel="打开今日重点"
+          >
+            <View style={styles.commandDecisionTop}>
+              <View style={styles.commandTitleBlock}>
+                <Text style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</Text>
+                <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+                  {headline}
+                </Text>
+              </View>
             </View>
-          </View>
-          <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
-          <View style={styles.commandMetricRail}>
-            {visibleLoopMetrics.map(metric => {
-              const color = c[metric.colorName];
-              return (
-                <Pressable
-                  key={metric.key}
-                  onPress={() => onOpenMetric(metric.route)}
-                  style={({ pressed }) => [
-                    styles.commandMetricPill,
-                    { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${metric.label} ${metric.value}`}
-                >
-                  <Text style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                    {metric.label}
-                  </Text>
-                  <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
-                    {metric.value}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+            <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
+            <View style={styles.commandMetricRail}>
+              {visibleLoopMetrics.map(metric => {
+                const color = c[metric.colorName];
+                return (
+                  <Pressable
+                    key={metric.key}
+                    onPress={() => onOpenMetric(metric.route)}
+                    style={({ pressed }) => [
+                      styles.commandMetricPill,
+                      { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${metric.label} ${metric.value}`}
+                  >
+                    <Text style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                      {metric.label}
+                    </Text>
+                    <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                      {metric.value}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
           <View style={styles.commandLoopLine}>
             <Ionicons name="git-compare-outline" size={13} color={decisionColor} />
             <Text style={[styles.commandLoopText, { color: c.labelSecondary }]} numberOfLines={1}>
-              {agentLoopLine}
+              {agentLoopLine} · {queueSummary}
             </Text>
           </View>
-        </Pressable>
-      </View>
-
-      <Pressable
-        onPress={onOpenFocus}
-        style={({ pressed }) => [
-          styles.commandNextStep,
-          { backgroundColor: c.brand, borderColor: c.brand, opacity: pressed ? 0.82 : 1 },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="打开下一步"
-      >
-        <Ionicons name="arrow-forward-circle-outline" size={18} color="#FFFFFF" />
-        <View style={styles.commandNextStepCopy}>
-          <Text style={styles.commandNextStepLabel}>下一步</Text>
-          <Text style={styles.commandNextStepText} numberOfLines={1}>{nextStepActionText}</Text>
+          <View style={styles.commandInlineActionRow}>
+            <Pressable
+              onPress={onOpenFocus}
+              style={({ pressed }) => [
+                styles.commandInlineNextStep,
+                { backgroundColor: c.brandLight, borderColor: `${c.brand}28`, opacity: pressed ? 0.78 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="打开下一步"
+            >
+              <View style={[styles.commandInlineNextIcon, { backgroundColor: c.brand }]}>
+                <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.commandInlineNextLabel, { color: c.brand }]}>下一步</Text>
+              <Text style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
+                {nextStepActionText}
+              </Text>
+            </Pressable>
+            {canComplete && action ? (
+              <Pressable
+                onPress={() => onCompleteAction(action)}
+                disabled={completionState === 'sending' || completionState === 'completed'}
+                style={({ pressed }) => [
+                  styles.commandInlineDoneButton,
+                  {
+                    backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
+                    borderColor: completionState === 'completed' ? c.green : c.separator,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="完成当前行动"
+              >
+                <Ionicons
+                  name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                  size={14}
+                  color={completionState === 'completed' ? c.green : c.labelSecondary}
+                />
+                <Text
+                  style={[
+                    styles.commandInlineDoneText,
+                    { color: completionState === 'completed' ? c.green : c.labelSecondary },
+                  ]}
+                >
+                  {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {completionState === 'error' ? (
+            <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
+              <Ionicons name="alert-circle-outline" size={14} color={c.red} />
+              <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
+            </View>
+          ) : null}
         </View>
-      </Pressable>
+      </View>
 
     </View>
   );
@@ -854,95 +896,6 @@ function CompactArchiveStrip({
         <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
         <Ionicons name="chevron-forward" size={13} color={c.brand} />
       </Pressable>
-    </View>
-  );
-}
-
-function PlanQueueCompactRow({
-  plan,
-  action,
-  completionState,
-  excludeActionKey,
-  onComplete,
-  onFallbackAgent,
-}: {
-  plan?: DailyOperatingPlan | null;
-  action: DailyPlanAction;
-  completionState: NextActionCompletionState;
-  excludeActionKey?: string | null;
-  onComplete: (action: DailyPlanAction) => void;
-  onFallbackAgent: () => void;
-}) {
-  const { c } = useTheme();
-  const remainingActionCount = Math.max(
-    0,
-    (plan?.actions ?? []).filter(item => (item.action_key || item.title) !== excludeActionKey).length,
-  );
-  const queueSummary = remainingActionCount > 0
-    ? `余下 ${remainingActionCount} 件后台排队`
-    : '完成后 Agent 再排下一步';
-  const canComplete = Boolean(action.action_key);
-
-  return (
-    <View style={styles.planQueueBlock}>
-      <View style={[styles.planQueueStrip, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-        <View style={[styles.planQueueIcon, { backgroundColor: c.tintGreen }]}>
-          <Ionicons name="layers-outline" size={15} color={c.green} />
-        </View>
-        <View style={styles.planQueueText}>
-          <Text style={[styles.planQueueTitle, { color: c.labelPrimary }]}>后台排队</Text>
-          <Text style={[styles.planQueueSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
-            {queueSummary}
-          </Text>
-        </View>
-        {canComplete ? (
-          <Pressable
-            onPress={() => onComplete(action)}
-            disabled={completionState === 'sending' || completionState === 'completed'}
-            style={({ pressed }) => [
-              styles.planQueueDoneButton,
-              {
-                backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
-                borderColor: completionState === 'completed' ? c.green : c.separator,
-                opacity: pressed ? 0.72 : 1,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="完成当前行动"
-          >
-            <Ionicons
-              name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
-              size={14}
-              color={completionState === 'completed' ? c.green : c.labelSecondary}
-            />
-            <Text
-              style={[
-                styles.planQueueDoneText,
-                { color: completionState === 'completed' ? c.green : c.labelSecondary },
-              ]}
-            >
-              {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
-            </Text>
-          </Pressable>
-        ) : null}
-        <Pressable
-          onPress={onFallbackAgent}
-          style={({ pressed }) => [
-            styles.planQueueAdjustButton,
-            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="问 Agent 调整后台排队"
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={14} color={c.brand} />
-        </Pressable>
-      </View>
-      {completionState === 'error' ? (
-        <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
-          <Ionicons name="alert-circle-outline" size={14} color={c.red} />
-          <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -1743,9 +1696,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
     paddingHorizontal: 12,
-    paddingTop: 11,
-    paddingBottom: 12,
-    gap: 8,
+    paddingTop: 10,
+    paddingBottom: 10,
+    gap: 7,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1786,7 +1739,7 @@ const styles = StyleSheet.create({
   commandMetricPill: {
     flex: 1,
     minWidth: 0,
-    minHeight: 31,
+    minHeight: 28,
     borderRadius: radii.full,
     paddingHorizontal: 8,
     flexDirection: 'row',
@@ -1825,7 +1778,7 @@ const styles = StyleSheet.create({
   commandSignalValue: { minWidth: 0, fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandNextStep: {
-    minHeight: 44,
+    minHeight: 38,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     paddingHorizontal: 12,
@@ -1836,6 +1789,36 @@ const styles = StyleSheet.create({
   commandNextStepCopy: { flex: 1, minWidth: 0, gap: 1 },
   commandNextStepLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandNextStepText: { color: '#FFFFFF', fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  commandInlineNextStep: {
+    minHeight: 33,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  commandInlineNextIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandInlineNextLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  commandInlineNextText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  commandInlineDoneButton: {
+    minHeight: 33,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  commandInlineDoneText: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1844,8 +1827,9 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandDecisionShell: { flexDirection: 'row', gap: 10, paddingVertical: 3 },
-  commandDecisionRail: { width: 4, height: 58, borderRadius: 2, marginTop: 3 },
-  commandDecisionArea: { flex: 1, minWidth: 0, gap: 7 },
+  commandDecisionRail: { width: 3, height: 42, borderRadius: 2, marginTop: 4 },
+  commandDecisionArea: { flex: 1, minWidth: 0, gap: 6 },
+  commandDecisionSummary: { gap: 6 },
   commandDecisionTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
@@ -1863,8 +1847,8 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 19, fontWeight: '800', lineHeight: 23, letterSpacing: 0 },
-  commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  commandTitle: { minWidth: 0, fontSize: 18, fontWeight: '800', lineHeight: 22, letterSpacing: 0 },
+  commandHint: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
   commandLoopLine: {
     minHeight: 21,
     alignSelf: 'stretch',
@@ -2357,45 +2341,6 @@ const styles = StyleSheet.create({
   bodyFeedbackTileText: { flex: 1, minWidth: 0, gap: 1 },
   bodyFeedbackLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
   bodyFeedbackValue: { fontSize: 14, lineHeight: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  planQueueBlock: { gap: 6 },
-  planQueueStrip: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
-    minHeight: 62,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  planQueueIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  planQueueText: { flex: 1, minWidth: 0, gap: 2 },
-  planQueueTitle: { fontSize: 14, lineHeight: 17, fontWeight: '800' },
-  planQueueSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
-  planQueueDoneButton: {
-    minHeight: 32,
-    borderRadius: radii.full,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  planQueueDoneText: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  planQueueAdjustButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
