@@ -221,9 +221,8 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
-    expect(getByText('今日洞察 · 1 个干预域')).toBeTruthy();
+    expect(getByText('今日洞察 · 1 个计划')).toBeTruthy();
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
-    expect(getByText('1 个计划')).toBeTruthy();
     expect(getByText(/观察 血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('依据：表观遗传/穿戴')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
@@ -236,7 +235,7 @@ describe('TodayScreen', () => {
 
     const { getByLabelText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('今日洞察 · 风险优先')).toBeTruthy();
+    expect(getByText('今日洞察 · 1 个风险')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
     expect(getByLabelText('打开下一步')).toBeTruthy();
@@ -512,7 +511,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
-    expect(getByText('2 个计划')).toBeTruthy();
+    expect(getByText('今日洞察 · 2 个计划')).toBeTruthy();
     expect(getByText('目标：改善 睡眠分、HRV、血氧')).toBeTruthy();
   });
 

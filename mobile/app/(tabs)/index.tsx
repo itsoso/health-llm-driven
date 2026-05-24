@@ -281,6 +281,9 @@ export default function TodayScreen() {
   const visibleNextActionState: NextActionCompletionState =
     nextActionCompletion.actionKey === nextActionKey ? nextActionCompletion.state : 'idle';
   const interventionDomains = buildInterventionDomainStatuses(dailyPlanQuery.data?.actions ?? []);
+  const topLoopMetrics = buildLoopFeedbackMetrics(twinSnap, nextAction, criticalAlerts[0]?.title);
+  const topLoopMetricKeys = new Set(topLoopMetrics.map(metric => metric.key));
+  const feedbackMetrics = buildHomeBodyFeedbackMetrics(twinSnap, topLoopMetricKeys);
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -479,6 +482,11 @@ export default function TodayScreen() {
           ]}
           onOpenAll={() => router.push('/(tabs)/record' as any)}
         />
+
+        <HomeBodyFeedbackPanel
+          metrics={feedbackMetrics}
+          onOpenMetric={(route) => router.push(route as any)}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -512,12 +520,6 @@ function HomeCommandHeader({
   onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
-  const statusColor = criticalCount > 0 ? c.red : c.green;
-  const statusLabel = criticalCount > 0
-    ? `${criticalCount} 个风险`
-    : planCount > 0
-      ? `${planCount} 个计划`
-      : '状态稳定';
   const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
   const wearableReady = Boolean(
     twinSnapshot.hrv
@@ -550,9 +552,11 @@ function HomeCommandHeader({
       ? improvementFocus.headline
       : '保持记录节奏';
   const focusKicker = criticalCount > 0
-    ? '今日洞察 · 风险优先'
-    : activeDomainCount > 0
-      ? `今日洞察 · ${activeDomainCount} 个干预域`
+    ? `今日洞察 · ${criticalCount} 个风险`
+    : planCount > 0
+      ? `今日洞察 · ${planCount} 个计划`
+      : activeDomainCount > 0
+        ? `今日洞察 · ${activeDomainCount} 个干预域`
       : '今日洞察 · 观察中';
   const focusText = criticalCount > 0
     ? improvementFocus.target
@@ -578,9 +582,7 @@ function HomeCommandHeader({
     .join(' · ');
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
-  const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
-  const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -597,12 +599,6 @@ function HomeCommandHeader({
           </Text>
         </View>
         <View style={styles.commandRightMeta}>
-          <View style={styles.commandRightTop}>
-            <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
-              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-              <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-            </View>
-          </View>
           <View style={styles.commandMiniActions}>
             <Pressable
               onPress={onOpenAgent}
@@ -620,62 +616,57 @@ function HomeCommandHeader({
         </View>
       </View>
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.commandDecisionArea,
-          {
-            backgroundColor: c.bgPrimary,
-            borderColor: `${decisionColor}30`,
-            opacity: pressed ? 0.78 : 1,
-          },
-        ]}
-        onPress={onOpenFocus}
-        accessibilityRole="button"
-        accessibilityLabel="打开今日重点"
-      >
-        <View style={styles.commandDecisionTop}>
-          <View style={[styles.commandDecisionIcon, { backgroundColor: decisionTint }]}>
-            <Ionicons name={decisionIcon} size={18} color={decisionColor} />
+      <View style={styles.commandDecisionShell}>
+        <View style={[styles.commandDecisionRail, { backgroundColor: decisionColor }]} />
+        <Pressable
+          style={({ pressed }) => [
+            styles.commandDecisionArea,
+            { opacity: pressed ? 0.78 : 1 },
+          ]}
+          onPress={onOpenFocus}
+          accessibilityRole="button"
+          accessibilityLabel="打开今日重点"
+        >
+          <View style={styles.commandDecisionTop}>
+            <View style={styles.commandTitleBlock}>
+              <Text style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</Text>
+              <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+                {headline}
+              </Text>
+            </View>
           </View>
-          <View style={styles.commandTitleBlock}>
-            <Text style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</Text>
-            <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-              {headline}
+          <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
+          <View style={styles.commandMetricRail}>
+            {visibleLoopMetrics.map(metric => {
+              const color = c[metric.colorName];
+              return (
+                <Pressable
+                  key={metric.key}
+                  onPress={() => onOpenMetric(metric.route)}
+                  style={({ pressed }) => [
+                    styles.commandMetricPill,
+                    { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${metric.label} ${metric.value}`}
+                >
+                  <Text style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                    {metric.label}
+                  </Text>
+                  <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                    {metric.value}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.commandLoopLine}>
+            <Ionicons name="git-compare-outline" size={13} color={decisionColor} />
+            <Text style={[styles.commandLoopText, { color: c.labelSecondary }]} numberOfLines={1}>
+              {agentLoopLine}
             </Text>
           </View>
-        </View>
-        <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
-        <View style={[styles.commandLoopLine, { backgroundColor: c.bgCard }]}>
-          <Ionicons name="git-compare-outline" size={13} color={decisionColor} />
-          <Text style={[styles.commandLoopText, { color: c.labelSecondary }]} numberOfLines={1}>
-            {agentLoopLine}
-          </Text>
-        </View>
-      </Pressable>
-
-      <View style={styles.commandMetricGrid}>
-        {visibleLoopMetrics.map(metric => {
-          const color = c[metric.colorName];
-          return (
-            <Pressable
-              key={metric.key}
-              onPress={() => onOpenMetric(metric.route)}
-              style={({ pressed }) => [
-                styles.commandMetricCard,
-                { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${metric.label} ${metric.value}`}
-            >
-              <Text style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                {metric.label}
-              </Text>
-              <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
-                {metric.value}
-              </Text>
-            </Pressable>
-          );
-        })}
+        </Pressable>
       </View>
 
       <Pressable
@@ -736,6 +727,63 @@ function HomeBackgroundPanel({
       <EnvironmentCard compact mode="micro" />
       <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
       <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
+    </View>
+  );
+}
+
+function HomeBodyFeedbackPanel({
+  metrics,
+  onOpenMetric,
+}: {
+  metrics: OutcomeFeedbackMetric[];
+  onOpenMetric: (route: string) => void;
+}) {
+  const { c } = useTheme();
+  const visibleMetrics = metrics.slice(0, 4);
+  if (visibleMetrics.length === 0) return null;
+
+  return (
+    <View style={[styles.bodyFeedbackPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.bodyFeedbackHeader}>
+        <View style={styles.bodyFeedbackTitleBlock}>
+          <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>身体反馈</Text>
+          <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>验证干预是否真的有效</Text>
+        </View>
+        <View style={[styles.bodyFeedbackBadge, { backgroundColor: c.brandLight }]}>
+          <Text style={[styles.bodyFeedbackBadgeText, { color: c.brand }]}>实时</Text>
+        </View>
+      </View>
+
+      <View style={styles.bodyFeedbackGrid}>
+        {visibleMetrics.map(metric => {
+          const color = c[metric.colorName];
+          return (
+            <Pressable
+              key={metric.key}
+              onPress={() => onOpenMetric(metric.route)}
+              style={({ pressed }) => [
+                styles.bodyFeedbackTile,
+                { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${metric.label} ${metric.value}`}
+            >
+              <View style={[styles.bodyFeedbackIcon, { backgroundColor: c[metric.tintName] }]}>
+                <Ionicons name={metric.icon} size={14} color={color} />
+              </View>
+              <View style={styles.bodyFeedbackTileText}>
+                <Text style={[styles.bodyFeedbackLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                  {metric.label}
+                </Text>
+                <Text style={[styles.bodyFeedbackValue, { color }]} numberOfLines={1}>
+                  {metric.value}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -1273,6 +1321,17 @@ function buildLoopFeedbackMetrics(
     .slice(0, 3) as OutcomeFeedbackMetric[];
 }
 
+function buildHomeBodyFeedbackMetrics(
+  twinSnapshot: TwinSnapshot,
+  excludedKeys: Set<string>,
+): OutcomeFeedbackMetric[] {
+  return ['body_shape', 'blood_pressure', 'vo2max', 'labs', 'precision']
+    .filter(key => !excludedKeys.has(key))
+    .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot))
+    .filter(Boolean)
+    .slice(0, 4) as OutcomeFeedbackMetric[];
+}
+
 function buildImprovementFocus({
   action,
   activeDomainCount,
@@ -1672,7 +1731,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 11,
     paddingBottom: 12,
-    gap: 9,
+    gap: 8,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1709,16 +1768,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  commandMetricGrid: { flexDirection: 'row', gap: 7 },
-  commandMetricCard: {
+  commandMetricRail: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  commandMetricPill: {
     flex: 1,
     minWidth: 0,
-    minHeight: 48,
-    borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+    minHeight: 31,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'center',
-    gap: 2,
+    gap: 4,
   },
   agentStepRail: {
     minHeight: 22,
@@ -1748,7 +1808,7 @@ const styles = StyleSheet.create({
   commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
   commandSignalPrefix: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  commandSignalValue: { minWidth: 0, fontSize: 14, lineHeight: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalValue: { minWidth: 0, fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandNextStep: {
     minHeight: 44,
@@ -1769,20 +1829,10 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  commandDecisionArea: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: 10,
-    gap: 7,
-  },
+  commandDecisionShell: { flexDirection: 'row', gap: 10, paddingVertical: 3 },
+  commandDecisionRail: { width: 4, height: 58, borderRadius: 2, marginTop: 3 },
+  commandDecisionArea: { flex: 1, minWidth: 0, gap: 7 },
   commandDecisionTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  commandDecisionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
   commandStatusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
@@ -1799,13 +1849,12 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 21, fontWeight: '800', lineHeight: 25, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 19, fontWeight: '800', lineHeight: 23, letterSpacing: 0 },
   commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
   commandLoopLine: {
-    minHeight: 25,
+    minHeight: 21,
     alignSelf: 'stretch',
     borderRadius: radii.full,
-    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -2235,6 +2284,50 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
+  bodyFeedbackPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 9,
+  },
+  bodyFeedbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  bodyFeedbackTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  bodyFeedbackTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
+  bodyFeedbackSubtitle: { fontSize: 11, lineHeight: 14, fontWeight: '600' },
+  bodyFeedbackBadge: {
+    minHeight: 24,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bodyFeedbackBadgeText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  bodyFeedbackGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  bodyFeedbackTile: {
+    width: '48.7%',
+    minHeight: 48,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  bodyFeedbackIcon: {
+    width: 27,
+    height: 27,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bodyFeedbackTileText: { flex: 1, minWidth: 0, gap: 1 },
+  bodyFeedbackLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  bodyFeedbackValue: { fontSize: 14, lineHeight: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
   planQueueBlock: { gap: 6 },
   planQueueStrip: {
     borderWidth: StyleSheet.hairlineWidth,
