@@ -826,31 +826,39 @@ function HomeBodyFeedbackPanel({
   const { c } = useTheme();
   const visibleMetrics = metrics.slice(0, 4);
   if (visibleMetrics.length === 0) return null;
-  const primaryMetric = visibleMetrics[0];
-  const primaryColor = c[primaryMetric.colorName];
-  const secondarySummary = visibleMetrics
-    .slice(1, 3)
-    .map(metric => `${metric.label} ${metric.value}`)
-    .join(' · ');
+  const boardMetrics = visibleMetrics.slice(0, 3);
 
   return (
-    <Pressable
-      onPress={() => onOpenMetric(primaryMetric.route)}
-      style={({ pressed }) => [styles.bodyFeedbackCompactRow, { opacity: pressed ? 0.72 : 1 }]}
-      accessibilityRole="button"
-      accessibilityLabel={`身体反馈 ${primaryMetric.label} ${primaryMetric.value}`}
-    >
-      <View style={[styles.bodyFeedbackIcon, { backgroundColor: c[primaryMetric.tintName] }]}>
-        <Ionicons name={primaryMetric.icon} size={13} color={primaryColor} />
+    <View style={styles.bodyFeedbackBoard}>
+      <View style={styles.bodyFeedbackHeader}>
+        <View style={styles.bodyFeedbackTextBlock}>
+          <HomeText style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>指标看板</HomeText>
+          <HomeText style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>身体反馈</HomeText>
+        </View>
+        <HomeText style={[styles.bodyFeedbackRight, { color: c.labelTertiary }]}>{visibleMetrics.length} 项</HomeText>
       </View>
-      <View style={styles.bodyFeedbackTextBlock}>
-        <HomeText style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>身体反馈</HomeText>
-        <HomeText style={[styles.bodyFeedbackSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
-          {primaryMetric.label} {primaryMetric.value}{secondarySummary ? ` · ${secondarySummary}` : ''}
-        </HomeText>
+      <View style={styles.bodyMetricRail}>
+        {boardMetrics.map(metric => {
+          const color = c[metric.colorName];
+          return (
+            <Pressable
+              key={metric.key}
+              onPress={() => onOpenMetric(metric.route)}
+              style={({ pressed }) => [
+                styles.bodyMetricTile,
+                { backgroundColor: c[metric.tintName], opacity: pressed ? 0.72 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${metric.label} ${metric.value}`}
+            >
+              <Ionicons name={metric.icon} size={14} color={color} />
+              <HomeText style={[styles.bodyMetricLabel, { color }]} numberOfLines={1}>{metric.label}</HomeText>
+              <HomeText style={[styles.bodyMetricValue, { color }]} numberOfLines={1}>{metric.value}</HomeText>
+            </Pressable>
+          );
+        })}
       </View>
-      <HomeText style={[styles.bodyFeedbackRight, { color: c.labelTertiary }]}>{visibleMetrics.length} 项</HomeText>
-    </Pressable>
+    </View>
   );
 }
 
@@ -2409,24 +2417,35 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
-  bodyFeedbackCompactRow: {
-    minHeight: 28,
+  bodyFeedbackBoard: { gap: 7 },
+  bodyFeedbackHeader: {
+    minHeight: 22,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 8,
     paddingHorizontal: 2,
-  },
-  bodyFeedbackIcon: {
-    width: 21,
-    height: 21,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   bodyFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 1 },
   bodyFeedbackTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  bodyFeedbackSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  bodyFeedbackSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '700' },
   bodyFeedbackRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  bodyMetricRail: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 6,
+  },
+  bodyMetricTile: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 48,
+    borderRadius: radii.md,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  bodyMetricLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  bodyMetricValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
