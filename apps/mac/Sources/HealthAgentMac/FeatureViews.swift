@@ -2486,6 +2486,7 @@ struct ImportCenterView: View {
 
 struct JobListView: View {
     let client: DesktopJobClient
+    let viewModel: TodayViewModel
     let openTrace: (Int) -> Void
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var jobs: [DesktopJobSummary] = []
@@ -2493,8 +2494,19 @@ struct JobListView: View {
     @State private var errorMessage: String?
     @State private var jobFilter: JobStatusFilter = .all
 
+    private var jobsForPresentation: [DesktopJobSummary] {
+        jobs.isEmpty ? viewModel.activeJobs : jobs
+    }
+
+    private var presentation: DesktopTaskCenterPresentation {
+        DesktopTaskCenterPresentation(
+            jobs: jobsForPresentation,
+            actionCards: viewModel.bootstrap?.actionCards ?? []
+        )
+    }
+
     private var filteredJobs: [DesktopJobSummary] {
-        jobFilter.filter(jobs)
+        jobFilter.filter(jobsForPresentation)
     }
 
     var body: some View {
@@ -2522,14 +2534,22 @@ struct JobListView: View {
                 HSplitView {
                     VStack(alignment: .leading, spacing: 12) {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
-                            JobStatCard(title: appText("Total", appLanguageRaw), value: "\(jobs.count)", systemImage: "tray.full.fill", color: .blue)
-                            JobStatCard(title: appText("Running", appLanguageRaw), value: "\(jobs.filter { $0.status == "queued" || $0.status == "running" }.count)", systemImage: "clock.arrow.circlepath", color: .teal)
-                            JobStatCard(title: appText("Failed", appLanguageRaw), value: "\(jobs.filter { $0.status == "failed" }.count)", systemImage: "exclamationmark.triangle.fill", color: .orange)
+                            JobStatCard(title: appText("Total", appLanguageRaw), value: "\(presentation.totalCount)", systemImage: "tray.full.fill", color: .blue)
+                            JobStatCard(title: appText("Running", appLanguageRaw), value: "\(presentation.runningJobCount)", systemImage: "clock.arrow.circlepath", color: .teal)
+                            JobStatCard(title: appText("Failed", appLanguageRaw), value: "\(presentation.failedJobCount)", systemImage: "exclamationmark.triangle.fill", color: .orange)
+                            JobStatCard(title: appText("Action Cards", appLanguageRaw), value: "\(presentation.actionCards.count)", systemImage: "checkmark.seal.fill", color: .purple)
                         }
 
-                        if filteredJobs.isEmpty {
+                        if !presentation.actionCards.isEmpty {
+                            TaskActionCardSection(cards: Array(presentation.actionCards.prefix(8)))
+                        }
+
+                        if presentation.isEmpty {
                             EmptyJobState()
                                 .frame(maxWidth: .infinity, minHeight: 260, alignment: .top)
+                        } else if filteredJobs.isEmpty {
+                            NoMatchingJobState()
+                                .frame(maxWidth: .infinity, minHeight: 120, alignment: .top)
                         } else {
                             Table(filteredJobs) {
                                 TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
@@ -2567,10 +2587,11 @@ struct JobListView: View {
     }
 
     private func refresh() async {
+        await viewModel.refresh()
         do {
             jobs = try await client.listJobs()
             if selectedJob == nil {
-                selectedJob = jobs.first
+                selectedJob = jobsForPresentation.first
             }
             errorMessage = nil
         } catch {
@@ -2594,6 +2615,79 @@ struct JobListView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct TaskActionCardSection: View {
+    let cards: [ActionCardSummary]
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(appText("Health Actions", appLanguageRaw), systemImage: "checklist")
+                .font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                ForEach(cards) { card in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(.purple)
+                                .frame(width: 30, height: 30)
+                                .background(Color.purple.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(card.title)
+                                    .font(.callout.weight(.semibold))
+                                    .lineLimit(2)
+                                if let content = card.content, !content.isEmpty {
+                                    Text(content)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+
+                        HStack(spacing: 6) {
+                            if let status = card.status {
+                                Text(appText(status, appLanguageRaw))
+                                    .taskChipStyle(color: .purple)
+                            }
+                            if let priority = card.priority {
+                                Text("P\(priority)")
+                                    .taskChipStyle(color: .orange)
+                            }
+                            if let metricKey = card.metricKey, !metricKey.isEmpty {
+                                Text(metricKey)
+                                    .taskChipStyle(color: .teal)
+                            }
+                            if let sourceType = card.sourceType, !sourceType.isEmpty {
+                                Text(sourceType)
+                                    .taskChipStyle(color: .blue)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.purple.opacity(0.16), lineWidth: 1)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private extension Text {
+    func taskChipStyle(color: Color) -> some View {
+        self
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.12), in: Capsule())
     }
 }
 
@@ -2625,6 +2719,30 @@ private enum JobStatusFilter: String, CaseIterable, Identifiable {
         case .completed:
             jobs.filter { $0.status == "completed" }
         }
+    }
+}
+
+private struct NoMatchingJobState: View {
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .frame(width: 42, height: 42)
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(appText("No desktop jobs match this filter.", appLanguageRaw))
+                    .font(.headline)
+                Text(appText("Health action cards are still shown above for follow-up.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

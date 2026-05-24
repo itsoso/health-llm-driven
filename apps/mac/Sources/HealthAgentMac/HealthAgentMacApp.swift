@@ -317,7 +317,7 @@ struct AppRootView: View {
                 viewModel: services.todayViewModel
             )
         case .jobs:
-            JobListView(client: services.desktopJobClient) { conversationID in
+            JobListView(client: services.desktopJobClient, viewModel: services.todayViewModel) { conversationID in
                 navigation.openTrace(conversationID: conversationID)
             }
         case .trace:
