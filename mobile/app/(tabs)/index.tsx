@@ -731,23 +731,18 @@ function CompactShortcutSection({
               <Pressable
                 onPress={item.onPress}
                 style={({ pressed }) => [
-                  styles.shortcutPill,
+                  styles.shortcutTextButton,
                   { opacity: pressed ? 0.58 : 1 },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`${item.label} ${item.value}`}
               >
-                <View style={[styles.shortcutIcon, { backgroundColor: item.bg }]}>
-                  <Ionicons name={item.icon} size={11} color={item.color} />
-                </View>
-                <View style={styles.shortcutTextBlock}>
-                  <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                    {item.label}
-                  </Text>
-                </View>
+                <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
               </Pressable>
               {index < shortcuts.length - 1 ? (
-                <View style={[styles.shortcutSeparator, { backgroundColor: c.separator }]} />
+                <Text style={[styles.shortcutSeparatorText, { color: c.labelTertiary }]}>·</Text>
               ) : null}
             </React.Fragment>
           ))}
@@ -2178,10 +2173,10 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   shortcutStrip: {
-    minHeight: 36,
+    minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   shortcutHeader: {
     flexDirection: 'row',
@@ -2192,9 +2187,13 @@ const styles = StyleSheet.create({
   shortcutHeaderText: { width: 72, minWidth: 72, gap: 1 },
   shortcutTitle: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
   shortcutSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
-  shortcutAllButton: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 1 },
+  shortcutAllButton: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 1 },
   shortcutAllText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
-  shortcutRail: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center' },
+  shortcutRail: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end' },
+  shortcutTextButton: {
+    minHeight: 24,
+    justifyContent: 'center',
+  },
   shortcutPill: {
     flex: 1,
     minWidth: 0,
@@ -2206,6 +2205,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
+  shortcutSeparatorText: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 2 },
   shortcutSeparator: { width: StyleSheet.hairlineWidth, height: 16 },
   shortcutIcon: {
     width: 15, height: 15, borderRadius: 7.5,
