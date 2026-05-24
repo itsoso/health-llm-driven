@@ -967,13 +967,16 @@ function AgentFollowUpQueue({
   const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
   const gapCount = snapshot?.data_gaps?.length ?? 0;
   const visibleAdvice = weeklyAdvice.slice(0, 1);
-  const compactRisks = trajectoryRisks.slice(0, visibleAdvice.length > 0 ? 1 : 2);
+  const primaryRisk = trajectoryRisks[0] ?? null;
+  const primaryAdvice = visibleAdvice[0] ?? null;
+  const showPrimaryAdvice = !primaryRisk && !!primaryAdvice;
   const showWeeklyPendingRow = weeklyAdvice.length === 0 && trajectoryRisks.length === 0;
   const showWeeklyPendingPill = weeklyAdvice.length === 0 && trajectoryRisks.length > 0;
   const queueCount = trajectoryRisks.length + visibleAdvice.length + (showWeeklyPendingRow ? 1 : 0);
   const hiddenCount = Math.max(
     0,
-    trajectoryRisks.length - compactRisks.length + weeklyAdvice.length - visibleAdvice.length,
+    trajectoryRisks.length - (primaryRisk ? 1 : 0)
+    + weeklyAdvice.length - (showPrimaryAdvice ? 1 : 0),
   );
   const subtitle = loading
     ? '正在整理长期轨迹'
@@ -1043,13 +1046,19 @@ function AgentFollowUpQueue({
       ) : null}
 
       <View style={styles.followUpList}>
-        {trajectoryRisks.length > 0 ? compactRisks.map(risk => (
+        {primaryRisk ? (
           <TrajectoryQueueRow
-            key={`${risk.domain}-${risk.level}-${risk.title}`}
-            risk={risk}
+            key={`${primaryRisk.domain}-${primaryRisk.level}-${primaryRisk.title}`}
+            risk={primaryRisk}
             onPress={onOpenTrajectory}
           />
-        )) : (
+        ) : showPrimaryAdvice && primaryAdvice ? (
+          <AdviceQueueRow
+            key={primaryAdvice.id}
+            card={primaryAdvice}
+            onPress={() => onOpenAdvice(primaryAdvice)}
+          />
+        ) : !showWeeklyPendingRow ? (
           <FollowUpPlainRow
             icon="analytics-outline"
             tint={c.brandLight}
@@ -1059,15 +1068,7 @@ function AgentFollowUpQueue({
             rightLabel={loading ? '同步中' : '观察'}
             onPress={onOpenTrajectory}
           />
-        )}
-
-        {visibleAdvice.map(card => (
-          <AdviceQueueRow
-            key={card.id}
-            card={card}
-            onPress={() => onOpenAdvice(card)}
-          />
-        ))}
+        ) : null}
 
         {showWeeklyPendingRow ? (
           <FollowUpPlainRow

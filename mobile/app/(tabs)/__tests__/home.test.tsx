@@ -315,7 +315,9 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
+    expect(getByText('另 1 项')).toBeTruthy();
     expect(getByText('缺口 2')).toBeTruthy();
+    expect(queryByText('恢复轨迹数据不足')).toBeNull();
     expect(queryByText('还有 2 个数据缺口会影响判断')).toBeNull();
   });
 
