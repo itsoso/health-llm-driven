@@ -28,7 +28,6 @@ import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
-import EvidenceChip from '../../components/shared/EvidenceChip';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
   getDailyOperatingPlan,
@@ -40,7 +39,6 @@ import {
   getHealthTrajectory,
   pickPrimaryTrajectoryRisks,
   type HealthTrajectorySnapshot,
-  type TrajectoryRisk,
 } from '../../services/trajectory';
 
 interface TwinSnapshot {
@@ -954,190 +952,79 @@ function AgentFollowUpQueue({
   const primaryRisk = trajectoryRisks[0] ?? null;
   const primaryAdvice = visibleAdvice[0] ?? null;
   const showPrimaryAdvice = !primaryRisk && !!primaryAdvice;
-  const showWeeklyPendingRow = weeklyAdvice.length === 0 && trajectoryRisks.length === 0;
   const hiddenCount = Math.max(
     0,
     trajectoryRisks.length - (primaryRisk ? 1 : 0)
     + weeklyAdvice.length - (showPrimaryAdvice ? 1 : 0),
   );
-  const subtitle = loading
-    ? '整理长期轨迹'
-    : weeklyAdvice.length > 0
-      ? '长期轨迹/周建议'
-      : trajectoryRisks.length > 0
-        ? '长期轨迹/周建议'
-        : '先执行上方闭环';
+  const queueTitle = loading
+    ? '正在整理长期轨迹'
+    : primaryRisk
+      ? primaryRisk.title
+      : showPrimaryAdvice && primaryAdvice
+        ? primaryAdvice.title
+        : weeklyAdvice.length === 0 && trajectoryRisks.length === 0
+          ? '本周建议等待复盘'
+          : '轨迹暂无新增风险';
+  const queueDetail = loading
+    ? '同步完成后会补上长期判断。'
+    : primaryRisk
+      ? (primaryRisk.primary_action || primaryRisk.why || 'Agent 会继续观察长期轨迹变化。')
+      : showPrimaryAdvice && primaryAdvice
+        ? primaryAdvice.content
+        : weeklyAdvice.length === 0 && trajectoryRisks.length === 0
+          ? '当前先做上方闭环，周日晚自动复盘。'
+          : '继续用睡眠、血氧、体成分和检查数据观察。';
+  const queueRightLabel = gapCount > 0
+    ? `缺口 ${gapCount}`
+    : hiddenCount > 0
+      ? '待关注'
+      : primaryRisk
+        ? getTrajectoryLevelLabel(primaryRisk.level)
+        : showPrimaryAdvice
+          ? '建议'
+          : '观察';
+  const queueTint = primaryRisk
+    ? getTrajectoryLevelColor(primaryRisk.level, c).tint
+    : showPrimaryAdvice
+      ? c.tintOrange
+      : c.brandLight;
+  const queueColor = primaryRisk
+    ? getTrajectoryLevelColor(primaryRisk.level, c).color
+    : showPrimaryAdvice
+      ? c.orange
+      : c.brand;
+  const queueIcon: keyof typeof Ionicons.glyphMap = primaryRisk
+    ? getTrajectoryRiskIcon(primaryRisk.domain)
+    : showPrimaryAdvice
+      ? 'bulb-outline'
+      : 'git-branch-outline';
+  const onOpenQueue = showPrimaryAdvice && primaryAdvice
+    ? () => onOpenAdvice(primaryAdvice)
+    : onOpenTrajectory;
 
-  return (
-    <View style={styles.followUpCard}>
-      <View style={styles.followUpHeader}>
-        <View style={[styles.followUpIcon, { backgroundColor: c.bgCard }]}>
-          <Ionicons name="git-branch-outline" size={17} color={c.purple} />
-        </View>
-        <View style={styles.followUpTitleBlock}>
-          <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台队列</Text>
-          <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
-        </View>
-        <View style={styles.followUpCountPill}>
-          <Text style={[styles.followUpCountText, { color: c.labelSecondary }]}>
-            {hiddenCount > 0 || gapCount > 0 ? '待关注' : '观察中'}
-          </Text>
-        </View>
-      </View>
-
-      {gapCount > 0 ? (
-        <View style={styles.followUpSummaryRail}>
-          <Pressable
-            onPress={onOpenTrajectory}
-            style={({ pressed }) => [
-              styles.followUpSummaryPill,
-              { opacity: pressed ? 0.62 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="查看健康轨迹缺口"
-          >
-            <Text style={[styles.followUpSummaryText, { color: c.amber }]}>缺口 {gapCount}</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      <View style={styles.followUpList}>
-        {primaryRisk ? (
-          <TrajectoryQueueRow
-            key={`${primaryRisk.domain}-${primaryRisk.level}-${primaryRisk.title}`}
-            risk={primaryRisk}
-            onPress={onOpenTrajectory}
-          />
-        ) : showPrimaryAdvice && primaryAdvice ? (
-          <AdviceQueueRow
-            key={primaryAdvice.id}
-            card={primaryAdvice}
-            onPress={() => onOpenAdvice(primaryAdvice)}
-          />
-        ) : !showWeeklyPendingRow ? (
-          <FollowUpPlainRow
-            icon="analytics-outline"
-            tint={c.brandLight}
-            color={c.brand}
-            title={loading ? '正在读取 90 天轨迹' : '轨迹暂无新增风险'}
-            detail={loading ? '同步完成后会补上长期判断。' : '继续用睡眠、血氧、体成分和检查数据校准。'}
-            rightLabel={loading ? '同步中' : '观察'}
-            onPress={onOpenTrajectory}
-          />
-        ) : null}
-
-        {showWeeklyPendingRow ? (
-          <FollowUpPlainRow
-            icon="calendar-outline"
-            tint={c.tintTeal}
-            color={c.brand}
-            title="本周建议待生成"
-            detail="当前先做上方闭环，周日晚 21:07 自动复盘长期建议。"
-            rightLabel="排队"
-          />
-        ) : null}
-
-      </View>
-    </View>
-  );
-}
-
-function TrajectoryQueueRow({ risk, onPress }: { risk: TrajectoryRisk; onPress: () => void }) {
-  const { c } = useTheme();
-  const color = getTrajectoryLevelColor(risk.level, c);
-  return (
-    <FollowUpPlainRow
-      icon={getTrajectoryRiskIcon(risk.domain)}
-      tint={color.tint}
-      color={color.color}
-      title={risk.title}
-      detail={risk.primary_action || risk.why || 'Agent 会继续观察长期轨迹变化。'}
-      rightLabel={getTrajectoryLevelLabel(risk.level)}
-      onPress={onPress}
-    />
-  );
-}
-
-function AdviceQueueRow({ card, onPress }: { card: ActionCard; onPress: () => void }) {
-  const { c } = useTheme();
-  const decided = !!card.user_decision;
   return (
     <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.followUpRow, { opacity: pressed ? 0.72 : 1 }]}
+      onPress={onOpenQueue}
+      style={({ pressed }) => [styles.followUpCompactRow, { opacity: pressed ? 0.72 : 1 }]}
       accessibilityRole="button"
-      accessibilityLabel={card.title}
+      accessibilityLabel={queueTitle}
     >
-      <View style={[styles.followUpRowIcon, { backgroundColor: c.tintOrange }]}>
-        <Ionicons name="bulb-outline" size={15} color={c.orange} />
+      <View style={[styles.followUpRowIcon, { backgroundColor: queueTint }]}>
+        <Ionicons name={queueIcon} size={15} color={queueColor} />
       </View>
       <View style={styles.followUpRowText}>
-        <View style={styles.followUpRowTitleLine}>
-          <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-            {card.title}
-          </Text>
-          <EvidenceChip level={card.evidence_level} />
-        </View>
+        <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台继续看</Text>
+        <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+          {queueTitle}
+        </Text>
         <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
-          {card.content}
+          {queueDetail}
         </Text>
       </View>
-      <Text style={[styles.followUpRowRight, { color: decided ? c.green : c.amber }]}>
-        {decided ? '已决策' : '建议'}
-      </Text>
+      <Text style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</Text>
     </Pressable>
   );
-}
-
-function FollowUpPlainRow({
-  icon,
-  tint,
-  color,
-  title,
-  detail,
-  rightLabel,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  tint: string;
-  color: string;
-  title: string;
-  detail: string;
-  rightLabel: string;
-  onPress?: () => void;
-}) {
-  const { c } = useTheme();
-  const content = (
-    <>
-      <View style={[styles.followUpRowIcon, { backgroundColor: tint }]}>
-        <Ionicons name={icon} size={15} color={color} />
-      </View>
-      <View style={styles.followUpRowText}>
-        <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
-          {detail}
-        </Text>
-      </View>
-      <Text style={[styles.followUpRowRight, { color }]}>{rightLabel}</Text>
-    </>
-  );
-
-  if (onPress) {
-    return (
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [styles.followUpRow, { opacity: pressed ? 0.72 : 1 }]}
-        accessibilityRole="button"
-        accessibilityLabel={title}
-      >
-        {content}
-      </Pressable>
-    );
-  }
-
-  return <View style={styles.followUpRow}>{content}</View>;
 }
 
 function isBodyMeasurementAction(action: DailyPlanAction): boolean {
@@ -2074,6 +1961,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingVertical: 2,
     gap: 3,
+  },
+  followUpCompactRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
   },
   followUpHeader: {
     flexDirection: 'row',
