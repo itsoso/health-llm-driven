@@ -28,6 +28,7 @@ MAX_TOOL_ROUNDS = 8
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
+COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
 
 
 def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
@@ -110,6 +111,78 @@ def _response_text(response: Any) -> str:
     if isinstance(response, dict):
         return response.get("content") or ""
     return str(response or "")
+
+
+def _extract_markdown_section(text: str, title: str) -> str:
+    pattern = rf"(?:^|\n)## {re.escape(title)}\n(?P<body>.*?)(?=\n## |\Z)"
+    match = re.search(pattern, text or "", flags=re.S)
+    if not match:
+        return ""
+    body = match.group("body").strip()
+    return f"## {title}\n{body}" if body else ""
+
+
+def _clip_context(text: str, limit: int) -> str:
+    clean = (text or "").strip()
+    if len(clean) <= limit:
+        return clean
+    return clean[:limit].rstrip() + "\n..."
+
+
+def _build_compact_empty_retry_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Build a short no-tools retry prompt for gateways that empty-answer long contexts."""
+    system_content = next(
+        (str(m.get("content") or "") for m in messages if m.get("role") == "system"),
+        "",
+    )
+    sections: list[str] = []
+    section_limits = {
+        "入口动作处理结果": 180,
+        "入口上下文 (用户正在看的具体方案)": 220,
+        "用户健康档案": 520,
+        "系统知识库相关条目": 220,
+    }
+    for title, limit in section_limits.items():
+        section = _extract_markdown_section(system_content, title)
+        if section:
+            sections.append(_clip_context(section, limit))
+
+    if not sections and system_content:
+        sections.append(_clip_context(system_content, 520))
+
+    compact_system_parts = [
+        "你是用户的 AI 健康助理。请用中文直接回答本轮问题。",
+        "必须基于已提供的健康上下文做判断；不要编造未给出的数据。",
+        "输出应简洁、可执行；涉及诊断、治疗或用药时提醒咨询医生。",
+    ]
+    if sections:
+        compact_system_parts.extend(["", "## 压缩上下文", "\n\n".join(sections)])
+
+    default_user_prompt = "请直接给出完整中文回答。"
+    skipped_retry_text = "上一轮没有生成任何用户可见回复"
+    user_messages = [
+        m for m in messages
+        if m.get("role") == "user"
+        and skipped_retry_text not in str(m.get("content") or "")
+    ]
+    last_user = user_messages[-1] if user_messages else {"role": "user", "content": default_user_prompt}
+    compact_system_content = _clip_context(
+        "\n".join(compact_system_parts),
+        COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT,
+    )
+    compact_messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": compact_system_content}
+    ]
+
+    last_content = last_user.get("content")
+    if isinstance(last_content, list):
+        compact_messages.append({"role": "user", "content": last_content})
+    else:
+        compact_messages.append({
+            "role": "user",
+            "content": str(last_content or default_user_prompt).strip(),
+        })
+    return compact_messages
 
 
 def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
@@ -615,6 +688,45 @@ class AgentExecutor:
                         if not final_text.strip():
                             final_text = _fallback_text_from_tool_results(messages)
                         if not final_text.strip():
+                            compact_messages = _build_compact_empty_retry_messages(messages)
+                            logger.warning(
+                                "[agent_executor] empty LLM reply after retry; compacting context "
+                                "from chars=%s to chars=%s",
+                                len(str(messages[0].get("content") or "")) if messages else 0,
+                                len(str(compact_messages[0].get("content") or "")),
+                            )
+                            _round_start = time.time()
+                            compact_response = await self._call_llm(compact_messages, [])
+                            if isinstance(compact_response, dict):
+                                final_finish_reason = compact_response.get("finish_reason") or final_finish_reason
+                            llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
+                            final_text = _response_text(compact_response)
+                            if isinstance(compact_response, dict):
+                                final_text = _append_interrupted_notice(
+                                    final_text,
+                                    compact_response.get("finish_reason"),
+                                )
+                        if not final_text.strip():
+                            logger.warning(
+                                "[agent_executor] compact retry also empty; using stable fallback provider"
+                            )
+                            _round_start = time.time()
+                            fallback_response = await self._call_llm_fallback_provider(
+                                _build_compact_empty_retry_messages(messages)
+                            )
+                            if isinstance(fallback_response, dict):
+                                final_finish_reason = (
+                                    fallback_response.get("finish_reason")
+                                    or final_finish_reason
+                                )
+                            llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
+                            final_text = _response_text(fallback_response)
+                            if isinstance(fallback_response, dict):
+                                final_text = _append_interrupted_notice(
+                                    final_text,
+                                    fallback_response.get("finish_reason"),
+                                )
+                        if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
                     for i in range(0, len(final_text), 20):
                         chunk = final_text[i:i + 20]
@@ -1065,6 +1177,26 @@ class AgentExecutor:
         if pass_tools:
             chat_kwargs["tools"] = pass_tools
         return await provider.chat(**chat_kwargs)
+
+    async def _call_llm_fallback_provider(self, messages: List[Dict]) -> Any:
+        """Use the stable global provider when a selected gateway keeps empty-answering."""
+        from app.services.llm.factory import create_llm_provider, get_llm_provider
+        from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+        from app.services.llm.usage_tracker import wrap_provider
+
+        try:
+            provider = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[agent_executor] tokenplan fallback unavailable: %s", e)
+            provider = get_llm_provider()
+        return await provider.chat(
+            messages=messages,
+            model=None,
+            temperature=0.3,
+            max_tokens=3000,
+            stream=False,
+            return_metadata=True,
+        )
 
     async def _call_llm_direct(
         self, messages: List[Dict], tools: List[Dict],

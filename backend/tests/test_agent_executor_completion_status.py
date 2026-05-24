@@ -117,6 +117,105 @@ async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, a
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(db, auth_user_and_headers, monkeypatch):
+    """Commercial gateways can return stop+empty for long system prompts."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    monkeypatch.setattr(
+        executor,
+        "_build_system_prompt",
+        lambda *_args, **_kwargs: (
+            "你是健康助理。\n"
+            "## 用户健康档案\n"
+            + ("睡眠、血压、运动、饮食和基因风险需要综合评估。\n" * 260)
+        ),
+    )
+    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: "")
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        if len(calls) <= 2:
+            return {"content": "", "finish_reason": "stop"}
+        return {"content": "压缩上下文后回答：先关注睡眠、血压和今天的第一项任务。", "finish_reason": "stop"}
+
+    executor._call_llm = fake_call_llm
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="为什么今天优先这五件任务？",
+            user_auth_token=None,
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "压缩上下文后回答" in rendered
+    assert len(calls) == 3
+    assert calls[2]["tool_count"] == 0
+    assert len(calls[2]["messages"][0]["content"]) < len(calls[0]["messages"][0]["content"])
+    assert "## 用户健康档案" in calls[2]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_empty(db, auth_user_and_headers, monkeypatch):
+    """If the selected commercial model keeps returning empty, use a stable fallback."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    fallback_calls = []
+
+    monkeypatch.setattr(
+        executor,
+        "_build_system_prompt",
+        lambda *_args, **_kwargs: (
+            "你是健康助理。\n"
+            "## 用户健康档案\n"
+            + ("睡眠、血压、运动、饮食和基因风险需要综合评估。\n" * 260)
+        ),
+    )
+    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: "")
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        return {"content": "", "finish_reason": "stop"}
+
+    async def fake_fallback(messages):
+        fallback_calls.append(messages)
+        return {"content": "稳定模型兜底回答：先处理血压、睡眠和低风险运动。", "finish_reason": "stop"}
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_fallback_provider = fake_fallback
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="为什么今天优先这五件任务？",
+            user_auth_token=None,
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "稳定模型兜底回答" in rendered
+    assert len(calls) == 3
+    assert len(fallback_calls) == 1
+    assert fallback_calls[0][0]["role"] == "system"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
