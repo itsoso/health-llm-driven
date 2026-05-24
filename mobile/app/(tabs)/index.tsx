@@ -32,7 +32,6 @@ import { pushChatWithContext } from '../../utils/agentContext';
 import {
   getDailyOperatingPlan,
   recordDailyPlanActionEvent,
-  type DailyOperatingPlan,
   type DailyPlanAction,
 } from '../../services/dailyPlan';
 import {
@@ -423,20 +422,6 @@ export default function TodayScreen() {
           onCompleteAction={completeNextAction}
           onOpenMetric={(route) => router.push(route as any)}
         />
-
-        {!nextAction && criticalAlerts.length === 0 ? (
-          <TodayExecutionQueue
-            plan={dailyPlanQuery.data}
-            action={null}
-            loading={dailyPlanQuery.isLoading}
-            completionState={visibleNextActionState}
-            excludeActionKey={nextActionKey}
-            onStart={openPlanAction}
-            onComplete={completeNextAction}
-            onFallbackRecord={() => router.push('/(tabs)/record' as any)}
-            onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
-          />
-        ) : null}
 
         {isLoading && (
           <View style={styles.loading}>
@@ -944,174 +929,6 @@ function HomeReviewCadencePanel({
       </View>
       <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
     </Pressable>
-  );
-}
-
-function TodayExecutionQueue({
-  plan,
-  action,
-  loading,
-  completionState,
-  excludeActionKey,
-  onStart,
-  onComplete,
-  onFallbackRecord,
-  onFallbackAgent,
-}: {
-  plan?: DailyOperatingPlan | null;
-  action?: DailyPlanAction | null;
-  loading?: boolean;
-  completionState: NextActionCompletionState;
-  excludeActionKey?: string | null;
-  onStart: (action: DailyPlanAction) => void;
-  onComplete: (action: DailyPlanAction) => void;
-  onFallbackRecord: () => void;
-  onFallbackAgent: () => void;
-}) {
-  const { c } = useTheme();
-  const hasAction = Boolean(action?.title);
-  const title = loading
-    ? '正在判断下一步'
-    : hasAction
-      ? action!.title
-      : '补齐今日记录';
-  const reason = loading
-    ? '同步计划后会给出当前最值得做的一件事'
-    : hasAction
-      ? (action?.why || action?.when || '先完成这一步，再看后续计划')
-      : '没有硬性任务时，先补齐今天会影响建议的数据';
-  const impactMetrics = buildActionImpactMetrics(action);
-  const totalActionCount = plan?.actions?.length ?? 0;
-  const remainingActionCount = Math.max(
-    0,
-    (plan?.actions ?? []).filter(item => (item.action_key || item.title) !== excludeActionKey).length,
-  );
-  const queueSubtitle = loading
-    ? 'Agent 正在排序最小下一步'
-    : totalActionCount > 0
-      ? totalActionCount === 1
-        ? '1 件事正在执行闭环'
-        : `${totalActionCount} 件事后台排队，只露出最该做的一件`
-      : '先补齐数据，Agent 再生成干预';
-  const queueSummary = remainingActionCount > 0
-    ? `余下 ${remainingActionCount} 件后台排队，完成后再推送`
-    : '完成后 Agent 会根据新反馈排下一步';
-
-  return (
-    <View style={[styles.executionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.executionHeader}>
-        <View style={[styles.executionIcon, { backgroundColor: c.tintGreen }]}>
-          <Ionicons name="radio-button-on-outline" size={17} color={c.green} />
-        </View>
-        <View style={styles.executionHeaderText}>
-          <HomeText style={[styles.executionTitle, { color: c.labelPrimary }]}>现在只做一件</HomeText>
-          <HomeText style={[styles.executionSubtitle, { color: c.labelTertiary }]}>{queueSubtitle}</HomeText>
-        </View>
-        <Pressable
-          onPress={onFallbackAgent}
-          style={({ pressed }) => [
-            styles.executionAdjustButton,
-            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="问 Agent 调整后台排队"
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={13} color={c.brand} />
-          <HomeText style={[styles.executionAdjustText, { color: c.brand }]}>调整</HomeText>
-        </Pressable>
-      </View>
-
-      <View style={[styles.executionPrimary, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
-        <View style={styles.executionPrimaryTop}>
-          <HomeText style={[styles.executionEyebrow, { color: c.green }]}>现在先做</HomeText>
-          <HomeText style={[styles.executionPrimaryTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-            {title}
-          </HomeText>
-        </View>
-        <HomeText style={[styles.executionReason, { color: c.labelSecondary }]} numberOfLines={2}>
-          {reason}
-        </HomeText>
-        {impactMetrics.length > 0 ? (
-          <View style={styles.executionImpactChips}>
-            {impactMetrics.map(metric => {
-              const color = c[metric.colorName];
-              return (
-                <View key={metric.key} style={[styles.executionImpactChip, { backgroundColor: c[metric.tintName] }]}>
-                  <HomeText style={[styles.executionImpactText, { color }]}>{metric.label}</HomeText>
-                </View>
-              );
-            })}
-          </View>
-        ) : null}
-        <View style={styles.nextActionButtons}>
-          <Pressable
-            onPress={() => (hasAction && action ? onStart(action) : onFallbackRecord())}
-            style={({ pressed }) => [
-              styles.nextActionPrimary,
-              { backgroundColor: c.green, opacity: pressed ? 0.82 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={hasAction ? `开始 ${title}` : '开始记录'}
-          >
-            <Ionicons name="play-outline" size={15} color="#FFFFFF" />
-            <HomeText style={styles.nextActionPrimaryText}>开始</HomeText>
-          </Pressable>
-          {hasAction && action?.action_key ? (
-            <Pressable
-              onPress={() => onComplete(action)}
-              disabled={completionState === 'sending' || completionState === 'completed'}
-              style={({ pressed }) => [
-                styles.nextActionComplete,
-                {
-                  borderColor: completionState === 'completed' ? c.green : c.separator,
-                  backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgCard,
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`完成 ${title}`}
-            >
-              <Ionicons
-                name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                size={14}
-                color={completionState === 'completed' ? c.green : c.labelSecondary}
-              />
-              <HomeText
-                style={[
-                  styles.nextActionCompleteText,
-                  { color: completionState === 'completed' ? c.green : c.labelSecondary },
-                ]}
-              >
-                {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
-              </HomeText>
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-
-      {completionState === 'error' ? (
-        <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
-          <Ionicons name="alert-circle-outline" size={14} color={c.red} />
-          <HomeText style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</HomeText>
-        </View>
-      ) : null}
-
-      <Pressable
-        onPress={onFallbackAgent}
-        style={({ pressed }) => [
-          styles.executionQueueSummary,
-          { backgroundColor: c.bgPrimary, opacity: pressed ? 0.68 : 1 },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="查看后台排队任务"
-      >
-        <Ionicons name="layers-outline" size={14} color={c.labelSecondary} />
-        <HomeText style={[styles.executionQueueSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
-          {queueSummary}
-        </HomeText>
-        <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
-      </Pressable>
-    </View>
   );
 }
 
@@ -2182,55 +1999,6 @@ const styles = StyleSheet.create({
   interventionDomainText: { alignItems: 'center', minWidth: 0, flexShrink: 1 },
   interventionDomainLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   interventionDomainStatus: { fontSize: 8, fontWeight: '700', marginTop: 1, textAlign: 'center' },
-  executionCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: 11,
-    gap: 8,
-  },
-  executionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  executionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  executionHeaderText: { flex: 1, minWidth: 0, gap: 2 },
-  executionTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
-  executionSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
-  executionAdjustButton: {
-    minHeight: 31,
-    borderRadius: radii.full,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  executionAdjustText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
-  executionPrimary: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  executionPrimaryTop: { flex: 1, minWidth: 0, gap: 3 },
-  executionEyebrow: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  executionPrimaryTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
-  executionReason: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
-  executionImpactChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  executionImpactChip: {
-    minHeight: 22,
-    borderRadius: radii.full,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  executionImpactText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   nextActionError: {
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm,
@@ -2240,36 +2008,6 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   nextActionErrorText: { fontSize: 12, fontWeight: '800' },
-  nextActionButtons: { width: 82, gap: 6 },
-  nextActionPrimary: {
-    minHeight: 34,
-    borderRadius: radii.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  nextActionPrimaryText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
-  nextActionComplete: {
-    minHeight: 32,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  nextActionCompleteText: { fontSize: 12, fontWeight: '800' },
-  executionQueueSummary: {
-    minHeight: 30,
-    borderRadius: radii.md,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  executionQueueSummaryText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '700' },
   loopCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,

@@ -170,13 +170,14 @@ describe('TodayScreen', () => {
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
-  it('places the single surfaced action before shortcut entries in the home feed', () => {
-    const screen = render(<TodayScreen />);
-    const textFlow = flattenText(screen.toJSON());
+  it('keeps the no-plan home feed focused on the top next step instead of adding a duplicate execution card', () => {
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(textFlow.indexOf('现在只做一件')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('个人画像'));
+    expect(getByText('下一步')).toBeTruthy();
+    expect(getByLabelText('打开下一步')).toBeTruthy();
+    expect(queryByText('现在只做一件')).toBeNull();
+    expect(queryByText('现在先做')).toBeNull();
+    expect(queryByText('没有硬性任务时，先补齐今天会影响建议的数据')).toBeNull();
   });
 
   it('groups the home feed into agent diagnosis, action, health outcomes, evidence, and follow-up sections', () => {
@@ -186,13 +187,11 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.some(text => /改善/.test(text))).toBe(true);
-    expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康指标')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
-    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('健康指标'));
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('健康指标'));
     expect(textFlow.indexOf('健康指标')).toBeLessThan(textFlow.indexOf('个人画像'));
     expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
@@ -318,8 +317,8 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
-    expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
+    expect(textFlow.indexOf('改善目标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('改善目标'));
     expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/改善/).length).toBeGreaterThan(0);
   });
@@ -345,10 +344,10 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('改善目标')).toBeGreaterThanOrEqual(0);
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('改善目标'));
   });
 
   it('prioritizes intervention feedback and personal evidence before the follow-up queue', () => {
