@@ -16,7 +16,10 @@ let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 
 jest.mock('expo-router', () => ({
-  router: { push: mockPush, setParams: mockSetParams },
+  router: {
+    push: (...args: any[]) => mockPush(...args),
+    setParams: (...args: any[]) => mockSetParams(...args),
+  },
   useLocalSearchParams: () => mockRouteParams,
   useFocusEffect: (cb: any) => cb(),
 }));
@@ -157,6 +160,52 @@ describe('ChatScreen', () => {
       expect(getByText('Qwen3.6 Plus')).toBeTruthy();
     });
     expect(queryByText('Qwen3.6 Plus 推理 · 阿里')).toBeNull();
+  });
+
+  it('opens model switching from the top-left header instead of the more sheet', async () => {
+    mockLlmPreference = {
+      model_id: 'qwen3.6-plus',
+      options: [
+        {
+          id: 'qwen3.6-plus',
+          label: 'Qwen3.6 Plus 推理 · 阿里',
+          provider: '阿里',
+          model: 'qwen3.6-plus',
+          speed_tier: 'reasoning',
+          note: '',
+        },
+      ],
+    };
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByLabelText('切换 AI 模型，当前 Qwen3.6 Plus')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
+    expect(queryByText('切换 AI 模型')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.6 Plus'));
+    });
+    expect(getByText('切换 AI 模型')).toBeTruthy();
+  });
+
+  it('keeps the header voice action as continuous voice conversation', async () => {
+    const { getByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByLabelText('开始语音对话')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('开始语音对话'));
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/voice-chat',
+      params: {},
+    });
   });
 
   it('sends opener quick replies with the opener context so verification has a target', async () => {

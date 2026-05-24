@@ -5,6 +5,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
 
+const mockStartRecording = jest.fn();
+
 const mockThemeColors = {
   bgPrimary: '#000000',
   bgCard: '#1C1C1E',
@@ -40,7 +42,7 @@ jest.mock('../../../hooks/useVoiceRecording', () => ({
     isRecording: false,
     isTranscribing: false,
     durationMs: 0,
-    startRecording: jest.fn(),
+    startRecording: mockStartRecording,
     stopAndTranscribe: jest.fn(),
     cancelRecording: jest.fn(),
   }),
@@ -71,6 +73,10 @@ jest.mock('react-native-reanimated', () => {
 });
 
 describe('ChatInputBar', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('uses themed colors for the attachment menu sheet', () => {
     const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
@@ -80,5 +86,16 @@ describe('ChatInputBar', () => {
 
     expect(StyleSheet.flatten(getByTestId('attachment-menu-sheet').props.style).backgroundColor)
       .toBe(mockThemeColors.bgCard);
+  });
+
+  it('uses the bottom microphone for voice input instead of voice conversation', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('语音输入'));
+    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageY: 300 } });
+
+    expect(mockStartRecording).toHaveBeenCalled();
   });
 });

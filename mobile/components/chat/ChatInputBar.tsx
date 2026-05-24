@@ -7,7 +7,6 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import { router } from 'expo-router';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
@@ -35,11 +34,11 @@ interface Props {
   isStreaming: boolean;
   /** Populated once on first mount; subsequent changes are ignored. */
   initialText?: string;
-  /** 当前会话 id — 进语音模式时带过去, 让 voice-chat 写到同一个 conversation. */
+  /** Reserved for callers that keep composer API aligned with chat-level voice entry. */
   conversationId?: number;
 }
 
-export default function ChatInputBar({ onSend, isStreaming, initialText, conversationId }: Props) {
+export default function ChatInputBar({ onSend, isStreaming, initialText }: Props) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const [input, setInput] = useState(initialText ?? '');
@@ -98,16 +97,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, convers
     voice.stopAndTranscribe();
   }, [voice]);
 
-  // 麦克风按钮 → 跳语音对话页 (连续语音对话, 替代旧的 whisper-into-text 模式)。
-  // 旧 voiceMode 状态保留但不再被这个按钮触发 —— 防止意外破坏 useVoiceRecording 的 hooks 依赖。
-  // 带上 conversationId, voice-chat 会写到同一个 conversation, 退出后 chat tab focus 时拉新消息.
-  const goToVoiceChat = useCallback(() => {
+  const startVoiceInput = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({
-      pathname: '/voice-chat',
-      params: conversationId ? { conversation_id: String(conversationId) } : {},
-    } as any);
-  }, [conversationId]);
+    setVoiceMode(true);
+  }, []);
+
+  const stopVoiceInput = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setVoiceMode(false);
+  }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
@@ -244,15 +242,17 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, convers
             <Ionicons name="checkmark" size={20} color="#fff" />
           </View>
         ) : (
-          /* P7 (2026-05-04): 灰色 mic-outline 太低调 — 输入框空且无图片时, voice
-              是 chat 的备选主路径之一. 改成 brand 色圆形背景, 视觉权重对齐 send 按钮. */
           <TouchableOpacity
-            onPress={goToVoiceChat}
-            style={styles.voiceCallBtn}
-            accessibilityLabel="进入语音对话"
-            accessibilityHint="打开语音对话页面与健康助理连续聊天"
+            onPress={voiceMode ? stopVoiceInput : startVoiceInput}
+            style={voiceMode ? styles.keyboardBtn : styles.voiceInputBtn}
+            accessibilityLabel={voiceMode ? '切回键盘输入' : '语音输入'}
+            accessibilityHint={voiceMode ? '回到文字输入框' : '切换到按住说话，将语音转成文字'}
           >
-            <Ionicons name="mic" size={20} color="#fff" />
+            <Ionicons
+              name={voiceMode ? 'keypad-outline' : 'mic-outline'}
+              size={20}
+              color={voiceMode ? c.labelPrimary : c.brand}
+            />
           </TouchableOpacity>
         )}
       </View>
@@ -324,11 +324,18 @@ function createStyles(c: ColorPalette) {
     width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
   },
-  // P7 (2026-05-04): voice call 按钮 — brand 色圆形, 视觉权重对齐 send button.
-  // 与 modeBtn (灰色 mic-outline) 不同, 这是 voice 的"主入口" 视觉.
-  voiceCallBtn: {
+  voiceInputBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: c.brand,
+    backgroundColor: c.bgCard,
+    borderWidth: 1,
+    borderColor: c.brand,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  keyboardBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: c.bgCard,
+    borderWidth: 1,
+    borderColor: c.separator,
     alignItems: 'center', justifyContent: 'center',
   },
 

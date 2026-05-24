@@ -42,6 +42,7 @@ export default function LlmModelPicker({
   options,
   savingModelId,
   error,
+  variant = 'default',
   onSelect,
 }: {
   currentLabel: string;
@@ -50,6 +51,7 @@ export default function LlmModelPicker({
   savingModelId: string | null;
   disabled?: boolean;
   error?: string | null;
+  variant?: 'default' | 'header';
   onSelect: (modelId: string | null) => void;
 }) {
   const { c } = useTheme();
@@ -61,25 +63,47 @@ export default function LlmModelPicker({
     setVisible(false);
     onSelect(modelId);
   };
+  const isHeader = variant === 'header';
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, isHeader && styles.rootHeader]}>
       <TouchableOpacity
-        style={styles.trigger}
+        style={[styles.trigger, isHeader && styles.triggerHeader]}
         onPress={() => setVisible(true)}
         activeOpacity={0.75}
         accessibilityRole="button"
         accessibilityLabel={`切换 AI 模型，当前 ${currentLabel}`}
       >
-        <Ionicons name="hardware-chip-outline" size={15} color={c.brand} />
-        <Text style={txt.triggerTitle} numberOfLines={1}>健康 Agent</Text>
-        <Text style={txt.triggerModel} numberOfLines={1}>
-          {savingModelId ? '切换中...' : currentLabel}
-        </Text>
-        {savingModelId ? (
-          <ActivityIndicator size="small" color={c.labelTertiary} />
+        {isHeader ? (
+          <>
+            <View style={styles.headerTitleRow}>
+              <Text style={txt.headerTitle} numberOfLines={1}>健康 Agent</Text>
+              {savingModelId ? (
+                <ActivityIndicator size="small" color={c.labelTertiary} />
+              ) : (
+                <Ionicons name="chevron-down" size={14} color={c.labelTertiary} />
+              )}
+            </View>
+            <View style={styles.headerModelRow}>
+              <Ionicons name="hardware-chip-outline" size={11} color={c.labelTertiary} />
+              <Text style={txt.headerModel} numberOfLines={1}>
+                {savingModelId ? '模型切换中...' : currentLabel}
+              </Text>
+            </View>
+          </>
         ) : (
-          <Ionicons name="chevron-down" size={15} color={c.labelTertiary} />
+          <>
+            <Ionicons name="hardware-chip-outline" size={15} color={c.brand} />
+            <Text style={txt.triggerTitle} numberOfLines={1}>健康 Agent</Text>
+            <Text style={txt.triggerModel} numberOfLines={1}>
+              {savingModelId ? '切换中...' : currentLabel}
+            </Text>
+            {savingModelId ? (
+              <ActivityIndicator size="small" color={c.labelTertiary} />
+            ) : (
+              <Ionicons name="chevron-down" size={15} color={c.labelTertiary} />
+            )}
+          </>
         )}
       </TouchableOpacity>
 
@@ -167,6 +191,7 @@ export default function LlmModelPicker({
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
     root: { flexShrink: 1, maxWidth: '72%' },
+    rootHeader: { flex: 1, maxWidth: undefined, minWidth: 0 },
     trigger: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -177,6 +202,31 @@ function createStyles(c: ColorPalette) {
       borderRadius: radii.lg,
       backgroundColor: c.bgCard,
       ...shadows.subtle,
+    },
+    triggerHeader: {
+      minHeight: 44,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+      borderRadius: 0,
+      backgroundColor: 'transparent',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      flexDirection: 'column',
+      gap: 1,
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    headerTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      maxWidth: '100%',
+    },
+    headerModelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      maxWidth: '100%',
     },
     backdrop: {
       flex: 1,
@@ -232,6 +282,8 @@ function createStyles(c: ColorPalette) {
 
 function createTxt(c: ColorPalette) {
   return {
+    headerTitle: { color: c.labelPrimary, fontSize: 20, fontWeight: '800' } as TextStyle,
+    headerModel: { color: c.labelTertiary, fontSize: 12, fontWeight: '600', flexShrink: 1 } as TextStyle,
     triggerTitle: { color: c.labelPrimary, fontSize: 15, fontWeight: '700' } as TextStyle,
     triggerModel: { color: c.labelTertiary, fontSize: 13, flexShrink: 1 } as TextStyle,
     sheetTitle: { color: c.labelPrimary, fontSize: 17, fontWeight: '700' } as TextStyle,

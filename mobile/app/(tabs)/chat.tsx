@@ -404,26 +404,28 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <View style={styles.chatTitleBlock}>
-          <Text style={txt.headerTitle}>健康 Agent</Text>
-          <Text style={txt.headerMeta} numberOfLines={1}>
-            {headerLlmLabel}
-          </Text>
-        </View>
-        <View style={{ flex: 1 }} />
-        {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
-            尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
+        <LlmModelPicker
+          variant="header"
+          currentLabel={headerLlmLabel}
+          currentModelId={llmModelId}
+          options={llmOptions}
+          savingModelId={llmSaving}
+          disabled={isStreaming}
+          error={llmError}
+          onSelect={handleSelectModel}
+        />
         <TouchableOpacity
           onPress={() => router.push({
             pathname: '/voice-chat',
             params: conversationId ? { conversation_id: String(conversationId) } : {},
           } as any)}
           hitSlop={8}
-          style={styles.headerAction}
-          accessibilityLabel="语音对话"
+          style={styles.voiceConversationAction}
+          accessibilityLabel="开始语音对话"
+          accessibilityHint="进入连续语音对话，AI 会听你说并用语音回复"
           accessibilityRole="button"
         >
-          <Ionicons name="mic" size={20} color="#FFFFFF" />
+          <Ionicons name="call" size={18} color="#FFFFFF" />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setToolMenuVisible(true)}
@@ -573,17 +575,6 @@ export default function ChatScreen() {
                 <Ionicons name="close" size={22} color={c.labelSecondary} />
               </TouchableOpacity>
             </View>
-            <View style={styles.menuModelWrap}>
-              <LlmModelPicker
-                currentLabel={activeLlmLabel}
-                currentModelId={llmModelId}
-                options={llmOptions}
-                savingModelId={llmSaving}
-                disabled={isStreaming}
-                error={llmError}
-                onSelect={handleSelectModel}
-              />
-            </View>
             <ToolMenuRow icon="time-outline" label="对话历史" onPress={openHistory} />
             <ToolMenuRow icon="create-outline" label="新建对话" onPress={handleNewChat} />
             {messages.some(isShareableChatMessage) && (
@@ -666,8 +657,7 @@ function createStyles(c: ColorPalette) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  chatTitleBlock: { flex: 1, minWidth: 0 },
-  headerAction: {
+  voiceConversationAction: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -755,7 +745,6 @@ function createStyles(c: ColorPalette) {
     gap: spacing.md,
     paddingBottom: spacing.sm,
   },
-  menuModelWrap: { paddingVertical: spacing.sm },
   toolMenuRow: {
     minHeight: 46,
     flexDirection: 'row',
