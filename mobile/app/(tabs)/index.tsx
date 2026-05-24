@@ -555,27 +555,11 @@ function HomeCommandHeader({
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
   }).replace(/\//g, '、')}已接入`;
-  const agentStepItems = [
-    { key: 'strategy', label: '策略：', value: activeDomainSummary || loopStrategy.interventionLabel },
-    {
-      key: 'watch',
-      label: '观察：',
-      value: loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/'),
-    },
-  ] as const;
-  const agentLoopLine = agentStepItems
-    .filter(item => item.value)
-    .map(item => `${item.label}${item.value}`)
-    .join(' · ');
+  const strategySummary = activeDomainSummary || loopStrategy.interventionLabel;
+  const watchSummary = loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/');
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
-  const remainingActionCount = Math.max(0, action?.title ? planCount - 1 : planCount);
-  const queueSummary = remainingActionCount > 0
-    ? `后台余 ${remainingActionCount} 件`
-    : action?.title
-      ? '完成后再排下一步'
-      : '等待新反馈';
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -653,11 +637,21 @@ function HomeCommandHeader({
               })}
             </View>
           </Pressable>
-          <View style={styles.commandLoopLine}>
-            <Ionicons name="git-compare-outline" size={13} color={decisionColor} />
-            <Text style={[styles.commandLoopText, { color: c.labelSecondary }]} numberOfLines={1}>
-              {agentLoopLine} · {queueSummary}
-            </Text>
+          <View style={styles.commandLoopRail}>
+            <View style={styles.commandLoopChip}>
+              <Ionicons name="options-outline" size={12} color={decisionColor} />
+              <Text style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>策略中</Text>
+              <Text style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
+                {strategySummary}
+              </Text>
+            </View>
+            <View style={styles.commandLoopChip}>
+              <Ionicons name="eye-outline" size={12} color={c.labelTertiary} />
+              <Text style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>观察</Text>
+              <Text style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
+                {watchSummary}
+              </Text>
+            </View>
           </View>
           <View style={styles.commandInlineActionRow}>
             <Pressable
@@ -1802,15 +1796,21 @@ const styles = StyleSheet.create({
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
-  commandLoopLine: {
-    minHeight: 18,
-    alignSelf: 'stretch',
-    borderRadius: radii.full,
+  commandLoopRail: {
+    minHeight: 20,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  commandLoopText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandLoopChip: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commandLoopLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandLoopValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -223,7 +223,8 @@ describe('TodayScreen', () => {
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日洞察 · 1 个计划')).toBeTruthy();
     expect(getByText('要改善')).toBeTruthy();
-    expect(getByText(/观察：血氧\/睡眠分/)).toBeTruthy();
+    expect(getAllByText('观察').length).toBeGreaterThan(0);
+    expect(getByText(/血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('表观遗传、穿戴已接入')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
   });
@@ -422,7 +423,8 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/策略/).length).toBeGreaterThan(0);
-    expect(getByText(/策略：饮食\/睡眠\/运动 \+2/)).toBeTruthy();
+    expect(getByText('策略中')).toBeTruthy();
+    expect(getByText(/饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
   it('opens outcome feedback surfaces from the agent summary', () => {
@@ -480,10 +482,10 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
+    const { getAllByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('后台排队')).toBeNull();
-    expect(getByText(/后台余 1 件/)).toBeTruthy();
+    expect(queryByText(/后台余/)).toBeNull();
     expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
     expect(queryByText('今天蛋白质目标')).toBeNull();
     expect(queryByText('接下来')).toBeNull();
@@ -508,10 +510,10 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { queryByText } = render(<TodayScreen />);
 
     expect(queryByText('后台排队')).toBeNull();
-    expect(getByText(/后台余 2 件/)).toBeTruthy();
+    expect(queryByText(/后台余/)).toBeNull();
     expect(queryByText('现在只做一件')).toBeNull();
     expect(queryByText('现在先做')).toBeNull();
     expect(queryByText('今日操作计划')).toBeNull();
@@ -579,11 +581,11 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getByText } = render(<TodayScreen />);
+    const { getAllByText } = render(<TodayScreen />);
 
-    expect(getByText('BMI/体脂')).toBeTruthy();
-    expect(getByText('VO2max')).toBeTruthy();
-    expect(getByText('HRV')).toBeTruthy();
+    expect(getAllByText('BMI/体脂').length).toBeGreaterThan(0);
+    expect(getAllByText('VO2max').length).toBeGreaterThan(0);
+    expect(getAllByText('HRV').length).toBeGreaterThan(0);
   });
 
   it('infers sleep intervention outcomes for sleep actions', () => {
