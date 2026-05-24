@@ -631,7 +631,7 @@ function HomeCommandHeader({
       </Pressable>
 
       <View style={styles.commandOutcomeBlock}>
-        <View style={[styles.agentStepRail, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+        <View style={[styles.agentStepRail, { backgroundColor: c.bgPrimary }]}>
           {agentStepItems.map((item, index) => (
             <React.Fragment key={item.key}>
               <View style={styles.agentStepSegment}>
@@ -641,7 +641,7 @@ function HomeCommandHeader({
                 </Text>
               </View>
               {index < agentStepItems.length - 1 ? (
-                <Ionicons name="chevron-forward" size={11} color={c.labelTertiary} />
+                <Text style={[styles.agentStepDivider, { color: c.labelTertiary }]}>/</Text>
               ) : null}
             </React.Fragment>
           ))}
@@ -1746,10 +1746,9 @@ const styles = StyleSheet.create({
   commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '700' },
   commandOutcomeBlock: { gap: 7 },
   agentStepRail: {
-    minHeight: 29,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 7,
+    minHeight: 26,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -1757,6 +1756,7 @@ const styles = StyleSheet.create({
   agentStepSegment: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   agentStepLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   agentStepValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  agentStepDivider: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandSignalLine: {
     flexDirection: 'row',
     alignItems: 'center',
