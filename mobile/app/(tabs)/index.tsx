@@ -431,6 +431,7 @@ export default function TodayScreen() {
             domains={interventionDomains}
             twinSnapshot={twinSnap}
             action={nextAction}
+            riskTitle={criticalAlerts[0]?.title}
             onPressDomain={(domain) => router.push(domain.route as any)}
             onOpenMetric={(route) => router.push(route as any)}
           />
@@ -732,20 +733,22 @@ function AgentHealthLoopPanel({
   domains,
   twinSnapshot,
   action,
+  riskTitle,
   onPressDomain,
   onOpenMetric,
 }: {
   domains: InterventionDomainStatus[];
   twinSnapshot: TwinSnapshot;
   action?: DailyPlanAction | null;
+  riskTitle?: string;
   onPressDomain: (domain: InterventionDomainStatus) => void;
   onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const metrics = buildOutcomeFeedbackMetrics(twinSnapshot, action).slice(0, 3);
-  const primaryDomains = domains.filter(domain => domain.activeCount > 0);
-  const visibleDomains = (primaryDomains.length > 0 ? primaryDomains : domains).slice(0, 5);
+  const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
+  const visibleDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 4);
 
   return (
     <View style={[styles.loopCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -756,18 +759,16 @@ function AgentHealthLoopPanel({
         <View style={styles.loopTitleBlock}>
           <Text style={[styles.loopTitle, { color: c.labelPrimary }]}>Agent 干预闭环</Text>
           <Text style={[styles.loopSubtitle, { color: c.labelTertiary }]} numberOfLines={2}>
-            {activeCount > 0
-              ? `${activeCount} 个任务用真实反馈校准下一步`
-              : '先观察关键指标，等待 Agent 编排下一轮行动'}
+            {loopStrategy.subtitle}
           </Text>
         </View>
       </View>
 
       <View style={[styles.loopPipeline, { borderColor: c.separator }]}>
         {[
-          { label: '判断', value: '实时', icon: 'pulse-outline' as const },
-          { label: '干预', value: activeCount > 0 ? `${activeCount}项` : '待编排', icon: 'git-network-outline' as const },
-          { label: '验证', value: `${metrics.length}项`, icon: 'analytics-outline' as const },
+          { label: '判断', value: loopStrategy.diagnosisLabel, icon: 'pulse-outline' as const },
+          { label: '干预', value: loopStrategy.interventionLabel, icon: 'git-network-outline' as const },
+          { label: '验证', value: loopStrategy.verificationLabel || `${metrics.length}项`, icon: 'analytics-outline' as const },
         ].map(step => (
           <View key={step.label} style={styles.loopPipelineStep}>
             <Ionicons name={step.icon} size={14} color={c.brand} />
@@ -1226,6 +1227,86 @@ function buildInterventionDomainStatuses(actions: DailyPlanAction[]): Interventi
     ...domain,
     activeCount: counts[domain.key],
   }));
+}
+
+function buildAgentLoopStrategy({
+  activeCount,
+  action,
+  riskTitle,
+}: {
+  activeCount: number;
+  action?: DailyPlanAction | null;
+  riskTitle?: string;
+}) {
+  const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
+  const activeLabel = activeCount > 0 ? `${activeCount}项` : null;
+
+  if (/spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
+    return {
+      subtitle: '先稳夜间血氧，再看睡眠分和 HRV 是否回升',
+      diagnosisLabel: '血氧风险',
+      interventionLabel: activeLabel ?? '睡眠优先',
+      verificationLabel: '血氧/睡眠',
+    };
+  }
+  if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
+    return {
+      subtitle: '用饮食和运动干预体成分，再看 BMI/体脂变化',
+      diagnosisLabel: '体成分',
+      interventionLabel: activeLabel ?? '饮食+运动',
+      verificationLabel: 'BMI/体脂',
+    };
+  }
+  if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
+    return {
+      subtitle: '先降低心血管负荷，再跟踪血压、HRV 和睡眠恢复',
+      diagnosisLabel: '血压负荷',
+      interventionLabel: activeLabel ?? '恢复优先',
+      verificationLabel: '血压/HRV',
+    };
+  }
+  if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
+    return {
+      subtitle: '先调整饮食、运动和补剂，再用血液/生化指标复盘',
+      diagnosisLabel: '生化指标',
+      interventionLabel: activeLabel ?? '代谢优先',
+      verificationLabel: '血检/体成分',
+    };
+  }
+
+  return {
+    subtitle: activeCount > 0
+      ? `${activeCount} 个任务用真实反馈校准下一步`
+      : '保持记录节奏，Agent 用关键指标寻找下一轮干预机会',
+    diagnosisLabel: '实时',
+    interventionLabel: activeLabel ?? '观察中',
+    verificationLabel: '',
+  };
+}
+
+function pickPriorityInterventionDomains(
+  domains: InterventionDomainStatus[],
+  riskTitle?: string,
+  action?: DailyPlanAction | null,
+): InterventionDomainStatus[] {
+  const activeDomains = domains.filter(domain => domain.activeCount > 0);
+  if (activeDomains.length > 0) return activeDomains;
+
+  const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
+  let priority: InterventionDomainKey[] = [];
+  if (/spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
+    priority = ['sleep', 'emotion', 'movement'];
+  } else if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
+    priority = ['diet', 'movement', 'sleep'];
+  } else if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
+    priority = ['movement', 'sleep', 'emotion', 'diet'];
+  } else if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
+    priority = ['diet', 'movement', 'supplement', 'sleep'];
+  }
+
+  if (priority.length === 0) return domains;
+  const byKey = new Map(domains.map(domain => [domain.key, domain]));
+  return priority.map(key => byKey.get(key)).filter(Boolean) as InterventionDomainStatus[];
 }
 
 function buildWorkspaceDataSources({
