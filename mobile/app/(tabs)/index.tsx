@@ -431,6 +431,7 @@ export default function TodayScreen() {
           snapshot={trajectoryQuery.data}
           loading={trajectoryQuery.isLoading}
           weeklyAdvice={weeklyAdvice}
+          primaryMetrics={topLoopMetrics}
           feedbackMetrics={feedbackMetrics}
           onOpenTrajectory={openTrajectoryChat}
           onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
@@ -531,11 +532,8 @@ function HomeCommandHeader({
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
   }).replace(/\//g, '、')}已接入`;
-  const watchSummary = loopMetrics.map(metric => metric.label).slice(0, 2).join('/') || '周日晚复盘';
-  const verificationMetrics = buildVerificationGoalText(visibleLoopMetrics);
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
-  const improvementSummary = verificationMetrics || watchSummary;
   const agentJudgmentText = buildAgentJudgmentText({
     action,
     criticalCount,
@@ -584,12 +582,6 @@ function HomeCommandHeader({
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
-          <View style={styles.commandObservationLine}>
-            <Ionicons name="trending-up-outline" size={11} color={decisionColor} />
-            <HomeText style={[styles.commandObservationText, { color: c.labelSecondary }]} numberOfLines={1}>
-              观察目标 · {improvementSummary}
-            </HomeText>
-          </View>
           {personalSignalSummary ? (
             <HomeText style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]} numberOfLines={1}>
               信号 · {personalSignalSummary}
@@ -666,6 +658,7 @@ function HomeBackgroundPanel({
   snapshot,
   loading,
   weeklyAdvice,
+  primaryMetrics,
   feedbackMetrics,
   onOpenTrajectory,
   onOpenAdvice,
@@ -678,6 +671,7 @@ function HomeBackgroundPanel({
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
   weeklyAdvice: ActionCard[];
+  primaryMetrics: OutcomeFeedbackMetric[];
   feedbackMetrics: OutcomeFeedbackMetric[];
   onOpenTrajectory: () => void;
   onOpenAdvice: (card: ActionCard) => void;
@@ -695,6 +689,7 @@ function HomeBackgroundPanel({
   onOpenAll: () => void;
 }) {
   const { c } = useTheme();
+  const runtimeTargetSummary = buildVerificationGoalText(primaryMetrics.slice(0, 3));
   return (
     <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.agentRuntimeHeader}>
@@ -717,7 +712,7 @@ function HomeBackgroundPanel({
           <View style={styles.evidenceChainTitleBlock}>
             <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>验证指标</HomeText>
             <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              这些反馈会影响下一轮干预
+              {runtimeTargetSummary ? `验证目标 · ${runtimeTargetSummary}` : '这些反馈会影响下一轮干预'}
             </HomeText>
           </View>
           <Pressable
@@ -1510,9 +1505,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     paddingHorizontal: 13,
-    paddingTop: 12,
-    paddingBottom: 11,
-    gap: 9,
+    paddingTop: 11,
+    paddingBottom: 10,
+    gap: 8,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1663,13 +1658,6 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  commandObservationLine: {
-    minHeight: 17,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  commandObservationText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandLoopPanel: {
     borderRadius: radii.md,
     paddingHorizontal: 8,
@@ -1720,14 +1708,14 @@ const styles = StyleSheet.create({
   commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 74,
+    minHeight: 62,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: 0,
     paddingVertical: 2,
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 8,
+    gap: 7,
   },
   commandDecisionIndicator: {
     width: 8,
@@ -1735,8 +1723,8 @@ const styles = StyleSheet.create({
     paddingTop: 3,
     paddingBottom: 4,
   },
-  commandDecisionRail: { width: 3, flex: 1, minHeight: 34, borderRadius: 2 },
-  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
+  commandDecisionRail: { width: 2, flex: 1, minHeight: 30, borderRadius: 2 },
+  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 3 },
   commandDecisionSupport: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandSignalChipRail: {
     minHeight: 22,
@@ -1777,8 +1765,8 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 16, fontWeight: '800', lineHeight: 20, letterSpacing: 0 },
+  commandFocusLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 15, fontWeight: '800', lineHeight: 18, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 24,
     flexDirection: 'row',
@@ -2097,14 +2085,14 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   evidenceChainHeader: {
-    minHeight: 24,
+    minHeight: 34,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
   },
-  evidenceChainTitleBlock: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  evidenceChainTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
   evidenceChainTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  evidenceChainSubtitle: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '600' },
+  evidenceChainSubtitle: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   evidenceAskButton: {
     minHeight: 22,
     borderRadius: radii.full,

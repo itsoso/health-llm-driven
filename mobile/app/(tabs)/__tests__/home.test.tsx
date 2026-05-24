@@ -162,7 +162,7 @@ describe('TodayScreen', () => {
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getByText('Agent 判断')).toBeTruthy();
     expect(getByText('补齐今天记录后，Agent 会重新排序干预。')).toBeTruthy();
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText('今日实验')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('证据链')).toBeTruthy();
@@ -202,7 +202,7 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
-    expect(textFlow.some(text => /观察目标/.test(text))).toBe(true);
+    expect(textFlow.some(text => /验证目标/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
@@ -246,8 +246,7 @@ describe('TodayScreen', () => {
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('Agent 判断')).toBeTruthy();
     expect(getByText('今天先 23:00 上床，观察血氧、睡眠分、HRV。')).toBeTruthy();
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
     expect(getByText('Agent 观测中')).toBeTruthy();
@@ -307,7 +306,7 @@ describe('TodayScreen', () => {
     expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
   });
 
-  it('presents the top card as diagnosis, next action, and improvement target without visible loop jargon', () => {
+  it('presents the top card as diagnosis and next action while runtime carries the improvement target', () => {
     mockDailyPlanActions = [
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
@@ -322,12 +321,12 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText(/BMI\/体脂.*睡眠分 90\+/)).toBeTruthy();
     expect(queryByText(/饮食\/睡眠/)).toBeNull();
     expect(getByText('今日实验')).toBeTruthy();
     expect(queryByText('干预闭环')).toBeNull();
-    expect(queryByText('验证目标')).toBeNull();
+    expect(queryByText(/观察目标 ·/)).toBeNull();
   });
 
   it('opens the home card with a plain Agent judgment instead of status-first task wording', () => {
@@ -349,14 +348,15 @@ describe('TodayScreen', () => {
     expect(queryByText('今日优先 · 1 项干预')).toBeNull();
   });
 
-  it('keeps improvement targets as a lightweight observation line instead of a separate top strip', () => {
+  it('moves improvement targets out of the hero and into the runtime verification line', () => {
     mockDailyPlanActions = [
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
     ];
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/观察目标 · 血氧 ≥95%.*睡眠分 90\+.*HRV 回升/)).toBeTruthy();
+    expect(queryByText(/观察目标 ·/)).toBeNull();
+    expect(getByText(/验证目标 · 血氧 ≥95%.*睡眠分 90\+.*HRV 回升/)).toBeTruthy();
     expect(queryByText('改善目标')).toBeNull();
   });
 
@@ -380,7 +380,7 @@ describe('TodayScreen', () => {
     const { getAllByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText(/干预/).length).toBeGreaterThan(0);
-    expect(getAllByText(/观察目标/).length).toBeGreaterThan(0);
+    expect(getAllByText(/验证目标/).length).toBeGreaterThan(0);
     expect(queryByText('Agent 干预闭环')).toBeNull();
     expect(queryByText('饮食 / 睡眠 / 运动 / 补剂 / 情绪')).toBeNull();
     expect(queryByText('长期任务')).toBeNull();
@@ -391,11 +391,11 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
-    const observationIndex = textFlow.findIndex(text => /观察目标/.test(text));
-    expect(observationIndex).toBeGreaterThanOrEqual(0);
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(observationIndex);
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(targetIndex);
     expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/观察目标/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/验证目标/).length).toBeGreaterThan(0);
   });
 
   it('describes multiple intervention domains in user language instead of plus-count shorthand', () => {
@@ -424,10 +424,10 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(queryByText(/饮食\/睡眠/)).toBeNull();
     expect(queryByText('干预闭环')).toBeNull();
-    expect(queryByText('验证目标')).toBeNull();
+    expect(queryByText(/观察目标 ·/)).toBeNull();
     expect(queryByText('干预策略')).toBeNull();
     expect(queryByText('验证是否变好')).toBeNull();
   });
@@ -437,11 +437,11 @@ describe('TodayScreen', () => {
     const textFlow = flattenText(screen.toJSON());
 
     expect(textFlow.indexOf('健康 Agent')).toBeGreaterThanOrEqual(0);
-    const observationIndex = textFlow.findIndex(text => /观察目标/.test(text));
-    expect(observationIndex).toBeGreaterThanOrEqual(0);
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(observationIndex);
+    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(targetIndex);
   });
 
   it('prioritizes intervention feedback and personal evidence before the follow-up queue', () => {
@@ -482,7 +482,7 @@ describe('TodayScreen', () => {
     expect(queryByText('身体反馈')).toBeNull();
     expect(getByText('Agent 观测中')).toBeTruthy();
     expect(getByText('验证指标')).toBeTruthy();
-    expect(getByText('这些反馈会影响下一轮干预')).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
     expect(getByText('证据链')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
@@ -640,7 +640,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/干预/).length).toBeGreaterThan(0);
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText(/5 个干预执行中/)).toBeTruthy();
   });
 
@@ -748,7 +748,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
     expect(getByText('Agent 判断')).toBeTruthy();
-    expect(getByText(/观察目标 ·/)).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
   });
 
   it('explains today focus with concrete health outcomes instead of generic ordering copy', () => {
