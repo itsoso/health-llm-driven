@@ -562,9 +562,7 @@ function HomeCommandHeader({
   }).replace(/\//g, '、')}已接入`;
   const strategySummary = activeDomainSummary || `${activeCount} 个干预`;
   const watchSummary = loopMetrics.map(metric => metric.label).slice(0, 2).join('/') || '周日晚复盘';
-  const verificationMetrics = visibleLoopMetrics
-    .map(metric => `${metric.label} ${metric.value}`)
-    .join(' / ');
+  const verificationMetrics = buildVerificationGoalText(visibleLoopMetrics);
   const primaryVerificationMetric = visibleLoopMetrics[0] ?? null;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
@@ -1312,6 +1310,25 @@ function buildLoopFeedbackMetrics(
     .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot))
     .filter(Boolean)
     .slice(0, 3) as OutcomeFeedbackMetric[];
+}
+
+function buildVerificationGoalText(metrics: OutcomeFeedbackMetric[]): string {
+  return metrics.map(metric => {
+    const target = getVerificationTarget(metric);
+    return `${metric.label} ${target}`;
+  }).join(' / ');
+}
+
+function getVerificationTarget(metric: OutcomeFeedbackMetric): string {
+  if (metric.key === 'spo2') return '≥95%';
+  if (metric.key === 'sleep_score') return '90+';
+  if (metric.key === 'hrv') return '回升';
+  if (metric.key === 'body_shape') return '下降';
+  if (metric.key === 'vo2max') return '提升';
+  if (metric.key === 'blood_pressure') return '更稳';
+  if (metric.key === 'labs') return '改善';
+  if (metric.key === 'precision') return '补齐';
+  return '改善';
 }
 
 function buildHomeBodyFeedbackMetrics(

@@ -225,7 +225,7 @@ describe('TodayScreen', () => {
     expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
     expect(getByText('验证目标')).toBeTruthy();
     expect(getAllByText(/验证/).length).toBeGreaterThan(0);
-    expect(getByText(/血氧 .*睡眠分/)).toBeTruthy();
+    expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
     expect(queryByText(/画像校准/)).toBeNull();
   });
@@ -412,11 +412,11 @@ describe('TodayScreen', () => {
     const { getByText } = render(<TodayScreen />);
 
     expect(getByText(/BMI\/体脂/)).toBeTruthy();
-    expect(getByText(/24\.1 \/ 21\.8%/)).toBeTruthy();
+    expect(getByText(/BMI\/体脂 下降/)).toBeTruthy();
     expect(getByText(/睡眠分/)).toBeTruthy();
-    expect(getByText(/89 分/)).toBeTruthy();
+    expect(getByText(/睡眠分 90\+/)).toBeTruthy();
     expect(getByText(/HRV/)).toBeTruthy();
-    expect(getByText(/62 ms/)).toBeTruthy();
+    expect(getByText(/HRV 回升/)).toBeTruthy();
   });
 
   it('shows the lifestyle intervention loop across diet, sleep, movement, supplements, and emotion', () => {
