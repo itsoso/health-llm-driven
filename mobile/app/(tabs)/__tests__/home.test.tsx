@@ -179,7 +179,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('现在只做一件')).toBeLessThan(textFlow.indexOf('个人画像'));
   });
 
-  it('groups the home feed into agent diagnosis, action, follow-up, and entry sections', () => {
+  it('groups the home feed into agent diagnosis, action, health outcomes, evidence, and follow-up sections', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
@@ -187,12 +187,14 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /干预/.test(text))).toBe(true);
     expect(textFlow.some(text => /验证/.test(text))).toBe(true);
     expect(textFlow.indexOf('现在先做')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康指标')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
-    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('个人画像'));
+    expect(textFlow.indexOf('现在先做')).toBeLessThan(textFlow.indexOf('健康指标'));
+    expect(textFlow.indexOf('健康指标')).toBeLessThan(textFlow.indexOf('个人画像'));
+    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
   it('frames the home feed as a background health agent workspace', () => {
@@ -268,6 +270,16 @@ describe('TodayScreen', () => {
     expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
   });
 
+  it('leads the background panel with health outcome improvement instead of backend task framing', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('健康指标')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康指标')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(screen.queryByText('Agent 后台任务')).toBeNull();
+  });
+
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
     const { getAllByText, queryByText } = render(<TodayScreen />);
 
@@ -315,7 +327,7 @@ describe('TodayScreen', () => {
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
   });
 
-  it('prioritizes intervention feedback before the follow-up queue and environment details', () => {
+  it('prioritizes intervention feedback and personal evidence before the follow-up queue', () => {
     mockTwinData = {
       physiological: {
         sleep_score_latest: 89,
@@ -338,15 +350,16 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境证据'));
+    expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 后台任务')).toBeTruthy();
+    expect(getByText('健康指标')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
-    expect(getByText('运行中')).toBeTruthy();
+    expect(getByText('后台运行')).toBeTruthy();
     expect(getByText('结果校准')).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
     expect(getByText('环境证据')).toBeTruthy();
@@ -362,25 +375,25 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 后台任务')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康指标')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('个人画像')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 后台任务')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('结果校准'));
+    expect(textFlow.indexOf('健康指标')).toBeLessThan(textFlow.indexOf('结果校准'));
     expect(textFlow.indexOf('结果校准')).toBeLessThan(textFlow.indexOf('身体反馈'));
     expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
+    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
   });
 
   it('collapses background diagnosis, calibration, evidence, and review into one quiet runtime panel', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 后台任务')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('健康指标')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境证据')).toBeGreaterThanOrEqual(0);
@@ -388,11 +401,11 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('下次复盘')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
-    expect(textFlow.indexOf('Agent 后台任务')).toBeLessThan(textFlow.indexOf('后台巡检'));
-    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('结果校准'));
+    expect(textFlow.indexOf('健康指标')).toBeLessThan(textFlow.indexOf('结果校准'));
     expect(textFlow.indexOf('结果校准')).toBeLessThan(textFlow.indexOf('环境证据'));
     expect(textFlow.indexOf('环境证据')).toBeLessThan(textFlow.indexOf('个人画像'));
-    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('下次复盘'));
+    expect(textFlow.indexOf('个人画像')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('下次复盘'));
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {

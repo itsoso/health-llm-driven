@@ -767,26 +767,19 @@ function HomeBackgroundPanel({
     <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.agentRuntimeHeader}>
         <View style={[styles.agentRuntimeIcon, { backgroundColor: c.brandLight }]}>
-          <Ionicons name="pulse-outline" size={13} color={c.brand} />
+          <Ionicons name="analytics-outline" size={13} color={c.brand} />
         </View>
         <View style={styles.agentRuntimeTitleBlock}>
-          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>Agent 后台任务</HomeText>
+          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>健康指标</HomeText>
           <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            巡检、校准、复盘在后台运行
+            Agent 在后台校准干预效果
           </HomeText>
         </View>
         <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.agentRuntimeLiveDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>运行中</HomeText>
+          <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>后台运行</HomeText>
         </View>
       </View>
-      <AgentFollowUpQueue
-        snapshot={snapshot}
-        loading={loading}
-        weeklyAdvice={weeklyAdvice}
-        onOpenTrajectory={onOpenTrajectory}
-        onOpenAdvice={onOpenAdvice}
-      />
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <View style={styles.evidenceChainHeader}>
           <View style={styles.evidenceChainTitleBlock}>
@@ -816,6 +809,13 @@ function HomeBackgroundPanel({
           <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
         </View>
       </View>
+      <AgentFollowUpQueue
+        snapshot={snapshot}
+        loading={loading}
+        weeklyAdvice={weeklyAdvice}
+        onOpenTrajectory={onOpenTrajectory}
+        onOpenAdvice={onOpenAdvice}
+      />
       <HomeReviewCadencePanel
         feedbackMetrics={feedbackMetrics}
         planCount={planCount}
