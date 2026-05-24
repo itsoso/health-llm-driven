@@ -304,7 +304,8 @@ describe('TodayScreen', () => {
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('后台运行')).toBeTruthy();
+    expect(queryByText('Agent 后台运行')).toBeNull();
     expect(getByText('运行中')).toBeTruthy();
     expect(getByText('环境影响')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
@@ -318,12 +319,13 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(textFlow.indexOf('Agent 后台运行')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台运行')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('后台巡检')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('反馈信号')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 后台运行')).toBeLessThan(textFlow.indexOf('后台巡检'));
+    expect(textFlow.indexOf('后台运行')).toBeLessThan(textFlow.indexOf('后台巡检'));
     expect(textFlow.indexOf('后台巡检')).toBeLessThan(textFlow.indexOf('反馈信号'));
     expect(textFlow.indexOf('反馈信号')).toBeLessThan(textFlow.indexOf('环境影响'));
     expect(textFlow.indexOf('环境影响')).toBeLessThan(textFlow.indexOf('长期档案'));

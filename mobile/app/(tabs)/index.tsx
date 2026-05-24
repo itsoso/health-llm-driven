@@ -748,8 +748,8 @@ function HomeBackgroundPanel({
     <View style={[styles.backgroundPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.backgroundHeader}>
         <View style={styles.backgroundTitleBlock}>
-          <Text style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 后台运行</Text>
-          <Text style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>诊断、反馈、环境和长期画像一起巡检</Text>
+          <Text style={[styles.backgroundTitle, { color: c.labelPrimary }]}>后台运行</Text>
+          <Text style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>长期轨迹 / 身体反馈 / 环境 / 档案</Text>
         </View>
         <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />
@@ -2187,10 +2187,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   backgroundTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  backgroundTitle: { fontSize: 14, lineHeight: 17, fontWeight: '800' },
+  backgroundTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
   backgroundSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
   backgroundLiveBadge: {
-    minHeight: 22,
+    minHeight: 20,
     borderRadius: radii.full,
     paddingHorizontal: 9,
     flexDirection: 'row',
@@ -2199,7 +2199,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   backgroundLiveDot: { width: 6, height: 6, borderRadius: 3 },
-  backgroundLiveText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  backgroundLiveText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   backgroundDivider: {
     height: StyleSheet.hairlineWidth,
   },
