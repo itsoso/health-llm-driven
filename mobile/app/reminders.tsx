@@ -90,12 +90,34 @@ export default function RemindersScreen() {
       {isLoading ? (
         <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
       ) : reminders.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons name="alarm-outline" size={48} color={c.labelTertiary} />
-          <Text style={txt.empty}>暂无提醒</Text>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-            <Text style={txt.addBtnText}>添加提醒</Text>
-          </TouchableOpacity>
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="alarm-outline" size={26} color={c.brand} />
+            </View>
+            <Text style={txt.emptyTitle}>先放 1 个不会漏的提醒</Text>
+            <Text style={txt.emptyBody}>
+              这里适合放固定节律任务。少量、明确、可执行，比一次加很多提醒更稳定。
+            </Text>
+            <View style={styles.templatePreview}>
+              {EMPTY_REMINDER_HINTS.map((hint) => (
+                <View key={hint.title} style={styles.hintRow}>
+                  <View style={[styles.hintDot, { backgroundColor: hint.color }]} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={txt.hintTitle}>{hint.title}</Text>
+                    <Text style={txt.hintMeta}>{hint.meta}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)} activeOpacity={0.75}>
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={txt.addBtnText}>添加提醒</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/notification-settings' as any)}>
+              <Text style={txt.secondaryBtnText}>先检查推送设置</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <FlatList
@@ -196,6 +218,12 @@ function AddReminderModal({ visible, onClose }: { visible: boolean; onClose: () 
   );
 }
 
+const EMPTY_REMINDER_HINTS = [
+  { title: '早晨记录', meta: '起床后 10 分钟内补齐体重 / 血压', color: '#30D158' },
+  { title: '用药 / 补剂', meta: '固定时间提醒, 避免重复或漏服', color: '#FF9F0A' },
+  { title: '睡前恢复', meta: '睡前 30 分钟降低刺激和屏幕', color: '#AF52DE' },
+];
+
 const createStyles = (c: ColorPalette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
@@ -213,9 +241,51 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', marginBottom: spacing.sm,
   },
   addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: c.brand, borderRadius: radii.lg,
     paddingHorizontal: spacing.xxl, paddingVertical: 12,
   },
+  secondaryBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  emptyWrap: {
+    flex: 1,
+    padding: spacing.lg,
+    paddingTop: spacing.xl,
+  },
+  emptyCard: {
+    backgroundColor: c.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...shadows.subtle,
+  },
+  emptyIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.lg,
+    backgroundColor: c.tintTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  templatePreview: {
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  hintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+  },
+  hintDot: { width: 8, height: 8, borderRadius: 4 },
   templateRow: {
     backgroundColor: c.bgCard, borderRadius: radii.lg,
     paddingHorizontal: spacing.lg, paddingVertical: 14,
@@ -235,8 +305,12 @@ const createTxt = (c: ColorPalette) => ({
   title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
   name: { fontSize: 15, fontWeight: '500', color: c.labelPrimary } as TextStyle,
   times: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  empty: { fontSize: 15, color: c.labelTertiary } as TextStyle,
+  emptyTitle: { fontSize: 20, lineHeight: 25, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  emptyBody: { fontSize: 14, lineHeight: 21, color: c.labelSecondary } as TextStyle,
   addBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' } as TextStyle,
+  secondaryBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
+  hintTitle: { fontSize: 14, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+  hintMeta: { fontSize: 12, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   templateName: { fontSize: 15, fontWeight: '500', color: c.labelPrimary } as TextStyle,
   templateTimes: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   customLabel: { fontSize: 13, color: c.labelSecondary } as TextStyle,

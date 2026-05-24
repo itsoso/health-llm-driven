@@ -392,6 +392,13 @@ export default function TodayScreen() {
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
         />
 
+        {criticalAlerts.length > 0 && (
+          <PriorityRiskStrip
+            alerts={criticalAlerts}
+            onPress={() => router.push('/alerts' as any)}
+          />
+        )}
+
         <AgentWorkspacePanel
           criticalCount={criticalAlerts.length}
           planCount={activePlanCount}
@@ -432,23 +439,6 @@ export default function TodayScreen() {
         )}
 
         <View style={styles.section}>
-          {criticalAlerts.length > 0 && (
-            <>
-            <SectionHeader title="需要立即处理" subtitle={`${criticalAlerts.length} 条高优先级`} />
-            {criticalAlerts.slice(0, 3).map(a => (
-              <AlertRow
-                key={a.rule_id}
-                alert={a}
-                onPress={() => router.push(`/alerts`)}
-              />
-            ))}
-            {criticalAlerts.length > 3 && (
-              <TouchableOpacity onPress={() => router.push('/alerts')} style={styles.moreLink}>
-                <Text style={[styles.moreText, { color: c.brand }]}>查看全部 {criticalAlerts.length} 条</Text>
-              </TouchableOpacity>
-            )}
-            </>
-          )}
           <OutcomeFeedbackPanel
             twinSnapshot={twinSnap}
             action={nextAction}
@@ -1335,16 +1325,32 @@ function classifyInterventionDomain(action: DailyPlanAction): InterventionDomain
   return null;
 }
 
-function AlertRow({ alert, onPress }: { alert: SafetyAlert; onPress: () => void }) {
+function PriorityRiskStrip({ alerts, onPress }: { alerts: SafetyAlert[]; onPress: () => void }) {
   const { c } = useTheme();
-  const sev = getSeverityKey(alert.severity);
+  const first = alerts[0];
+  const sev = getSeverityKey(first?.severity);
   const color = sev === 'critical' ? c.red : c.amber;
   return (
-    <TouchableOpacity style={[styles.row, { borderColor: color }]} onPress={onPress}>
-      <View style={styles.rowMain}>
-        <Text style={[styles.rowTitle, { color: c.labelPrimary }]}>{alert.title}</Text>
-        <Text style={[styles.rowSub, { color: c.labelSecondary }]} numberOfLines={2}>
-          {alert.message}
+    <TouchableOpacity
+      style={[styles.priorityRiskStrip, { backgroundColor: c.bgCard, borderColor: color }]}
+      onPress={onPress}
+      activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={`查看 ${alerts.length} 条需要处理的风险`}
+    >
+      <View style={[styles.priorityRiskIcon, { backgroundColor: `${color}18` }]}>
+        <Ionicons name="warning-outline" size={18} color={color} />
+      </View>
+      <View style={styles.priorityRiskBody}>
+        <View style={styles.priorityRiskTop}>
+          <Text style={[styles.priorityRiskKicker, { color }]}>需要立即处理</Text>
+          <Text style={[styles.priorityRiskCount, { color }]}>{alerts.length} 条</Text>
+        </View>
+        <Text style={[styles.priorityRiskTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+          {first?.title ?? '查看风险'}
+        </Text>
+        <Text style={[styles.priorityRiskMeta, { color: c.labelSecondary }]} numberOfLines={1}>
+          {first?.message ?? '先确认风险, 再执行今天的计划'}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={color} />
@@ -1450,6 +1456,27 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   secondaryActionText: { fontSize: 14, fontWeight: '700' },
+  priorityRiskStrip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  priorityRiskIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priorityRiskBody: { flex: 1, minWidth: 0, gap: 2 },
+  priorityRiskTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  priorityRiskKicker: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '800' },
+  priorityRiskCount: { fontSize: 12, fontWeight: '800' },
+  priorityRiskTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
+  priorityRiskMeta: { fontSize: 12, lineHeight: 16 },
   workspaceCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,

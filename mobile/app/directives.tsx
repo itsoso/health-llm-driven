@@ -152,16 +152,38 @@ export default function DirectivesScreen() {
       {isLoading ? (
         <View style={styles.center}><ActivityIndicator /></View>
       ) : directives.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="document-text-outline" size={48} color={c.labelTertiary} />
-          <Text style={styles.emptyTitle}>暂无指令</Text>
-          <Text style={styles.emptyHint}>
-            你可以给 AI 下硬性约束, 比如"血压控制在 130 以下"
-            {'\n'}"停用美托洛尔"/"戒酒 30 天"/"不要再推鱼油"
-          </Text>
-          <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAdd(true)}>
-            <Text style={styles.emptyBtnText}>添加第一条</Text>
-          </TouchableOpacity>
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyHeader}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="shield-checkmark-outline" size={24} color={c.brand} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.emptyTitle}>先给 Agent 一条硬边界</Text>
+                <Text style={styles.emptyHint}>适合放必须遵守的限制、目标或禁忌。</Text>
+              </View>
+            </View>
+            <View style={styles.ruleExamples}>
+              {EMPTY_DIRECTIVE_EXAMPLES.map((example) => (
+                <TouchableOpacity
+                  key={example}
+                  style={styles.ruleExample}
+                  onPress={() => {
+                    setFreeText(example);
+                    setShowAdd(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="add-circle-outline" size={16} color={c.brand} />
+                  <Text style={styles.ruleExampleText}>{example}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAdd(true)} activeOpacity={0.75}>
+              <Text style={styles.emptyBtnText}>添加指令</Text>
+            </TouchableOpacity>
+            <Text style={styles.emptyFootnote}>涉及诊断和处方时, 这里仅作为 AI 推荐边界, 不替代医生决策。</Text>
+          </View>
         </View>
       ) : (
         <FlatList
@@ -235,6 +257,12 @@ const EXAMPLES = [
   '不要再推鱼油和银杏',
 ];
 
+const EMPTY_DIRECTIVE_EXAMPLES = [
+  '血压高于 140/90 时不要安排高强度训练',
+  '鼻炎发作期优先恢复睡眠, 不追求运动目标',
+  '不要再推荐鱼油和银杏类补剂',
+];
+
 const createStyles = (c: ColorPalette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
@@ -277,14 +305,44 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   },
   swipeText: { color: '#fff', fontSize: 12, marginTop: 2 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, gap: spacing.md },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: c.labelSecondary },
-  emptyHint: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 20 },
+  emptyWrap: { flex: 1, padding: spacing.md, paddingTop: spacing.sm },
+  emptyCard: {
+    backgroundColor: c.bgCard,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  emptyHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  emptyIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radii.lg,
+    backgroundColor: c.tintTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: c.labelPrimary },
+  emptyHint: { fontSize: 13, color: c.labelSecondary, lineHeight: 18, marginTop: 2 },
+  ruleExamples: { gap: spacing.xs },
+  ruleExample: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+  },
+  ruleExampleText: { flex: 1, fontSize: 13, lineHeight: 18, color: c.labelPrimary },
   emptyBtn: {
-    marginTop: spacing.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: 12,
     backgroundColor: c.brand, borderRadius: radii.md,
   },
   emptyBtnText: { color: '#fff', fontWeight: '600' },
+  emptyFootnote: { fontSize: 11, lineHeight: 16, color: c.labelTertiary },
   modalSafe: { flex: 1, backgroundColor: c.bgPrimary },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
