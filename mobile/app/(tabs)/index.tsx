@@ -848,13 +848,56 @@ function TodayExecutionQueue({
               const color = c[metric.colorName];
               return (
                 <View key={metric.key} style={[styles.executionImpactChip, { backgroundColor: c[metric.tintName] }]}>
-                  <Ionicons name={metric.icon} size={12} color={color} />
                   <Text style={[styles.executionImpactText, { color }]}>{metric.label}</Text>
                 </View>
               );
             })}
           </View>
         ) : null}
+        <View style={styles.nextActionButtons}>
+          <Pressable
+            onPress={() => (hasAction && action ? onStart(action) : onFallbackRecord())}
+            style={({ pressed }) => [
+              styles.nextActionPrimary,
+              { backgroundColor: c.green, opacity: pressed ? 0.82 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={hasAction ? `开始 ${title}` : '开始记录'}
+          >
+            <Ionicons name="play-outline" size={15} color="#FFFFFF" />
+            <Text style={styles.nextActionPrimaryText}>开始</Text>
+          </Pressable>
+          {hasAction && action?.action_key ? (
+            <Pressable
+              onPress={() => onComplete(action)}
+              disabled={completionState === 'sending' || completionState === 'completed'}
+              style={({ pressed }) => [
+                styles.nextActionComplete,
+                {
+                  borderColor: completionState === 'completed' ? c.green : c.separator,
+                  backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgCard,
+                  opacity: pressed ? 0.72 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`完成 ${title}`}
+            >
+              <Ionicons
+                name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                size={14}
+                color={completionState === 'completed' ? c.green : c.labelSecondary}
+              />
+              <Text
+                style={[
+                  styles.nextActionCompleteText,
+                  { color: completionState === 'completed' ? c.green : c.labelSecondary },
+                ]}
+              >
+                {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {completionState === 'error' ? (
@@ -863,50 +906,6 @@ function TodayExecutionQueue({
           <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
         </View>
       ) : null}
-      <View style={styles.nextActionButtons}>
-        <Pressable
-          onPress={() => (hasAction && action ? onStart(action) : onFallbackRecord())}
-          style={({ pressed }) => [
-            styles.nextActionPrimary,
-            { backgroundColor: c.green, opacity: pressed ? 0.82 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={hasAction ? `开始 ${title}` : '开始记录'}
-        >
-          <Ionicons name="play-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.nextActionPrimaryText}>开始</Text>
-        </Pressable>
-        {hasAction && action?.action_key ? (
-          <Pressable
-            onPress={() => onComplete(action)}
-            disabled={completionState === 'sending' || completionState === 'completed'}
-            style={({ pressed }) => [
-              styles.nextActionComplete,
-              {
-                borderColor: completionState === 'completed' ? c.green : c.separator,
-                backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
-                opacity: pressed ? 0.72 : 1,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`完成 ${title}`}
-          >
-            <Ionicons
-              name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
-              size={15}
-              color={completionState === 'completed' ? c.green : c.labelSecondary}
-            />
-            <Text
-              style={[
-                styles.nextActionCompleteText,
-                { color: completionState === 'completed' ? c.green : c.labelSecondary },
-              ]}
-            >
-              {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
 
       <View style={styles.executionNextBlock}>
         <View style={styles.executionNextHeader}>
@@ -1938,8 +1937,8 @@ const styles = StyleSheet.create({
   executionCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    padding: 12,
-    gap: 9,
+    padding: 11,
+    gap: 8,
   },
   executionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   executionIcon: {
@@ -1965,22 +1964,23 @@ const styles = StyleSheet.create({
   executionPrimary: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    gap: 7,
-  },
-  executionPrimaryTop: { gap: 3 },
-  executionEyebrow: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  executionPrimaryTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800' },
-  executionReason: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
-  executionImpactChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  executionImpactChip: {
-    minHeight: 24,
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
+  },
+  executionPrimaryTop: { flex: 1, minWidth: 0, gap: 3 },
+  executionEyebrow: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  executionPrimaryTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  executionReason: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  executionImpactChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  executionImpactChip: {
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   executionImpactText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   nextActionError: {
@@ -1992,28 +1992,27 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   nextActionErrorText: { fontSize: 12, fontWeight: '800' },
-  nextActionButtons: { flexDirection: 'row', gap: spacing.sm },
+  nextActionButtons: { width: 82, gap: 6 },
   nextActionPrimary: {
-    flex: 1,
-    minHeight: 39,
-    borderRadius: radii.lg,
+    minHeight: 34,
+    borderRadius: radii.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
-  nextActionPrimaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  nextActionPrimaryText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   nextActionComplete: {
-    minHeight: 39,
+    minHeight: 32,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    paddingHorizontal: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
   },
-  nextActionCompleteText: { fontSize: 14, fontWeight: '800' },
+  nextActionCompleteText: { fontSize: 12, fontWeight: '800' },
   executionNextBlock: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(120, 120, 128, 0.14)',
@@ -2023,25 +2022,27 @@ const styles = StyleSheet.create({
   executionNextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   executionNextTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
   executionNextMeta: { fontSize: 11, lineHeight: 13, fontWeight: '700' },
-  executionNextList: { gap: 6 },
+  executionNextList: { flexDirection: 'row', gap: 6 },
   executionNextRow: {
-    minHeight: 38,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 34,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
   },
   executionNextIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  executionNextText: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  executionNextMetric: { maxWidth: 52, fontSize: 11, lineHeight: 13, fontWeight: '700' },
+  executionNextText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  executionNextMetric: { maxWidth: 44, fontSize: 10, lineHeight: 12, fontWeight: '700' },
   executionEmptyText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
   loopCard: {
     borderWidth: StyleSheet.hairlineWidth,
