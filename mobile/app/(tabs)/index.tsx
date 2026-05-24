@@ -725,7 +725,7 @@ function AgentHealthLoopPanel({
 }) {
   const { c } = useTheme();
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
-  const metrics = buildOutcomeFeedbackMetrics(twinSnapshot, action).slice(0, 3);
+  const metrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const visibleDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 4);
 
@@ -1075,6 +1075,34 @@ function buildOutcomeFeedbackMetrics(
   deferredImpactKeys.forEach(add);
 
   return metrics.slice(0, 4);
+}
+
+function buildLoopFeedbackMetrics(
+  twinSnapshot: TwinSnapshot,
+  action?: DailyPlanAction | null,
+  riskTitle?: string,
+): OutcomeFeedbackMetric[] {
+  const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
+  let priority: string[] = [];
+
+  if (/spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
+    priority = ['spo2', 'sleep_score', 'hrv'];
+  } else if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
+    priority = ['body_shape', 'vo2max', 'hrv'];
+  } else if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
+    priority = ['blood_pressure', 'hrv', 'sleep_score'];
+  } else if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
+    priority = ['labs', 'body_shape', 'sleep_score'];
+  }
+
+  if (priority.length === 0) {
+    return buildOutcomeFeedbackMetrics(twinSnapshot, action).slice(0, 3);
+  }
+
+  return priority
+    .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot))
+    .filter(Boolean)
+    .slice(0, 3) as OutcomeFeedbackMetric[];
 }
 
 function buildOutcomeFeedbackMetric(
