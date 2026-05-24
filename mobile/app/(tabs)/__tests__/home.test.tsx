@@ -303,12 +303,29 @@ describe('TodayScreen', () => {
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
+    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('运行中')).toBeTruthy();
     expect(getByText('环境影响')).toBeTruthy();
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
     expect(getByText('基因/检查/趋势')).toBeTruthy();
     expect(getByText('基因')).toBeTruthy();
     expect(getByText('饮食')).toBeTruthy();
+  });
+
+  it('keeps background diagnosis, feedback, environment, and archives in one operations panel', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(textFlow.indexOf('Agent 后台运行')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台继续看')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 后台运行')).toBeLessThan(textFlow.indexOf('后台继续看'));
+    expect(textFlow.indexOf('后台继续看')).toBeLessThan(textFlow.indexOf('身体反馈'));
+    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境影响'));
+    expect(textFlow.indexOf('环境影响')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
 
   it('keeps trajectory gaps as compact follow-up badges instead of full rows', () => {

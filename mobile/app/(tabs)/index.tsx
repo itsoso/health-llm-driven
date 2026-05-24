@@ -444,8 +444,10 @@ export default function TodayScreen() {
           snapshot={trajectoryQuery.data}
           loading={trajectoryQuery.isLoading}
           weeklyAdvice={weeklyAdvice}
+          feedbackMetrics={feedbackMetrics}
           onOpenTrajectory={openTrajectoryChat}
           onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
+          onOpenMetric={(route) => router.push(route as any)}
           shortcuts={[
             {
               label: '基因',
@@ -481,11 +483,6 @@ export default function TodayScreen() {
             },
           ]}
           onOpenAll={() => router.push('/(tabs)/record' as any)}
-        />
-
-        <HomeBodyFeedbackPanel
-          metrics={feedbackMetrics}
-          onOpenMetric={(route) => router.push(route as any)}
         />
       </ScrollView>
     </SafeAreaView>
@@ -693,16 +690,20 @@ function HomeBackgroundPanel({
   snapshot,
   loading,
   weeklyAdvice,
+  feedbackMetrics,
   onOpenTrajectory,
   onOpenAdvice,
+  onOpenMetric,
   shortcuts,
   onOpenAll,
 }: {
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
   weeklyAdvice: ActionCard[];
+  feedbackMetrics: OutcomeFeedbackMetric[];
   onOpenTrajectory: () => void;
   onOpenAdvice: (card: ActionCard) => void;
+  onOpenMetric: (route: string) => void;
   shortcuts: {
     label: string;
     value: string;
@@ -716,6 +717,17 @@ function HomeBackgroundPanel({
   const { c } = useTheme();
   return (
     <View style={[styles.backgroundPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.backgroundHeader}>
+        <View style={styles.backgroundTitleBlock}>
+          <Text style={[styles.backgroundTitle, { color: c.labelPrimary }]}>Agent 后台运行</Text>
+          <Text style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>诊断、反馈、环境和长期画像一起巡检</Text>
+        </View>
+        <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
+          <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />
+          <Text style={[styles.backgroundLiveText, { color: c.brand }]}>运行中</Text>
+        </View>
+      </View>
+      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
       <AgentFollowUpQueue
         snapshot={snapshot}
         loading={loading}
@@ -723,6 +735,8 @@ function HomeBackgroundPanel({
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
       />
+      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
+      <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
       <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
       <EnvironmentCard compact mode="micro" />
       <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
@@ -743,14 +757,14 @@ function HomeBodyFeedbackPanel({
   if (visibleMetrics.length === 0) return null;
 
   return (
-    <View style={[styles.bodyFeedbackPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+    <View style={styles.bodyFeedbackBlock}>
       <View style={styles.bodyFeedbackHeader}>
         <View style={styles.bodyFeedbackTitleBlock}>
           <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>身体反馈</Text>
           <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>验证干预是否真的有效</Text>
         </View>
-        <View style={[styles.bodyFeedbackBadge, { backgroundColor: c.brandLight }]}>
-          <Text style={[styles.bodyFeedbackBadgeText, { color: c.brand }]}>实时</Text>
+        <View style={[styles.bodyFeedbackBadge, { backgroundColor: c.bgPrimary }]}>
+          <Text style={[styles.bodyFeedbackBadgeText, { color: c.labelSecondary }]}>4 项</Text>
         </View>
       </View>
 
@@ -2225,8 +2239,29 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    gap: 7,
+    gap: 8,
   },
+  backgroundHeader: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  backgroundTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
+  backgroundTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
+  backgroundSubtitle: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
+  backgroundLiveBadge: {
+    minHeight: 24,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  backgroundLiveDot: { width: 6, height: 6, borderRadius: 3 },
+  backgroundLiveText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   backgroundDivider: {
     height: StyleSheet.hairlineWidth,
   },
@@ -2284,13 +2319,7 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
-  bodyFeedbackPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 9,
-  },
+  bodyFeedbackBlock: { gap: 8 },
   bodyFeedbackHeader: {
     flexDirection: 'row',
     alignItems: 'center',
