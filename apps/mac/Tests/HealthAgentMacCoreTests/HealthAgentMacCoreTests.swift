@@ -56,4 +56,11 @@ final class HealthAgentMacCoreTests: XCTestCase {
         XCTAssertEqual(L10n.text("Today", language: .zh), "今日")
         XCTAssertEqual(L10n.text("Today", language: .en), "Today")
     }
+
+    func testMacAppLifecyclePolicyRequiresSingleInstanceAndQuitOnWindowClose() {
+        XCTAssertEqual(MacAppLifecyclePolicy.bundleIdentifier, "life.executor.health.mac")
+        XCTAssertTrue(MacAppLifecyclePolicy.preventsMultipleInstances)
+        XCTAssertTrue(MacAppLifecyclePolicy.terminatesAfterLastWindowClosed)
+        XCTAssertEqual(MacAppLifecyclePolicy.multipleInstancePlistKey, "LSMultipleInstancesProhibited")
+    }
 }

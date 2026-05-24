@@ -5,6 +5,7 @@ import UserNotifications
 
 @main
 struct HealthAgentMacApp: App {
+    @NSApplicationDelegateAdaptor(HealthAgentAppDelegate.self) private var appDelegate
     @State private var appServices = AppServices()
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
@@ -62,6 +63,34 @@ struct HealthAgentMacApp: App {
                 .keyboardShortcut("0", modifiers: [.command])
             }
         }
+    }
+}
+
+@MainActor
+final class HealthAgentAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        activateExistingInstanceAndTerminateIfNeeded()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        MacAppLifecyclePolicy.terminatesAfterLastWindowClosed
+    }
+
+    private func activateExistingInstanceAndTerminateIfNeeded() {
+        guard MacAppLifecyclePolicy.preventsMultipleInstances else {
+            return
+        }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let runningInstances = NSRunningApplication
+            .runningApplications(withBundleIdentifier: MacAppLifecyclePolicy.bundleIdentifier)
+            .filter { !$0.isTerminated && $0.processIdentifier != currentPID }
+
+        guard let existingInstance = runningInstances.first else {
+            return
+        }
+
+        existingInstance.activate(options: [.activateAllWindows])
+        NSApplication.shared.terminate(nil)
     }
 }
 
