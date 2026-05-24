@@ -714,7 +714,11 @@ public final class AgentChatViewModel {
     }
 
     private func buildExtraContext() -> String? {
-        var context: [String: Any] = [:]
+        var context: [String: Any] = [
+            "client": "mac",
+            "response_format": "markdown",
+            "desktop_markdown_response_instruction": Self.desktopMarkdownResponseInstruction,
+        ]
         if let selectedModelID {
             context["model_id"] = selectedModelID
         }
@@ -741,12 +745,13 @@ public final class AgentChatViewModel {
                 ] as [String: Any]
             }
         }
-        guard !context.isEmpty else {
-            return nil
-        }
         guard let data = try? JSONSerialization.data(withJSONObject: context) else {
             return nil
         }
         return String(data: data, encoding: .utf8)
     }
+
+    private static let desktopMarkdownResponseInstruction = """
+    请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。不要输出密集长段落。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
+    """
 }

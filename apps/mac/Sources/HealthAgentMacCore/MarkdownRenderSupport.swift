@@ -9,6 +9,43 @@ public enum MarkdownRenderSupport {
             .joined(separator: "\n")
     }
 
+    public static func readableFallback(_ markdown: String) -> String {
+        sanitizedForSwiftUI(markdown)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { readableLine(String($0)) }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func readableLine(_ line: String) -> String {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else {
+            return ""
+        }
+        if text == "---" || text == "***" || text == "___" {
+            return ""
+        }
+        if text.hasPrefix("|"), text.hasSuffix("|") {
+            return text
+                .split(separator: "|")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "  ")
+        }
+        while text.hasPrefix("#") {
+            text.removeFirst()
+        }
+        text = text.trimmingCharacters(in: .whitespaces)
+        if text.hasPrefix(">") {
+            text.removeFirst()
+            text = text.trimmingCharacters(in: .whitespaces)
+        }
+        return text
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+    }
+
     private static func sanitizeLine(_ line: String) -> String {
         if isLikelyMarkdownTableSeparator(line) {
             return ""

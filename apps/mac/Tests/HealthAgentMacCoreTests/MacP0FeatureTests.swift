@@ -134,6 +134,29 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertFalse(sanitized.contains("|---|---|"))
     }
 
+    func testMarkdownRenderSupportReadableFallbackRemovesRawMarkdownMarkers() {
+        let markdown = """
+        ## 七天饮食趋势分析
+
+        **趋势观察**
+
+        | 维度 | 建议 |
+        |---|---|
+        | 饮食 | 暂不调整 |
+
+        1. **先解决记录问题**
+        """
+
+        let fallback = MarkdownRenderSupport.readableFallback(markdown)
+
+        XCTAssertTrue(fallback.contains("七天饮食趋势分析"))
+        XCTAssertTrue(fallback.contains("趋势观察"))
+        XCTAssertTrue(fallback.contains("饮食  暂不调整"))
+        XCTAssertFalse(fallback.contains("##"))
+        XCTAssertFalse(fallback.contains("**"))
+        XCTAssertFalse(fallback.contains("|---"))
+    }
+
     func testWorkspaceContextFactoryBuildsKnowledgeDocumentAndJobContext() {
         let document = KnowledgeDocumentSummary(
             docID: "dedao:100-ecc79a079a92",

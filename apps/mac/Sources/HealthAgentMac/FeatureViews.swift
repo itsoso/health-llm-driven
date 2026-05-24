@@ -974,7 +974,7 @@ private struct MarkdownMessageText: View {
         if let attributed = parsedMarkdown {
             Text(attributed)
         } else {
-            Text(markdown.isEmpty ? " " : markdown)
+            Text(MarkdownRenderSupport.readableFallback(markdown.isEmpty ? " " : markdown))
         }
     }
 

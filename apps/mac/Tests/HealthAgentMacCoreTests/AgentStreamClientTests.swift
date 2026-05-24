@@ -291,6 +291,24 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelAlwaysRequestsStructuredMarkdownReplies() async throws {
+        let service = CapturingAgentStreamService()
+        let model = AgentChatViewModel(streamService: service)
+
+        await model.send("分析今天状态")
+
+        let context = try XCTUnwrap(service.extraContext)
+        let data = try XCTUnwrap(context.data(using: .utf8))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["client"] as? String, "mac")
+        XCTAssertEqual(json["response_format"] as? String, "markdown")
+        let instruction = try XCTUnwrap(json["desktop_markdown_response_instruction"] as? String)
+        XCTAssertTrue(instruction.contains("Markdown"))
+        XCTAssertTrue(instruction.contains("不要输出密集长段落"))
+        XCTAssertTrue(instruction.contains("不确定性边界"))
+    }
+
+    @MainActor
     func testAgentChatViewModelIncludesSelectedContextItemsInExtraContext() async throws {
         let service = CapturingAgentStreamService()
         let model = AgentChatViewModel(streamService: service)
