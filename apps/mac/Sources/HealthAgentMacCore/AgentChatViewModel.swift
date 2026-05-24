@@ -18,6 +18,223 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum AgentProposedActionStatus: String, Codable, Equatable, Sendable {
+    case pending
+    case confirmed
+    case dismissed
+}
+
+public struct AgentProposedAction: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let messageID: UUID
+    public let toolName: String
+    public let title: String
+    public let summary: String
+    public let rawCommand: String
+    public let parameters: [String: String]
+    public var status: AgentProposedActionStatus
+
+    public init(
+        id: String,
+        messageID: UUID,
+        toolName: String,
+        title: String,
+        summary: String,
+        rawCommand: String,
+        parameters: [String: String],
+        status: AgentProposedActionStatus = .pending
+    ) {
+        self.id = id
+        self.messageID = messageID
+        self.toolName = toolName
+        self.title = title
+        self.summary = summary
+        self.rawCommand = rawCommand
+        self.parameters = parameters
+        self.status = status
+    }
+
+    public var contextItem: AgentContextItem {
+        var payload = parameters
+        payload["tool_name"] = toolName
+        payload["raw_command"] = rawCommand
+        payload["status"] = status.rawValue
+        return AgentContextItem(
+            sourceID: id,
+            sourceKind: "agent_proposed_action",
+            title: title,
+            summary: summary,
+            payload: payload
+        )
+    }
+}
+
+public enum AgentStructuredCommandParser {
+    public static func proposedActions(in content: String, messageID: UUID) -> [AgentProposedAction] {
+        structuredCommands(in: content).enumerated().map { index, command in
+            AgentProposedAction(
+                id: "\(messageID.uuidString):\(index)",
+                messageID: messageID,
+                toolName: command.toolName,
+                title: title(for: command),
+                summary: summary(for: command),
+                rawCommand: command.rawCommand,
+                parameters: command.parameters
+            )
+        }
+    }
+
+    public static func displayText(for content: String) -> String {
+        var result = content
+        for range in structuredCommands(in: content).map(\.range).reversed() {
+            result.removeSubrange(range)
+        }
+        return result
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0 != "```" && $0 != "```json" }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private struct StructuredCommand {
+        let toolName: String
+        let parameters: [String: String]
+        let rawCommand: String
+        let range: Range<String.Index>
+    }
+
+    private static func structuredCommands(in content: String) -> [StructuredCommand] {
+        var commands: [StructuredCommand] = []
+        var index = content.startIndex
+        while index < content.endIndex {
+            guard content[index] == "{" else {
+                index = content.index(after: index)
+                continue
+            }
+            guard let range = balancedJSONObjectRange(in: content, from: index) else {
+                index = content.index(after: index)
+                continue
+            }
+            let rawCommand = String(content[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let command = parseCommand(rawCommand: rawCommand, range: range) {
+                commands.append(command)
+                index = range.upperBound
+            } else {
+                index = content.index(after: index)
+            }
+        }
+        return commands
+    }
+
+    private static func balancedJSONObjectRange(in content: String, from start: String.Index) -> Range<String.Index>? {
+        var index = start
+        var depth = 0
+        var isInString = false
+        var isEscaped = false
+        while index < content.endIndex {
+            let character = content[index]
+            if isInString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInString = false
+                }
+            } else if character == "\"" {
+                isInString = true
+            } else if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return start..<content.index(after: index)
+                }
+            }
+            index = content.index(after: index)
+        }
+        return nil
+    }
+
+    private static func parseCommand(rawCommand: String, range: Range<String.Index>) -> StructuredCommand? {
+        guard let data = rawCommand.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let toolName = object["name"] as? String,
+              !toolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let parameters = object["parameters"] as? [String: Any] else {
+            return nil
+        }
+
+        return StructuredCommand(
+            toolName: toolName,
+            parameters: parameters.mapValues(stringValue),
+            rawCommand: rawCommand,
+            range: range
+        )
+    }
+
+    private static func stringValue(_ value: Any) -> String {
+        switch value {
+        case let value as String:
+            return value
+        case let value as Int:
+            return "\(value)"
+        case let value as Double:
+            return value.formatted(.number.precision(.fractionLength(0...2)))
+        case let value as Bool:
+            return value ? "true" : "false"
+        default:
+            if JSONSerialization.isValidJSONObject([value]) {
+                let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+                return data.flatMap { String(data: $0, encoding: .utf8) } ?? "\(value)"
+            }
+            return "\(value)"
+        }
+    }
+
+    private static func title(for command: StructuredCommand) -> String {
+        guard command.toolName == "health_manage" else {
+            return "确认 \(command.toolName) 动作"
+        }
+        let action = command.parameters["action"] ?? "execute"
+        let recordType = command.parameters["record_type"] ?? command.parameters["type"] ?? "record"
+        let recordID = command.parameters["record_id"] ?? command.parameters["id"]
+        let verb: String
+        switch action {
+        case "delete": verb = "删除"
+        case "update": verb = "更新"
+        case "create", "add": verb = "新增"
+        default: verb = "执行"
+        }
+        let noun = recordTypeTitle(recordType)
+        if let recordID, !recordID.isEmpty {
+            return "\(verb)\(noun)记录 #\(recordID)"
+        }
+        return "\(verb)\(noun)记录"
+    }
+
+    private static func summary(for command: StructuredCommand) -> String {
+        let parametersText = command.parameters
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " · ")
+        return "\(command.toolName) · \(parametersText)"
+    }
+
+    private static func recordTypeTitle(_ recordType: String) -> String {
+        switch recordType {
+        case "diet", "meal", "food": "饮食"
+        case "water", "drink": "饮水"
+        case "supplement", "supplements": "补剂"
+        case "weight": "体重"
+        case "blood_pressure", "bp": "血压"
+        case "symptom", "symptoms": "症状"
+        default: recordType
+        }
+    }
+}
+
 public struct AgentConversationSnapshot: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let conversationID: Int?
@@ -196,6 +413,7 @@ public final class AgentChatViewModel {
     public var savedContextBundles: [AgentContextBundle] = []
     public var conversationHistory: [AgentConversationSnapshot] = []
     public var toolActivities: [AgentToolActivity] = []
+    public var proposedActions: [AgentProposedAction] = []
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
@@ -235,6 +453,7 @@ public final class AgentChatViewModel {
             self.conversationID = latest.conversationID
             self.messages = latest.messages
         }
+        rebuildProposedActions()
     }
 
     public func selectModel(_ id: String?) {
@@ -361,6 +580,7 @@ public final class AgentChatViewModel {
         } else if runState != .completed {
             runState = messages[assistantIndex].content.isEmpty ? .failed : .completed
         }
+        rebuildProposedActions()
         if errorMessage == nil {
             attachments = []
         }
@@ -378,6 +598,7 @@ public final class AgentChatViewModel {
         lastPrompt = nil
         toolActivities = []
         currentConversationSnapshotID = nil
+        proposedActions = []
     }
 
     public func loadConversation(_ conversation: AgentConversationSnapshot) {
@@ -390,6 +611,7 @@ public final class AgentChatViewModel {
         lastSourcesUsed = []
         toolActivities = []
         lastPrompt = conversation.messages.last(where: { $0.role == .user })?.content
+        rebuildProposedActions()
     }
 
     public func deleteConversation(_ conversation: AgentConversationSnapshot) {
@@ -405,6 +627,35 @@ public final class AgentChatViewModel {
             return
         }
         await send(lastPrompt)
+    }
+
+    public func displayContent(for message: AgentChatMessage) -> String {
+        guard message.role == .assistant else {
+            return message.content
+        }
+        let displayText = AgentStructuredCommandParser.displayText(for: message.content)
+        return displayText.isEmpty && !proposedActions(for: message).isEmpty
+            ? "已生成需要确认的结构化动作。"
+            : displayText
+    }
+
+    public func proposedActions(for message: AgentChatMessage) -> [AgentProposedAction] {
+        proposedActions.filter { $0.messageID == message.id && $0.status != .dismissed }
+    }
+
+    public func dismissProposedAction(_ action: AgentProposedAction) {
+        updateProposedAction(action, status: .dismissed)
+    }
+
+    public func confirmProposedAction(_ action: AgentProposedAction) async {
+        guard !isStreaming else {
+            return
+        }
+        updateProposedAction(action, status: .confirmed)
+        var confirmedAction = action
+        confirmedAction.status = .confirmed
+        addContextItem(confirmedAction.contextItem)
+        await send("请执行我刚确认的健康管理动作。请使用上下文里的 agent_proposed_action；执行成功或失败都用自然语言说明，不要再次只输出 JSON。")
     }
 
     private func persistContextBundles() {
@@ -428,6 +679,29 @@ public final class AgentChatViewModel {
         conversationHistory.insert(snapshot, at: 0)
         conversationHistory = Array(conversationHistory.prefix(30))
         conversationStore?.saveConversations(conversationHistory)
+    }
+
+    private func rebuildProposedActions() {
+        let existingStatuses = Dictionary(uniqueKeysWithValues: proposedActions.map { ($0.id, $0.status) })
+        proposedActions = messages
+            .filter { $0.role == .assistant }
+            .flatMap { message in
+                AgentStructuredCommandParser.proposedActions(in: message.content, messageID: message.id)
+            }
+            .map { action in
+                var mutableAction = action
+                if let status = existingStatuses[action.id] {
+                    mutableAction.status = status
+                }
+                return mutableAction
+            }
+    }
+
+    private func updateProposedAction(_ action: AgentProposedAction, status: AgentProposedActionStatus) {
+        guard let index = proposedActions.firstIndex(where: { $0.id == action.id }) else {
+            return
+        }
+        proposedActions[index].status = status
     }
 
     private func conversationTitle(from messages: [AgentChatMessage]) -> String {

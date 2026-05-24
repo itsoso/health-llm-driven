@@ -120,6 +120,74 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentStructuredCommandParserBuildsConfirmableActionAndHidesRawJSON() {
+        let messageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let content = """
+        好的，我来帮你删除最后一条饮食记录。
+        {"name":"health_manage","parameters":{"action":"delete","record_type":"diet","record_id":625}}
+        """
+
+        let actions = AgentStructuredCommandParser.proposedActions(in: content, messageID: messageID)
+        let displayText = AgentStructuredCommandParser.displayText(for: content)
+
+        XCTAssertEqual(actions.count, 1)
+        XCTAssertEqual(actions.first?.messageID, messageID)
+        XCTAssertEqual(actions.first?.toolName, "health_manage")
+        XCTAssertEqual(actions.first?.parameters["action"], "delete")
+        XCTAssertEqual(actions.first?.parameters["record_type"], "diet")
+        XCTAssertEqual(actions.first?.parameters["record_id"], "625")
+        XCTAssertEqual(actions.first?.title, "删除饮食记录 #625")
+        XCTAssertTrue(displayText.contains("好的，我来帮你删除最后一条饮食记录。"))
+        XCTAssertFalse(displayText.contains(#""name""#))
+        XCTAssertFalse(displayText.contains("health_manage"))
+    }
+
+    @MainActor
+    func testAgentChatViewModelTurnsAssistantJSONCommandIntoConfirmableActionContext() async throws {
+        let service = CapturingAgentStreamService()
+        service.streams = [
+            AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+                continuation.yield(.start(conversationID: 77))
+                continuation.yield(.token("""
+                已识别到可执行记录操作。
+                {"name":"health_manage","parameters":{"action":"update","record_type":"diet","record_id":625,"calories":650}}
+                """))
+                continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: []))
+                continuation.finish()
+            },
+            AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+                continuation.yield(.done(conversationID: 77, messageID: 89, completionStatus: "complete", model: nil, sourcesUsed: []))
+                continuation.finish()
+            }
+        ]
+        let model = AgentChatViewModel(streamService: service)
+
+        await model.send("把这餐热量改成一半")
+
+        let assistantMessage = try XCTUnwrap(model.messages.last)
+        XCTAssertEqual(model.proposedActions.count, 1)
+        XCTAssertEqual(model.proposedActions.first?.title, "更新饮食记录 #625")
+        XCTAssertFalse(model.displayContent(for: assistantMessage).contains(#""parameters""#))
+
+        let action = try XCTUnwrap(model.proposedActions.first)
+        await model.confirmProposedAction(action)
+
+        XCTAssertEqual(model.proposedActions.first?.status, .confirmed)
+        XCTAssertTrue(service.messages.last?.contains("请执行我刚确认的健康管理动作") ?? false)
+        let latestContext = try XCTUnwrap(service.extraContexts.last)
+        let context = try XCTUnwrap(latestContext)
+        let data = try XCTUnwrap(context.data(using: .utf8))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let contextItems = try XCTUnwrap(json["context_items"] as? [[String: Any]])
+        let contextItem = try XCTUnwrap(contextItems.last)
+        XCTAssertEqual(contextItem["source_kind"] as? String, "agent_proposed_action")
+        let payload = try XCTUnwrap(contextItem["payload"] as? [String: String])
+        XCTAssertEqual(payload["tool_name"], "health_manage")
+        XCTAssertEqual(payload["action"], "update")
+        XCTAssertEqual(payload["record_id"], "625")
+    }
+
+    @MainActor
     func testAgentChatViewModelTracksToolExecutionTimeline() async {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 77))
@@ -340,9 +408,17 @@ private struct StaticAgentStreamService: AgentStreamServicing {
 
 private final class CapturingAgentStreamService: AgentStreamServicing, @unchecked Sendable {
     nonisolated(unsafe) var extraContext: String?
+    nonisolated(unsafe) var extraContexts: [String?] = []
+    nonisolated(unsafe) var messages: [String] = []
+    nonisolated(unsafe) var streams: [AsyncThrowingStream<AgentStreamEvent, Error>] = []
 
     func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         self.extraContext = extraContext
+        self.extraContexts.append(extraContext)
+        self.messages.append(message)
+        if !streams.isEmpty {
+            return streams.removeFirst()
+        }
         return AsyncThrowingStream { continuation in
             continuation.yield(.done(
                 conversationID: conversationID,

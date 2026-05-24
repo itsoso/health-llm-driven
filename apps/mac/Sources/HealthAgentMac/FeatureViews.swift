@@ -420,6 +420,20 @@ struct AgentChatView: View {
                 messageContent(message)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if message.role == .assistant {
+                    ForEach(viewModel.proposedActions(for: message)) { action in
+                        AgentProposedActionCard(
+                            action: action,
+                            isStreaming: viewModel.isStreaming,
+                            onConfirm: {
+                                Task { await viewModel.confirmProposedAction(action) }
+                            },
+                            onDismiss: {
+                                viewModel.dismissProposedAction(action)
+                            }
+                        )
+                    }
+                }
                 if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
                     ProgressView()
                         .controlSize(.small)
@@ -444,7 +458,7 @@ struct AgentChatView: View {
     @ViewBuilder
     private func messageContent(_ message: AgentChatMessage) -> some View {
         if message.role == .assistant {
-            MarkdownMessageText(markdown: message.content)
+            MarkdownMessageText(markdown: viewModel.displayContent(for: message))
         } else {
             Text(message.content.isEmpty ? " " : message.content)
         }
@@ -860,6 +874,96 @@ private struct FlowLayout<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AgentProposedActionCard: View {
+    let action: AgentProposedAction
+    let isStreaming: Bool
+    let onConfirm: () -> Void
+    let onDismiss: () -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: statusIcon)
+                    .font(.headline)
+                    .foregroundStyle(statusColor)
+                    .frame(width: 28, height: 28)
+                    .background(statusColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(action.title)
+                        .font(.callout.weight(.semibold))
+                    Text(action.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Text(appText(statusText, appLanguageRaw))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(statusColor.opacity(0.12), in: Capsule())
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    onConfirm()
+                } label: {
+                    Label(appText("Confirm Action", appLanguageRaw), systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(action.status != .pending || isStreaming)
+
+                Button {
+                    onDismiss()
+                } label: {
+                    Label(appText("Ignore", appLanguageRaw), systemImage: "xmark.circle")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(action.status != .pending || isStreaming)
+
+                Spacer()
+                Text(appText("Structured command requires confirmation before execution.", appLanguageRaw))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(statusColor.opacity(0.075), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(statusColor.opacity(0.16), lineWidth: 1)
+        }
+    }
+
+    private var statusText: String {
+        switch action.status {
+        case .pending: "Needs Confirmation"
+        case .confirmed: "Confirmed"
+        case .dismissed: "Ignored"
+        }
+    }
+
+    private var statusIcon: String {
+        switch action.status {
+        case .pending: "exclamationmark.shield.fill"
+        case .confirmed: "checkmark.shield.fill"
+        case .dismissed: "xmark.shield.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch action.status {
+        case .pending: .orange
+        case .confirmed: .green
+        case .dismissed: .secondary
+        }
     }
 }
 
