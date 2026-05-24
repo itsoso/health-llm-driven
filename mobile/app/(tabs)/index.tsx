@@ -274,6 +274,7 @@ export default function TodayScreen() {
   const activePlanCount = dailyPlanQuery.data?.actions?.length ?? 0;
   const nextAction = (dailyPlanQuery.data?.actions ?? []).find(action => Boolean(action?.title)) ?? null;
   const nextActionKey = nextAction?.action_key || nextAction?.title || null;
+  const riskTakesPrimarySlot = criticalAlerts.length > 0 && !nextAction;
   const visibleNextActionState: NextActionCompletionState =
     nextActionCompletion.actionKey === nextActionKey ? nextActionCompletion.state : 'idle';
   const interventionDomains = buildInterventionDomainStatuses(dailyPlanQuery.data?.actions ?? []);
@@ -404,20 +405,22 @@ export default function TodayScreen() {
         />
 
         <View style={styles.section}>
-          <NextBestActionCard
-            action={nextAction}
-            loading={dailyPlanQuery.isLoading}
-            completionState={visibleNextActionState}
-            onStart={openPlanAction}
-            onComplete={completeNextAction}
-            onFallbackRecord={() => router.push('/(tabs)/record' as any)}
-            onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
-          />
+          {!riskTakesPrimarySlot && (
+            <NextBestActionCard
+              action={nextAction}
+              loading={dailyPlanQuery.isLoading}
+              completionState={visibleNextActionState}
+              onStart={openPlanAction}
+              onComplete={completeNextAction}
+              onFallbackRecord={() => router.push('/(tabs)/record' as any)}
+              onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
+            />
+          )}
           <TodayPlanPanel
             plan={dailyPlanQuery.data}
             loading={dailyPlanQuery.isLoading}
-            compact
-            title="余下计划"
+            compact={riskTakesPrimarySlot}
+            title={riskTakesPrimarySlot ? '风险处理后继续' : '余下计划'}
             excludeActionKey={nextActionKey}
             onPressAction={openPlanAction}
             onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
@@ -732,7 +735,7 @@ function InterventionStrategyPanel({
         <View style={styles.strategyTitleBlock}>
           <Text style={[styles.strategyTitle, { color: c.labelPrimary }]}>生活方式干预路径</Text>
           <Text style={[styles.strategySubtitle, { color: c.labelTertiary }]}>
-            {activeCount > 0 ? `${activeCount} 个任务正在影响关键指标` : '等待 Agent 基于反馈编排新任务'}
+            {activeCount > 0 ? `${activeCount} 个任务正在影响睡眠、体脂、血氧和恢复` : '等待 Agent 基于反馈编排新任务'}
           </Text>
         </View>
       </View>
