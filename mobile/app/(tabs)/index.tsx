@@ -537,8 +537,6 @@ function HomeCommandHeader({
     criticalCount,
     planCount,
     riskTitle,
-    activeDomainCount,
-    loopMetrics,
   });
   const headline = criticalCount > 0
     ? improvementFocus.headline
@@ -552,11 +550,6 @@ function HomeCommandHeader({
       : activeDomainCount > 0
         ? `今日洞察 · ${activeDomainCount} 个干预域`
       : '今日洞察 · 观察中';
-  const focusText = criticalCount > 0
-    ? improvementFocus.target
-    : planCount > 0
-      ? improvementFocus.target
-      : improvementFocus.target;
   const evidenceSummary = `${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
     hasClinical: clinicalReady,
@@ -634,8 +627,8 @@ function HomeCommandHeader({
                 </Text>
               </View>
             </View>
-            <Text style={[styles.commandHint, { color: c.labelSecondary }]} numberOfLines={2}>{focusText}</Text>
             <View style={styles.commandMetricRail}>
+              <Text style={[styles.commandOutcomeLabel, { color: c.labelSecondary }]}>要改善</Text>
               {visibleLoopMetrics.map(metric => {
                 const color = c[metric.colorName];
                 return (
@@ -1285,82 +1278,54 @@ function buildHomeBodyFeedbackMetrics(
 
 function buildImprovementFocus({
   action,
-  activeDomainCount,
   criticalCount,
   planCount,
   riskTitle,
-  loopMetrics,
 }: {
   action?: DailyPlanAction | null;
-  activeDomainCount: number;
   criticalCount: number;
   planCount: number;
   riskTitle?: string;
-  loopMetrics: OutcomeFeedbackMetric[];
 }) {
   const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
-  const metricLabels = loopMetrics
-    .map(metric => metric.label.replace('BMI/体脂', 'BMI 和体脂').replace('血液/生化', '血液和生化'))
-    .slice(0, 3);
-  const metricTarget = metricLabels.length > 0
-    ? metricLabels.join('、')
-    : '关键健康指标';
 
   if (/sleep|bed|spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
     return {
       headline: '稳住夜间血氧',
-      target: '目标：血氧稳定，睡眠分和 HRV 回升',
-      outcome: '夜间血氧、睡眠分和 HRV 改善',
     };
   }
   if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
     return {
       headline: '改善体成分',
-      target: '目标：BMI 和体脂下降，恢复指标不掉线',
-      outcome: 'BMI、体脂和有氧能力改善',
     };
   }
   if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
     return {
       headline: '降低血压负荷',
-      target: '目标：血压更稳，HRV 和睡眠恢复同步改善',
-      outcome: '血压、HRV 和睡眠恢复改善',
     };
   }
   if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
     return {
       headline: '校准代谢指标',
-      target: '目标：饮食、运动和补剂最终反映到血检',
-      outcome: '血液和生化指标改善',
     };
   }
   if (action?.title) {
     return {
       headline: action.title,
-      target: `目标：改善 ${metricTarget}`,
-      outcome: `${metricTarget}改善`,
     };
   }
   if (criticalCount > 0) {
     return {
       headline: riskTitle || `${criticalCount} 个风险待处理`,
-      target: `目标：先压低风险，再观察 ${metricTarget}`,
-      outcome: `${metricTarget}改善`,
     };
   }
   if (planCount > 0) {
     return {
       headline: `今天 ${planCount} 件事`,
-      target: activeDomainCount > 0
-        ? `目标：用 ${activeDomainCount} 个干预域改善 ${metricTarget}`
-        : `目标：完成计划并观察 ${metricTarget}`,
-      outcome: `${metricTarget}改善`,
     };
   }
   return {
     headline: '保持记录节奏',
-    target: '目标：补齐数据，让建议更贴近身体反馈',
-    outcome: '建议精度和长期趋势判断改善',
   };
 }
 
@@ -1719,7 +1684,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  commandMetricRail: { minHeight: 19, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  commandMetricRail: {
+    minHeight: 23,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
   commandMetricPill: {
     flexShrink: 1,
     minWidth: 0,
@@ -1729,6 +1700,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 3,
   },
+  commandOutcomeLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   agentStepRail: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -1830,7 +1802,6 @@ const styles = StyleSheet.create({
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
-  commandHint: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandLoopLine: {
     minHeight: 18,
     alignSelf: 'stretch',

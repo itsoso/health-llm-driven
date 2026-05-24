@@ -162,7 +162,7 @@ describe('TodayScreen', () => {
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getByText('今日洞察 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
-    expect(getByText('目标：补齐数据，让建议更贴近身体反馈')).toBeTruthy();
+    expect(getByText('要改善')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('长期档案')).toBeTruthy();
@@ -222,7 +222,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日洞察 · 1 个计划')).toBeTruthy();
-    expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
+    expect(getByText('要改善')).toBeTruthy();
     expect(getByText(/观察：血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('表观遗传、穿戴已接入')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
@@ -529,7 +529,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
     expect(getByText('今日洞察 · 2 个计划')).toBeTruthy();
-    expect(getByText('目标：改善 睡眠分、HRV、血氧')).toBeTruthy();
+    expect(getByText('要改善')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
