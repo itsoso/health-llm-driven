@@ -223,7 +223,7 @@ describe('TodayScreen', () => {
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日洞察 · 1 个干预域')).toBeTruthy();
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
-    expect(getByText('打开今天第一件事')).toBeTruthy();
+    expect(getByText('1 个计划')).toBeTruthy();
     expect(getByText(/观察 血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('依据：表观遗传/穿戴')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
@@ -466,8 +466,8 @@ describe('TodayScreen', () => {
 
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('现在只做一件')).toBeTruthy();
-    expect(getByText('余下 1 件后台排队，完成后再推送')).toBeTruthy();
+    expect(getByText('后台排队')).toBeTruthy();
+    expect(getByText('余下 1 件后台排队')).toBeTruthy();
     expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
     expect(queryByText('今天蛋白质目标')).toBeNull();
     expect(queryByText('接下来')).toBeNull();
@@ -494,9 +494,10 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('现在只做一件')).toBeTruthy();
-    expect(getByText('现在先做')).toBeTruthy();
-    expect(getByText('余下 2 件后台排队，完成后再推送')).toBeTruthy();
+    expect(getByText('后台排队')).toBeTruthy();
+    expect(getByText('余下 2 件后台排队')).toBeTruthy();
+    expect(queryByText('现在只做一件')).toBeNull();
+    expect(queryByText('现在先做')).toBeNull();
     expect(queryByText('今日操作计划')).toBeNull();
     expect(queryByText('余下计划')).toBeNull();
     expect(queryByText('接下来')).toBeNull();
@@ -511,6 +512,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
+    expect(getByText('2 个计划')).toBeTruthy();
     expect(getByText('目标：改善 睡眠分、HRV、血氧')).toBeTruthy();
   });
 
@@ -540,12 +542,12 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('现在先做')).toBeTruthy();
     expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+    expect(queryByText('现在先做')).toBeNull();
 
-    fireEvent.press(getByText('开始'));
+    fireEvent.press(getByLabelText('打开下一步'));
 
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
@@ -563,8 +565,9 @@ describe('TodayScreen', () => {
 
     const { getByText } = render(<TodayScreen />);
 
-    expect(getByText('BMI')).toBeTruthy();
-    expect(getByText('体脂')).toBeTruthy();
+    expect(getByText('BMI/体脂')).toBeTruthy();
+    expect(getByText('VO2max')).toBeTruthy();
+    expect(getByText('HRV')).toBeTruthy();
   });
 
   it('infers sleep intervention outcomes for sleep actions', () => {
@@ -579,9 +582,9 @@ describe('TodayScreen', () => {
 
     const { getAllByText } = render(<TodayScreen />);
 
-    expect(getAllByText('睡眠分').length).toBeGreaterThan(1);
-    expect(getAllByText('HRV').length).toBeGreaterThan(1);
-    expect(getAllByText('血氧').length).toBeGreaterThan(1);
+    expect(getAllByText('睡眠分').length).toBeGreaterThan(0);
+    expect(getAllByText('HRV').length).toBeGreaterThan(0);
+    expect(getAllByText('血氧').length).toBeGreaterThan(0);
   });
 
   it('lets the user complete the next best action from the top card', async () => {

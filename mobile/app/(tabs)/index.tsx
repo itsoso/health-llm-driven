@@ -405,14 +405,22 @@ export default function TodayScreen() {
                 : router.push('/(tabs)/record' as any)
           )}
           onOpenAgent={openWorkspaceChat}
-          onOpenRecord={() => router.push('/(tabs)/record' as any)}
           onOpenMetric={(route) => router.push(route as any)}
         />
 
-        {(criticalAlerts.length === 0 || activePlanCount > 0) ? (
-          <TodayExecutionQueue
+        {nextAction ? (
+          <PlanQueueCompactRow
             plan={dailyPlanQuery.data}
             action={nextAction}
+            completionState={visibleNextActionState}
+            excludeActionKey={nextActionKey}
+            onComplete={completeNextAction}
+            onFallbackAgent={() => router.push('/(tabs)/chat' as any)}
+          />
+        ) : criticalAlerts.length === 0 ? (
+          <TodayExecutionQueue
+            plan={dailyPlanQuery.data}
+            action={null}
             loading={dailyPlanQuery.isLoading}
             completionState={visibleNextActionState}
             excludeActionKey={nextActionKey}
@@ -494,7 +502,6 @@ function HomeCommandHeader({
   action,
   onOpenFocus,
   onOpenAgent,
-  onOpenRecord,
   onOpenMetric,
 }: {
   criticalCount: number;
@@ -508,16 +515,15 @@ function HomeCommandHeader({
   action?: DailyPlanAction | null;
   onOpenFocus: () => void;
   onOpenAgent: () => void;
-  onOpenRecord: () => void;
   onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
-  const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
-  const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
-  const primaryLabel = '问 Agent';
-  const primaryIcon: keyof typeof Ionicons.glyphMap = 'chatbubble-ellipses-outline';
-  const primaryAction = onOpenAgent;
+  const statusLabel = criticalCount > 0
+    ? `${criticalCount} 个风险`
+    : planCount > 0
+      ? `${planCount} 个计划`
+      : '状态稳定';
   const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
   const wearableReady = Boolean(
     twinSnapshot.hrv
@@ -577,7 +583,7 @@ function HomeCommandHeader({
     .map(item => `${item.label} ${item.value}`)
     .join(' · ');
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
-  const nextStepActionText = action?.title ? '打开今天第一件事' : nextStepLabel.replace(/^下一步：/, '');
+  const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
@@ -597,12 +603,25 @@ function HomeCommandHeader({
           </Text>
         </View>
         <View style={styles.commandRightMeta}>
-          <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-          <View style={styles.commandMetaPills}>
+          <View style={styles.commandRightTop}>
             <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
               <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
               <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
             </View>
+          </View>
+          <View style={styles.commandMiniActions}>
+            <Pressable
+              onPress={onOpenAgent}
+              style={({ pressed }) => [
+                styles.commandMiniAction,
+                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.7 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="问 Agent"
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+              <Text style={[styles.commandMiniActionText, { color: c.brand }]}>问 Agent</Text>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -681,32 +700,6 @@ function HomeCommandHeader({
         </View>
       </Pressable>
 
-      <View style={styles.commandActions}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryAction,
-            { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.76 : 1 },
-          ]}
-          onPress={primaryAction}
-          accessibilityRole="button"
-          accessibilityLabel={primaryLabel}
-        >
-          <Ionicons name={primaryIcon} size={17} color={c.brand} />
-          <Text style={[styles.primaryActionText, { color: c.labelPrimary }]}>{primaryLabel}</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.secondaryAction,
-            { borderColor: c.separator, backgroundColor: c.bgPrimary, opacity: pressed ? 0.76 : 1 },
-          ]}
-          onPress={onOpenRecord}
-          accessibilityRole="button"
-          accessibilityLabel="记录健康数据"
-        >
-          <Ionicons name="add-circle-outline" size={17} color={c.brand} />
-          <Text style={[styles.secondaryActionText, { color: c.labelPrimary }]}>记录</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -765,6 +758,95 @@ function CompactShortcutSection({
           <Ionicons name="chevron-forward" size={13} color={c.brand} />
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+function PlanQueueCompactRow({
+  plan,
+  action,
+  completionState,
+  excludeActionKey,
+  onComplete,
+  onFallbackAgent,
+}: {
+  plan?: DailyOperatingPlan | null;
+  action: DailyPlanAction;
+  completionState: NextActionCompletionState;
+  excludeActionKey?: string | null;
+  onComplete: (action: DailyPlanAction) => void;
+  onFallbackAgent: () => void;
+}) {
+  const { c } = useTheme();
+  const remainingActionCount = Math.max(
+    0,
+    (plan?.actions ?? []).filter(item => (item.action_key || item.title) !== excludeActionKey).length,
+  );
+  const queueSummary = remainingActionCount > 0
+    ? `余下 ${remainingActionCount} 件后台排队`
+    : '完成后 Agent 再排下一步';
+  const canComplete = Boolean(action.action_key);
+
+  return (
+    <View style={styles.planQueueBlock}>
+      <View style={[styles.planQueueStrip, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+        <View style={[styles.planQueueIcon, { backgroundColor: c.tintGreen }]}>
+          <Ionicons name="layers-outline" size={15} color={c.green} />
+        </View>
+        <View style={styles.planQueueText}>
+          <Text style={[styles.planQueueTitle, { color: c.labelPrimary }]}>后台排队</Text>
+          <Text style={[styles.planQueueSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
+            {queueSummary}
+          </Text>
+        </View>
+        {canComplete ? (
+          <Pressable
+            onPress={() => onComplete(action)}
+            disabled={completionState === 'sending' || completionState === 'completed'}
+            style={({ pressed }) => [
+              styles.planQueueDoneButton,
+              {
+                backgroundColor: completionState === 'completed' ? c.tintGreen : c.bgPrimary,
+                borderColor: completionState === 'completed' ? c.green : c.separator,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="完成当前行动"
+          >
+            <Ionicons
+              name={completionState === 'completed' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={14}
+              color={completionState === 'completed' ? c.green : c.labelSecondary}
+            />
+            <Text
+              style={[
+                styles.planQueueDoneText,
+                { color: completionState === 'completed' ? c.green : c.labelSecondary },
+              ]}
+            >
+              {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
+            </Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={onFallbackAgent}
+          style={({ pressed }) => [
+            styles.planQueueAdjustButton,
+            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="问 Agent 调整后台排队"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={14} color={c.brand} />
+        </Pressable>
+      </View>
+      {completionState === 'error' ? (
+        <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
+          <Ionicons name="alert-circle-outline" size={14} color={c.red} />
+          <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1517,11 +1599,6 @@ function fmt(v?: number | null): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-function formatHomeDate(value: Date): string {
-  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][value.getDay()];
-  return `${value.getMonth() + 1}月${value.getDate()}日 · ${weekday}`;
-}
-
 function getTrajectoryLevelLabel(level: string): string {
   if (level === 'high') return '高';
   if (level === 'attention') return '关注';
@@ -1573,7 +1650,21 @@ const styles = StyleSheet.create({
   commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
   commandAgentLabel: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
   commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
-  commandRightMeta: { alignItems: 'flex-end', gap: 5 },
+  commandRightMeta: { alignItems: 'flex-end', gap: 5, flexShrink: 0 },
+  commandRightTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  commandMiniActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  commandMiniAction: {
+    minWidth: 84,
+    height: 29,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
+    paddingHorizontal: 9,
+  },
+  commandMiniActionText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
   commandAgentCopy: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
   commandOutcomeBlock: {
@@ -2100,6 +2191,45 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
+  planQueueBlock: { gap: 6 },
+  planQueueStrip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    minHeight: 62,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  planQueueIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planQueueText: { flex: 1, minWidth: 0, gap: 2 },
+  planQueueTitle: { fontSize: 14, lineHeight: 17, fontWeight: '800' },
+  planQueueSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
+  planQueueDoneButton: {
+    minHeight: 32,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  planQueueDoneText: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  planQueueAdjustButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
