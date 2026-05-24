@@ -557,32 +557,32 @@ function HomeCommandHeader({
     : planCount > 0
       ? improvementFocus.target
       : improvementFocus.target;
-  const evidenceSummary = `依据：${buildEvidenceSourceSummary({
+  const evidenceSummary = `${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
-  })}`;
+  }).replace(/\//g, '、')}已接入`;
   const agentStepItems = [
-    { key: 'strategy', label: '策略', value: activeDomainSummary || loopStrategy.interventionLabel },
+    { key: 'strategy', label: '策略：', value: activeDomainSummary || loopStrategy.interventionLabel },
     {
       key: 'watch',
-      label: '观察',
+      label: '观察：',
       value: loopStrategy.verificationLabel || loopMetrics.map(metric => metric.label).slice(0, 2).join('/'),
     },
   ] as const;
   const agentLoopLine = agentStepItems
     .filter(item => item.value)
-    .map(item => `${item.label} ${item.value}`)
+    .map(item => `${item.label}${item.value}`)
     .join(' · ');
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const remainingActionCount = Math.max(0, action?.title ? planCount - 1 : planCount);
   const queueSummary = remainingActionCount > 0
-    ? `余下 ${remainingActionCount} 件后台排队`
+    ? `后台余 ${remainingActionCount} 件`
     : action?.title
-      ? '完成后 Agent 再排下一步'
-      : 'Agent 会根据新反馈继续排程';
+      ? '完成后再排下一步'
+      : '等待新反馈';
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -800,16 +800,10 @@ function HomeBodyFeedbackPanel({
 
   return (
     <View style={styles.bodyFeedbackBlock}>
-      <View style={styles.bodyFeedbackHeader}>
-        <View style={styles.bodyFeedbackTitleBlock}>
-          <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>身体反馈</Text>
-          <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>验证干预是否真的有效</Text>
-        </View>
-        <View style={[styles.bodyFeedbackBadge, { backgroundColor: c.bgPrimary }]}>
-          <Text style={[styles.bodyFeedbackBadgeText, { color: c.labelSecondary }]}>4 项</Text>
-        </View>
+      <View style={styles.bodyFeedbackInlineLabel}>
+        <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>反馈信号</Text>
+        <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelTertiary }]}>4 项</Text>
       </View>
-
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -1699,26 +1693,26 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
-    gap: 7,
+    paddingTop: 9,
+    paddingBottom: 9,
+    gap: 6,
   },
   commandAgentHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  commandAgentTitleBlock: { flex: 1, minWidth: 0, gap: 4 },
-  commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
-  commandAgentLabel: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
-  commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
+  commandAgentTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  commandAgentLabel: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  commandAgentSubLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
   commandRightMeta: { alignItems: 'flex-end', gap: 5, flexShrink: 0 },
   commandRightTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   commandMiniActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   commandMiniAction: {
-    minWidth: 84,
-    height: 29,
+    minWidth: 78,
+    height: 27,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -1727,9 +1721,9 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 9,
   },
-  commandMiniActionText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  commandMiniActionText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
-  commandAgentCopy: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  commandAgentCopy: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandOutcomeBlock: {
     minHeight: 28,
     borderRadius: radii.full,
@@ -1738,7 +1732,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  commandMetricRail: { minHeight: 21, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  commandMetricRail: { minHeight: 19, flexDirection: 'row', alignItems: 'center', gap: 8 },
   commandMetricPill: {
     flexShrink: 1,
     minWidth: 0,
@@ -1775,8 +1769,8 @@ const styles = StyleSheet.create({
   },
   commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
   commandSignalPrefix: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  commandSignalValue: { minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandSignalValue: { minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandNextStep: {
     minHeight: 38,
@@ -1791,7 +1785,7 @@ const styles = StyleSheet.create({
   commandNextStepLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandNextStepText: { color: '#FFFFFF', fontSize: 13, lineHeight: 16, fontWeight: '800' },
   commandInlineNextStep: {
-    minHeight: 33,
+    minHeight: 31,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.full,
     paddingHorizontal: 8,
@@ -1800,17 +1794,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   commandInlineNextIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 19,
+    height: 19,
+    borderRadius: 9.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandInlineNextLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
-  commandInlineNextText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandInlineNextLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandInlineNextText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandInlineDoneButton: {
-    minHeight: 33,
+    minHeight: 31,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 9,
@@ -1819,7 +1813,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  commandInlineDoneText: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandInlineDoneText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1827,10 +1821,10 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  commandDecisionShell: { flexDirection: 'row', gap: 10, paddingVertical: 3 },
-  commandDecisionRail: { width: 3, height: 42, borderRadius: 2, marginTop: 4 },
-  commandDecisionArea: { flex: 1, minWidth: 0, gap: 6 },
-  commandDecisionSummary: { gap: 6 },
+  commandDecisionShell: { flexDirection: 'row', gap: 9, paddingVertical: 1 },
+  commandDecisionRail: { width: 3, height: 36, borderRadius: 2, marginTop: 4 },
+  commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
+  commandDecisionSummary: { gap: 5 },
   commandDecisionTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
@@ -1847,18 +1841,18 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 18, fontWeight: '800', lineHeight: 22, letterSpacing: 0 },
-  commandHint: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  commandFocusLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
+  commandHint: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandLoopLine: {
-    minHeight: 21,
+    minHeight: 18,
     alignSelf: 'stretch',
     borderRadius: radii.full,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  commandLoopText: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandLoopText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2158,11 +2152,11 @@ const styles = StyleSheet.create({
   loopMetricValue: { fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   followUpCard: {
     paddingHorizontal: 0,
-    paddingVertical: 2,
-    gap: 3,
+    paddingVertical: 1,
+    gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 58,
+    minHeight: 50,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -2176,15 +2170,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   followUpIcon: {
-    width: 20,
-    height: 20,
+    width: 19,
+    height: 19,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   followUpTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  followUpTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  followUpSubtitle: { fontSize: 10, lineHeight: 12, fontWeight: '600' },
+  followUpTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
   followUpCountPill: {
     minHeight: 18,
     alignItems: 'center',
@@ -2223,21 +2217,21 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
+    paddingVertical: 9,
+    gap: 7,
   },
   backgroundHeader: {
-    minHeight: 34,
+    minHeight: 30,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
   },
   backgroundTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  backgroundTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
-  backgroundSubtitle: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
+  backgroundTitle: { fontSize: 14, lineHeight: 17, fontWeight: '800' },
+  backgroundSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
   backgroundLiveBadge: {
-    minHeight: 24,
+    minHeight: 22,
     borderRadius: radii.full,
     paddingHorizontal: 9,
     flexDirection: 'row',
@@ -2246,7 +2240,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   backgroundLiveDot: { width: 6, height: 6, borderRadius: 3 },
-  backgroundLiveText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  backgroundLiveText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   backgroundDivider: {
     height: StyleSheet.hairlineWidth,
   },
@@ -2304,44 +2298,34 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
-  bodyFeedbackBlock: { gap: 8 },
-  bodyFeedbackHeader: {
+  bodyFeedbackBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: 8,
   },
-  bodyFeedbackTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  bodyFeedbackTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
-  bodyFeedbackSubtitle: { fontSize: 11, lineHeight: 14, fontWeight: '600' },
-  bodyFeedbackBadge: {
-    minHeight: 24,
-    borderRadius: radii.full,
-    paddingHorizontal: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bodyFeedbackBadgeText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
-  bodyFeedbackRail: { gap: 8, paddingRight: 2 },
+  bodyFeedbackInlineLabel: { width: 52, minWidth: 52, gap: 1 },
+  bodyFeedbackTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  bodyFeedbackSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  bodyFeedbackRail: { gap: 7, paddingRight: 2 },
   bodyFeedbackSignal: {
-    width: 100,
-    minHeight: 42,
+    width: 96,
+    minHeight: 38,
     borderRadius: radii.md,
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
   bodyFeedbackIcon: {
-    width: 23,
-    height: 23,
+    width: 21,
+    height: 21,
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bodyFeedbackSignalText: { flex: 1, minWidth: 0, gap: 1 },
-  bodyFeedbackLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  bodyFeedbackValue: { fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bodyFeedbackLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  bodyFeedbackValue: { fontSize: 11, lineHeight: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,

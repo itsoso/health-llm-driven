@@ -199,7 +199,7 @@ describe('TodayScreen', () => {
 
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getAllByText(/依据：/).length).toBeGreaterThan(0);
+    expect(getAllByText(/已接入/).length).toBeGreaterThan(0);
     expect(queryByText(/源画像/)).toBeNull();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
@@ -223,8 +223,8 @@ describe('TodayScreen', () => {
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日洞察 · 1 个计划')).toBeTruthy();
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
-    expect(getByText(/观察 血氧\/睡眠分/)).toBeTruthy();
-    expect(getByText('依据：表观遗传/穿戴')).toBeTruthy();
+    expect(getByText(/观察：血氧\/睡眠分/)).toBeTruthy();
+    expect(getByText('表观遗传、穿戴已接入')).toBeTruthy();
     expect(queryByText(/画像校准/)).toBeNull();
   });
 
@@ -319,12 +319,12 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('Agent 后台运行')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台继续看')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('身体反馈')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('反馈信号')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('环境影响')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('长期档案')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBeLessThan(textFlow.indexOf('后台继续看'));
-    expect(textFlow.indexOf('后台继续看')).toBeLessThan(textFlow.indexOf('身体反馈'));
-    expect(textFlow.indexOf('身体反馈')).toBeLessThan(textFlow.indexOf('环境影响'));
+    expect(textFlow.indexOf('后台继续看')).toBeLessThan(textFlow.indexOf('反馈信号'));
+    expect(textFlow.indexOf('反馈信号')).toBeLessThan(textFlow.indexOf('环境影响'));
     expect(textFlow.indexOf('环境影响')).toBeLessThan(textFlow.indexOf('长期档案'));
   });
 
@@ -422,7 +422,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/策略/).length).toBeGreaterThan(0);
-    expect(getByText(/策略 饮食\/睡眠\/运动 \+2/)).toBeTruthy();
+    expect(getByText(/策略：饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
   it('opens outcome feedback surfaces from the agent summary', () => {
@@ -483,7 +483,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('后台排队')).toBeNull();
-    expect(getByText(/余下 1 件后台排队/)).toBeTruthy();
+    expect(getByText(/后台余 1 件/)).toBeTruthy();
     expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
     expect(queryByText('今天蛋白质目标')).toBeNull();
     expect(queryByText('接下来')).toBeNull();
@@ -511,7 +511,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('后台排队')).toBeNull();
-    expect(getByText(/余下 2 件后台排队/)).toBeTruthy();
+    expect(getByText(/后台余 2 件/)).toBeTruthy();
     expect(queryByText('现在只做一件')).toBeNull();
     expect(queryByText('现在先做')).toBeNull();
     expect(queryByText('今日操作计划')).toBeNull();
