@@ -37,9 +37,18 @@ type QuickRecordEntry = {
   key: string;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  hint: string;
   color: string;
   priority: number;
   onPress: () => void;
+};
+
+type RecordGapState = {
+  isMorning: boolean;
+  isMealWindow: boolean;
+  isPreWorkoutWindow: boolean;
+  missingBody: boolean;
+  missingMeal: boolean;
 };
 
 export default function RecordScreen() {
@@ -82,52 +91,62 @@ export default function RecordScreen() {
     () => waterData?.records ?? (Array.isArray(waterData) ? waterData : []),
     [waterData],
   );
+  const recordGaps = useMemo<RecordGapState>(() => {
+    const hour = new Date().getHours();
+    return {
+      isMorning: hour >= 5 && hour <= 10,
+      isMealWindow: (hour >= 11 && hour <= 14) || (hour >= 17 && hour <= 20),
+      isPreWorkoutWindow: hour >= 16 && hour <= 21,
+      missingBody: !weightStats?.current_weight && !bpStats?.average_systolic,
+      missingMeal: meals.length === 0,
+    };
+  }, [bpStats?.average_systolic, meals.length, weightStats?.current_weight]);
+
   const today = new Date().toISOString().split('T')[0];
   const highFrequencyRecords = useMemo<QuickRecordEntry[]>(() => {
-    const hour = new Date().getHours();
-    const isMorning = hour >= 5 && hour <= 10;
-    const isMealWindow = (hour >= 11 && hour <= 14) || (hour >= 17 && hour <= 20);
-    const isPreWorkoutWindow = hour >= 16 && hour <= 21;
-    const missingBody = !weightStats?.current_weight && !bpStats?.average_systolic;
-    const missingMeal = meals.length === 0;
-
     const entries: QuickRecordEntry[] = [
       {
         key: 'diet',
         icon: 'nutrition-outline',
         label: '饮食',
+        hint: recordGaps.missingMeal ? '今天还没记餐' : '补充餐食细节',
         color: c.orange,
-        priority: (isMealWindow && missingMeal) ? 95 : missingMeal ? 62 : 30,
+        priority: (recordGaps.isMealWindow && recordGaps.missingMeal) ? 95 : recordGaps.missingMeal ? 62 : 30,
         onPress: () => router.push('/diet' as any),
       },
       {
         key: 'body',
         icon: 'body-outline',
         label: '体重腰围',
+        hint: recordGaps.missingBody ? '缺少基础指标' : '更新体重血压',
         color: c.teal,
-        priority: (isMorning && missingBody) ? 100 : missingBody ? 70 : 28,
+        priority: (recordGaps.isMorning && recordGaps.missingBody) ? 100 : recordGaps.missingBody ? 70 : 28,
         onPress: () => router.push('/body-measurements' as any),
       },
       {
         key: 'voice',
         icon: 'mic-outline',
         label: '声音笔记',
+        hint: '不想打字就说',
         color: c.blue,
-        priority: 48,
+        priority: 24,
         onPress: () => router.push('/voice-chat?intent=journal' as any),
       },
       {
         key: 'preworkout',
         icon: 'flash-outline',
         label: '跑前准备',
+        hint: '跑前确认状态',
         color: c.green,
-        priority: isPreWorkoutWindow ? 72 : 42,
+        priority: recordGaps.isPreWorkoutWindow ? 72 : 18,
         onPress: () => router.push('/voice-chat?intent=preworkout&workout_type=running' as any),
       },
     ];
 
     return entries.sort((a, b) => b.priority - a.priority);
-  }, [bpStats?.average_systolic, c.blue, c.green, c.orange, c.teal, meals.length, router, weightStats?.current_weight]);
+  }, [c.blue, c.green, c.orange, c.teal, recordGaps, router]);
+  const recommendedRecord = highFrequencyRecords[0];
+  const shouldShowRecommendedRecord = recommendedRecord?.priority >= 60;
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
   const doWater = useCallback(async (amt: number) => {
@@ -175,6 +194,27 @@ export default function RecordScreen() {
               <Text style={txt.sectionHint}>先录入会改变今日建议的数据</Text>
             </View>
           </View>
+          {shouldShowRecommendedRecord && recommendedRecord && (
+            <RecordFocusCard
+              entry={recommendedRecord}
+              gaps={recordGaps}
+              onPress={recommendedRecord.onPress}
+              onAskAgent={() => {
+                pushChatWithContext(router, {
+                  prompt: `请帮我判断现在最该补充哪条健康记录，并说明为什么优先「${recommendedRecord.label}」。`,
+                  badge: '记录优先级',
+                  context: {
+                    from: 'record/focus',
+                    recommended_record: recommendedRecord.key,
+                    missing_body: recordGaps.missingBody,
+                    missing_meal: recordGaps.missingMeal,
+                    water_total_ml: waterTotal,
+                    water_target_ml: waterTarget,
+                  },
+                });
+              }}
+            />
+          )}
           <View style={styles.captureModeRow}>
             <CaptureModeBtn
               icon="mic-outline"
@@ -195,20 +235,20 @@ export default function RecordScreen() {
             <CaptureModeBtn
               icon="hand-left-outline"
               label="点一下"
-              hint="快速打卡"
+              hint="记录症状"
               color={c.green}
-              onPress={() => router.push('/(tabs)/record' as any)}
-              accessibilityLabel="点一下快速打卡"
+              onPress={() => router.push('/symptom-record' as any)}
+              accessibilityLabel="点一下记录症状"
             />
           </View>
           <View style={styles.quickNav} testID="high-frequency-records">
-            {highFrequencyRecords.map((entry, index) => (
+            {highFrequencyRecords.map((entry) => (
               <QuickNavBtn
                 key={entry.key}
                 icon={entry.icon}
                 label={entry.label}
+                hint={entry.hint}
                 color={entry.color}
-                priorityLabel={index === 0 ? `现在优先：${entry.label}` : undefined}
                 onPress={entry.onPress}
               />
             ))}
@@ -494,6 +534,73 @@ export default function RecordScreen() {
   );
 }
 
+function getRecordFocusReason(entry: QuickRecordEntry, gaps: RecordGapState) {
+  if (entry.key === 'body') {
+    if (gaps.isMorning && gaps.missingBody) return '早晨体重和血压会直接影响今天的饮食、运动和风险判断。';
+    if (gaps.missingBody) return '缺少基础身体指标，先补齐会提高今日建议的可信度。';
+    return '更新体重、腰围或血压，让趋势更连续。';
+  }
+  if (entry.key === 'diet') {
+    if (gaps.isMealWindow && gaps.missingMeal) return '当前餐窗还没记录，先补餐食会影响热量和蛋白目标。';
+    if (gaps.missingMeal) return '今天还没有餐食记录，先补一餐让 Agent 有依据。';
+    return '补充餐食细节，帮助复盘今天的营养目标。';
+  }
+  if (entry.key === 'preworkout') return '跑前先确认配速、心率上限和血氧风险。';
+  return '用一句话补充体感、异常或今天的执行情况。';
+}
+
+function RecordFocusCard({
+  entry,
+  gaps,
+  onPress,
+  onAskAgent,
+}: {
+  entry: QuickRecordEntry;
+  gaps: RecordGapState;
+  onPress: () => void;
+  onAskAgent: () => void;
+}) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  return (
+    <View style={[styles.recordFocusCard, { borderColor: `${entry.color}55`, backgroundColor: `${entry.color}0F` }]}>
+      <View style={styles.recordFocusTop}>
+        <View style={[styles.recordFocusIcon, { backgroundColor: `${entry.color}1F` }]}>
+          <Ionicons name={entry.icon} size={22} color={entry.color} />
+        </View>
+        <View style={styles.recordFocusBody}>
+          <Text style={[txt.recordFocusKicker, { color: entry.color }]}>现在优先</Text>
+          <Text style={txt.recordFocusTitle}>{entry.label}</Text>
+          <Text style={txt.recordFocusHint}>{getRecordFocusReason(entry, gaps)}</Text>
+        </View>
+      </View>
+      <View style={styles.recordFocusActions}>
+        <TouchableOpacity
+          style={[styles.recordFocusPrimary, { backgroundColor: entry.color }]}
+          onPress={onPress}
+          activeOpacity={0.76}
+          accessibilityRole="button"
+          accessibilityLabel={`开始记录${entry.label}`}
+        >
+          <Ionicons name="play" size={15} color="#fff" />
+          <Text style={txt.recordFocusPrimaryText}>开始记录</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.recordFocusSecondary, { borderColor: `${entry.color}45` }]}
+          onPress={onAskAgent}
+          activeOpacity={0.76}
+          accessibilityRole="button"
+          accessibilityLabel={`询问 Agent 为什么优先记录${entry.label}`}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={15} color={entry.color} />
+          <Text style={[txt.recordFocusSecondaryText, { color: entry.color }]}>问 Agent</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function CaptureModeBtn({
   icon,
   label,
@@ -532,14 +639,14 @@ function CaptureModeBtn({
 function QuickNavBtn({
   icon,
   label,
+  hint,
   color,
-  priorityLabel,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  hint: string;
   color: string;
-  priorityLabel?: string;
   onPress: () => void;
 }) {
   const { c } = useTheme();
@@ -547,15 +654,14 @@ function QuickNavBtn({
   const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={label}>
-      {priorityLabel ? (
-        <View style={[styles.priorityBadge, { backgroundColor: `${color}18` }]}>
-          <Text style={[txt.priorityBadge, { color }]}>{priorityLabel}</Text>
-        </View>
-      ) : null}
       <View style={[styles.quickNavIcon, { backgroundColor: `${color}18` }]}>
         <Ionicons name={icon} size={18} color={color} />
       </View>
-      <Text style={txt.quickNavLabel}>{label}</Text>
+      <View style={styles.quickNavCopy}>
+        <Text style={txt.quickNavLabel}>{label}</Text>
+        <Text style={txt.quickNavHint} numberOfLines={1}>{hint}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={14} color={c.labelQuaternary} />
     </TouchableOpacity>
   );
 }
@@ -625,20 +731,52 @@ function createStyles(c: ColorPalette) {
   quickNavBtn: {
     width: '48.5%',
     minHeight: 72,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 9,
     backgroundColor: c.bgPrimary,
     borderRadius: radii.md,
     paddingVertical: 11,
-  },
-  priorityBadge: {
-    alignSelf: 'center',
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginBottom: 1,
+    paddingHorizontal: 10,
   },
   quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
+  quickNavCopy: { flex: 1, minWidth: 0 },
+  recordFocusCard: {
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  recordFocusTop: { flexDirection: 'row', gap: spacing.sm },
+  recordFocusIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordFocusBody: { flex: 1, minWidth: 0 },
+  recordFocusActions: { flexDirection: 'row', gap: spacing.sm },
+  recordFocusPrimary: {
+    flex: 1.3,
+    minHeight: 42,
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  recordFocusSecondary: {
+    flex: 1,
+    minHeight: 42,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: c.bgCard,
+  },
   moreRecordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   captureModeRow: { flexDirection: 'row', gap: spacing.sm },
   captureModeBtn: {
@@ -745,8 +883,13 @@ function createTxt(c: ColorPalette) {
   title: { fontSize: 28, fontWeight: '700', color: c.labelPrimary, marginBottom: spacing.md } as TextStyle,
   captureModeLabel: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   captureModeHint: { fontSize: 10, color: c.labelTertiary, fontWeight: '600' } as TextStyle,
-  quickNavLabel: { fontSize: 11, fontWeight: '500', color: c.labelSecondary } as TextStyle,
-  priorityBadge: { fontSize: 10, fontWeight: '800' } as TextStyle,
+  quickNavLabel: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  quickNavHint: { fontSize: 10, color: c.labelTertiary, fontWeight: '600', marginTop: 2 } as TextStyle,
+  recordFocusKicker: { fontSize: 12, fontWeight: '800' } as TextStyle,
+  recordFocusTitle: { fontSize: 19, fontWeight: '900', color: c.labelPrimary, marginTop: 2 } as TextStyle,
+  recordFocusHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4 } as TextStyle,
+  recordFocusPrimaryText: { fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
+  recordFocusSecondaryText: { fontSize: 13, fontWeight: '800' } as TextStyle,
   sectionEyebrow: { fontSize: 16, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sectionHint: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   moreTitle: { fontSize: 12, fontWeight: '700', color: c.labelTertiary } as TextStyle,
