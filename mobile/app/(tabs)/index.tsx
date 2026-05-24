@@ -547,29 +547,35 @@ function HomeCommandHeader({
     wearableReady,
   ].filter(Boolean).length;
   const evidenceLabel = `${evidenceSourceCount}源画像`;
-  const headline = criticalCount > 0
-    ? (riskTitle || `${criticalCount} 个风险待处理`)
-    : planCount > 0
-      ? `今天 ${planCount} 件事`
-      : '保持记录节奏';
-  const focusKicker = criticalCount > 0
-    ? '当前重点 · 风险优先'
-    : activeDomainCount > 0
-      ? `当前重点 · ${activeDomainCount} 个干预域执行中`
-      : '当前重点 · 等待新任务';
-  const focusText = criticalCount > 0
-    ? `${criticalCount} 个风险 · 先看解释和处理顺序`
-    : planCount > 0
-      ? '按优先级完成今日计划'
-      : '暂无硬性任务，保持记录节奏';
-  const liveSignalSummary = buildLiveSignalSummary(twinSnapshot);
-  const agentInsight = criticalCount > 0
-    ? `正在看 ${liveSignalSummary}，优先解释并处理「${riskTitle || '风险信号'}」。`
-    : `正在看 ${liveSignalSummary}，继续调整生活方式干预。`;
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
   const loopDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 3);
+  const improvementFocus = buildImprovementFocus({
+    action,
+    criticalCount,
+    planCount,
+    riskTitle,
+    activeDomainCount,
+    loopMetrics,
+  });
+  const headline = criticalCount > 0
+    ? improvementFocus.headline
+    : planCount > 0
+      ? improvementFocus.headline
+      : '保持记录节奏';
+  const focusKicker = criticalCount > 0
+    ? 'Agent 正在处理 · 风险优先'
+    : activeDomainCount > 0
+      ? `Agent 正在执行 · ${activeDomainCount} 个干预域`
+      : 'Agent 正在观察 · 等待新任务';
+  const focusText = criticalCount > 0
+    ? improvementFocus.target
+    : planCount > 0
+      ? improvementFocus.target
+      : improvementFocus.target;
+  const liveSignalSummary = buildLiveSignalSummary(twinSnapshot);
+  const agentInsight = `基于 ${evidenceLabel} 和 ${liveSignalSummary}，正在推动${improvementFocus.outcome}。`;
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -1235,7 +1241,7 @@ function buildLoopFeedbackMetrics(
   const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
   let priority: string[] = [];
 
-  if (/spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
+  if (/sleep|bed|spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
     priority = ['spo2', 'sleep_score', 'hrv'];
   } else if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
     priority = ['body_shape', 'vo2max', 'hrv'];
@@ -1253,6 +1259,87 @@ function buildLoopFeedbackMetrics(
     .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot))
     .filter(Boolean)
     .slice(0, 3) as OutcomeFeedbackMetric[];
+}
+
+function buildImprovementFocus({
+  action,
+  activeDomainCount,
+  criticalCount,
+  planCount,
+  riskTitle,
+  loopMetrics,
+}: {
+  action?: DailyPlanAction | null;
+  activeDomainCount: number;
+  criticalCount: number;
+  planCount: number;
+  riskTitle?: string;
+  loopMetrics: OutcomeFeedbackMetric[];
+}) {
+  const haystack = `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''} ${action?.metric_key ?? ''}`.toLowerCase();
+  const metricLabels = loopMetrics
+    .map(metric => metric.label.replace('BMI/体脂', 'BMI 和体脂').replace('血液/生化', '血液和生化'))
+    .slice(0, 3);
+  const metricTarget = metricLabels.length > 0
+    ? metricLabels.join('、')
+    : '关键健康指标';
+
+  if (/sleep|bed|spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻/.test(haystack)) {
+    return {
+      headline: '稳住夜间血氧',
+      target: '目标：血氧稳定，睡眠分和 HRV 回升',
+      outcome: '夜间血氧、睡眠分和 HRV 改善',
+    };
+  }
+  if (/bmi|weight|waist|fat|体重|腰围|体脂|身材/.test(haystack)) {
+    return {
+      headline: '改善体成分',
+      target: '目标：BMI 和体脂下降，恢复指标不掉线',
+      outcome: 'BMI、体脂和有氧能力改善',
+    };
+  }
+  if (/bp|blood_pressure|pressure|血压|心血管/.test(haystack)) {
+    return {
+      headline: '降低血压负荷',
+      target: '目标：血压更稳，HRV 和睡眠恢复同步改善',
+      outcome: '血压、HRV 和睡眠恢复改善',
+    };
+  }
+  if (/ldl|hdl|tg|triglyceride|hba1c|glucose|alt|ast|uric|lab|blood|血糖|血脂|尿酸|肝|生化|血检/.test(haystack)) {
+    return {
+      headline: '校准代谢指标',
+      target: '目标：饮食、运动和补剂最终反映到血检',
+      outcome: '血液和生化指标改善',
+    };
+  }
+  if (action?.title) {
+    return {
+      headline: action.title,
+      target: `目标：改善 ${metricTarget}`,
+      outcome: `${metricTarget}改善`,
+    };
+  }
+  if (criticalCount > 0) {
+    return {
+      headline: riskTitle || `${criticalCount} 个风险待处理`,
+      target: `目标：先压低风险，再观察 ${metricTarget}`,
+      outcome: `${metricTarget}改善`,
+    };
+  }
+  if (planCount > 0) {
+    return {
+      headline: `今天 ${planCount} 件事`,
+      target: activeDomainCount > 0
+        ? `目标：用 ${activeDomainCount} 个干预域改善 ${metricTarget}`
+        : `目标：完成计划并观察 ${metricTarget}`,
+      outcome: `${metricTarget}改善`,
+    };
+  }
+  return {
+    headline: '保持记录节奏',
+    target: '目标：补齐数据，让建议更贴近身体反馈',
+    outcome: '建议精度和长期趋势判断改善',
+  };
 }
 
 function buildOutcomeFeedbackMetric(

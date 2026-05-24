@@ -165,8 +165,9 @@ describe('TodayScreen', () => {
     expect(queryByText('健康 Agent 正在运行')).toBeNull();
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getByText('当前重点 · 等待新任务')).toBeTruthy();
+    expect(getByText('Agent 正在观察 · 等待新任务')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
+    expect(getByText('目标：补齐数据，让建议更贴近身体反馈')).toBeTruthy();
     expect(getByText('更多入口')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
@@ -198,14 +199,34 @@ describe('TodayScreen', () => {
   });
 
   it('frames the home feed as a background health agent workspace', () => {
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getByText(/源画像/)).toBeTruthy();
+    expect(getAllByText(/源画像/).length).toBeGreaterThan(0);
+    expect(getByText(/基于 .*源画像/)).toBeTruthy();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
     expect(queryByText('Agent 正在把你的长期画像、检查和实时反馈合并成饮食、睡眠、运动和恢复策略。')).toBeNull();
+  });
+
+  it('states health improvement targets instead of only listing risks', () => {
+    mockTwinData = {
+      physiological: {
+        sleep_score_latest: 91,
+        hrv_latest: 63,
+        spo2_avg: 93,
+      },
+    };
+    mockDailyPlanActions = [
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+    ];
+
+    const { getAllByText, getByText } = render(<TodayScreen />);
+
+    expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
+    expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
+    expect(getByText(/夜间血氧、睡眠分和 HRV 改善/)).toBeTruthy();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
@@ -418,9 +439,10 @@ describe('TodayScreen', () => {
       { id: '2', title: '步行 20 分钟' },
     ];
 
-    const { getByText } = render(<TodayScreen />);
+    const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('今天 2 件事')).toBeTruthy();
+    expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
+    expect(getByText('目标：改善 睡眠分、HRV、血氧')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
