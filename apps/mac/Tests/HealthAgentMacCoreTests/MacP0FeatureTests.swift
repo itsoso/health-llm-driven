@@ -36,6 +36,18 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(model.isModelPickerEnabled)
     }
 
+    func testAgentModelCatalogIncludesAliyunTokenPlanModels() {
+        let options = AgentModelCatalog.defaultOptions
+        let optionIDs = Set(options.map(\.id))
+
+        XCTAssertTrue(optionIDs.contains("qwen3.6-plus"))
+        XCTAssertTrue(optionIDs.contains("minimax-m2.5"))
+        XCTAssertTrue(optionIDs.contains("glm-5"))
+        XCTAssertTrue(optionIDs.contains("deepseek-v3.2"))
+        XCTAssertEqual(options.first(where: { $0.id == "qwen3.6-plus" })?.provider, "阿里 TokenPlan")
+        XCTAssertEqual(optionIDs.count, options.count)
+    }
+
     func testCommandPaletteBuildsCoreDesktopCommands() {
         let commands = DesktopCommandPalette.defaultCommands(language: .zh)
 

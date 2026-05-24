@@ -12,15 +12,7 @@ struct AgentChatView: View {
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
 
-    private let modelOptions: [(id: String, title: String, tier: String)] = [
-        ("commercial/Claude-Opus-4.7", "Claude Opus 4.7", "Top"),
-        ("commercial/Gemini-3.1-Pro-Preview", "Gemini 3.1 Pro", "Top"),
-        ("commercial/GPT-5.5", "GPT-5.5", "Top"),
-        ("commercial/GPT-5.4", "GPT-5.4", "Top"),
-        ("commercial/GPT-5.1", "GPT-5.1", "Mid"),
-        ("commercial/DeepSeek-R1", "DeepSeek R1", "Mid"),
-        ("commercial/DeepSeek-V3.2", "DeepSeek V3.2", "Mid")
-    ]
+    private let modelOptions = AgentModelCatalog.defaultOptions
 
     var body: some View {
         ScrollView {
@@ -275,7 +267,7 @@ struct AgentChatView: View {
         .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private func modelCard(_ option: (id: String, title: String, tier: String)) -> some View {
+    private func modelCard(_ option: AgentModelOption) -> some View {
         let isSelected = viewModel.selectedModelID == option.id
         return Button {
             modelStrategy = "manual"
@@ -292,6 +284,9 @@ struct AgentChatView: View {
                     Text(option.tier)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text(option.provider)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
             }

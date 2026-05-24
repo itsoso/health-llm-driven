@@ -230,6 +230,21 @@ def reset_llm_provider() -> None:
     logger.info("[LLM Factory] Provider 单例已重置")
 
 
+def create_provider_for_model_id(model_id: str) -> LLMProvider:
+    """Create a wrapped provider for an explicit registered model id."""
+
+    from app.services.llm.model_registry import get_model
+    from app.services.llm.usage_tracker import wrap_provider
+    from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+
+    entry = get_model(model_id)
+    if not entry:
+        raise ValueError(f"未注册的 model_id: {model_id}")
+    raw = _create_from_entry(entry)
+    logger.info(f"[LLM Factory] 用请求指定模型 {model_id} (provider={entry.provider})")
+    return wrap_provider_pii_scrub(wrap_provider(raw))
+
+
 def create_provider_for_user(user_id: int, db) -> LLMProvider:
     """用户级 LLM 偏好 (2026-05-13).
 

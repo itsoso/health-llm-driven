@@ -31,6 +31,28 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
 
 
+def _extract_model_id_from_extra_context(extra_context: Optional[str]) -> Optional[str]:
+    """Return a safe per-request model id from Mac/mobile extra context."""
+
+    if not extra_context:
+        return None
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    model_id = payload.get("model_id")
+    if not isinstance(model_id, str):
+        return None
+    model_id = model_id.strip()
+    if not model_id:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,120}", model_id):
+        return None
+    return model_id
+
+
 def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
     """Map provider finish_reason to a small client-facing completion status."""
     if finish_reason == "length":
@@ -403,6 +425,7 @@ class AgentExecutor:
         self.db = db
         self._current_user_id: Optional[int] = None
         self._http_client: Optional[httpx.AsyncClient] = None
+        self._request_model_id: Optional[str] = None
 
     async def run_stream(
         self,
@@ -427,6 +450,7 @@ class AgentExecutor:
 
         start_time = time.time()
         self._current_user_id = user_id
+        self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         # 可解释性: 记录本次回答用到的数据源. 必须在 system prompt / inspection 前初始化.
         sources_used: list = []
 
@@ -550,13 +574,18 @@ class AgentExecutor:
                     try:
                         # 2026-05-14: 显示给前端看的 model name 也走用户偏好
                         # (之前 bug: get_llm_provider() 是全局, 用户切了仍显示 MiniMax)
-                        if self._current_user_id:
+                        if self._request_model_id:
+                            from app.services.llm.model_registry import get_model
+                            entry = get_model(self._request_model_id)
+                            model_name = entry.model if entry else self._request_model_id
+                        elif self._current_user_id:
                             from app.services.llm.factory import create_provider_for_user
                             p = create_provider_for_user(self._current_user_id, self.db)
+                            model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
                         else:
                             from app.services.llm.factory import get_llm_provider
                             p = get_llm_provider()
-                        model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
+                            model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
                     except Exception:
                         pass
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
@@ -848,9 +877,9 @@ class AgentExecutor:
             from app.models.user_profile import UserProfile
             from app.services.llm.model_registry import get_active_model_id, get_model
 
-            model_id = None
+            model_id = self._request_model_id
             profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-            if profile:
+            if not model_id and profile:
                 model_id = getattr(profile, "llm_model_id", None)
             model_id = model_id or get_active_model_id()
             if not model_id:
@@ -1153,12 +1182,28 @@ class AgentExecutor:
             model = settings.agent_model or settings.llm_model
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
+        # Mac/桌面端手动路由: extra_context.model_id 是 model_registry 里的 id,
+        # 只影响本次请求, 不改 user_profile 持久偏好.
+        if self._request_model_id:
+            try:
+                from app.services.llm.factory import create_provider_for_model_id
+                provider = create_provider_for_model_id(self._request_model_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[agent_executor] request model override %s unavailable, fallback: %s",
+                    self._request_model_id,
+                    e,
+                )
+                provider = None
+        else:
+            provider = None
+
         # 回退到默认 provider — 不传 model, 让 provider 用 init 时的默认
         # 2026-05-13: 用户级 LLM 偏好 — 优先读 user_profile.llm_model_id
-        if self._current_user_id:
+        if provider is None and self._current_user_id:
             from app.services.llm.factory import create_provider_for_user
             provider = create_provider_for_user(self._current_user_id, self.db)
-        else:
+        elif provider is None:
             from app.services.llm.factory import get_llm_provider
             provider = get_llm_provider()
         # OpenClaw 不吃 tools 字段; wrap_provider 是 in-place patch, isinstance 仍可识别.
