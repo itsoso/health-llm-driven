@@ -677,14 +677,14 @@ function HomeCommandHeader({
         <Pressable
           style={({ pressed }) => [
             styles.primaryAction,
-            { backgroundColor: c.brand, opacity: pressed ? 0.86 : 1 },
+            { backgroundColor: c.brandLight, borderColor: `${c.brand}2E`, opacity: pressed ? 0.76 : 1 },
           ]}
           onPress={primaryAction}
           accessibilityRole="button"
           accessibilityLabel={primaryLabel}
         >
-          <Ionicons name={primaryIcon} size={17} color="#FFFFFF" />
-          <Text style={styles.primaryActionText}>{primaryLabel}</Text>
+          <Ionicons name={primaryIcon} size={17} color={c.brand} />
+          <Text style={[styles.primaryActionText, { color: c.brand }]}>{primaryLabel}</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [
@@ -720,10 +720,37 @@ function CompactShortcutSection({
   const { c } = useTheme();
   return (
     <View style={styles.shortcutCard}>
-      <View style={styles.shortcutHeader}>
+      <View style={styles.shortcutStrip}>
         <View style={styles.shortcutHeaderText}>
           <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>更多入口</Text>
           <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>低频数据先收起</Text>
+        </View>
+        <View style={styles.shortcutRail}>
+          {shortcuts.map((item, index) => (
+            <React.Fragment key={item.label}>
+              <Pressable
+                onPress={item.onPress}
+                style={({ pressed }) => [
+                  styles.shortcutPill,
+                  { opacity: pressed ? 0.58 : 1 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.label} ${item.value}`}
+              >
+                <View style={[styles.shortcutIcon, { backgroundColor: item.bg }]}>
+                  <Ionicons name={item.icon} size={11} color={item.color} />
+                </View>
+                <View style={styles.shortcutTextBlock}>
+                  <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                    {item.label}
+                  </Text>
+                </View>
+              </Pressable>
+              {index < shortcuts.length - 1 ? (
+                <View style={[styles.shortcutSeparator, { backgroundColor: c.separator }]} />
+              ) : null}
+            </React.Fragment>
+          ))}
         </View>
         <Pressable
           onPress={onOpenAll}
@@ -734,32 +761,6 @@ function CompactShortcutSection({
           <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
           <Ionicons name="chevron-forward" size={13} color={c.brand} />
         </Pressable>
-      </View>
-      <View style={styles.shortcutRail}>
-        {shortcuts.map(item => (
-          <Pressable
-            key={item.label}
-            onPress={item.onPress}
-            style={({ pressed }) => [
-              styles.shortcutPill,
-              { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.label} ${item.value}`}
-          >
-            <View style={[styles.shortcutIcon, { backgroundColor: item.bg }]}>
-              <Ionicons name={item.icon} size={12} color={item.color} />
-            </View>
-            <View style={styles.shortcutTextBlock}>
-              <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                {item.label}
-              </Text>
-              <Text style={[styles.shortcutValue, { color: c.labelPrimary }]} numberOfLines={1}>
-                {item.value}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
       </View>
     </View>
   );
@@ -1726,10 +1727,10 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 13,
-    paddingTop: 12,
-    paddingBottom: 12,
-    gap: 9,
+    paddingHorizontal: 12,
+    paddingTop: 11,
+    paddingBottom: 11,
+    gap: 8,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1739,19 +1740,19 @@ const styles = StyleSheet.create({
   },
   commandAgentTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
   commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
-  commandAgentLabel: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
-  commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
-  commandRightMeta: { alignItems: 'flex-end', gap: 6 },
+  commandAgentLabel: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  commandAgentSubLabel: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  commandRightMeta: { alignItems: 'flex-end', gap: 5 },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
   commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '700' },
   commandOutcomeBlock: { gap: 7 },
   agentStepRail: {
-    minHeight: 26,
+    minHeight: 24,
     borderRadius: radii.full,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   agentStepSegment: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   agentStepLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
@@ -1781,9 +1782,9 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandDecisionArea: {
-    borderLeftWidth: 3,
-    paddingLeft: 10,
-    paddingVertical: 2,
+    borderLeftWidth: 2,
+    paddingLeft: 9,
+    paddingVertical: 1,
     gap: 4,
   },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
@@ -1801,41 +1802,42 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 20, fontWeight: '800', lineHeight: 25, letterSpacing: 0 },
+  commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 18, fontWeight: '800', lineHeight: 23, letterSpacing: 0 },
   commandHint: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     borderRadius: radii.full,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12, fontWeight: '800' },
-  commandActions: { flexDirection: 'row', gap: spacing.sm },
+  statusText: { fontSize: 11, fontWeight: '800' },
+  commandActions: { flexDirection: 'row', gap: 8 },
   primaryAction: {
     flex: 1,
-    minHeight: 38,
-    borderRadius: radii.lg,
+    minHeight: 35,
+    borderRadius: radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 7,
   },
-  primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  primaryActionText: { fontSize: 14, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 38,
-    minWidth: 82,
-    borderRadius: radii.lg,
+    minHeight: 35,
+    minWidth: 76,
+    borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
   },
-  secondaryActionText: { fontSize: 14, fontWeight: '800' },
+  secondaryActionText: { fontSize: 13, fontWeight: '800' },
   workspaceCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -2185,6 +2187,12 @@ const styles = StyleSheet.create({
   followUpRowDetail: { fontSize: 11, lineHeight: 13, fontWeight: '500' },
   followUpRowRight: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   shortcutCard: {
+    gap: 0,
+  },
+  shortcutStrip: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
   shortcutHeader: {
@@ -2193,38 +2201,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  shortcutHeaderText: { flex: 1, minWidth: 0, gap: 2 },
-  shortcutTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
-  shortcutSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
-  shortcutAllButton: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 2 },
-  shortcutAllText: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  shortcutRail: { flexDirection: 'row', flexWrap: 'nowrap', gap: 5 },
+  shortcutHeaderText: { width: 72, minWidth: 72, gap: 1 },
+  shortcutTitle: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  shortcutSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
+  shortcutAllButton: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 1 },
+  shortcutAllText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  shortcutRail: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center' },
   shortcutPill: {
     flex: 1,
     minWidth: 0,
-    minHeight: 32,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    minHeight: 30,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
+  shortcutSeparator: { width: StyleSheet.hairlineWidth, height: 16 },
   shortcutIcon: {
-    width: 17, height: 17, borderRadius: 8.5,
+    width: 15, height: 15, borderRadius: 7.5,
     alignItems: 'center', justifyContent: 'center',
   },
   shortcutTextBlock: {
     flex: 1,
     minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
   },
-  shortcutLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700', textAlign: 'center' },
+  shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   emptyBlock: {
     borderWidth: 1,
