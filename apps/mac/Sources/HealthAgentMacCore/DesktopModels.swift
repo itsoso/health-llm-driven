@@ -696,6 +696,7 @@ public struct KnowledgeSummary: Decodable, Equatable, Sendable {
     public let entityTypeCounts: [KnowledgeCount]
     public let evidenceLevelCounts: [KnowledgeCount]
     public let sourceCounts: [KnowledgeSourceCount]
+    public let localSourceSummary: KnowledgeLocalSourceSummary?
     public let recentDocuments: [KnowledgeDocumentSummary]
 
     enum CodingKeys: String, CodingKey {
@@ -709,7 +710,88 @@ public struct KnowledgeSummary: Decodable, Equatable, Sendable {
         case entityTypeCounts = "entity_type_counts"
         case evidenceLevelCounts = "evidence_level_counts"
         case sourceCounts = "source_counts"
+        case localSourceSummary = "local_source_summary"
         case recentDocuments = "recent_documents"
+    }
+}
+
+public struct KnowledgeLocalSourceSummary: Decodable, Equatable, Sendable {
+    public let sourceRoot: String
+    public let exists: Bool
+    public let wikiExists: Bool
+    public let artifactsExists: Bool
+    public let wikiMarkdownCount: Int
+    public let artifactJSONCount: Int
+    public let rawSourceCount: Int
+    public let linkedDocumentCount: Int
+    public let originCounts: [KnowledgeOriginCount]
+    public let bridgeManifest: KnowledgeBridgeManifest?
+
+    public init(
+        sourceRoot: String,
+        exists: Bool,
+        wikiExists: Bool,
+        artifactsExists: Bool,
+        wikiMarkdownCount: Int,
+        artifactJSONCount: Int,
+        rawSourceCount: Int,
+        linkedDocumentCount: Int,
+        originCounts: [KnowledgeOriginCount],
+        bridgeManifest: KnowledgeBridgeManifest?
+    ) {
+        self.sourceRoot = sourceRoot
+        self.exists = exists
+        self.wikiExists = wikiExists
+        self.artifactsExists = artifactsExists
+        self.wikiMarkdownCount = wikiMarkdownCount
+        self.artifactJSONCount = artifactJSONCount
+        self.rawSourceCount = rawSourceCount
+        self.linkedDocumentCount = linkedDocumentCount
+        self.originCounts = originCounts
+        self.bridgeManifest = bridgeManifest
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case sourceRoot = "source_root"
+        case exists
+        case wikiExists = "wiki_exists"
+        case artifactsExists = "artifacts_exists"
+        case wikiMarkdownCount = "wiki_markdown_count"
+        case artifactJSONCount = "artifact_json_count"
+        case rawSourceCount = "raw_source_count"
+        case linkedDocumentCount = "linked_document_count"
+        case originCounts = "origin_counts"
+        case bridgeManifest = "bridge_manifest"
+    }
+}
+
+public struct KnowledgeOriginCount: Decodable, Equatable, Identifiable, Sendable {
+    public let origin: String
+    public let count: Int
+
+    public init(origin: String, count: Int) {
+        self.origin = origin
+        self.count = count
+    }
+
+    public var id: String { origin }
+}
+
+public struct KnowledgeBridgeManifest: Decodable, Equatable, Sendable {
+    public let pipeline: String?
+    public let sourceRoot: String?
+    public let compiledAt: String?
+
+    public init(pipeline: String?, sourceRoot: String?, compiledAt: String?) {
+        self.pipeline = pipeline
+        self.sourceRoot = sourceRoot
+        self.compiledAt = compiledAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case pipeline
+        case sourceRoot = "source_root"
+        case compiledAt = "compiled_at"
     }
 }
 

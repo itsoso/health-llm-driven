@@ -543,6 +543,22 @@ final class MacP0FeatureTests: XCTestCase {
             "entity_type_counts": [{"level": "gene", "count": 2}],
             "evidence_level_counts": [{"level": "B", "count": 1}],
             "source_counts": [{"source": "dedao:qiuzilong-genetics-07", "count": 3}],
+            "local_source_summary": {
+              "source_root": "/Users/liqiuhua/work/personal/down-dedao",
+              "exists": true,
+              "wiki_exists": true,
+              "artifacts_exists": true,
+              "wiki_markdown_count": 4,
+              "artifact_json_count": 12,
+              "raw_source_count": 46,
+              "linked_document_count": 3,
+              "origin_counts": [{"origin": "down-dedao-llm-wiki", "count": 3}],
+              "bridge_manifest": {
+                "pipeline": "down_dedao_llm_wiki_bridge_v1",
+                "source_root": "/Users/liqiuhua/work/personal/down-dedao",
+                "compiled_at": "2026-05-23T01:44:15Z"
+              }
+            },
             "recent_documents": [
               {"doc_id": "claim:c_mthfr_c677t_hcy_folate_boundary", "doc_type": "claim", "title": "MTHFR 叶酸边界", "summary": "Hcy 和叶酸/B12 用于复查闭环。", "evidence_level": "B", "confidence": 0.82, "sources": ["dedao:qiuzilong-genetics-07"]}
             ]
@@ -585,6 +601,8 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(knowledgeSummary.metrics.map(\.title), ["Documents", "Claims", "Sources", "Edges", "Entity Types"])
         XCTAssertEqual(knowledgeSummary.metrics.map(\.value), ["3", "1", "2", "1", "1"])
         XCTAssertEqual(knowledgeSummary.knowledgeSummary?.docTypeCounts.map(\.level), ["article", "claim", "entity"])
+        XCTAssertEqual(knowledgeSummary.knowledgeSummary?.localSourceSummary?.linkedDocumentCount, 3)
+        XCTAssertEqual(knowledgeSummary.knowledgeSummary?.localSourceSummary?.bridgeManifest?.pipeline, "down_dedao_llm_wiki_bridge_v1")
         XCTAssertEqual(knowledgeSummary.knowledgeSummary?.recentDocuments.first?.docID, "claim:c_mthfr_c677t_hcy_folate_boundary")
         XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建", "来源覆盖审计"])
         XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.title), ["Import Dedao folder", "Rebuild system KB", "Audit source coverage"])

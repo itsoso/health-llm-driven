@@ -212,6 +212,7 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             confidence=0.82,
             evidence_level="B",
             sources=["dedao:qiuzilong-genetics-07", "pubmed:123"],
+            metadata_json={"origin": "down-dedao-llm-wiki"},
             is_archived=False,
         ),
         KBDocument(
@@ -221,6 +222,7 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             entity_id="MTHFR",
             title="MTHFR",
             sources=["dedao:qiuzilong-genetics-07"],
+            metadata_json={"origin": "down-dedao-llm-wiki"},
             is_archived=False,
         ),
         KBDocument(
@@ -228,6 +230,7 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             doc_type="article",
             title="叶酸代谢课程",
             sources=["dedao:qiuzilong-genetics-07"],
+            metadata_json={"origin": "down-dedao-llm-wiki"},
             is_archived=False,
         ),
     ])
@@ -322,6 +325,11 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     assert body["knowledge_summary"]["entity_type_counts"] == [{"level": "gene", "count": 2}]
     assert body["knowledge_summary"]["source_total_count"] == 2
     assert body["knowledge_summary"]["source_counts"][0] == {"source": "dedao:qiuzilong-genetics-07", "count": 3}
+    assert body["knowledge_summary"]["local_source_summary"]["linked_document_count"] == 3
+    assert body["knowledge_summary"]["local_source_summary"]["origin_counts"] == [
+        {"origin": "down-dedao-llm-wiki", "count": 3}
+    ]
+    assert body["knowledge_summary"]["local_source_summary"]["bridge_manifest"]["pipeline"] == "down_dedao_llm_wiki_bridge_v1"
     assert body["knowledge_summary"]["recent_documents"][0]["doc_id"] == "article:dedao:folate"
     recent_types = [record["type"] for record in body["recent_records_summary"]["recent_records"]]
     assert "blood_pressure" in recent_types

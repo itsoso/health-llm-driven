@@ -2304,6 +2304,10 @@ struct WorkspaceOverviewView: View {
             SectionPanel(title: appText("Knowledge Coverage", appLanguageRaw), systemImage: "books.vertical.fill") {
                 if let knowledge = summary.knowledgeSummary, knowledge.documentCount > 0 {
                     VStack(alignment: .leading, spacing: 14) {
+                        if let localSource = resolvedLocalKnowledgeSource(knowledge.localSourceSummary) {
+                            localKnowledgeSourcePanel(localSource)
+                        }
+
                         HStack(alignment: .top, spacing: 12) {
                             if !knowledge.docTypeCounts.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -2634,6 +2638,136 @@ struct WorkspaceOverviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private func localKnowledgeSourcePanel(_ source: KnowledgeLocalSourceSummary) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: source.exists ? "externaldrive.connected.to.line.below.fill" : "externaldrive.badge.questionmark")
+                    .foregroundStyle(source.exists ? .teal : .orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appText("Local LLM Wiki Source", appLanguageRaw))
+                        .font(.callout.weight(.semibold))
+                    Text(source.sourceRoot)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                Spacer(minLength: 0)
+                Text(appText(source.exists ? "Connected" : "Not Found", appLanguageRaw))
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background((source.exists ? Color.teal : Color.orange).opacity(0.12), in: Capsule())
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+                coverageMetric(title: "Wiki Markdown", value: "\(source.wikiMarkdownCount)", color: .teal)
+                coverageMetric(title: "Artifacts JSON", value: "\(source.artifactJSONCount)", color: .cyan)
+                coverageMetric(title: "Raw Sources", value: "\(source.rawSourceCount)", color: .blue)
+                coverageMetric(title: "Linked KB Docs", value: "\(source.linkedDocumentCount)", color: .purple)
+            }
+
+            HStack(spacing: 8) {
+                if let pipeline = source.bridgeManifest?.pipeline {
+                    Text(pipeline)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.secondary.opacity(0.10), in: Capsule())
+                }
+                if let compiledAt = source.bridgeManifest?.compiledAt {
+                    Text("\(appText("Compiled", appLanguageRaw)): \(compiledAt)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !source.originCounts.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(source.originCounts) { origin in
+                        Text("\(origin.origin): \(origin.count)")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.indigo.opacity(0.12), in: Capsule())
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func resolvedLocalKnowledgeSource(_ apiSource: KnowledgeLocalSourceSummary?) -> KnowledgeLocalSourceSummary? {
+        let root = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("work/personal/down-dedao", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return apiSource
+        }
+        let wikiRoot = root.appendingPathComponent("wiki", isDirectory: true)
+        let artifactRoot = root.appendingPathComponent("artifacts", isDirectory: true)
+        let rawRoot = root.appendingPathComponent("raw", isDirectory: true)
+        return KnowledgeLocalSourceSummary(
+            sourceRoot: root.path,
+            exists: true,
+            wikiExists: FileManager.default.fileExists(atPath: wikiRoot.path),
+            artifactsExists: FileManager.default.fileExists(atPath: artifactRoot.path),
+            wikiMarkdownCount: countLocalFiles(in: wikiRoot, pathExtension: "md"),
+            artifactJSONCount: countLocalFiles(in: artifactRoot, pathExtension: "json"),
+            rawSourceCount: countTopLevelItems(in: rawRoot),
+            linkedDocumentCount: apiSource?.linkedDocumentCount ?? 0,
+            originCounts: apiSource?.originCounts ?? [],
+            bridgeManifest: apiSource?.bridgeManifest ?? localBridgeManifest(in: artifactRoot)
+        )
+    }
+
+    private func localBridgeManifest(in artifactRoot: URL) -> KnowledgeBridgeManifest? {
+        let manifestURL = artifactRoot.appendingPathComponent("manifest.json")
+        guard
+            let data = try? Data(contentsOf: manifestURL),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+        let bridge = json["down_dedao_wiki"] as? [String: Any]
+        return KnowledgeBridgeManifest(
+            pipeline: bridge?["pipeline"] as? String ?? json["pipeline"] as? String,
+            sourceRoot: bridge?["source_root"] as? String ?? json["source_root"] as? String,
+            compiledAt: bridge?["compiled_at"] as? String ?? json["compiled_at"] as? String
+        )
+    }
+
+    private func countLocalFiles(in root: URL, pathExtension: String) -> Int {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+        return enumerator.compactMap { $0 as? URL }.filter { url in
+            guard
+                url.pathExtension.lowercased() == pathExtension,
+                let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+            else {
+                return false
+            }
+            return values.isRegularFile == true
+        }.count
+    }
+
+    private func countTopLevelItems(in root: URL) -> Int {
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+        return items.count
     }
 
     private func geneticRiskColor(_ riskLevel: String?) -> Color {

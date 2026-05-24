@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date, timedelta
+import json
+import os
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,6 +36,8 @@ from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.health_trajectory import build_health_trajectory_snapshot
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
+DEFAULT_DOWN_DEDAO_ROOT = "~/work/personal/down-dedao"
+SYSTEM_KB_SEED_MANIFEST = Path(__file__).resolve().parents[2] / "data" / "system_kb_v2_seed" / "manifest.json"
 
 DesktopJobType = Literal[
     "gene_reanalysis",
@@ -585,6 +590,7 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
     source_counts: Counter[str] = Counter()
     evidence_counts: Counter[str] = Counter()
     entity_type_counts: Counter[str] = Counter()
+    origin_counts: Counter[str] = Counter()
     for doc in docs:
         for source in doc.sources or []:
             source_counts[str(source)] += 1
@@ -592,6 +598,9 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
             evidence_counts[str(doc.evidence_level)] += 1
         if doc.entity_type:
             entity_type_counts[str(doc.entity_type)] += 1
+        origin = (doc.metadata_json or {}).get("origin")
+        if origin:
+            origin_counts[str(origin)] += 1
 
     recent_documents = [
         {
@@ -629,8 +638,56 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
             {"source": source, "count": count}
             for source, count in source_counts.most_common(8)
         ],
+        "local_source_summary": _knowledge_local_source_summary(origin_counts),
         "recent_documents": recent_documents,
     }
+
+
+def _knowledge_local_source_summary(origin_counts: Counter[str]) -> dict[str, Any]:
+    source_root = Path(os.getenv("DOWN_DEDAO_ROOT", DEFAULT_DOWN_DEDAO_ROOT)).expanduser()
+    artifact_root = source_root / "artifacts"
+    wiki_root = source_root / "wiki"
+    raw_root = source_root / "raw"
+    bridge_manifest = _load_down_dedao_bridge_manifest()
+
+    return {
+        "source_root": str(source_root),
+        "exists": source_root.exists(),
+        "wiki_exists": wiki_root.exists(),
+        "artifacts_exists": artifact_root.exists(),
+        "wiki_markdown_count": _count_files(wiki_root, "*.md"),
+        "artifact_json_count": _count_files(artifact_root, "*.json"),
+        "raw_source_count": _count_top_level(raw_root),
+        "linked_document_count": origin_counts.get("down-dedao-llm-wiki", 0),
+        "origin_counts": [
+            {"origin": origin, "count": count}
+            for origin, count in origin_counts.most_common(8)
+        ],
+        "bridge_manifest": bridge_manifest,
+    }
+
+
+def _load_down_dedao_bridge_manifest() -> dict[str, Any]:
+    if not SYSTEM_KB_SEED_MANIFEST.exists():
+        return {}
+    try:
+        manifest = json.loads(SYSTEM_KB_SEED_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    bridge_manifest = manifest.get("down_dedao_wiki")
+    return bridge_manifest if isinstance(bridge_manifest, dict) else {}
+
+
+def _count_files(root: Path, pattern: str) -> int:
+    if not root.exists() or not root.is_dir():
+        return 0
+    return sum(1 for path in root.rglob(pattern) if path.is_file())
+
+
+def _count_top_level(root: Path) -> int:
+    if not root.exists() or not root.is_dir():
+        return 0
+    return sum(1 for _ in root.iterdir())
 
 
 def _active_desktop_jobs(db: Session, user_id: int) -> list[dict[str, Any]]:
