@@ -556,32 +556,13 @@ function HomeCommandHeader({
     || twinSnapshot.spo2_avg,
   );
   const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
-  const sourceItems = [
-    {
-      label: '基因',
-      value: geneticHits != null ? String(geneticHits) : '已纳入',
-      color: c.purple,
-      bg: c.tintPurple,
-    },
-    {
-      label: '表观',
-      value: progressTotal != null ? String(progressTotal) : '生活',
-      color: c.orange,
-      bg: c.tintOrange,
-    },
-    {
-      label: '检查',
-      value: clinicalReady ? '指标' : '待补',
-      color: c.pink,
-      bg: c.tintPink,
-    },
-    {
-      label: '穿戴',
-      value: wearableReady ? '实时' : refreshing ? '同步' : '待同步',
-      color: c.blue,
-      bg: c.tintBlue,
-    },
-  ];
+  const evidenceSourceCount = [
+    geneticHits != null,
+    true,
+    clinicalReady,
+    wearableReady,
+  ].filter(Boolean).length;
+  const evidenceLabel = `${evidenceSourceCount}源画像`;
   const headline = criticalCount > 0
     ? `先处理 ${criticalCount} 个风险`
     : planCount > 0
@@ -601,7 +582,6 @@ function HomeCommandHeader({
   const agentInsight = criticalCount > 0
     ? `正在看 ${liveSignalSummary}，优先解释并处理「${riskTitle || '风险信号'}」。`
     : `正在看 ${liveSignalSummary}，继续调整生活方式干预。`;
-  const sourceText = sourceItems.map(item => `${item.label}${item.value}`).join(' · ');
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -616,9 +596,15 @@ function HomeCommandHeader({
         </View>
         <View style={styles.commandRightMeta}>
           <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-          <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          <View style={styles.commandMetaPills}>
+            <View style={[styles.evidencePill, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+              <Ionicons name="layers-outline" size={11} color={c.labelTertiary} />
+              <Text style={[styles.evidenceText, { color: c.labelSecondary }]}>{evidenceLabel}</Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
+              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -643,13 +629,6 @@ function HomeCommandHeader({
         <Ionicons name="pulse-outline" size={15} color={c.brand} />
         <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
           {agentInsight}
-        </Text>
-      </View>
-
-      <View style={[styles.commandSourceLine, { borderColor: c.separator }]}>
-        <Ionicons name="layers-outline" size={14} color={c.labelTertiary} />
-        <Text style={[styles.commandSourceSentence, { color: c.labelTertiary }]} numberOfLines={1}>
-          {sourceText}
         </Text>
       </View>
 
@@ -1424,7 +1403,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
-    gap: 12,
+    gap: 11,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1437,6 +1416,17 @@ const styles = StyleSheet.create({
   commandAgentLabel: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
   commandAgentSubLabel: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
   commandRightMeta: { alignItems: 'flex-end', gap: 6 },
+  commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
+  evidencePill: {
+    minHeight: 24,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  evidenceText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandAgentCopy: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700' },
   commandInsightBox: {
     minHeight: 36,
@@ -1447,15 +1437,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 7,
   },
-  commandSourceLine: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  commandSourceSentence: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '700' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
