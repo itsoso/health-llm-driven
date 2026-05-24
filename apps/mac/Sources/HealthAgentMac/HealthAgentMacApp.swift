@@ -278,7 +278,7 @@ struct AppRootView: View {
         case .agent:
             AgentChatView(viewModel: services.agentViewModel)
         case .record:
-            RecordHubView(client: services.recordClient)
+            RecordHubView(client: services.recordClient, viewModel: services.todayViewModel)
         case .jobs:
             JobListView(client: services.desktopJobClient) { conversationID in
                 navigation.openTrace(conversationID: conversationID)

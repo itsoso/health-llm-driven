@@ -909,6 +909,7 @@ private final class CommandReturnTextView: NSTextView {
 
 struct RecordHubView: View {
     let client: RecordClient
+    @Bindable var viewModel: TodayViewModel
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var quickText = ""
     @State private var recordType = StructuredRecordDraftType.diet
@@ -933,6 +934,7 @@ struct RecordHubView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 recordHeader
+                recordSnapshotSection
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 16) {
@@ -973,6 +975,9 @@ struct RecordHubView: View {
         )
         .onAppear {
             quickFocusToken += 1
+            if viewModel.bootstrap == nil {
+                Task { await viewModel.refresh() }
+            }
         }
     }
 
@@ -997,6 +1002,235 @@ struct RecordHubView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background((isSubmitting ? Color.orange : Color.green).opacity(0.12), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var recordSnapshotSection: some View {
+        if let presentation = recordPresentation {
+            recordSnapshotPanel(presentation)
+        } else {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(appText("Loading desktop context...", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            }
+        }
+    }
+
+    private var recordPresentation: DesktopRecordHubPresentation? {
+        viewModel.bootstrap.map { DesktopRecordHubPresentation(summary: $0.recentRecordsSummary) }
+    }
+
+    private func recordSnapshotPanel(_ presentation: DesktopRecordHubPresentation) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                Label(appText("Recent Record Snapshot", appLanguageRaw), systemImage: "calendar.badge.clock")
+                    .font(.headline)
+                if let date = presentation.date {
+                    Text(date)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    Task { await viewModel.refresh() }
+                } label: {
+                    Label(appText("Refresh", appLanguageRaw), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isLoading)
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    recordMetricGroup(
+                        title: appText("Today", appLanguageRaw),
+                        subtitle: appText("Latest day", appLanguageRaw),
+                        metrics: presentation.todayMetrics
+                    )
+                    recordMetricGroup(
+                        title: appText("7 days", appLanguageRaw),
+                        subtitle: appText("Average and trend baseline", appLanguageRaw),
+                        metrics: presentation.sevenDayMetrics
+                    )
+                    recentServerRecords(presentation.recentRows)
+                        .frame(width: 320)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    recordMetricGroup(
+                        title: appText("Today", appLanguageRaw),
+                        subtitle: appText("Latest day", appLanguageRaw),
+                        metrics: presentation.todayMetrics
+                    )
+                    recordMetricGroup(
+                        title: appText("7 days", appLanguageRaw),
+                        subtitle: appText("Average and trend baseline", appLanguageRaw),
+                        metrics: presentation.sevenDayMetrics
+                    )
+                    recentServerRecords(presentation.recentRows)
+                }
+            }
+
+            if let error = viewModel.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func recordMetricGroup(title: String, subtitle: String, metrics: [DesktopDashboardMetric]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
+                ForEach(metrics) { metric in
+                    recordMetricTile(metric)
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func recordMetricTile(_ metric: DesktopDashboardMetric) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: metric.systemImage)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(recordToneColor(metric.tone))
+                    .frame(width: 24, height: 24)
+                    .background(recordToneColor(metric.tone).opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text(appText(metric.titleKey, appLanguageRaw))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Text(metric.value)
+                .font(.title3.weight(.bold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Text(localizedRecordDetail(metric.detail))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(recordToneColor(metric.tone).opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(recordToneColor(metric.tone).opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    private func recentServerRecords(_ rows: [DesktopDashboardRow]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(appText("Recent Health Records", appLanguageRaw), systemImage: "waveform.path.ecg")
+                .font(.headline.weight(.semibold))
+
+            if rows.isEmpty {
+                recordEmptyState(text: appText("No recent health records loaded.", appLanguageRaw))
+                    .frame(maxWidth: .infinity, minHeight: 118)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(rows) { row in
+                        HStack(spacing: 9) {
+                            Image(systemName: row.systemImage)
+                                .foregroundStyle(recordToneColor(row.tone))
+                                .frame(width: 24, height: 24)
+                                .background(recordToneColor(row.tone).opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title)
+                                    .font(.callout.weight(.semibold))
+                                    .lineLimit(1)
+                                if let subtitle = row.subtitle {
+                                    Text(subtitle)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                            if let value = row.value {
+                                Text(value)
+                                    .font(.caption.weight(.semibold))
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        if row.id != rows.last?.id {
+                            Divider().padding(.leading, 33)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func localizedRecordDetail(_ detail: String) -> String {
+        detail
+            .replacingOccurrences(of: "records", with: appText("records", appLanguageRaw))
+            .replacingOccurrences(of: "No record", with: appText("No record", appLanguageRaw))
+            .replacingOccurrences(of: "Avg", with: appText("Avg", appLanguageRaw))
+            .replacingOccurrences(of: "/day", with: appText("/day", appLanguageRaw))
+            .replacingOccurrences(of: "Adherence", with: appText("Adherence", appLanguageRaw))
+            .replacingOccurrences(of: "active", with: appText("active", appLanguageRaw))
+    }
+
+    private func recordEmptyState(text: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tray")
+                .font(.system(size: 24))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func recordToneColor(_ tone: String) -> Color {
+        switch tone {
+        case "orange": .orange
+        case "cyan": .cyan
+        case "green": .green
+        case "pink": .pink
+        case "purple": .purple
+        case "blue": .blue
+        case "red": .red
+        case "indigo": .indigo
+        case "teal": .teal
+        default: .secondary
+        }
     }
 
     private var quickCaptureCard: some View {
@@ -1429,9 +1663,10 @@ struct RecordHubView: View {
                 guard !text.isEmpty else { return }
                 result = try await client.recordSymptom(description: text)
             }
-            handleRecordResult(result, fallbackText: draft.previewText)
-            if result.success {
+            let didSave = handleRecordResult(result, fallbackText: draft.previewText)
+            if didSave {
                 clearStructuredFields()
+                await viewModel.refresh()
             }
         } catch {
             resultMessage = "Save failed: \(error.localizedDescription)"
@@ -1445,13 +1680,15 @@ struct RecordHubView: View {
         defer { isSubmitting = false }
         do {
             let result = try await client.quickRecord(text: text)
-            handleRecordResult(result, fallbackText: text)
+            if handleRecordResult(result, fallbackText: text) {
+                await viewModel.refresh()
+            }
         } catch {
             resultMessage = "Save failed: \(error.localizedDescription)"
         }
     }
 
-    private func handleRecordResult(_ result: QuickRecordResult, fallbackText: String) {
+    private func handleRecordResult(_ result: QuickRecordResult, fallbackText: String) -> Bool {
         resultMessage = result.message
         if result.success {
             lastSavedRecord = result.undoPath == nil ? nil : result
@@ -1459,7 +1696,9 @@ struct RecordHubView: View {
             recentRecords.removeAll { $0 == fallbackText }
             recentRecords.insert(fallbackText, at: 0)
             recentRecords = Array(recentRecords.prefix(8))
+            return true
         }
+        return false
     }
 
     private func undoSavedRecord(path: String) async {
@@ -1470,6 +1709,7 @@ struct RecordHubView: View {
             try await client.undoSavedRecord(path: path)
             lastSavedRecord = nil
             resultMessage = appText("Record undone.", appLanguageRaw)
+            await viewModel.refresh()
         } catch {
             resultMessage = "\(appText("Undo failed", appLanguageRaw)): \(error.localizedDescription)"
         }
