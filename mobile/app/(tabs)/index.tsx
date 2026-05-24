@@ -596,6 +596,10 @@ function HomeCommandHeader({
     : planCount > 0
       ? '按优先级完成今日计划'
       : '暂无硬性任务，保持记录节奏';
+  const liveSignalSummary = buildLiveSignalSummary(twinSnapshot);
+  const agentInsight = criticalCount > 0
+    ? `正在看 ${liveSignalSummary}，优先解释并处理「${riskTitle || '风险信号'}」。`
+    : `正在看 ${liveSignalSummary}，继续调整生活方式干预。`;
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -606,7 +610,7 @@ function HomeCommandHeader({
         <Text style={[styles.commandSyncText, { color: c.labelTertiary }]}>{refreshing ? '同步中' : '已同步'}</Text>
       </View>
       <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
-        基于基因、表观生活、医疗检查和可穿戴反馈，持续诊断并编排饮食、睡眠、运动、补剂和情绪干预。
+        {agentInsight}
       </Text>
       <View style={styles.commandSourceRail}>
         {sourceItems.map(item => (
@@ -1267,6 +1271,18 @@ function buildWorkspaceDataSources({
       value: wearableReady ? '实时回流' : null,
     },
   ];
+}
+
+function buildLiveSignalSummary(twinSnapshot: TwinSnapshot): string {
+  const signals: string[] = [];
+  if (twinSnapshot.sleep_score != null) signals.push(`睡眠 ${fmt(twinSnapshot.sleep_score)}分`);
+  if (twinSnapshot.hrv != null) signals.push(`HRV ${fmt(twinSnapshot.hrv)}ms`);
+  if (twinSnapshot.spo2_avg != null) signals.push(`血氧 ${fmt(twinSnapshot.spo2_avg)}%`);
+  if (twinSnapshot.bmi != null) signals.push(`BMI ${fmt(twinSnapshot.bmi)}`);
+  if (twinSnapshot.body_fat_pct != null) signals.push(`体脂 ${fmt(twinSnapshot.body_fat_pct)}%`);
+  if (twinSnapshot.vo2max != null) signals.push(`VO2max ${fmt(twinSnapshot.vo2max)}`);
+  if (signals.length === 0) return '可穿戴、身体记录和检查反馈';
+  return signals.slice(0, 3).join('、');
 }
 
 function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {
