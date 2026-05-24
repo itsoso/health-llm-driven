@@ -169,6 +169,30 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertFalse(fallback.contains("|---"))
     }
 
+    func testMarkdownRenderSupportBuildsReadableBlocks() {
+        let markdown = """
+        ## 七天饮食趋势分析
+
+        **关键结论**：先补齐记录。
+
+        - 今天饮水不足
+        1. 晚饭后散步 20 分钟
+
+        | 维度 | 建议 |
+        |---|---|
+        | 饮食 | 暂不调整 |
+        """
+
+        let blocks = MarkdownRenderSupport.blocks(from: markdown)
+
+        XCTAssertEqual(blocks.first, .heading(level: 2, text: "七天饮食趋势分析"))
+        XCTAssertTrue(blocks.contains(.paragraph("**关键结论**：先补齐记录。")))
+        XCTAssertTrue(blocks.contains(.bullet("今天饮水不足")))
+        XCTAssertTrue(blocks.contains(.numbered(index: "1", text: "晚饭后散步 20 分钟")))
+        XCTAssertTrue(blocks.contains(.tableRow(["维度", "建议"])))
+        XCTAssertTrue(blocks.contains(.tableRow(["饮食", "暂不调整"])))
+    }
+
     func testWorkspaceContextFactoryBuildsKnowledgeDocumentAndJobContext() {
         let document = KnowledgeDocumentSummary(
             docID: "dedao:100-ecc79a079a92",

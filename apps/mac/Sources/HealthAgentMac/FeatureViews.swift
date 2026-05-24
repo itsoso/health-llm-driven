@@ -18,6 +18,7 @@ struct AgentChatView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
+                conversationHistoryStrip
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 16) {
@@ -265,6 +266,54 @@ struct AgentChatView: View {
         }
         .padding(16)
         .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var conversationHistoryStrip: some View {
+        if !viewModel.conversationHistory.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                        .font(.headline)
+                    Text(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(viewModel.conversationHistory.count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.10), in: Capsule())
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(viewModel.conversationHistory.prefix(12)) { conversation in
+                            AgentConversationHistoryPill(
+                                conversation: conversation,
+                                isSelected: conversation.id == viewModel.currentConversationID,
+                                onLoad: {
+                                    viewModel.loadConversation(conversation)
+                                    editorFocusToken += 1
+                                },
+                                onDelete: {
+                                    viewModel.deleteConversation(conversation)
+                                }
+                            )
+                            .frame(width: 260)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            }
+        }
     }
 
     private func modelCard(_ option: AgentModelOption) -> some View {
@@ -966,19 +1015,147 @@ private struct MarkdownMessageText: View {
     let markdown: String
 
     var body: some View {
-        if let attributed = parsedMarkdown {
-            Text(attributed)
-        } else {
-            Text(MarkdownRenderSupport.readableFallback(markdown.isEmpty ? " " : markdown))
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
         }
     }
 
-    private var parsedMarkdown: AttributedString? {
-        let sanitized = MarkdownRenderSupport.sanitizedForSwiftUI(markdown.isEmpty ? " " : markdown)
-        return try? AttributedString(
-            markdown: sanitized,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+    private var blocks: [MarkdownRenderBlock] {
+        let blocks = MarkdownRenderSupport.blocks(from: markdown.isEmpty ? " " : markdown)
+        if blocks.isEmpty {
+            return [.paragraph(MarkdownRenderSupport.readableFallback(markdown.isEmpty ? " " : markdown))]
+        }
+        return blocks
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: MarkdownRenderBlock) -> some View {
+        switch block {
+        case .heading(let level, let text):
+            inlineText(text)
+                .font(level <= 2 ? .title3.bold() : .headline)
+                .foregroundStyle(.primary)
+                .padding(.top, level <= 2 ? 4 : 2)
+        case .paragraph(let text):
+            inlineText(text)
+                .font(.callout)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        case .bullet(let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•")
+                    .font(.callout.bold())
+                    .foregroundStyle(Color.accentColor)
+                inlineText(text)
+                    .font(.callout)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .numbered(let index, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(index).")
+                    .font(.callout.bold())
+                    .foregroundStyle(Color.accentColor)
+                    .frame(minWidth: 22, alignment: .trailing)
+                inlineText(text)
+                    .font(.callout)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .tableRow(let columns):
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
+                    inlineText(column)
+                        .font(.caption)
+                        .lineLimit(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                        .background(Color.secondary.opacity(0.06))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        case .divider:
+            Divider()
+                .padding(.vertical, 2)
+        }
+    }
+
+    private func inlineText(_ text: String) -> Text {
+        let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
+        if let attributed = try? AttributedString(
+            markdown: cleaned,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            return Text(attributed)
+        }
+        return Text(MarkdownRenderSupport.readableFallback(text))
+    }
+}
+
+private struct AgentConversationHistoryPill: View {
+    let conversation: AgentConversationSnapshot
+    let isSelected: Bool
+    let onLoad: () -> Void
+    let onDelete: () -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Button {
+                onLoad()
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "bubble.left.and.bubble.right")
+                        .font(.callout)
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(conversation.title)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        Text(historySubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(appText("Load Chat", appLanguageRaw))
+
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(appText("Delete", appLanguageRaw))
+        }
+        .padding(12)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.13) : Color(nsColor: .controlBackgroundColor).opacity(0.86),
+            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var historySubtitle: String {
+        let count = conversation.messages.count
+        let date = conversation.updatedAt.formatted(date: .numeric, time: .shortened)
+        if let conversationID = conversation.conversationID {
+            return "#\(conversationID) · \(count) \(appText("messages", appLanguageRaw)) · \(date)"
+        }
+        return "\(count) \(appText("messages", appLanguageRaw)) · \(date)"
     }
 }
 

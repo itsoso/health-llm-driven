@@ -117,6 +117,40 @@ async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, a
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_user_and_headers, monkeypatch):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *_args, **_kwargs: "你是健康助理。")
+    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: "")
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        return {"content": "## 关键结论\n\n- 已按桌面端 Markdown 输出。", "finish_reason": "stop"}
+
+    executor._call_llm = fake_call_llm
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="分析最近饮食趋势",
+            user_auth_token=None,
+            extra_context=json.dumps({
+                "client": "mac",
+                "desktop_markdown_response_instruction": "请用 Markdown 分段，不要输出密集长段落。",
+            }),
+        )
+    ]
+
+    system_prompt = calls[0]["messages"][0]["content"]
+    assert "## 桌面端回复格式要求" in system_prompt
+    assert "请用 Markdown 分段" in system_prompt
+    assert events[-1]["event"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(db, auth_user_and_headers, monkeypatch):
     """Commercial gateways can return stop+empty for long system prompts."""
     user, _headers = auth_user_and_headers

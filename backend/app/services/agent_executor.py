@@ -53,6 +53,26 @@ def _extract_model_id_from_extra_context(extra_context: Optional[str]) -> Option
     return model_id
 
 
+def _extract_desktop_response_instruction(extra_context: Optional[str]) -> Optional[str]:
+    """Return explicit desktop response formatting instructions from extra context."""
+
+    if not extra_context:
+        return None
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or payload.get("client") != "mac":
+        return None
+    instruction = payload.get("desktop_markdown_response_instruction")
+    if not isinstance(instruction, str):
+        return None
+    instruction = instruction.strip()
+    if not instruction:
+        return None
+    return instruction[:1200]
+
+
 def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
     """Map provider finish_reason to a small client-facing completion status."""
     if finish_reason == "length":
@@ -496,6 +516,13 @@ class AgentExecutor:
             )
             if "ActionCard" not in sources_used:
                 sources_used.append("ActionCard")
+        desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
+        if desktop_response_instruction:
+            system_content += (
+                "\n\n## 桌面端回复格式要求\n"
+                f"{desktop_response_instruction}\n"
+                "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+            )
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():

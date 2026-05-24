@@ -171,6 +171,7 @@ public enum L10n {
         "No active jobs for this workspace.": "这个工作台没有进行中的任务。",
         "Recent Memory": "近期记忆",
         "History": "历史",
+        "Continue a recent conversation or start fresh.": "继续最近对话，或开始新对话。",
         "New Chat": "新对话",
         "Load Chat": "载入对话",
         "messages": "条消息",
