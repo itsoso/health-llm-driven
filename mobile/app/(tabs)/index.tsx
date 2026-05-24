@@ -510,7 +510,6 @@ function HomeCommandHeader({
   onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
-  const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
   const wearableReady = Boolean(
     twinSnapshot.hrv
     || twinSnapshot.sleep_score
@@ -524,9 +523,7 @@ function HomeCommandHeader({
   const activeDomainLabels = domains
     .filter(domain => domain.activeCount > 0)
     .map(domain => domain.label);
-  const activeDomainSummary = activeDomainLabels.length > 3
-    ? `${activeDomainLabels.slice(0, 3).join('/')} +${activeDomainLabels.length - 3}`
-    : activeDomainLabels.join('/');
+  const activeDomainSummary = buildInterventionSummary(activeDomainLabels);
   const improvementFocus = buildImprovementFocus({
     action,
     criticalCount,
@@ -540,10 +537,12 @@ function HomeCommandHeader({
       : '保持记录节奏';
   const focusKicker = criticalCount > 0
     ? `今日优先 · ${criticalCount} 个风险`
+    : activeCount > 0 && activeCount === planCount
+      ? `今日优先 · ${activeCount} 项干预`
     : planCount > 0
       ? `今日优先 · ${planCount} 个计划`
-      : activeDomainCount > 0
-        ? `今日优先 · ${activeDomainCount} 个干预域`
+    : activeCount > 0
+      ? `今日优先 · ${activeCount} 项干预`
       : '今日优先 · 观察中';
   const evidenceSummary = `${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
@@ -558,7 +557,7 @@ function HomeCommandHeader({
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const improvementSummary = verificationMetrics || watchSummary;
   const targetSourceText = strategySummary && strategySummary !== '0 个干预'
-    ? `${strategySummary} 影响这些指标`
+    ? `${strategySummary}会影响这些指标`
     : '补齐记录后更新目标';
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
@@ -1501,6 +1500,12 @@ function buildEvidenceSourceSummary({
   ].filter(Boolean);
 
   return sources.length > 0 ? sources.join('/') : '记录/检查/穿戴';
+}
+
+function buildInterventionSummary(labels: string[]): string {
+  if (labels.length === 0) return '';
+  if (labels.length <= 3) return labels.join('/');
+  return `${labels.slice(0, 3).join('/')}等 ${labels.length} 项干预`;
 }
 
 function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {

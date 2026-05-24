@@ -227,7 +227,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
-    expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
+    expect(getByText('今日优先 · 1 项干预')).toBeTruthy();
     expect(getByText('改善目标')).toBeTruthy();
     expect(getAllByText(/改善/).length).toBeGreaterThan(0);
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
@@ -331,6 +331,22 @@ describe('TodayScreen', () => {
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('改善目标'));
     expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/改善/).length).toBeGreaterThan(0);
+  });
+
+  it('describes multiple intervention domains in user language instead of plus-count shorthand', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+      { action_key: 'movement.zone2', domain: 'movement', title: 'Zone 2 快走' },
+      { action_key: 'supplement.magnesium', domain: 'supplement', title: '睡前镁' },
+    ];
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('今日优先 · 4 项干预')).toBeTruthy();
+    expect(getByText(/饮食\/睡眠\/运动等 4 项干预/)).toBeTruthy();
+    expect(queryByText(/饮食\/睡眠\/运动 \+1/)).toBeNull();
+    expect(queryByText(/干预域/)).toBeNull();
   });
 
   it('uses one compact improvement target instead of visible workflow tiles', () => {
@@ -544,7 +560,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText(/干预/).length).toBeGreaterThan(0);
     expect(getByText('改善目标')).toBeTruthy();
-    expect(getByText(/饮食\/睡眠\/运动 \+2/)).toBeTruthy();
+    expect(getByText(/饮食\/睡眠\/运动等 5 项干预/)).toBeTruthy();
   });
 
   it('opens outcome feedback surfaces from the agent summary', () => {
