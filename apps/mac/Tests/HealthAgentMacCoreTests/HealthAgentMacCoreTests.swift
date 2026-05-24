@@ -57,6 +57,12 @@ final class HealthAgentMacCoreTests: XCTestCase {
         XCTAssertEqual(L10n.text("Today", language: .en), "Today")
         XCTAssertEqual(L10n.text("Reopen App", language: .zh), "重新打开 App")
         XCTAssertEqual(L10n.text("Reopen App", language: .en), "Reopen App")
+        XCTAssertEqual(L10n.text("disease_risk", language: .zh), "疾病风险")
+        XCTAssertEqual(L10n.text("drug_sensitivity", language: .zh), "药物敏感性")
+        XCTAssertEqual(L10n.text("height_trait", language: .zh), "身高/体征")
+        XCTAssertEqual(L10n.text("variants", language: .zh), "个位点")
+        XCTAssertEqual(L10n.text("High", language: .zh), "高")
+        XCTAssertEqual(L10n.text("Medium", language: .zh), "中")
     }
 
     func testMacAppLifecyclePolicyRequiresSingleInstanceAndQuitOnWindowClose() {

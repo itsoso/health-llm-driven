@@ -2172,21 +2172,21 @@ struct WorkspaceOverviewView: View {
                             ForEach(genomic.topCategories) { category in
                                 VStack(alignment: .leading, spacing: 10) {
                                     HStack {
-                                        Text(category.category)
+                                        Text(localizedGenomicCategory(category.category))
                                             .font(.callout.weight(.semibold))
                                             .lineLimit(1)
                                         Spacer()
                                     }
-                                    Text("\(category.count) variants")
+                                    Text("\(category.count) \(appText("variants", appLanguageRaw))")
                                         .font(.title3.weight(.bold).monospacedDigit())
-                                    Text("H \(category.highRiskCount) · M \(category.mediumRiskCount)")
+                                    Text("\(appText("High", appLanguageRaw)) \(category.highRiskCount) · \(appText("Medium", appLanguageRaw)) \(category.mediumRiskCount)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     HStack(spacing: 8) {
                                         Button {
                                             selectedGenomicDetail = .category(category)
                                         } label: {
-                                            Label(appText("View Detail", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
+                                            Label(appText("Detail", appLanguageRaw), systemImage: "doc.text.magnifyingglass")
                                         }
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
@@ -2194,7 +2194,7 @@ struct WorkspaceOverviewView: View {
                                             Button {
                                                 onAskAgent(genomicCategoryPrompt(category), genomicCategoryContext(category))
                                             } label: {
-                                                Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                                                Label(appText("Ask", appLanguageRaw), systemImage: "sparkles")
                                             }
                                             .buttonStyle(.borderedProminent)
                                             .controlSize(.small)
@@ -2203,7 +2203,7 @@ struct WorkspaceOverviewView: View {
                                             Button {
                                                 onAddContext(genomicCategoryContext(category))
                                             } label: {
-                                                Label(appText("Add Context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                                                Label(appText("Add", appLanguageRaw), systemImage: "tray.and.arrow.down")
                                             }
                                             .buttonStyle(.bordered)
                                             .controlSize(.small)
@@ -2539,12 +2539,18 @@ struct WorkspaceOverviewView: View {
         """
     }
 
+    private func localizedGenomicCategory(_ category: String) -> String {
+        appText(category, appLanguageRaw)
+    }
+
     private func genomicCategoryPrompt(_ category: GenomicCategorySummary) -> String {
-        """
-        请基于我的真实基因报告，围绕 \(category.category) 这个分类做一次风险分层和行动建议。不要把基因结果当成诊断；请按优先级列出需要结合的数据、可执行生活方式动作、复查指标和不确定性边界。
+        let localizedCategory = localizedGenomicCategory(category.category)
+        return """
+        请基于我的真实基因报告，围绕 \(localizedCategory) 这个分类做一次风险分层和行动建议。不要把基因结果当成诊断；请按优先级列出需要结合的数据、可执行生活方式动作、复查指标和不确定性边界。
 
         分类摘要：
-        - 分类：\(category.category)
+        - 分类：\(localizedCategory)
+        - 原始分类键：\(category.category)
         - 位点数：\(category.count)
         - 高风险：\(category.highRiskCount)
         - 中风险：\(category.mediumRiskCount)
@@ -2582,10 +2588,11 @@ struct WorkspaceOverviewView: View {
         AgentContextItem(
             sourceID: "genomic_category:\(category.category)",
             sourceKind: "genomic_category",
-            title: category.category,
-            summary: "\(category.count) variants · H \(category.highRiskCount) · M \(category.mediumRiskCount)",
+            title: localizedGenomicCategory(category.category),
+            summary: "\(category.count) \(appText("variants", appLanguageRaw)) · \(appText("High", appLanguageRaw)) \(category.highRiskCount) · \(appText("Medium", appLanguageRaw)) \(category.mediumRiskCount)",
             payload: [
                 "category": category.category,
+                "display_category": localizedGenomicCategory(category.category),
                 "count": "\(category.count)",
                 "high_risk_count": "\(category.highRiskCount)",
                 "medium_risk_count": "\(category.mediumRiskCount)"
@@ -2860,7 +2867,7 @@ private struct GenomicCategoryDetailSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(appText("Genetic Category Detail", appLanguageRaw))
                         .font(.title2.bold())
-                    Text(category.category)
+                    Text(appText(category.category, appLanguageRaw))
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }
@@ -2871,9 +2878,9 @@ private struct GenomicCategoryDetailSheet: View {
             }
 
             HStack(spacing: 10) {
-                categoryMetric("Variants", "\(category.count)", .purple)
-                categoryMetric("High Risk", "\(category.highRiskCount)", .red)
-                categoryMetric("Medium Risk", "\(category.mediumRiskCount)", .orange)
+                categoryMetric(appText("Variants", appLanguageRaw), "\(category.count)", .purple)
+                categoryMetric(appText("High Risk", appLanguageRaw), "\(category.highRiskCount)", .red)
+                categoryMetric(appText("Medium Risk", appLanguageRaw), "\(category.mediumRiskCount)", .orange)
             }
 
             VStack(alignment: .leading, spacing: 10) {
