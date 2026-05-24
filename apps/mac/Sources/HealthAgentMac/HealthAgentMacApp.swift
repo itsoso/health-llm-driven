@@ -348,10 +348,7 @@ struct AppRootView: View {
     }
 
     private func askAgentWithContext(_ prompt: String, _ item: AgentContextItem?) {
-        if let item {
-            services.agentViewModel.addContextItem(item)
-        }
-        services.agentViewModel.prepareDraft(prompt)
+        services.agentViewModel.prepareDraftForNewConversation(prompt, contextItem: item)
         navigation.selection = .agent
     }
 
@@ -364,8 +361,8 @@ struct AppRootView: View {
         case .navigate(let destination):
             navigation.selection = destination
         case .quickPrompt:
-            services.agentViewModel.prepareDraft(
-                "请基于我当前已选上下文，结合最近健康记录、基因、知识库证据和不确定性边界，给出可执行建议。"
+            services.agentViewModel.prepareDraftForNewConversation(
+                "请结合最近健康记录、基因、知识库证据和不确定性边界，给出可执行建议。"
             )
             navigation.selection = .agent
         case .refresh:

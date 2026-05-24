@@ -464,6 +464,14 @@ public final class AgentChatViewModel {
         preparedDraft = text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    public func prepareDraftForNewConversation(_ text: String, contextItem: AgentContextItem? = nil) {
+        startNewConversation()
+        if let contextItem {
+            addContextItem(contextItem)
+        }
+        prepareDraft(text)
+    }
+
     public func consumePreparedDraft() -> String? {
         defer { preparedDraft = nil }
         guard let preparedDraft, !preparedDraft.isEmpty else {
@@ -599,6 +607,9 @@ public final class AgentChatViewModel {
         toolActivities = []
         currentConversationSnapshotID = nil
         proposedActions = []
+        attachments = []
+        contextItems = []
+        preparedDraft = nil
     }
 
     public func loadConversation(_ conversation: AgentConversationSnapshot) {

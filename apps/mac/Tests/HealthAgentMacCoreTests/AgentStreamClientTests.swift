@@ -92,6 +92,37 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelPreparesContextDraftInFreshConversation() {
+        let model = AgentChatViewModel()
+        let previousContext = AgentContextItem(
+            sourceID: "knowledge:previous",
+            sourceKind: "knowledge_document",
+            title: "旧知识上下文",
+            summary: "上一轮分析留下的上下文"
+        )
+        let newContext = AgentContextItem(
+            sourceID: "genomic:rs10572724",
+            sourceKind: "genomic_finding",
+            title: "9p21 心血管风险",
+            summary: "rs10572724 AA screening"
+        )
+
+        model.messages = [
+            AgentChatMessage(role: .user, content: "旧问题"),
+            AgentChatMessage(role: .assistant, content: "旧回答")
+        ]
+        model.conversationID = 42
+        model.addContextItem(previousContext)
+
+        model.prepareDraftForNewConversation("  基于 9p21 给我行动建议  ", contextItem: newContext)
+
+        XCTAssertTrue(model.messages.isEmpty)
+        XCTAssertNil(model.conversationID)
+        XCTAssertEqual(model.consumePreparedDraft(), "基于 9p21 给我行动建议")
+        XCTAssertEqual(model.contextItems.map(\.id), [newContext.id])
+    }
+
+    @MainActor
     func testAgentChatViewModelStreamsAssistantReply() async {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 77))
