@@ -388,6 +388,10 @@ export default function TodayScreen() {
           planCount={activePlanCount}
           refreshing={isRefreshing}
           riskTitle={criticalAlerts[0]?.title}
+          geneticHits={geneticStatsQuery.data?.hits}
+          progressTotal={progressStatsQuery.data?.total}
+          twinSnapshot={twinSnap}
+          domains={interventionDomains}
           onOpenFocus={() => (
             criticalAlerts.length > 0
               ? router.push('/alerts' as any)
@@ -395,7 +399,7 @@ export default function TodayScreen() {
                 ? openPlanAction(nextAction)
                 : router.push('/(tabs)/record' as any)
           )}
-          onOpenAgent={() => router.push('/(tabs)/chat' as any)}
+          onOpenAgent={openWorkspaceChat}
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
         />
 
@@ -418,6 +422,10 @@ export default function TodayScreen() {
             onPressAction={openPlanAction}
             onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
           />
+          <InterventionStrategyPanel
+            domains={interventionDomains}
+            onPressDomain={(domain) => router.push(domain.route as any)}
+          />
         </View>
 
         {isLoading && (
@@ -439,18 +447,6 @@ export default function TodayScreen() {
           />
           <EnvironmentCard />
         </View>
-
-        <AgentWorkspacePanel
-          criticalCount={criticalAlerts.length}
-          planCount={activePlanCount}
-          refreshing={isRefreshing}
-          geneticHits={geneticStatsQuery.data?.hits}
-          progressTotal={progressStatsQuery.data?.total}
-          twinSnapshot={twinSnap}
-          domains={interventionDomains}
-          onPressDomain={(domain) => router.push(domain.route as any)}
-          onOpenAgent={openWorkspaceChat}
-        />
 
         <View style={styles.section}>
           <SectionHeader
@@ -521,6 +517,10 @@ function HomeCommandHeader({
   planCount,
   refreshing,
   riskTitle,
+  geneticHits,
+  progressTotal,
+  twinSnapshot,
+  domains,
   onOpenFocus,
   onOpenAgent,
   onOpenRecord,
@@ -529,6 +529,10 @@ function HomeCommandHeader({
   planCount: number;
   refreshing: boolean;
   riskTitle?: string;
+  geneticHits?: number | null;
+  progressTotal?: number | null;
+  twinSnapshot: TwinSnapshot;
+  domains: InterventionDomainStatus[];
   onOpenFocus: () => void;
   onOpenAgent: () => void;
   onOpenRecord: () => void;
@@ -540,11 +544,50 @@ function HomeCommandHeader({
   const primaryLabel = criticalCount > 0 ? '查看风险' : '问 Agent';
   const primaryIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
   const primaryAction = criticalCount > 0 ? onOpenFocus : onOpenAgent;
+  const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
+  const wearableReady = Boolean(
+    twinSnapshot.hrv
+    || twinSnapshot.sleep_score
+    || twinSnapshot.resting_hr
+    || twinSnapshot.spo2_avg,
+  );
+  const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
+  const sourceItems = [
+    {
+      label: '基因',
+      value: geneticHits != null ? String(geneticHits) : '已纳入',
+      color: c.purple,
+      bg: c.tintPurple,
+    },
+    {
+      label: '表观',
+      value: progressTotal != null ? String(progressTotal) : '生活',
+      color: c.orange,
+      bg: c.tintOrange,
+    },
+    {
+      label: '检查',
+      value: clinicalReady ? '指标' : '待补',
+      color: c.pink,
+      bg: c.tintPink,
+    },
+    {
+      label: '穿戴',
+      value: wearableReady ? '实时' : refreshing ? '同步' : '待同步',
+      color: c.blue,
+      bg: c.tintBlue,
+    },
+  ];
   const headline = criticalCount > 0
     ? `先处理 ${criticalCount} 个风险`
     : planCount > 0
       ? `今天 ${planCount} 件事`
       : '保持记录节奏';
+  const focusKicker = criticalCount > 0
+    ? '当前重点 · 风险优先'
+    : activeDomainCount > 0
+      ? `当前重点 · ${activeDomainCount} 个干预域执行中`
+      : '当前重点 · 等待新任务';
   const focusText = criticalCount > 0
     ? (riskTitle || '先确认风险，再处理今天的计划')
     : planCount > 0
@@ -552,19 +595,37 @@ function HomeCommandHeader({
       : '暂无硬性任务，保持记录节奏';
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.commandAgentHeader}>
+        <View style={styles.commandAgentIdentity}>
+          <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
+          <Text style={[styles.commandAgentLabel, { color: c.brand }]}>健康 Agent · 后台运行</Text>
+        </View>
+        <Text style={[styles.commandSyncText, { color: c.labelTertiary }]}>{refreshing ? '同步中' : '已同步'}</Text>
+      </View>
+      <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
+        基于基因、表观生活、医疗检查和可穿戴反馈，持续诊断并编排饮食、睡眠、运动、补剂和情绪干预。
+      </Text>
+      <View style={styles.commandSourceRail}>
+        {sourceItems.map(item => (
+          <View key={item.label} style={[styles.commandSourceChip, { backgroundColor: item.bg }]}>
+            <Text style={[styles.commandSourceLabel, { color: item.color }]}>{item.label}</Text>
+            <Text style={[styles.commandSourceValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+          </View>
+        ))}
+      </View>
       <Pressable
-        style={({ pressed }) => [styles.commandFocusArea, { opacity: pressed ? 0.82 : 1 }]}
+        style={({ pressed }) => [
+          styles.commandFocusArea,
+          { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.82 : 1 },
+        ]}
         onPress={onOpenFocus}
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <View style={styles.commandTop}>
+        <View style={styles.commandFocusTop}>
           <View style={styles.commandTitleBlock}>
-            <View style={styles.commandStatusLine}>
-              <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
-              <Text style={[styles.commandSyncText, { color: c.labelTertiary }]}>{refreshing ? '同步中' : '已同步'}</Text>
-            </View>
-            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>今日重点</Text>
+            <Text style={[styles.commandDate, { color: c.labelTertiary }]}>{dateLabel}</Text>
+            <Text style={[styles.commandFocusLabel, { color: c.brand }]}>{focusKicker}</Text>
             <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
               {headline}
             </Text>
@@ -604,173 +665,6 @@ function HomeCommandHeader({
         </Pressable>
       </View>
     </View>
-  );
-}
-
-function AgentWorkspacePanel({
-  criticalCount,
-  planCount,
-  refreshing,
-  geneticHits,
-  progressTotal,
-  twinSnapshot,
-  domains,
-  onPressDomain,
-  onOpenAgent,
-}: {
-  criticalCount: number;
-  planCount: number;
-  refreshing: boolean;
-  geneticHits?: number | null;
-  progressTotal?: number | null;
-  twinSnapshot: TwinSnapshot;
-  domains: InterventionDomainStatus[];
-  onPressDomain: (domain: InterventionDomainStatus) => void;
-  onOpenAgent: () => void;
-}) {
-  const { c } = useTheme();
-  const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
-  const interventionSummary = activeDomainCount > 0 ? `${activeDomainCount} 个域待执行` : '等待 Agent 编排';
-  const wearableReady = Boolean(
-    twinSnapshot.hrv
-    || twinSnapshot.sleep_score
-    || twinSnapshot.resting_hr
-    || twinSnapshot.spo2_avg,
-  );
-  const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
-  const sourceItems = [
-    {
-      label: '基因',
-      value: geneticHits != null ? String(geneticHits) : '已纳入',
-      color: c.purple,
-      bg: c.tintPurple,
-    },
-    {
-      label: '表观',
-      value: progressTotal != null ? String(progressTotal) : '生活',
-      color: c.orange,
-      bg: c.tintOrange,
-    },
-    {
-      label: '体检',
-      value: clinicalReady ? '指标' : '待补',
-      color: c.pink,
-      bg: c.tintPink,
-    },
-    {
-      label: '穿戴',
-      value: wearableReady ? '实时' : refreshing ? '同步' : '待同步',
-      color: c.blue,
-      bg: c.tintBlue,
-    },
-  ];
-  const riskSummary = criticalCount > 0 ? `${criticalCount} 个风险` : '风险稳定';
-  const executionSummary = planCount > 0 ? `${planCount} 个任务` : '等待记录';
-
-  return (
-    <View style={styles.section}>
-      <View style={[styles.workspaceCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-        <View style={styles.workspaceTop}>
-          <View style={[styles.workspaceStatusIcon, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="pulse-outline" size={17} color={c.brand} />
-          </View>
-          <View style={styles.workspaceTitleBlock}>
-            <Text style={[styles.workspaceEyebrow, { color: c.brand }]}>Agent 雷达 · 后台运行中</Text>
-            <Text style={[styles.workspaceTitle, { color: c.labelPrimary }]}>
-              {sourceItems.length} 源诊断 · {domains.length} 域干预
-            </Text>
-            <Text style={[styles.workspaceCopy, { color: c.labelSecondary }]} numberOfLines={1}>
-              {riskSummary} · {executionSummary} · 长期闭环
-            </Text>
-          </View>
-          <Pressable
-            onPress={onOpenAgent}
-            style={({ pressed }) => [
-              styles.workspaceAskButton,
-              { backgroundColor: c.brandLight, opacity: pressed ? 0.7 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="让 Agent 解释当前判断"
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
-            <Text style={[styles.workspaceAskText, { color: c.brand }]}>解释</Text>
-          </Pressable>
-        </View>
-
-        <View style={[styles.workspaceDetailBlock, { borderTopColor: c.separator }]}>
-          <View style={styles.workspaceDetailGroup}>
-            <View style={styles.workspaceDetailHeader}>
-              <Text style={[styles.workspaceDetailLabel, { color: c.labelTertiary }]}>数据依据</Text>
-              <Text style={[styles.workspaceDetailLabel, { color: c.brand }]} numberOfLines={1}>
-                当前闭环 · {interventionSummary}
-              </Text>
-            </View>
-            <View style={styles.sourceRail}>
-              {sourceItems.map(item => (
-                <View key={item.label} style={[styles.sourceChip, { backgroundColor: item.bg }]}>
-                  <Text style={[styles.sourceLabel, { color: item.color }]}>{item.label}</Text>
-                  <Text style={[styles.sourceValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-          <View style={styles.workspaceDetailGroup}>
-            <Text style={[styles.workspaceDetailLabel, { color: c.labelTertiary }]}>干预状态</Text>
-            <View style={styles.interventionGrid}>
-              {domains.map(domain => (
-                <InterventionDomainButton
-                  key={domain.key}
-                  domain={domain}
-                  onPress={() => onPressDomain(domain)}
-                />
-              ))}
-            </View>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function InterventionDomainButton({
-  domain,
-  onPress,
-}: {
-  domain: InterventionDomainStatus;
-  onPress: () => void;
-}) {
-  const { c } = useTheme();
-  const active = domain.activeCount > 0;
-  const color = c[domain.colorName];
-  const bg = c[domain.tintName];
-  const status = active ? `${domain.activeCount} 个任务` : '观察中';
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.interventionDomain,
-        {
-          backgroundColor: active ? bg : c.bgPrimary,
-          borderColor: active ? `${color}55` : c.separator,
-          opacity: pressed ? 0.72 : 1,
-        },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={`打开${domain.label}干预`}
-    >
-      <View style={[styles.interventionDomainIcon, { backgroundColor: active ? c.bgCard : bg }]}>
-        <Ionicons name={domain.icon} size={12} color={color} />
-      </View>
-      <View style={styles.interventionDomainText}>
-        <Text style={[styles.interventionDomainLabel, { color: c.labelPrimary }]} numberOfLines={1}>
-          {domain.label}
-        </Text>
-        <Text style={[styles.interventionDomainStatus, { color: active ? color : c.labelTertiary }]} numberOfLines={1}>
-          {status}
-        </Text>
-      </View>
-    </Pressable>
   );
 }
 
@@ -815,6 +709,62 @@ function CompactShortcutSection({
             </View>
           </Pressable>
         ))}
+      </View>
+    </View>
+  );
+}
+
+function InterventionStrategyPanel({
+  domains,
+  onPressDomain,
+}: {
+  domains: InterventionDomainStatus[];
+  onPressDomain: (domain: InterventionDomainStatus) => void;
+}) {
+  const { c } = useTheme();
+  const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
+  return (
+    <View style={[styles.strategyCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.strategyHeader}>
+        <View style={[styles.strategyIcon, { backgroundColor: c.brandLight }]}>
+          <Ionicons name="git-network-outline" size={16} color={c.brand} />
+        </View>
+        <View style={styles.strategyTitleBlock}>
+          <Text style={[styles.strategyTitle, { color: c.labelPrimary }]}>生活方式干预路径</Text>
+          <Text style={[styles.strategySubtitle, { color: c.labelTertiary }]}>
+            {activeCount > 0 ? `${activeCount} 个任务正在影响关键指标` : '等待 Agent 基于反馈编排新任务'}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.strategyGrid}>
+        {domains.map(domain => {
+          const color = c[domain.colorName];
+          const active = domain.activeCount > 0;
+          return (
+            <Pressable
+              key={domain.key}
+              onPress={() => onPressDomain(domain)}
+              style={({ pressed }) => [
+                styles.strategyDomain,
+                {
+                  backgroundColor: active ? c[domain.tintName] : c.bgPrimary,
+                  borderColor: active ? `${color}55` : c.separator,
+                  opacity: pressed ? 0.72 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`打开${domain.label}干预`}
+            >
+              <Ionicons name={domain.icon} size={15} color={color} />
+              <Text style={[styles.strategyDomainLabel, { color: c.labelPrimary }]} numberOfLines={1}>
+                {domain.label}
+              </Text>
+              <Text style={[styles.strategyDomainMeta, { color: active ? color : c.labelTertiary }]} numberOfLines={1}>
+                {active ? `${domain.activeCount} 个` : '观察'}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -1374,7 +1324,33 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
-  commandFocusArea: { gap: spacing.xs },
+  commandAgentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
+  commandAgentLabel: { fontSize: 14, fontWeight: '900' },
+  commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  commandSourceRail: { flexDirection: 'row', gap: 6 },
+  commandSourceChip: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: radii.md,
+    paddingHorizontal: 7,
+    paddingVertical: 7,
+    alignItems: 'center',
+  },
+  commandSourceLabel: { fontSize: 10, lineHeight: 12, fontWeight: '900' },
+  commandSourceValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', marginTop: 2 },
+  commandFocusArea: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+    gap: spacing.xs,
+  },
+  commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTitleBlock: { flex: 1, gap: 4, minWidth: 0 },
   commandStatusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
@@ -1672,6 +1648,37 @@ const styles = StyleSheet.create({
   shortcutTextBlock: { flex: 1, minWidth: 0 },
   shortcutLabel: { fontSize: 11, fontWeight: '600' },
   shortcutValue: { fontSize: 14, fontWeight: '800', marginTop: 1 },
+  strategyCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  strategyHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  strategyIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  strategyTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  strategyTitle: { fontSize: 16, lineHeight: 20, fontWeight: '900' },
+  strategySubtitle: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  strategyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  strategyDomain: {
+    flexBasis: '31.8%',
+    flexGrow: 1,
+    minHeight: 54,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  strategyDomainLabel: { fontSize: 12, lineHeight: 15, fontWeight: '900' },
+  strategyDomainMeta: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
