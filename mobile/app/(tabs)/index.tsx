@@ -29,7 +29,6 @@ import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import EvidenceChip from '../../components/shared/EvidenceChip';
-import { EvidenceRefsRow } from '../../components/knowledge';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
   getDailyOperatingPlan,
@@ -983,12 +982,12 @@ function AgentFollowUpQueue({
     + weeklyAdvice.length - (showPrimaryAdvice ? 1 : 0),
   );
   const subtitle = loading
-    ? '正在整理长期轨迹'
+    ? 'Agent 后台队列 · 整理长期轨迹'
     : weeklyAdvice.length > 0
-      ? `${trajectoryRisks.length} 条轨迹 · ${weeklyAdvice.length} 条建议`
+      ? `后台队列 · ${trajectoryRisks.length} 轨迹/${weeklyAdvice.length} 建议`
       : trajectoryRisks.length > 0
-        ? `${trajectoryRisks.length} 条轨迹 · 周建议待生成`
-        : '先执行上方闭环';
+        ? `后台队列 · ${trajectoryRisks.length} 轨迹/周建议排队`
+        : '后台队列 · 先执行上方闭环';
 
   return (
     <View style={[styles.followUpCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -1126,10 +1125,9 @@ function AdviceQueueRow({ card, onPress }: { card: ActionCard; onPress: () => vo
           </Text>
           <EvidenceChip level={card.evidence_level} />
         </View>
-        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={2}>
+        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {card.content}
         </Text>
-        <EvidenceRefsRow refs={card.evidence_refs} />
       </View>
       <Text style={[styles.followUpRowRight, { color: decided ? c.green : c.amber }]}>
         {decided ? '已决策' : '建议'}
@@ -1165,7 +1163,7 @@ function FollowUpPlainRow({
         <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={2}>
+        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {detail}
         </Text>
       </View>
@@ -2126,9 +2124,10 @@ const styles = StyleSheet.create({
   loopMetricValue: { fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   followUpCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: 12,
-    gap: 8,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 5,
   },
   followUpHeader: {
     flexDirection: 'row',
@@ -2136,55 +2135,55 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   followUpIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   followUpTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  followUpTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
-  followUpSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  followUpTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  followUpSubtitle: { fontSize: 11, lineHeight: 13, fontWeight: '600' },
   followUpCountPill: {
-    minHeight: 25,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  followUpCountText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
-  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  followUpSummaryPill: {
-    minHeight: 26,
+    minHeight: 22,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.full,
     paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followUpCountText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'nowrap', gap: 5 },
+  followUpSummaryPill: {
+    minHeight: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  followUpSummaryText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
-  followUpList: { gap: 2 },
+  followUpSummaryText: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  followUpList: { gap: 0 },
   followUpRow: {
-    minHeight: 48,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: 6,
+    gap: 7,
+    paddingVertical: 3,
   },
   followUpRowIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  followUpRowText: { flex: 1, minWidth: 0, gap: 3 },
+  followUpRowText: { flex: 1, minWidth: 0, gap: 2 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0 },
-  followUpRowTitle: { flexShrink: 1, fontSize: 13, lineHeight: 17, fontWeight: '800' },
-  followUpRowDetail: { fontSize: 12, lineHeight: 15, fontWeight: '500' },
-  followUpRowRight: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpRowTitle: { flexShrink: 1, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpRowDetail: { fontSize: 11, lineHeight: 13, fontWeight: '500' },
+  followUpRowRight: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   shortcutCard: {
     gap: 6,
   },
