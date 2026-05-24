@@ -571,8 +571,10 @@ function HomeCommandHeader({
   const primaryVerificationMetric = visibleLoopMetrics[0] ?? null;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
-  const interventionSummary = `${strategySummary} · ${nextStepActionText}`;
   const improvementSummary = verificationMetrics || watchSummary;
+  const targetSourceText = strategySummary && strategySummary !== '0 个干预'
+    ? `${strategySummary} 影响这些指标`
+    : '补齐记录后更新目标';
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
   const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0
@@ -638,37 +640,33 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <View style={[styles.commandLoopPanel, { backgroundColor: c.bgPrimary }]}>
+      <View style={[styles.commandTargetPanel, { backgroundColor: c.bgPrimary }]}>
         <Pressable
           onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
           style={({ pressed }) => [
-            styles.commandLoopStrip,
+            styles.commandTargetStrip,
             { opacity: pressed ? 0.68 : 1 },
           ]}
           accessibilityRole="button"
           accessibilityLabel={
             primaryVerificationMetric
               ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
-              : '查看验证目标'
+              : '查看改善目标'
             }
         >
-          <View style={[styles.commandLoopBadge, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="analytics-outline" size={11} color={c.brand} />
-            <HomeText style={[styles.commandLoopTitleText, { color: c.brand }]}>干预闭环</HomeText>
+          <View style={[styles.commandTargetBadge, { backgroundColor: c.brandLight }]}>
+            <Ionicons name="trending-up-outline" size={11} color={c.brand} />
+            <HomeText style={[styles.commandTargetBadgeText, { color: c.brand }]}>改善目标</HomeText>
           </View>
-          <View style={styles.commandLoopSegment}>
-            <HomeText style={[styles.commandLoopSegmentLabel, { color: c.green }]}>干预</HomeText>
-            <HomeText style={[styles.commandLoopSegmentValue, { color: c.labelSecondary }]} numberOfLines={1}>
-              {interventionSummary}
-            </HomeText>
-          </View>
-          <Ionicons name="arrow-forward" size={12} color={c.labelTertiary} />
-          <View style={styles.commandLoopSegment}>
-            <HomeText style={[styles.commandLoopSegmentLabel, { color: c.blue }]}>验证目标</HomeText>
-            <HomeText style={[styles.commandLoopSegmentValue, { color: c.labelSecondary }]} numberOfLines={1}>
+          <View style={styles.commandTargetTextBlock}>
+            <HomeText style={[styles.commandTargetValue, { color: c.labelPrimary }]} numberOfLines={1}>
               {improvementSummary}
             </HomeText>
+            <HomeText style={[styles.commandTargetSource, { color: c.labelTertiary }]} numberOfLines={1}>
+              {targetSourceText}
+            </HomeText>
           </View>
+          <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
         </Pressable>
       </View>
 
@@ -1158,7 +1156,7 @@ function AgentFollowUpQueue({
       : showPrimaryAdvice && primaryAdvice
         ? primaryAdvice.content
         : weeklyAdvice.length === 0 && trajectoryRisks.length === 0
-          ? '当前先做上方闭环，周日晚自动复盘。'
+          ? '当前先完成上方行动，周日晚自动复盘。'
           : '继续用睡眠、血氧、体成分和检查数据观察。';
   const queueRightLabel = gapCount > 0
     ? `缺口 ${gapCount}`
@@ -1891,6 +1889,29 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  commandTargetPanel: {
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+  },
+  commandTargetStrip: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  commandTargetBadge: {
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commandTargetBadgeText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandTargetTextBlock: { flex: 1, minWidth: 0, gap: 1 },
+  commandTargetValue: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  commandTargetSource: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandLoopPanel: {
     borderRadius: radii.md,
     paddingHorizontal: 8,
