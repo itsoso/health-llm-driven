@@ -559,17 +559,13 @@ function HomeCommandHeader({
   const targetSourceText = strategySummary && strategySummary !== '0 个干预'
     ? `${strategySummary}会影响这些指标`
     : '补齐记录后更新目标';
+  const actionOutcomeExplanation = buildActionOutcomeExplanation(action, visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
-  const decisionTint = criticalCount > 0 ? c.tintRed : c.brandLight;
-  const decisionIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0
-    ? 'alert-circle-outline'
-    : action
-      ? getPlanActionIcon(action.domain)
-      : 'sparkles-outline';
   const baseDecisionSupport = riskTitle
     || action?.why
     || action?.when
-    || (planCount > 0 ? 'Agent 已把今天任务排成执行顺序。' : '补齐今天记录后，Agent 会重新排序干预。');
+    || actionOutcomeExplanation
+    || (planCount > 0 ? '先完成这一步，再用身体反馈调整后续干预。' : '补齐今天记录后，Agent 会重新排序干预。');
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const decisionSupport = baseDecisionSupport;
   const canComplete = Boolean(action?.action_key);
@@ -599,8 +595,8 @@ function HomeCommandHeader({
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <View style={[styles.commandDecisionIcon, { backgroundColor: decisionTint }]}>
-          <Ionicons name={decisionIcon} size={18} color={decisionColor} />
+        <View style={styles.commandDecisionIndicator}>
+          <View style={[styles.commandDecisionRail, { backgroundColor: decisionColor }]} />
         </View>
         <View style={styles.commandDecisionText}>
           <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</HomeText>
@@ -638,9 +634,9 @@ function HomeCommandHeader({
               : '查看改善目标'
             }
         >
-          <View style={[styles.commandTargetBadge, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="trending-up-outline" size={11} color={c.brand} />
-            <HomeText style={[styles.commandTargetBadgeText, { color: c.brand }]}>改善目标</HomeText>
+          <View style={[styles.commandTargetBadge, { backgroundColor: c.bgCard }]}>
+            <Ionicons name="trending-up-outline" size={11} color={decisionColor} />
+            <HomeText style={[styles.commandTargetBadgeText, { color: decisionColor }]}>改善目标</HomeText>
           </View>
           <View style={styles.commandTargetTextBlock}>
             <HomeText style={[styles.commandTargetValue, { color: c.labelPrimary }]} numberOfLines={1}>
@@ -821,7 +817,7 @@ function HomeBodyFeedbackPanel({
 
   return (
     <View style={styles.bodyFeedbackBoard}>
-      <View style={styles.bodyMetricRail}>
+      <View style={[styles.bodyMetricRail, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
         {boardMetrics.map(metric => {
           const color = c[metric.colorName];
           return (
@@ -831,8 +827,8 @@ function HomeBodyFeedbackPanel({
               style={({ pressed }) => [
                 styles.bodyMetricTile,
                 {
-                  backgroundColor: c.bgPrimary,
-                  borderColor: c.separator,
+                  backgroundColor: 'transparent',
+                  borderColor: 'transparent',
                   opacity: pressed ? 0.72 : 1,
                 },
               ]}
@@ -1168,6 +1164,16 @@ function buildVerificationGoalText(metrics: OutcomeFeedbackMetric[]): string {
     const target = getVerificationTarget(metric);
     return `${metric.label} ${target}`;
   }).join(' / ');
+}
+
+function buildActionOutcomeExplanation(
+  action: DailyPlanAction | null | undefined,
+  metrics: OutcomeFeedbackMetric[],
+): string | null {
+  if (!action?.title || metrics.length === 0) return null;
+  const labels = metrics.map(metric => metric.label).slice(0, 3).join('、');
+  if (!labels) return null;
+  return `先做${action.title}，观察 ${labels} 是否改善。`;
 }
 
 function getVerificationTarget(metric: OutcomeFeedbackMetric): string {
@@ -1540,16 +1546,6 @@ function getTrajectoryRiskIcon(domain: string): keyof typeof Ionicons.glyphMap {
   return 'analytics-outline';
 }
 
-function getPlanActionIcon(domain?: string | null): keyof typeof Ionicons.glyphMap {
-  if (domain === 'diet' || domain === 'nutrition') return 'restaurant-outline';
-  if (domain === 'sleep') return 'moon-outline';
-  if (domain === 'movement' || domain === 'exercise') return 'walk-outline';
-  if (domain === 'supplement') return 'medkit-outline';
-  if (domain === 'emotion' || domain === 'stress') return 'cloudy-outline';
-  if (domain === 'measurement') return 'analytics-outline';
-  return 'sparkles-outline';
-}
-
 function getTrajectoryLevelColor(level: string, c: ReturnType<typeof useTheme>['c']) {
   if (level === 'high') return { tint: c.tintRed, color: c.red };
   if (level === 'attention') return { tint: c.tintAmber, color: c.amber };
@@ -1572,9 +1568,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingTop: 13,
     paddingBottom: 12,
-    gap: 9,
+    gap: 10,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1718,9 +1714,9 @@ const styles = StyleSheet.create({
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   commandTargetPanel: {
-    borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
+    borderRadius: radii.lg,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   commandTargetStrip: {
     minHeight: 36,
@@ -1729,7 +1725,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   commandTargetBadge: {
-    minHeight: 22,
+    minHeight: 21,
     borderRadius: radii.full,
     paddingHorizontal: 8,
     flexDirection: 'row',
@@ -1738,7 +1734,7 @@ const styles = StyleSheet.create({
   },
   commandTargetBadgeText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   commandTargetTextBlock: { flex: 1, minWidth: 0, gap: 1 },
-  commandTargetValue: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  commandTargetValue: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
   commandTargetSource: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandLoopPanel: {
     borderRadius: radii.md,
@@ -1790,23 +1786,23 @@ const styles = StyleSheet.create({
   commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 72,
+    minHeight: 82,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 2,
-    paddingVertical: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 2,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: 9,
   },
-  commandDecisionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
+  commandDecisionIndicator: {
+    width: 8,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: 3,
+    paddingBottom: 4,
   },
-  commandDecisionText: { flex: 1, minWidth: 0, gap: 3 },
+  commandDecisionRail: { width: 3, flex: 1, minHeight: 34, borderRadius: 2 },
+  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
   commandDecisionSupport: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandSignalChipRail: {
     minHeight: 22,
@@ -1827,7 +1823,7 @@ const styles = StyleSheet.create({
   commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
-  commandDecisionRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
+  commandDecisionAccentRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
   commandDecisionSummary: { gap: 5 },
   commandDecisionTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -2349,15 +2345,17 @@ const styles = StyleSheet.create({
   bodyMetricRail: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.lg,
+    overflow: 'hidden',
   },
   bodyMetricTile: {
     flex: 1,
     minWidth: 0,
-    minHeight: 58,
+    minHeight: 54,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 7,
     justifyContent: 'center',
     gap: 3,

@@ -537,13 +537,13 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getByText } = render(<TodayScreen />);
+    const { getAllByText, getByText } = render(<TodayScreen />);
 
-    expect(getByText(/BMI\/体脂/)).toBeTruthy();
+    expect(getAllByText(/BMI\/体脂/).length).toBeGreaterThan(0);
     expect(getByText(/BMI\/体脂 下降/)).toBeTruthy();
-    expect(getByText(/睡眠分/)).toBeTruthy();
+    expect(getAllByText(/睡眠分/).length).toBeGreaterThan(0);
     expect(getByText(/睡眠分 90\+/)).toBeTruthy();
-    expect(getByText(/HRV/)).toBeTruthy();
+    expect(getAllByText(/HRV/).length).toBeGreaterThan(0);
     expect(getByText(/HRV 回升/)).toBeTruthy();
   });
 
@@ -668,6 +668,27 @@ describe('TodayScreen', () => {
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 2 个计划')).toBeTruthy();
     expect(getByText('改善目标')).toBeTruthy();
+  });
+
+  it('explains today focus with concrete health outcomes instead of generic ordering copy', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'nutrition.protein_target',
+        domain: 'nutrition',
+        title: '提高早餐蛋白',
+      },
+    ];
+    mockTwinData = {
+      body_composition: {
+        bmi: 24.1,
+        body_fat_pct: 21.8,
+      },
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(queryByText('Agent 已把今天任务排成执行顺序。')).toBeNull();
+    expect(getByText('先做提高早餐蛋白，观察 BMI/体脂、睡眠分、HRV 是否改善。')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
