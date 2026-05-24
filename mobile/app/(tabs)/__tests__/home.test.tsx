@@ -160,8 +160,8 @@ describe('TodayScreen', () => {
     expect(queryByText('健康 Agent 正在运行')).toBeNull();
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getByText('今日优先 · 观察中')).toBeTruthy();
-    expect(getByText('保持记录节奏')).toBeTruthy();
+    expect(getByText('Agent 判断')).toBeTruthy();
+    expect(getByText('补齐今天记录后，Agent 会重新排序干预。')).toBeTruthy();
     expect(getByText('改善目标')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
@@ -227,7 +227,8 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
-    expect(getByText('今日优先 · 1 项干预')).toBeTruthy();
+    expect(getByText('Agent 判断')).toBeTruthy();
+    expect(getByText('今天先 23:00 上床，观察血氧、睡眠分、HRV。')).toBeTruthy();
     expect(getByText('改善目标')).toBeTruthy();
     expect(getAllByText(/改善/).length).toBeGreaterThan(0);
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
@@ -243,7 +244,8 @@ describe('TodayScreen', () => {
 
     const { getByLabelText, getByText } = render(<TodayScreen />);
 
-    expect(getByText('今日优先 · 1 个风险')).toBeTruthy();
+    expect(getByText('Agent 判断')).toBeTruthy();
+    expect(getByText('夜间血氧持续偏低，先查看风险原因并调整今晚策略。')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
     expect(getByLabelText('打开下一步')).toBeTruthy();
@@ -264,7 +266,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('夜间血氧过低')).toBeTruthy();
+    expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
     expect(getByText('血氧')).toBeTruthy();
     expect(getByText('93%')).toBeTruthy();
     expect(getByText('睡眠分')).toBeTruthy();
@@ -295,6 +297,25 @@ describe('TodayScreen', () => {
     expect(getByText('下一步')).toBeTruthy();
     expect(queryByText('干预闭环')).toBeNull();
     expect(queryByText('验证目标')).toBeNull();
+  });
+
+  it('opens the home card with a plain Agent judgment instead of status-first task wording', () => {
+    mockDailyPlanActions = [
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+    ];
+    mockTwinData = {
+      physiological: {
+        sleep_score_latest: 91,
+        hrv_latest: 63,
+        spo2_avg: 95,
+      },
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('Agent 判断')).toBeTruthy();
+    expect(getByText('今天先 23:00 上床，观察血氧、睡眠分、HRV。')).toBeTruthy();
+    expect(queryByText('今日优先 · 1 项干预')).toBeNull();
   });
 
   it('leads the background panel with health outcome improvement instead of backend task framing', () => {
@@ -343,7 +364,8 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('今日优先 · 4 项干预')).toBeTruthy();
+    expect(getByText('Agent 判断')).toBeTruthy();
+    expect(getByText('今天先 提高早餐蛋白，观察BMI/体脂、睡眠分、HRV。')).toBeTruthy();
     expect(getByText(/饮食\/睡眠\/运动等 4 项干预/)).toBeTruthy();
     expect(queryByText(/饮食\/睡眠\/运动 \+1/)).toBeNull();
     expect(queryByText(/干预域/)).toBeNull();
@@ -667,7 +689,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
-    expect(getByText('今日优先 · 2 个计划')).toBeTruthy();
+    expect(getByText('Agent 判断')).toBeTruthy();
     expect(getByText('改善目标')).toBeTruthy();
   });
 
@@ -689,7 +711,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('Agent 已把今天任务排成执行顺序。')).toBeNull();
-    expect(getByText('先做提高早餐蛋白，观察 BMI/体脂、睡眠分、HRV 是否改善。')).toBeTruthy();
+    expect(getByText('今天先 提高早餐蛋白，观察BMI/体脂、睡眠分、HRV。')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {

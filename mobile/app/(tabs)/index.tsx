@@ -535,15 +535,6 @@ function HomeCommandHeader({
     : planCount > 0
       ? improvementFocus.headline
       : '保持记录节奏';
-  const focusKicker = criticalCount > 0
-    ? `今日优先 · ${criticalCount} 个风险`
-    : activeCount > 0 && activeCount === planCount
-      ? `今日优先 · ${activeCount} 项干预`
-    : planCount > 0
-      ? `今日优先 · ${planCount} 个计划`
-    : activeCount > 0
-      ? `今日优先 · ${activeCount} 项干预`
-      : '今日优先 · 观察中';
   const evidenceSummary = `${buildEvidenceSourceSummary({
     hasGenetic: geneticHits != null,
     hasClinical: clinicalReady,
@@ -559,15 +550,16 @@ function HomeCommandHeader({
   const targetSourceText = strategySummary && strategySummary !== '0 个干预'
     ? `${strategySummary}会影响这些指标`
     : '补齐记录后更新目标';
-  const actionOutcomeExplanation = buildActionOutcomeExplanation(action, visibleLoopMetrics);
+  const agentJudgmentText = buildAgentJudgmentText({
+    action,
+    criticalCount,
+    headline,
+    planCount,
+    riskTitle,
+    metrics: visibleLoopMetrics,
+  });
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
-  const baseDecisionSupport = riskTitle
-    || action?.why
-    || action?.when
-    || actionOutcomeExplanation
-    || (planCount > 0 ? '先完成这一步，再用身体反馈调整后续干预。' : '补齐今天记录后，Agent 会重新排序干预。');
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
-  const decisionSupport = baseDecisionSupport;
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -599,12 +591,9 @@ function HomeCommandHeader({
           <View style={[styles.commandDecisionRail, { backgroundColor: decisionColor }]} />
         </View>
         <View style={styles.commandDecisionText}>
-          <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</HomeText>
+          <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>Agent 判断</HomeText>
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
-            {headline}
-          </HomeText>
-          <HomeText style={[styles.commandDecisionSupport, { color: c.labelSecondary }]} numberOfLines={2}>
-            {decisionSupport}
+            {agentJudgmentText}
           </HomeText>
           {personalSignalChips.length > 0 ? (
             <View style={styles.commandSignalChipRail}>
@@ -1139,14 +1128,34 @@ function buildVerificationGoalText(metrics: OutcomeFeedbackMetric[]): string {
   }).join(' / ');
 }
 
-function buildActionOutcomeExplanation(
-  action: DailyPlanAction | null | undefined,
-  metrics: OutcomeFeedbackMetric[],
-): string | null {
-  if (!action?.title || metrics.length === 0) return null;
-  const labels = metrics.map(metric => metric.label).slice(0, 3).join('、');
-  if (!labels) return null;
-  return `先做${action.title}，观察 ${labels} 是否改善。`;
+function buildAgentJudgmentText({
+  action,
+  criticalCount,
+  headline,
+  planCount,
+  riskTitle,
+  metrics,
+}: {
+  action?: DailyPlanAction | null;
+  criticalCount: number;
+  headline: string;
+  planCount: number;
+  riskTitle?: string;
+  metrics: OutcomeFeedbackMetric[];
+}): string {
+  const metricLabels = metrics.map(metric => metric.label).slice(0, 3).join('、');
+  if (criticalCount > 0) {
+    const riskFocus = riskTitle || headline;
+    if (action?.title) return `${riskFocus}，今天先 ${action.title}。`;
+    return `${riskFocus}，先查看风险原因并调整今晚策略。`;
+  }
+  if (action?.title) {
+    return metricLabels
+      ? `今天先 ${action.title}，观察${metricLabels}。`
+      : `今天先 ${action.title}。`;
+  }
+  if (planCount > 0) return `今天先完成 ${planCount} 个计划，再用身体反馈调整。`;
+  return '补齐今天记录后，Agent 会重新排序干预。';
 }
 
 function getVerificationTarget(metric: OutcomeFeedbackMetric): string {
