@@ -244,6 +244,23 @@ describe('TodayScreen', () => {
     expect(getByLabelText('问 Agent')).toBeTruthy();
   });
 
+  it('grounds the top diagnosis in this person wearable signals', () => {
+    mockSafetyAlerts = [
+      { severity: 'high', title: '夜间血氧过低' },
+    ];
+    mockTwinData = {
+      physiological: {
+        spo2_avg: 93,
+        sleep_score_latest: 89,
+        hrv_latest: 62,
+      },
+    };
+
+    const { getByText } = render(<TodayScreen />);
+
+    expect(getByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeTruthy();
+  });
+
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
     const { getAllByText, queryByText } = render(<TodayScreen />);
 

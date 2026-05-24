@@ -576,10 +576,14 @@ function HomeCommandHeader({
     : action
       ? getPlanActionIcon(action.domain)
       : 'sparkles-outline';
-  const decisionSupport = riskTitle
+  const baseDecisionSupport = riskTitle
     || action?.why
     || action?.when
     || (planCount > 0 ? 'Agent 已把今天任务排成执行顺序。' : '补齐今天记录后，Agent 会重新排序干预。');
+  const personalSignalSummary = buildPersonalSignalSummary(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
+  const decisionSupport = personalSignalSummary
+    ? `${baseDecisionSupport} · ${personalSignalSummary}`
+    : baseDecisionSupport;
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -1427,6 +1431,55 @@ function buildHomeNextStepLabel({
   if (action?.title) return `下一步：${action.title}`;
   if (criticalCount > 0) return '下一步：查看风险原因，调整今晚策略';
   return '下一步：补齐今天记录，Agent 再排干预';
+}
+
+function buildPersonalSignalSummary(
+  twinSnapshot: TwinSnapshot,
+  contextText: string,
+): string {
+  const context = contextText.toLowerCase();
+  const picked: string[] = [];
+  const add = (label: string, value?: string | null) => {
+    if (!value || picked.length >= 3) return;
+    picked.push(`${label} ${value}`);
+  };
+
+  const sleepSignals = () => {
+    add('血氧', twinSnapshot.spo2_avg != null ? `${fmt(twinSnapshot.spo2_avg)}%` : null);
+    add('睡眠分', twinSnapshot.sleep_score != null ? fmt(twinSnapshot.sleep_score) : null);
+    add('HRV', twinSnapshot.hrv != null ? `${fmt(twinSnapshot.hrv)}ms` : null);
+  };
+  const bodySignals = () => {
+    add('BMI', twinSnapshot.bmi != null ? fmt(twinSnapshot.bmi) : null);
+    add('体脂', twinSnapshot.body_fat_pct != null ? `${fmt(twinSnapshot.body_fat_pct)}%` : null);
+    add('VO2max', twinSnapshot.vo2max != null ? fmt(twinSnapshot.vo2max) : null);
+  };
+  const pressureSignals = () => {
+    add(
+      '血压',
+      twinSnapshot.systolic_bp && twinSnapshot.diastolic_bp
+        ? `${twinSnapshot.systolic_bp}/${twinSnapshot.diastolic_bp}`
+        : null,
+    );
+    add('HRV', twinSnapshot.hrv != null ? `${fmt(twinSnapshot.hrv)}ms` : null);
+    add('睡眠分', twinSnapshot.sleep_score != null ? fmt(twinSnapshot.sleep_score) : null);
+  };
+
+  if (/sleep|bed|spo2|oxygen|血氧|呼吸|睡眠|鼾|鼻|hrv|恢复/.test(context)) {
+    sleepSignals();
+  } else if (/bmi|weight|waist|fat|体重|腰围|体脂|身材|nutrition|diet|protein|饮食|蛋白/.test(context)) {
+    bodySignals();
+  } else if (/bp|blood_pressure|pressure|血压|心血管/.test(context)) {
+    pressureSignals();
+  }
+
+  if (picked.length === 0) {
+    sleepSignals();
+    bodySignals();
+    pressureSignals();
+  }
+
+  return picked.join(' · ');
 }
 
 function buildOutcomeFeedbackMetric(
