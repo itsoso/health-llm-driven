@@ -437,18 +437,12 @@ export default function TodayScreen() {
           </View>
         )}
 
-        <View style={[styles.section, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-          <AgentFollowUpQueue
-            snapshot={trajectoryQuery.data}
-            loading={trajectoryQuery.isLoading}
-            weeklyAdvice={weeklyAdvice}
-            onOpenTrajectory={openTrajectoryChat}
-            onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
-          />
-          <EnvironmentCard compact mode="micro" />
-        </View>
-
-        <CompactShortcutSection
+        <HomeBackgroundPanel
+          snapshot={trajectoryQuery.data}
+          loading={trajectoryQuery.isLoading}
+          weeklyAdvice={weeklyAdvice}
+          onOpenTrajectory={openTrajectoryChat}
+          onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           shortcuts={[
             {
               label: '基因',
@@ -704,7 +698,49 @@ function HomeCommandHeader({
   );
 }
 
-function CompactShortcutSection({
+function HomeBackgroundPanel({
+  snapshot,
+  loading,
+  weeklyAdvice,
+  onOpenTrajectory,
+  onOpenAdvice,
+  shortcuts,
+  onOpenAll,
+}: {
+  snapshot?: HealthTrajectorySnapshot | null;
+  loading?: boolean;
+  weeklyAdvice: ActionCard[];
+  onOpenTrajectory: () => void;
+  onOpenAdvice: (card: ActionCard) => void;
+  shortcuts: {
+    label: string;
+    value: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    color: string;
+    bg: string;
+    onPress: () => void;
+  }[];
+  onOpenAll: () => void;
+}) {
+  const { c } = useTheme();
+  return (
+    <View style={[styles.backgroundPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <AgentFollowUpQueue
+        snapshot={snapshot}
+        loading={loading}
+        weeklyAdvice={weeklyAdvice}
+        onOpenTrajectory={onOpenTrajectory}
+        onOpenAdvice={onOpenAdvice}
+      />
+      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
+      <EnvironmentCard compact mode="micro" />
+      <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
+      <CompactArchiveStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
+    </View>
+  );
+}
+
+function CompactArchiveStrip({
   shortcuts,
   onOpenAll,
 }: {
@@ -720,44 +756,42 @@ function CompactShortcutSection({
 }) {
   const { c } = useTheme();
   return (
-    <View style={[styles.shortcutCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.shortcutStrip}>
-        <View style={styles.shortcutHeaderText}>
-          <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</Text>
-          <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</Text>
-        </View>
-        <View style={styles.shortcutRail}>
-          {shortcuts.map((item, index) => (
-            <React.Fragment key={item.label}>
-              <Pressable
-                onPress={item.onPress}
-                style={({ pressed }) => [
-                  styles.shortcutTextButton,
-                  { opacity: pressed ? 0.58 : 1 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`${item.label} ${item.value}`}
-              >
-                <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                  {item.label}
-                </Text>
-              </Pressable>
-              {index < shortcuts.length - 1 ? (
-                <Text style={[styles.shortcutSeparatorText, { color: c.labelTertiary }]}>·</Text>
-              ) : null}
-            </React.Fragment>
-          ))}
-        </View>
-        <Pressable
-          onPress={onOpenAll}
-          style={({ pressed }) => [styles.shortcutAllButton, { opacity: pressed ? 0.65 : 1 }]}
-          accessibilityRole="button"
-          accessibilityLabel="查看全部长期档案"
-        >
-          <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
-          <Ionicons name="chevron-forward" size={13} color={c.brand} />
-        </Pressable>
+    <View style={styles.shortcutStrip}>
+      <View style={styles.shortcutHeaderText}>
+        <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</Text>
+        <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</Text>
       </View>
+      <View style={styles.shortcutRail}>
+        {shortcuts.map((item, index) => (
+          <React.Fragment key={item.label}>
+            <Pressable
+              onPress={item.onPress}
+              style={({ pressed }) => [
+                styles.shortcutTextButton,
+                { opacity: pressed ? 0.58 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.label} ${item.value}`}
+            >
+              <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                {item.label}
+              </Text>
+            </Pressable>
+            {index < shortcuts.length - 1 ? (
+              <Text style={[styles.shortcutSeparatorText, { color: c.labelTertiary }]}>·</Text>
+            ) : null}
+          </React.Fragment>
+        ))}
+      </View>
+      <Pressable
+        onPress={onOpenAll}
+        style={({ pressed }) => [styles.shortcutAllButton, { opacity: pressed ? 0.65 : 1 }]}
+        accessibilityRole="button"
+        accessibilityLabel="查看全部长期档案"
+      >
+        <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
+        <Ionicons name="chevron-forward" size={13} color={c.brand} />
+      </Pressable>
     </View>
   );
 }
@@ -2137,6 +2171,16 @@ const styles = StyleSheet.create({
   followUpRowTitle: { flexShrink: 1, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   followUpRowDetail: { fontSize: 10, lineHeight: 12, fontWeight: '500' },
   followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  backgroundPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.xl,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 7,
+  },
+  backgroundDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
   shortcutCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
