@@ -193,6 +193,25 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(blocks.contains(.tableRow(["饮食", "暂不调整"])))
     }
 
+    func testMarkdownRenderSupportBuildsCompactCardPreviewWithoutRawMarkers() {
+        let markdown = """
+        ## 🎯 核心目标
+
+        **补剂**：5-MTHF（活性叶酸）400-800 μg/天。
+        - 4 周复查 Hcy
+        - 若 ALT/AST 异常先暂停
+        """
+
+        let preview = MarkdownRenderSupport.compactPreview(from: markdown, maxLines: 3)
+
+        XCTAssertFalse(preview.contains("##"))
+        XCTAssertFalse(preview.contains("**"))
+        XCTAssertFalse(preview.contains("- "))
+        XCTAssertTrue(preview.contains("核心目标"))
+        XCTAssertTrue(preview.contains("补剂"))
+        XCTAssertTrue(preview.contains("4 周复查 Hcy"))
+    }
+
     func testWorkspaceContextFactoryBuildsKnowledgeDocumentAndJobContext() {
         let document = KnowledgeDocumentSummary(
             docID: "dedao:100-ecc79a079a92",

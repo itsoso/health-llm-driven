@@ -1339,11 +1339,11 @@ private struct DashboardRowView: View {
                 .foregroundStyle(toneColor(row.tone))
                 .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 3) {
-                Text(row.title)
+                Text(MarkdownRenderSupport.compactPreview(from: row.title, maxLines: 1))
                     .font(.callout.weight(.semibold))
                     .lineLimit(2)
                 if let subtitle = row.subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
+                    Text(MarkdownRenderSupport.compactPreview(from: subtitle, maxLines: 1))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -3352,12 +3352,12 @@ private struct WorkspaceActionCard: View {
                 .background(color.opacity(0.86), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(card.title)
+                Text(MarkdownRenderSupport.compactPreview(from: card.title, maxLines: 1))
                     .font(.callout.weight(.semibold))
                     .lineLimit(2)
 
                 if let content = card.content?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
-                    Text(content)
+                    Text(MarkdownRenderSupport.compactPreview(from: content, maxLines: 3))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)

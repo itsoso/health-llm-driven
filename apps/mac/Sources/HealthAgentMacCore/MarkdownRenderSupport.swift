@@ -82,6 +82,23 @@ public enum MarkdownRenderSupport {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    public static func compactPreview(from markdown: String, maxLines: Int = 3) -> String {
+        let lineLimit = max(1, maxLines)
+        let lines = readableFallback(markdown)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { compactLine(String($0)) }
+            .filter { !$0.isEmpty }
+        return lines.prefix(lineLimit).joined(separator: "\n")
+    }
+
+    private static func compactLine(_ line: String) -> String {
+        var text = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasPrefix("- ") || text.hasPrefix("* ") {
+            text = String(text.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        }
+        return text
+    }
+
     private static func readableLine(_ line: String) -> String {
         var text = line.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else {
