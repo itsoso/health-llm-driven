@@ -572,8 +572,11 @@ function HomeCommandHeader({
     : planCount > 0
       ? improvementFocus.target
       : improvementFocus.target;
-  const liveSignalSummary = buildLiveSignalSummary(twinSnapshot);
-  const evidenceSummary = `${evidenceLabel} · ${liveSignalSummary}`;
+  const evidenceSummary = `${evidenceLabel} · ${buildEvidenceSourceSummary({
+    hasGenetic: geneticHits != null,
+    hasClinical: clinicalReady,
+    hasWearable: wearableReady,
+  })}`;
   const agentStepItems = [
     { key: 'diagnosis', label: '判断', value: loopStrategy.diagnosisLabel },
     { key: 'intervention', label: '干预', value: activeDomainSummary || loopStrategy.interventionLabel },
@@ -1652,16 +1655,23 @@ function buildWorkspaceDataSources({
   ];
 }
 
-function buildLiveSignalSummary(twinSnapshot: TwinSnapshot): string {
-  const signals: string[] = [];
-  if (twinSnapshot.sleep_score != null) signals.push(`睡眠 ${fmt(twinSnapshot.sleep_score)}分`);
-  if (twinSnapshot.hrv != null) signals.push(`HRV ${fmt(twinSnapshot.hrv)}ms`);
-  if (twinSnapshot.spo2_avg != null) signals.push(`血氧 ${fmt(twinSnapshot.spo2_avg)}%`);
-  if (twinSnapshot.bmi != null) signals.push(`BMI ${fmt(twinSnapshot.bmi)}`);
-  if (twinSnapshot.body_fat_pct != null) signals.push(`体脂 ${fmt(twinSnapshot.body_fat_pct)}%`);
-  if (twinSnapshot.vo2max != null) signals.push(`VO2max ${fmt(twinSnapshot.vo2max)}`);
-  if (signals.length === 0) return '可穿戴、身体记录和检查反馈';
-  return signals.slice(0, 3).join('、');
+function buildEvidenceSourceSummary({
+  hasClinical,
+  hasGenetic,
+  hasWearable,
+}: {
+  hasClinical: boolean;
+  hasGenetic: boolean;
+  hasWearable: boolean;
+}): string {
+  const sources = [
+    hasGenetic ? '基因' : null,
+    '表观',
+    hasClinical ? '体检' : null,
+    hasWearable ? '穿戴' : null,
+  ].filter(Boolean);
+
+  return sources.length > 0 ? sources.join('/') : '记录/检查/穿戴';
 }
 
 function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {

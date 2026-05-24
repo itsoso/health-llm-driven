@@ -216,11 +216,13 @@ describe('TodayScreen', () => {
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
     ];
 
-    const { getAllByText, getByText } = render(<TodayScreen />);
+    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
     expect(getByText('血氧/睡眠分')).toBeTruthy();
+    expect(getByText('2 源画像 · 表观/穿戴')).toBeTruthy();
+    expect(queryByText(/源画像 · 睡眠/)).toBeNull();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {
