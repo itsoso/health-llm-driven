@@ -409,7 +409,7 @@ struct AgentChatView: View {
                 )
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
-                Text(message.content.isEmpty ? " " : message.content)
+                messageContent(message)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
@@ -430,6 +430,15 @@ struct AgentChatView: View {
             if message.role == .assistant {
                 Spacer(minLength: 70)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func messageContent(_ message: AgentChatMessage) -> some View {
+        if message.role == .assistant {
+            MarkdownMessageText(markdown: message.content)
+        } else {
+            Text(message.content.isEmpty ? " " : message.content)
         }
     }
 
@@ -822,6 +831,26 @@ private struct FlowLayout<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct MarkdownMessageText: View {
+    let markdown: String
+
+    var body: some View {
+        if let attributed = parsedMarkdown {
+            Text(attributed)
+        } else {
+            Text(markdown.isEmpty ? " " : markdown)
+        }
+    }
+
+    private var parsedMarkdown: AttributedString? {
+        let sanitized = MarkdownRenderSupport.sanitizedForSwiftUI(markdown.isEmpty ? " " : markdown)
+        return try? AttributedString(
+            markdown: sanitized,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+        )
     }
 }
 

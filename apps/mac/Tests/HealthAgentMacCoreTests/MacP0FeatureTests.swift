@@ -113,6 +113,27 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(prompt.contains("2026-05-18=500 kcal"))
     }
 
+    func testMarkdownRenderSupportPreservesHeadingsBoldAndNormalizesLists() {
+        let markdown = """
+        # 7天饮食趋势分析
+
+        **趋势观察**
+          - 5/19 偏高
+          - 5/24 偏低
+
+        | 维度 | 建议 |
+        |---|---|
+        | 饮食 | 暂不调整 |
+        """
+
+        let sanitized = MarkdownRenderSupport.sanitizedForSwiftUI(markdown)
+
+        XCTAssertTrue(sanitized.contains("# 7天饮食趋势分析"))
+        XCTAssertTrue(sanitized.contains("**趋势观察**"))
+        XCTAssertTrue(sanitized.contains("- 5/19 偏高"))
+        XCTAssertFalse(sanitized.contains("|---|---|"))
+    }
+
     func testWorkspaceContextFactoryBuildsKnowledgeDocumentAndJobContext() {
         let document = KnowledgeDocumentSummary(
             docID: "dedao:100-ecc79a079a92",
