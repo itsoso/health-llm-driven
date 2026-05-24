@@ -1012,23 +1012,16 @@ function AgentFollowUpQueue({
               onPress={onOpenTrajectory}
               style={({ pressed }) => [
                 styles.followUpSummaryPill,
-                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+                { opacity: pressed ? 0.62 : 1 },
               ]}
               accessibilityRole="button"
               accessibilityLabel="查看更多后续队列"
             >
-              <Ionicons name="albums-outline" size={12} color={c.labelTertiary} />
               <Text style={[styles.followUpSummaryText, { color: c.labelSecondary }]}>另 {hiddenCount} 项</Text>
             </Pressable>
           ) : null}
           {showWeeklyPendingPill ? (
-            <View
-              style={[
-                styles.followUpSummaryPill,
-                { backgroundColor: c.tintTeal, borderColor: `${c.brand}33` },
-              ]}
-            >
-              <Ionicons name="calendar-outline" size={12} color={c.brand} />
+            <View style={styles.followUpSummaryPill}>
               <Text style={[styles.followUpSummaryText, { color: c.brand }]}>周建议排队</Text>
             </View>
           ) : null}
@@ -1037,12 +1030,11 @@ function AgentFollowUpQueue({
               onPress={onOpenTrajectory}
               style={({ pressed }) => [
                 styles.followUpSummaryPill,
-                { backgroundColor: c.tintAmber, borderColor: `${c.amber}55`, opacity: pressed ? 0.72 : 1 },
+                { opacity: pressed ? 0.62 : 1 },
               ]}
               accessibilityRole="button"
               accessibilityLabel="查看健康轨迹缺口"
             >
-              <Ionicons name="alert-circle-outline" size={12} color={c.amber} />
               <Text style={[styles.followUpSummaryText, { color: c.amber }]}>缺口 {gapCount}</Text>
             </Pressable>
           ) : null}
@@ -2155,15 +2147,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpCountText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'nowrap', gap: 4 },
+  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 8 },
   followUpSummaryPill: {
-    minHeight: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
-    paddingHorizontal: 6,
+    minHeight: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
   },
   followUpSummaryText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   followUpList: { gap: 0 },
