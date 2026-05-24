@@ -396,6 +396,7 @@ export default function TodayScreen() {
           progressTotal={progressStatsQuery.data?.total}
           twinSnapshot={twinSnap}
           domains={interventionDomains}
+          action={nextAction}
           onOpenFocus={() => (
             criticalAlerts.length > 0
               ? router.push('/alerts' as any)
@@ -405,6 +406,8 @@ export default function TodayScreen() {
           )}
           onOpenAgent={openWorkspaceChat}
           onOpenRecord={() => router.push('/(tabs)/record' as any)}
+          onPressDomain={(domain) => router.push(domain.route as any)}
+          onOpenMetric={(route) => router.push(route as any)}
         />
 
         <View style={styles.section}>
@@ -430,14 +433,6 @@ export default function TodayScreen() {
               onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
             />
           )}
-          <AgentHealthLoopPanel
-            domains={interventionDomains}
-            twinSnapshot={twinSnap}
-            action={nextAction}
-            riskTitle={criticalAlerts[0]?.title}
-            onPressDomain={(domain) => router.push(domain.route as any)}
-            onOpenMetric={(route) => router.push(route as any)}
-          />
         </View>
 
         {isLoading && (
@@ -508,9 +503,12 @@ function HomeCommandHeader({
   progressTotal,
   twinSnapshot,
   domains,
+  action,
   onOpenFocus,
   onOpenAgent,
   onOpenRecord,
+  onPressDomain,
+  onOpenMetric,
 }: {
   criticalCount: number;
   planCount: number;
@@ -520,9 +518,12 @@ function HomeCommandHeader({
   progressTotal?: number | null;
   twinSnapshot: TwinSnapshot;
   domains: InterventionDomainStatus[];
+  action?: DailyPlanAction | null;
   onOpenFocus: () => void;
   onOpenAgent: () => void;
   onOpenRecord: () => void;
+  onPressDomain: (domain: InterventionDomainStatus) => void;
+  onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
   const dateLabel = formatHomeDate(new Date());
@@ -565,6 +566,10 @@ function HomeCommandHeader({
   const agentInsight = criticalCount > 0
     ? `正在看 ${liveSignalSummary}，优先解释并处理「${riskTitle || '风险信号'}」。`
     : `正在看 ${liveSignalSummary}，继续调整生活方式干预。`;
+  const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
+  const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
+  const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
+  const loopDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 3);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -613,6 +618,78 @@ function HomeCommandHeader({
         <Text style={[styles.commandAgentCopy, { color: c.labelSecondary }]} numberOfLines={2}>
           {agentInsight}
         </Text>
+      </View>
+
+      <View style={styles.commandLoopDigest}>
+        <View style={[styles.commandLoopSteps, { borderColor: c.separator }]}>
+          {[
+            { label: '判断', value: loopStrategy.diagnosisLabel, icon: 'pulse-outline' as const },
+            { label: '干预', value: loopStrategy.interventionLabel, icon: 'git-network-outline' as const },
+            { label: '验证', value: loopStrategy.verificationLabel || `${loopMetrics.length}项`, icon: 'analytics-outline' as const },
+          ].map(step => (
+            <View key={step.label} style={styles.commandLoopStep}>
+              <Ionicons name={step.icon} size={12} color={c.brand} />
+              <Text style={[styles.commandLoopStepLabel, { color: c.labelTertiary }]}>{step.label}</Text>
+              <Text style={[styles.commandLoopStepValue, { color: c.labelPrimary }]} numberOfLines={1}>
+                {step.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.commandMetricRail}>
+          {loopMetrics.map(metric => {
+            const color = c[metric.colorName];
+            return (
+              <Pressable
+                key={metric.key}
+                onPress={() => onOpenMetric(metric.route)}
+                style={({ pressed }) => [
+                  styles.commandMetricPill,
+                  { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${metric.label} ${metric.value}`}
+              >
+                <Ionicons name={metric.icon} size={12} color={color} />
+                <Text style={[styles.commandMetricLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                  {metric.label}
+                </Text>
+                <Text style={[styles.commandMetricValue, { color }]} numberOfLines={1}>
+                  {metric.value}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.commandDomainRail}>
+          {loopDomains.map(domain => {
+            const color = c[domain.colorName];
+            const active = domain.activeCount > 0;
+            return (
+              <Pressable
+                key={domain.key}
+                onPress={() => onPressDomain(domain)}
+                style={({ pressed }) => [
+                  styles.commandDomainPill,
+                  {
+                    backgroundColor: active ? c[domain.tintName] : c.bgPrimary,
+                    borderColor: active ? `${color}55` : c.separator,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`打开${domain.label}干预`}
+              >
+                <Ionicons name={domain.icon} size={12} color={color} />
+                <Text style={[styles.commandDomainText, { color: c.labelPrimary }]} numberOfLines={1}>
+                  {domain.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <View style={styles.commandActions}>
@@ -686,116 +763,6 @@ function CompactShortcutSection({
             </View>
           </Pressable>
         ))}
-      </View>
-    </View>
-  );
-}
-
-function AgentHealthLoopPanel({
-  domains,
-  twinSnapshot,
-  action,
-  riskTitle,
-  onPressDomain,
-  onOpenMetric,
-}: {
-  domains: InterventionDomainStatus[];
-  twinSnapshot: TwinSnapshot;
-  action?: DailyPlanAction | null;
-  riskTitle?: string;
-  onPressDomain: (domain: InterventionDomainStatus) => void;
-  onOpenMetric: (route: string) => void;
-}) {
-  const { c } = useTheme();
-  const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
-  const metrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
-  const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
-  const visibleDomains = pickPriorityInterventionDomains(domains, riskTitle, action).slice(0, 5);
-
-  return (
-    <View style={[styles.loopCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.loopHeader}>
-        <View style={[styles.loopIcon, { backgroundColor: c.brandLight }]}>
-          <Ionicons name="sync-circle-outline" size={19} color={c.brand} />
-        </View>
-        <View style={styles.loopTitleBlock}>
-          <Text style={[styles.loopTitle, { color: c.labelPrimary }]}>Agent 干预闭环</Text>
-          <Text style={[styles.loopSubtitle, { color: c.labelTertiary }]} numberOfLines={2}>
-            {loopStrategy.subtitle}
-          </Text>
-        </View>
-      </View>
-
-      <View style={[styles.loopPipeline, { borderColor: c.separator }]}>
-        {[
-          { label: '判断', value: loopStrategy.diagnosisLabel, icon: 'pulse-outline' as const },
-          { label: '干预', value: loopStrategy.interventionLabel, icon: 'git-network-outline' as const },
-          { label: '验证', value: loopStrategy.verificationLabel || `${metrics.length}项`, icon: 'analytics-outline' as const },
-        ].map(step => (
-          <View key={step.label} style={styles.loopPipelineStep}>
-            <Ionicons name={step.icon} size={14} color={c.brand} />
-            <Text style={[styles.loopStepLabel, { color: c.labelTertiary }]}>{step.label}</Text>
-            <Text style={[styles.loopStepValue, { color: c.labelPrimary }]} numberOfLines={1}>
-              {step.value}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.loopDomainRail}>
-        {visibleDomains.map(domain => {
-          const color = c[domain.colorName];
-          const active = domain.activeCount > 0;
-          return (
-            <Pressable
-              key={domain.key}
-              onPress={() => onPressDomain(domain)}
-              style={({ pressed }) => [
-                styles.loopDomainChip,
-                {
-                  backgroundColor: active ? c[domain.tintName] : c.bgPrimary,
-                  borderColor: active ? `${color}55` : c.separator,
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`打开${domain.label}干预`}
-            >
-              <Ionicons name={domain.icon} size={13} color={color} />
-              <Text style={[styles.loopDomainText, { color: c.labelPrimary }]} numberOfLines={1}>
-                {domain.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.loopMetricRail}>
-        {metrics.map(metric => {
-          const color = c[metric.colorName];
-          return (
-            <Pressable
-              key={metric.key}
-              onPress={() => onOpenMetric(metric.route)}
-              style={({ pressed }) => [
-                styles.loopMetricTile,
-                { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${metric.label} ${metric.value}`}
-            >
-              <View style={[styles.loopMetricIcon, { backgroundColor: c[metric.tintName] }]}>
-                <Ionicons name={metric.icon} size={13} color={color} />
-              </View>
-              <Text style={[styles.loopMetricLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                {metric.label}
-              </Text>
-              <Text style={[styles.loopMetricValue, { color }]} numberOfLines={1}>
-                {metric.value}
-              </Text>
-            </Pressable>
-          );
-        })}
       </View>
     </View>
   );
@@ -1645,6 +1612,49 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 7,
   },
+  commandLoopDigest: { gap: 7 },
+  commandLoopSteps: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  commandLoopStep: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  commandLoopStepLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandLoopStepValue: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandMetricRail: { flexDirection: 'row', gap: spacing.xs },
+  commandMetricPill: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  commandMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandMetricValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandDomainRail: { flexDirection: 'row', gap: spacing.xs },
+  commandDomainPill: {
+    minHeight: 30,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  commandDomainText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
