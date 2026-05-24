@@ -10,6 +10,7 @@ let mockDailyPlanActions: unknown[] = [];
 let mockTwinData: Record<string, unknown> = {};
 let mockTrajectoryData: any = null;
 let mockWeeklyAdvice: any[] = [];
+let mockSafetyAlerts: any[] = [];
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -19,7 +20,7 @@ jest.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     const key = Array.isArray(queryKey) ? queryKey.join(':') : String(queryKey);
     if (key.includes('safety')) {
-      return { data: { alerts: [] }, isLoading: false, isRefetching: false };
+      return { data: { alerts: mockSafetyAlerts }, isLoading: false, isRefetching: false };
     }
     if (key.includes('action-cards')) {
       return { data: [], isLoading: false, isRefetching: false };
@@ -143,6 +144,7 @@ describe('TodayScreen', () => {
     mockTwinData = {};
     mockTrajectoryData = null;
     mockWeeklyAdvice = [];
+    mockSafetyAlerts = [];
   });
 
   it('does not show the low-value Agent data visibility panel on the home feed', () => {
@@ -158,9 +160,10 @@ describe('TodayScreen', () => {
     expect(queryByText('健康 Agent 正在运行')).toBeNull();
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getByText('后台任务 · 观察中')).toBeTruthy();
+    expect(getByText('今日洞察 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
     expect(getByText('目标：补齐数据，让建议更贴近身体反馈')).toBeTruthy();
+    expect(getByText('下一步：补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('长期档案')).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
@@ -219,10 +222,24 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
+    expect(getByText('今日洞察 · 1 个干预域')).toBeTruthy();
     expect(getByText('目标：血氧稳定，睡眠分和 HRV 回升')).toBeTruthy();
+    expect(getByText('下一步：23:00 上床')).toBeTruthy();
     expect(getByText(/验证 血氧\/睡眠分/)).toBeTruthy();
     expect(getByText('画像校准 · 表观遗传/穿戴')).toBeTruthy();
     expect(queryByText(/画像校准 · 睡眠/)).toBeNull();
+  });
+
+  it('turns critical risk into a concrete next step instead of only a status badge', () => {
+    mockSafetyAlerts = [
+      { severity: 'high', title: '夜间血氧持续偏低' },
+    ];
+
+    const { getByLabelText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('今日洞察 · 风险优先')).toBeTruthy();
+    expect(getByText('下一步：查看风险原因，调整今晚策略')).toBeTruthy();
+    expect(getByLabelText('处理风险')).toBeTruthy();
   });
 
   it('keeps lifestyle intervention status inside the agent workspace instead of a standalone task card', () => {

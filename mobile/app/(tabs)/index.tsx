@@ -518,7 +518,7 @@ function HomeCommandHeader({
   const dateLabel = formatHomeDate(new Date());
   const statusColor = criticalCount > 0 ? c.red : c.green;
   const statusLabel = criticalCount > 0 ? `${criticalCount} 个风险` : '状态稳定';
-  const primaryLabel = criticalCount > 0 ? '查看风险' : '问 Agent';
+  const primaryLabel = criticalCount > 0 ? '处理风险' : '问 Agent';
   const primaryIcon: keyof typeof Ionicons.glyphMap = criticalCount > 0 ? 'warning-outline' : 'sparkles-outline';
   const primaryAction = criticalCount > 0 ? onOpenFocus : onOpenAgent;
   const activeDomainCount = domains.filter(domain => domain.activeCount > 0).length;
@@ -553,10 +553,10 @@ function HomeCommandHeader({
       ? improvementFocus.headline
       : '保持记录节奏';
   const focusKicker = criticalCount > 0
-    ? '后台任务 · 风险优先'
+    ? '今日洞察 · 风险优先'
     : activeDomainCount > 0
-      ? `后台任务 · ${activeDomainCount} 个干预域`
-      : '后台任务 · 观察中';
+      ? `今日洞察 · ${activeDomainCount} 个干预域`
+      : '今日洞察 · 观察中';
   const focusText = criticalCount > 0
     ? improvementFocus.target
     : planCount > 0
@@ -580,6 +580,7 @@ function HomeCommandHeader({
     .filter(item => item.value)
     .map(item => `${item.label} ${item.value}`)
     .join(' · ');
+  const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
@@ -662,6 +663,21 @@ function HomeCommandHeader({
           })}
         </View>
       </View>
+
+      <Pressable
+        onPress={onOpenFocus}
+        style={({ pressed }) => [
+          styles.commandNextStep,
+          { borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="打开下一步"
+      >
+        <Ionicons name="arrow-forward-circle-outline" size={16} color={c.brand} />
+        <Text style={[styles.commandNextStepText, { color: c.labelPrimary }]} numberOfLines={1}>
+          {nextStepLabel}
+        </Text>
+      </Pressable>
 
       <View style={styles.commandActions}>
         <Pressable
@@ -1331,6 +1347,18 @@ function buildImprovementFocus({
   };
 }
 
+function buildHomeNextStepLabel({
+  action,
+  criticalCount,
+}: {
+  action?: DailyPlanAction | null;
+  criticalCount: number;
+}): string {
+  if (action?.title) return `下一步：${action.title}`;
+  if (criticalCount > 0) return '下一步：查看风险原因，调整今晚策略';
+  return '下一步：补齐今天记录，Agent 再排干预';
+}
+
 function buildOutcomeFeedbackMetric(
   key: string,
   twinSnapshot: TwinSnapshot,
@@ -1695,6 +1723,16 @@ const styles = StyleSheet.create({
   commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
   commandSignalValue: { minWidth: 0, fontSize: 14, lineHeight: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
+  commandNextStep: {
+    minHeight: 34,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  commandNextStepText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
