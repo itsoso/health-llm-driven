@@ -964,13 +964,13 @@ function AgentFollowUpQueue({
         : '先执行上方闭环';
 
   return (
-    <View style={[styles.followUpCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+    <View style={styles.followUpCard}>
       <View style={styles.followUpHeader}>
-        <View style={[styles.followUpIcon, { backgroundColor: c.tintPurple }]}>
+        <View style={[styles.followUpIcon, { backgroundColor: c.bgCard }]}>
           <Ionicons name="git-branch-outline" size={17} color={c.purple} />
         </View>
         <View style={styles.followUpTitleBlock}>
-          <Text style={[styles.followUpTitle, { color: c.labelPrimary }]}>后台队列</Text>
+          <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>Agent 后台</Text>
           <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
         </View>
         <View style={styles.followUpCountPill}>
@@ -2037,21 +2037,20 @@ const styles = StyleSheet.create({
   loopMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
   loopMetricValue: { fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   followUpCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    gap: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 2,
+    gap: 3,
   },
   followUpHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
+    paddingHorizontal: 2,
   },
   followUpIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
+    width: 20,
+    height: 20,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2064,7 +2063,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpCountText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 8 },
+  followUpSummaryRail: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 8, paddingHorizontal: 2 },
   followUpSummaryPill: {
     minHeight: 16,
     flexDirection: 'row',
@@ -2078,6 +2077,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingVertical: 1,
+    paddingHorizontal: 2,
   },
   followUpRowIcon: {
     width: 21,
