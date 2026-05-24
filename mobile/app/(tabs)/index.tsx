@@ -631,28 +631,33 @@ function HomeCommandHeader({
         </View>
       </Pressable>
 
-      <View style={styles.commandOutcomeBlock}>
+      <View style={[styles.commandOutcomeBlock, { backgroundColor: c.bgPrimary }]}>
+        <Text style={[styles.commandSignalPrefix, { color: c.labelTertiary }]}>影响指标</Text>
         <View style={styles.commandSignalLine}>
-          {visibleLoopMetrics.map(metric => {
+          {visibleLoopMetrics.map((metric, index) => {
             const color = c[metric.colorName];
             return (
-              <Pressable
-                key={metric.key}
-                onPress={() => onOpenMetric(metric.route)}
-                style={({ pressed }) => [
-                  styles.commandSignalChip,
-                  { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`${metric.label} ${metric.value}`}
-              >
-                <Text style={[styles.commandSignalLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                  {metric.label}
-                </Text>
-                <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
-                  {metric.value}
-                </Text>
-              </Pressable>
+              <React.Fragment key={metric.key}>
+                <Pressable
+                  onPress={() => onOpenMetric(metric.route)}
+                  style={({ pressed }) => [
+                    styles.commandSignalChip,
+                    { opacity: pressed ? 0.72 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${metric.label} ${metric.value}`}
+                >
+                  <Text style={[styles.commandSignalLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                    {metric.label}
+                  </Text>
+                  <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                    {metric.value}
+                  </Text>
+                </Pressable>
+                {index < visibleLoopMetrics.length - 1 ? (
+                  <Text style={[styles.commandSignalSeparator, { color: c.labelTertiary }]}>·</Text>
+                ) : null}
+              </React.Fragment>
             );
           })}
         </View>
@@ -955,7 +960,7 @@ function AgentFollowUpQueue({
           <Ionicons name="git-branch-outline" size={17} color={c.purple} />
         </View>
         <View style={styles.followUpTitleBlock}>
-          <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>Agent 后台</Text>
+          <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台队列</Text>
           <Text style={[styles.followUpSubtitle, { color: c.labelTertiary }]}>{subtitle}</Text>
         </View>
         <View style={styles.followUpCountPill}>
@@ -1652,7 +1657,14 @@ const styles = StyleSheet.create({
   commandRightMeta: { alignItems: 'flex-end', gap: 5 },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
   commandAgentCopy: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
-  commandOutcomeBlock: { gap: 6 },
+  commandOutcomeBlock: {
+    minHeight: 28,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
   agentStepRail: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -1666,24 +1678,23 @@ const styles = StyleSheet.create({
   agentStepValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   agentStepDivider: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandSignalLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  commandSignalChip: {
     flex: 1,
     minWidth: 0,
-    minHeight: 42,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    justifyContent: 'center',
-    gap: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  commandSignalChip: {
+    minWidth: 0,
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
+  commandSignalPrefix: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
   commandSignalValue: { minWidth: 0, fontSize: 14, lineHeight: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1713,7 +1724,7 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 22, fontWeight: '800', lineHeight: 27, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 21, fontWeight: '800', lineHeight: 26, letterSpacing: 0 },
   commandHint: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
   commandLoopLine: {
     minHeight: 26,
@@ -1738,7 +1749,7 @@ const styles = StyleSheet.create({
   commandActions: { flexDirection: 'row', gap: 9 },
   primaryAction: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 38,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -1748,8 +1759,8 @@ const styles = StyleSheet.create({
   },
   primaryActionText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   secondaryAction: {
-    minHeight: 42,
-    minWidth: 86,
+    minHeight: 38,
+    minWidth: 82,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
