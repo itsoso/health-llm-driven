@@ -19,6 +19,7 @@ struct AgentChatView: View {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 conversationHistoryStrip
+                conversationSection
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 16) {
@@ -35,7 +36,6 @@ struct AgentChatView: View {
                 }
 
                 modelControls
-                conversationSection
             }
             .padding(24)
         }
