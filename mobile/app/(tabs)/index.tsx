@@ -56,6 +56,13 @@ interface TwinSnapshot {
 type NextActionCompletionState = 'idle' | 'sending' | 'completed' | 'error';
 type InterventionDomainKey = 'diet' | 'sleep' | 'movement' | 'supplement' | 'emotion';
 
+function HomeText({
+  maxFontSizeMultiplier = 1.18,
+  ...props
+}: React.ComponentProps<typeof Text>) {
+  return <Text maxFontSizeMultiplier={maxFontSizeMultiplier} {...props} />;
+}
+
 interface InterventionDomainStatus {
   key: InterventionDomainKey;
   label: string;
@@ -567,14 +574,14 @@ function HomeCommandHeader({
         <View style={styles.commandAgentTitleBlock}>
           <View style={styles.commandAgentIdentity}>
             <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
-            <Text style={[styles.commandAgentLabel, { color: c.labelPrimary }]}>健康 Agent</Text>
-            <Text style={[styles.commandAgentSubLabel, { color: c.labelTertiary }]}>
+            <HomeText style={[styles.commandAgentLabel, { color: c.labelPrimary }]}>健康 Agent</HomeText>
+            <HomeText style={[styles.commandAgentSubLabel, { color: c.labelTertiary }]}>
               {refreshing ? '正在同步新数据' : '后台监测中'}
-            </Text>
+            </HomeText>
           </View>
-          <Text style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
+          <HomeText style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
             {evidenceSummary}
-          </Text>
+          </HomeText>
         </View>
         <View style={styles.commandRightMeta}>
           <View style={styles.commandMiniActions}>
@@ -588,7 +595,6 @@ function HomeCommandHeader({
               accessibilityLabel="问 Agent"
             >
               <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
-              <Text style={[styles.commandMiniActionText, { color: c.brand }]}>问 Agent</Text>
             </Pressable>
           </View>
         </View>
@@ -605,14 +611,14 @@ function HomeCommandHeader({
           >
             <View style={styles.commandDecisionTop}>
               <View style={styles.commandTitleBlock}>
-                <Text style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</Text>
-                <Text style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+                <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>{focusKicker}</HomeText>
+                <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
                   {headline}
-                </Text>
+                </HomeText>
               </View>
             </View>
             <View style={styles.commandMetricRail}>
-              <Text style={[styles.commandOutcomeLabel, { color: c.labelSecondary }]}>要改善</Text>
+              <HomeText style={[styles.commandOutcomeLabel, { color: c.labelSecondary }]}>要改善</HomeText>
               {visibleLoopMetrics.map(metric => {
                 const color = c[metric.colorName];
                 return (
@@ -626,12 +632,12 @@ function HomeCommandHeader({
                     accessibilityRole="button"
                     accessibilityLabel={`${metric.label} ${metric.value}`}
                   >
-                    <Text style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                    <HomeText style={[styles.commandSignalLabel, { color: c.labelTertiary }]} numberOfLines={1}>
                       {metric.label}
-                    </Text>
-                    <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                    </HomeText>
+                    <HomeText style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
                       {metric.value}
-                    </Text>
+                    </HomeText>
                   </Pressable>
                 );
               })}
@@ -640,17 +646,17 @@ function HomeCommandHeader({
           <View style={styles.commandLoopRail}>
             <View style={styles.commandLoopChip}>
               <Ionicons name="options-outline" size={12} color={decisionColor} />
-              <Text style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>策略中</Text>
-              <Text style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
+              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>策略中</HomeText>
+              <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
                 {strategySummary}
-              </Text>
+              </HomeText>
             </View>
             <View style={styles.commandLoopChip}>
               <Ionicons name="eye-outline" size={12} color={c.labelTertiary} />
-              <Text style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>观察</Text>
-              <Text style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
+              <HomeText style={[styles.commandLoopLabel, { color: c.labelTertiary }]}>观察</HomeText>
+              <HomeText style={[styles.commandLoopValue, { color: c.labelSecondary }]} numberOfLines={1}>
                 {watchSummary}
-              </Text>
+              </HomeText>
             </View>
           </View>
           <View style={styles.commandInlineActionRow}>
@@ -666,10 +672,10 @@ function HomeCommandHeader({
               <View style={[styles.commandInlineNextIcon, { backgroundColor: c.brand }]}>
                 <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
               </View>
-              <Text style={[styles.commandInlineNextLabel, { color: c.brand }]}>下一步</Text>
-              <Text style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
+              <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>下一步</HomeText>
+              <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
                 {nextStepActionText}
-              </Text>
+              </HomeText>
             </Pressable>
             {canComplete && action ? (
               <Pressable
@@ -691,21 +697,21 @@ function HomeCommandHeader({
                   size={14}
                   color={completionState === 'completed' ? c.green : c.labelSecondary}
                 />
-                <Text
+                <HomeText
                   style={[
                     styles.commandInlineDoneText,
                     { color: completionState === 'completed' ? c.green : c.labelSecondary },
                   ]}
                 >
                   {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
-                </Text>
+                </HomeText>
               </Pressable>
             ) : null}
           </View>
           {completionState === 'error' ? (
             <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
               <Ionicons name="alert-circle-outline" size={14} color={c.red} />
-              <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
+              <HomeText style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</HomeText>
             </View>
           ) : null}
         </View>
@@ -747,13 +753,16 @@ function HomeBackgroundPanel({
   return (
     <View style={[styles.backgroundPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.backgroundHeader}>
+        <View style={[styles.backgroundStatusIcon, { backgroundColor: c.brandLight }]}>
+          <Ionicons name="pulse-outline" size={13} color={c.brand} />
+        </View>
         <View style={styles.backgroundTitleBlock}>
-          <Text style={[styles.backgroundTitle, { color: c.labelPrimary }]}>后台运行</Text>
-          <Text style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>长期轨迹 / 身体反馈 / 环境 / 档案</Text>
+          <HomeText style={[styles.backgroundTitle, { color: c.labelPrimary }]}>后台运行</HomeText>
+          <HomeText style={[styles.backgroundSubtitle, { color: c.labelTertiary }]}>轨迹、反馈、环境、档案</HomeText>
         </View>
         <View style={[styles.backgroundLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.backgroundLiveDot, { backgroundColor: c.brand }]} />
-          <Text style={[styles.backgroundLiveText, { color: c.brand }]}>运行中</Text>
+          <HomeText style={[styles.backgroundLiveText, { color: c.brand }]}>运行中</HomeText>
         </View>
       </View>
       <View style={[styles.backgroundDivider, { backgroundColor: c.separator }]} />
@@ -802,12 +811,12 @@ function HomeBodyFeedbackPanel({
         <Ionicons name={primaryMetric.icon} size={13} color={primaryColor} />
       </View>
       <View style={styles.bodyFeedbackTextBlock}>
-        <Text style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>反馈信号</Text>
-        <Text style={[styles.bodyFeedbackSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
+        <HomeText style={[styles.bodyFeedbackTitle, { color: c.labelPrimary }]}>反馈信号</HomeText>
+        <HomeText style={[styles.bodyFeedbackSubtitle, { color: c.labelSecondary }]} numberOfLines={1}>
           {primaryMetric.label} {primaryMetric.value}{secondarySummary ? ` · ${secondarySummary}` : ''}
-        </Text>
+        </HomeText>
       </View>
-      <Text style={[styles.bodyFeedbackRight, { color: c.labelTertiary }]}>{visibleMetrics.length} 项</Text>
+      <HomeText style={[styles.bodyFeedbackRight, { color: c.labelTertiary }]}>{visibleMetrics.length} 项</HomeText>
     </Pressable>
   );
 }
@@ -830,8 +839,8 @@ function CompactArchiveStrip({
   return (
     <View style={styles.shortcutStrip}>
       <View style={styles.shortcutHeaderText}>
-        <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</Text>
-        <Text style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</Text>
+        <HomeText style={[styles.shortcutTitle, { color: c.labelPrimary }]}>长期档案</HomeText>
+        <HomeText style={[styles.shortcutSubtitle, { color: c.labelTertiary }]}>基因/检查/趋势</HomeText>
       </View>
       <View style={styles.shortcutRail}>
         {shortcuts.map((item, index) => (
@@ -845,12 +854,12 @@ function CompactArchiveStrip({
               accessibilityRole="button"
               accessibilityLabel={`${item.label} ${item.value}`}
             >
-              <Text style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+              <HomeText style={[styles.shortcutLabel, { color: c.labelSecondary }]} numberOfLines={1}>
                 {item.label}
-              </Text>
+              </HomeText>
             </Pressable>
             {index < shortcuts.length - 1 ? (
-              <Text style={[styles.shortcutSeparatorText, { color: c.labelTertiary }]}>·</Text>
+              <HomeText style={[styles.shortcutSeparatorText, { color: c.labelTertiary }]}>·</HomeText>
             ) : null}
           </React.Fragment>
         ))}
@@ -861,7 +870,7 @@ function CompactArchiveStrip({
         accessibilityRole="button"
         accessibilityLabel="查看全部长期档案"
       >
-        <Text style={[styles.shortcutAllText, { color: c.brand }]}>全部</Text>
+        <HomeText style={[styles.shortcutAllText, { color: c.brand }]}>全部</HomeText>
         <Ionicons name="chevron-forward" size={13} color={c.brand} />
       </Pressable>
     </View>
@@ -925,8 +934,8 @@ function TodayExecutionQueue({
           <Ionicons name="radio-button-on-outline" size={17} color={c.green} />
         </View>
         <View style={styles.executionHeaderText}>
-          <Text style={[styles.executionTitle, { color: c.labelPrimary }]}>现在只做一件</Text>
-          <Text style={[styles.executionSubtitle, { color: c.labelTertiary }]}>{queueSubtitle}</Text>
+          <HomeText style={[styles.executionTitle, { color: c.labelPrimary }]}>现在只做一件</HomeText>
+          <HomeText style={[styles.executionSubtitle, { color: c.labelTertiary }]}>{queueSubtitle}</HomeText>
         </View>
         <Pressable
           onPress={onFallbackAgent}
@@ -938,27 +947,27 @@ function TodayExecutionQueue({
           accessibilityLabel="问 Agent 调整后台排队"
         >
           <Ionicons name="chatbubble-ellipses-outline" size={13} color={c.brand} />
-          <Text style={[styles.executionAdjustText, { color: c.brand }]}>调整</Text>
+          <HomeText style={[styles.executionAdjustText, { color: c.brand }]}>调整</HomeText>
         </Pressable>
       </View>
 
       <View style={[styles.executionPrimary, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
         <View style={styles.executionPrimaryTop}>
-          <Text style={[styles.executionEyebrow, { color: c.green }]}>现在先做</Text>
-          <Text style={[styles.executionPrimaryTitle, { color: c.labelPrimary }]} numberOfLines={2}>
+          <HomeText style={[styles.executionEyebrow, { color: c.green }]}>现在先做</HomeText>
+          <HomeText style={[styles.executionPrimaryTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {title}
-          </Text>
+          </HomeText>
         </View>
-        <Text style={[styles.executionReason, { color: c.labelSecondary }]} numberOfLines={2}>
+        <HomeText style={[styles.executionReason, { color: c.labelSecondary }]} numberOfLines={2}>
           {reason}
-        </Text>
+        </HomeText>
         {impactMetrics.length > 0 ? (
           <View style={styles.executionImpactChips}>
             {impactMetrics.map(metric => {
               const color = c[metric.colorName];
               return (
                 <View key={metric.key} style={[styles.executionImpactChip, { backgroundColor: c[metric.tintName] }]}>
-                  <Text style={[styles.executionImpactText, { color }]}>{metric.label}</Text>
+                  <HomeText style={[styles.executionImpactText, { color }]}>{metric.label}</HomeText>
                 </View>
               );
             })}
@@ -975,7 +984,7 @@ function TodayExecutionQueue({
             accessibilityLabel={hasAction ? `开始 ${title}` : '开始记录'}
           >
             <Ionicons name="play-outline" size={15} color="#FFFFFF" />
-            <Text style={styles.nextActionPrimaryText}>开始</Text>
+            <HomeText style={styles.nextActionPrimaryText}>开始</HomeText>
           </Pressable>
           {hasAction && action?.action_key ? (
             <Pressable
@@ -997,14 +1006,14 @@ function TodayExecutionQueue({
                 size={14}
                 color={completionState === 'completed' ? c.green : c.labelSecondary}
               />
-              <Text
+              <HomeText
                 style={[
                   styles.nextActionCompleteText,
                   { color: completionState === 'completed' ? c.green : c.labelSecondary },
                 ]}
               >
                 {completionState === 'sending' ? '记录中' : completionState === 'completed' ? '已完成' : '完成'}
-              </Text>
+              </HomeText>
             </Pressable>
           ) : null}
         </View>
@@ -1013,7 +1022,7 @@ function TodayExecutionQueue({
       {completionState === 'error' ? (
         <View style={[styles.nextActionError, { backgroundColor: c.tintRed }]}>
           <Ionicons name="alert-circle-outline" size={14} color={c.red} />
-          <Text style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</Text>
+          <HomeText style={[styles.nextActionErrorText, { color: c.red }]}>记录失败，请重试</HomeText>
         </View>
       ) : null}
 
@@ -1027,9 +1036,9 @@ function TodayExecutionQueue({
         accessibilityLabel="查看后台排队任务"
       >
         <Ionicons name="layers-outline" size={14} color={c.labelSecondary} />
-        <Text style={[styles.executionQueueSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
+        <HomeText style={[styles.executionQueueSummaryText, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueSummary}
-        </Text>
+        </HomeText>
         <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
       </Pressable>
     </View>
@@ -1119,17 +1128,17 @@ function AgentFollowUpQueue({
       </View>
       <View style={styles.followUpRowText}>
         <View style={styles.followUpRowTitleLine}>
-          <Text style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台巡检</Text>
-          <Text style={[styles.followUpTitleDot, { color: c.labelTertiary }]}>·</Text>
-          <Text style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+          <HomeText style={[styles.followUpTitle, { color: c.labelSecondary }]}>后台巡检</HomeText>
+          <HomeText style={[styles.followUpTitleDot, { color: c.labelTertiary }]}>·</HomeText>
+          <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
             {queueTitle}
-          </Text>
+          </HomeText>
         </View>
-        <Text style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
+        <HomeText style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueDetail}
-        </Text>
+        </HomeText>
       </View>
-      <Text style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</Text>
+      <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</HomeText>
     </Pressable>
   );
 }
@@ -1637,11 +1646,11 @@ const styles = StyleSheet.create({
   },
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     paddingHorizontal: 12,
-    paddingTop: 9,
-    paddingBottom: 9,
-    gap: 6,
+    paddingTop: 8,
+    paddingBottom: 8,
+    gap: 5,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1651,25 +1660,23 @@ const styles = StyleSheet.create({
   },
   commandAgentTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
   commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  commandAgentLabel: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  commandAgentSubLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandAgentLabel: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  commandAgentSubLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandRightMeta: { alignItems: 'flex-end', gap: 5, flexShrink: 0 },
   commandRightTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   commandMiniActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   commandMiniAction: {
-    minWidth: 78,
-    height: 27,
+    width: 31,
+    height: 31,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 9,
   },
   commandMiniActionText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
-  commandAgentCopy: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandAgentCopy: { fontSize: 8, lineHeight: 10, fontWeight: '700' },
   commandOutcomeBlock: {
     minHeight: 28,
     borderRadius: radii.full,
@@ -1679,11 +1686,11 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   commandMetricRail: {
-    minHeight: 23,
+    minHeight: 21,
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 7,
+    gap: 6,
   },
   commandMetricPill: {
     flexShrink: 1,
@@ -1694,7 +1701,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 3,
   },
-  commandOutcomeLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandOutcomeLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   agentStepRail: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -1722,8 +1729,8 @@ const styles = StyleSheet.create({
   },
   commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
   commandSignalPrefix: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandSignalLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  commandSignalValue: { minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '700' },
+  commandSignalValue: { minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandSignalSeparator: { fontSize: 10, lineHeight: 12, fontWeight: '700', paddingHorizontal: 6 },
   commandNextStep: {
     minHeight: 38,
@@ -1738,7 +1745,7 @@ const styles = StyleSheet.create({
   commandNextStepLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandNextStepText: { color: '#FFFFFF', fontSize: 13, lineHeight: 16, fontWeight: '800' },
   commandInlineNextStep: {
-    minHeight: 31,
+    minHeight: 29,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.full,
     paddingHorizontal: 8,
@@ -1747,17 +1754,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   commandInlineNextIcon: {
-    width: 19,
-    height: 19,
-    borderRadius: 9.5,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandInlineNextLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandInlineNextText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandInlineNextLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandInlineNextText: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '800' },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandInlineDoneButton: {
-    minHeight: 31,
+    minHeight: 29,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 9,
@@ -1766,7 +1773,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  commandInlineDoneText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandInlineDoneText: { fontSize: 10, lineHeight: 13, fontWeight: '800' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -1774,8 +1781,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  commandDecisionShell: { flexDirection: 'row', gap: 9, paddingVertical: 1 },
-  commandDecisionRail: { width: 3, height: 36, borderRadius: 2, marginTop: 4 },
+  commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
+  commandDecisionRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
   commandDecisionSummary: { gap: 5 },
   commandDecisionTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -1794,8 +1801,8 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
+  commandFocusLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 15, fontWeight: '800', lineHeight: 19, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 20,
     flexDirection: 'row',
@@ -1809,8 +1816,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  commandLoopLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandLoopValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandLoopLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  commandLoopValue: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2135,9 +2142,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  followUpTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  followUpTitleDot: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  followUpSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
+  followUpTitle: { fontSize: 10, lineHeight: 13, fontWeight: '800' },
+  followUpTitleDot: { fontSize: 10, lineHeight: 13, fontWeight: '800' },
+  followUpSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '600' },
   followUpCountPill: {
     minHeight: 18,
     alignItems: 'center',
@@ -2150,7 +2157,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  followUpSummaryText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  followUpSummaryText: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   followUpList: { gap: 0 },
   followUpRow: {
     minHeight: 30,
@@ -2169,36 +2176,42 @@ const styles = StyleSheet.create({
   },
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
-  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  followUpRowDetail: { fontSize: 10, lineHeight: 12, fontWeight: '500' },
-  followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  followUpRowDetail: { fontSize: 9, lineHeight: 11, fontWeight: '500' },
+  followUpRowRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   backgroundPanel: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    gap: 7,
+    borderRadius: radii.lg,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    gap: 0,
   },
   backgroundHeader: {
-    minHeight: 30,
+    minHeight: 34,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: 8,
   },
-  backgroundTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  backgroundTitle: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  backgroundStatusIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backgroundTitleBlock: { flex: 1, minWidth: 0, gap: 0 },
+  backgroundTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   backgroundSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
   backgroundLiveBadge: {
-    minHeight: 20,
+    minHeight: 19,
     borderRadius: radii.full,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
   },
-  backgroundLiveDot: { width: 6, height: 6, borderRadius: 3 },
+  backgroundLiveDot: { width: 5, height: 5, borderRadius: 2.5 },
   backgroundLiveText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   backgroundDivider: {
     height: StyleSheet.hairlineWidth,
@@ -2223,10 +2236,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   shortcutHeaderText: { width: 72, minWidth: 72, gap: 1 },
-  shortcutTitle: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
-  shortcutSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
+  shortcutTitle: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
+  shortcutSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '600' },
   shortcutAllButton: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 1 },
-  shortcutAllText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  shortcutAllText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   shortcutRail: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end' },
   shortcutTextButton: {
     minHeight: 24,
@@ -2255,7 +2268,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  shortcutLabel: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
+  shortcutLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   bodyFeedbackCompactRow: {
     minHeight: 34,
@@ -2272,9 +2285,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bodyFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 1 },
-  bodyFeedbackTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  bodyFeedbackSubtitle: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  bodyFeedbackRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  bodyFeedbackTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  bodyFeedbackSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  bodyFeedbackRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
