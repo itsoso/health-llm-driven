@@ -182,4 +182,54 @@ final class DesktopDashboardPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.actionRows.map(\.value), ["P80", "P40", "P30", "P20"])
         XCTAssertEqual(presentation.actionRows.map(\.subtitle), ["active", "active", "active", "active"])
     }
+
+    func testDashboardContextFactoryBuildsMetricTrendAndActionContextForAgentHandoff() {
+        let metric = DesktopDashboardMetric(
+            id: "hero_spo2",
+            titleKey: "SpO2",
+            value: "93%",
+            detail: "wearable",
+            tone: "cyan",
+            systemImage: "lungs.fill"
+        )
+        let trend = DesktopDashboardTrend(
+            id: "diet-trend-7",
+            titleKey: "Diet Trend",
+            unit: "kcal",
+            tone: "orange",
+            averageLabel: "Avg 1,876.9/day",
+            points: [
+                DesktopDashboardTrendPoint(date: "2026-05-18", value: 1499),
+                DesktopDashboardTrendPoint(date: "2026-05-19", value: 3645)
+            ]
+        )
+        let row = DesktopDashboardRow(
+            id: "action-card-24",
+            title: "4–6 周复查血常规",
+            subtitle: "active",
+            value: "P80",
+            tone: "teal",
+            systemImage: "checkmark.seal.fill",
+            progress: nil
+        )
+
+        let metricItem = DesktopDashboardContextFactory.contextItem(for: metric, section: "today_hero")
+        let trendItem = DesktopDashboardContextFactory.contextItem(for: trend, section: "today_intake", rangeDays: 7)
+        let rowItem = DesktopDashboardContextFactory.contextItem(for: row, section: "priority_actions")
+
+        XCTAssertEqual(metricItem.sourceID, "dashboard_metric:today_hero:hero_spo2")
+        XCTAssertEqual(metricItem.sourceKind, "dashboard_metric")
+        XCTAssertEqual(metricItem.payload["value"], "93%")
+        XCTAssertTrue(DesktopDashboardContextFactory.prompt(for: metric, section: "today_hero").contains("SpO2"))
+
+        XCTAssertEqual(trendItem.sourceID, "dashboard_trend:today_intake:diet-trend-7")
+        XCTAssertEqual(trendItem.sourceKind, "dashboard_trend")
+        XCTAssertEqual(trendItem.payload["points"], "2026-05-18=1499 kcal; 2026-05-19=3645 kcal")
+        XCTAssertTrue(DesktopDashboardContextFactory.prompt(for: trend, section: "today_intake", rangeDays: 7).contains("Diet Trend"))
+
+        XCTAssertEqual(rowItem.sourceID, "dashboard_row:priority_actions:action-card-24")
+        XCTAssertEqual(rowItem.sourceKind, "dashboard_row")
+        XCTAssertEqual(rowItem.payload["title"], "4–6 周复查血常规")
+        XCTAssertTrue(DesktopDashboardContextFactory.prompt(for: row, section: "priority_actions").contains("4–6 周复查血常规"))
+    }
 }

@@ -659,11 +659,18 @@ struct TodayView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
                 ForEach(presentation.heroMetrics) { metric in
-                    HeroMetricTile(
-                        metric: metric,
-                        title: localizedMetricTitle(metric.titleKey),
-                        detail: localizedMetricDetail(metric.detail)
-                    )
+                    Button {
+                        askAgent(metric, section: "today_hero")
+                    } label: {
+                        HeroMetricTile(
+                            metric: metric,
+                            title: localizedMetricTitle(metric.titleKey),
+                            detail: localizedMetricDetail(metric.detail),
+                            showsDisclosure: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(appText("Ask Agent with Context", appLanguageRaw))
                 }
             }
 
@@ -684,18 +691,28 @@ struct TodayView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
                 ForEach(rangeMetrics) { metric in
-                    SummaryMetricStrip(
-                        metric: metric,
-                        title: localizedMetricTitle(metric.titleKey),
-                        detail: localizedMetricDetail(metric.detail)
-                    )
+                    Button {
+                        askAgent(metric, section: dashboardRange == .sevenDays ? "today_intake_7d" : "today_intake_30d")
+                    } label: {
+                        SummaryMetricStrip(
+                            metric: metric,
+                            title: localizedMetricTitle(metric.titleKey),
+                            detail: localizedMetricDetail(metric.detail),
+                            showsDisclosure: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(appText("Ask Agent with Context", appLanguageRaw))
                 }
             }
 
             TrendSparklineGrid(
                 trends: rangeTrends,
                 localizedTitle: localizedMetricTitle,
-                localizedDetail: localizedMetricDetail
+                localizedDetail: localizedMetricDetail,
+                onSelect: { trend in
+                    askAgent(trend, section: "today_trends", rangeDays: dashboardRange == .sevenDays ? 7 : 30)
+                }
             )
 
             if let error = viewModel.errorMessage {
@@ -770,7 +787,13 @@ struct TodayView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(actions) { row in
-                        DashboardRowView(row: row)
+                        Button {
+                            askAgent(row, section: "priority_actions")
+                        } label: {
+                            DashboardRowView(row: row, showsDisclosure: true)
+                        }
+                        .buttonStyle(.plain)
+                        .help(appText("Ask Agent with Context", appLanguageRaw))
                         if row.id != actions.last?.id { Divider().padding(.leading, 34) }
                     }
                 }
@@ -845,7 +868,13 @@ struct TodayView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 10)], spacing: 10) {
                     ForEach(records) { row in
-                        CompactRecordCard(row: row)
+                        Button {
+                            askAgent(row, section: "recent_health_records")
+                        } label: {
+                            CompactRecordCard(row: row, showsDisclosure: true)
+                        }
+                        .buttonStyle(.plain)
+                        .help(appText("Ask Agent with Context", appLanguageRaw))
                     }
                 }
             }
@@ -857,11 +886,18 @@ struct TodayView: View {
             sectionHeader(title: appText("Wearable Today", appLanguageRaw), systemImage: "sensor.tag.radiowaves.forward.fill")
             VStack(spacing: 8) {
                 ForEach(metrics) { metric in
-                    VitalRow(
-                        metric: metric,
-                        title: localizedMetricTitle(metric.titleKey),
-                        detail: localizedMetricDetail(metric.detail)
-                    )
+                    Button {
+                        askAgent(metric, section: "wearable_today")
+                    } label: {
+                        VitalRow(
+                            metric: metric,
+                            title: localizedMetricTitle(metric.titleKey),
+                            detail: localizedMetricDetail(metric.detail),
+                            showsDisclosure: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(appText("Ask Agent with Context", appLanguageRaw))
                 }
             }
         }
@@ -899,6 +935,24 @@ struct TodayView: View {
                 }
             }
         }
+    }
+
+    private func askAgent(_ metric: DesktopDashboardMetric, section: String) {
+        let item = DesktopDashboardContextFactory.contextItem(for: metric, section: section)
+        let prompt = DesktopDashboardContextFactory.prompt(for: metric, section: section)
+        onAskAgent?(prompt, item)
+    }
+
+    private func askAgent(_ trend: DesktopDashboardTrend, section: String, rangeDays: Int) {
+        let item = DesktopDashboardContextFactory.contextItem(for: trend, section: section, rangeDays: rangeDays)
+        let prompt = DesktopDashboardContextFactory.prompt(for: trend, section: section, rangeDays: rangeDays)
+        onAskAgent?(prompt, item)
+    }
+
+    private func askAgent(_ row: DesktopDashboardRow, section: String) {
+        let item = DesktopDashboardContextFactory.contextItem(for: row, section: section)
+        let prompt = DesktopDashboardContextFactory.prompt(for: row, section: section)
+        onAskAgent?(prompt, item)
     }
 
     private func localizedMetricTitle(_ key: String) -> String {
@@ -975,6 +1029,7 @@ private struct HeroMetricTile: View {
     let metric: DesktopDashboardMetric
     let title: String
     let detail: String
+    var showsDisclosure = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -982,6 +1037,11 @@ private struct HeroMetricTile: View {
                 Image(systemName: metric.systemImage)
                     .foregroundStyle(toneColor(metric.tone))
                 Spacer()
+                if showsDisclosure {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(toneColor(metric.tone))
+                }
             }
             Text(metric.value)
                 .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -1008,6 +1068,7 @@ private struct SummaryMetricStrip: View {
     let metric: DesktopDashboardMetric
     let title: String
     let detail: String
+    var showsDisclosure = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1030,6 +1091,11 @@ private struct SummaryMetricStrip: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(12)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -1040,15 +1106,30 @@ private struct TrendSparklineGrid: View {
     let trends: [DesktopDashboardTrend]
     let localizedTitle: (String) -> String
     let localizedDetail: (String) -> String
+    var onSelect: ((DesktopDashboardTrend) -> Void)?
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
             ForEach(trends) { trend in
-                TrendSparklineCard(
-                    trend: trend,
-                    title: localizedTitle(trend.titleKey),
-                    detail: localizedDetail(trend.averageLabel)
-                )
+                if let onSelect {
+                    Button {
+                        onSelect(trend)
+                    } label: {
+                        TrendSparklineCard(
+                            trend: trend,
+                            title: localizedTitle(trend.titleKey),
+                            detail: localizedDetail(trend.averageLabel),
+                            showsDisclosure: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    TrendSparklineCard(
+                        trend: trend,
+                        title: localizedTitle(trend.titleKey),
+                        detail: localizedDetail(trend.averageLabel)
+                    )
+                }
             }
         }
     }
@@ -1058,6 +1139,7 @@ private struct TrendSparklineCard: View {
     let trend: DesktopDashboardTrend
     let title: String
     let detail: String
+    var showsDisclosure = false
 
     private var maxValue: Double {
         max(trend.points.map(\.value).max() ?? 0, 1)
@@ -1078,6 +1160,11 @@ private struct TrendSparklineCard: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if showsDisclosure {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             HStack(alignment: .lastTextBaseline, spacing: 4) {
@@ -1177,6 +1264,7 @@ private struct VitalRow: View {
     let metric: DesktopDashboardMetric
     let title: String
     let detail: String
+    var showsDisclosure = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1198,6 +1286,11 @@ private struct VitalRow: View {
             Text(metric.value)
                 .font(.title3.weight(.bold).monospacedDigit())
                 .lineLimit(1)
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(10)
         .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1206,6 +1299,7 @@ private struct VitalRow: View {
 
 private struct DashboardRowView: View {
     let row: DesktopDashboardRow
+    var showsDisclosure = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1231,6 +1325,12 @@ private struct DashboardRowView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+            }
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 3)
             }
         }
         .padding(.vertical, 9)
@@ -1352,6 +1452,7 @@ private struct InputInboxEventCard: View {
 
 private struct CompactRecordCard: View {
     let row: DesktopDashboardRow
+    var showsDisclosure = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -1372,6 +1473,11 @@ private struct CompactRecordCard: View {
             Text(row.value ?? "—")
                 .font(.callout.weight(.semibold).monospacedDigit())
                 .lineLimit(1)
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(12)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
