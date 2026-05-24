@@ -18,7 +18,7 @@ public struct AgentChatMessage: Equatable, Identifiable, Sendable {
     }
 }
 
-public struct AgentContextItem: Equatable, Identifiable, Sendable {
+public struct AgentContextItem: Codable, Equatable, Identifiable, Sendable {
     public let sourceID: String
     public let sourceKind: String
     public let title: String
@@ -39,6 +39,51 @@ public struct AgentContextItem: Equatable, Identifiable, Sendable {
         self.title = title
         self.summary = summary
         self.payload = payload
+    }
+}
+
+public struct AgentContextBundle: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public let name: String
+    public let items: [AgentContextItem]
+    public let createdAt: Date
+
+    public var itemCount: Int { items.count }
+
+    public init(id: UUID = UUID(), name: String, items: [AgentContextItem], createdAt: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.items = items
+        self.createdAt = createdAt
+    }
+}
+
+public protocol AgentContextBundleStoring: Sendable {
+    func loadContextBundles() -> [AgentContextBundle]
+    func saveContextBundles(_ bundles: [AgentContextBundle])
+}
+
+public final class UserDefaultsAgentContextBundleStore: AgentContextBundleStoring, @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let key: String
+
+    public init(defaults: UserDefaults = .standard, key: String = "agentContextBundles") {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    public func loadContextBundles() -> [AgentContextBundle] {
+        guard let data = defaults.data(forKey: key) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([AgentContextBundle].self, from: data)) ?? []
+    }
+
+    public func saveContextBundles(_ bundles: [AgentContextBundle]) {
+        guard let data = try? JSONEncoder().encode(bundles) else {
+            return
+        }
+        defaults.set(data, forKey: key)
     }
 }
 
@@ -97,10 +142,13 @@ public final class AgentChatViewModel {
     public var lastPrompt: String?
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
+    public var savedContextBundles: [AgentContextBundle] = []
     public var toolActivities: [AgentToolActivity] = []
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
+    @ObservationIgnored
+    private let contextBundleStore: AgentContextBundleStoring?
 
     public var canRetry: Bool {
         !isStreaming && lastPrompt != nil && (runState == .failed || runState == .partial)
@@ -110,9 +158,15 @@ public final class AgentChatViewModel {
         true
     }
 
-    public init(selectedModelID: String? = nil, streamService: AgentStreamServicing? = nil) {
+    public init(
+        selectedModelID: String? = nil,
+        streamService: AgentStreamServicing? = nil,
+        contextBundleStore: AgentContextBundleStoring? = nil
+    ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
+        self.contextBundleStore = contextBundleStore
+        self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
     }
 
     public func selectModel(_ id: String?) {
@@ -157,6 +211,30 @@ public final class AgentChatViewModel {
 
     public func clearContextItems() {
         contextItems = []
+    }
+
+    @discardableResult
+    public func saveCurrentContextBundle(named name: String) -> AgentContextBundle {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bundle = AgentContextBundle(
+            name: trimmedName.isEmpty ? "Context Bundle \(savedContextBundles.count + 1)" : trimmedName,
+            items: contextItems
+        )
+        savedContextBundles.removeAll { $0.name == bundle.name }
+        savedContextBundles.insert(bundle, at: 0)
+        persistContextBundles()
+        return bundle
+    }
+
+    public func applyContextBundle(_ bundle: AgentContextBundle) {
+        for item in bundle.items {
+            addContextItem(item)
+        }
+    }
+
+    public func deleteContextBundle(_ bundle: AgentContextBundle) {
+        savedContextBundles.removeAll { $0.id == bundle.id }
+        persistContextBundles()
     }
 
     public func send(_ text: String) async {
@@ -226,6 +304,10 @@ public final class AgentChatViewModel {
             return
         }
         await send(lastPrompt)
+    }
+
+    private func persistContextBundles() {
+        contextBundleStore?.saveContextBundles(savedContextBundles)
     }
 
     private func buildExtraContext() -> String? {

@@ -255,6 +255,38 @@ final class AgentStreamClientTests: XCTestCase {
         let payload = try XCTUnwrap(contextItems.first?["payload"] as? [String: String])
         XCTAssertEqual(payload["risk_level"], "high")
     }
+
+    @MainActor
+    func testAgentChatViewModelSavesAppliesAndDeletesContextBundles() {
+        let model = AgentChatViewModel()
+        let gene = AgentContextItem(
+            sourceID: "genomic:rs10572724",
+            sourceKind: "genomic_finding",
+            title: "9p21 心血管风险",
+            summary: "rs10572724 AA screening"
+        )
+        let knowledge = AgentContextItem(
+            sourceID: "knowledge:apoB",
+            sourceKind: "knowledge_document",
+            title: "ApoB 轨迹",
+            summary: "LDL-C/ApoB evidence"
+        )
+
+        model.addContextItem(gene)
+        model.addContextItem(knowledge)
+
+        let bundle = model.saveCurrentContextBundle(named: "血脂-基因闭环")
+        model.clearContextItems()
+        model.applyContextBundle(bundle)
+
+        XCTAssertEqual(model.savedContextBundles.map(\.name), ["血脂-基因闭环"])
+        XCTAssertEqual(model.savedContextBundles.first?.itemCount, 2)
+        XCTAssertEqual(model.contextItems.map(\.id), [gene.id, knowledge.id])
+
+        model.deleteContextBundle(bundle)
+
+        XCTAssertTrue(model.savedContextBundles.isEmpty)
+    }
 }
 
 private struct StaticAgentStreamService: AgentStreamServicing {

@@ -10,6 +10,7 @@ struct AgentChatView: View {
     @State private var modelStrategy = "auto"
     @State private var editorFocusToken = 0
     @State private var isAttachImporterPresented = false
+    @State private var contextBundleName = ""
 
     private let modelOptions: [(id: String, title: String, tier: String)] = [
         ("commercial/Claude-Opus-4.7", "Claude Opus 4.7", "Top"),
@@ -475,6 +476,62 @@ struct AgentChatView: View {
                         AgentContextItemCard(item: item) {
                             viewModel.removeContextItem(item)
                         }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    TextField(appText("Bundle name", appLanguageRaw), text: $contextBundleName)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        let bundle = viewModel.saveCurrentContextBundle(named: contextBundleName)
+                        contextBundleName = bundle.name
+                    } label: {
+                        Label(appText("Save Bundle", appLanguageRaw), systemImage: "archivebox")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.contextItems.isEmpty)
+                }
+            }
+
+            if !viewModel.savedContextBundles.isEmpty {
+                Divider()
+
+                Label(appText("Saved Context Bundles", appLanguageRaw), systemImage: "archivebox.fill")
+                    .font(.subheadline.bold())
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(viewModel.savedContextBundles.prefix(4)) { bundle in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "square.stack.3d.up.fill")
+                                .foregroundStyle(.white)
+                                .frame(width: 24, height: 24)
+                                .background(Color.indigo.opacity(0.85), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(bundle.name)
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                Text("\(bundle.itemCount) \(appText("items", appLanguageRaw))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Button {
+                                viewModel.applyContextBundle(bundle)
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .help(appText("Apply Bundle", appLanguageRaw))
+                            Button {
+                                viewModel.deleteContextBundle(bundle)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help(appText("Delete", appLanguageRaw))
+                        }
+                        .padding(10)
+                        .background(Color.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
             }
@@ -1498,6 +1555,21 @@ struct ImportCenterView: View {
                     }
                     .frame(minHeight: 140)
 
+                    HStack(spacing: 10) {
+                        Label(appText("Detected Route", appLanguageRaw), systemImage: "point.3.connected.trianglepath.dotted")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Text(jobType(for: intakeItem.sourceKind))
+                            .font(.caption.weight(.semibold).monospaced())
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                        Spacer()
+                        Text(appText("Review hash and route before creating a long-running desktop job.", appLanguageRaw))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Toggle(appText("I confirm this raw local file may be registered as a desktop import job.", appLanguageRaw), isOn: $rawUploadConfirmed)
                         .toggleStyle(.checkbox)
                 }
@@ -1602,6 +1674,11 @@ struct JobListView: View {
     @State private var jobs: [DesktopJobSummary] = []
     @State private var selectedJob: DesktopJobSummary?
     @State private var errorMessage: String?
+    @State private var jobFilter: JobStatusFilter = .all
+
+    private var filteredJobs: [DesktopJobSummary] {
+        jobFilter.filter(jobs)
+    }
 
     var body: some View {
         ZStack {
@@ -1613,6 +1690,13 @@ struct JobListView: View {
                     Text(appText("Jobs", appLanguageRaw))
                         .font(.largeTitle.bold())
                     Spacer()
+                    Picker(appText("Status", appLanguageRaw), selection: $jobFilter) {
+                        ForEach(JobStatusFilter.allCases) { filter in
+                            Text(appText(filter.titleKey, appLanguageRaw)).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 360)
                     Button(appText("Refresh", appLanguageRaw)) {
                         Task { await refresh() }
                     }
@@ -1626,11 +1710,11 @@ struct JobListView: View {
                             JobStatCard(title: appText("Failed", appLanguageRaw), value: "\(jobs.filter { $0.status == "failed" }.count)", systemImage: "exclamationmark.triangle.fill", color: .orange)
                         }
 
-                        if jobs.isEmpty {
+                        if filteredJobs.isEmpty {
                             EmptyJobState()
                                 .frame(maxWidth: .infinity, minHeight: 260, alignment: .top)
                         } else {
-                            Table(jobs) {
+                            Table(filteredJobs) {
                                 TableColumn(appText("ID", appLanguageRaw)) { job in Text("#\(job.id)") }
                                 TableColumn(appText("Type", appLanguageRaw), value: \.jobType)
                                 TableColumn(appText("Status", appLanguageRaw), value: \.status)
@@ -1692,6 +1776,37 @@ struct JobListView: View {
             await refresh()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private enum JobStatusFilter: String, CaseIterable, Identifiable {
+    case all
+    case active
+    case failed
+    case completed
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .all: "All"
+        case .active: "Active"
+        case .failed: "Failed"
+        case .completed: "Completed"
+        }
+    }
+
+    func filter(_ jobs: [DesktopJobSummary]) -> [DesktopJobSummary] {
+        switch self {
+        case .all:
+            jobs
+        case .active:
+            jobs.filter { $0.status == "queued" || $0.status == "running" }
+        case .failed:
+            jobs.filter { $0.status == "failed" }
+        case .completed:
+            jobs.filter { $0.status == "completed" }
         }
     }
 }
@@ -1858,6 +1973,12 @@ struct TraceLookupView: View {
                         Text(appText("Status", appLanguageRaw)).foregroundStyle(.secondary)
                         Text(trace.assistantMessage.completionStatus ?? "Unknown")
                     }
+                }
+
+                HStack(spacing: 10) {
+                    JobStatCard(title: appText("Tools", appLanguageRaw), value: "\(trace.toolCalls.count)", systemImage: "wrench.and.screwdriver", color: .teal)
+                    JobStatCard(title: appText("Evidence", appLanguageRaw), value: "\(trace.evidenceCards.count)", systemImage: "doc.text.magnifyingglass", color: .indigo)
+                    JobStatCard(title: appText("Sources", appLanguageRaw), value: "\(trace.sourcesUsed.count)", systemImage: "link", color: .blue)
                 }
 
                 HSplitView {

@@ -208,7 +208,8 @@ struct AppServices {
             service: DesktopBootstrapService(apiClient: apiClient)
         )
         self.agentViewModel = AgentChatViewModel(
-            streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider)
+            streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider),
+            contextBundleStore: UserDefaultsAgentContextBundleStore()
         )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
@@ -2944,6 +2945,31 @@ struct MenuBarRootView: View {
             Label(appText("Health Agent", appLanguageRaw), systemImage: "heart.text.square")
                 .font(.headline)
             Divider()
+            Label(appText("Status Center", appLanguageRaw), systemImage: "dot.radiowaves.left.and.right")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                menuStatusChip(
+                    title: "Jobs",
+                    value: "\(activeJobCount)",
+                    color: activeJobCount > 0 ? .teal : .secondary
+                )
+                menuStatusChip(
+                    title: "Failed",
+                    value: "\(failedJobCount)",
+                    color: failedJobCount > 0 ? .orange : .secondary
+                )
+                menuStatusChip(
+                    title: "Cards",
+                    value: "\(viewModel.bootstrap?.actionCards.count ?? 0)",
+                    color: .blue
+                )
+            }
+            Button(appText("Open Jobs", appLanguageRaw)) {
+                navigation.selection = .jobs
+                openWindow(id: "main")
+            }
+            Divider()
             if viewModel.topActions.isEmpty {
                 Text(appText("No actions loaded", appLanguageRaw))
                     .foregroundStyle(.secondary)
@@ -3008,6 +3034,27 @@ struct MenuBarRootView: View {
         }
         .padding(8)
         .frame(width: 250)
+    }
+
+    private var activeJobCount: Int {
+        (viewModel.bootstrap?.activeJobs ?? []).filter { $0.status == "queued" || $0.status == "running" }.count
+    }
+
+    private var failedJobCount: Int {
+        (viewModel.bootstrap?.activeJobs ?? []).filter { $0.status == "failed" }.count
+    }
+
+    private func menuStatusChip(title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.caption.weight(.bold).monospacedDigit())
+            Text(appText(title, appLanguageRaw))
+                .font(.caption2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .foregroundStyle(color)
     }
 
     private func saveQuickRecord(_ text: String) {
