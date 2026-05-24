@@ -420,7 +420,6 @@ export default function TodayScreen() {
                 : router.push('/(tabs)/record' as any)
           )}
           onCompleteAction={completeNextAction}
-          onOpenMetric={(route) => router.push(route as any)}
         />
 
         {isLoading && (
@@ -493,7 +492,6 @@ function HomeCommandHeader({
   completionState,
   onOpenFocus,
   onCompleteAction,
-  onOpenMetric,
 }: {
   criticalCount: number;
   planCount: number;
@@ -507,7 +505,6 @@ function HomeCommandHeader({
   completionState: NextActionCompletionState;
   onOpenFocus: () => void;
   onCompleteAction: (action: DailyPlanAction) => void;
-  onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
   const wearableReady = Boolean(
@@ -517,13 +514,8 @@ function HomeCommandHeader({
     || twinSnapshot.spo2_avg,
   );
   const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
-  const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
   const visibleLoopMetrics = loopMetrics.slice(0, 3);
-  const activeDomainLabels = domains
-    .filter(domain => domain.activeCount > 0)
-    .map(domain => domain.label);
-  const activeDomainSummary = buildInterventionSummary(activeDomainLabels);
   const improvementFocus = buildImprovementFocus({
     action,
     criticalCount,
@@ -540,16 +532,11 @@ function HomeCommandHeader({
     hasClinical: clinicalReady,
     hasWearable: wearableReady,
   }).replace(/\//g, '、')}已接入`;
-  const strategySummary = activeDomainSummary || `${activeCount} 个干预`;
   const watchSummary = loopMetrics.map(metric => metric.label).slice(0, 2).join('/') || '周日晚复盘';
   const verificationMetrics = buildVerificationGoalText(visibleLoopMetrics);
-  const primaryVerificationMetric = visibleLoopMetrics[0] ?? null;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const improvementSummary = verificationMetrics || watchSummary;
-  const targetSourceText = strategySummary && strategySummary !== '0 个干预'
-    ? `${strategySummary}会影响这些指标`
-    : '补齐记录后更新目标';
   const agentJudgmentText = buildAgentJudgmentText({
     action,
     criticalCount,
@@ -560,6 +547,9 @@ function HomeCommandHeader({
   });
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
+  const personalSignalSummary = personalSignalChips
+    .map(signal => `${signal.label} ${signal.value}`)
+    .join(' · ');
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -595,49 +585,20 @@ function HomeCommandHeader({
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
-          {personalSignalChips.length > 0 ? (
-            <View style={styles.commandSignalChipRail}>
-              {personalSignalChips.map(signal => (
-                <View key={`${signal.label}-${signal.value}`} style={[styles.commandPersonalSignalChip, { backgroundColor: c.bgCard }]}>
-                  <HomeText style={[styles.commandPersonalSignalLabel, { color: decisionColor }]}>{signal.label}</HomeText>
-                  <HomeText style={[styles.commandPersonalSignalValue, { color: c.labelSecondary }]}>{signal.value}</HomeText>
-                </View>
-              ))}
-            </View>
+          <View style={styles.commandObservationLine}>
+            <Ionicons name="trending-up-outline" size={11} color={decisionColor} />
+            <HomeText style={[styles.commandObservationText, { color: c.labelSecondary }]} numberOfLines={1}>
+              观察目标 · {improvementSummary}
+            </HomeText>
+          </View>
+          {personalSignalSummary ? (
+            <HomeText style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]} numberOfLines={1}>
+              信号 · {personalSignalSummary}
+            </HomeText>
           ) : null}
         </View>
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
-
-      <View style={[styles.commandTargetPanel, { backgroundColor: c.bgPrimary }]}>
-        <Pressable
-          onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
-          style={({ pressed }) => [
-            styles.commandTargetStrip,
-            { opacity: pressed ? 0.68 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={
-            primaryVerificationMetric
-              ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
-              : '查看改善目标'
-            }
-        >
-          <View style={[styles.commandTargetBadge, { backgroundColor: c.bgCard }]}>
-            <Ionicons name="trending-up-outline" size={11} color={decisionColor} />
-            <HomeText style={[styles.commandTargetBadgeText, { color: decisionColor }]}>改善目标</HomeText>
-          </View>
-          <View style={styles.commandTargetTextBlock}>
-            <HomeText style={[styles.commandTargetValue, { color: c.labelPrimary }]} numberOfLines={1}>
-              {improvementSummary}
-            </HomeText>
-            <HomeText style={[styles.commandTargetSource, { color: c.labelTertiary }]} numberOfLines={1}>
-              {targetSourceText}
-            </HomeText>
-          </View>
-          <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} />
-        </Pressable>
-      </View>
 
       <View style={styles.commandInlineActionRow}>
         <Pressable
@@ -1146,7 +1107,7 @@ function buildAgentJudgmentText({
   const metricLabels = metrics.map(metric => metric.label).slice(0, 3).join('、');
   if (criticalCount > 0) {
     const riskFocus = riskTitle || headline;
-    if (action?.title) return `${riskFocus}，今天先 ${action.title}。`;
+    if (action?.title) return `${riskFocus}，先${compactHeroActionTitle(action.title)}。`;
     return `${riskFocus}，先查看风险原因并调整今晚策略。`;
   }
   if (action?.title) {
@@ -1156,6 +1117,14 @@ function buildAgentJudgmentText({
   }
   if (planCount > 0) return `今天先完成 ${planCount} 个计划，再用身体反馈调整。`;
   return '补齐今天记录后，Agent 会重新排序干预。';
+}
+
+function compactHeroActionTitle(title: string): string {
+  return title
+    .replace(/^晨起/, '')
+    .replace(/^早晨/, '')
+    .replace(/^今天/, '')
+    .trim();
 }
 
 function getVerificationTarget(metric: OutcomeFeedbackMetric): string {
@@ -1490,12 +1459,6 @@ function buildEvidenceSourceSummary({
   return sources.length > 0 ? sources.join('/') : '记录/检查/穿戴';
 }
 
-function buildInterventionSummary(labels: string[]): string {
-  if (labels.length === 0) return '';
-  if (labels.length <= 3) return labels.join('/');
-  return `${labels.slice(0, 3).join('/')}等 ${labels.length} 项干预`;
-}
-
 function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {
   const haystack = `${action.domain ?? ''} ${action.action_key ?? ''} ${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
 
@@ -1549,10 +1512,10 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 14,
-    paddingTop: 13,
-    paddingBottom: 12,
-    gap: 10,
+    paddingHorizontal: 13,
+    paddingTop: 12,
+    paddingBottom: 11,
+    gap: 9,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1652,7 +1615,7 @@ const styles = StyleSheet.create({
   commandInlineNextStep: {
     flex: 1,
     minWidth: 0,
-    minHeight: 36,
+    minHeight: 34,
     borderRadius: radii.full,
     paddingHorizontal: 12,
     flexDirection: 'row',
@@ -1678,7 +1641,7 @@ const styles = StyleSheet.create({
   },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandInlineDoneButton: {
-    minHeight: 36,
+    minHeight: 34,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 11,
@@ -1695,29 +1658,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  commandTargetPanel: {
-    borderRadius: radii.lg,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  commandTargetStrip: {
-    minHeight: 36,
+  commandObservationLine: {
+    minHeight: 17,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
-  commandTargetBadge: {
-    minHeight: 21,
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  commandTargetBadgeText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandTargetTextBlock: { flex: 1, minWidth: 0, gap: 1 },
-  commandTargetValue: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  commandTargetSource: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandObservationText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   commandLoopPanel: {
     borderRadius: radii.md,
     paddingHorizontal: 8,
@@ -1768,14 +1715,14 @@ const styles = StyleSheet.create({
   commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 82,
+    minHeight: 74,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: 0,
     paddingVertical: 2,
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 9,
+    gap: 8,
   },
   commandDecisionIndicator: {
     width: 8,
@@ -1804,6 +1751,7 @@ const styles = StyleSheet.create({
   },
   commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
   commandDecisionAccentRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
@@ -1825,7 +1773,7 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 17, fontWeight: '800', lineHeight: 21, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 16, fontWeight: '800', lineHeight: 20, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 24,
     flexDirection: 'row',
