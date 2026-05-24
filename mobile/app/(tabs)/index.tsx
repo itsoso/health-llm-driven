@@ -542,6 +542,7 @@ function HomeCommandHeader({
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
   const loopStrategy = buildAgentLoopStrategy({ activeCount, action, riskTitle });
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
+  const visibleLoopMetrics = loopMetrics.slice(0, 3);
   const activeDomainLabels = domains
     .filter(domain => domain.activeCount > 0)
     .map(domain => domain.label);
@@ -643,31 +644,27 @@ function HomeCommandHeader({
             </React.Fragment>
           ))}
         </View>
-        <View style={styles.commandMetricGrid}>
-          {loopMetrics.map(metric => {
+        <View style={styles.commandSignalLine}>
+          {visibleLoopMetrics.map(metric => {
             const color = c[metric.colorName];
             return (
               <Pressable
                 key={metric.key}
                 onPress={() => onOpenMetric(metric.route)}
                 style={({ pressed }) => [
-                  styles.commandMetricTile,
-                  { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+                  styles.commandSignalChip,
+                  { opacity: pressed ? 0.72 : 1 },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`${metric.label} ${metric.value}`}
               >
-                <View style={[styles.commandMetricIcon, { backgroundColor: c[metric.tintName] }]}>
-                  <Ionicons name={metric.icon} size={13} color={color} />
-                </View>
-                <View style={styles.commandMetricTextBlock}>
-                  <Text style={[styles.commandMetricLabel, { color: c.labelTertiary }]} numberOfLines={1}>
-                    {metric.label}
-                  </Text>
-                  <Text style={[styles.commandMetricValue, { color }]} numberOfLines={1}>
-                    {metric.value}
-                  </Text>
-                </View>
+                <View style={[styles.commandSignalDot, { backgroundColor: color }]} />
+                <Text style={[styles.commandSignalLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                  {metric.label}
+                </Text>
+                <Text style={[styles.commandSignalValue, { color }]} numberOfLines={1}>
+                  {metric.value}
+                </Text>
               </Pressable>
             );
           })}
@@ -720,7 +717,7 @@ function CompactShortcutSection({
 }) {
   const { c } = useTheme();
   return (
-    <View style={[styles.shortcutCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+    <View style={styles.shortcutCard}>
       <View style={styles.shortcutHeader}>
         <View style={styles.shortcutHeaderText}>
           <Text style={[styles.shortcutTitle, { color: c.labelPrimary }]}>更多入口</Text>
@@ -743,7 +740,7 @@ function CompactShortcutSection({
             onPress={item.onPress}
             style={({ pressed }) => [
               styles.shortcutPill,
-              { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+              { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`${item.label} ${item.value}`}
@@ -1740,10 +1737,10 @@ const styles = StyleSheet.create({
   commandAgentCopy: { fontSize: 12, lineHeight: 17, fontWeight: '700' },
   commandOutcomeBlock: { gap: 7 },
   agentStepRail: {
-    minHeight: 30,
+    minHeight: 29,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -1751,28 +1748,22 @@ const styles = StyleSheet.create({
   agentStepSegment: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   agentStepLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   agentStepValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandMetricGrid: { flexDirection: 'row', gap: 6 },
-  commandMetricTile: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 28,
-    borderRadius: radii.full,
-    paddingHorizontal: 5,
-    paddingVertical: 4,
+  commandSignalLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
-  commandMetricIcon: {
-    width: 19,
-    height: 19,
-    borderRadius: 9.5,
+  commandSignalChip: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 24,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
   },
-  commandMetricTextBlock: { flex: 1, minWidth: 0, gap: 0 },
-  commandMetricLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  commandMetricValue: { fontSize: 12, lineHeight: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandSignalDot: { width: 5, height: 5, borderRadius: 2.5 },
+  commandSignalLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandSignalValue: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
@@ -2119,9 +2110,9 @@ const styles = StyleSheet.create({
   loopMetricValue: { fontSize: 13, lineHeight: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   followUpCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
-    padding: spacing.md,
-    gap: spacing.sm,
+    borderRadius: radii.lg,
+    padding: 12,
+    gap: 8,
   },
   followUpHeader: {
     flexDirection: 'row',
@@ -2129,17 +2120,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   followUpIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   followUpTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  followUpTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  followUpTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
   followUpSubtitle: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
   followUpCountPill: {
-    minHeight: 27,
+    minHeight: 25,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.full,
     paddingHorizontal: 9,
@@ -2160,28 +2151,25 @@ const styles = StyleSheet.create({
   followUpSummaryText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   followUpList: { gap: 2 },
   followUpRow: {
-    minHeight: 58,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   followUpRowIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   followUpRowText: { flex: 1, minWidth: 0, gap: 3 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0 },
-  followUpRowTitle: { flexShrink: 1, fontSize: 14, lineHeight: 18, fontWeight: '800' },
-  followUpRowDetail: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  followUpRowTitle: { flexShrink: 1, fontSize: 13, lineHeight: 17, fontWeight: '800' },
+  followUpRowDetail: { fontSize: 12, lineHeight: 15, fontWeight: '500' },
   followUpRowRight: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
   shortcutCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: 11,
     gap: 8,
   },
   shortcutHeader: {
@@ -2199,18 +2187,18 @@ const styles = StyleSheet.create({
   shortcutPill: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
+    minHeight: 40,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 5,
-    paddingVertical: 7,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
   shortcutIcon: {
-    width: 23, height: 23, borderRadius: 8,
+    width: 21, height: 21, borderRadius: 7,
     alignItems: 'center', justifyContent: 'center',
   },
   shortcutTextBlock: { minWidth: 0, alignItems: 'center' },
