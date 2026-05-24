@@ -427,9 +427,12 @@ export default function TodayScreen() {
               onActionEvent={() => qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] })}
             />
           )}
-          <InterventionStrategyPanel
+          <AgentHealthLoopPanel
             domains={interventionDomains}
+            twinSnapshot={twinSnap}
+            action={nextAction}
             onPressDomain={(domain) => router.push(domain.route as any)}
+            onOpenMetric={(route) => router.push(route as any)}
           />
         </View>
 
@@ -440,11 +443,6 @@ export default function TodayScreen() {
         )}
 
         <View style={styles.section}>
-          <OutcomeFeedbackPanel
-            twinSnapshot={twinSnap}
-            action={nextAction}
-            onOpenMetric={(route) => router.push(route as any)}
-          />
           <TrajectorySnapshotPanel
             snapshot={trajectoryQuery.data}
             loading={trajectoryQuery.isLoading}
@@ -730,30 +728,59 @@ function CompactShortcutSection({
   );
 }
 
-function InterventionStrategyPanel({
+function AgentHealthLoopPanel({
   domains,
+  twinSnapshot,
+  action,
   onPressDomain,
+  onOpenMetric,
 }: {
   domains: InterventionDomainStatus[];
+  twinSnapshot: TwinSnapshot;
+  action?: DailyPlanAction | null;
   onPressDomain: (domain: InterventionDomainStatus) => void;
+  onOpenMetric: (route: string) => void;
 }) {
   const { c } = useTheme();
   const activeCount = domains.reduce((sum, domain) => sum + domain.activeCount, 0);
+  const metrics = buildOutcomeFeedbackMetrics(twinSnapshot, action).slice(0, 3);
+  const primaryDomains = domains.filter(domain => domain.activeCount > 0);
+  const visibleDomains = (primaryDomains.length > 0 ? primaryDomains : domains).slice(0, 5);
+
   return (
-    <View style={[styles.strategyCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.strategyHeader}>
-        <View style={[styles.strategyIcon, { backgroundColor: c.brandLight }]}>
-          <Ionicons name="git-network-outline" size={16} color={c.brand} />
+    <View style={[styles.loopCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.loopHeader}>
+        <View style={[styles.loopIcon, { backgroundColor: c.brandLight }]}>
+          <Ionicons name="sync-circle-outline" size={19} color={c.brand} />
         </View>
-        <View style={styles.strategyTitleBlock}>
-          <Text style={[styles.strategyTitle, { color: c.labelPrimary }]}>生活方式干预路径</Text>
-          <Text style={[styles.strategySubtitle, { color: c.labelTertiary }]}>
-            {activeCount > 0 ? `${activeCount} 个任务正在影响睡眠、体脂、血氧和恢复` : '等待 Agent 基于反馈编排新任务'}
+        <View style={styles.loopTitleBlock}>
+          <Text style={[styles.loopTitle, { color: c.labelPrimary }]}>Agent 干预闭环</Text>
+          <Text style={[styles.loopSubtitle, { color: c.labelTertiary }]} numberOfLines={2}>
+            {activeCount > 0
+              ? `${activeCount} 个任务用真实反馈校准下一步`
+              : '先观察关键指标，等待 Agent 编排下一轮行动'}
           </Text>
         </View>
       </View>
-      <View style={styles.strategyGrid}>
-        {domains.map(domain => {
+
+      <View style={[styles.loopPipeline, { borderColor: c.separator }]}>
+        {[
+          { label: '判断', value: '实时', icon: 'pulse-outline' as const },
+          { label: '干预', value: activeCount > 0 ? `${activeCount}项` : '待编排', icon: 'git-network-outline' as const },
+          { label: '验证', value: `${metrics.length}项`, icon: 'analytics-outline' as const },
+        ].map(step => (
+          <View key={step.label} style={styles.loopPipelineStep}>
+            <Ionicons name={step.icon} size={14} color={c.brand} />
+            <Text style={[styles.loopStepLabel, { color: c.labelTertiary }]}>{step.label}</Text>
+            <Text style={[styles.loopStepValue, { color: c.labelPrimary }]} numberOfLines={1}>
+              {step.value}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.loopDomainRail}>
+        {visibleDomains.map(domain => {
           const color = c[domain.colorName];
           const active = domain.activeCount > 0;
           return (
@@ -761,7 +788,7 @@ function InterventionStrategyPanel({
               key={domain.key}
               onPress={() => onPressDomain(domain)}
               style={({ pressed }) => [
-                styles.strategyDomain,
+                styles.loopDomainChip,
                 {
                   backgroundColor: active ? c[domain.tintName] : c.bgPrimary,
                   borderColor: active ? `${color}55` : c.separator,
@@ -771,52 +798,16 @@ function InterventionStrategyPanel({
               accessibilityRole="button"
               accessibilityLabel={`打开${domain.label}干预`}
             >
-              <View style={styles.strategyDomainTop}>
-                <Ionicons name={domain.icon} size={15} color={color} />
-                <Text style={[styles.strategyDomainStatus, { color: active ? color : c.labelTertiary }]} numberOfLines={1}>
-                  {active ? `${domain.activeCount} 个任务` : '观察中'}
-                </Text>
-              </View>
-              <Text style={[styles.strategyDomainLabel, { color: c.labelPrimary }]} numberOfLines={1}>
+              <Ionicons name={domain.icon} size={13} color={color} />
+              <Text style={[styles.loopDomainText, { color: c.labelPrimary }]} numberOfLines={1}>
                 {domain.label}
-              </Text>
-              <Text style={[styles.strategyDomainMeta, { color: c.labelTertiary }]} numberOfLines={1}>
-                {domain.detail}
               </Text>
             </Pressable>
           );
         })}
       </View>
-    </View>
-  );
-}
 
-function OutcomeFeedbackPanel({
-  twinSnapshot,
-  action,
-  onOpenMetric,
-}: {
-  twinSnapshot: TwinSnapshot;
-  action?: DailyPlanAction | null;
-  onOpenMetric: (route: string) => void;
-}) {
-  const { c } = useTheme();
-  const metrics = buildOutcomeFeedbackMetrics(twinSnapshot, action);
-
-  return (
-    <View style={[styles.outcomeCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.outcomeHeader}>
-        <View style={[styles.outcomeIcon, { backgroundColor: c.brandLight }]}>
-          <Ionicons name="analytics-outline" size={16} color={c.brand} />
-        </View>
-        <View style={styles.outcomeHeaderText}>
-          <Text style={[styles.outcomeTitle, { color: c.labelPrimary }]}>指标反馈 · 本轮干预结果</Text>
-          <Text style={[styles.outcomeSubtitle, { color: c.labelTertiary }]}>
-            用可穿戴、体成分和检查验证行动是否有效
-          </Text>
-        </View>
-      </View>
-      <View style={styles.outcomeGrid}>
+      <View style={styles.loopMetricRail}>
         {metrics.map(metric => {
           const color = c[metric.colorName];
           return (
@@ -824,25 +815,20 @@ function OutcomeFeedbackPanel({
               key={metric.key}
               onPress={() => onOpenMetric(metric.route)}
               style={({ pressed }) => [
-                styles.outcomeMetric,
+                styles.loopMetricTile,
                 { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`${metric.label} ${metric.value}`}
             >
-              <View style={styles.outcomeMetricTop}>
-                <View style={[styles.outcomeMetricIcon, { backgroundColor: c[metric.tintName] }]}>
-                  <Ionicons name={metric.icon} size={14} color={color} />
-                </View>
-                <Text style={[styles.outcomeMetricLabel, { color: c.labelSecondary }]} numberOfLines={1}>
-                  {metric.label}
-                </Text>
+              <View style={[styles.loopMetricIcon, { backgroundColor: c[metric.tintName] }]}>
+                <Ionicons name={metric.icon} size={13} color={color} />
               </View>
-              <Text style={[styles.outcomeMetricValue, { color }]} numberOfLines={1}>
-                {metric.value}
+              <Text style={[styles.loopMetricLabel, { color: c.labelTertiary }]} numberOfLines={1}>
+                {metric.label}
               </Text>
-              <Text style={[styles.outcomeMetricDetail, { color: c.labelTertiary }]} numberOfLines={1}>
-                {metric.detail}
+              <Text style={[styles.loopMetricValue, { color }]} numberOfLines={1}>
+                {metric.value}
               </Text>
             </Pressable>
           );
@@ -1380,15 +1366,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 7,
   },
-  commandSourceRail: { flexDirection: 'row', gap: 6 },
-  commandSourceChip: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: radii.md,
-    paddingHorizontal: 7,
-    paddingVertical: 7,
-    alignItems: 'center',
-  },
   commandSourceLine: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1397,14 +1374,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  commandSourceItem: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    gap: 2,
-  },
-  commandSourceLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  commandSourceValue: { fontSize: 11, lineHeight: 13, fontWeight: '900' },
   commandSourceSentence: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '700' },
   commandFocusArea: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1653,44 +1622,71 @@ const styles = StyleSheet.create({
   sectionSubtitle: { fontSize: 12, fontWeight: '500' },
   sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
   sectionActionText: { fontSize: 13, fontWeight: '700' },
-  outcomeCard: {
+  loopCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     padding: spacing.md,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
-  outcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  outcomeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+  loopHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  loopIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  outcomeHeaderText: { flex: 1, gap: 2 },
-  outcomeTitle: { fontSize: 15, fontWeight: '800' },
-  outcomeSubtitle: { fontSize: 12, fontWeight: '500' },
-  outcomeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  outcomeMetric: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    minWidth: 142,
+  loopTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  loopTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  loopSubtitle: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  loopPipeline: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    padding: spacing.sm,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  loopPipelineStep: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  loopStepLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  loopStepValue: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  loopDomainRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  loopDomainChip: {
+    minHeight: 30,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 5,
   },
-  outcomeMetricTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  outcomeMetricIcon: {
+  loopDomainText: { fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  loopMetricRail: { flexDirection: 'row', gap: spacing.xs },
+  loopMetricTile: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 70,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  loopMetricIcon: {
     width: 24,
     height: 24,
-    borderRadius: 7,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  outcomeMetricLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
-  outcomeMetricValue: { fontSize: 19, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: 0 },
-  outcomeMetricDetail: { fontSize: 11, fontWeight: '600' },
+  loopMetricLabel: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  loopMetricValue: { fontSize: 14, lineHeight: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
   compactSection: { gap: spacing.sm },
   shortcutRail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   shortcutPill: {
@@ -1711,39 +1707,6 @@ const styles = StyleSheet.create({
   shortcutTextBlock: { flex: 1, minWidth: 0 },
   shortcutLabel: { fontSize: 11, fontWeight: '600' },
   shortcutValue: { fontSize: 14, fontWeight: '800', marginTop: 1 },
-  strategyCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.xl,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  strategyHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  strategyIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  strategyTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  strategyTitle: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
-  strategySubtitle: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
-  strategyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  strategyDomain: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    minHeight: 62,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    justifyContent: 'center',
-    gap: 4,
-  },
-  strategyDomainTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
-  strategyDomainLabel: { fontSize: 13, lineHeight: 16, fontWeight: '800' },
-  strategyDomainMeta: { fontSize: 10, lineHeight: 12, fontWeight: '700' },
-  strategyDomainStatus: { flex: 1, textAlign: 'right', fontSize: 9, lineHeight: 11, fontWeight: '800' },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
