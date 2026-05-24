@@ -133,6 +133,44 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelPreparesMultipleContextItemsInFreshConversation() {
+        let model = AgentChatViewModel()
+        let categoryContext = AgentContextItem(
+            sourceID: "genomic_category:disease_risk",
+            sourceKind: "genomic_category",
+            title: "疾病风险",
+            summary: "22 个位点，高 6，中 6",
+            payload: [
+                "category": "disease_risk",
+                "high_count": "6"
+            ]
+        )
+        let findingContext = AgentContextItem(
+            sourceID: "genomic_finding:rs10572724",
+            sourceKind: "genomic_finding",
+            title: "9p21 心血管风险",
+            summary: "rs10572724 AA screening",
+            payload: [
+                "rsid": "rs10572724",
+                "genotype": "AA"
+            ]
+        )
+
+        model.prepareDraftForNewConversation(
+            "请分析这个基因分类",
+            contextItems: [categoryContext, findingContext, findingContext]
+        )
+
+        let draft = model.consumePreparedDraft()
+        XCTAssertTrue(draft?.contains("当前上下文") == true)
+        XCTAssertTrue(draft?.contains("1. 疾病风险") == true)
+        XCTAssertTrue(draft?.contains("2. 9p21 心血管风险") == true)
+        XCTAssertTrue(draft?.contains("high_count=6") == true)
+        XCTAssertTrue(draft?.contains("rsid=rs10572724") == true)
+        XCTAssertEqual(model.contextItems.map(\.id), [categoryContext.id, findingContext.id])
+    }
+
+    @MainActor
     func testAgentChatViewModelStreamsAssistantReply() async {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 77))

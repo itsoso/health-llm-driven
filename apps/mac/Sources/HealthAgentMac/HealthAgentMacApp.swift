@@ -354,7 +354,9 @@ struct AppRootView: View {
     }
 
     private func askAgentWithContext(_ prompt: String, _ item: AgentContextItem?) {
-        services.agentViewModel.prepareDraftForNewConversation(prompt, contextItem: item)
+        let currentContext = services.agentViewModel.contextItems
+        let handoffContext = currentContext + (item.map { [$0] } ?? [])
+        services.agentViewModel.prepareDraftForNewConversation(prompt, contextItems: handoffContext)
         navigation.selection = .agent
     }
 
@@ -368,7 +370,8 @@ struct AppRootView: View {
             navigation.selection = destination
         case .quickPrompt:
             services.agentViewModel.prepareDraftForNewConversation(
-                "请结合最近健康记录、基因、知识库证据和不确定性边界，给出可执行建议。"
+                "请结合最近健康记录、基因、知识库证据和不确定性边界，给出可执行建议。",
+                contextItems: services.agentViewModel.contextItems
             )
             navigation.selection = .agent
         case .refresh:

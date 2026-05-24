@@ -465,11 +465,15 @@ public final class AgentChatViewModel {
     }
 
     public func prepareDraftForNewConversation(_ text: String, contextItem: AgentContextItem? = nil) {
+        prepareDraftForNewConversation(text, contextItems: contextItem.map { [$0] } ?? [])
+    }
+
+    public func prepareDraftForNewConversation(_ text: String, contextItems: [AgentContextItem]) {
         startNewConversation()
-        if let contextItem {
+        for contextItem in contextItems {
             addContextItem(contextItem)
         }
-        prepareDraft(Self.visibleDraft(text: text, contextItems: contextItem.map { [$0] } ?? []))
+        prepareDraft(Self.visibleDraft(text: text, contextItems: self.contextItems))
     }
 
     public func consumePreparedDraft() -> String? {
