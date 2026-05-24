@@ -567,7 +567,6 @@ function HomeCommandHeader({
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const evidenceSourceText = evidenceSummary.replace(/已接入$/, '');
-  const reasoningSummary = `${evidenceSourceText}合并判断，先处理${headline}`;
   const interventionSummary = `${strategySummary} · ${nextStepActionText}`;
   const improvementSummary = verificationMetrics || watchSummary;
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
@@ -623,43 +622,45 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <View style={[styles.commandWorkflowPanel, { borderColor: c.separator }]}>
-        <View style={styles.commandInsightLine}>
-          <View style={[styles.commandInsightIcon, { backgroundColor: c.brandLight }]}>
+      <View style={[styles.commandLoopPanel, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+        <View style={styles.commandLoopHeaderLine}>
+          <View style={[styles.commandLoopIcon, { backgroundColor: c.brandLight }]}>
             <Ionicons name="analytics-outline" size={12} color={c.brand} />
           </View>
-          <HomeText style={[styles.commandInsightText, { color: c.labelSecondary }]} numberOfLines={1}>
-            {reasoningSummary}
-          </HomeText>
+          <View style={styles.commandLoopTitleBlock}>
+            <HomeText style={[styles.commandLoopTitleText, { color: c.labelPrimary }]}>干预闭环</HomeText>
+            <HomeText style={[styles.commandLoopEvidenceText, { color: c.labelTertiary }]} numberOfLines={1}>
+              基于 {evidenceSourceText}
+            </HomeText>
+          </View>
         </View>
-        <View style={styles.commandPillRail}>
-          <View style={[styles.commandStatusPill, { backgroundColor: c.tintGreen }]}>
-            <Ionicons name="leaf-outline" size={12} color={c.green} />
-            <HomeText style={[styles.commandStatusLabel, { color: c.green }]}>干预策略</HomeText>
-            <HomeText style={[styles.commandStatusValue, { color: c.green }]} numberOfLines={2}>
+        <Pressable
+          onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
+          style={({ pressed }) => [
+            styles.commandLoopStrip,
+            { opacity: pressed ? 0.68 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            primaryVerificationMetric
+              ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
+              : '查看验证目标'
+          }
+        >
+          <View style={styles.commandLoopSegment}>
+            <HomeText style={[styles.commandLoopSegmentLabel, { color: c.green }]}>干预</HomeText>
+            <HomeText style={[styles.commandLoopSegmentValue, { color: c.labelSecondary }]} numberOfLines={1}>
               {interventionSummary}
             </HomeText>
           </View>
-          <Pressable
-            onPress={() => primaryVerificationMetric ? onOpenMetric(primaryVerificationMetric.route) : undefined}
-            style={({ pressed }) => [
-              styles.commandStatusPill,
-              { backgroundColor: c.tintBlue, opacity: pressed ? 0.64 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={
-              primaryVerificationMetric
-                ? `${primaryVerificationMetric.label} ${primaryVerificationMetric.value}`
-                : '查看验证目标'
-            }
-          >
-            <Ionicons name="trending-up-outline" size={12} color={c.blue} />
-            <HomeText style={[styles.commandStatusLabel, { color: c.blue }]}>验证是否变好</HomeText>
-            <HomeText style={[styles.commandStatusValue, { color: c.blue }]} numberOfLines={2}>
+          <Ionicons name="arrow-forward" size={12} color={c.labelTertiary} />
+          <View style={styles.commandLoopSegment}>
+            <HomeText style={[styles.commandLoopSegmentLabel, { color: c.blue }]}>验证目标</HomeText>
+            <HomeText style={[styles.commandLoopSegmentValue, { color: c.labelSecondary }]} numberOfLines={1}>
               {improvementSummary}
             </HomeText>
-          </Pressable>
-        </View>
+          </View>
+        </Pressable>
       </View>
 
       <View style={styles.commandInlineActionRow}>
@@ -1832,42 +1833,49 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   commandFocusTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  commandWorkflowPanel: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 8,
-    gap: 7,
+  commandLoopPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    gap: 6,
   },
-  commandInsightLine: {
-    minHeight: 24,
+  commandLoopHeaderLine: {
+    minHeight: 22,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
   },
-  commandInsightIcon: {
+  commandLoopIcon: {
     width: 22,
     height: 22,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commandInsightText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  commandPillRail: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 6,
-  },
-  commandStatusPill: {
+  commandLoopTitleBlock: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
-    borderRadius: radii.md,
-    paddingHorizontal: 7,
-    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  commandLoopTitleText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  commandLoopEvidenceText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandLoopStrip: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+  },
+  commandLoopSegment: {
+    flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
     gap: 1,
   },
-  commandStatusLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  commandStatusValue: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
     minHeight: 78,
     borderWidth: StyleSheet.hairlineWidth,

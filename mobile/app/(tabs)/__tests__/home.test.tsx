@@ -162,7 +162,7 @@ describe('TodayScreen', () => {
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getByText('今日优先 · 观察中')).toBeTruthy();
     expect(getByText('保持记录节奏')).toBeTruthy();
-    expect(getByText('验证是否变好')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
     expect(getByText('下一步')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText('个人画像')).toBeTruthy();
@@ -223,7 +223,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 1 个计划')).toBeTruthy();
-    expect(getByText('验证是否变好')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
     expect(getAllByText(/验证/).length).toBeGreaterThan(0);
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
@@ -263,6 +263,21 @@ describe('TodayScreen', () => {
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('现在先做'));
     expect(screen.getAllByText(/干预/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/验证/).length).toBeGreaterThan(0);
+  });
+
+  it('uses one compact agent loop instead of two competing workflow tiles', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+    ];
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('干预闭环')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
+    expect(getByText(/饮食\/睡眠/)).toBeTruthy();
+    expect(queryByText('干预策略')).toBeNull();
+    expect(queryByText('验证是否变好')).toBeNull();
   });
 
   it('puts the agent workspace before action and outcome feedback sections', () => {
@@ -450,7 +465,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/干预/).length).toBeGreaterThan(0);
-    expect(getByText('干预策略')).toBeTruthy();
+    expect(getByText('干预闭环')).toBeTruthy();
     expect(getByText(/饮食\/睡眠\/运动 \+2/)).toBeTruthy();
   });
 
@@ -558,7 +573,7 @@ describe('TodayScreen', () => {
 
     expect(getAllByText('晨间记录').length).toBeGreaterThan(0);
     expect(getByText('今日优先 · 2 个计划')).toBeTruthy();
-    expect(getByText('验证是否变好')).toBeTruthy();
+    expect(getByText('验证目标')).toBeTruthy();
   });
 
   it('opens today plan when the focus header itself is tapped', () => {
