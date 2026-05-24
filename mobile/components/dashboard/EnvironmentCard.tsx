@@ -180,7 +180,7 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
       .filter(Boolean)
       .join(' · ');
     return (
-      <View style={[styles.microCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.microCard}>
         <TouchableOpacity
           style={styles.microMain}
           onPress={() => router.push('/location' as any)}
@@ -200,7 +200,7 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
           ]}
         />
         <TouchableOpacity
-          style={[styles.microAgentButton, { backgroundColor: c.brandLight }]}
+          style={styles.microAgentButton}
           onPress={() => pushChatWithContext(router, {
             prompt: '请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。',
             context: envContext,
@@ -211,7 +211,7 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
           <Ionicons name="sparkles-outline" size={14} color={c.brand} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.microRunButton, { borderColor: c.separator, backgroundColor: c.bgPrimary }]}
+          style={styles.microRunButton}
           onPress={() => router.push('/live-run' as any)}
           accessibilityLabel="开始跑步"
         >
@@ -377,38 +377,35 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   microCard: {
-    minHeight: 42,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    minHeight: 28,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
   microMain: {
     flex: 1,
     minWidth: 0,
-    minHeight: 30,
+    minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   microTextBlock: { flex: 1, minWidth: 0 },
-  microSummaryText: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
-  microAqiDot: { width: 6, height: 6, borderRadius: 3 },
+  microSummaryText: { fontSize: 11, lineHeight: 14, fontWeight: '700' },
+  microAqiDot: { width: 5, height: 5, borderRadius: 2.5 },
   microAgentButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   microRunButton: {
-    width: 30,
-    height: 30,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
