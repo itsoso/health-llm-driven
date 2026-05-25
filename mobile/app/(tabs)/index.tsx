@@ -435,41 +435,6 @@ export default function TodayScreen() {
           onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           onOpenMetric={(route) => router.push(route as any)}
           planCount={activePlanCount}
-          shortcuts={[
-            {
-              label: '基因',
-              icon: 'git-branch-outline',
-              value: geneticStatsQuery.data?.hits != null ? String(geneticStatsQuery.data.hits) : '—',
-              color: c.purple,
-              bg: c.tintPurple,
-              onPress: () => router.push('/genetic-report' as any),
-            },
-            {
-              label: '进度',
-              icon: 'trending-up-outline',
-              value: progressStatsQuery.data?.improved != null ? String(progressStatsQuery.data.improved) : '—',
-              color: c.blue,
-              bg: c.tintBlue,
-              onPress: () => router.push('/my-progress' as any),
-            },
-            {
-              label: '运动',
-              icon: 'walk-outline',
-              value: '处方',
-              color: c.pink,
-              bg: c.tintPink,
-              onPress: () => router.push('/movement-plan' as any),
-            },
-            {
-              label: '饮食',
-              icon: 'restaurant-outline',
-              value: '方案',
-              color: c.orange,
-              bg: c.tintOrange,
-              onPress: () => router.push('/diet-plan' as any),
-            },
-          ]}
-          onOpenAll={() => router.push('/(tabs)/record' as any)}
         />
       </ScrollView>
     </SafeAreaView>
@@ -528,6 +493,7 @@ function HomeCommandHeader({
   });
   const runtimeTargetSummary = buildVerificationGoalText(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
+  const decisionLabelColor = c.brand;
   const decisionSurfaceColor = 'transparent';
   const decisionIconColor = criticalCount > 0 ? c.tintRed : c.brandLight;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
@@ -576,7 +542,7 @@ function HomeCommandHeader({
           />
         </View>
         <View style={styles.commandDecisionText}>
-          <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>为什么优先</HomeText>
+          <HomeText style={[styles.commandFocusLabel, { color: decisionLabelColor }]}>今日判断</HomeText>
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
@@ -669,8 +635,6 @@ function HomeBackgroundPanel({
   onOpenAdvice,
   onOpenMetric,
   planCount,
-  shortcuts,
-  onOpenAll,
 }: {
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
@@ -680,15 +644,6 @@ function HomeBackgroundPanel({
   onOpenAdvice: (card: ActionCard) => void;
   onOpenMetric: (route: string) => void;
   planCount: number;
-  shortcuts: {
-    label: string;
-    value: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    color: string;
-    bg: string;
-    onPress: () => void;
-  }[];
-  onOpenAll: () => void;
 }) {
   const { c } = useTheme();
   return (
@@ -696,9 +651,9 @@ function HomeBackgroundPanel({
       <View style={styles.backgroundTaskHeader}>
         <View style={styles.backgroundTaskTitleLine}>
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>Agent 后台运行</HomeText>
+          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>持续观察</HomeText>
         </View>
-        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>穿戴 / GPS / 体检</HomeText>
+        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>穿戴 · GPS · 体检</HomeText>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
@@ -711,8 +666,6 @@ function HomeBackgroundPanel({
         onOpenAdvice={onOpenAdvice}
         feedbackMetrics={feedbackMetrics}
         planCount={planCount}
-        shortcuts={shortcuts}
-        onOpenAll={onOpenAll}
       />
     </View>
   );
@@ -739,7 +692,7 @@ function HomeBodyFeedbackPanel({
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
-        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>实时反馈</HomeText>
+        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>指标反馈</HomeText>
         <View style={styles.runtimeFeedbackChipRow}>
           {stripMetrics.map(metric => {
           const color = c[metric.colorName];
@@ -770,26 +723,6 @@ function HomeBodyFeedbackPanel({
   );
 }
 
-function buildRuntimeEvidenceSummary(shortcuts: {
-  label: string;
-  value: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  bg: string;
-  onPress: () => void;
-}[]): string {
-  const genetic = shortcuts.find(item => item.label === '基因');
-  const progress = shortcuts.find(item => item.label === '进度');
-  const protocols = shortcuts
-    .filter(item => item.label === '运动' || item.label === '饮食')
-    .map(item => item.label)
-    .join('/');
-  const geneticSummary = genetic?.value && genetic.value !== '—' ? `基因 ${genetic.value}` : '基因待同步';
-  const progressSummary = progress?.value && progress.value !== '—' ? `进展 ${progress.value}` : '进展待校准';
-  const protocolSummary = protocols ? `${protocols}方案` : '生活方式方案';
-  return `GPS/天气 · ${geneticSummary} · ${progressSummary} · ${protocolSummary}`;
-}
-
 function AgentFollowUpQueue({
   snapshot,
   loading,
@@ -798,8 +731,6 @@ function AgentFollowUpQueue({
   onOpenAdvice,
   feedbackMetrics,
   planCount,
-  shortcuts,
-  onOpenAll,
 }: {
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
@@ -808,15 +739,6 @@ function AgentFollowUpQueue({
   onOpenAdvice: (card: ActionCard) => void;
   feedbackMetrics: OutcomeFeedbackMetric[];
   planCount: number;
-  shortcuts: {
-    label: string;
-    value: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    color: string;
-    bg: string;
-    onPress: () => void;
-  }[];
-  onOpenAll: () => void;
 }) {
   const { c } = useTheme();
   const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
@@ -840,16 +762,16 @@ function AgentFollowUpQueue({
           ? '本周建议等待复盘'
           : '轨迹暂无新增风险';
   const queueDetail = loading
-    ? '同步完成后会补上长期判断。'
+    ? '同步后补上长期判断'
     : primaryRisk
       ? (primaryRisk.primary_action || primaryRisk.why || 'Agent 会继续观察长期轨迹变化。')
       : showPrimaryAdvice && primaryAdvice
         ? primaryAdvice.content
         : weeklyAdvice.length === 0 && trajectoryRisks.length === 0
-          ? '当前先完成上方行动，周日晚自动复盘。'
-          : '继续用睡眠、血氧、体成分和检查数据观察。';
+          ? '先做上方行动，周日晚自动复盘'
+          : '继续看睡眠、血氧、体成分和检查';
   const queueRightLabel = gapCount > 0
-    ? `缺口 ${gapCount}`
+    ? `待补 ${gapCount}`
     : hiddenCount > 0
       ? '待关注'
       : primaryRisk
@@ -878,10 +800,8 @@ function AgentFollowUpQueue({
   const reviewTargets = feedbackMetrics
     .slice(0, 3)
     .map(metric => metric.label)
-    .join(' / ') || '睡眠 / 血氧 / 体成分';
-  const planLabel = planCount > 0 ? `${planCount} 个干预执行中` : '等待今天记录补齐';
-  const evidenceSummary = buildRuntimeEvidenceSummary(shortcuts);
-
+    .join(' · ') || '睡眠 · 血氧 · 体成分';
+  const planLabel = planCount > 0 ? `${planCount} 个干预` : '等记录';
   return (
     <View
       testID="home-runtime-task-strip"
@@ -894,35 +814,20 @@ function AgentFollowUpQueue({
         onPress={onOpenQueue}
         style={({ pressed }) => [styles.followUpRowText, { opacity: pressed ? 0.72 : 1 }]}
         accessibilityRole="button"
-        accessibilityLabel={queueTitle}
+        accessibilityLabel={`${queueTitle}，${queueDetail}`}
       >
         <View style={styles.followUpRowTitleLine}>
           <HomeText style={[styles.followUpTaskLabel, { color: queueColor }]} numberOfLines={1}>
-            长期复盘
+            正在观察
           </HomeText>
           <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
             {queueTitle}
           </HomeText>
         </View>
-        <HomeText style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
-          {queueDetail}
-        </HomeText>
-        <Pressable
-          onPress={onOpenAll}
-          style={({ pressed }) => [styles.followUpEvidenceLine, { opacity: pressed ? 0.72 : 1 }]}
-          accessibilityRole="button"
-          accessibilityLabel="查看个人画像"
-        >
-          <Ionicons name="git-network-outline" size={10} color={c.brand} />
-          <HomeText style={[styles.followUpEvidenceText, { color: c.labelTertiary }]} numberOfLines={1}>
-            <HomeText style={[styles.followUpEvidenceLabel, { color: c.labelSecondary }]}>证据来源</HomeText>
-            {` · ${evidenceSummary}`}
-          </HomeText>
-        </Pressable>
         <View style={styles.followUpReviewLine}>
           <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
           <HomeText style={[styles.followUpReviewText, { color: c.labelTertiary }]} numberOfLines={1}>
-            下次复盘 · 周日晚看 {reviewTargets}，当前 {planLabel}
+            下次看 · 周日晚 · {reviewTargets} · {planLabel}
           </HomeText>
         </View>
       </Pressable>
@@ -1261,7 +1166,7 @@ function buildDiagnosisBasisText(
     ? signals.map(signal => `${signal.label} ${signal.value}`).join(' · ')
     : '穿戴待同步';
   const genetics = geneticHits != null ? `基因 ${geneticHits}` : '基因待同步';
-  return `已看 · ${wearable} · ${genetics} · GPS · 体检`;
+  return `依据 · ${wearable} · ${genetics} · GPS · 体检`;
 }
 
 function buildOutcomeFeedbackMetric(
@@ -1748,7 +1653,7 @@ const styles = StyleSheet.create({
   },
   commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '700' },
+  commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700' },
   commandValidationLine: {
     minHeight: 18,
     flexDirection: 'row',
@@ -1786,8 +1691,8 @@ const styles = StyleSheet.create({
   agentRunningText: { fontSize: 12, fontWeight: '800' },
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
-  commandFocusLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 13, fontWeight: '800', lineHeight: 17, letterSpacing: 0 },
+  commandFocusLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandTitle: { minWidth: 0, fontSize: 15, fontWeight: '800', lineHeight: 20, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 24,
     flexDirection: 'row',
@@ -2177,7 +2082,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   backgroundTaskDot: { width: 5, height: 5, borderRadius: 2.5 },
-  backgroundTaskTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  backgroundTaskTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
   backgroundTaskMeta: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 8, lineHeight: 10, fontWeight: '700' },
   calibrationContextRail: {
     flexDirection: 'row',
