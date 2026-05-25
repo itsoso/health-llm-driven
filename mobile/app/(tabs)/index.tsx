@@ -415,6 +415,7 @@ export default function TodayScreen() {
                 ? openPlanAction(nextAction)
                 : router.push('/(tabs)/record' as any)
           )}
+          onOpenAgent={openWorkspaceChat}
           onCompleteAction={completeNextAction}
         />
 
@@ -428,12 +429,10 @@ export default function TodayScreen() {
           snapshot={trajectoryQuery.data}
           loading={trajectoryQuery.isLoading}
           weeklyAdvice={weeklyAdvice}
-          primaryMetrics={topLoopMetrics}
           feedbackMetrics={feedbackMetrics}
           onOpenTrajectory={openTrajectoryChat}
           onOpenAdvice={(card) => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
           onOpenMetric={(route) => router.push(route as any)}
-          onOpenAgent={openWorkspaceChat}
           planCount={activePlanCount}
           shortcuts={[
             {
@@ -485,6 +484,7 @@ function HomeCommandHeader({
   action,
   completionState,
   onOpenFocus,
+  onOpenAgent,
   onCompleteAction,
 }: {
   criticalCount: number;
@@ -495,6 +495,7 @@ function HomeCommandHeader({
   action?: DailyPlanAction | null;
   completionState: NextActionCompletionState;
   onOpenFocus: () => void;
+  onOpenAgent: () => void;
   onCompleteAction: (action: DailyPlanAction) => void;
 }) {
   const { c } = useTheme();
@@ -521,6 +522,7 @@ function HomeCommandHeader({
     riskTitle,
     metrics: visibleLoopMetrics,
   });
+  const runtimeTargetSummary = buildVerificationGoalText(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const personalSignalSummary = personalSignalChips
@@ -539,6 +541,18 @@ function HomeCommandHeader({
             </HomeText>
           </View>
         </View>
+        <Pressable
+          onPress={onOpenAgent}
+          style={({ pressed }) => [
+            styles.commandAgentAskButton,
+            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="问 Agent"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={12} color={c.brand} />
+          <HomeText style={[styles.commandAgentAskText, { color: c.brand }]}>问原因</HomeText>
+        </Pressable>
       </View>
 
       <Pressable
@@ -563,6 +577,16 @@ function HomeCommandHeader({
               信号 · {personalSignalSummary}
             </HomeText>
           ) : null}
+          <View style={styles.commandValidationLine}>
+            <Ionicons name="pulse-outline" size={11} color={c.brand} />
+            <HomeText style={[styles.commandValidationText, { color: c.labelTertiary }]} numberOfLines={1}>
+              {runtimeTargetSummary ? `验证目标 · ${runtimeTargetSummary}` : '验证目标 · 补齐记录后校准干预'}
+            </HomeText>
+            <View style={[styles.commandRunningPill, { backgroundColor: c.brandLight }]}>
+              <View style={[styles.commandRunningDot, { backgroundColor: c.brand }]} />
+              <HomeText style={[styles.commandRunningText, { color: c.brand }]}>运行中</HomeText>
+            </View>
+          </View>
         </View>
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
@@ -634,12 +658,10 @@ function HomeBackgroundPanel({
   snapshot,
   loading,
   weeklyAdvice,
-  primaryMetrics,
   feedbackMetrics,
   onOpenTrajectory,
   onOpenAdvice,
   onOpenMetric,
-  onOpenAgent,
   planCount,
   shortcuts,
   onOpenAll,
@@ -647,12 +669,10 @@ function HomeBackgroundPanel({
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
   weeklyAdvice: ActionCard[];
-  primaryMetrics: OutcomeFeedbackMetric[];
   feedbackMetrics: OutcomeFeedbackMetric[];
   onOpenTrajectory: () => void;
   onOpenAdvice: (card: ActionCard) => void;
   onOpenMetric: (route: string) => void;
-  onOpenAgent: () => void;
   planCount: number;
   shortcuts: {
     label: string;
@@ -665,36 +685,8 @@ function HomeBackgroundPanel({
   onOpenAll: () => void;
 }) {
   const { c } = useTheme();
-  const runtimeTargetSummary = buildVerificationGoalText(primaryMetrics.slice(0, 3));
   return (
     <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.agentRuntimeHeader}>
-        <View style={[styles.agentRuntimeIcon, { backgroundColor: c.brandLight }]}>
-          <Ionicons name="pulse-outline" size={13} color={c.brand} />
-        </View>
-        <View style={styles.agentRuntimeTitleBlock}>
-          <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>Agent 观测中</HomeText>
-          <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            {runtimeTargetSummary ? `验证目标 · ${runtimeTargetSummary}` : '正在用体征反馈校准今天策略'}
-          </HomeText>
-        </View>
-        <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
-          <View style={[styles.agentRuntimeLiveDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>运行中</HomeText>
-        </View>
-        <Pressable
-          onPress={onOpenAgent}
-          style={({ pressed }) => [
-            styles.evidenceAskButton,
-            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="问 Agent"
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={12} color={c.brand} />
-          <HomeText style={[styles.evidenceAskText, { color: c.brand }]}>问原因</HomeText>
-        </Pressable>
-      </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
       </View>
@@ -1472,6 +1464,15 @@ const styles = StyleSheet.create({
   commandAgentIdentity: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   commandAgentLabel: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
   commandAgentSubLabel: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandAgentAskButton: {
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commandAgentAskText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandRightMeta: { alignItems: 'flex-end', gap: 5, flexShrink: 0 },
   commandRightTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   commandMiniActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
@@ -1697,6 +1698,23 @@ const styles = StyleSheet.create({
   commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandValidationLine: {
+    minHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  commandValidationText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  commandRunningPill: {
+    minHeight: 18,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commandRunningDot: { width: 5, height: 5, borderRadius: 2.5 },
+  commandRunningText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
   commandDecisionAccentRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
@@ -2045,15 +2063,6 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     gap: 0,
   },
-  evidenceAskButton: {
-    minHeight: 22,
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  evidenceAskText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   backgroundPanel: {
     gap: 7,
   },
@@ -2095,34 +2104,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 6,
   },
-  agentRuntimeHeader: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 1,
-  },
-  agentRuntimeIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  agentRuntimeTitleBlock: { flex: 1, minWidth: 0, gap: 1 },
-  agentRuntimeTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  agentRuntimeSubtitle: { fontSize: 9, lineHeight: 11, fontWeight: '600' },
-  agentRuntimeLiveBadge: {
-    minHeight: 20,
-    borderRadius: radii.full,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  agentRuntimeLiveDot: { width: 5, height: 5, borderRadius: 2.5 },
-  agentRuntimeLiveText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   calibrationContextRail: {
     flexDirection: 'row',
     alignItems: 'stretch',

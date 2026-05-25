@@ -170,6 +170,18 @@ describe('TodayScreen', () => {
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
   });
 
+  it('uses one visible Agent identity and keeps validation inside the top diagnosis card', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+
+    expect(screen.getAllByText('健康 Agent')).toHaveLength(1);
+    expect(screen.queryByText('Agent 观测中')).toBeNull();
+    expect(screen.getByLabelText('问 Agent')).toBeTruthy();
+    expect(targetIndex).toBeGreaterThan(textFlow.indexOf('Agent 判断'));
+    expect(targetIndex).toBeLessThan(textFlow.indexOf('今日实验'));
+  });
+
   it('keeps the no-plan home feed focused on the top next step instead of adding a duplicate execution card', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
@@ -205,16 +217,16 @@ describe('TodayScreen', () => {
     expect(textFlow.some(text => /验证目标/.test(text))).toBe(true);
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
     expect(targetIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
-    expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('Agent 观测中'));
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.indexOf('Agent 判断'));
+    expect(textFlow.indexOf('Agent 判断')).toBeLessThan(targetIndex);
+    expect(targetIndex).toBeLessThan(textFlow.indexOf('今日实验'));
     expect(targetIndex).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
@@ -253,7 +265,7 @@ describe('TodayScreen', () => {
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
     expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
-    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
   });
 
@@ -370,14 +382,14 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
     expect(targetIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(screen.queryByText('结果校准')).toBeNull();
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(textFlow.indexOf('Agent 判断')).toBeLessThan(targetIndex);
     expect(targetIndex).toBeLessThan(reviewIndex);
     expect(screen.queryByText('Agent 后台任务')).toBeNull();
   });
@@ -486,7 +498,7 @@ describe('TodayScreen', () => {
     expect(getByText('运行中')).toBeTruthy();
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
-    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
     expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
@@ -502,7 +514,8 @@ describe('TodayScreen', () => {
   it('compresses evidence and follow-up into quiet runtime summary rows', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(getByText('健康 Agent')).toBeTruthy();
+    expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('正在用体征反馈校准今天策略')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
     expect(getByText(/验证目标 ·/)).toBeTruthy();
@@ -523,11 +536,12 @@ describe('TodayScreen', () => {
     expect(queryByTestId('home-body-feedback-board')).toBeNull();
   });
 
-  it('folds verification targets into the runtime header instead of a separate section title', () => {
+  it('folds verification targets into the top diagnosis card instead of a separate section title', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText(/验证目标 ·/)).toBeTruthy();
+    expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
     expect(getByLabelText('问 Agent')).toBeTruthy();
   });
@@ -547,7 +561,7 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
@@ -556,7 +570,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(textFlow.indexOf('Agent 判断')).toBeLessThan(targetIndex);
     expect(targetIndex).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
@@ -567,7 +581,7 @@ describe('TodayScreen', () => {
 
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
-    expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
     expect(targetIndex).toBeGreaterThanOrEqual(0);
@@ -577,7 +591,7 @@ describe('TodayScreen', () => {
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(textFlow.indexOf('Agent 判断')).toBeLessThan(targetIndex);
     expect(targetIndex).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
