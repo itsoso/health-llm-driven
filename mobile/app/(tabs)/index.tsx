@@ -686,6 +686,13 @@ function HomeBackgroundPanel({
   const { c } = useTheme();
   return (
     <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={styles.backgroundTaskHeader}>
+        <View style={styles.backgroundTaskTitleLine}>
+          <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
+          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台任务</HomeText>
+        </View>
+        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>实时校准 / 长期复盘</HomeText>
+      </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
       </View>
@@ -725,7 +732,7 @@ function HomeBodyFeedbackPanel({
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
-        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>实时反馈</HomeText>
+        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>实时校准</HomeText>
         <View style={styles.runtimeFeedbackChipRow}>
           {stripMetrics.map(metric => {
           const color = c[metric.colorName];
@@ -882,9 +889,14 @@ function AgentFollowUpQueue({
         accessibilityRole="button"
         accessibilityLabel={queueTitle}
       >
-        <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
-          {queueTitle}
-        </HomeText>
+        <View style={styles.followUpRowTitleLine}>
+          <HomeText style={[styles.followUpTaskLabel, { color: queueColor }]} numberOfLines={1}>
+            长期复盘
+          </HomeText>
+          <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+            {queueTitle}
+          </HomeText>
+        </View>
         <HomeText style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueDetail}
         </HomeText>
@@ -2047,6 +2059,7 @@ const styles = StyleSheet.create({
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
   followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpTaskLabel: { flexShrink: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
   followUpRowDetail: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
   followUpReviewLine: {
     minHeight: 14,
@@ -2114,6 +2127,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 6,
   },
+  backgroundTaskHeader: {
+    minHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingHorizontal: 1,
+  },
+  backgroundTaskTitleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  backgroundTaskDot: { width: 5, height: 5, borderRadius: 2.5 },
+  backgroundTaskTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  backgroundTaskMeta: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 8, lineHeight: 10, fontWeight: '700' },
   calibrationContextRail: {
     flexDirection: 'row',
     alignItems: 'stretch',

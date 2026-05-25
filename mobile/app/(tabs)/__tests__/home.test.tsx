@@ -563,6 +563,19 @@ describe('TodayScreen', () => {
     expect(queryByTestId('home-body-feedback-board')).toBeNull();
   });
 
+  it('frames realtime metrics and trajectory review as a background task queue', () => {
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(screen.getByText('后台任务')).toBeTruthy();
+    expect(screen.getByText('实时校准')).toBeTruthy();
+    expect(screen.getByText('长期复盘')).toBeTruthy();
+    expect(screen.queryByText('实时反馈')).toBeNull();
+    expect(textFlow.indexOf('后台任务')).toBeLessThan(textFlow.indexOf('实时校准'));
+    expect(textFlow.indexOf('实时校准')).toBeLessThan(textFlow.indexOf('长期复盘'));
+    expect(textFlow.indexOf('长期复盘')).toBeLessThan(textFlow.indexOf('证据链'));
+  });
+
   it('folds verification targets into the top diagnosis card instead of a separate section title', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
