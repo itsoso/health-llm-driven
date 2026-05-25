@@ -719,24 +719,11 @@ function HomeBackgroundPanel({
   onOpenMetric: (route: string) => void;
   planCount: number;
 }) {
-  const { c } = useTheme();
   return (
     <View
       testID="home-background-runtime"
       style={[styles.agentRuntimePanel, { backgroundColor: 'transparent', borderColor: 'transparent', borderWidth: 0 }]}
     >
-      <View style={styles.backgroundTaskHeader}>
-        <View style={styles.backgroundTaskTitleLine}>
-          <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台验证</HomeText>
-        </View>
-        <HomeText
-          accessibilityLabel="后台持续合并基因、表观遗传、医疗检查、穿戴和 GPS 数据"
-          style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}
-        >
-          个体画像 · 5类数据合并
-        </HomeText>
-      </View>
       <AgentFollowUpQueue
         snapshot={snapshot}
         loading={loading}
@@ -845,6 +832,16 @@ function AgentFollowUpQueue({
         accessibilityRole="button"
         accessibilityLabel={`${queueTitle}，${queueDetail}`}
       >
+        <View style={styles.followUpRuntimeLine}>
+          <View style={[styles.followUpRuntimeDot, { backgroundColor: c.brand }]} />
+          <HomeText
+            accessibilityLabel="后台持续合并基因、表观遗传、医疗检查、穿戴和 GPS 数据"
+            style={[styles.followUpRuntimeText, { color: c.labelTertiary }]}
+            numberOfLines={1}
+          >
+            后台验证 · 个体画像
+          </HomeText>
+        </View>
         <View style={styles.followUpRowTitleLine}>
           <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
             {queueTitle}
@@ -2109,6 +2106,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
+  followUpRuntimeLine: {
+    minHeight: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  followUpRuntimeDot: { width: 4, height: 4, borderRadius: 2 },
+  followUpRuntimeText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '800' },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
   followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   followUpRowDetail: { fontSize: 9, lineHeight: 12, fontWeight: '600' },
@@ -2205,22 +2210,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 7,
   },
-  backgroundTaskHeader: {
-    minHeight: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingHorizontal: 1,
-  },
-  backgroundTaskTitleLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  backgroundTaskDot: { width: 5, height: 5, borderRadius: 2.5 },
-  backgroundTaskTitle: { fontSize: 12, lineHeight: 15, fontWeight: '800' },
-  backgroundTaskMeta: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 8, lineHeight: 10, fontWeight: '700' },
   calibrationContextRail: {
     flexDirection: 'row',
     alignItems: 'stretch',

@@ -283,7 +283,7 @@ describe('TodayScreen', () => {
   it('keeps background review copy scannable and user-facing', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台验证')).toBeTruthy();
+    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
     expect(getByText(/下次看 ·/)).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(queryByText('正在观察')).toBeNull();
@@ -296,12 +296,12 @@ describe('TodayScreen', () => {
   it('frames background work as a verification queue instead of another agent headline', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台验证')).toBeTruthy();
-    expect(getByText('个体画像 · 5类数据合并')).toBeTruthy();
+    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
     expect(getByLabelText('后台持续合并基因、表观遗传、医疗检查、穿戴和 GPS 数据')).toBeTruthy();
     expect(getByText('要改善的结果')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(queryByText('影响结果')).toBeNull();
+    expect(queryByText('个体画像 · 5类数据合并')).toBeNull();
     expect(queryByText('长期画像 · 基因 表观 体检 穿戴 GPS')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('穿戴 · GPS · 体检')).toBeNull();
@@ -763,7 +763,7 @@ describe('TodayScreen', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('健康指标')).toBeNull();
-    expect(getByText('后台验证')).toBeTruthy();
+    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
     expect(queryByText('运行中')).toBeNull();
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
@@ -792,7 +792,7 @@ describe('TodayScreen', () => {
     expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
     expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
     expect(getByText(/下次看/)).toBeTruthy();
-    expect(getByText('后台验证')).toBeTruthy();
+    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('环境证据')).toBeNull();
@@ -817,7 +817,7 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(screen.getByText('后台验证')).toBeTruthy();
+    expect(screen.getByText('后台验证 · 个体画像')).toBeTruthy();
     expect(screen.getByText('要改善的结果')).toBeTruthy();
     expect(screen.queryByText('指标反馈')).toBeNull();
     expect(screen.queryByText('正在观察')).toBeNull();
@@ -827,7 +827,7 @@ describe('TodayScreen', () => {
     expect(screen.queryByText('后台校准')).toBeNull();
     expect(screen.queryByText('实时校准')).toBeNull();
     expect(screen.queryByText('证据链')).toBeNull();
-    expect(textFlow.indexOf('后台验证')).toBeLessThan(textFlow.indexOf('要改善的结果'));
+    expect(textFlow.indexOf('后台验证 · 个体画像')).toBeLessThan(textFlow.indexOf('要改善的结果'));
     expect(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text))).toBeLessThan(
       textFlow.indexOf('要改善的结果'),
     );
@@ -864,7 +864,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
-    expect(textFlow.indexOf('后台验证')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台验证 · 个体画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台观察')).toBe(-1);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /看结果/.test(text));
@@ -883,7 +883,7 @@ describe('TodayScreen', () => {
     const { getByTestId, getByText, queryByText } = render(<TodayScreen />);
     const panelStyle = StyleSheet.flatten(getByTestId('home-background-runtime').props.style);
 
-    expect(getByText('后台验证')).toBeTruthy();
+    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(panelStyle.backgroundColor).toBe('transparent');
