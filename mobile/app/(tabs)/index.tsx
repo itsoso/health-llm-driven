@@ -754,19 +754,27 @@ function HomeBodyFeedbackPanel({
   const { c } = useTheme();
   const visibleMetrics = metrics.slice(0, 4);
   if (visibleMetrics.length === 0) return null;
-  const boardMetrics = visibleMetrics.slice(0, 3);
+  const stripMetrics = visibleMetrics.slice(0, 3);
 
   return (
-    <View style={styles.bodyFeedbackBoard}>
-      <View style={[styles.bodyMetricRail, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
-        {boardMetrics.map(metric => {
+    <View
+      testID="home-runtime-feedback-strip"
+      style={[styles.runtimeFeedbackStrip, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}
+    >
+      <View style={[styles.runtimeFeedbackIcon, { backgroundColor: c.bgCard }]}>
+        <Ionicons name="analytics-outline" size={12} color={c.brand} />
+      </View>
+      <View style={styles.runtimeFeedbackTextBlock}>
+        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>实时反馈</HomeText>
+        <View style={styles.runtimeFeedbackChipRow}>
+          {stripMetrics.map(metric => {
           const color = c[metric.colorName];
           return (
             <Pressable
               key={metric.key}
               onPress={() => onOpenMetric(metric.route)}
               style={({ pressed }) => [
-                styles.bodyMetricTile,
+                styles.runtimeFeedbackChip,
                 {
                   backgroundColor: 'transparent',
                   borderColor: 'transparent',
@@ -776,14 +784,13 @@ function HomeBodyFeedbackPanel({
               accessibilityRole="button"
               accessibilityLabel={`${metric.label} ${metric.value}`}
             >
-              <View style={[styles.bodyMetricIconBadge, { backgroundColor: c[metric.tintName] }]}>
-                <Ionicons name={metric.icon} size={13} color={color} />
-              </View>
-              <HomeText style={[styles.bodyMetricLabel, { color: c.labelSecondary }]} numberOfLines={1}>{metric.label}</HomeText>
-              <HomeText style={[styles.bodyMetricValue, { color: c.labelPrimary }]} numberOfLines={1}>{metric.value}</HomeText>
+              <View style={[styles.runtimeFeedbackDot, { backgroundColor: color }]} />
+              <HomeText style={[styles.runtimeFeedbackLabel, { color: c.labelSecondary }]} numberOfLines={1}>{metric.label}</HomeText>
+              <HomeText style={[styles.runtimeFeedbackValue, { color: c.labelPrimary }]} numberOfLines={1}>{metric.value}</HomeText>
             </Pressable>
           );
         })}
+        </View>
       </View>
     </View>
   );
@@ -2264,45 +2271,36 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
-  bodyFeedbackBoard: { gap: 7 },
-  bodyFeedbackHeader: {
-    minHeight: 22,
+  runtimeFeedbackStrip: {
+    minHeight: 36,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 2,
   },
-  bodyFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 1 },
-  bodyFeedbackTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  bodyFeedbackSubtitle: { fontSize: 8, lineHeight: 10, fontWeight: '700' },
-  bodyFeedbackRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  bodyMetricRail: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    overflow: 'hidden',
-  },
-  bodyMetricTile: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 54,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    justifyContent: 'center',
-    gap: 3,
-  },
-  bodyMetricIconBadge: {
+  runtimeFeedbackIcon: {
     width: 22,
     height: 22,
-    borderRadius: 8,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bodyMetricLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  bodyMetricValue: { fontSize: 11, lineHeight: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  runtimeFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 4 },
+  runtimeFeedbackTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  runtimeFeedbackChipRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  runtimeFeedbackChip: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  runtimeFeedbackDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
+  runtimeFeedbackLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  runtimeFeedbackValue: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,

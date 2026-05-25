@@ -509,6 +509,13 @@ describe('TodayScreen', () => {
     expect(queryByText('后台巡检')).toBeNull();
   });
 
+  it('keeps live feedback as a compact runtime strip instead of a dashboard grid', () => {
+    const { getByTestId, queryByTestId } = render(<TodayScreen />);
+
+    expect(getByTestId('home-runtime-feedback-strip')).toBeTruthy();
+    expect(queryByTestId('home-body-feedback-board')).toBeNull();
+  });
+
   it('keeps background diagnosis, feedback, environment, and archives in one operations panel', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
