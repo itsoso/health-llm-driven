@@ -517,6 +517,7 @@ function HomeCommandHeader({
       : '保持记录节奏';
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
+  const experimentLabel = buildActionExperimentLabel(action);
   const agentJudgmentText = buildAgentJudgmentText({
     action,
     criticalCount,
@@ -527,6 +528,8 @@ function HomeCommandHeader({
   });
   const runtimeTargetSummary = buildVerificationGoalText(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
+  const decisionSurfaceColor = 'transparent';
+  const decisionIconColor = criticalCount > 0 ? c.tintRed : c.brandLight;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const diagnosisBasisText = buildDiagnosisBasisText(personalSignalChips, geneticHits);
   const canComplete = Boolean(action?.action_key);
@@ -559,14 +562,18 @@ function HomeCommandHeader({
       <Pressable
         style={({ pressed }) => [
           styles.commandDecisionCard,
-          { backgroundColor: 'transparent', borderColor: 'transparent', opacity: pressed ? 0.78 : 1 },
+          { backgroundColor: decisionSurfaceColor, borderColor: 'transparent', opacity: pressed ? 0.78 : 1 },
         ]}
         onPress={onOpenFocus}
         accessibilityRole="button"
         accessibilityLabel="打开今日重点"
       >
-        <View style={styles.commandDecisionIndicator}>
-          <View style={[styles.commandDecisionRail, { backgroundColor: decisionColor }]} />
+        <View style={[styles.commandDecisionIcon, { backgroundColor: decisionIconColor }]}>
+          <Ionicons
+            name={criticalCount > 0 ? 'warning-outline' : 'pulse-outline'}
+            size={15}
+            color={decisionColor}
+          />
         </View>
         <View style={styles.commandDecisionText}>
           <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>Agent 判断</HomeText>
@@ -604,7 +611,7 @@ function HomeCommandHeader({
             <Ionicons name="flask-outline" size={13} color={c.brand} />
           </View>
           <View style={styles.commandExperimentTextBlock}>
-            <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>今日实验</HomeText>
+            <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>{experimentLabel}</HomeText>
             <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
               {nextStepActionText}
             </HomeText>
@@ -689,9 +696,9 @@ function HomeBackgroundPanel({
       <View style={styles.backgroundTaskHeader}>
         <View style={styles.backgroundTaskTitleLine}>
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台任务</HomeText>
+          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台校准</HomeText>
         </View>
-        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>实时校准 / 长期复盘</HomeText>
+        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>穿戴 / GPS / 体检</HomeText>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
@@ -777,10 +784,10 @@ function buildRuntimeEvidenceSummary(shortcuts: {
     .filter(item => item.label === '运动' || item.label === '饮食')
     .map(item => item.label)
     .join('/');
-  const geneticSummary = genetic?.value && genetic.value !== '—' ? `基因 ${genetic.value} 个命中` : '基因待同步';
-  const progressSummary = progress?.value && progress.value !== '—' ? `进展 ${progress.value} 项改善` : '进展待校准';
+  const geneticSummary = genetic?.value && genetic.value !== '—' ? `基因 ${genetic.value}` : '基因待同步';
+  const progressSummary = progress?.value && progress.value !== '—' ? `进展 ${progress.value}` : '进展待校准';
   const protocolSummary = protocols ? `${protocols}方案` : '生活方式方案';
-  return `环境 GPS/天气 · ${geneticSummary} · ${progressSummary} · ${protocolSummary}`;
+  return `GPS/天气 · ${geneticSummary} · ${progressSummary} · ${protocolSummary}`;
 }
 
 function AgentFollowUpQueue({
@@ -1182,6 +1189,19 @@ function buildHomeNextStepLabel({
   return '下一步：补齐今天记录，Agent 再排干预';
 }
 
+function buildActionExperimentLabel(action?: DailyPlanAction | null): string {
+  if (!action) return '今日实验';
+  if (isBodyMeasurementAction(action) || action.domain === 'measurement') return '记录实验';
+
+  const domain = classifyInterventionDomain(action);
+  if (domain === 'diet') return '饮食实验';
+  if (domain === 'sleep') return '睡眠实验';
+  if (domain === 'movement') return '运动实验';
+  if (domain === 'supplement') return '补剂实验';
+  if (domain === 'emotion') return '情绪实验';
+  return '今日实验';
+}
+
 function buildPersonalSignalChips(
   twinSnapshot: TwinSnapshot,
   contextText: string,
@@ -1236,10 +1256,10 @@ function buildDiagnosisBasisText(
   geneticHits?: number | null,
 ): string {
   const wearable = signals.length > 0
-    ? `穿戴 ${signals.map(signal => `${signal.label} ${signal.value}`).join(' · ')}`
+    ? signals.map(signal => `${signal.label} ${signal.value}`).join(' · ')
     : '穿戴待同步';
   const genetics = geneticHits != null ? `基因 ${geneticHits}` : '基因待同步';
-  return `依据 · ${wearable} · ${genetics} · 检查/环境 GPS`;
+  return `依据 · ${wearable} · ${genetics} · GPS/检查`;
 }
 
 function buildOutcomeFeedbackMetric(
@@ -1686,11 +1706,18 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 0,
-    paddingVertical: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
     flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 6,
+    alignItems: 'center',
+    gap: 8,
+  },
+  commandDecisionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   commandDecisionIndicator: {
     width: 6,
@@ -1699,7 +1726,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   commandDecisionRail: { width: 2, flex: 1, minHeight: 30, borderRadius: 2 },
-  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 3 },
+  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
   commandDecisionSupport: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandSignalChipRail: {
     minHeight: 22,
@@ -1719,7 +1746,7 @@ const styles = StyleSheet.create({
   },
   commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '700' },
   commandValidationLine: {
     minHeight: 18,
     flexDirection: 'row',
@@ -1758,7 +1785,7 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 14, fontWeight: '800', lineHeight: 18, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 13, fontWeight: '800', lineHeight: 17, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 24,
     flexDirection: 'row',
@@ -2001,7 +2028,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 58,
+    minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -2050,17 +2077,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   followUpRowIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 9,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
-  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 15, fontWeight: '800' },
+  followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   followUpTaskLabel: { flexShrink: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  followUpRowDetail: { fontSize: 10, lineHeight: 13, fontWeight: '600' },
+  followUpRowDetail: { fontSize: 9, lineHeight: 12, fontWeight: '600' },
   followUpReviewLine: {
     minHeight: 14,
     flexDirection: 'row',
@@ -2125,7 +2152,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    gap: 6,
+    gap: 7,
   },
   backgroundTaskHeader: {
     minHeight: 18,

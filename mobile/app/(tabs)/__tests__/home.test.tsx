@@ -204,7 +204,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/依据 · 穿戴 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*环境 GPS/)).toBeTruthy();
+    expect(getByText(/依据 · 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*GPS\/检查/)).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
   });
 
@@ -229,9 +229,22 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('今日实验')).toBeTruthy();
+    expect(getByText('记录实验')).toBeTruthy();
     expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+    expect(queryByText('今日实验')).toBeNull();
     expect(queryByText('下一步')).toBeNull();
+  });
+
+  it('names the active lifestyle intervention experiment by strategy domain', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+    ];
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('饮食实验')).toBeTruthy();
+    expect(getByText('提高早餐蛋白')).toBeTruthy();
+    expect(queryByText('今日实验')).toBeNull();
   });
 
   it('groups the home feed into agent diagnosis, action, health outcomes, evidence, and follow-up sections', () => {
@@ -263,7 +276,7 @@ describe('TodayScreen', () => {
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
     expect(queryByText(/已接入/)).toBeNull();
-    expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
+    expect(getByText(/证据链 · GPS\/天气/)).toBeTruthy();
     expect(queryByText(/源画像/)).toBeNull();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
@@ -290,7 +303,7 @@ describe('TodayScreen', () => {
     expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
     expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
-    expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
+    expect(getByText(/证据链 · GPS\/天气/)).toBeTruthy();
     expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
   });
@@ -343,7 +356,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('依据 · 穿戴 血氧 93% · 睡眠分 89 · HRV 62ms · 基因待同步 · 检查/环境 GPS')).toBeTruthy();
+    expect(getByText('依据 · 血氧 93% · 睡眠分 89 · HRV 62ms · 基因待同步 · GPS/检查')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
     expect(queryByText('93%')).toBeNull();
     expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
@@ -367,7 +380,8 @@ describe('TodayScreen', () => {
     expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText(/BMI\/体脂.*睡眠分 90\+/)).toBeTruthy();
     expect(queryByText(/饮食\/睡眠/)).toBeNull();
-    expect(getByText('今日实验')).toBeTruthy();
+    expect(getByText('饮食实验')).toBeTruthy();
+    expect(queryByText('今日实验')).toBeNull();
     expect(queryByText('干预闭环')).toBeNull();
     expect(queryByText(/观察目标 ·/)).toBeNull();
   });
@@ -547,7 +561,7 @@ describe('TodayScreen', () => {
     expect(queryByText('验证指标')).toBeNull();
     expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText('证据链')).toBeTruthy();
-    expect(getByText(/环境 .* · 基因/)).toBeTruthy();
+    expect(getByText(/GPS\/天气 · 基因/)).toBeTruthy();
     expect(getByText(/下次复盘/)).toBeTruthy();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('环境证据')).toBeNull();
@@ -567,11 +581,11 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(screen.getByText('后台任务')).toBeTruthy();
+    expect(screen.getByText('后台校准')).toBeTruthy();
     expect(screen.getByText('实时校准')).toBeTruthy();
     expect(screen.getByText('长期复盘')).toBeTruthy();
     expect(screen.queryByText('实时反馈')).toBeNull();
-    expect(textFlow.indexOf('后台任务')).toBeLessThan(textFlow.indexOf('实时校准'));
+    expect(textFlow.indexOf('后台校准')).toBeLessThan(textFlow.indexOf('实时校准'));
     expect(textFlow.indexOf('实时校准')).toBeLessThan(textFlow.indexOf('长期复盘'));
     expect(textFlow.indexOf('长期复盘')).toBeLessThan(textFlow.indexOf('证据链'));
   });
@@ -591,7 +605,7 @@ describe('TodayScreen', () => {
 
     expect(getByTestId('home-runtime-task-strip')).toBeTruthy();
     expect(queryByTestId('home-runtime-evidence-strip')).toBeNull();
-    expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
+    expect(getByText(/证据链 · GPS\/天气/)).toBeTruthy();
     expect(getByText(/下次复盘/)).toBeTruthy();
   });
 
