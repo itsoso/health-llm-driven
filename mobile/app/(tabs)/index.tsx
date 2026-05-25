@@ -696,7 +696,7 @@ function HomeBackgroundPanel({
       <View style={styles.backgroundTaskHeader}>
         <View style={styles.backgroundTaskTitleLine}>
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台校准</HomeText>
+          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>Agent 后台运行</HomeText>
         </View>
         <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>穿戴 / GPS / 体检</HomeText>
       </View>
@@ -739,7 +739,7 @@ function HomeBodyFeedbackPanel({
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
-        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>实时校准</HomeText>
+        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>实时反馈</HomeText>
         <View style={styles.runtimeFeedbackChipRow}>
           {stripMetrics.map(metric => {
           const color = c[metric.colorName];
@@ -915,7 +915,7 @@ function AgentFollowUpQueue({
         >
           <Ionicons name="git-network-outline" size={10} color={c.brand} />
           <HomeText style={[styles.followUpEvidenceText, { color: c.labelTertiary }]} numberOfLines={1}>
-            <HomeText style={[styles.followUpEvidenceLabel, { color: c.labelSecondary }]}>证据链</HomeText>
+            <HomeText style={[styles.followUpEvidenceLabel, { color: c.labelSecondary }]}>证据来源</HomeText>
             {` · ${evidenceSummary}`}
           </HomeText>
         </Pressable>
@@ -926,7 +926,9 @@ function AgentFollowUpQueue({
           </HomeText>
         </View>
       </Pressable>
-      <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</HomeText>
+      <View style={[styles.followUpRowRightPill, { backgroundColor: queueTint }]}>
+        <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</HomeText>
+      </View>
     </View>
   );
 }
@@ -2105,7 +2107,14 @@ const styles = StyleSheet.create({
   },
   followUpEvidenceText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
   followUpEvidenceLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  followUpRowRightPill: {
+    minHeight: 20,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followUpRowRight: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   evidenceChain: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
