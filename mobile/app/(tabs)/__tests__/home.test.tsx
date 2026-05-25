@@ -575,6 +575,22 @@ describe('TodayScreen', () => {
     expect(queryByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeNull();
   });
 
+  it('connects record actions to the body outcome they update', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByLabelText, queryByLabelText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('现在只做 · 记录')).toBeTruthy();
+    expect(getByLabelText('BMI/体脂 记录后更新')).toBeTruthy();
+    expect(queryByLabelText('BMI/体脂 待记录')).toBeNull();
+  });
+
   it('describes multiple intervention domains in user language instead of plus-count shorthand', () => {
     mockDailyPlanActions = [
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },

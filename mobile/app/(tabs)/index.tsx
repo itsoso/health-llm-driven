@@ -293,7 +293,9 @@ export default function TodayScreen() {
   const interventionDomains = buildInterventionDomainStatuses(dailyPlanQuery.data?.actions ?? []);
   const topLoopMetrics = buildLoopFeedbackMetrics(twinSnap, nextAction, criticalAlerts[0]?.title);
   const topLoopMetricKeys = new Set(topLoopMetrics.map(metric => metric.key));
-  const feedbackMetrics = buildHomeBodyFeedbackMetrics(twinSnap, topLoopMetricKeys);
+  const feedbackExcludedKeys = new Set(topLoopMetricKeys);
+  if (isBodyMeasurementAction(nextAction)) feedbackExcludedKeys.delete('body_shape');
+  const feedbackMetrics = buildHomeBodyFeedbackMetrics(twinSnap, feedbackExcludedKeys, nextAction);
 
   const openPlanAction = useCallback((action: DailyPlanAction) => {
     if (action.source_card_id) {
@@ -731,28 +733,30 @@ function HomeBodyFeedbackPanel({
         <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>结果追踪</HomeText>
         <View style={styles.runtimeFeedbackChipRow}>
           {stripMetrics.map(metric => {
-          const color = c[metric.colorName];
-          return (
-            <Pressable
-              key={metric.key}
-              onPress={() => onOpenMetric(metric.route)}
-              style={({ pressed }) => [
-                styles.runtimeFeedbackChip,
-                {
-                  backgroundColor: 'transparent',
-                  borderColor: 'transparent',
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${metric.label} ${metric.value}`}
-            >
-              <View style={[styles.runtimeFeedbackDot, { backgroundColor: color }]} />
-              <HomeText style={[styles.runtimeFeedbackLabel, { color: c.labelSecondary }]} numberOfLines={1}>{metric.label}</HomeText>
-              <HomeText style={[styles.runtimeFeedbackValue, { color: c.labelPrimary }]} numberOfLines={1}>{metric.value}</HomeText>
-            </Pressable>
-          );
-        })}
+            const color = c[metric.colorName];
+            const isLinkedActionTarget = metric.key === 'body_shape' && metric.value === '记录后更新';
+            return (
+              <Pressable
+                key={metric.key}
+                onPress={() => onOpenMetric(metric.route)}
+                style={({ pressed }) => [
+                  styles.runtimeFeedbackChip,
+                  isLinkedActionTarget && styles.runtimeFeedbackChipActive,
+                  {
+                    backgroundColor: isLinkedActionTarget ? c.brandLight : 'transparent',
+                    borderColor: isLinkedActionTarget ? c.brand : 'transparent',
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${metric.label} ${metric.value}`}
+              >
+                <View style={[styles.runtimeFeedbackDot, { backgroundColor: color }]} />
+                <HomeText style={[styles.runtimeFeedbackLabel, { color: isLinkedActionTarget ? c.brand : c.labelSecondary }]} numberOfLines={1}>{metric.label}</HomeText>
+                <HomeText style={[styles.runtimeFeedbackValue, { color: isLinkedActionTarget ? c.brand : c.labelPrimary }]} numberOfLines={1}>{metric.value}</HomeText>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
     </View>
@@ -871,8 +875,8 @@ function AgentFollowUpQueue({
   );
 }
 
-function isBodyMeasurementAction(action: DailyPlanAction): boolean {
-  if (action.domain !== 'measurement') return false;
+function isBodyMeasurementAction(action?: DailyPlanAction | null): boolean {
+  if (action?.domain !== 'measurement') return false;
   const haystack = `${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
   return /体重|腰围|weight|waist|bmi/.test(haystack);
 }
@@ -1056,10 +1060,12 @@ function getVerificationTarget(metric: OutcomeFeedbackMetric): string {
 function buildHomeBodyFeedbackMetrics(
   twinSnapshot: TwinSnapshot,
   excludedKeys: Set<string>,
+  action?: DailyPlanAction | null,
 ): OutcomeFeedbackMetric[] {
+  const bodyShapePendingLabel = isBodyMeasurementAction(action) ? '记录后更新' : undefined;
   return ['body_shape', 'blood_pressure', 'vo2max', 'labs', 'precision']
     .filter(key => !excludedKeys.has(key))
-    .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot))
+    .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot, { bodyShapePendingLabel }))
     .filter(Boolean)
     .slice(0, 4) as OutcomeFeedbackMetric[];
 }
@@ -1211,6 +1217,9 @@ function formatBasisSignal(signal: PersonalSignalChip): string {
 function buildOutcomeFeedbackMetric(
   key: string,
   twinSnapshot: TwinSnapshot,
+  options?: {
+    bodyShapePendingLabel?: string;
+  },
 ): OutcomeFeedbackMetric | null {
   if (key === 'sleep_score') {
     return {
@@ -1257,7 +1266,7 @@ function buildOutcomeFeedbackMetric(
         ? `${fmt(bmi)} BMI`
         : bodyFat != null
           ? `${fmt(bodyFat)}%`
-          : '待记录';
+          : options?.bodyShapePendingLabel ?? '待记录';
     return {
       key,
       label: 'BMI/体脂',
@@ -2242,9 +2251,16 @@ const styles = StyleSheet.create({
   runtimeFeedbackChip: {
     flex: 1,
     minWidth: 0,
+    minHeight: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.full,
+    paddingHorizontal: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
+  },
+  runtimeFeedbackChipActive: {
+    paddingHorizontal: 6,
   },
   runtimeFeedbackDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
   runtimeFeedbackLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
