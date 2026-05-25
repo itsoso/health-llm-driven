@@ -532,6 +532,29 @@ describe('TodayScreen', () => {
     expect(screen.getAllByText(/看结果/).length).toBeGreaterThan(0);
   });
 
+  it('surfaces lifestyle strategy coverage without adding another task panel', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
+      { action_key: 'movement.zone2', domain: 'movement', title: 'Zone 2 快走' },
+      { action_key: 'supplement.magnesium', domain: 'supplement', title: '睡前镁' },
+      { action_key: 'emotion.breathing', domain: 'emotion', title: '睡前呼吸 5 分钟' },
+    ];
+
+    const screen = render(<TodayScreen />);
+    const textFlow = flattenText(screen.toJSON());
+
+    expect(screen.getByTestId('home-strategy-coverage-rail')).toBeTruthy();
+    expect(screen.getByText('策略覆盖')).toBeTruthy();
+    expect(screen.getByText('饮食')).toBeTruthy();
+    expect(screen.getByText('睡眠')).toBeTruthy();
+    expect(screen.getByText('运动')).toBeTruthy();
+    expect(screen.getByText('补剂')).toBeTruthy();
+    expect(screen.getByText('情绪')).toBeTruthy();
+    expect(screen.queryByText('干预策略')).toBeNull();
+    expect(textFlow.indexOf('策略覆盖')).toBeLessThan(textFlow.indexOf('现在只做 · 饮食'));
+  });
+
   it('describes multiple intervention domains in user language instead of plus-count shorthand', () => {
     mockDailyPlanActions = [
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },

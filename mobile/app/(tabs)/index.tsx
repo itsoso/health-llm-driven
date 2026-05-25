@@ -407,6 +407,7 @@ export default function TodayScreen() {
           riskTitle={criticalAlerts[0]?.title}
           twinSnapshot={twinSnap}
           geneticHits={geneticStatsQuery.data?.hits}
+          interventionDomains={interventionDomains}
           action={nextAction}
           completionState={visibleNextActionState}
           onOpenFocus={() => (
@@ -448,6 +449,7 @@ function HomeCommandHeader({
   riskTitle,
   twinSnapshot,
   geneticHits,
+  interventionDomains,
   action,
   completionState,
   onOpenFocus,
@@ -460,6 +462,7 @@ function HomeCommandHeader({
   riskTitle?: string;
   twinSnapshot: TwinSnapshot;
   geneticHits?: number | null;
+  interventionDomains: InterventionDomainStatus[];
   action?: DailyPlanAction | null;
   completionState: NextActionCompletionState;
   onOpenFocus: () => void;
@@ -560,6 +563,8 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
+      <HomeStrategyCoverageRail domains={interventionDomains} />
+
       <View style={styles.commandInlineActionRow}>
         <Pressable
           onPress={onOpenFocus}
@@ -619,6 +624,44 @@ function HomeCommandHeader({
         </View>
       ) : null}
 
+    </View>
+  );
+}
+
+function HomeStrategyCoverageRail({
+  domains,
+}: {
+  domains: InterventionDomainStatus[];
+}) {
+  const { c } = useTheme();
+  return (
+    <View testID="home-strategy-coverage-rail" style={styles.commandStrategyCoverageRail}>
+      <HomeText style={[styles.commandStrategyCoverageLabel, { color: c.labelTertiary }]}>策略覆盖</HomeText>
+      <View style={styles.commandStrategyCoverageChips}>
+        {domains.map(domain => {
+          const active = domain.activeCount > 0;
+          return (
+            <View
+              key={domain.key}
+              style={[
+                styles.commandStrategyCoverageChip,
+                { backgroundColor: active ? c[domain.tintName] : c.fill },
+              ]}
+              accessibilityLabel={`${domain.label}${active ? ` ${domain.activeCount} 个干预` : ' 待观察'}`}
+            >
+              <View style={[styles.commandStrategyCoverageDot, { backgroundColor: active ? c[domain.colorName] : c.labelTertiary }]} />
+              <HomeText
+                style={[
+                  styles.commandStrategyCoverageText,
+                  { color: active ? c[domain.colorName] : c.labelTertiary },
+                ]}
+              >
+                {domain.label}
+              </HomeText>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -1539,6 +1582,38 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  commandStrategyCoverageRail: {
+    minHeight: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  commandStrategyCoverageLabel: {
+    flexShrink: 0,
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: '800',
+  },
+  commandStrategyCoverageChips: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  commandStrategyCoverageChip: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 22,
+    borderRadius: radii.full,
+    paddingHorizontal: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  commandStrategyCoverageDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
+  commandStrategyCoverageText: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandInlineDoneButton: {
     minHeight: 32,
     borderRadius: radii.full,
