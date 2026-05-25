@@ -1034,9 +1034,9 @@ describe('TodayScreen', () => {
     });
     mockDailyPlanActions = [
       {
-        action_key: 'measurement.weight_waist_morning',
-        domain: 'measurement',
-        title: '晨起记录体重和腰围',
+        action_key: 'movement.walk_20',
+        domain: 'movement',
+        title: '步行 20 分钟',
       },
     ];
 
@@ -1046,19 +1046,36 @@ describe('TodayScreen', () => {
 
     await waitFor(() => {
       expect(mockRecordDailyPlanActionEvent).toHaveBeenCalledWith(
-        'measurement.weight_waist_morning',
+        'movement.walk_20',
         { event_type: 'completed', payload: { source: 'next_best_action' } },
       );
     });
+  });
+
+  it('opens record tasks without a separate complete button', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('现在只做 · 记录')).toBeTruthy();
+    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+    expect(queryByText('完成')).toBeNull();
+    expect(queryByLabelText('完成当前行动')).toBeNull();
   });
 
   it('shows an inline failure when completing the next action fails', async () => {
     mockRecordDailyPlanActionEvent.mockRejectedValueOnce(new Error('network'));
     mockDailyPlanActions = [
       {
-        action_key: 'measurement.weight_waist_morning',
-        domain: 'measurement',
-        title: '晨起记录体重和腰围',
+        action_key: 'movement.walk_20',
+        domain: 'movement',
+        title: '步行 20 分钟',
       },
     ];
 
@@ -1078,9 +1095,9 @@ describe('TodayScreen', () => {
     });
     mockDailyPlanActions = [
       {
-        action_key: 'measurement.weight_waist_morning',
-        domain: 'measurement',
-        title: '晨起记录体重和腰围',
+        action_key: 'movement.walk_20',
+        domain: 'movement',
+        title: '步行 20 分钟',
       },
     ];
 

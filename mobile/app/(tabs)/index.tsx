@@ -498,7 +498,8 @@ function HomeCommandHeader({
   const decisionIconColor = criticalCount > 0 ? c.tintRed : c.brandLight;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const diagnosisBasisText = buildDiagnosisBasisText(personalSignalChips, geneticHits);
-  const canComplete = Boolean(action?.action_key);
+  const isRecordAction = action?.domain === 'measurement';
+  const canComplete = Boolean(action?.action_key) && !isRecordAction;
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.commandAgentHeader}>
