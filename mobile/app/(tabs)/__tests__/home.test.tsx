@@ -644,10 +644,11 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getByLabelText, queryByLabelText, getByText } = render(<TodayScreen />);
+    const { getByLabelText, queryByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('现在只做 · 记录')).toBeTruthy();
-    expect(getByLabelText('BMI/体脂 记录后更新')).toBeTruthy();
+    expect(getByLabelText('要改善的结果：BMI/体脂 记录后更新、血压 待记录、血液/生化 待复盘')).toBeTruthy();
+    expect(queryByText('记录后更新')).toBeNull();
     expect(queryByLabelText('BMI/体脂 待记录')).toBeNull();
   });
 
@@ -789,9 +790,13 @@ describe('TodayScreen', () => {
   });
 
   it('keeps live feedback as a compact runtime strip instead of a dashboard grid', () => {
-    const { getByTestId, queryByTestId } = render(<TodayScreen />);
+    const { getByLabelText, getByTestId, getByText, queryByTestId, queryByText } = render(<TodayScreen />);
 
     expect(getByTestId('home-runtime-feedback-strip')).toBeTruthy();
+    expect(getByText('3项结果持续验证')).toBeTruthy();
+    expect(getByLabelText('要改善的结果：BMI/体脂 待记录、血压 待记录、VO2max 待估算')).toBeTruthy();
+    expect(queryByText('待记录')).toBeNull();
+    expect(queryByText('待估算')).toBeNull();
     expect(queryByTestId('home-body-feedback-board')).toBeNull();
   });
 
@@ -993,7 +998,7 @@ describe('TodayScreen', () => {
 
     const { getByLabelText } = render(<TodayScreen />);
 
-    fireEvent.press(getByLabelText('BMI/体脂 待记录'));
+    fireEvent.press(getByLabelText('要改善的结果：BMI/体脂 待记录、血压 待记录、VO2max 待估算'));
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
 

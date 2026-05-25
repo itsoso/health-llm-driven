@@ -99,6 +99,12 @@ interface VerificationGoalCopy {
   accessibilityLabel: string;
 }
 
+interface OutcomeFeedbackSummary {
+  summary: string;
+  accessibilityLabel: string;
+  route: string;
+}
+
 interface PersonalSignalChip {
   label: string;
   value: string;
@@ -746,6 +752,7 @@ function HomeBodyFeedbackPanel({
   const visibleMetrics = metrics.slice(0, 4);
   if (visibleMetrics.length === 0) return null;
   const stripMetrics = visibleMetrics.slice(0, 3);
+  const feedbackSummary = buildOutcomeFeedbackSummary(stripMetrics);
 
   return (
     <View
@@ -757,33 +764,21 @@ function HomeBodyFeedbackPanel({
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
         <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>要改善的结果</HomeText>
-        <View style={styles.runtimeFeedbackChipRow}>
-          {stripMetrics.map(metric => {
-            const color = c[metric.colorName];
-            const isLinkedActionTarget = metric.key === 'body_shape' && metric.value === '记录后更新';
-            return (
-              <Pressable
-                key={metric.key}
-                onPress={() => onOpenMetric(metric.route)}
-                style={({ pressed }) => [
-                  styles.runtimeFeedbackChip,
-                  isLinkedActionTarget && styles.runtimeFeedbackChipActive,
-                  {
-                    backgroundColor: isLinkedActionTarget ? c.brandLight : 'transparent',
-                    borderColor: isLinkedActionTarget ? c.brand : 'transparent',
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`${metric.label} ${metric.value}`}
-              >
-                <View style={[styles.runtimeFeedbackDot, { backgroundColor: color }]} />
-                <HomeText style={[styles.runtimeFeedbackLabel, { color: isLinkedActionTarget ? c.brand : c.labelSecondary }]} numberOfLines={1}>{metric.label}</HomeText>
-                <HomeText style={[styles.runtimeFeedbackValue, { color: isLinkedActionTarget ? c.brand : c.labelPrimary }]} numberOfLines={1}>{metric.value}</HomeText>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Pressable
+          onPress={() => onOpenMetric(feedbackSummary.route)}
+          style={({ pressed }) => [
+            styles.runtimeFeedbackSummary,
+            { backgroundColor: c.brandLight, borderColor: c.brand, opacity: pressed ? 0.72 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={feedbackSummary.accessibilityLabel}
+        >
+          <View style={[styles.runtimeFeedbackDot, { backgroundColor: c.brand }]} />
+          <HomeText style={[styles.runtimeFeedbackSummaryText, { color: c.brand }]} numberOfLines={1}>
+            {feedbackSummary.summary}
+          </HomeText>
+          <Ionicons name="chevron-forward" size={11} color={c.brand} />
+        </Pressable>
       </View>
     </View>
   );
@@ -1106,6 +1101,14 @@ function buildHomeBodyFeedbackMetrics(
     .map(key => buildOutcomeFeedbackMetric(key, twinSnapshot, { bodyShapePendingLabel }))
     .filter(Boolean)
     .slice(0, 4) as OutcomeFeedbackMetric[];
+}
+
+function buildOutcomeFeedbackSummary(metrics: OutcomeFeedbackMetric[]): OutcomeFeedbackSummary {
+  return {
+    summary: `${metrics.length}项结果持续验证`,
+    accessibilityLabel: `要改善的结果：${metrics.map(metric => `${metric.label} ${metric.value}`).join('、')}`,
+    route: metrics[0]?.route ?? '/body-measurements?focus=morning',
+  };
 }
 
 function buildImprovementFocus({
@@ -2285,24 +2288,19 @@ const styles = StyleSheet.create({
   },
   runtimeFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 3 },
   runtimeFeedbackTitle: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
-  runtimeFeedbackChipRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  runtimeFeedbackChip: {
-    flex: 1,
-    minWidth: 0,
+  runtimeFeedbackSummary: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
     minHeight: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.full,
-    paddingHorizontal: 0,
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
   },
-  runtimeFeedbackChipActive: {
-    paddingHorizontal: 6,
-  },
+  runtimeFeedbackSummaryText: { flexShrink: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '900' },
   runtimeFeedbackDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
-  runtimeFeedbackLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  runtimeFeedbackValue: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   emptyBlock: {
     borderWidth: 1,
     borderRadius: radii.md,
