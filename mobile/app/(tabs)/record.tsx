@@ -256,6 +256,7 @@ export default function RecordScreen() {
           <Text style={txt.moreTitle}>更多记录</Text>
           <View style={styles.moreRecordRow} testID="more-records">
             <MoreRecordBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
+            <MoreRecordBtn icon="git-branch-outline" label="基因" color={c.teal} onPress={() => router.push('/genetic-report' as any)} />
             <MoreRecordBtn icon="moon-outline" label="睡眠" color={c.purple} onPress={() => router.push('/sleep' as any)} />
             <MoreRecordBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
             <MoreRecordBtn icon="cloud-upload-outline" label="导入档案" color={c.purple} onPress={() => router.push('/import' as any)} />

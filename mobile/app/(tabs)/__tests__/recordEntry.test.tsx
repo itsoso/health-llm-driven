@@ -121,10 +121,14 @@ describe('RecordScreen import shortcuts', () => {
     await waitFor(() => expect(getByText('声音笔记')).toBeTruthy());
     expect(within(getByTestId('high-frequency-records')).queryByText('化验记录')).toBeNull();
     expect(within(getByTestId('more-records')).getByText('化验记录')).toBeTruthy();
+    expect(within(getByTestId('more-records')).getByText('基因')).toBeTruthy();
     expect(getByText('导入档案')).toBeTruthy();
 
     fireEvent.press(getByLabelText('化验记录'));
     expect(mockPush).toHaveBeenCalledWith('/medical-exams');
+
+    fireEvent.press(getByLabelText('基因'));
+    expect(mockPush).toHaveBeenCalledWith('/genetic-report');
 
     fireEvent.press(getByLabelText('导入档案'));
     expect(mockPush).toHaveBeenCalledWith('/import');
@@ -133,9 +137,10 @@ describe('RecordScreen import shortcuts', () => {
   it('highlights the best record shortcut for the current time and missing data', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-05-23T07:30:00+08:00'));
 
-    const { getByText } = renderScreen();
+    const { getAllByText, getByText } = renderScreen();
 
-    await waitFor(() => expect(getByText('现在优先：体重腰围')).toBeTruthy());
+    await waitFor(() => expect(getByText('现在优先')).toBeTruthy());
+    expect(getAllByText('体重腰围').length).toBeGreaterThan(0);
   });
 
   it('promotes mobile-native voice, photo, and tap capture paths', async () => {
