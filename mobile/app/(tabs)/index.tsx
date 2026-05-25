@@ -813,9 +813,6 @@ function AgentFollowUpQueue({
         accessibilityLabel={`${queueTitle}，${queueDetail}`}
       >
         <View style={styles.followUpRowTitleLine}>
-          <HomeText style={[styles.followUpTaskLabel, { color: queueColor }]} numberOfLines={1}>
-            正在观察
-          </HomeText>
           <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
             {queueTitle}
           </HomeText>
@@ -1979,7 +1976,6 @@ const styles = StyleSheet.create({
   followUpRowText: { flex: 1, minWidth: 0, gap: 1 },
   followUpRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
   followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  followUpTaskLabel: { flexShrink: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
   followUpRowDetail: { fontSize: 9, lineHeight: 12, fontWeight: '600' },
   followUpReviewLine: {
     minHeight: 14,

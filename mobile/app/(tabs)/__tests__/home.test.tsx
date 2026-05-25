@@ -244,8 +244,9 @@ describe('TodayScreen', () => {
   it('keeps background review copy scannable and user-facing', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('正在观察')).toBeTruthy();
+    expect(getByText('持续观察')).toBeTruthy();
     expect(getByText(/下次看 ·/)).toBeTruthy();
+    expect(queryByText('正在观察')).toBeNull();
     expect(queryByText('长期复盘')).toBeNull();
     expect(queryByText(/下次复盘 ·/)).toBeNull();
     expect(queryByText(/当前先完成上方行动/)).toBeNull();
@@ -642,13 +643,13 @@ describe('TodayScreen', () => {
 
     expect(screen.getByText('持续观察')).toBeTruthy();
     expect(screen.getByText('指标反馈')).toBeTruthy();
-    expect(screen.getByText('正在观察')).toBeTruthy();
+    expect(screen.queryByText('正在观察')).toBeNull();
     expect(screen.getByText(/依据 ·/)).toBeTruthy();
     expect(screen.queryByText('后台校准')).toBeNull();
     expect(screen.queryByText('实时校准')).toBeNull();
     expect(screen.queryByText('证据链')).toBeNull();
     expect(textFlow.indexOf('持续观察')).toBeLessThan(textFlow.indexOf('指标反馈'));
-    expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.indexOf('正在观察'));
+    expect(textFlow.indexOf('指标反馈')).toBeLessThan(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text)));
     expect(findEvidenceIndex(textFlow)).toBeLessThan(textFlow.indexOf('指标反馈'));
   });
 
