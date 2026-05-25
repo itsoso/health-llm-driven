@@ -233,6 +233,14 @@ describe('TodayScreen', () => {
     expect(queryByText(/看结果 · .* \/ /)).toBeNull();
   });
 
+  it('keeps only one visible running state on the first screen', () => {
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('后台监测中')).toBeTruthy();
+    expect(getByText(/看结果 ·/)).toBeTruthy();
+    expect(queryByText('运行中')).toBeNull();
+  });
+
   it('keeps background review copy scannable and user-facing', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
@@ -588,7 +596,7 @@ describe('TodayScreen', () => {
 
     expect(queryByText('健康指标')).toBeNull();
     expect(getByText('持续观察')).toBeTruthy();
-    expect(getByText('运行中')).toBeTruthy();
+    expect(queryByText('运行中')).toBeNull();
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
     expect(queryByText('Agent 观测中')).toBeNull();

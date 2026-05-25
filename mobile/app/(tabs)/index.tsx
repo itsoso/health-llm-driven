@@ -554,10 +554,6 @@ function HomeCommandHeader({
             <HomeText style={[styles.commandValidationText, { color: c.labelTertiary }]} numberOfLines={1}>
               {runtimeTargetSummary ? `看结果 · ${runtimeTargetSummary}` : '看结果 · 补齐记录后校准干预'}
             </HomeText>
-            <View style={[styles.commandRunningPill, { backgroundColor: c.brandLight }]}>
-              <View style={[styles.commandRunningDot, { backgroundColor: c.brand }]} />
-              <HomeText style={[styles.commandRunningText, { color: c.brand }]}>运行中</HomeText>
-            </View>
           </View>
         </View>
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
@@ -1661,16 +1657,6 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   commandValidationText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
-  commandRunningPill: {
-    minHeight: 18,
-    borderRadius: radii.full,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  commandRunningDot: { width: 5, height: 5, borderRadius: 2.5 },
-  commandRunningText: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandDecisionShell: { flexDirection: 'row', gap: 8, paddingVertical: 1 },
   commandDecisionAccentRail: { width: 3, height: 32, borderRadius: 2, marginTop: 4 },
   commandDecisionArea: { flex: 1, minWidth: 0, gap: 5 },
