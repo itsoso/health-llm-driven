@@ -267,8 +267,9 @@ describe('TodayScreen', () => {
   it('keeps background review copy scannable and user-facing', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('后台验证')).toBeTruthy();
     expect(getByText(/下次看 ·/)).toBeTruthy();
+    expect(queryByText('Agent 后台运行')).toBeNull();
     expect(queryByText('正在观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('长期复盘')).toBeNull();
@@ -276,12 +277,14 @@ describe('TodayScreen', () => {
     expect(queryByText(/当前先完成上方行动/)).toBeNull();
   });
 
-  it('frames background work as an agent runner instead of generic observation', () => {
+  it('frames background work as a verification queue instead of another agent headline', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('后台验证')).toBeTruthy();
     expect(getByText('长期画像 · 基因 表观 体检 穿戴 GPS')).toBeTruthy();
-    expect(getByText('影响结果')).toBeTruthy();
+    expect(getByText('要改善的结果')).toBeTruthy();
+    expect(queryByText('Agent 后台运行')).toBeNull();
+    expect(queryByText('影响结果')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('穿戴 · GPS · 体检')).toBeNull();
     expect(queryByText('长期画像 · 基因/表观/体检/穿戴/GPS')).toBeNull();
@@ -729,7 +732,7 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('健康指标')).toBeNull();
-    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('后台验证')).toBeTruthy();
     expect(queryByText('运行中')).toBeNull();
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
@@ -756,7 +759,7 @@ describe('TodayScreen', () => {
     expect(getByText(/看结果 ·/)).toBeTruthy();
     expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
     expect(getByText(/下次看/)).toBeTruthy();
-    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('后台验证')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('环境证据')).toBeNull();
@@ -776,8 +779,8 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(screen.getByText('Agent 后台运行')).toBeTruthy();
-    expect(screen.getByText('影响结果')).toBeTruthy();
+    expect(screen.getByText('后台验证')).toBeTruthy();
+    expect(screen.getByText('要改善的结果')).toBeTruthy();
     expect(screen.queryByText('指标反馈')).toBeNull();
     expect(screen.queryByText('正在观察')).toBeNull();
     expect(screen.queryByText('后台观察')).toBeNull();
@@ -786,9 +789,9 @@ describe('TodayScreen', () => {
     expect(screen.queryByText('后台校准')).toBeNull();
     expect(screen.queryByText('实时校准')).toBeNull();
     expect(screen.queryByText('证据链')).toBeNull();
-    expect(textFlow.indexOf('Agent 后台运行')).toBeLessThan(textFlow.indexOf('影响结果'));
-    expect(textFlow.indexOf('影响结果')).toBeLessThan(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text)));
-    expect(findEvidenceIndex(textFlow)).toBeLessThan(textFlow.indexOf('影响结果'));
+    expect(textFlow.indexOf('后台验证')).toBeLessThan(textFlow.indexOf('要改善的结果'));
+    expect(textFlow.indexOf('要改善的结果')).toBeLessThan(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text)));
+    expect(findEvidenceIndex(textFlow)).toBeLessThan(textFlow.indexOf('要改善的结果'));
   });
 
   it('folds verification targets into the top diagnosis card instead of a separate section title', () => {
@@ -817,7 +820,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
-    expect(textFlow.indexOf('Agent 后台运行')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台验证')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台观察')).toBe(-1);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /看结果/.test(text));
@@ -836,7 +839,7 @@ describe('TodayScreen', () => {
     const { getByTestId, getByText, queryByText } = render(<TodayScreen />);
     const panelStyle = StyleSheet.flatten(getByTestId('home-background-runtime').props.style);
 
-    expect(getByText('Agent 后台运行')).toBeTruthy();
+    expect(getByText('后台验证')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(panelStyle.backgroundColor).toBe('transparent');
