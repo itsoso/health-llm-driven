@@ -400,6 +400,8 @@ reminder: {"title":"明早复查血压","priority":"high"}
 
 参数 name 是中文/英文都行 (LDL / 低密度脂蛋白). since 是 YYYY-MM-DD, 不传就给最近 1 年.
 返回每条: record_date / value / unit / is_abnormal / reference_low / reference_high.
+注意: 血压不是化验表指标。用户问"血压/BP/收缩压/舒张压"时优先用 health_query(dimension='blood_pressure');
+如果误调用本工具, 后端会桥接到 blood_pressure_records 并返回标准化 BP/SBP/DBP 结构.
 
 如果用户问的是"我体检结果怎么样"那种宽泛问题, 用 health_query(dimension='medical_exam') 拿最新整体快照, 不要走这个.""",
             "parameters": {

@@ -268,6 +268,7 @@ _TOOL_TO_SOURCE_LABEL = {
     "health_query": "健康数据查询 (Garmin/化验/补剂)",
     "health_record": "今天打卡记录",
     "health_manage": "健康记录管理 (查询/修改/删除)",
+    "query_lab_indicators": "化验/体征指标历史",
     "exam_query": "化验单详情",
     "indicator_history": "指标历史趋势",
     "knowledge_search": "得到 wiki 知识库",
@@ -300,6 +301,53 @@ def _allow_twin_evidence_fallback(message: str) -> bool:
     if has_record_intent and not has_advice_intent:
         return False
     return has_advice_intent
+
+
+_BLOOD_PRESSURE_INDICATOR_ALIASES = {
+    "血压",
+    "bp",
+    "blood pressure",
+    "blood_pressure",
+    "收缩压",
+    "舒张压",
+    "sbp",
+    "dbp",
+    "systolic",
+    "diastolic",
+}
+
+
+def _is_blood_pressure_indicator_name(name: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (name or "").strip().lower())
+    return normalized in _BLOOD_PRESSURE_INDICATOR_ALIASES
+
+
+def _blood_pressure_indicator_item(record: Any) -> dict:
+    systolic = getattr(record, "systolic", None)
+    diastolic = getattr(record, "diastolic", None)
+    category = getattr(record, "category", None)
+    record_date = getattr(record, "record_date", None)
+    measured_at = getattr(record, "measured_at", None)
+    return {
+        "source": "blood_pressure_records",
+        "record_id": getattr(record, "id", None),
+        "name": "血压",
+        "name_en": "BP",
+        "metric_key": "blood_pressure",
+        "value": f"{systolic}/{diastolic}" if systolic is not None and diastolic is not None else None,
+        "unit": "mmHg",
+        "systolic": systolic,
+        "diastolic": diastolic,
+        "pulse": getattr(record, "pulse", None),
+        "category": category,
+        "record_date": record_date.isoformat() if record_date else None,
+        "measured_at": measured_at.isoformat() if measured_at else None,
+        "is_abnormal": category not in (None, "正常"),
+        "components": [
+            {"name": "收缩压", "name_en": "SBP", "value": systolic, "unit": "mmHg"},
+            {"name": "舒张压", "name_en": "DBP", "value": diastolic, "unit": "mmHg"},
+        ],
+    }
 
 
 def _inspect_user_data_sources(db, user_id: int) -> list:
@@ -1564,7 +1612,7 @@ class AgentExecutor:
             "body_battery": f"/garmin-analysis/me/body-battery?days={days}",
             "stress": f"/garmin-analysis/me/stress?days={days}",
             "weight": "/weight/records/me/recent?limit=10",
-            "blood_pressure": "/blood-pressure/records/me/recent?limit=10",
+            "blood_pressure": "/blood-pressure/records/me?limit=10",
             "supplements": f"/supplements/me/stats?days={days}",
             "water": "/water/records/me/today",
             # diet 没有 /me/today 端点, 只有 /me/date/{record_date}; 用 today() 拼路径.
@@ -2128,7 +2176,6 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """查询 MedicalIndicator (跨次体检的单指标历史). 直接读 DB, 不走 HTTP."""
-        from app.models.family_health import MedicalIndicator
         from sqlalchemy import or_, desc as sa_desc
 
         if self._current_user_id is None:
@@ -2146,6 +2193,45 @@ class AgentExecutor:
                 since = _date.today() - timedelta(days=365)
         except Exception:
             return f"Error: since 必须是 YYYY-MM-DD, got {since_str!r}"
+
+        if name and _is_blood_pressure_indicator_name(name):
+            from app.models.blood_pressure import BloodPressureRecord
+
+            rows = (
+                self.db.query(BloodPressureRecord)
+                .filter(
+                    BloodPressureRecord.user_id == self._current_user_id,
+                    BloodPressureRecord.record_date >= since,
+                )
+                .order_by(
+                    sa_desc(BloodPressureRecord.record_date),
+                    sa_desc(BloodPressureRecord.id),
+                )
+                .limit(limit)
+                .all()
+            )
+            items = [_blood_pressure_indicator_item(record) for record in rows]
+            if not items:
+                return json.dumps(
+                    {
+                        "count": 0,
+                        "metric_key": "blood_pressure",
+                        "items": [],
+                        "hint": "未找到血压记录；血压属于 vital sign，会从 blood_pressure_records 查询，不属于 MedicalIndicator 化验表。",
+                    },
+                    ensure_ascii=False,
+                )
+            return json.dumps(
+                {
+                    "count": len(items),
+                    "metric_key": "blood_pressure",
+                    "source": "blood_pressure_records",
+                    "items": items,
+                },
+                ensure_ascii=False,
+            )
+
+        from app.models.family_health import MedicalIndicator
 
         q = self.db.query(MedicalIndicator).filter(
             MedicalIndicator.user_id == self._current_user_id,

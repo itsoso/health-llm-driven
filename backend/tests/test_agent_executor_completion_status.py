@@ -1,7 +1,9 @@
 import json
+from datetime import date, timedelta
 
 import pytest
 
+from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
 from app.models.openclaw import OpenClawMessage
 from app.services.agent_executor import (
@@ -17,6 +19,75 @@ def test_completion_status_marks_length_finish_reason_as_interrupted():
 
 def test_completion_status_marks_stop_finish_reason_as_complete():
     assert _completion_status_from_finish_reason("stop") == "complete"
+
+
+@pytest.mark.asyncio
+async def test_health_query_blood_pressure_uses_existing_records_endpoint(db):
+    executor = AgentExecutor(db)
+    captured_urls = []
+
+    async def fake_api_get(url, headers):
+        captured_urls.append(url)
+        return "[]"
+
+    executor._api_get = fake_api_get
+
+    await executor._exec_health_query(
+        "http://testserver/api/v1",
+        {},
+        {"dimension": "blood_pressure", "days": 7},
+    )
+
+    assert captured_urls == ["http://testserver/api/v1/blood-pressure/records/me?limit=10"]
+
+
+@pytest.mark.asyncio
+async def test_query_lab_indicators_bridges_blood_pressure_alias_to_standardized_vitals(
+    db,
+    auth_user_and_headers,
+):
+    user, _headers = auth_user_and_headers
+    db.add_all([
+        BloodPressureRecord(
+            user_id=user.id,
+            record_date=date.today(),
+            systolic=119,
+            diastolic=75,
+            pulse=64,
+        ),
+        BloodPressureRecord(
+            user_id=user.id,
+            record_date=date.today() - timedelta(days=1),
+            systolic=124,
+            diastolic=78,
+            pulse=66,
+        ),
+    ])
+    db.commit()
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    result = await executor._exec_query_lab_indicators(
+        "",
+        {},
+        {
+            "name": "血压",
+            "since": (date.today() - timedelta(days=30)).isoformat(),
+            "limit": 10,
+        },
+    )
+    payload = json.loads(result)
+
+    assert payload["metric_key"] == "blood_pressure"
+    assert payload["count"] == 2
+    assert payload["items"][0]["name"] == "血压"
+    assert payload["items"][0]["name_en"] == "BP"
+    assert payload["items"][0]["value"] == "119/75"
+    assert payload["items"][0]["unit"] == "mmHg"
+    assert payload["items"][0]["systolic"] == 119
+    assert payload["items"][0]["diastolic"] == 75
+    assert payload["items"][0]["pulse"] == 64
 
 
 @pytest.mark.asyncio
