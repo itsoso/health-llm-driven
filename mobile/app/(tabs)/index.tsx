@@ -405,10 +405,7 @@ export default function TodayScreen() {
           planCount={activePlanCount}
           refreshing={isRefreshing}
           riskTitle={criticalAlerts[0]?.title}
-          geneticHits={geneticStatsQuery.data?.hits}
-          progressTotal={progressStatsQuery.data?.total}
           twinSnapshot={twinSnap}
-          domains={interventionDomains}
           action={nextAction}
           completionState={visibleNextActionState}
           onOpenFocus={() => (
@@ -484,10 +481,7 @@ function HomeCommandHeader({
   planCount,
   refreshing,
   riskTitle,
-  geneticHits,
-  progressTotal,
   twinSnapshot,
-  domains,
   action,
   completionState,
   onOpenFocus,
@@ -497,23 +491,13 @@ function HomeCommandHeader({
   planCount: number;
   refreshing: boolean;
   riskTitle?: string;
-  geneticHits?: number | null;
-  progressTotal?: number | null;
   twinSnapshot: TwinSnapshot;
-  domains: InterventionDomainStatus[];
   action?: DailyPlanAction | null;
   completionState: NextActionCompletionState;
   onOpenFocus: () => void;
   onCompleteAction: (action: DailyPlanAction) => void;
 }) {
   const { c } = useTheme();
-  const wearableReady = Boolean(
-    twinSnapshot.hrv
-    || twinSnapshot.sleep_score
-    || twinSnapshot.resting_hr
-    || twinSnapshot.spo2_avg,
-  );
-  const clinicalReady = Boolean(twinSnapshot.systolic_bp || twinSnapshot.diastolic_bp);
   const loopMetrics = buildLoopFeedbackMetrics(twinSnapshot, action, riskTitle);
   const visibleLoopMetrics = loopMetrics.slice(0, 3);
   const improvementFocus = buildImprovementFocus({
@@ -527,11 +511,6 @@ function HomeCommandHeader({
     : planCount > 0
       ? improvementFocus.headline
       : '保持记录节奏';
-  const evidenceSummary = `${buildEvidenceSourceSummary({
-    hasGenetic: geneticHits != null,
-    hasClinical: clinicalReady,
-    hasWearable: wearableReady,
-  }).replace(/\//g, '、')}已接入`;
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const agentJudgmentText = buildAgentJudgmentText({
@@ -559,9 +538,6 @@ function HomeCommandHeader({
               {refreshing ? '正在同步新数据' : '后台监测中'}
             </HomeText>
           </View>
-          <HomeText style={[styles.commandAgentCopy, { color: c.labelTertiary }]} numberOfLines={1}>
-            {evidenceSummary}
-          </HomeText>
         </View>
       </View>
 
@@ -1436,25 +1412,6 @@ function buildWorkspaceDataSources({
   ];
 }
 
-function buildEvidenceSourceSummary({
-  hasClinical,
-  hasGenetic,
-  hasWearable,
-}: {
-  hasClinical: boolean;
-  hasGenetic: boolean;
-  hasWearable: boolean;
-}): string {
-  const sources = [
-    hasGenetic ? '基因' : null,
-    '表观遗传',
-    hasClinical ? '体检' : null,
-    hasWearable ? '穿戴' : null,
-  ].filter(Boolean);
-
-  return sources.length > 0 ? sources.join('/') : '记录/检查/穿戴';
-}
-
 function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {
   const haystack = `${action.domain ?? ''} ${action.action_key ?? ''} ${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
 
@@ -1537,7 +1494,6 @@ const styles = StyleSheet.create({
   },
   commandMiniActionText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   commandMetaPills: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
-  commandAgentCopy: { fontSize: 8, lineHeight: 10, fontWeight: '700' },
   commandOutcomeBlock: {
     minHeight: 28,
     borderRadius: radii.full,

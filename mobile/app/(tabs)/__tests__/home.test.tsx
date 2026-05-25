@@ -218,11 +218,12 @@ describe('TodayScreen', () => {
   });
 
   it('frames the home feed as a background health agent workspace', () => {
-    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
+    const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
-    expect(getAllByText(/已接入/).length).toBeGreaterThan(0);
+    expect(queryByText(/已接入/)).toBeNull();
+    expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
     expect(queryByText(/源画像/)).toBeNull();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
@@ -241,14 +242,15 @@ describe('TodayScreen', () => {
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
     ];
 
-    const { getAllByText, getByText } = render(<TodayScreen />);
+    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('Agent 判断')).toBeTruthy();
     expect(getByText('今天先 23:00 上床，观察血氧、睡眠分、HRV。')).toBeTruthy();
     expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
-    expect(getAllByText('表观遗传、穿戴已接入').length).toBeGreaterThan(0);
+    expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
+    expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
     expect(getByText('Agent 观测中')).toBeTruthy();
     expect(getByText('验证指标')).toBeTruthy();
   });
