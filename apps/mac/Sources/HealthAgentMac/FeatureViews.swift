@@ -11,6 +11,7 @@ struct AgentChatView: View {
     @State private var editorFocusToken = 0
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
+    @State private var selectedToolActivity: AgentToolActivity?
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
@@ -57,6 +58,9 @@ struct AgentChatView: View {
         }
         .onChange(of: viewModel.preparedDraft) { _, _ in
             ingestPreparedDraft()
+        }
+        .sheet(item: $selectedToolActivity) { activity in
+            ToolActivityDetailSheet(activity: activity)
         }
     }
 
@@ -639,21 +643,39 @@ struct AgentChatView: View {
                     .font(.subheadline.bold())
                 VStack(alignment: .leading, spacing: 7) {
                     ForEach(viewModel.toolActivities) { activity in
-                        HStack(spacing: 8) {
-                            Image(systemName: toolActivityIcon(activity.status))
-                                .foregroundStyle(toolActivityColor(activity.status))
-                                .frame(width: 18)
-                            Text(activity.name)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Text(appText(toolActivityText(activity.status), appLanguageRaw))
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(toolActivityColor(activity.status))
+                        Button {
+                            selectedToolActivity = activity
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: toolActivityIcon(activity.status))
+                                    .foregroundStyle(toolActivityColor(activity.status))
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(activity.name)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                    if let summary = activity.resultText ?? activity.arguments {
+                                        Text(summary)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                Text(appText(toolActivityText(activity.status), appLanguageRaw))
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(toolActivityColor(activity.status))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 7)
                         .background(toolActivityColor(activity.status).opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .help(appText("View Tool Result", appLanguageRaw))
                     }
                 }
             }
@@ -1101,6 +1123,109 @@ private struct MarkdownMessageText: View {
 
     private func scaledFont(base: Double, weight: Font.Weight? = nil) -> Font {
         .system(size: appFontScale.pointSize(base: base), weight: weight)
+    }
+}
+
+private struct ToolActivityDetailSheet: View {
+    let activity: AgentToolActivity
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: iconName)
+                    .foregroundStyle(color)
+                    .frame(width: 28, height: 28)
+                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(activity.name)
+                        .font(.title3.weight(.semibold))
+                    HStack(spacing: 8) {
+                        Text(statusText)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(color)
+                        if let round = activity.round {
+                            Text("\(appText("Round", appLanguageRaw)) \(round)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Spacer()
+                Button(appText("Close", appLanguageRaw)) {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    detailBlock(
+                        title: appText("Arguments", appLanguageRaw),
+                        text: activity.arguments ?? appText("No arguments captured.", appLanguageRaw)
+                    )
+                    detailBlock(
+                        title: appText("Tool Result", appLanguageRaw),
+                        text: activity.resultText ?? appText("No tool result yet.", appLanguageRaw)
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(22)
+        .frame(minWidth: 620, minHeight: 440)
+    }
+
+    private func detailBlock(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+            Text(formatted(text))
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func formatted(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              JSONSerialization.isValidJSONObject(object),
+              let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let string = String(data: pretty, encoding: .utf8) else {
+            return trimmed
+        }
+        return string
+    }
+
+    private var statusText: String {
+        switch activity.status {
+        case .running: appText("Running", appLanguageRaw)
+        case .succeeded: appText("Succeeded", appLanguageRaw)
+        case .failed: appText("Failed", appLanguageRaw)
+        }
+    }
+
+    private var iconName: String {
+        switch activity.status {
+        case .running: "hourglass"
+        case .succeeded: "checkmark.circle.fill"
+        case .failed: "xmark.circle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch activity.status {
+        case .running: .accentColor
+        case .succeeded: .green
+        case .failed: .red
+        }
     }
 }
 

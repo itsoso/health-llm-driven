@@ -4,8 +4,34 @@ public enum AgentStreamEvent: Equatable, Sendable {
     case start(conversationID: Int?)
     case token(String)
     case tool(name: String?, success: Bool?)
+    case toolDetails(AgentToolEvent)
     case done(conversationID: Int?, messageID: Int?, completionStatus: String?, model: String?, sourcesUsed: [String])
     case error(String)
+}
+
+public struct AgentToolEvent: Equatable, Sendable {
+    public let name: String?
+    public let success: Bool?
+    public let arguments: String?
+    public let preview: String?
+    public let result: String?
+    public let round: Int?
+
+    public init(
+        name: String?,
+        success: Bool?,
+        arguments: String?,
+        preview: String?,
+        result: String?,
+        round: Int?
+    ) {
+        self.name = name
+        self.success = success
+        self.arguments = arguments
+        self.preview = preview
+        self.result = result
+        self.round = round
+    }
 }
 
 public enum AgentStreamParser {
@@ -39,9 +65,23 @@ public enum AgentStreamParser {
                 case "token":
                     return .token(eventData?["content"] as? String ?? "")
                 case "tool_call":
-                    return .tool(name: eventData?["tool"] as? String, success: nil)
+                    return .toolDetails(AgentToolEvent(
+                        name: eventData?["tool"] as? String,
+                        success: nil,
+                        arguments: normalizedJSONString(eventData?["args"]),
+                        preview: nil,
+                        result: nil,
+                        round: eventData?["round"] as? Int
+                    ))
                 case "tool_result":
-                    return .tool(name: eventData?["tool"] as? String, success: eventData?["success"] as? Bool)
+                    return .toolDetails(AgentToolEvent(
+                        name: eventData?["tool"] as? String,
+                        success: eventData?["success"] as? Bool,
+                        arguments: normalizedJSONString(eventData?["args"]),
+                        preview: eventData?["preview"] as? String,
+                        result: eventData?["result"] as? String,
+                        round: eventData?["round"] as? Int
+                    ))
                 case "done":
                     return .done(
                         conversationID: eventData?["conversation_id"] as? Int,
@@ -56,5 +96,18 @@ public enum AgentStreamParser {
                     return nil
                 }
             }
+    }
+
+    private static func normalizedJSONString(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let string = value as? String {
+            return string
+        }
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+           let string = String(data: data, encoding: .utf8) {
+            return string
+        }
+        return String(describing: value)
     }
 }

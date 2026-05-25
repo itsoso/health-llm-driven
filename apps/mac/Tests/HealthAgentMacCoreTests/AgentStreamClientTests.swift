@@ -33,6 +33,38 @@ final class AgentStreamClientTests: XCTestCase {
         ])
     }
 
+    func testParserCapturesToolArgumentsAndResultsForInspection() throws {
+        let payload = """
+        event: tool_call
+        data: {"tool":"query_lab_indicators","args":"{\\\"days\\\":7}","round":2}
+
+        event: tool_result
+        data: {"tool":"query_lab_indicators","success":true,"preview":"查到 3 条指标","result":"完整指标结果"}
+
+        """
+
+        let events = try AgentStreamParser.parse(payload)
+
+        XCTAssertEqual(events, [
+            .toolDetails(AgentToolEvent(
+                name: "query_lab_indicators",
+                success: nil,
+                arguments: "{\"days\":7}",
+                preview: nil,
+                result: nil,
+                round: 2
+            )),
+            .toolDetails(AgentToolEvent(
+                name: "query_lab_indicators",
+                success: true,
+                arguments: nil,
+                preview: "查到 3 条指标",
+                result: "完整指标结果",
+                round: nil
+            ))
+        ])
+    }
+
     func testAgentStreamClientPostsMessageAndYieldsEvents() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
@@ -280,9 +312,45 @@ final class AgentStreamClientTests: XCTestCase {
 
         await model.send("分析并执行")
 
-        XCTAssertEqual(model.toolActivities.map(\.name), ["knowledge_search", "knowledge_search", "health_manage"])
-        XCTAssertEqual(model.toolActivities.map(\.status), [.running, .succeeded, .failed])
+        XCTAssertEqual(model.toolActivities.map(\.name), ["knowledge_search", "health_manage"])
+        XCTAssertEqual(model.toolActivities.map(\.status), [.succeeded, .failed])
         XCTAssertEqual(model.toolActivities.last?.displayTitle, "health_manage failed")
+    }
+
+    @MainActor
+    func testAgentChatViewModelMergesToolResultIntoRunningToolForDetailInspection() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 77))
+            continuation.yield(.toolDetails(AgentToolEvent(
+                name: "query_lab_indicators",
+                success: nil,
+                arguments: "{\"days\":7}",
+                preview: nil,
+                result: nil,
+                round: 1
+            )))
+            continuation.yield(.toolDetails(AgentToolEvent(
+                name: "query_lab_indicators",
+                success: true,
+                arguments: nil,
+                preview: "查到 3 条指标",
+                result: "完整指标结果",
+                round: nil
+            )))
+            continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: []))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+
+        await model.send("查询指标")
+
+        XCTAssertEqual(model.toolActivities.count, 1)
+        let activity = try! XCTUnwrap(model.toolActivities.first)
+        XCTAssertEqual(activity.name, "query_lab_indicators")
+        XCTAssertEqual(activity.status, .succeeded)
+        XCTAssertEqual(activity.arguments, "{\"days\":7}")
+        XCTAssertEqual(activity.resultText, "完整指标结果")
+        XCTAssertEqual(activity.round, 1)
     }
 
     @MainActor

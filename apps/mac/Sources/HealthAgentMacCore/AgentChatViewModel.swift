@@ -374,6 +374,14 @@ public struct AgentToolActivity: Equatable, Identifiable, Sendable {
     public let id: UUID
     public let name: String
     public let status: AgentToolActivityStatus
+    public let arguments: String?
+    public let preview: String?
+    public let result: String?
+    public let round: Int?
+
+    public var resultText: String? {
+        result ?? preview
+    }
 
     public var displayTitle: String {
         switch status {
@@ -386,10 +394,22 @@ public struct AgentToolActivity: Equatable, Identifiable, Sendable {
         }
     }
 
-    public init(id: UUID = UUID(), name: String, status: AgentToolActivityStatus) {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        status: AgentToolActivityStatus,
+        arguments: String? = nil,
+        preview: String? = nil,
+        result: String? = nil,
+        round: Int? = nil
+    ) {
         self.id = id
         self.name = name
         self.status = status
+        self.arguments = arguments
+        self.preview = preview
+        self.result = result
+        self.round = round
     }
 }
 
@@ -564,12 +584,16 @@ public final class AgentChatViewModel {
                     runState = .streaming
                     messages[assistantIndex].content += content
                 case .tool(let name, let success):
-                    toolActivities.append(
-                        AgentToolActivity(
-                            name: name ?? "tool",
-                            status: success.map { $0 ? .succeeded : .failed } ?? .running
-                        )
-                    )
+                    applyToolEvent(AgentToolEvent(
+                        name: name,
+                        success: success,
+                        arguments: nil,
+                        preview: nil,
+                        result: nil,
+                        round: nil
+                    ))
+                case .toolDetails(let toolEvent):
+                    applyToolEvent(toolEvent)
                 case .done(let id, _, let completionStatus, let model, let sourcesUsed):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
@@ -635,6 +659,37 @@ public final class AgentChatViewModel {
         if currentConversationSnapshotID == conversation.id {
             startNewConversation()
         }
+    }
+
+    private func applyToolEvent(_ event: AgentToolEvent) {
+        let name = event.name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? event.name! : "tool"
+        let status = event.success.map { $0 ? AgentToolActivityStatus.succeeded : .failed } ?? .running
+
+        if event.success != nil,
+           let runningIndex = toolActivities.lastIndex(where: { $0.name == name && $0.status == .running }) {
+            let running = toolActivities[runningIndex]
+            toolActivities[runningIndex] = AgentToolActivity(
+                id: running.id,
+                name: running.name,
+                status: status,
+                arguments: running.arguments ?? event.arguments,
+                preview: event.preview ?? running.preview,
+                result: event.result ?? running.result,
+                round: running.round ?? event.round
+            )
+            return
+        }
+
+        toolActivities.append(
+            AgentToolActivity(
+                name: name,
+                status: status,
+                arguments: event.arguments,
+                preview: event.preview,
+                result: event.result,
+                round: event.round
+            )
+        )
     }
 
     public func retryLastMessage() async {

@@ -700,6 +700,7 @@ class AgentExecutor:
                             "tool": func_name,
                             "success": not result.startswith("Error"),
                             "preview": result[:200],
+                            "result": result,
                         }
                         if func_name == "health_record":
                             try:

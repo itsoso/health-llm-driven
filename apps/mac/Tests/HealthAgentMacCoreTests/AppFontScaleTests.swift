@@ -11,6 +11,7 @@ final class AppFontScaleTests: XCTestCase {
 
     func testFontScaleResetReturnsDefaultReadableSize() {
         XCTAssertEqual(AppFontScale(level: 3).reset().level, AppFontScale.defaultLevel)
+        XCTAssertEqual(AppFontScale.defaultLevel, 2)
         XCTAssertEqual(AppFontScale(level: 0).displayPercent, 112)
         XCTAssertEqual(AppFontScale(level: 2).displayPercent, 140)
         XCTAssertEqual(AppFontScale(level: 4).displayPercent, 190)
@@ -19,12 +20,14 @@ final class AppFontScaleTests: XCTestCase {
     func testFontScaleMapsDefaultToReadableDynamicTypeSize() {
         XCTAssertEqual(AppFontScale(level: -1).dynamicTypeSizeName, "medium")
         XCTAssertEqual(AppFontScale(level: 0).dynamicTypeSizeName, "large")
+        XCTAssertEqual(AppFontScale(level: AppFontScale.defaultLevel).dynamicTypeSizeName, "xxLarge")
         XCTAssertEqual(AppFontScale(level: 4).dynamicTypeSizeName, "accessibility1")
     }
 
     func testFontScaleMapsPointSizesRelativeToDefaultLevel() {
         XCTAssertEqual(AppFontScale(level: 0).pointSize(base: 15), 15, accuracy: 0.001)
         XCTAssertEqual(AppFontScale(level: 1).pointSize(base: 15), 16.741, accuracy: 0.001)
+        XCTAssertEqual(AppFontScale(level: AppFontScale.defaultLevel).pointSize(base: 15), 18.75, accuracy: 0.001)
         XCTAssertEqual(AppFontScale(level: 4).pointSize(base: 15), 25.446, accuracy: 0.001)
         XCTAssertEqual(AppFontScale(level: -1).pointSize(base: 15), 13.393, accuracy: 0.001)
     }

@@ -347,6 +347,7 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         event.get("event") == "tool_result"
         and event["data"]["record_type"] == "diet"
         and event["data"]["record_data"]["calories"] == 520
+        and event["data"]["result"] == '{"id":701,"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
         for event in events
     )
     assert "已记录晚餐" in rendered

@@ -1,10 +1,11 @@
 import Foundation
 
 public struct AppFontScale: Equatable, Sendable {
-    public static let defaultsKey = "appFontScaleLevel"
+    public static let defaultsKey = "appFontScaleLevelV2"
     public static let minLevel = -1
-    public static let defaultLevel = 0
+    public static let defaultLevel = 2
     public static let maxLevel = 4
+    private static let baselineDisplayPercent = 112
 
     public let level: Int
 
@@ -41,7 +42,7 @@ public struct AppFontScale: Equatable, Sendable {
     }
 
     public var pointScale: Double {
-        Double(displayPercent) / Double(AppFontScale(level: Self.defaultLevel).displayPercent)
+        Double(displayPercent) / Double(Self.baselineDisplayPercent)
     }
 
     public func pointSize(base: Double) -> Double {
