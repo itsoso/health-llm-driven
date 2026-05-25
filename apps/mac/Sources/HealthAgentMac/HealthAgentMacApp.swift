@@ -583,41 +583,45 @@ struct TodayView: View {
     @State private var inputInboxFilter: InputInboxFilter = .all
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .controlBackgroundColor)
-                .ignoresSafeArea()
+        GeometryReader { proxy in
+            let layout = DesktopDashboardLayoutPolicy.metrics(forAvailableWidth: Double(proxy.size.width))
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let presentation {
-                        HStack(alignment: .top, spacing: 16) {
-                            VStack(alignment: .leading, spacing: 18) {
-                                dashboardHero(presentation)
-                                inputInboxPanel(
-                                    events: presentation.inputInboxEvents,
-                                    summary: presentation.inputInboxSummary
-                                )
-                                actionPanel(presentation.actionRows)
-                                recentRecordsPanel(presentation.recentRecordRows)
-                            }
-                            .frame(minWidth: 620, maxWidth: .infinity, alignment: .topLeading)
+            ZStack {
+                Color(nsColor: .controlBackgroundColor)
+                    .ignoresSafeArea()
 
-                            VStack(alignment: .leading, spacing: 18) {
-                                refreshPanel
-                                wearablePanel(presentation.wearableMetrics)
-                                memoryPanel(presentation.memoryRows)
-                                jobsPanel(presentation.activeJobRows)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let presentation {
+                            HStack(alignment: .top, spacing: CGFloat(layout.columnSpacing)) {
+                                VStack(alignment: .leading, spacing: 18) {
+                                    dashboardHero(presentation)
+                                    inputInboxPanel(
+                                        events: presentation.inputInboxEvents,
+                                        summary: presentation.inputInboxSummary
+                                    )
+                                    actionPanel(presentation.actionRows)
+                                    recentRecordsPanel(presentation.recentRecordRows)
+                                }
+                                .frame(minWidth: 620, maxWidth: .infinity, alignment: .topLeading)
+
+                                VStack(alignment: .leading, spacing: 18) {
+                                    refreshPanel
+                                    wearablePanel(presentation.wearableMetrics)
+                                    memoryPanel(presentation.memoryRows)
+                                    jobsPanel(presentation.activeJobRows)
+                                }
+                                .frame(width: CGFloat(layout.rightRailWidth), alignment: .topLeading)
                             }
-                            .frame(width: 360, alignment: .topLeading)
+                        } else {
+                            loadingPanel
                         }
-                    } else {
-                        loadingPanel
                     }
+                    .frame(maxWidth: CGFloat(layout.contentMaxWidth), alignment: .leading)
+                    .padding(.horizontal, CGFloat(layout.horizontalPadding))
+                    .padding(.vertical, 22)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(maxWidth: 1220, alignment: .center)
-                .padding(.horizontal, 26)
-                .padding(.vertical, 22)
-                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
         .task {
