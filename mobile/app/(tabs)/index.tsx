@@ -563,7 +563,7 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <HomeStrategyCoverageRail domains={interventionDomains} />
+      <HomeStrategyCoverageRail domains={interventionDomains} action={action} />
 
       <View style={styles.commandInlineActionRow}>
         <Pressable
@@ -630,19 +630,27 @@ function HomeCommandHeader({
 
 function HomeStrategyCoverageRail({
   domains,
+  action,
 }: {
   domains: InterventionDomainStatus[];
+  action?: DailyPlanAction | null;
 }) {
   const { c } = useTheme();
-  const strategySummary = domains.map(domain => domain.label).join(' · ');
   const activeCount = domains.reduce((total, domain) => total + domain.activeCount, 0);
+  const activeDomains = domains.filter(domain => domain.activeCount > 0);
+  const isRecordAction = action?.domain === 'measurement';
+  const isCalibrationMode = activeCount === 0 || isRecordAction;
+  const railLabel = isCalibrationMode ? '策略校准' : '策略覆盖';
+  const strategySummary = isCalibrationMode
+    ? '记录后校准饮食 · 睡眠 · 运动'
+    : activeDomains.map(domain => domain.label).join(' · ');
   return (
     <View
       testID="home-strategy-coverage-rail"
       style={styles.commandStrategyCoverageRail}
-      accessibilityLabel={`策略覆盖：${strategySummary}，${activeCount} 个干预`}
+      accessibilityLabel={`${railLabel}：${strategySummary}，${activeCount} 个干预`}
     >
-      <HomeText style={[styles.commandStrategyCoverageLabel, { color: c.labelTertiary }]}>策略覆盖</HomeText>
+      <HomeText style={[styles.commandStrategyCoverageLabel, { color: c.labelTertiary }]}>{railLabel}</HomeText>
       <View style={[styles.commandStrategyCoverageDot, { backgroundColor: c.brand }]} />
       <HomeText style={[styles.commandStrategyCoverageText, { color: c.labelSecondary }]} numberOfLines={1}>
         {strategySummary}

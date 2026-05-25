@@ -558,6 +558,23 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('策略覆盖')).toBeLessThan(textFlow.indexOf('现在只做 · 饮食'));
   });
 
+  it('shows strategy calibration copy when the current action is only a record task', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('策略校准')).toBeTruthy();
+    expect(getByText('记录后校准饮食 · 睡眠 · 运动')).toBeTruthy();
+    expect(queryByText('策略覆盖')).toBeNull();
+    expect(queryByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeNull();
+  });
+
   it('describes multiple intervention domains in user language instead of plus-count shorthand', () => {
     mockDailyPlanActions = [
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
