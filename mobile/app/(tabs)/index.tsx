@@ -105,6 +105,11 @@ interface OutcomeFeedbackSummary {
   route: string;
 }
 
+interface BackgroundReviewCopy {
+  summary: string;
+  accessibilityLabel: string;
+}
+
 interface PersonalSignalChip {
   label: string;
   value: string;
@@ -861,8 +866,9 @@ function AgentFollowUpQueue({
   const reviewTargets = feedbackMetrics
     .slice(0, 3)
     .map(metric => metric.label)
-    .join(' · ') || '睡眠 · 血氧 · 体成分';
+    .filter(Boolean);
   const planLabel = planCount > 0 ? `${planCount} 个干预` : '等记录';
+  const reviewCopy = buildBackgroundReviewCopy(reviewTargets, planLabel);
   return (
     <View
       testID="home-runtime-task-strip"
@@ -884,8 +890,12 @@ function AgentFollowUpQueue({
         </View>
         <View style={styles.followUpReviewLine}>
           <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
-          <HomeText style={[styles.followUpReviewText, { color: c.labelTertiary }]} numberOfLines={1}>
-            下次看 · 周日晚 · {reviewTargets} · {planLabel}
+          <HomeText
+            accessibilityLabel={reviewCopy.accessibilityLabel}
+            style={[styles.followUpReviewText, { color: c.labelTertiary }]}
+            numberOfLines={1}
+          >
+            {reviewCopy.summary}
           </HomeText>
         </View>
       </Pressable>
@@ -1108,6 +1118,14 @@ function buildOutcomeFeedbackSummary(metrics: OutcomeFeedbackMetric[]): OutcomeF
     summary: `${metrics.length}项结果持续验证`,
     accessibilityLabel: `要改善的结果：${metrics.map(metric => `${metric.label} ${metric.value}`).join('、')}`,
     route: metrics[0]?.route ?? '/body-measurements?focus=morning',
+  };
+}
+
+function buildBackgroundReviewCopy(targetLabels: string[], planLabel: string): BackgroundReviewCopy {
+  const targets = targetLabels.length > 0 ? targetLabels : ['睡眠', '血氧', '体成分'];
+  return {
+    summary: `下次看 · 周日晚复盘 · ${targets.length}项结果 · ${planLabel}`,
+    accessibilityLabel: `下次看：周日晚复盘 ${targets.join('、')}；${planLabel}`,
   };
 }
 

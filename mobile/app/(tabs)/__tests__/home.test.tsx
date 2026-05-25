@@ -830,13 +830,15 @@ describe('TodayScreen', () => {
   });
 
   it('folds evidence and next review into one agent background queue strip', () => {
-    const { getByLabelText, getByTestId, getByText, queryByTestId } = render(<TodayScreen />);
+    const { getByLabelText, getByTestId, getByText, queryByTestId, queryByText } = render(<TodayScreen />);
 
     expect(getByTestId('home-runtime-task-strip')).toBeTruthy();
     expect(queryByTestId('home-runtime-evidence-strip')).toBeNull();
     expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
     expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
-    expect(getByText(/下次看/)).toBeTruthy();
+    expect(getByText('下次看 · 周日晚复盘 · 3项结果 · 等记录')).toBeTruthy();
+    expect(getByLabelText('下次看：周日晚复盘 BMI/体脂、血压、VO2max；等记录')).toBeTruthy();
+    expect(queryByText(/BMI\/体脂 · 血压 · VO2max/)).toBeNull();
   });
 
   it('keeps background diagnosis, feedback, environment, and archives in one operations panel', () => {
