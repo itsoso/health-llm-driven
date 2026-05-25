@@ -231,7 +231,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · GPS · 体检')).toBeTruthy();
+    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeTruthy();
     expect(getByText(/看结果 · 睡眠分90\+ · HRV回升 · 血氧≥95%/)).toBeTruthy();
     expect(queryByText(/已看 ·/)).toBeNull();
     expect(queryByText(/看结果 · .* \/ /)).toBeNull();
@@ -271,11 +271,27 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('Agent 后台运行')).toBeTruthy();
-    expect(getByText('基因 · 穿戴 · GPS · 体检持续合并')).toBeTruthy();
+    expect(getByText('长期画像 · 基因/表观/体检/穿戴/GPS')).toBeTruthy();
     expect(getByText('影响结果')).toBeTruthy();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('穿戴 · GPS · 体检')).toBeNull();
     expect(queryByText('结果追踪')).toBeNull();
+  });
+
+  it('surfaces epigenetic context in the compact personal evidence line', () => {
+    mockGeneticStats = { hits: 65, total: 90 };
+    mockTwinData = {
+      physiological: {
+        spo2_avg: 95,
+        sleep_score_latest: 91,
+        hrv_latest: 63,
+      },
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeTruthy();
+    expect(queryByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · GPS · 体检')).toBeNull();
   });
 
   it('grounds the top diagnosis in personal data sources instead of a generic signal line', () => {
@@ -290,7 +306,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · GPS · 体检')).toBeTruthy();
+    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
   });
 
@@ -363,7 +379,7 @@ describe('TodayScreen', () => {
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
     expect(queryByText(/已接入/)).toBeNull();
-    expect(getByText(/依据 · .*GPS.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
     expect(queryByText(/源画像/)).toBeNull();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
@@ -390,7 +406,7 @@ describe('TodayScreen', () => {
     expect(getByText(/看结果 ·/)).toBeTruthy();
     expect(getByText(/血氧≥95%.*睡眠分90\+/)).toBeTruthy();
     expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
-    expect(getByText(/依据 · .*GPS.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
     expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
   });
@@ -443,7 +459,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('依据 · 血氧93 · 睡眠89 · HRV62 · 基因待同步 · GPS · 体检')).toBeTruthy();
+    expect(getByText('依据 · 血氧93 · 睡眠89 · HRV62 · 基因待同步 · 表观 · 体检')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
     expect(queryByText('93%')).toBeNull();
     expect(queryByText(/夜间血氧过低.*血氧93.*睡眠89.*HRV62/)).toBeNull();
@@ -724,7 +740,7 @@ describe('TodayScreen', () => {
     expect(queryByText('正在用体征反馈校准今天策略')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
     expect(getByText(/看结果 ·/)).toBeTruthy();
-    expect(getByText(/依据 · .*GPS.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
     expect(getByText(/下次看/)).toBeTruthy();
     expect(getByText('Agent 后台运行')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
@@ -776,7 +792,7 @@ describe('TodayScreen', () => {
 
     expect(getByTestId('home-runtime-task-strip')).toBeTruthy();
     expect(queryByTestId('home-runtime-evidence-strip')).toBeNull();
-    expect(getByText(/依据 · .*GPS.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
     expect(getByText(/下次看/)).toBeTruthy();
   });
 

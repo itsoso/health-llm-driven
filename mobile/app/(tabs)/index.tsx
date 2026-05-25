@@ -687,7 +687,7 @@ function HomeBackgroundPanel({
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
           <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>Agent 后台运行</HomeText>
         </View>
-        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>基因 · 穿戴 · GPS · 体检持续合并</HomeText>
+        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>长期画像 · 基因/表观/体检/穿戴/GPS</HomeText>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
@@ -1201,7 +1201,7 @@ function buildDiagnosisBasisText(
     ? signals.map(formatBasisSignal).join(' · ')
     : '穿戴待同步';
   const genetics = geneticHits != null ? `基因${geneticHits}` : '基因待同步';
-  return `依据 · ${wearable} · ${genetics} · GPS · 体检`;
+  return `依据 · ${wearable} · ${genetics} · 表观 · 体检`;
 }
 
 function formatBasisSignal(signal: PersonalSignalChip): string {
