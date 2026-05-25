@@ -268,7 +268,7 @@ export default function TodayScreen() {
   }, [qc]);
 
   const isLoading = safetyQuery.isLoading || cardsQuery.isLoading || twinQuery.isLoading || dailyPlanQuery.isLoading;
-  // RefreshControl spinner: 用户主动下拉时立刻显示, 直到所有 invalidate 完成 (含 env)
+  // Header shows background sync; pull-to-refresh spinner is reserved for explicit user pulls.
   const isRefreshing = manualRefreshing
     || safetyQuery.isRefetching
     || cardsQuery.isRefetching
@@ -398,7 +398,7 @@ export default function TodayScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
         <HomeCommandHeader
           criticalCount={criticalAlerts.length}

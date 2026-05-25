@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
+import { RefreshControl } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
@@ -13,6 +14,7 @@ let mockWeeklyAdvice: any[] = [];
 let mockSafetyAlerts: any[] = [];
 let mockGeneticStats: { hits: number | null; total: number | null } = { hits: null, total: null };
 let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
+let mockRefetchingKeys = new Set<string>();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -21,26 +23,27 @@ jest.mock('expo-router', () => ({
 jest.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     const key = Array.isArray(queryKey) ? queryKey.join(':') : String(queryKey);
+    const isRefetching = mockRefetchingKeys.has(key);
     if (key.includes('safety')) {
-      return { data: { alerts: mockSafetyAlerts }, isLoading: false, isRefetching: false };
+      return { data: { alerts: mockSafetyAlerts }, isLoading: false, isRefetching };
     }
     if (key.includes('action-cards')) {
-      return { data: [], isLoading: false, isRefetching: false };
+      return { data: [], isLoading: false, isRefetching };
     }
     if (key.includes('twin')) {
-      return { data: mockTwinData, isLoading: false, isRefetching: false };
+      return { data: mockTwinData, isLoading: false, isRefetching };
     }
     if (key.includes('daily-plan')) {
-      return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching: false };
+      return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching };
     }
     if (key.includes('trajectory')) {
-      return { data: mockTrajectoryData, isLoading: false, isRefetching: false };
+      return { data: mockTrajectoryData, isLoading: false, isRefetching };
     }
     if (key.includes('genetic-stats')) {
-      return { data: mockGeneticStats, isLoading: false, isRefetching: false };
+      return { data: mockGeneticStats, isLoading: false, isRefetching };
     }
     if (key.includes('progress-stats')) {
-      return { data: mockProgressStats, isLoading: false, isRefetching: false };
+      return { data: mockProgressStats, isLoading: false, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -159,6 +162,7 @@ describe('TodayScreen', () => {
     mockSafetyAlerts = [];
     mockGeneticStats = { hits: null, total: null };
     mockProgressStats = { improved: null, total: null };
+    mockRefetchingKeys = new Set<string>();
   });
 
   it('does not show the low-value Agent data visibility panel on the home feed', () => {
@@ -239,6 +243,16 @@ describe('TodayScreen', () => {
     expect(getByText('后台监测中')).toBeTruthy();
     expect(getByText(/看结果 ·/)).toBeTruthy();
     expect(queryByText('运行中')).toBeNull();
+  });
+
+  it('keeps background sync out of the pull-to-refresh spinner', () => {
+    mockRefetchingKeys = new Set(['twin:me']);
+
+    const screen = render(<TodayScreen />);
+    const refreshControl = screen.UNSAFE_getByType(RefreshControl);
+
+    expect(screen.getByText('正在同步新数据')).toBeTruthy();
+    expect(refreshControl.props.refreshing).toBe(false);
   });
 
   it('keeps background review copy scannable and user-facing', () => {
