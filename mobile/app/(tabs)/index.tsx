@@ -94,6 +94,11 @@ interface OutcomeFeedbackMetric {
   route: string;
 }
 
+interface VerificationGoalCopy {
+  summary: string;
+  accessibilityLabel: string;
+}
+
 interface PersonalSignalChip {
   label: string;
   value: string;
@@ -497,7 +502,7 @@ function HomeCommandHeader({
     riskTitle,
     metrics: visibleLoopMetrics,
   });
-  const runtimeTargetSummary = buildVerificationGoalText(visibleLoopMetrics);
+  const verificationGoal = buildVerificationGoalCopy(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionLabelColor = c.brand;
   const decisionSurfaceColor = criticalCount > 0 ? 'rgba(255, 59, 48, 0.055)' : 'rgba(0, 153, 148, 0.065)';
@@ -568,8 +573,12 @@ function HomeCommandHeader({
           </HomeText>
           <View style={styles.commandValidationLine}>
             <Ionicons name="pulse-outline" size={11} color={c.brand} />
-            <HomeText style={[styles.commandValidationText, { color: c.labelTertiary }]} numberOfLines={1}>
-              {runtimeTargetSummary ? `看结果 · ${runtimeTargetSummary}` : '看结果 · 补齐记录后校准干预'}
+            <HomeText
+              accessibilityLabel={verificationGoal.accessibilityLabel}
+              style={[styles.commandValidationText, { color: c.labelTertiary }]}
+              numberOfLines={1}
+            >
+              {verificationGoal.summary}
             </HomeText>
           </View>
         </View>
@@ -1017,11 +1026,23 @@ function buildLoopFeedbackMetrics(
     .slice(0, 3) as OutcomeFeedbackMetric[];
 }
 
-function buildVerificationGoalText(metrics: OutcomeFeedbackMetric[]): string {
-  return metrics.map(metric => {
+function buildVerificationGoalCopy(metrics: OutcomeFeedbackMetric[]): VerificationGoalCopy {
+  const detailedTargets = metrics.map(metric => {
     const target = getVerificationTarget(metric);
     return `${metric.label}${target}`;
-  }).join(' · ');
+  });
+
+  if (detailedTargets.length === 0) {
+    return {
+      summary: '看结果 · 补齐记录后校准干预',
+      accessibilityLabel: '看结果：补齐记录后校准干预',
+    };
+  }
+
+  return {
+    summary: `看结果 · ${detailedTargets.length}项改善目标`,
+    accessibilityLabel: `看结果：${detailedTargets.join('、')}`,
+  };
 }
 
 function buildAgentJudgmentText({
