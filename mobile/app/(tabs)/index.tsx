@@ -406,6 +406,7 @@ export default function TodayScreen() {
           refreshing={isRefreshing}
           riskTitle={criticalAlerts[0]?.title}
           twinSnapshot={twinSnap}
+          geneticHits={geneticStatsQuery.data?.hits}
           action={nextAction}
           completionState={visibleNextActionState}
           onOpenFocus={() => (
@@ -481,6 +482,7 @@ function HomeCommandHeader({
   refreshing,
   riskTitle,
   twinSnapshot,
+  geneticHits,
   action,
   completionState,
   onOpenFocus,
@@ -492,6 +494,7 @@ function HomeCommandHeader({
   refreshing: boolean;
   riskTitle?: string;
   twinSnapshot: TwinSnapshot;
+  geneticHits?: number | null;
   action?: DailyPlanAction | null;
   completionState: NextActionCompletionState;
   onOpenFocus: () => void;
@@ -525,9 +528,7 @@ function HomeCommandHeader({
   const runtimeTargetSummary = buildVerificationGoalText(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
-  const personalSignalSummary = personalSignalChips
-    .map(signal => `${signal.label} ${signal.value}`)
-    .join(' · ');
+  const diagnosisBasisText = buildDiagnosisBasisText(personalSignalChips, geneticHits);
   const canComplete = Boolean(action?.action_key);
   return (
     <View style={[styles.commandHeader, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -572,11 +573,9 @@ function HomeCommandHeader({
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
-          {personalSignalSummary ? (
-            <HomeText style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]} numberOfLines={1}>
-              信号 · {personalSignalSummary}
-            </HomeText>
-          ) : null}
+          <HomeText style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]} numberOfLines={1}>
+            {diagnosisBasisText}
+          </HomeText>
           <View style={styles.commandValidationLine}>
             <Ionicons name="pulse-outline" size={11} color={c.brand} />
             <HomeText style={[styles.commandValidationText, { color: c.labelTertiary }]} numberOfLines={1}>
@@ -1218,6 +1217,17 @@ function buildPersonalSignalChips(
   }
 
   return picked;
+}
+
+function buildDiagnosisBasisText(
+  signals: PersonalSignalChip[],
+  geneticHits?: number | null,
+): string {
+  const wearable = signals.length > 0
+    ? `穿戴 ${signals.map(signal => `${signal.label} ${signal.value}`).join(' · ')}`
+    : '穿戴待同步';
+  const genetics = geneticHits != null ? `基因 ${geneticHits}` : '基因待同步';
+  return `依据 · ${wearable} · ${genetics} · 检查/环境 GPS`;
 }
 
 function buildOutcomeFeedbackMetric(

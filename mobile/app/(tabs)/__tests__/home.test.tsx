@@ -11,6 +11,8 @@ let mockTwinData: Record<string, unknown> = {};
 let mockTrajectoryData: any = null;
 let mockWeeklyAdvice: any[] = [];
 let mockSafetyAlerts: any[] = [];
+let mockGeneticStats: { hits: number | null; total: number | null } = { hits: null, total: null };
+let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -33,6 +35,12 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('trajectory')) {
       return { data: mockTrajectoryData, isLoading: false, isRefetching: false };
+    }
+    if (key.includes('genetic-stats')) {
+      return { data: mockGeneticStats, isLoading: false, isRefetching: false };
+    }
+    if (key.includes('progress-stats')) {
+      return { data: mockProgressStats, isLoading: false, isRefetching: false };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -145,6 +153,8 @@ describe('TodayScreen', () => {
     mockTrajectoryData = null;
     mockWeeklyAdvice = [];
     mockSafetyAlerts = [];
+    mockGeneticStats = { hits: null, total: null };
+    mockProgressStats = { improved: null, total: null };
   });
 
   it('does not show the low-value Agent data visibility panel on the home feed', () => {
@@ -180,6 +190,22 @@ describe('TodayScreen', () => {
     expect(screen.getByLabelText('问 Agent')).toBeTruthy();
     expect(targetIndex).toBeGreaterThan(textFlow.indexOf('Agent 判断'));
     expect(targetIndex).toBeLessThan(textFlow.indexOf('今日实验'));
+  });
+
+  it('grounds the top diagnosis in personal data sources instead of a generic signal line', () => {
+    mockGeneticStats = { hits: 65, total: 90 };
+    mockTwinData = {
+      physiological: {
+        spo2_avg: 95,
+        sleep_score_latest: 91,
+        hrv_latest: 63,
+      },
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText(/依据 · 穿戴 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*环境 GPS/)).toBeTruthy();
+    expect(queryByText(/信号 ·/)).toBeNull();
   });
 
   it('keeps the no-plan home feed focused on the top next step instead of adding a duplicate execution card', () => {
@@ -302,7 +328,7 @@ describe('TodayScreen', () => {
     expect(queryByText('夜间血氧过低，今天先 晨起记录体重和腰围。')).toBeNull();
   });
 
-  it('grounds the top diagnosis with a calm personal signal line', () => {
+  it('grounds the top diagnosis with a calm personal evidence line', () => {
     mockSafetyAlerts = [
       { severity: 'high', title: '夜间血氧过低' },
     ];
@@ -317,7 +343,8 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('信号 · 血氧 93% · 睡眠分 89 · HRV 62ms')).toBeTruthy();
+    expect(getByText('依据 · 穿戴 血氧 93% · 睡眠分 89 · HRV 62ms · 基因待同步 · 检查/环境 GPS')).toBeTruthy();
+    expect(queryByText(/信号 ·/)).toBeNull();
     expect(queryByText('93%')).toBeNull();
     expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
   });
@@ -491,7 +518,7 @@ describe('TodayScreen', () => {
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('健康指标')).toBeNull();
     expect(queryByText('Agent 后台运行')).toBeNull();
@@ -506,7 +533,7 @@ describe('TodayScreen', () => {
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
     expect(queryByText('基因/检查/趋势')).toBeNull();
-    expect(getByText(/基因待同步/)).toBeTruthy();
+    expect(getAllByText(/基因待同步/).length).toBeGreaterThan(0);
     expect(getByText(/进展待校准/)).toBeTruthy();
     expect(getByText(/运动\/饮食方案/)).toBeTruthy();
   });
