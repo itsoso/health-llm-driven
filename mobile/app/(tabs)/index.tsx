@@ -685,9 +685,9 @@ function HomeBackgroundPanel({
       <View style={styles.backgroundTaskHeader}>
         <View style={styles.backgroundTaskTitleLine}>
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台观察</HomeText>
+          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>Agent 后台运行</HomeText>
         </View>
-        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>穿戴 · GPS · 体检</HomeText>
+        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>基因 · 穿戴 · GPS · 体检持续合并</HomeText>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
@@ -726,7 +726,7 @@ function HomeBodyFeedbackPanel({
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
-        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>结果追踪</HomeText>
+        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>影响结果</HomeText>
         <View style={styles.runtimeFeedbackChipRow}>
           {stripMetrics.map(metric => {
             const color = c[metric.colorName];
