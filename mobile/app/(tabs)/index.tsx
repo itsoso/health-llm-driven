@@ -688,7 +688,7 @@ function HomeBodyFeedbackPanel({
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
-        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>指标反馈</HomeText>
+        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>结果追踪</HomeText>
         <View style={styles.runtimeFeedbackChipRow}>
           {stripMetrics.map(metric => {
           const color = c[metric.colorName];
@@ -1327,7 +1327,7 @@ function buildWorkspaceDataSources({
       key: 'clinical',
       label: '体检',
       status: clinicalReady ? 'ready' : 'missing_or_stale',
-      value: clinicalReady ? '指标反馈' : null,
+      value: clinicalReady ? '结果追踪' : null,
     },
     {
       key: 'wearable',
