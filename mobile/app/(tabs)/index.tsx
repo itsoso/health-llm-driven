@@ -510,7 +510,7 @@ function HomeCommandHeader({
       : '保持记录节奏';
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
-  const actionLeverLabel = buildActionLeverLabel(action);
+  const actionLeverLabel = buildActionLeverLabel(action, criticalCount);
   const strategyStatus = buildActionStrategyStatus(interventionDomains, action);
   const agentJudgmentText = buildAgentJudgmentText({
     action,
@@ -523,8 +523,8 @@ function HomeCommandHeader({
   const verificationGoal = buildVerificationGoalCopy(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionLabelColor = c.brand;
-  const decisionSurfaceColor = c.fill;
-  const decisionBorderColor = c.separator;
+  const decisionSurfaceColor = c.bgCard;
+  const decisionBorderColor = c.bgCard;
   const decisionIconColor = criticalCount > 0 ? c.tintRed : c.bgCard;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const diagnosisBasis = buildDiagnosisBasis(personalSignalChips, geneticHits);
@@ -582,22 +582,25 @@ function HomeCommandHeader({
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
-          <HomeText
-            accessibilityLabel={diagnosisBasis.accessibilityLabel}
-            style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]}
-            numberOfLines={1}
-          >
-            {diagnosisBasis.summary}
-          </HomeText>
-          <View style={styles.commandValidationLine}>
-            <Ionicons name="pulse-outline" size={11} color={c.brand} />
+          <View style={styles.commandSupportRail}>
             <HomeText
-              accessibilityLabel={verificationGoal.accessibilityLabel}
-              style={[styles.commandValidationText, { color: c.labelTertiary }]}
+              accessibilityLabel={diagnosisBasis.accessibilityLabel}
+              style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]}
               numberOfLines={1}
             >
-              {verificationGoal.summary}
+              {diagnosisBasis.summary}
             </HomeText>
+            <View style={[styles.commandSupportDivider, { backgroundColor: c.separator }]} />
+            <View style={styles.commandValidationLine}>
+              <Ionicons name="pulse-outline" size={11} color={c.brand} />
+              <HomeText
+                accessibilityLabel={verificationGoal.accessibilityLabel}
+                style={[styles.commandValidationText, { color: c.labelTertiary }]}
+                numberOfLines={1}
+              >
+                {verificationGoal.summary}
+              </HomeText>
+            </View>
           </View>
         </View>
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
@@ -605,6 +608,7 @@ function HomeCommandHeader({
 
       <View style={styles.commandInlineActionRow}>
         <Pressable
+          testID="home-command-next-step"
           onPress={onOpenFocus}
           style={({ pressed }) => [
             styles.commandInlineNextStep,
@@ -839,7 +843,7 @@ function AgentFollowUpQueue({
             style={[styles.followUpRuntimeText, { color: c.labelTertiary }]}
             numberOfLines={1}
           >
-            后台验证 · 个体画像
+            后台运行 · 长期画像
           </HomeText>
         </View>
         <View style={styles.followUpRowTitleLine}>
@@ -847,8 +851,7 @@ function AgentFollowUpQueue({
             {queueTitle}
           </HomeText>
         </View>
-        <View style={styles.followUpResultLine}>
-          <HomeText style={[styles.followUpResultLabel, { color: c.labelTertiary }]}>要改善的结果</HomeText>
+        <View style={styles.followUpMetaLine}>
           <Pressable
             testID="home-runtime-result-link"
             onPress={() => onOpenMetric(feedbackSummary.route)}
@@ -865,17 +868,24 @@ function AgentFollowUpQueue({
             </HomeText>
             <Ionicons name="chevron-forward" size={10} color={c.brand} />
           </Pressable>
+          <View style={[styles.followUpMetaDivider, { backgroundColor: c.separator }]} />
+          <View style={styles.followUpReviewLine}>
+            <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
+            <HomeText
+              accessibilityLabel={reviewCopy.accessibilityLabel}
+              style={[styles.followUpReviewText, { color: c.labelTertiary }]}
+              numberOfLines={1}
+            >
+              {reviewCopy.summary}
+            </HomeText>
+          </View>
         </View>
-        <View style={styles.followUpReviewLine}>
-          <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
-          <HomeText
-            accessibilityLabel={reviewCopy.accessibilityLabel}
-            style={[styles.followUpReviewText, { color: c.labelTertiary }]}
-            numberOfLines={1}
-          >
-            {reviewCopy.summary}
-          </HomeText>
-        </View>
+        <HomeText
+          style={[styles.followUpQueueDetail, { color: c.labelTertiary }]}
+          numberOfLines={1}
+        >
+          {queueDetail}
+        </HomeText>
       </Pressable>
       <View
         accessibilityLabel={queueRightStatus.accessibilityLabel}
@@ -1049,7 +1059,6 @@ function buildAgentJudgmentText({
   const metricLabels = metrics.map(metric => metric.label).slice(0, 3).join('、');
   if (criticalCount > 0) {
     const riskFocus = riskTitle || headline;
-    if (action?.title) return `${riskFocus}，先${compactHeroActionTitle(action.title)}。`;
     return `${riskFocus}，先查看风险原因并调整今晚策略。`;
   }
   if (action?.title) {
@@ -1058,15 +1067,17 @@ function buildAgentJudgmentText({
       : `今天先 ${action.title}。`;
   }
   if (planCount > 0) return `今天先完成 ${planCount} 个计划，再用身体反馈调整。`;
+  const liveMetricLabels = metrics
+    .filter(hasLiveMetricValue)
+    .map(metric => metric.label)
+    .slice(0, 3)
+    .join('、');
+  if (liveMetricLabels) return `已有${liveMetricLabels}反馈，先稳住恢复并补齐关键记录。`;
   return '补齐今天记录后，Agent 会重新排序干预。';
 }
 
-function compactHeroActionTitle(title: string): string {
-  return title
-    .replace(/^晨起/, '')
-    .replace(/^早晨/, '')
-    .replace(/^今天/, '')
-    .trim();
+function hasLiveMetricValue(metric: OutcomeFeedbackMetric): boolean {
+  return !/^(待|记录后|补齐|4 源)/.test(metric.value);
 }
 
 function getVerificationTarget(metric: OutcomeFeedbackMetric): string {
@@ -1096,8 +1107,8 @@ function buildHomeBodyFeedbackMetrics(
 
 function buildOutcomeFeedbackSummary(metrics: OutcomeFeedbackMetric[]): OutcomeFeedbackSummary {
   return {
-    summary: `${metrics.length}项结果持续验证`,
-    accessibilityLabel: `要改善的结果：${metrics.map(metric => `${metric.label} ${metric.value}`).join('、')}`,
+    summary: `${metrics.length}项结果验证`,
+    accessibilityLabel: `结果验证：${metrics.map(metric => `${metric.label} ${metric.value}`).join('、')}`,
     route: metrics[0]?.route ?? '/body-measurements?focus=morning',
   };
 }
@@ -1105,8 +1116,8 @@ function buildOutcomeFeedbackSummary(metrics: OutcomeFeedbackMetric[]): OutcomeF
 function buildBackgroundReviewCopy(targetLabels: string[], planLabel: string): BackgroundReviewCopy {
   const targets = targetLabels.length > 0 ? targetLabels : ['睡眠', '血氧', '体成分'];
   return {
-    summary: `下次看 · 周日晚复盘 · ${targets.length}项结果 · ${planLabel}`,
-    accessibilityLabel: `下次看：周日晚复盘 ${targets.join('、')}；${planLabel}`,
+    summary: `周日晚复盘 · ${planLabel}`,
+    accessibilityLabel: `复盘：周日晚复盘 ${targets.join('、')}；${planLabel}`,
   };
 }
 
@@ -1193,12 +1204,13 @@ function buildHomeNextStepLabel({
   action?: DailyPlanAction | null;
   criticalCount: number;
 }): string {
-  if (action?.title) return `下一步：${action.title}`;
   if (criticalCount > 0) return '下一步：查看风险原因，调整今晚策略';
+  if (action?.title) return `下一步：${action.title}`;
   return '下一步：补齐今天记录，Agent 再排干预';
 }
 
-function buildActionLeverLabel(action?: DailyPlanAction | null): string {
+function buildActionLeverLabel(action?: DailyPlanAction | null, criticalCount = 0): string {
+  if (criticalCount > 0) return '现在只做 · 风险';
   if (!action) return '现在只做';
   if (isBodyMeasurementAction(action) || action.domain === 'measurement') return '现在只做 · 记录';
 
@@ -1516,10 +1528,10 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 9,
-    gap: 7,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 11,
+    gap: 9,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1627,11 +1639,11 @@ const styles = StyleSheet.create({
   commandInlineNextStep: {
     flex: 1,
     minWidth: 0,
-    minHeight: 54,
-    borderRadius: radii.md,
+    minHeight: 48,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 9,
-    paddingVertical: 6,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -1735,18 +1747,18 @@ const styles = StyleSheet.create({
   commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 52,
+    minHeight: 58,
     borderWidth: 0,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
+    borderRadius: 8,
+    paddingHorizontal: 0,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   commandDecisionIcon: {
-    width: 28,
-    height: 28,
+    width: 30,
+    height: 30,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1758,7 +1770,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   commandDecisionRail: { width: 2, flex: 1, minHeight: 30, borderRadius: 2 },
-  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
+  commandDecisionText: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 5 },
   commandDecisionSupport: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   commandSignalChipRail: {
     minHeight: 22,
@@ -1778,8 +1790,20 @@ const styles = StyleSheet.create({
   },
   commandPersonalSignalLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   commandPersonalSignalValue: { fontSize: 9, lineHeight: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  commandPersonalSignalLine: { minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  commandPersonalSignalLine: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  commandSupportRail: {
+    minHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  commandSupportDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 12,
+  },
   commandValidationLine: {
+    flex: 1,
+    minWidth: 0,
     minHeight: 18,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2118,23 +2142,24 @@ const styles = StyleSheet.create({
   followUpRowTitle: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   followUpRowDetail: { fontSize: 9, lineHeight: 12, fontWeight: '600' },
   followUpReviewLine: {
-    minHeight: 14,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 18,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingTop: 1,
   },
   followUpReviewText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
-  followUpResultLine: {
+  followUpMetaLine: {
     minHeight: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     paddingTop: 2,
   },
-  followUpResultLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  followUpMetaDivider: { width: StyleSheet.hairlineWidth, height: 12 },
   followUpResultLink: {
-    flex: 1,
+    flexShrink: 0,
     minWidth: 0,
     minHeight: 18,
     borderRadius: radii.full,
@@ -2144,7 +2169,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   followUpResultDot: { width: 5, height: 5, borderRadius: 2.5 },
-  followUpResultText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  followUpResultText: { minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  followUpQueueDetail: { minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
   followUpEvidenceLine: {
     minHeight: 14,
     flexDirection: 'row',

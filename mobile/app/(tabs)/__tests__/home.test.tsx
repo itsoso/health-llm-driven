@@ -184,8 +184,24 @@ describe('TodayScreen', () => {
     expect(getByText('现在只做')).toBeTruthy();
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
     expect(getByText(/依据 ·/)).toBeTruthy();
-    expect(getByText(/下次看/)).toBeTruthy();
+    expect(getByText(/周日晚复盘/)).toBeTruthy();
     expect(queryByText('先处理一件，再看余下计划')).toBeNull();
+  });
+
+  it('uses live wearable feedback for the top judgment even when no plan is generated', () => {
+    mockTwinData = {
+      physiological: {
+        sleep_score_latest: 82,
+        hrv_latest: 48,
+        spo2_avg: 93,
+      },
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('已有睡眠分、HRV、血氧反馈，先稳住恢复并补齐关键记录。')).toBeTruthy();
+    expect(getByText('看结果 · 3项改善目标')).toBeTruthy();
+    expect(queryByText('补齐今天记录后，Agent 会重新排序干预。')).toBeNull();
   });
 
   it('uses one visible Agent identity and keeps validation inside the top diagnosis card', () => {
@@ -223,7 +239,7 @@ describe('TodayScreen', () => {
     const { getByTestId } = render(<TodayScreen />);
     const decisionStyle = StyleSheet.flatten(getByTestId('home-command-decision-card').props.style);
 
-    expect(decisionStyle.backgroundColor).not.toBe('transparent');
+    expect(decisionStyle.backgroundColor).toBe('#fff');
     expect(decisionStyle.borderColor).not.toBe('transparent');
     expect(decisionStyle.borderWidth).toBe(0);
   });
@@ -236,8 +252,26 @@ describe('TodayScreen', () => {
     const { getByTestId } = render(<TodayScreen />);
     const decisionStyle = StyleSheet.flatten(getByTestId('home-command-decision-card').props.style);
 
-    expect(decisionStyle.backgroundColor).toBe('#f5f5f5');
+    expect(decisionStyle.backgroundColor).toBe('#fff');
     expect(decisionStyle.backgroundColor).not.toBe('rgba(255, 59, 48, 0.055)');
+  });
+
+  it('keeps the next step as a compact teal strip instead of a large task card', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByTestId } = render(<TodayScreen />);
+    const nextStepStyle = StyleSheet.flatten(getByTestId('home-command-next-step').props.style);
+
+    expect(nextStepStyle.backgroundColor).toBe('#E6F7F7');
+    expect(nextStepStyle.minHeight).toBeLessThanOrEqual(50);
+    expect(nextStepStyle.borderRadius).toBeLessThanOrEqual(12);
+    expect(nextStepStyle.backgroundColor).not.toBe('#16A34A');
   });
 
   it('keeps top evidence and target lines short enough to scan', () => {
@@ -283,8 +317,8 @@ describe('TodayScreen', () => {
   it('keeps background review copy scannable and user-facing', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
-    expect(getByText(/下次看 ·/)).toBeTruthy();
+    expect(getByText('后台运行 · 长期画像')).toBeTruthy();
+    expect(getByText(/周日晚复盘 ·/)).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(queryByText('正在观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
@@ -296,9 +330,9 @@ describe('TodayScreen', () => {
   it('frames background work as a verification queue instead of another agent headline', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
+    expect(getByText('后台运行 · 长期画像')).toBeTruthy();
     expect(getByLabelText('后台持续合并基因、表观遗传、医疗检查、穿戴和 GPS 数据')).toBeTruthy();
-    expect(getByText('要改善的结果')).toBeTruthy();
+    expect(getByText('3项结果验证')).toBeTruthy();
     expect(queryByText('Agent 后台运行')).toBeNull();
     expect(queryByText('影响结果')).toBeNull();
     expect(queryByText('个体画像 · 5类数据合并')).toBeNull();
@@ -307,6 +341,19 @@ describe('TodayScreen', () => {
     expect(queryByText('穿戴 · GPS · 体检')).toBeNull();
     expect(queryByText('长期画像 · 基因/表观/体检/穿戴/GPS')).toBeNull();
     expect(queryByText('结果追踪')).toBeNull();
+  });
+
+  it('compresses the background queue into one agent task line instead of separate system labels', () => {
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('后台运行 · 长期画像')).toBeTruthy();
+    expect(getByText('3项结果验证')).toBeTruthy();
+    expect(getByText('周日晚复盘 · 等记录')).toBeTruthy();
+    expect(getByLabelText('结果验证：BMI/体脂 待记录、血压 待记录、VO2max 待估算')).toBeTruthy();
+    expect(getByLabelText('复盘：周日晚复盘 BMI/体脂、血压、VO2max；等记录')).toBeTruthy();
+    expect(queryByText('后台验证 · 个体画像')).toBeNull();
+    expect(queryByText('要改善的结果')).toBeNull();
+    expect(queryByText(/下次看/)).toBeNull();
   });
 
   it('surfaces epigenetic context in the compact personal evidence line', () => {
@@ -398,7 +445,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('验证指标')).toBe(-1);
     const evidenceIndex = findEvidenceIndex(textFlow);
     expect(evidenceIndex).toBeGreaterThanOrEqual(0);
-    const reviewIndex = textFlow.findIndex(text => /下次看/.test(text));
+    const reviewIndex = textFlow.findIndex(text => /周日晚复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.indexOf('今日判断'));
     expect(textFlow.indexOf('今日判断')).toBeLessThan(targetIndex);
@@ -456,13 +503,13 @@ describe('TodayScreen', () => {
 
     expect(getByText('今日判断')).toBeTruthy();
     expect(getByText('夜间血氧持续偏低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('现在只做')).toBeTruthy();
+    expect(getByText('现在只做 · 风险')).toBeTruthy();
     expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
     expect(getByLabelText('打开下一步')).toBeTruthy();
     expect(getByLabelText('问 Agent')).toBeTruthy();
   });
 
-  it('keeps critical risk action copy short enough for the hero card', () => {
+  it('keeps critical risk as the next step even when a record task exists', () => {
     mockSafetyAlerts = [
       { severity: 'high', title: '夜间血氧过低' },
     ];
@@ -474,10 +521,18 @@ describe('TodayScreen', () => {
       },
     ];
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('夜间血氧过低，先记录体重和腰围。')).toBeTruthy();
+    expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
+    expect(getByText('现在只做 · 风险')).toBeTruthy();
+    expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
+    expect(queryByText('现在只做 · 记录')).toBeNull();
+    expect(queryByText('夜间血氧过低，先记录体重和腰围。')).toBeNull();
     expect(queryByText('夜间血氧过低，今天先 晨起记录体重和腰围。')).toBeNull();
+
+    fireEvent.press(getByLabelText('打开下一步'));
+
+    expect(mockPush).toHaveBeenCalledWith('/alerts');
   });
 
   it('grounds the top diagnosis with a calm personal evidence line', () => {
@@ -570,7 +625,7 @@ describe('TodayScreen', () => {
     expect(targetIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(screen.queryByText('结果校准')).toBeNull();
-    const reviewIndex = textFlow.findIndex(text => /下次看/.test(text));
+    const reviewIndex = textFlow.findIndex(text => /周日晚复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日判断')).toBeLessThan(targetIndex);
     expect(targetIndex).toBeLessThan(reviewIndex);
@@ -660,7 +715,7 @@ describe('TodayScreen', () => {
     const { getByLabelText, queryByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('现在只做 · 记录')).toBeTruthy();
-    expect(getByLabelText('要改善的结果：BMI/体脂 记录后更新、血压 待记录、血液/生化 待复盘')).toBeTruthy();
+    expect(getByLabelText('结果验证：BMI/体脂 记录后更新、血压 待记录、血液/生化 待复盘')).toBeTruthy();
     expect(queryByText('记录后更新')).toBeNull();
     expect(queryByLabelText('BMI/体脂 待记录')).toBeNull();
   });
@@ -755,7 +810,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('今日行动影响的长期结果')).toBe(-1);
     const evidenceIndex = findEvidenceIndex(textFlow);
     expect(evidenceIndex).toBeGreaterThanOrEqual(0);
-    const reviewIndex = textFlow.findIndex(text => /下次看/.test(text));
+    const reviewIndex = textFlow.findIndex(text => /周日晚复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(evidenceIndex).toBeLessThan(textFlow.findIndex(text => /看结果/.test(text)));
     expect(textFlow.findIndex(text => /看结果/.test(text))).toBeLessThan(reviewIndex);
@@ -765,7 +820,7 @@ describe('TodayScreen', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('健康指标')).toBeNull();
-    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
+    expect(getByText('后台运行 · 长期画像')).toBeTruthy();
     expect(queryByText('运行中')).toBeNull();
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
@@ -793,8 +848,8 @@ describe('TodayScreen', () => {
     expect(getByText(/看结果 ·/)).toBeTruthy();
     expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
     expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
-    expect(getByText(/下次看/)).toBeTruthy();
-    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
+    expect(getByText(/周日晚复盘/)).toBeTruthy();
+    expect(getByText('后台运行 · 长期画像')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('环境证据')).toBeNull();
@@ -807,8 +862,8 @@ describe('TodayScreen', () => {
     const { getByLabelText, getByTestId, getByText, queryByTestId, queryByText } = render(<TodayScreen />);
 
     expect(getByTestId('home-runtime-result-link')).toBeTruthy();
-    expect(getByText('3项结果持续验证')).toBeTruthy();
-    expect(getByLabelText('要改善的结果：BMI/体脂 待记录、血压 待记录、VO2max 待估算')).toBeTruthy();
+    expect(getByText('3项结果验证')).toBeTruthy();
+    expect(getByLabelText('结果验证：BMI/体脂 待记录、血压 待记录、VO2max 待估算')).toBeTruthy();
     expect(queryByText('待记录')).toBeNull();
     expect(queryByText('待估算')).toBeNull();
     expect(queryByTestId('home-runtime-feedback-strip')).toBeNull();
@@ -819,8 +874,8 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(screen.getByText('后台验证 · 个体画像')).toBeTruthy();
-    expect(screen.getByText('要改善的结果')).toBeTruthy();
+    expect(screen.getByText('后台运行 · 长期画像')).toBeTruthy();
+    expect(screen.getByText('3项结果验证')).toBeTruthy();
     expect(screen.queryByText('指标反馈')).toBeNull();
     expect(screen.queryByText('正在观察')).toBeNull();
     expect(screen.queryByText('后台观察')).toBeNull();
@@ -829,12 +884,15 @@ describe('TodayScreen', () => {
     expect(screen.queryByText('后台校准')).toBeNull();
     expect(screen.queryByText('实时校准')).toBeNull();
     expect(screen.queryByText('证据链')).toBeNull();
-    expect(textFlow.indexOf('后台验证 · 个体画像')).toBeLessThan(textFlow.indexOf('要改善的结果'));
+    const resultIndex = textFlow.findIndex(text => /结果验证/.test(text));
+
+    expect(resultIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台运行 · 长期画像')).toBeLessThan(resultIndex);
     expect(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text))).toBeLessThan(
-      textFlow.indexOf('要改善的结果'),
+      resultIndex,
     );
-    expect(textFlow.indexOf('要改善的结果')).toBeLessThan(textFlow.findIndex(text => /下次看/.test(text)));
-    expect(findEvidenceIndex(textFlow)).toBeLessThan(textFlow.indexOf('要改善的结果'));
+    expect(resultIndex).toBeLessThan(textFlow.findIndex(text => /周日晚复盘/.test(text)));
+    expect(findEvidenceIndex(textFlow)).toBeLessThan(resultIndex);
   });
 
   it('folds verification targets into the top diagnosis card instead of a separate section title', () => {
@@ -854,8 +912,8 @@ describe('TodayScreen', () => {
     expect(queryByTestId('home-runtime-evidence-strip')).toBeNull();
     expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
     expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
-    expect(getByText('下次看 · 周日晚复盘 · 3项结果 · 等记录')).toBeTruthy();
-    expect(getByLabelText('下次看：周日晚复盘 BMI/体脂、血压、VO2max；等记录')).toBeTruthy();
+    expect(getByText('周日晚复盘 · 等记录')).toBeTruthy();
+    expect(getByLabelText('复盘：周日晚复盘 BMI/体脂、血压、VO2max；等记录')).toBeTruthy();
     expect(queryByText(/BMI\/体脂 · 血压 · VO2max/)).toBeNull();
   });
 
@@ -866,7 +924,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBe(-1);
-    expect(textFlow.indexOf('后台验证 · 个体画像')).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('后台运行 · 长期画像')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('后台观察')).toBe(-1);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
     const targetIndex = textFlow.findIndex(text => /看结果/.test(text));
@@ -874,7 +932,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('验证指标')).toBe(-1);
     const evidenceIndex = findEvidenceIndex(textFlow);
     expect(evidenceIndex).toBeGreaterThanOrEqual(0);
-    const reviewIndex = textFlow.findIndex(text => /下次看/.test(text));
+    const reviewIndex = textFlow.findIndex(text => /周日晚复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('今日判断')).toBeLessThan(targetIndex);
     expect(evidenceIndex).toBeLessThan(targetIndex);
@@ -885,7 +943,7 @@ describe('TodayScreen', () => {
     const { getByTestId, getByText, queryByText } = render(<TodayScreen />);
     const panelStyle = StyleSheet.flatten(getByTestId('home-background-runtime').props.style);
 
-    expect(getByText('后台验证 · 个体画像')).toBeTruthy();
+    expect(getByText('后台运行 · 长期画像')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
     expect(queryByText('后台观察')).toBeNull();
     expect(panelStyle.backgroundColor).toBe('transparent');
@@ -905,7 +963,7 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('验证指标')).toBe(-1);
     const evidenceIndex = findEvidenceIndex(textFlow);
     expect(evidenceIndex).toBeGreaterThanOrEqual(0);
-    const reviewIndex = textFlow.findIndex(text => /下次看/.test(text));
+    const reviewIndex = textFlow.findIndex(text => /周日晚复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
@@ -1020,7 +1078,7 @@ describe('TodayScreen', () => {
 
     const { getByLabelText } = render(<TodayScreen />);
 
-    fireEvent.press(getByLabelText('要改善的结果：BMI/体脂 待记录、血压 待记录、VO2max 待估算'));
+    fireEvent.press(getByLabelText('结果验证：BMI/体脂 待记录、血压 待记录、VO2max 待估算'));
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
 
