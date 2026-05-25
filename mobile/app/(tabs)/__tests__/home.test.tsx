@@ -219,6 +219,15 @@ describe('TodayScreen', () => {
     expect(queryByText('记录实验')).toBeNull();
   });
 
+  it('renders the main judgment as a distinct decision panel instead of floating copy', () => {
+    const { getByTestId } = render(<TodayScreen />);
+    const decisionStyle = StyleSheet.flatten(getByTestId('home-command-decision-card').props.style);
+
+    expect(decisionStyle.backgroundColor).not.toBe('transparent');
+    expect(decisionStyle.borderColor).not.toBe('transparent');
+    expect(decisionStyle.borderWidth).toBeGreaterThan(0);
+  });
+
   it('keeps top evidence and target lines short enough to scan', () => {
     mockGeneticStats = { hits: 65, total: 90 };
     mockTwinData = {
@@ -271,10 +280,11 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('Agent 后台运行')).toBeTruthy();
-    expect(getByText('长期画像 · 基因/表观/体检/穿戴/GPS')).toBeTruthy();
+    expect(getByText('长期画像 · 基因 表观 体检 穿戴 GPS')).toBeTruthy();
     expect(getByText('影响结果')).toBeTruthy();
     expect(queryByText('后台观察')).toBeNull();
     expect(queryByText('穿戴 · GPS · 体检')).toBeNull();
+    expect(queryByText('长期画像 · 基因/表观/体检/穿戴/GPS')).toBeNull();
     expect(queryByText('结果追踪')).toBeNull();
   });
 
@@ -598,10 +608,11 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('策略校准')).toBeNull();
-    expect(getByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeTruthy();
+    expect(getByText('记录后校准 5 类策略 · 饮食 睡眠 运动 补剂 情绪')).toBeTruthy();
     expect(getByText('现在只做 · 记录')).toBeTruthy();
     expect(queryByText('策略覆盖')).toBeNull();
     expect(queryByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeNull();
+    expect(queryByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeNull();
     expect(queryByText('记录后校准饮食 · 睡眠 · 运动')).toBeNull();
   });
 
@@ -634,7 +645,8 @@ describe('TodayScreen', () => {
 
     expect(queryByTestId('home-strategy-coverage-rail')).toBeNull();
     expect(queryByText('策略校准')).toBeNull();
-    expect(getByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeTruthy();
+    expect(getByText('记录后校准 5 类策略 · 饮食 睡眠 运动 补剂 情绪')).toBeTruthy();
+    expect(queryByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeNull();
     expect(queryByText('记录后校准饮食 · 睡眠 · 运动')).toBeNull();
     expect(getByText('现在只做 · 记录')).toBeTruthy();
   });

@@ -500,8 +500,9 @@ function HomeCommandHeader({
   const runtimeTargetSummary = buildVerificationGoalText(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionLabelColor = c.brand;
-  const decisionSurfaceColor = 'transparent';
-  const decisionIconColor = criticalCount > 0 ? c.tintRed : c.brandLight;
+  const decisionSurfaceColor = criticalCount > 0 ? 'rgba(255, 59, 48, 0.055)' : 'rgba(0, 153, 148, 0.065)';
+  const decisionBorderColor = criticalCount > 0 ? 'rgba(255, 59, 48, 0.18)' : 'rgba(0, 153, 148, 0.16)';
+  const decisionIconColor = c.bgCard;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const diagnosisBasisText = buildDiagnosisBasisText(personalSignalChips, geneticHits);
   const isRecordAction = action?.domain === 'measurement';
@@ -533,9 +534,14 @@ function HomeCommandHeader({
       </View>
 
       <Pressable
+        testID="home-command-decision-card"
         style={({ pressed }) => [
           styles.commandDecisionCard,
-          { backgroundColor: decisionSurfaceColor, borderColor: 'transparent', opacity: pressed ? 0.78 : 1 },
+          {
+            backgroundColor: decisionSurfaceColor,
+            borderColor: decisionBorderColor,
+            opacity: pressed ? 0.78 : 1,
+          },
         ]}
         onPress={onOpenFocus}
         accessibilityRole="button"
@@ -646,7 +652,7 @@ function buildActionStrategyStatus(
 
   if (isCalibrationMode) {
     return {
-      summary: '记录后校准饮食/睡眠/运动/补剂/情绪',
+      summary: '记录后校准 5 类策略 · 饮食 睡眠 运动 补剂 情绪',
       activeCount,
     };
   }
@@ -687,7 +693,7 @@ function HomeBackgroundPanel({
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
           <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>Agent 后台运行</HomeText>
         </View>
-        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>长期画像 · 基因/表观/体检/穿戴/GPS</HomeText>
+        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>长期画像 · 基因 表观 体检 穿戴 GPS</HomeText>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
