@@ -634,34 +634,19 @@ function HomeStrategyCoverageRail({
   domains: InterventionDomainStatus[];
 }) {
   const { c } = useTheme();
+  const strategySummary = domains.map(domain => domain.label).join(' · ');
+  const activeCount = domains.reduce((total, domain) => total + domain.activeCount, 0);
   return (
-    <View testID="home-strategy-coverage-rail" style={styles.commandStrategyCoverageRail}>
+    <View
+      testID="home-strategy-coverage-rail"
+      style={styles.commandStrategyCoverageRail}
+      accessibilityLabel={`策略覆盖：${strategySummary}，${activeCount} 个干预`}
+    >
       <HomeText style={[styles.commandStrategyCoverageLabel, { color: c.labelTertiary }]}>策略覆盖</HomeText>
-      <View style={styles.commandStrategyCoverageChips}>
-        {domains.map(domain => {
-          const active = domain.activeCount > 0;
-          return (
-            <View
-              key={domain.key}
-              style={[
-                styles.commandStrategyCoverageChip,
-                { backgroundColor: active ? c[domain.tintName] : c.fill },
-              ]}
-              accessibilityLabel={`${domain.label}${active ? ` ${domain.activeCount} 个干预` : ' 待观察'}`}
-            >
-              <View style={[styles.commandStrategyCoverageDot, { backgroundColor: active ? c[domain.colorName] : c.labelTertiary }]} />
-              <HomeText
-                style={[
-                  styles.commandStrategyCoverageText,
-                  { color: active ? c[domain.colorName] : c.labelTertiary },
-                ]}
-              >
-                {domain.label}
-              </HomeText>
-            </View>
-          );
-        })}
-      </View>
+      <View style={[styles.commandStrategyCoverageDot, { backgroundColor: c.brand }]} />
+      <HomeText style={[styles.commandStrategyCoverageText, { color: c.labelSecondary }]} numberOfLines={1}>
+        {strategySummary}
+      </HomeText>
     </View>
   );
 }
@@ -1583,10 +1568,10 @@ const styles = StyleSheet.create({
   },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandStrategyCoverageRail: {
-    minHeight: 25,
+    minHeight: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 5,
   },
   commandStrategyCoverageLabel: {
     flexShrink: 0,
@@ -1594,26 +1579,8 @@ const styles = StyleSheet.create({
     lineHeight: 10,
     fontWeight: '800',
   },
-  commandStrategyCoverageChips: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  commandStrategyCoverageChip: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 22,
-    borderRadius: radii.full,
-    paddingHorizontal: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
   commandStrategyCoverageDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
-  commandStrategyCoverageText: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  commandStrategyCoverageText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandInlineDoneButton: {
     minHeight: 32,
     borderRadius: radii.full,

@@ -544,14 +544,17 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    expect(screen.getByTestId('home-strategy-coverage-rail')).toBeTruthy();
+    const railStyle = StyleSheet.flatten(screen.getByTestId('home-strategy-coverage-rail').props.style);
+
     expect(screen.getByText('策略覆盖')).toBeTruthy();
-    expect(screen.getByText('饮食')).toBeTruthy();
-    expect(screen.getByText('睡眠')).toBeTruthy();
-    expect(screen.getByText('运动')).toBeTruthy();
-    expect(screen.getByText('补剂')).toBeTruthy();
-    expect(screen.getByText('情绪')).toBeTruthy();
+    expect(screen.getByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeTruthy();
+    expect(screen.queryByText('饮食')).toBeNull();
+    expect(screen.queryByText('睡眠')).toBeNull();
+    expect(screen.queryByText('运动')).toBeNull();
+    expect(screen.queryByText('补剂')).toBeNull();
+    expect(screen.queryByText('情绪')).toBeNull();
     expect(screen.queryByText('干预策略')).toBeNull();
+    expect(railStyle.minHeight).toBeLessThanOrEqual(20);
     expect(textFlow.indexOf('策略覆盖')).toBeLessThan(textFlow.indexOf('现在只做 · 饮食'));
   });
 
