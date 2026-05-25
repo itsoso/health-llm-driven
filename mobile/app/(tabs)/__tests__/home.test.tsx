@@ -625,7 +625,7 @@ describe('TodayScreen', () => {
     );
   });
 
-  it('shows strategy calibration copy when the current action is only a record task', () => {
+  it('shows user-facing benefit copy when the current action is only a record task', () => {
     mockDailyPlanActions = [
       {
         action_key: 'measurement.weight_waist_morning',
@@ -637,10 +637,11 @@ describe('TodayScreen', () => {
     const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('策略校准')).toBeNull();
-    expect(getByText('校准 5 类生活策略')).toBeTruthy();
-    expect(getByLabelText('记录后校准饮食、睡眠、运动、补剂和情绪策略')).toBeTruthy();
+    expect(getByText('让建议更准')).toBeTruthy();
+    expect(getByLabelText('记录后让饮食、睡眠、运动、补剂和情绪建议更准')).toBeTruthy();
     expect(getByText('现在只做 · 记录')).toBeTruthy();
     expect(queryByText('策略覆盖')).toBeNull();
+    expect(queryByText('校准 5 类生活策略')).toBeNull();
     expect(queryByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeNull();
     expect(queryByText('记录后校准 5 类策略 · 饮食 睡眠 运动 补剂 情绪')).toBeNull();
     expect(queryByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeNull();
@@ -677,8 +678,9 @@ describe('TodayScreen', () => {
 
     expect(queryByTestId('home-strategy-coverage-rail')).toBeNull();
     expect(queryByText('策略校准')).toBeNull();
-    expect(getByText('校准 5 类生活策略')).toBeTruthy();
-    expect(getByLabelText('记录后校准饮食、睡眠、运动、补剂和情绪策略')).toBeTruthy();
+    expect(getByText('让建议更准')).toBeTruthy();
+    expect(getByLabelText('记录后让饮食、睡眠、运动、补剂和情绪建议更准')).toBeTruthy();
+    expect(queryByText('校准 5 类生活策略')).toBeNull();
     expect(queryByText('记录后校准 5 类策略 · 饮食 睡眠 运动 补剂 情绪')).toBeNull();
     expect(queryByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeNull();
     expect(queryByText('记录后校准饮食 · 睡眠 · 运动')).toBeNull();

@@ -688,9 +688,9 @@ function buildActionStrategyStatus(
 
   if (isCalibrationMode) {
     return {
-      summary: '校准 5 类生活策略',
+      summary: '让建议更准',
       activeCount,
-      accessibilityLabel: '记录后校准饮食、睡眠、运动、补剂和情绪策略',
+      accessibilityLabel: '记录后让饮食、睡眠、运动、补剂和情绪建议更准',
     };
   }
 
