@@ -92,4 +92,47 @@ describe('streamChat', () => {
     });
     await iter.return?.(undefined as any);
   });
+
+  it('parses a final done event even without a trailing newline', async () => {
+    const iter = streamChat('slow commercial model');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":77,"message_id":88,"completion_status":"complete"}}';
+    xhr.onload?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'done',
+        conversationId: 77,
+        messageId: 88,
+        elapsedMs: undefined,
+        llmMs: undefined,
+        llmRounds: undefined,
+        model: undefined,
+        sourcesUsed: undefined,
+        completionStatus: 'complete',
+        cards: undefined,
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('allows longer commercial gateway replies before timing out', async () => {
+    const iter = streamChat('use commercial model');
+    const first = iter.next();
+    await Promise.resolve();
+
+    const xhr = MockXMLHttpRequest.instances[0];
+    expect(xhr.timeout).toBe(300000);
+
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":1,"message_id":2}}\n\n';
+    xhr.onprogress?.();
+    await first;
+    await iter.return?.(undefined as any);
+  });
 });

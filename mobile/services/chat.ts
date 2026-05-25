@@ -115,11 +115,66 @@ export async function* streamChat(
     resolve?.();
   };
 
-  xhr.timeout = 120000; // 2 min for agent responses
+  xhr.timeout = 300000; // Commercial gateway responses can take several minutes.
   xhr.send(JSON.stringify(body));
 
   // Parse SSE lines from accumulated chunks
   let buffer = '';
+  const doneSentinel = Symbol('done');
+
+  const streamEventFromPayload = (payload: string): StreamEvent | typeof doneSentinel | undefined => {
+    if (payload === '[DONE]') return doneSentinel;
+
+    try {
+      const parsed = JSON.parse(payload);
+
+      if (parsed.event === 'agent_start') {
+        return {
+          type: 'start',
+          conversationId: parsed.data?.conversation_id,
+        };
+      } else if (parsed.event === 'token') {
+        const text = parsed.data?.content || '';
+        if (text) return { type: 'token', content: text };
+      } else if (parsed.event === 'tool_call') {
+        const tool = parsed.data?.tool || '';
+        // 不把 "🔧 health_record (第1轮)" 这种技术文本注入消息气泡
+        // toolName 仍传给前端, cards dispatcher / analytics 可用
+        return { type: 'tool', content: '', toolName: tool };
+      } else if (parsed.event === 'tool_result') {
+        const tool = parsed.data?.tool || '';
+        const ok = parsed.data?.success;
+        // 成功静默 (AI token 流会接着讲), 失败才给用户可见的简短提示
+        return {
+          type: 'tool',
+          content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
+          toolName: tool,
+          toolSuccess: ok,
+          // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
+          recordType: parsed.data?.record_type,
+          recordData: parsed.data?.record_data,
+        };
+      } else if (parsed.event === 'done') {
+        return {
+          type: 'done',
+          conversationId: parsed.data?.conversation_id,
+          messageId: parsed.data?.message_id,
+          elapsedMs: parsed.data?.elapsed_ms,
+          llmMs: parsed.data?.llm_ms,
+          llmRounds: parsed.data?.llm_rounds,
+          model: parsed.data?.model,
+          sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
+          completionStatus: parsed.data?.completion_status,
+          cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
+        };
+      } else if (parsed.event === 'error') {
+        return { type: 'error', content: parsed.data?.message || '请求失败' };
+      }
+    } catch {
+      // non-JSON line, skip
+    }
+    return undefined;
+  };
 
   while (true) {
     // Wait for new data or completion
@@ -143,56 +198,9 @@ export async function* streamChat(
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith('data:')) continue;
       const payload = trimmed.slice(5).trim();
-      if (payload === '[DONE]') return;
-
-      try {
-        const parsed = JSON.parse(payload);
-
-        if (parsed.event === 'agent_start') {
-          yield {
-            type: 'start',
-            conversationId: parsed.data?.conversation_id,
-          };
-        } else if (parsed.event === 'token') {
-          const text = parsed.data?.content || '';
-          if (text) yield { type: 'token', content: text };
-        } else if (parsed.event === 'tool_call') {
-          const tool = parsed.data?.tool || '';
-          // 不把 "🔧 health_record (第1轮)" 这种技术文本注入消息气泡
-          // toolName 仍传给前端, cards dispatcher / analytics 可用
-          yield { type: 'tool', content: '', toolName: tool };
-        } else if (parsed.event === 'tool_result') {
-          const tool = parsed.data?.tool || '';
-          const ok = parsed.data?.success;
-          // 成功静默 (AI token 流会接着讲), 失败才给用户可见的简短提示
-          yield {
-            type: 'tool',
-            content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
-            toolName: tool,
-            toolSuccess: ok,
-            // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
-            recordType: parsed.data?.record_type,
-            recordData: parsed.data?.record_data,
-          };
-        } else if (parsed.event === 'done') {
-          yield {
-            type: 'done',
-            conversationId: parsed.data?.conversation_id,
-            messageId: parsed.data?.message_id,
-            elapsedMs: parsed.data?.elapsed_ms,
-            llmMs: parsed.data?.llm_ms,
-            llmRounds: parsed.data?.llm_rounds,
-            model: parsed.data?.model,
-            sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
-            completionStatus: parsed.data?.completion_status,
-            cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
-          };
-        } else if (parsed.event === 'error') {
-          yield { type: 'error', content: parsed.data?.message || '请求失败' };
-        }
-      } catch {
-        // non-JSON line, skip
-      }
+      const evt = streamEventFromPayload(payload);
+      if (evt === doneSentinel) return;
+      if (evt) yield evt;
     }
 
     if (done && chunks.length === 0) break;
@@ -203,12 +211,8 @@ export async function* streamChat(
     const trimmed = buffer.trim();
     if (trimmed.startsWith('data:')) {
       const payload = trimmed.slice(5).trim();
-      try {
-        const parsed = JSON.parse(payload);
-        if (parsed.event === 'token' && parsed.data?.content) {
-          yield { type: 'token', content: parsed.data.content };
-        }
-      } catch { /* skip */ }
+      const evt = streamEventFromPayload(payload);
+      if (evt !== doneSentinel && evt) yield evt;
     }
   }
 }
