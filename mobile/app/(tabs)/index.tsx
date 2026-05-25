@@ -729,7 +729,6 @@ function HomeBackgroundPanel({
           </Pressable>
         </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
-        <CompactEvidenceStrip shortcuts={shortcuts} onOpenAll={onOpenAll} />
       </View>
       <AgentFollowUpQueue
         snapshot={snapshot}
@@ -739,6 +738,8 @@ function HomeBackgroundPanel({
         onOpenAdvice={onOpenAdvice}
         feedbackMetrics={feedbackMetrics}
         planCount={planCount}
+        shortcuts={shortcuts}
+        onOpenAll={onOpenAll}
       />
     </View>
   );
@@ -796,21 +797,14 @@ function HomeBodyFeedbackPanel({
   );
 }
 
-function CompactEvidenceStrip({
-  shortcuts,
-  onOpenAll,
-}: {
-  shortcuts: {
-    label: string;
-    value: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    color: string;
-    bg: string;
-    onPress: () => void;
-  }[];
-  onOpenAll: () => void;
-}) {
-  const { c } = useTheme();
+function buildRuntimeEvidenceSummary(shortcuts: {
+  label: string;
+  value: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  bg: string;
+  onPress: () => void;
+}[]): string {
   const genetic = shortcuts.find(item => item.label === '基因');
   const progress = shortcuts.find(item => item.label === '进度');
   const protocols = shortcuts
@@ -820,28 +814,7 @@ function CompactEvidenceStrip({
   const geneticSummary = genetic?.value && genetic.value !== '—' ? `基因 ${genetic.value} 个命中` : '基因待同步';
   const progressSummary = progress?.value && progress.value !== '—' ? `进展 ${progress.value} 项改善` : '进展待校准';
   const protocolSummary = protocols ? `${protocols}方案` : '生活方式方案';
-  return (
-    <Pressable
-      onPress={onOpenAll}
-      style={({ pressed }) => [
-        styles.runtimeEvidenceStrip,
-        { backgroundColor: c.bgPrimary, opacity: pressed ? 0.72 : 1 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel="查看个人画像"
-    >
-      <View style={[styles.runtimeEvidenceIcon, { backgroundColor: c.bgCard }]}>
-        <Ionicons name="git-network-outline" size={12} color={c.brand} />
-      </View>
-      <View style={styles.runtimeEvidenceTextBlock}>
-        <HomeText style={[styles.runtimeEvidenceTitle, { color: c.labelPrimary }]}>证据链</HomeText>
-        <HomeText style={[styles.runtimeEvidenceText, { color: c.labelSecondary }]} numberOfLines={1}>
-          环境 GPS/天气 · {geneticSummary} · {progressSummary} · {protocolSummary}
-        </HomeText>
-      </View>
-      <Ionicons name="chevron-forward" size={13} color={c.brand} />
-    </Pressable>
-  );
+  return `环境 GPS/天气 · ${geneticSummary} · ${progressSummary} · ${protocolSummary}`;
 }
 
 function AgentFollowUpQueue({
@@ -852,6 +825,8 @@ function AgentFollowUpQueue({
   onOpenAdvice,
   feedbackMetrics,
   planCount,
+  shortcuts,
+  onOpenAll,
 }: {
   snapshot?: HealthTrajectorySnapshot | null;
   loading?: boolean;
@@ -860,6 +835,15 @@ function AgentFollowUpQueue({
   onOpenAdvice: (card: ActionCard) => void;
   feedbackMetrics: OutcomeFeedbackMetric[];
   planCount: number;
+  shortcuts: {
+    label: string;
+    value: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    color: string;
+    bg: string;
+    onPress: () => void;
+  }[];
+  onOpenAll: () => void;
 }) {
   const { c } = useTheme();
   const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
@@ -923,36 +907,49 @@ function AgentFollowUpQueue({
     .map(metric => metric.label)
     .join(' / ') || '睡眠 / 血氧 / 体成分';
   const planLabel = planCount > 0 ? `${planCount} 个干预执行中` : '等待今天记录补齐';
+  const evidenceSummary = buildRuntimeEvidenceSummary(shortcuts);
 
   return (
-    <Pressable
-      onPress={onOpenQueue}
-      style={({ pressed }) => [
-        styles.followUpCompactRow,
-        { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={queueTitle}
+    <View
+      testID="home-runtime-task-strip"
+      style={[styles.followUpCompactRow, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}
     >
       <View style={[styles.followUpRowIcon, { backgroundColor: queueTint }]}>
         <Ionicons name={queueIcon} size={15} color={queueColor} />
       </View>
-      <View style={styles.followUpRowText}>
+      <Pressable
+        onPress={onOpenQueue}
+        style={({ pressed }) => [styles.followUpRowText, { opacity: pressed ? 0.72 : 1 }]}
+        accessibilityRole="button"
+        accessibilityLabel={queueTitle}
+      >
         <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
           {queueTitle}
         </HomeText>
         <HomeText style={[styles.followUpRowDetail, { color: c.labelSecondary }]} numberOfLines={1}>
           {queueDetail}
         </HomeText>
+        <Pressable
+          onPress={onOpenAll}
+          style={({ pressed }) => [styles.followUpEvidenceLine, { opacity: pressed ? 0.72 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="查看个人画像"
+        >
+          <Ionicons name="git-network-outline" size={10} color={c.brand} />
+          <HomeText style={[styles.followUpEvidenceText, { color: c.labelTertiary }]} numberOfLines={1}>
+            <HomeText style={[styles.followUpEvidenceLabel, { color: c.labelSecondary }]}>证据链</HomeText>
+            {` · ${evidenceSummary}`}
+          </HomeText>
+        </Pressable>
         <View style={styles.followUpReviewLine}>
           <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
           <HomeText style={[styles.followUpReviewText, { color: c.labelTertiary }]} numberOfLines={1}>
             下次复盘 · 周日晚看 {reviewTargets}，当前 {planLabel}
           </HomeText>
         </View>
-      </View>
+      </Pressable>
       <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</HomeText>
-    </Pressable>
+    </View>
   );
 }
 
@@ -2016,11 +2013,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 56,
+    minHeight: 68,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 7,
+    paddingVertical: 8,
     paddingHorizontal: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
@@ -2083,6 +2080,15 @@ const styles = StyleSheet.create({
     paddingTop: 1,
   },
   followUpReviewText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
+  followUpEvidenceLine: {
+    minHeight: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: 1,
+  },
+  followUpEvidenceText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
+  followUpEvidenceLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
   followUpRowRight: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
   evidenceChain: {
     borderWidth: StyleSheet.hairlineWidth,

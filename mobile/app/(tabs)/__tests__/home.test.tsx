@@ -516,6 +516,15 @@ describe('TodayScreen', () => {
     expect(queryByTestId('home-body-feedback-board')).toBeNull();
   });
 
+  it('folds evidence and next review into one agent background queue strip', () => {
+    const { getByTestId, getByText, queryByTestId } = render(<TodayScreen />);
+
+    expect(getByTestId('home-runtime-task-strip')).toBeTruthy();
+    expect(queryByTestId('home-runtime-evidence-strip')).toBeNull();
+    expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
+    expect(getByText(/下次复盘/)).toBeTruthy();
+  });
+
   it('keeps background diagnosis, feedback, environment, and archives in one operations panel', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
