@@ -24,6 +24,7 @@ final class AppFontScaleTests: XCTestCase {
 
     func testFontScaleKeyboardShortcutsMapCommandPlusMinusAndZero() {
         XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "=", command: true), .increase)
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "=", command: true, shift: true), .increase)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "+", command: true, shift: true), .increase)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "-", command: true), .decrease)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "0", command: true), .reset)
@@ -47,5 +48,18 @@ final class AppFontScaleTests: XCTestCase {
         XCTAssertEqual(AppFontScaleKeyboardShortcut.increase.apply(to: AppFontScale(level: 0)).level, 1)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.decrease.apply(to: AppFontScale(level: 0)).level, -1)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.reset.apply(to: AppFontScale(level: 3)).level, AppFontScale.defaultLevel)
+    }
+
+    func testFontScaleNativeMenuShortcutsUseMacKeyEquivalents() {
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.nativeMenuShortcuts(for: .increase), [
+            AppFontScaleNativeMenuShortcut(keyEquivalent: "=", command: true, shift: false),
+            AppFontScaleNativeMenuShortcut(keyEquivalent: "=", command: true, shift: true)
+        ])
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.nativeMenuShortcuts(for: .decrease), [
+            AppFontScaleNativeMenuShortcut(keyEquivalent: "-", command: true, shift: false)
+        ])
+        XCTAssertEqual(AppFontScaleKeyboardShortcut.nativeMenuShortcuts(for: .reset), [
+            AppFontScaleNativeMenuShortcut(keyEquivalent: "0", command: true, shift: false)
+        ])
     }
 }

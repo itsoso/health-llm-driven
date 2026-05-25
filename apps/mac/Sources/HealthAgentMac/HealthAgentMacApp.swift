@@ -56,7 +56,7 @@ struct HealthAgentMacApp: App {
                 Button(appText("Increase Font Size", appLanguageRaw)) {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).increased().level
                 }
-                .keyboardShortcut("+", modifiers: [.command, .shift])
+                .keyboardShortcut("=", modifiers: [.command, .shift])
                 Button(appText("Decrease Font Size", appLanguageRaw)) {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).decreased().level
                 }

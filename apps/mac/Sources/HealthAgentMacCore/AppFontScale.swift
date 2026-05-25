@@ -101,4 +101,30 @@ public enum AppFontScaleKeyboardShortcut: Equatable, Sendable {
             scale.reset()
         }
     }
+
+    public static func nativeMenuShortcuts(for action: AppFontScaleKeyboardShortcut) -> [AppFontScaleNativeMenuShortcut] {
+        switch action {
+        case .increase:
+            [
+                AppFontScaleNativeMenuShortcut(keyEquivalent: "=", command: true, shift: false),
+                AppFontScaleNativeMenuShortcut(keyEquivalent: "=", command: true, shift: true)
+            ]
+        case .decrease:
+            [AppFontScaleNativeMenuShortcut(keyEquivalent: "-", command: true, shift: false)]
+        case .reset:
+            [AppFontScaleNativeMenuShortcut(keyEquivalent: "0", command: true, shift: false)]
+        }
+    }
+}
+
+public struct AppFontScaleNativeMenuShortcut: Equatable, Sendable {
+    public let keyEquivalent: String
+    public let command: Bool
+    public let shift: Bool
+
+    public init(keyEquivalent: String, command: Bool, shift: Bool) {
+        self.keyEquivalent = keyEquivalent
+        self.command = command
+        self.shift = shift
+    }
 }
