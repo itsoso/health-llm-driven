@@ -918,10 +918,12 @@ describe('TodayScreen', () => {
       ],
     };
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('另 1 项')).toBeNull();
-    expect(getByText('待补 2')).toBeTruthy();
+    expect(getByText('补证据')).toBeTruthy();
+    expect(getByLabelText('补证据：血检缺口、腰围缺口')).toBeTruthy();
+    expect(queryByText('待补 2')).toBeNull();
     expect(queryByText('恢复轨迹数据不足')).toBeNull();
     expect(queryByText('还有 2 个数据缺口会影响判断')).toBeNull();
     expect(getByText('代谢健康轨迹需要关注')).toBeTruthy();

@@ -37,6 +37,8 @@ import {
   getHealthTrajectory,
   pickPrimaryTrajectoryRisks,
   type HealthTrajectorySnapshot,
+  type TrajectoryDataGap,
+  type TrajectoryRiskLevel,
 } from '../../services/trajectory';
 
 interface TwinSnapshot {
@@ -108,6 +110,11 @@ interface OutcomeFeedbackSummary {
 interface BackgroundReviewCopy {
   summary: string;
   accessibilityLabel: string;
+}
+
+interface QueueRightStatusCopy {
+  label: string;
+  accessibilityLabel?: string;
 }
 
 interface PersonalSignalChip {
@@ -808,7 +815,7 @@ function AgentFollowUpQueue({
 }) {
   const { c } = useTheme();
   const trajectoryRisks = pickPrimaryTrajectoryRisks(snapshot?.trajectory_risks ?? [], 2);
-  const gapCount = snapshot?.data_gaps?.length ?? 0;
+  const dataGaps = snapshot?.data_gaps ?? [];
   const visibleAdvice = weeklyAdvice.slice(0, 1);
   const primaryRisk = trajectoryRisks[0] ?? null;
   const primaryAdvice = visibleAdvice[0] ?? null;
@@ -836,15 +843,12 @@ function AgentFollowUpQueue({
         : weeklyAdvice.length === 0 && trajectoryRisks.length === 0
           ? '先做上方行动，周日晚自动复盘'
           : '继续看睡眠、血氧、体成分和检查';
-  const queueRightLabel = gapCount > 0
-    ? `待补 ${gapCount}`
-    : hiddenCount > 0
-      ? '待关注'
-      : primaryRisk
-        ? getTrajectoryLevelLabel(primaryRisk.level)
-        : showPrimaryAdvice
-          ? '建议'
-          : '观察';
+  const queueRightStatus = buildQueueRightStatus({
+    dataGaps,
+    hiddenCount,
+    primaryRiskLevel: primaryRisk?.level,
+    showPrimaryAdvice,
+  });
   const queueTint = primaryRisk
     ? getTrajectoryLevelColor(primaryRisk.level, c).tint
     : showPrimaryAdvice
@@ -899,8 +903,11 @@ function AgentFollowUpQueue({
           </HomeText>
         </View>
       </Pressable>
-      <View style={[styles.followUpRowRightPill, { backgroundColor: queueTint }]}>
-        <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightLabel}</HomeText>
+      <View
+        accessibilityLabel={queueRightStatus.accessibilityLabel}
+        style={[styles.followUpRowRightPill, { backgroundColor: queueTint }]}
+      >
+        <HomeText style={[styles.followUpRowRight, { color: queueColor }]}>{queueRightStatus.label}</HomeText>
       </View>
     </View>
   );
@@ -1127,6 +1134,29 @@ function buildBackgroundReviewCopy(targetLabels: string[], planLabel: string): B
     summary: `下次看 · 周日晚复盘 · ${targets.length}项结果 · ${planLabel}`,
     accessibilityLabel: `下次看：周日晚复盘 ${targets.join('、')}；${planLabel}`,
   };
+}
+
+function buildQueueRightStatus({
+  dataGaps,
+  hiddenCount,
+  primaryRiskLevel,
+  showPrimaryAdvice,
+}: {
+  dataGaps: TrajectoryDataGap[];
+  hiddenCount: number;
+  primaryRiskLevel?: TrajectoryRiskLevel | null;
+  showPrimaryAdvice: boolean;
+}): QueueRightStatusCopy {
+  if (dataGaps.length > 0) {
+    return {
+      label: '补证据',
+      accessibilityLabel: `补证据：${dataGaps.map(gap => gap.label).join('、')}`,
+    };
+  }
+  if (hiddenCount > 0) return { label: '待关注' };
+  if (primaryRiskLevel) return { label: getTrajectoryLevelLabel(primaryRiskLevel) };
+  if (showPrimaryAdvice) return { label: '建议' };
+  return { label: '观察' };
 }
 
 function buildImprovementFocus({
