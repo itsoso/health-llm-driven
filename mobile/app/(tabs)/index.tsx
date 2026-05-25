@@ -517,7 +517,7 @@ function HomeCommandHeader({
       : '保持记录节奏';
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
-  const experimentLabel = buildActionExperimentLabel(action);
+  const actionLeverLabel = buildActionLeverLabel(action);
   const agentJudgmentText = buildAgentJudgmentText({
     action,
     criticalCount,
@@ -576,7 +576,7 @@ function HomeCommandHeader({
           />
         </View>
         <View style={styles.commandDecisionText}>
-          <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>Agent 判断</HomeText>
+          <HomeText style={[styles.commandFocusLabel, { color: decisionColor }]}>为什么优先</HomeText>
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
@@ -586,7 +586,7 @@ function HomeCommandHeader({
           <View style={styles.commandValidationLine}>
             <Ionicons name="pulse-outline" size={11} color={c.brand} />
             <HomeText style={[styles.commandValidationText, { color: c.labelTertiary }]} numberOfLines={1}>
-              {runtimeTargetSummary ? `验证目标 · ${runtimeTargetSummary}` : '验证目标 · 补齐记录后校准干预'}
+              {runtimeTargetSummary ? `看结果 · ${runtimeTargetSummary}` : '看结果 · 补齐记录后校准干预'}
             </HomeText>
             <View style={[styles.commandRunningPill, { backgroundColor: c.brandLight }]}>
               <View style={[styles.commandRunningDot, { backgroundColor: c.brand }]} />
@@ -611,7 +611,7 @@ function HomeCommandHeader({
             <Ionicons name="flask-outline" size={13} color={c.brand} />
           </View>
           <View style={styles.commandExperimentTextBlock}>
-            <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>{experimentLabel}</HomeText>
+            <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>{actionLeverLabel}</HomeText>
             <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
               {nextStepActionText}
             </HomeText>
@@ -1191,17 +1191,17 @@ function buildHomeNextStepLabel({
   return '下一步：补齐今天记录，Agent 再排干预';
 }
 
-function buildActionExperimentLabel(action?: DailyPlanAction | null): string {
-  if (!action) return '今日实验';
-  if (isBodyMeasurementAction(action) || action.domain === 'measurement') return '记录实验';
+function buildActionLeverLabel(action?: DailyPlanAction | null): string {
+  if (!action) return '现在只做';
+  if (isBodyMeasurementAction(action) || action.domain === 'measurement') return '现在只做 · 记录';
 
   const domain = classifyInterventionDomain(action);
-  if (domain === 'diet') return '饮食实验';
-  if (domain === 'sleep') return '睡眠实验';
-  if (domain === 'movement') return '运动实验';
-  if (domain === 'supplement') return '补剂实验';
-  if (domain === 'emotion') return '情绪实验';
-  return '今日实验';
+  if (domain === 'diet') return '现在只做 · 饮食';
+  if (domain === 'sleep') return '现在只做 · 睡眠';
+  if (domain === 'movement') return '现在只做 · 运动';
+  if (domain === 'supplement') return '现在只做 · 补剂';
+  if (domain === 'emotion') return '现在只做 · 情绪';
+  return '现在只做';
 }
 
 function buildPersonalSignalChips(
