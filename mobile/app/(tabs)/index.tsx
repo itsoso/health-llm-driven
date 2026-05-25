@@ -504,7 +504,7 @@ function HomeCommandHeader({
   const decisionBorderColor = criticalCount > 0 ? 'rgba(255, 59, 48, 0.18)' : 'rgba(0, 153, 148, 0.16)';
   const decisionIconColor = c.bgCard;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
-  const diagnosisBasisText = buildDiagnosisBasisText(personalSignalChips, geneticHits);
+  const diagnosisBasis = buildDiagnosisBasis(personalSignalChips, geneticHits);
   const isRecordAction = action?.domain === 'measurement';
   const canComplete = Boolean(action?.action_key) && !isRecordAction;
   return (
@@ -559,8 +559,12 @@ function HomeCommandHeader({
           <HomeText style={[styles.commandTitle, { color: c.labelPrimary }]} numberOfLines={2}>
             {agentJudgmentText}
           </HomeText>
-          <HomeText style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]} numberOfLines={1}>
-            {diagnosisBasisText}
+          <HomeText
+            accessibilityLabel={diagnosisBasis.accessibilityLabel}
+            style={[styles.commandPersonalSignalLine, { color: c.labelSecondary }]}
+            numberOfLines={1}
+          >
+            {diagnosisBasis.summary}
           </HomeText>
           <View style={styles.commandValidationLine}>
             <Ionicons name="pulse-outline" size={11} color={c.brand} />
@@ -1210,15 +1214,22 @@ function buildPersonalSignalChips(
   return picked;
 }
 
-function buildDiagnosisBasisText(
+function buildDiagnosisBasis(
   signals: PersonalSignalChip[],
   geneticHits?: number | null,
-): string {
+): {
+  summary: string;
+  accessibilityLabel: string;
+} {
   const wearable = signals.length > 0
-    ? signals.map(formatBasisSignal).join(' · ')
-    : '穿戴待同步';
+    ? signals.map(formatBasisSignal)
+    : ['穿戴待同步'];
   const genetics = geneticHits != null ? `基因${geneticHits}` : '基因待同步';
-  return `依据 · ${wearable} · ${genetics} · 表观 · 体检`;
+  const sources = [...wearable, genetics, '表观遗传', '体检'];
+  return {
+    summary: `依据 · ${sources.length}项个人信号`,
+    accessibilityLabel: `依据：${sources.join('、')}`,
+  };
 }
 
 function formatBasisSignal(signal: PersonalSignalChip): string {

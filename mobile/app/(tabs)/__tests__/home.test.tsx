@@ -238,9 +238,11 @@ describe('TodayScreen', () => {
       },
     };
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeTruthy();
+    expect(getByText('依据 · 6项个人信号')).toBeTruthy();
+    expect(getByLabelText('依据：血氧95、睡眠91、HRV63、基因65、表观遗传、体检')).toBeTruthy();
+    expect(queryByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeNull();
     expect(getByText(/看结果 · 睡眠分90\+ · HRV回升 · 血氧≥95%/)).toBeTruthy();
     expect(queryByText(/已看 ·/)).toBeNull();
     expect(queryByText(/看结果 · .* \/ /)).toBeNull();
@@ -303,9 +305,11 @@ describe('TodayScreen', () => {
       },
     };
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeTruthy();
+    expect(getByText('依据 · 6项个人信号')).toBeTruthy();
+    expect(getByLabelText('依据：血氧95、睡眠91、HRV63、基因65、表观遗传、体检')).toBeTruthy();
+    expect(queryByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeNull();
     expect(queryByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · GPS · 体检')).toBeNull();
   });
 
@@ -319,9 +323,10 @@ describe('TodayScreen', () => {
       },
     };
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · 表观 · 体检')).toBeTruthy();
+    expect(getByText('依据 · 6项个人信号')).toBeTruthy();
+    expect(getByLabelText('依据：血氧95、睡眠91、HRV63、基因65、表观遗传、体检')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
   });
 
@@ -389,12 +394,13 @@ describe('TodayScreen', () => {
   });
 
   it('frames the home feed as a background health agent workspace', () => {
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText('后台监测中')).toBeTruthy();
     expect(queryByText(/已接入/)).toBeNull();
-    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
+    expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
     expect(queryByText(/源画像/)).toBeNull();
     expect(queryByText('后台任务与长期干预')).toBeNull();
     expect(queryByText('持续监测 → 诊断推理 → 干预执行')).toBeNull();
@@ -413,7 +419,7 @@ describe('TodayScreen', () => {
       { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
     ];
 
-    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
+    const { getAllByText, getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getAllByText('23:00 上床').length).toBeGreaterThan(0);
     expect(getByText('今日判断')).toBeTruthy();
@@ -421,7 +427,8 @@ describe('TodayScreen', () => {
     expect(getByText(/看结果 ·/)).toBeTruthy();
     expect(getByText(/血氧≥95%.*睡眠分90\+/)).toBeTruthy();
     expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
-    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
+    expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
     expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
   });
@@ -471,10 +478,12 @@ describe('TodayScreen', () => {
       },
     };
 
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('依据 · 血氧93 · 睡眠89 · HRV62 · 基因待同步 · 表观 · 体检')).toBeTruthy();
+    expect(getByText('依据 · 6项个人信号')).toBeTruthy();
+    expect(getByLabelText('依据：血氧93、睡眠89、HRV62、基因待同步、表观遗传、体检')).toBeTruthy();
+    expect(queryByText('依据 · 血氧93 · 睡眠89 · HRV62 · 基因待同步 · 表观 · 体检')).toBeNull();
     expect(queryByText(/信号 ·/)).toBeNull();
     expect(queryByText('93%')).toBeNull();
     expect(queryByText(/夜间血氧过低.*血氧93.*睡眠89.*HRV62/)).toBeNull();
@@ -735,7 +744,7 @@ describe('TodayScreen', () => {
   });
 
   it('uses compact environment and shortcut sections to reduce home card clutter', () => {
-    const { getAllByText, getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('健康指标')).toBeNull();
     expect(getByText('后台验证')).toBeTruthy();
@@ -750,20 +759,22 @@ describe('TodayScreen', () => {
     expect(queryByText('环境背景')).toBeNull();
     expect(queryByText('环境反馈')).toBeNull();
     expect(queryByText('基因/检查/趋势')).toBeNull();
-    expect(getAllByText(/基因待同步/).length).toBeGreaterThan(0);
+    expect(getByLabelText(/依据：.*基因待同步.*表观遗传.*体检/)).toBeTruthy();
+    expect(queryByText(/基因待同步/)).toBeNull();
     expect(queryByText(/进展待校准/)).toBeNull();
     expect(queryByText(/运动\/饮食方案/)).toBeNull();
   });
 
   it('compresses evidence and follow-up into quiet runtime summary rows', () => {
-    const { getByText, queryByText } = render(<TodayScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(queryByText('Agent 观测中')).toBeNull();
     expect(queryByText('正在用体征反馈校准今天策略')).toBeNull();
     expect(queryByText('验证指标')).toBeNull();
     expect(getByText(/看结果 ·/)).toBeTruthy();
-    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
+    expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
     expect(getByText(/下次看/)).toBeTruthy();
     expect(getByText('后台验证')).toBeTruthy();
     expect(queryByText('持续观察')).toBeNull();
@@ -811,11 +822,12 @@ describe('TodayScreen', () => {
   });
 
   it('folds evidence and next review into one agent background queue strip', () => {
-    const { getByTestId, getByText, queryByTestId } = render(<TodayScreen />);
+    const { getByLabelText, getByTestId, getByText, queryByTestId } = render(<TodayScreen />);
 
     expect(getByTestId('home-runtime-task-strip')).toBeTruthy();
     expect(queryByTestId('home-runtime-evidence-strip')).toBeNull();
-    expect(getByText(/依据 · .*表观.*体检/)).toBeTruthy();
+    expect(getByText(/依据 · \d+项个人信号/)).toBeTruthy();
+    expect(getByLabelText(/依据：.*表观遗传.*体检/)).toBeTruthy();
     expect(getByText(/下次看/)).toBeTruthy();
   });
 
