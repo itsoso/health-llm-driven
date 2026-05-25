@@ -11,8 +11,15 @@ final class AppFontScaleTests: XCTestCase {
 
     func testFontScaleResetReturnsDefaultReadableSize() {
         XCTAssertEqual(AppFontScale(level: 3).reset().level, AppFontScale.defaultLevel)
-        XCTAssertEqual(AppFontScale(level: 0).displayPercent, 100)
-        XCTAssertEqual(AppFontScale(level: 2).displayPercent, 125)
+        XCTAssertEqual(AppFontScale(level: 0).displayPercent, 112)
+        XCTAssertEqual(AppFontScale(level: 2).displayPercent, 140)
+        XCTAssertEqual(AppFontScale(level: 4).displayPercent, 190)
+    }
+
+    func testFontScaleMapsDefaultToReadableDynamicTypeSize() {
+        XCTAssertEqual(AppFontScale(level: -1).dynamicTypeSizeName, "medium")
+        XCTAssertEqual(AppFontScale(level: 0).dynamicTypeSizeName, "large")
+        XCTAssertEqual(AppFontScale(level: 4).dynamicTypeSizeName, "accessibility1")
     }
 
     func testFontScaleKeyboardShortcutsMapCommandPlusMinusAndZero() {

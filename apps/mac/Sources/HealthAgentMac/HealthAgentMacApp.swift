@@ -53,6 +53,10 @@ struct HealthAgentMacApp: App {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).increased().level
                 }
                 .keyboardShortcut("=", modifiers: [.command])
+                Button(appText("Increase Font Size", appLanguageRaw)) {
+                    appFontScaleLevel = AppFontScale(level: appFontScaleLevel).increased().level
+                }
+                .keyboardShortcut("+", modifiers: [.command, .shift])
                 Button(appText("Decrease Font Size", appLanguageRaw)) {
                     appFontScaleLevel = AppFontScale(level: appFontScaleLevel).decreased().level
                 }
@@ -187,19 +191,21 @@ private struct AppFontScaleViewModifier: ViewModifier {
     }
 
     private var dynamicTypeSize: DynamicTypeSize {
-        switch scale.level {
-        case AppFontScale.minLevel:
-            .small
-        case 1:
-            .large
-        case 2:
-            .xLarge
-        case 3:
-            .xxLarge
-        case AppFontScale.maxLevel:
-            .xxxLarge
-        default:
+        switch scale.dynamicTypeSizeName {
+        case "medium":
             .medium
+        case "large":
+            .large
+        case "xLarge":
+            .xLarge
+        case "xxLarge":
+            .xxLarge
+        case "xxxLarge":
+            .xxxLarge
+        case "accessibility1":
+            .accessibility1
+        default:
+            .large
         }
     }
 }

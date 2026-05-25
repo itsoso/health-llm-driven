@@ -14,12 +14,29 @@ public struct AppFontScale: Equatable, Sendable {
 
     public var displayPercent: Int {
         switch level {
-        case -1: 90
-        case 0: 100
-        case 1: 112
-        case 2: 125
-        case 3: 140
-        default: 160
+        case -1: 100
+        case 0: 112
+        case 1: 125
+        case 2: 140
+        case 3: 160
+        default: 190
+        }
+    }
+
+    public var dynamicTypeSizeName: String {
+        switch level {
+        case Self.minLevel:
+            "medium"
+        case 0:
+            "large"
+        case 1:
+            "xLarge"
+        case 2:
+            "xxLarge"
+        case 3:
+            "xxxLarge"
+        default:
+            "accessibility1"
         }
     }
 
