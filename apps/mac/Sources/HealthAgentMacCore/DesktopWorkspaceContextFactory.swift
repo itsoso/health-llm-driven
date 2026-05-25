@@ -1,6 +1,25 @@
 import Foundation
 
 public enum DesktopWorkspaceContextFactory {
+    public static func contextItem(for row: DesktopWorkspaceGuidanceRow, workspace: DesktopWorkspaceSummary) -> AgentContextItem {
+        AgentContextItem(
+            sourceID: "workspace_guidance:\(workspace.kind.rawValue):\(row.id)",
+            sourceKind: "workspace_guidance",
+            title: row.title,
+            summary: row.detail,
+            payload: [
+                "workspace": workspace.kind.rawValue,
+                "action": row.action.rawValue,
+                "title": row.title,
+                "detail": row.detail,
+                "metrics": workspace.metrics.map { "\($0.title)=\($0.value)" }.joined(separator: "; "),
+                "focus_domains": workspace.focusDomains.joined(separator: ", "),
+                "active_jobs": workspace.jobs.map { "#\($0.id) \($0.jobType) \($0.status) \($0.progress)%" }.joined(separator: "; "),
+                "source_root": workspace.knowledgeSummary?.localSourceSummary?.sourceRoot ?? ""
+            ]
+        )
+    }
+
     public static func contextItem(for record: DesktopRecordMetric) -> AgentContextItem {
         AgentContextItem(
             sourceID: "health_record:\(record.id)",
@@ -105,5 +124,28 @@ public enum DesktopWorkspaceContextFactory {
             trend.latestRecordText.map { "最近记录：\($0)。" },
             "请结合我的最近记录、穿戴数据、基因风险、补剂和知识库证据，判断趋势是否需要调整饮食、运动、补剂或复查计划；列出不确定性边界，不要当作诊断。"
         ].compactMap { $0 }.joined()
+    }
+
+    public static func prompt(for row: DesktopWorkspaceGuidanceRow, workspace: DesktopWorkspaceSummary) -> String {
+        switch row.action {
+        case .reviewWeeklyIntake:
+            return "请基于当前数据工作台的 7 天饮食、饮水、补剂、体重、血压和步数概览，判断今天是否需要调整饮食、饮水、补剂或运动，并列出不确定性边界。"
+        case .reviewClinicalBoundary:
+            return "请基于当前基因工作台概览，说明哪些基因发现只能用于风险分层，哪些需要临床检测确认；不要把基因风险当成诊断或用药决定。"
+        case .auditSourceCoverage:
+            return "请基于当前知识库工作台上下文，审查得到、本地 llms-wiki、PubMed 和系统证据的覆盖是否足够；指出缺口、优先补充来源和下一步任务。"
+        case .rebuildSystemKnowledgeBase:
+            return "请基于当前知识库工作台上下文，规划一次系统知识库重建：包括 down-dedao/llms-wiki 来源、claim 编译、证据引用、来源覆盖和验收标准。"
+        case .importDedaoFolder:
+            return "请基于当前知识库工作台上下文，检查本地 down-dedao 健康课程和电子书如何导入到系统知识库，并说明导入后如何验证来源覆盖。"
+        case .refreshRecentHealthData:
+            return "请基于当前数据工作台上下文，判断刷新近期健康数据后应该优先检查哪些指标和异常趋势。"
+        case .createMedicalImport:
+            return "请基于当前数据工作台上下文，说明医疗文件导入任务应该如何命名、审计、提取指标并纳入 Agent 上下文。"
+        case .importGenomeFile:
+            return "请基于当前基因工作台上下文，说明导入 WeGene/23andMe 原始基因文件后的重分析流程、风险边界和验收标准。"
+        case .runRiskReanalysis:
+            return "请基于当前基因工作台上下文，规划一次基因风险重分析：包括源文件哈希、位点匹配、置信度、重复去重和临床边界。"
+        }
     }
 }

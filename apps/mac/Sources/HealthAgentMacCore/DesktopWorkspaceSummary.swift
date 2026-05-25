@@ -42,6 +42,19 @@ public struct DesktopWorkspaceGuidanceRow: Equatable, Identifiable, Sendable {
     public let detail: String
     public let systemImage: String
     public let tone: String
+    public let action: DesktopWorkspaceGuidanceAction
+}
+
+public enum DesktopWorkspaceGuidanceAction: String, Equatable, Sendable {
+    case refreshRecentHealthData
+    case reviewWeeklyIntake
+    case createMedicalImport
+    case importGenomeFile
+    case runRiskReanalysis
+    case reviewClinicalBoundary
+    case importDedaoFolder
+    case rebuildSystemKnowledgeBase
+    case auditSourceCoverage
 }
 
 public struct DesktopWorkspaceSummary: Equatable, Sendable {
@@ -146,21 +159,21 @@ public extension DesktopBootstrap {
         switch kind {
         case .data:
             return [
-                .init(id: "refresh_data", title: "Refresh recent health data", detail: "Update labs, records, wearable trajectory, and medical imports before analysis.", systemImage: "arrow.clockwise", tone: "blue"),
-                .init(id: "review_intake", title: "Review weekly intake", detail: "Use the 7-day diet, water, and supplement baseline before making daily decisions.", systemImage: "chart.xyaxis.line", tone: "teal"),
-                .init(id: "medical_import", title: "Create medical import", detail: "Register lab PDFs or Apple Health exports as auditable desktop jobs.", systemImage: "doc.badge.plus", tone: "orange")
+                .init(id: "refresh_data", title: "Refresh recent health data", detail: "Update labs, records, wearable trajectory, and medical imports before analysis.", systemImage: "arrow.clockwise", tone: "blue", action: .refreshRecentHealthData),
+                .init(id: "review_intake", title: "Review weekly intake", detail: "Use the 7-day diet, water, and supplement baseline before making daily decisions.", systemImage: "chart.xyaxis.line", tone: "teal", action: .reviewWeeklyIntake),
+                .init(id: "medical_import", title: "Create medical import", detail: "Register lab PDFs or Apple Health exports as auditable desktop jobs.", systemImage: "doc.badge.plus", tone: "orange", action: .createMedicalImport)
             ]
         case .genetics:
             return [
-                .init(id: "import_genome", title: "Import genome file", detail: "Drop WeGene, 23andMe, or other raw genotype txt files to create a reanalysis job.", systemImage: "dna", tone: "purple"),
-                .init(id: "risk_reanalysis", title: "Run risk reanalysis", detail: "Rebuild risk calls with source hashes, confidence, and uncertainty boundaries.", systemImage: "waveform.path.ecg.rectangle", tone: "teal"),
-                .init(id: "clinical_boundary", title: "Keep clinical boundary", detail: "Treat genetic results as risk stratification, not diagnosis or medication decisions.", systemImage: "exclamationmark.shield.fill", tone: "orange")
+                .init(id: "import_genome", title: "Import genome file", detail: "Drop WeGene, 23andMe, or other raw genotype txt files to create a reanalysis job.", systemImage: "dna", tone: "purple", action: .importGenomeFile),
+                .init(id: "risk_reanalysis", title: "Run risk reanalysis", detail: "Rebuild risk calls with source hashes, confidence, and uncertainty boundaries.", systemImage: "waveform.path.ecg.rectangle", tone: "teal", action: .runRiskReanalysis),
+                .init(id: "clinical_boundary", title: "Keep clinical boundary", detail: "Treat genetic results as risk stratification, not diagnosis or medication decisions.", systemImage: "exclamationmark.shield.fill", tone: "orange", action: .reviewClinicalBoundary)
             ]
         case .knowledge:
             return [
-                .init(id: "import_dedao", title: "Import Dedao folder", detail: "Use the local down-dedao health courses and ebooks as source material.", systemImage: "folder.badge.plus", tone: "blue"),
-                .init(id: "rebuild_kb", title: "Rebuild system KB", detail: "Compile claims, evidence refs, and source coverage for safer Agent answers.", systemImage: "books.vertical.fill", tone: "teal"),
-                .init(id: "audit_sources", title: "Audit source coverage", detail: "Check whether answers cite enough dedao, pubmed, and system evidence.", systemImage: "checklist.checked", tone: "indigo")
+                .init(id: "import_dedao", title: "Import Dedao folder", detail: "Use the local down-dedao health courses and ebooks as source material.", systemImage: "folder.badge.plus", tone: "blue", action: .importDedaoFolder),
+                .init(id: "rebuild_kb", title: "Rebuild system KB", detail: "Compile claims, evidence refs, and source coverage for safer Agent answers.", systemImage: "books.vertical.fill", tone: "teal", action: .rebuildSystemKnowledgeBase),
+                .init(id: "audit_sources", title: "Audit source coverage", detail: "Check whether answers cite enough dedao, pubmed, and system evidence.", systemImage: "checklist.checked", tone: "indigo", action: .auditSourceCoverage)
             ]
         }
     }

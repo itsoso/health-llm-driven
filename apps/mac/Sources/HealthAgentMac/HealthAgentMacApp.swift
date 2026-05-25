@@ -331,6 +331,7 @@ struct AppRootView: View {
         case .data:
             WorkspaceOverviewView(
                 viewModel: services.todayViewModel,
+                jobClient: services.desktopJobClient,
                 kind: .data,
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
@@ -1592,6 +1593,7 @@ struct ContentPlaceholder: View {
 
 struct WorkspaceOverviewView: View {
     @Bindable var viewModel: TodayViewModel
+    let jobClient: DesktopJobClient
     let kind: DesktopWorkspaceKind
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
@@ -1602,6 +1604,8 @@ struct WorkspaceOverviewView: View {
     @State private var selectedKnowledgeDocument: KnowledgeDocumentSummary?
     @State private var knowledgeSearchText = ""
     @State private var knowledgeDocumentFilter: KnowledgeDocumentFilter = .all
+    @State private var guidanceActionStatus: String?
+    @State private var runningGuidanceAction: DesktopWorkspaceGuidanceAction?
 
     var body: some View {
         ScrollView {
@@ -1720,6 +1724,113 @@ struct WorkspaceOverviewView: View {
         viewModel.bootstrap?.workspaceSummary(for: kind)
     }
 
+    private func guidanceActionButton(_ row: DesktopWorkspaceGuidanceRow, summary: DesktopWorkspaceSummary) -> some View {
+        Button {
+            Task { await runGuidanceAction(row, summary: summary) }
+        } label: {
+            WorkspaceGuidanceCard(
+                row: row,
+                isWorking: runningGuidanceAction == row.action,
+                ctaTitle: guidanceActionTitle(row.action)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(runningGuidanceAction != nil)
+        .help(guidanceActionTitle(row.action))
+    }
+
+    @ViewBuilder
+    private var guidanceStatusView: some View {
+        if let guidanceActionStatus {
+            Text(guidanceActionStatus)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+        }
+    }
+
+    @MainActor
+    private func runGuidanceAction(_ row: DesktopWorkspaceGuidanceRow, summary: DesktopWorkspaceSummary) async {
+        runningGuidanceAction = row.action
+        guidanceActionStatus = nil
+        defer { runningGuidanceAction = nil }
+
+        do {
+            switch row.action {
+            case .refreshRecentHealthData:
+                await viewModel.refresh()
+                guidanceActionStatus = appText("Recent health data refreshed.", appLanguageRaw)
+            case .importDedaoFolder:
+                let job = try await createGuidanceJob(
+                    jobType: "dedao_compile",
+                    sourceKind: "dedao_folder",
+                    sourceName: "down-dedao",
+                    payload: [
+                        "raw_upload_confirmed": true,
+                        "source_url": .string(defaultDedaoFolderURL.path),
+                        "source_hint": .string("local_down_dedao")
+                    ]
+                )
+                guidanceActionStatus = "\(appText("Created desktop job", appLanguageRaw)) #\(job.id) · \(job.status)"
+            case .rebuildSystemKnowledgeBase:
+                let job = try await createGuidanceJob(
+                    jobType: "system_kb_rebuild",
+                    sourceKind: "system_knowledge_base",
+                    sourceName: "system-kb",
+                    payload: [
+                        "source_root": .string(summary.knowledgeSummary?.localSourceSummary?.sourceRoot ?? defaultDedaoFolderURL.path),
+                        "include_dedao_bridge": true,
+                        "include_pubmed_sources": true
+                    ]
+                )
+                guidanceActionStatus = "\(appText("Created desktop job", appLanguageRaw)) #\(job.id) · \(job.status)"
+            case .auditSourceCoverage, .reviewWeeklyIntake, .reviewClinicalBoundary, .createMedicalImport, .importGenomeFile, .runRiskReanalysis:
+                let item = DesktopWorkspaceContextFactory.contextItem(for: row, workspace: summary)
+                onAskAgent?(DesktopWorkspaceContextFactory.prompt(for: row, workspace: summary), item)
+                guidanceActionStatus = appText("Opened a fresh Agent draft with this workspace context.", appLanguageRaw)
+            }
+
+            if row.action == .importDedaoFolder || row.action == .rebuildSystemKnowledgeBase {
+                await viewModel.refresh()
+            }
+        } catch {
+            guidanceActionStatus = "\(appText("Action failed", appLanguageRaw)): \(error.localizedDescription)"
+        }
+    }
+
+    private func createGuidanceJob(
+        jobType: String,
+        sourceKind: String,
+        sourceName: String,
+        payload: [String: JSONValue]
+    ) async throws -> DesktopJobSummary {
+        try await jobClient.createJob(.init(
+            jobType: jobType,
+            sourceKind: sourceKind,
+            sourceName: sourceName,
+            sourceHash: nil,
+            requestPayload: payload
+        ))
+    }
+
+    private var defaultDedaoFolderURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("work/personal/down-dedao", isDirectory: true)
+    }
+
+    private func guidanceActionTitle(_ action: DesktopWorkspaceGuidanceAction) -> String {
+        switch action {
+        case .refreshRecentHealthData:
+            appText("Refresh", appLanguageRaw)
+        case .importDedaoFolder:
+            appText("Create Import Job", appLanguageRaw)
+        case .rebuildSystemKnowledgeBase:
+            appText("Create Rebuild Job", appLanguageRaw)
+        case .auditSourceCoverage, .reviewWeeklyIntake, .reviewClinicalBoundary, .createMedicalImport, .importGenomeFile, .runRiskReanalysis:
+            appText("Ask", appLanguageRaw)
+        }
+    }
+
     @ViewBuilder
     private func workspaceSummary(_ summary: DesktopWorkspaceSummary) -> some View {
         if kind == .data {
@@ -1736,9 +1847,10 @@ struct WorkspaceOverviewView: View {
             SectionPanel(title: appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
                     ForEach(summary.guidanceRows) { row in
-                        WorkspaceGuidanceCard(row: row)
+                        guidanceActionButton(row, summary: summary)
                     }
                 }
+                guidanceStatusView
             }
 
             SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
@@ -2013,9 +2125,10 @@ struct WorkspaceOverviewView: View {
                 .font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 10)], spacing: 10) {
                 ForEach(summary.guidanceRows) { row in
-                    WorkspaceGuidanceCard(row: row)
+                    guidanceActionButton(row, summary: summary)
                 }
             }
+            guidanceStatusView
         }
         .padding(18)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -2554,9 +2667,10 @@ struct WorkspaceOverviewView: View {
                 SectionPanel(title: appText("Workspace Actions", appLanguageRaw), systemImage: "wand.and.stars") {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
                         ForEach(summary.guidanceRows) { row in
-                            WorkspaceGuidanceCard(row: row)
+                            guidanceActionButton(row, summary: summary)
                         }
                     }
+                    guidanceStatusView
                 }
 
                 SectionPanel(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist") {
@@ -3715,15 +3829,24 @@ private func formatTrendNumber(_ value: Double) -> String {
 
 private struct WorkspaceGuidanceCard: View {
     let row: DesktopWorkspaceGuidanceRow
+    let isWorking: Bool
+    let ctaTitle: String
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: row.systemImage)
-                .font(.headline)
-                .foregroundStyle(color)
-                .frame(width: 32, height: 32)
-                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            ZStack {
+                if isWorking {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: row.systemImage)
+                        .font(.headline)
+                        .foregroundStyle(color)
+                }
+            }
+            .frame(width: 32, height: 32)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 5) {
                 Text(appText(row.title, appLanguageRaw))
                     .font(.callout.weight(.semibold))
@@ -3734,10 +3857,21 @@ private struct WorkspaceGuidanceCard: View {
                     .lineLimit(3)
             }
             Spacer(minLength: 0)
+            Label(ctaTitle, systemImage: isWorking ? "hourglass" : "chevron.right")
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(color)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(color.opacity(0.10), in: Capsule())
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
         .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(color.opacity(0.18), lineWidth: 1)
+        }
     }
 
     private var color: Color {
@@ -3838,6 +3972,7 @@ struct ImportWorkspaceView: View {
             VStack(alignment: .leading, spacing: 22) {
                 WorkspaceOverviewView(
                     viewModel: viewModel,
+                    jobClient: jobClient,
                     kind: kind,
                     onAskAgent: onAskAgent,
                     onAddContext: onAddContext

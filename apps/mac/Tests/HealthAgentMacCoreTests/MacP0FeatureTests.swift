@@ -708,6 +708,7 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(knowledgeSummary.knowledgeSummary?.recentDocuments.first?.docID, "claim:c_mthfr_c677t_hcy_folate_boundary")
         XCTAssertEqual(knowledgeSummary.actionCards.map(\.title), ["得到课程知识库重建", "来源覆盖审计"])
         XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.title), ["Import Dedao folder", "Rebuild system KB", "Audit source coverage"])
+        XCTAssertEqual(knowledgeSummary.guidanceRows.map(\.action), [.importDedaoFolder, .rebuildSystemKnowledgeBase, .auditSourceCoverage])
         XCTAssertEqual(knowledgeSummary.jobs.map(\.id), [2])
     }
 }
