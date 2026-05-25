@@ -544,18 +544,18 @@ describe('TodayScreen', () => {
     const screen = render(<TodayScreen />);
     const textFlow = flattenText(screen.toJSON());
 
-    const railStyle = StyleSheet.flatten(screen.getByTestId('home-strategy-coverage-rail').props.style);
-
-    expect(screen.getByText('策略覆盖')).toBeTruthy();
-    expect(screen.getByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeTruthy();
+    expect(screen.queryByTestId('home-strategy-coverage-rail')).toBeNull();
+    expect(screen.queryByText('策略覆盖')).toBeNull();
+    expect(screen.getByText('长期干预 · 饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeTruthy();
     expect(screen.queryByText('饮食')).toBeNull();
     expect(screen.queryByText('睡眠')).toBeNull();
     expect(screen.queryByText('运动')).toBeNull();
     expect(screen.queryByText('补剂')).toBeNull();
     expect(screen.queryByText('情绪')).toBeNull();
     expect(screen.queryByText('干预策略')).toBeNull();
-    expect(railStyle.minHeight).toBeLessThanOrEqual(20);
-    expect(textFlow.indexOf('策略覆盖')).toBeLessThan(textFlow.indexOf('现在只做 · 饮食'));
+    expect(textFlow.indexOf('现在只做 · 饮食')).toBeLessThan(
+      textFlow.indexOf('长期干预 · 饮食 · 睡眠 · 运动 · 补剂 · 情绪'),
+    );
   });
 
   it('shows strategy calibration copy when the current action is only a record task', () => {
@@ -569,8 +569,9 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('策略校准')).toBeTruthy();
+    expect(queryByText('策略校准')).toBeNull();
     expect(getByText('记录后校准饮食 · 睡眠 · 运动')).toBeTruthy();
+    expect(getByText('现在只做 · 记录')).toBeTruthy();
     expect(queryByText('策略覆盖')).toBeNull();
     expect(queryByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeNull();
   });
@@ -589,6 +590,23 @@ describe('TodayScreen', () => {
     expect(getByText('现在只做 · 记录')).toBeTruthy();
     expect(getByLabelText('BMI/体脂 记录后更新')).toBeTruthy();
     expect(queryByLabelText('BMI/体脂 待记录')).toBeNull();
+  });
+
+  it('keeps strategy calibration attached to the primary action instead of a standalone rail', () => {
+    mockDailyPlanActions = [
+      {
+        action_key: 'measurement.weight_waist_morning',
+        domain: 'measurement',
+        title: '晨起记录体重和腰围',
+      },
+    ];
+
+    const { getByText, queryByTestId, queryByText } = render(<TodayScreen />);
+
+    expect(queryByTestId('home-strategy-coverage-rail')).toBeNull();
+    expect(queryByText('策略校准')).toBeNull();
+    expect(getByText('记录后校准饮食 · 睡眠 · 运动')).toBeTruthy();
+    expect(getByText('现在只做 · 记录')).toBeTruthy();
   });
 
   it('describes multiple intervention domains in user language instead of plus-count shorthand', () => {

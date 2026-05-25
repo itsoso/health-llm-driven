@@ -488,6 +488,7 @@ function HomeCommandHeader({
   const nextStepLabel = buildHomeNextStepLabel({ action, criticalCount });
   const nextStepActionText = nextStepLabel.replace(/^下一步：/, '');
   const actionLeverLabel = buildActionLeverLabel(action);
+  const strategyStatus = buildActionStrategyStatus(interventionDomains, action);
   const agentJudgmentText = buildAgentJudgmentText({
     action,
     criticalCount,
@@ -565,8 +566,6 @@ function HomeCommandHeader({
         <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
       </Pressable>
 
-      <HomeStrategyCoverageRail domains={interventionDomains} action={action} />
-
       <View style={styles.commandInlineActionRow}>
         <Pressable
           onPress={onOpenFocus}
@@ -584,6 +583,9 @@ function HomeCommandHeader({
             <HomeText style={[styles.commandInlineNextLabel, { color: c.brand }]}>{actionLeverLabel}</HomeText>
             <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
               {nextStepActionText}
+            </HomeText>
+            <HomeText style={[styles.commandInlineNextMeta, { color: c.labelSecondary }]} numberOfLines={1}>
+              {strategyStatus.summary}
             </HomeText>
           </View>
           <Ionicons name="chevron-forward" size={13} color={c.labelTertiary} />
@@ -630,35 +632,29 @@ function HomeCommandHeader({
   );
 }
 
-function HomeStrategyCoverageRail({
-  domains,
-  action,
-}: {
-  domains: InterventionDomainStatus[];
-  action?: DailyPlanAction | null;
-}) {
-  const { c } = useTheme();
+function buildActionStrategyStatus(
+  domains: InterventionDomainStatus[],
+  action?: DailyPlanAction | null,
+): {
+  summary: string;
+  activeCount: number;
+} {
   const activeCount = domains.reduce((total, domain) => total + domain.activeCount, 0);
   const activeDomains = domains.filter(domain => domain.activeCount > 0);
   const isRecordAction = action?.domain === 'measurement';
   const isCalibrationMode = activeCount === 0 || isRecordAction;
-  const railLabel = isCalibrationMode ? '策略校准' : '策略覆盖';
-  const strategySummary = isCalibrationMode
-    ? '记录后校准饮食 · 睡眠 · 运动'
-    : activeDomains.map(domain => domain.label).join(' · ');
-  return (
-    <View
-      testID="home-strategy-coverage-rail"
-      style={styles.commandStrategyCoverageRail}
-      accessibilityLabel={`${railLabel}：${strategySummary}，${activeCount} 个干预`}
-    >
-      <HomeText style={[styles.commandStrategyCoverageLabel, { color: c.labelTertiary }]}>{railLabel}</HomeText>
-      <View style={[styles.commandStrategyCoverageDot, { backgroundColor: c.brand }]} />
-      <HomeText style={[styles.commandStrategyCoverageText, { color: c.labelSecondary }]} numberOfLines={1}>
-        {strategySummary}
-      </HomeText>
-    </View>
-  );
+
+  if (isCalibrationMode) {
+    return {
+      summary: '记录后校准饮食 · 睡眠 · 运动',
+      activeCount,
+    };
+  }
+
+  return {
+    summary: `长期干预 · ${activeDomains.map(domain => domain.label).join(' · ')}`,
+    activeCount,
+  };
 }
 
 function HomeBackgroundPanel({
@@ -1557,7 +1553,7 @@ const styles = StyleSheet.create({
   commandInlineNextStep: {
     flex: 1,
     minWidth: 0,
-    minHeight: 38,
+    minHeight: 54,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 9,
@@ -1589,21 +1585,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flexShrink: 1,
   },
-  commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  commandStrategyCoverageRail: {
-    minHeight: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  commandStrategyCoverageLabel: {
-    flexShrink: 0,
-    fontSize: 8,
-    lineHeight: 10,
+  commandInlineNextMeta: {
+    minWidth: 0,
+    fontSize: 9,
+    lineHeight: 11,
     fontWeight: '800',
+    flexShrink: 1,
   },
-  commandStrategyCoverageDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
-  commandStrategyCoverageText: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandInlineDoneButton: {
     minHeight: 32,
     borderRadius: radii.full,
