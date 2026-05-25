@@ -590,7 +590,11 @@ function HomeCommandHeader({
             <HomeText style={[styles.commandInlineNextText, { color: c.labelPrimary }]} numberOfLines={1}>
               {nextStepActionText}
             </HomeText>
-            <HomeText style={[styles.commandInlineNextMeta, { color: c.labelSecondary }]} numberOfLines={1}>
+            <HomeText
+              accessibilityLabel={strategyStatus.accessibilityLabel}
+              style={[styles.commandInlineNextMeta, { color: c.labelSecondary }]}
+              numberOfLines={1}
+            >
               {strategyStatus.summary}
             </HomeText>
           </View>
@@ -644,6 +648,7 @@ function buildActionStrategyStatus(
 ): {
   summary: string;
   activeCount: number;
+  accessibilityLabel?: string;
 } {
   const activeCount = domains.reduce((total, domain) => total + domain.activeCount, 0);
   const activeDomains = domains.filter(domain => domain.activeCount > 0);
@@ -652,8 +657,9 @@ function buildActionStrategyStatus(
 
   if (isCalibrationMode) {
     return {
-      summary: '记录后校准 5 类策略 · 饮食 睡眠 运动 补剂 情绪',
+      summary: '校准 5 类生活策略',
       activeCount,
+      accessibilityLabel: '记录后校准饮食、睡眠、运动、补剂和情绪策略',
     };
   }
 
@@ -693,7 +699,12 @@ function HomeBackgroundPanel({
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
           <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台验证</HomeText>
         </View>
-        <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>长期画像 · 基因 表观 体检 穿戴 GPS</HomeText>
+        <HomeText
+          accessibilityLabel="后台持续合并基因、表观遗传、医疗检查、穿戴和 GPS 数据"
+          style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}
+        >
+          个体画像 · 5类数据合并
+        </HomeText>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
