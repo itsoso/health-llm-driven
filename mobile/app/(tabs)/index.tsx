@@ -1188,10 +1188,16 @@ function buildDiagnosisBasisText(
   geneticHits?: number | null,
 ): string {
   const wearable = signals.length > 0
-    ? signals.map(signal => `${signal.label} ${signal.value}`).join(' · ')
+    ? signals.map(formatBasisSignal).join(' · ')
     : '穿戴待同步';
-  const genetics = geneticHits != null ? `基因 ${geneticHits}` : '基因待同步';
+  const genetics = geneticHits != null ? `基因${geneticHits}` : '基因待同步';
   return `依据 · ${wearable} · ${genetics} · GPS · 体检`;
+}
+
+function formatBasisSignal(signal: PersonalSignalChip): string {
+  const label = signal.label === '睡眠分' ? '睡眠' : signal.label;
+  const value = signal.value.replace(/%|ms/g, '');
+  return `${label}${value}`;
 }
 
 function buildOutcomeFeedbackMetric(

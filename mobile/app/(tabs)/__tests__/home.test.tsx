@@ -231,7 +231,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/依据 · 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*GPS.*体检/)).toBeTruthy();
+    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · GPS · 体检')).toBeTruthy();
     expect(getByText(/看结果 · 睡眠分90\+ · HRV回升 · 血氧≥95%/)).toBeTruthy();
     expect(queryByText(/已看 ·/)).toBeNull();
     expect(queryByText(/看结果 · .* \/ /)).toBeNull();
@@ -278,7 +278,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/依据 · 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*GPS.*体检/)).toBeTruthy();
+    expect(getByText('依据 · 血氧95 · 睡眠91 · HRV63 · 基因65 · GPS · 体检')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
   });
 
@@ -431,10 +431,10 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('依据 · 血氧 93% · 睡眠分 89 · HRV 62ms · 基因待同步 · GPS · 体检')).toBeTruthy();
+    expect(getByText('依据 · 血氧93 · 睡眠89 · HRV62 · 基因待同步 · GPS · 体检')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
     expect(queryByText('93%')).toBeNull();
-    expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
+    expect(queryByText(/夜间血氧过低.*血氧93.*睡眠89.*HRV62/)).toBeNull();
   });
 
   it('presents the top card as diagnosis and next action while runtime carries the improvement target', () => {
