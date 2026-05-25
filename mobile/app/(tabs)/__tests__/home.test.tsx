@@ -598,10 +598,11 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText('策略校准')).toBeNull();
-    expect(getByText('记录后校准饮食 · 睡眠 · 运动')).toBeTruthy();
+    expect(getByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeTruthy();
     expect(getByText('现在只做 · 记录')).toBeTruthy();
     expect(queryByText('策略覆盖')).toBeNull();
     expect(queryByText('饮食 · 睡眠 · 运动 · 补剂 · 情绪')).toBeNull();
+    expect(queryByText('记录后校准饮食 · 睡眠 · 运动')).toBeNull();
   });
 
   it('connects record actions to the body outcome they update', () => {
@@ -633,7 +634,8 @@ describe('TodayScreen', () => {
 
     expect(queryByTestId('home-strategy-coverage-rail')).toBeNull();
     expect(queryByText('策略校准')).toBeNull();
-    expect(getByText('记录后校准饮食 · 睡眠 · 运动')).toBeTruthy();
+    expect(getByText('记录后校准饮食/睡眠/运动/补剂/情绪')).toBeTruthy();
+    expect(queryByText('记录后校准饮食 · 睡眠 · 运动')).toBeNull();
     expect(getByText('现在只做 · 记录')).toBeTruthy();
   });
 

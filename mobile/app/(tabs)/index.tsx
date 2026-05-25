@@ -646,7 +646,7 @@ function buildActionStrategyStatus(
 
   if (isCalibrationMode) {
     return {
-      summary: '记录后校准饮食 · 睡眠 · 运动',
+      summary: '记录后校准饮食/睡眠/运动/补剂/情绪',
       activeCount,
     };
   }
