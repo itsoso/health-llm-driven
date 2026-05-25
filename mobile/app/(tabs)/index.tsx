@@ -644,11 +644,14 @@ function HomeBackgroundPanel({
 }) {
   const { c } = useTheme();
   return (
-    <View style={[styles.agentRuntimePanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+    <View
+      testID="home-background-runtime"
+      style={[styles.agentRuntimePanel, { backgroundColor: 'transparent', borderColor: 'transparent', borderWidth: 0 }]}
+    >
       <View style={styles.backgroundTaskHeader}>
         <View style={styles.backgroundTaskTitleLine}>
           <View style={[styles.backgroundTaskDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>持续观察</HomeText>
+          <HomeText style={[styles.backgroundTaskTitle, { color: c.labelPrimary }]}>后台观察</HomeText>
         </View>
         <HomeText style={[styles.backgroundTaskMeta, { color: c.labelTertiary }]}>穿戴 · GPS · 体检</HomeText>
       </View>
@@ -683,7 +686,7 @@ function HomeBodyFeedbackPanel({
   return (
     <View
       testID="home-runtime-feedback-strip"
-      style={[styles.runtimeFeedbackStrip, { backgroundColor: 'transparent', borderColor: 'transparent' }]}
+      style={[styles.runtimeFeedbackStrip, { backgroundColor: c.bgCard, borderColor: c.separator }]}
     >
       <View style={[styles.runtimeFeedbackIcon, { backgroundColor: c.brandLight }]}>
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
@@ -802,7 +805,7 @@ function AgentFollowUpQueue({
   return (
     <View
       testID="home-runtime-task-strip"
-      style={[styles.followUpCompactRow, { backgroundColor: 'transparent', borderColor: 'transparent' }]}
+      style={[styles.followUpCompactRow, { backgroundColor: c.bgCard, borderColor: c.separator }]}
     >
       <View style={[styles.followUpRowIcon, { backgroundColor: queueTint }]}>
         <Ionicons name={queueIcon} size={15} color={queueColor} />
