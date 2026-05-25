@@ -1061,8 +1061,8 @@ function buildLoopFeedbackMetrics(
 function buildVerificationGoalText(metrics: OutcomeFeedbackMetric[]): string {
   return metrics.map(metric => {
     const target = getVerificationTarget(metric);
-    return `${metric.label} ${target}`;
-  }).join(' / ');
+    return `${metric.label}${target}`;
+  }).join(' · ');
 }
 
 function buildAgentJudgmentText({
@@ -1261,7 +1261,7 @@ function buildDiagnosisBasisText(
     ? signals.map(signal => `${signal.label} ${signal.value}`).join(' · ')
     : '穿戴待同步';
   const genetics = geneticHits != null ? `基因 ${geneticHits}` : '基因待同步';
-  return `依据 · ${wearable} · ${genetics} · GPS/检查`;
+  return `已看 · ${wearable} · ${genetics} · GPS · 体检`;
 }
 
 function buildOutcomeFeedbackMetric(

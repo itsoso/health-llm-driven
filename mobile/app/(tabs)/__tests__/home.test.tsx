@@ -211,6 +211,24 @@ describe('TodayScreen', () => {
     expect(queryByText('记录实验')).toBeNull();
   });
 
+  it('keeps top evidence and target lines short enough to scan', () => {
+    mockGeneticStats = { hits: 65, total: 90 };
+    mockTwinData = {
+      physiological: {
+        spo2_avg: 95,
+        sleep_score_latest: 91,
+        hrv_latest: 63,
+      },
+    };
+
+    const { getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText(/已看 · 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*GPS.*体检/)).toBeTruthy();
+    expect(getByText(/看结果 · 睡眠分90\+ · HRV回升 · 血氧≥95%/)).toBeTruthy();
+    expect(queryByText(/依据 ·/)).toBeNull();
+    expect(queryByText(/看结果 · .* \/ /)).toBeNull();
+  });
+
   it('grounds the top diagnosis in personal data sources instead of a generic signal line', () => {
     mockGeneticStats = { hits: 65, total: 90 };
     mockTwinData = {
@@ -223,7 +241,7 @@ describe('TodayScreen', () => {
 
     const { getByText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText(/依据 · 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*GPS\/检查/)).toBeTruthy();
+    expect(getByText(/已看 · 血氧 95%.*睡眠分 91.*HRV 63ms.*基因 65.*GPS.*体检/)).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
   });
 
@@ -320,7 +338,7 @@ describe('TodayScreen', () => {
     expect(getByText('为什么优先')).toBeTruthy();
     expect(getByText('今天先 23:00 上床，观察血氧、睡眠分、HRV。')).toBeTruthy();
     expect(getByText(/看结果 ·/)).toBeTruthy();
-    expect(getByText(/血氧 ≥95%.*睡眠分 90\+/)).toBeTruthy();
+    expect(getByText(/血氧≥95%.*睡眠分90\+/)).toBeTruthy();
     expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
     expect(getByText(/证据来源 · GPS\/天气/)).toBeTruthy();
     expect(queryByText('Agent 观测中')).toBeNull();
@@ -375,7 +393,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('夜间血氧过低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-    expect(getByText('依据 · 血氧 93% · 睡眠分 89 · HRV 62ms · 基因待同步 · GPS/检查')).toBeTruthy();
+    expect(getByText('已看 · 血氧 93% · 睡眠分 89 · HRV 62ms · 基因待同步 · GPS · 体检')).toBeTruthy();
     expect(queryByText(/信号 ·/)).toBeNull();
     expect(queryByText('93%')).toBeNull();
     expect(queryByText(/夜间血氧过低.*血氧 93%.*睡眠分 89.*HRV 62ms/)).toBeNull();
@@ -397,7 +415,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText(/看结果 ·/)).toBeTruthy();
-    expect(getByText(/BMI\/体脂.*睡眠分 90\+/)).toBeTruthy();
+    expect(getByText(/BMI\/体脂.*睡眠分90\+/)).toBeTruthy();
     expect(queryByText(/饮食\/睡眠/)).toBeNull();
     expect(getByText('现在只做 · 饮食')).toBeTruthy();
     expect(queryByText('今日实验')).toBeNull();
@@ -432,7 +450,7 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(queryByText(/观察目标 ·/)).toBeNull();
-    expect(getByText(/看结果 · 血氧 ≥95%.*睡眠分 90\+.*HRV 回升/)).toBeTruthy();
+    expect(getByText(/看结果 · 血氧≥95%.*睡眠分90\+.*HRV回升/)).toBeTruthy();
     expect(queryByText('改善目标')).toBeNull();
   });
 
@@ -747,11 +765,11 @@ describe('TodayScreen', () => {
     const { getAllByText, getByText } = render(<TodayScreen />);
 
     expect(getAllByText(/BMI\/体脂/).length).toBeGreaterThan(0);
-    expect(getByText(/BMI\/体脂 下降/)).toBeTruthy();
+    expect(getByText(/BMI\/体脂下降/)).toBeTruthy();
     expect(getAllByText(/睡眠分/).length).toBeGreaterThan(0);
-    expect(getByText(/睡眠分 90\+/)).toBeTruthy();
+    expect(getByText(/睡眠分90\+/)).toBeTruthy();
     expect(getAllByText(/HRV/).length).toBeGreaterThan(0);
-    expect(getByText(/HRV 回升/)).toBeTruthy();
+    expect(getByText(/HRV回升/)).toBeTruthy();
   });
 
   it('shows the lifestyle intervention loop across diet, sleep, movement, supplements, and emotion', () => {
