@@ -219,13 +219,25 @@ describe('TodayScreen', () => {
     expect(queryByText('记录实验')).toBeNull();
   });
 
-  it('renders the main judgment as a distinct decision panel instead of floating copy', () => {
+  it('renders the main judgment as a connected lead area instead of a nested bordered card', () => {
     const { getByTestId } = render(<TodayScreen />);
     const decisionStyle = StyleSheet.flatten(getByTestId('home-command-decision-card').props.style);
 
     expect(decisionStyle.backgroundColor).not.toBe('transparent');
     expect(decisionStyle.borderColor).not.toBe('transparent');
-    expect(decisionStyle.borderWidth).toBeGreaterThan(0);
+    expect(decisionStyle.borderWidth).toBe(0);
+  });
+
+  it('keeps high-risk judgment calm by avoiding a full red warning surface', () => {
+    mockSafetyAlerts = [
+      { severity: 'high', title: '夜间血氧过低' },
+    ];
+
+    const { getByTestId } = render(<TodayScreen />);
+    const decisionStyle = StyleSheet.flatten(getByTestId('home-command-decision-card').props.style);
+
+    expect(decisionStyle.backgroundColor).toBe('#f5f5f5');
+    expect(decisionStyle.backgroundColor).not.toBe('rgba(255, 59, 48, 0.055)');
   });
 
   it('keeps top evidence and target lines short enough to scan', () => {
@@ -789,14 +801,15 @@ describe('TodayScreen', () => {
     expect(queryByText('后台巡检')).toBeNull();
   });
 
-  it('keeps live feedback as a compact runtime strip instead of a dashboard grid', () => {
+  it('folds live feedback into the background queue instead of another standalone card', () => {
     const { getByLabelText, getByTestId, getByText, queryByTestId, queryByText } = render(<TodayScreen />);
 
-    expect(getByTestId('home-runtime-feedback-strip')).toBeTruthy();
+    expect(getByTestId('home-runtime-result-link')).toBeTruthy();
     expect(getByText('3项结果持续验证')).toBeTruthy();
     expect(getByLabelText('要改善的结果：BMI/体脂 待记录、血压 待记录、VO2max 待估算')).toBeTruthy();
     expect(queryByText('待记录')).toBeNull();
     expect(queryByText('待估算')).toBeNull();
+    expect(queryByTestId('home-runtime-feedback-strip')).toBeNull();
     expect(queryByTestId('home-body-feedback-board')).toBeNull();
   });
 
@@ -815,7 +828,10 @@ describe('TodayScreen', () => {
     expect(screen.queryByText('实时校准')).toBeNull();
     expect(screen.queryByText('证据链')).toBeNull();
     expect(textFlow.indexOf('后台验证')).toBeLessThan(textFlow.indexOf('要改善的结果'));
-    expect(textFlow.indexOf('要改善的结果')).toBeLessThan(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text)));
+    expect(textFlow.findIndex(text => /本周建议等待复盘|轨迹暂无新增风险/.test(text))).toBeLessThan(
+      textFlow.indexOf('要改善的结果'),
+    );
+    expect(textFlow.indexOf('要改善的结果')).toBeLessThan(textFlow.findIndex(text => /下次看/.test(text)));
     expect(findEvidenceIndex(textFlow)).toBeLessThan(textFlow.indexOf('要改善的结果'));
   });
 

@@ -523,9 +523,9 @@ function HomeCommandHeader({
   const verificationGoal = buildVerificationGoalCopy(visibleLoopMetrics);
   const decisionColor = criticalCount > 0 ? c.red : c.brand;
   const decisionLabelColor = c.brand;
-  const decisionSurfaceColor = criticalCount > 0 ? 'rgba(255, 59, 48, 0.055)' : 'rgba(0, 153, 148, 0.065)';
-  const decisionBorderColor = criticalCount > 0 ? 'rgba(255, 59, 48, 0.18)' : 'rgba(0, 153, 148, 0.16)';
-  const decisionIconColor = c.bgCard;
+  const decisionSurfaceColor = c.fill;
+  const decisionBorderColor = c.separator;
+  const decisionIconColor = criticalCount > 0 ? c.tintRed : c.bgCard;
   const personalSignalChips = buildPersonalSignalChips(twinSnapshot, `${riskTitle ?? ''} ${action?.domain ?? ''} ${action?.title ?? ''} ${action?.why ?? ''}`);
   const diagnosisBasis = buildDiagnosisBasis(personalSignalChips, geneticHits);
   const isRecordAction = action?.domain === 'measurement';
@@ -737,61 +737,16 @@ function HomeBackgroundPanel({
           个体画像 · 5类数据合并
         </HomeText>
       </View>
-      <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
-        <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
-      </View>
       <AgentFollowUpQueue
         snapshot={snapshot}
         loading={loading}
         weeklyAdvice={weeklyAdvice}
         onOpenTrajectory={onOpenTrajectory}
         onOpenAdvice={onOpenAdvice}
+        onOpenMetric={onOpenMetric}
         feedbackMetrics={feedbackMetrics}
         planCount={planCount}
       />
-    </View>
-  );
-}
-
-function HomeBodyFeedbackPanel({
-  metrics,
-  onOpenMetric,
-}: {
-  metrics: OutcomeFeedbackMetric[];
-  onOpenMetric: (route: string) => void;
-}) {
-  const { c } = useTheme();
-  const visibleMetrics = metrics.slice(0, 4);
-  if (visibleMetrics.length === 0) return null;
-  const stripMetrics = visibleMetrics.slice(0, 3);
-  const feedbackSummary = buildOutcomeFeedbackSummary(stripMetrics);
-
-  return (
-    <View
-      testID="home-runtime-feedback-strip"
-      style={[styles.runtimeFeedbackStrip, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-    >
-      <View style={[styles.runtimeFeedbackIcon, { backgroundColor: c.brandLight }]}>
-        <Ionicons name="analytics-outline" size={12} color={c.brand} />
-      </View>
-      <View style={styles.runtimeFeedbackTextBlock}>
-        <HomeText style={[styles.runtimeFeedbackTitle, { color: c.labelPrimary }]}>要改善的结果</HomeText>
-        <Pressable
-          onPress={() => onOpenMetric(feedbackSummary.route)}
-          style={({ pressed }) => [
-            styles.runtimeFeedbackSummary,
-            { backgroundColor: c.brandLight, borderColor: c.brand, opacity: pressed ? 0.72 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={feedbackSummary.accessibilityLabel}
-        >
-          <View style={[styles.runtimeFeedbackDot, { backgroundColor: c.brand }]} />
-          <HomeText style={[styles.runtimeFeedbackSummaryText, { color: c.brand }]} numberOfLines={1}>
-            {feedbackSummary.summary}
-          </HomeText>
-          <Ionicons name="chevron-forward" size={11} color={c.brand} />
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -802,6 +757,7 @@ function AgentFollowUpQueue({
   weeklyAdvice,
   onOpenTrajectory,
   onOpenAdvice,
+  onOpenMetric,
   feedbackMetrics,
   planCount,
 }: {
@@ -810,6 +766,7 @@ function AgentFollowUpQueue({
   weeklyAdvice: ActionCard[];
   onOpenTrajectory: () => void;
   onOpenAdvice: (card: ActionCard) => void;
+  onOpenMetric: (route: string) => void;
   feedbackMetrics: OutcomeFeedbackMetric[];
   planCount: number;
 }) {
@@ -871,6 +828,7 @@ function AgentFollowUpQueue({
     .slice(0, 3)
     .map(metric => metric.label)
     .filter(Boolean);
+  const feedbackSummary = buildOutcomeFeedbackSummary(reviewTargets.length > 0 ? feedbackMetrics.slice(0, 3) : []);
   const planLabel = planCount > 0 ? `${planCount} 个干预` : '等记录';
   const reviewCopy = buildBackgroundReviewCopy(reviewTargets, planLabel);
   return (
@@ -891,6 +849,25 @@ function AgentFollowUpQueue({
           <HomeText style={[styles.followUpRowTitle, { color: c.labelPrimary }]} numberOfLines={1}>
             {queueTitle}
           </HomeText>
+        </View>
+        <View style={styles.followUpResultLine}>
+          <HomeText style={[styles.followUpResultLabel, { color: c.labelTertiary }]}>要改善的结果</HomeText>
+          <Pressable
+            testID="home-runtime-result-link"
+            onPress={() => onOpenMetric(feedbackSummary.route)}
+            style={({ pressed }) => [
+              styles.followUpResultLink,
+              { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={feedbackSummary.accessibilityLabel}
+          >
+            <View style={[styles.followUpResultDot, { backgroundColor: c.brand }]} />
+            <HomeText style={[styles.followUpResultText, { color: c.brand }]} numberOfLines={1}>
+              {feedbackSummary.summary}
+            </HomeText>
+            <Ionicons name="chevron-forward" size={10} color={c.brand} />
+          </Pressable>
         </View>
         <View style={styles.followUpReviewLine}>
           <Ionicons name="calendar-outline" size={10} color={c.labelTertiary} />
@@ -1762,10 +1739,10 @@ const styles = StyleSheet.create({
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
     minHeight: 52,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 0,
     borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -2143,6 +2120,26 @@ const styles = StyleSheet.create({
     paddingTop: 1,
   },
   followUpReviewText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '700' },
+  followUpResultLine: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 2,
+  },
+  followUpResultLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  followUpResultLink: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 18,
+    borderRadius: radii.full,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  followUpResultDot: { width: 5, height: 5, borderRadius: 2.5 },
+  followUpResultText: { flex: 1, minWidth: 0, fontSize: 8, lineHeight: 10, fontWeight: '800' },
   followUpEvidenceLine: {
     minHeight: 14,
     flexDirection: 'row',
