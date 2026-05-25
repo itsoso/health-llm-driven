@@ -2231,11 +2231,13 @@ struct WorkspaceOverviewView: View {
 
             SectionPanel(title: appText("Top Genetic Findings", appLanguageRaw), systemImage: "exclamationmark.triangle.fill") {
                 if let findings = summary.genomicSummary?.topFindings, !findings.isEmpty {
+                    let findingGroups = GenomicFindingPresentation.groups(from: findings)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 10)], spacing: 10) {
-                        ForEach(findings.prefix(8)) { finding in
+                        ForEach(findingGroups.prefix(8)) { group in
+                            let finding = group.primary
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(alignment: .top) {
-                                    Text(finding.displayTitle)
+                                    Text(group.title)
                                         .font(.callout.weight(.semibold))
                                         .lineLimit(2)
                                     Spacer(minLength: 8)
@@ -2247,10 +2249,14 @@ struct WorkspaceOverviewView: View {
                                         .foregroundStyle(geneticRiskColor(finding.riskLevel))
                                 }
                                 HStack(spacing: 8) {
-                                    if let rsid = finding.rsid {
-                                        Text(rsid)
+                                    if group.variantCount > 1 {
+                                        Text("\(group.variantCount) \(appText("variants", appLanguageRaw))")
+                                            .foregroundStyle(.primary)
                                     }
-                                    if let genotype = finding.genotype {
+                                    if !group.rsidSummary.isEmpty {
+                                        Text(group.rsidSummary)
+                                    }
+                                    if group.variantCount == 1, let genotype = finding.genotype {
                                         Text(genotype)
                                     }
                                     if let evidence = finding.evidenceLevel {
