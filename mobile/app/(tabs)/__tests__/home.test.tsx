@@ -206,14 +206,16 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('健康 Agent')).toBeLessThan(textFlow.findIndex(text => /干预/.test(text)));
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('Agent 观测中'));
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
-    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(targetIndex).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
@@ -252,7 +254,7 @@ describe('TodayScreen', () => {
     expect(queryByText('表观遗传、穿戴已接入')).toBeNull();
     expect(getByText(/证据链 · 环境 GPS\/天气/)).toBeTruthy();
     expect(getByText('Agent 观测中')).toBeTruthy();
-    expect(getByText('验证指标')).toBeTruthy();
+    expect(queryByText('验证指标')).toBeNull();
   });
 
   it('turns critical risk into a concrete next step instead of only a status badge', () => {
@@ -369,12 +371,14 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('健康指标')).toBe(-1);
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(screen.queryByText('结果校准')).toBeNull();
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
-    expect(textFlow.indexOf('验证指标')).toBeLessThan(reviewIndex);
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(targetIndex).toBeLessThan(reviewIndex);
     expect(screen.queryByText('Agent 后台任务')).toBeNull();
   });
 
@@ -470,7 +474,7 @@ describe('TodayScreen', () => {
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.findIndex(text => /干预/.test(text))).toBeLessThan(textFlow.indexOf('证据链'));
-    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.findIndex(text => /验证目标/.test(text))).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
@@ -483,7 +487,7 @@ describe('TodayScreen', () => {
     expect(queryByText('结果校准')).toBeNull();
     expect(queryByText('身体反馈')).toBeNull();
     expect(getByText('Agent 观测中')).toBeTruthy();
-    expect(getByText('验证指标')).toBeTruthy();
+    expect(queryByText('验证指标')).toBeNull();
     expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText('问原因')).toBeTruthy();
     expect(getByText('证据链')).toBeTruthy();
@@ -499,8 +503,9 @@ describe('TodayScreen', () => {
     const { getByText, queryByText } = render(<TodayScreen />);
 
     expect(getByText('Agent 观测中')).toBeTruthy();
-    expect(getByText('正在用体征反馈校准今天策略')).toBeTruthy();
-    expect(getByText('验证指标')).toBeTruthy();
+    expect(queryByText('正在用体征反馈校准今天策略')).toBeNull();
+    expect(queryByText('验证指标')).toBeNull();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
     expect(getByText('证据链')).toBeTruthy();
     expect(getByText(/环境 .* · 基因/)).toBeTruthy();
     expect(getByText(/下次复盘/)).toBeTruthy();
@@ -516,6 +521,15 @@ describe('TodayScreen', () => {
 
     expect(getByTestId('home-runtime-feedback-strip')).toBeTruthy();
     expect(queryByTestId('home-body-feedback-board')).toBeNull();
+  });
+
+  it('folds verification targets into the runtime header instead of a separate section title', () => {
+    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('Agent 观测中')).toBeTruthy();
+    expect(getByText(/验证目标 ·/)).toBeTruthy();
+    expect(queryByText('验证指标')).toBeNull();
+    expect(getByLabelText('问 Agent')).toBeTruthy();
   });
 
   it('folds evidence and next review into one agent background queue strip', () => {
@@ -536,12 +550,14 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 后台运行')).toBe(-1);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
-    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(targetIndex).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 
@@ -553,14 +569,16 @@ describe('TodayScreen', () => {
     expect(textFlow.indexOf('身体反馈')).toBe(-1);
     expect(textFlow.indexOf('Agent 观测中')).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('结果校准')).toBe(-1);
-    expect(textFlow.indexOf('验证指标')).toBeGreaterThanOrEqual(0);
+    const targetIndex = textFlow.findIndex(text => /验证目标/.test(text));
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    expect(textFlow.indexOf('验证指标')).toBe(-1);
     expect(textFlow.indexOf('证据链')).toBeGreaterThanOrEqual(0);
     const reviewIndex = textFlow.findIndex(text => /下次复盘/.test(text));
     expect(reviewIndex).toBeGreaterThanOrEqual(0);
     expect(textFlow.indexOf('Agent 自动处理')).toBe(-1);
     expect(textFlow.indexOf('正在校准结果')).toBe(-1);
-    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(textFlow.indexOf('验证指标'));
-    expect(textFlow.indexOf('验证指标')).toBeLessThan(textFlow.indexOf('证据链'));
+    expect(textFlow.indexOf('Agent 观测中')).toBeLessThan(targetIndex);
+    expect(targetIndex).toBeLessThan(textFlow.indexOf('证据链'));
     expect(textFlow.indexOf('证据链')).toBeLessThan(reviewIndex);
   });
 

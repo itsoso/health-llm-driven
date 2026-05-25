@@ -572,7 +572,7 @@ function HomeCommandHeader({
           onPress={onOpenFocus}
           style={({ pressed }) => [
             styles.commandInlineNextStep,
-            { backgroundColor: c.bgPrimary, borderColor: c.separator, opacity: pressed ? 0.72 : 1 },
+            { backgroundColor: c.brandLight, borderColor: 'transparent', opacity: pressed ? 0.72 : 1 },
           ]}
           accessibilityRole="button"
           accessibilityLabel="打开下一步"
@@ -675,35 +675,27 @@ function HomeBackgroundPanel({
         <View style={styles.agentRuntimeTitleBlock}>
           <HomeText style={[styles.agentRuntimeTitle, { color: c.labelPrimary }]}>Agent 观测中</HomeText>
           <HomeText style={[styles.agentRuntimeSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-            正在用体征反馈校准今天策略
+            {runtimeTargetSummary ? `验证目标 · ${runtimeTargetSummary}` : '正在用体征反馈校准今天策略'}
           </HomeText>
         </View>
         <View style={[styles.agentRuntimeLiveBadge, { backgroundColor: c.brandLight }]}>
           <View style={[styles.agentRuntimeLiveDot, { backgroundColor: c.brand }]} />
           <HomeText style={[styles.agentRuntimeLiveText, { color: c.brand }]}>运行中</HomeText>
         </View>
+        <Pressable
+          onPress={onOpenAgent}
+          style={({ pressed }) => [
+            styles.evidenceAskButton,
+            { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="问 Agent"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={12} color={c.brand} />
+          <HomeText style={[styles.evidenceAskText, { color: c.brand }]}>问原因</HomeText>
+        </Pressable>
       </View>
       <View style={[styles.evidenceChain, { backgroundColor: 'transparent', borderColor: 'transparent' }]}>
-        <View style={styles.evidenceChainHeader}>
-          <View style={styles.evidenceChainTitleBlock}>
-            <HomeText style={[styles.evidenceChainTitle, { color: c.labelPrimary }]}>验证指标</HomeText>
-            <HomeText style={[styles.evidenceChainSubtitle, { color: c.labelTertiary }]} numberOfLines={1}>
-              {runtimeTargetSummary ? `验证目标 · ${runtimeTargetSummary}` : '这些反馈会影响下一轮干预'}
-            </HomeText>
-          </View>
-          <Pressable
-            onPress={onOpenAgent}
-            style={({ pressed }) => [
-              styles.evidenceAskButton,
-              { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="问 Agent"
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={12} color={c.brand} />
-            <HomeText style={[styles.evidenceAskText, { color: c.brand }]}>问原因</HomeText>
-          </Pressable>
-        </View>
         <HomeBodyFeedbackPanel metrics={feedbackMetrics} onOpenMetric={onOpenMetric} />
       </View>
       <AgentFollowUpQueue
@@ -736,9 +728,9 @@ function HomeBodyFeedbackPanel({
   return (
     <View
       testID="home-runtime-feedback-strip"
-      style={[styles.runtimeFeedbackStrip, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}
+      style={[styles.runtimeFeedbackStrip, { backgroundColor: 'transparent', borderColor: 'transparent' }]}
     >
-      <View style={[styles.runtimeFeedbackIcon, { backgroundColor: c.bgCard }]}>
+      <View style={[styles.runtimeFeedbackIcon, { backgroundColor: c.brandLight }]}>
         <Ionicons name="analytics-outline" size={12} color={c.brand} />
       </View>
       <View style={styles.runtimeFeedbackTextBlock}>
@@ -888,7 +880,7 @@ function AgentFollowUpQueue({
   return (
     <View
       testID="home-runtime-task-strip"
-      style={[styles.followUpCompactRow, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}
+      style={[styles.followUpCompactRow, { backgroundColor: 'transparent', borderColor: 'transparent' }]}
     >
       <View style={[styles.followUpRowIcon, { backgroundColor: queueTint }]}>
         <Ionicons name={queueIcon} size={15} color={queueColor} />
@@ -1465,10 +1457,10 @@ const styles = StyleSheet.create({
   commandHeader: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
-    paddingHorizontal: 13,
-    paddingTop: 11,
-    paddingBottom: 10,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 9,
+    gap: 7,
   },
   commandAgentHeader: {
     flexDirection: 'row',
@@ -1567,7 +1559,7 @@ const styles = StyleSheet.create({
   commandInlineNextStep: {
     flex: 1,
     minWidth: 0,
-    minHeight: 40,
+    minHeight: 38,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 9,
@@ -1601,7 +1593,7 @@ const styles = StyleSheet.create({
   },
   commandInlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   commandInlineDoneButton: {
-    minHeight: 34,
+    minHeight: 32,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 11,
@@ -1668,17 +1660,17 @@ const styles = StyleSheet.create({
   commandLoopSegmentLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   commandLoopSegmentValue: { flex: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   commandDecisionCard: {
-    minHeight: 62,
+    minHeight: 52,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: 0,
-    paddingVertical: 2,
+    paddingVertical: 1,
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 7,
+    gap: 6,
   },
   commandDecisionIndicator: {
-    width: 8,
+    width: 6,
     alignItems: 'center',
     paddingTop: 3,
     paddingBottom: 4,
@@ -1726,7 +1718,7 @@ const styles = StyleSheet.create({
   commandSyncText: { fontSize: 11, fontWeight: '700' },
   commandFocusRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
   commandFocusLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  commandTitle: { minWidth: 0, fontSize: 15, fontWeight: '800', lineHeight: 18, letterSpacing: 0 },
+  commandTitle: { minWidth: 0, fontSize: 14, fontWeight: '800', lineHeight: 18, letterSpacing: 0 },
   commandLoopRail: {
     minHeight: 24,
     flexDirection: 'row',
@@ -1969,12 +1961,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   followUpCompactRow: {
-    minHeight: 68,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 1,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
   },
@@ -2051,17 +2043,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     paddingHorizontal: 0,
     paddingVertical: 0,
-    gap: 7,
+    gap: 0,
   },
-  evidenceChainHeader: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  evidenceChainTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  evidenceChainTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  evidenceChainSubtitle: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11, fontWeight: '700' },
   evidenceAskButton: {
     minHeight: 22,
     borderRadius: radii.full,
@@ -2109,8 +2092,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.lg,
     paddingHorizontal: 12,
-    paddingVertical: 11,
-    gap: 9,
+    paddingVertical: 10,
+    gap: 6,
   },
   agentRuntimeHeader: {
     minHeight: 30,
@@ -2234,24 +2217,24 @@ const styles = StyleSheet.create({
   shortcutLabel: { fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   shortcutValue: { flexShrink: 1, minWidth: 0, fontSize: 10, lineHeight: 12, fontWeight: '800', textAlign: 'center' },
   runtimeFeedbackStrip: {
-    minHeight: 36,
+    minHeight: 30,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+    paddingHorizontal: 1,
+    paddingVertical: 3,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   runtimeFeedbackIcon: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  runtimeFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 4 },
-  runtimeFeedbackTitle: { fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  runtimeFeedbackTextBlock: { flex: 1, minWidth: 0, gap: 3 },
+  runtimeFeedbackTitle: { fontSize: 9, lineHeight: 11, fontWeight: '800' },
   runtimeFeedbackChipRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
   runtimeFeedbackChip: {
     flex: 1,
