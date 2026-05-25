@@ -22,6 +22,13 @@ final class AppFontScaleTests: XCTestCase {
         XCTAssertEqual(AppFontScale(level: 4).dynamicTypeSizeName, "accessibility1")
     }
 
+    func testFontScaleMapsPointSizesRelativeToDefaultLevel() {
+        XCTAssertEqual(AppFontScale(level: 0).pointSize(base: 15), 15, accuracy: 0.001)
+        XCTAssertEqual(AppFontScale(level: 1).pointSize(base: 15), 16.741, accuracy: 0.001)
+        XCTAssertEqual(AppFontScale(level: 4).pointSize(base: 15), 25.446, accuracy: 0.001)
+        XCTAssertEqual(AppFontScale(level: -1).pointSize(base: 15), 13.393, accuracy: 0.001)
+    }
+
     func testFontScaleKeyboardShortcutsMapCommandPlusMinusAndZero() {
         XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "=", command: true), .increase)
         XCTAssertEqual(AppFontScaleKeyboardShortcut.action(forKeyEquivalent: "=", command: true, shift: true), .increase)

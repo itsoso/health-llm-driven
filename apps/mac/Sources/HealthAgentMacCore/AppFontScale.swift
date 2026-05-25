@@ -40,6 +40,14 @@ public struct AppFontScale: Equatable, Sendable {
         }
     }
 
+    public var pointScale: Double {
+        Double(displayPercent) / Double(AppFontScale(level: Self.defaultLevel).displayPercent)
+    }
+
+    public func pointSize(base: Double) -> Double {
+        base * pointScale
+    }
+
     public func increased() -> AppFontScale {
         AppFontScale(level: level + 1)
     }

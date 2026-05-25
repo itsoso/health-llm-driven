@@ -1013,6 +1013,7 @@ private struct AgentProposedActionCard: View {
 
 private struct MarkdownMessageText: View {
     let markdown: String
+    @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1035,32 +1036,32 @@ private struct MarkdownMessageText: View {
         switch block {
         case .heading(let level, let text):
             inlineText(text)
-                .font(level <= 2 ? .title3.bold() : .headline)
+                .font(level <= 2 ? scaledFont(base: 20, weight: .bold) : scaledFont(base: 16, weight: .semibold))
                 .foregroundStyle(.primary)
                 .padding(.top, level <= 2 ? 4 : 2)
         case .paragraph(let text):
             inlineText(text)
-                .font(.callout)
+                .font(scaledFont(base: 15))
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
-                    .font(.callout.bold())
+                    .font(scaledFont(base: 15, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                 inlineText(text)
-                    .font(.callout)
+                    .font(scaledFont(base: 15))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .numbered(let index, let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(index).")
-                    .font(.callout.bold())
+                    .font(scaledFont(base: 15, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                     .frame(minWidth: 22, alignment: .trailing)
                 inlineText(text)
-                    .font(.callout)
+                    .font(scaledFont(base: 15))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1068,7 +1069,7 @@ private struct MarkdownMessageText: View {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                     inlineText(column)
-                        .font(.caption)
+                        .font(scaledFont(base: 12))
                         .lineLimit(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
@@ -1092,6 +1093,14 @@ private struct MarkdownMessageText: View {
             return Text(attributed)
         }
         return Text(MarkdownRenderSupport.readableFallback(text))
+    }
+
+    private var appFontScale: AppFontScale {
+        AppFontScale(level: appFontScaleLevel)
+    }
+
+    private func scaledFont(base: Double, weight: Font.Weight? = nil) -> Font {
+        .system(size: appFontScale.pointSize(base: base), weight: weight)
     }
 }
 
