@@ -319,6 +319,8 @@ struct AppServices {
     let traceClient: TraceClient
     let authClient: AuthClient
     let safetyClient: SafetyClient
+    let briefingClient: BriefingClient
+    let nocturnalClient: NocturnalTimeseriesClient
 
     init() {
         let tokenProvider = UserDefaultsTokenStore()
@@ -339,6 +341,8 @@ struct AppServices {
         self.traceClient = TraceClient(apiClient: apiClient)
         self.authClient = AuthClient(apiClient: apiClient, tokenStore: tokenProvider)
         self.safetyClient = SafetyClient(apiClient: apiClient)
+        self.briefingClient = BriefingClient(apiClient: apiClient)
+        self.nocturnalClient = NocturnalTimeseriesClient(apiClient: apiClient)
     }
 }
 
@@ -369,8 +373,22 @@ struct AppRootView: View {
             } else {
                 NavigationSplitView {
                     List(SidebarDestination.sidebarVisible, selection: $navigation.selection) { destination in
-                        Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
-                            .tag(destination)
+                        HStack(spacing: 6) {
+                            Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
+                            if destination == .agent {
+                                let basketCount = services.agentViewModel.contextItems.count
+                                if basketCount > 0 {
+                                    Text("\(basketCount)")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(Color.accentColor, in: Capsule())
+                                        .help(appText("Items waiting in the context basket.", appLanguageRaw))
+                                }
+                            }
+                        }
+                        .tag(destination)
                     }
                     .navigationTitle(appText("Health Agent", appLanguageRaw))
                 } detail: {
@@ -409,6 +427,7 @@ struct AppRootView: View {
         case .today:
             TodayView(
                 viewModel: services.todayViewModel,
+                briefingClient: services.briefingClient,
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
@@ -432,6 +451,7 @@ struct AppRootView: View {
                 viewModel: services.todayViewModel,
                 jobClient: services.desktopJobClient,
                 kind: .data,
+                nocturnalClient: services.nocturnalClient,
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
@@ -687,12 +707,15 @@ struct LoginView: View {
 
 struct TodayView: View {
     @Bindable var viewModel: TodayViewModel
+    var briefingClient: BriefingClient?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dashboardRange: DashboardRange = .sevenDays
     @State private var inputInboxFilter: InputInboxFilter = .all
     @State private var priorityActionIndex: Int = 0
+    @State private var briefing: DailyBriefing?
+    @State private var briefingLoaded = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -707,6 +730,9 @@ struct TodayView: View {
                         if let presentation {
                             HStack(alignment: .top, spacing: CGFloat(layout.columnSpacing)) {
                                 VStack(alignment: .leading, spacing: 18) {
+                                    if let briefing, !briefing.sections.isEmpty {
+                                        briefingCard(briefing)
+                                    }
                                     priorityActionHero(presentation.actionRows)
                                     dashboardHero(presentation)
                                     inputInboxPanel(
@@ -741,6 +767,17 @@ struct TodayView: View {
             if viewModel.bootstrap == nil {
                 await viewModel.refresh()
             }
+            await loadBriefingIfNeeded()
+        }
+    }
+
+    private func loadBriefingIfNeeded() async {
+        guard !briefingLoaded, let client = briefingClient else { return }
+        briefingLoaded = true
+        do {
+            briefing = try await client.fetchMorningBriefing()
+        } catch {
+            briefing = nil
         }
     }
 
@@ -874,6 +911,87 @@ struct TodayView: View {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .strokeBorder(tone.opacity(0.25), lineWidth: 1)
                 }
+        }
+    }
+
+    private func briefingCard(_ briefing: DailyBriefing) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Label(appText("Today's Briefing", appLanguageRaw), systemImage: "sun.max.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                if let date = briefing.date, !date.isEmpty {
+                    Text(date)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let greeting = briefing.greeting, !greeting.isEmpty {
+                Text(greeting)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(briefing.sections) { section in
+                    briefingSectionRow(section)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(panelStroke(radius: 16))
+    }
+
+    private func briefingSectionRow(_ section: BriefingSection) -> some View {
+        let kind = section.statusKind
+        let color = briefingStatusColor(kind)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: briefingStatusIcon(kind))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+                Text(section.title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("•")
+                        .font(.callout)
+                        .foregroundStyle(color)
+                    Text(item)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(color.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func briefingStatusColor(_ kind: BriefingSection.Status) -> Color {
+        switch kind {
+        case .good: return .green
+        case .warning: return .orange
+        case .poor: return .red
+        case .info: return .secondary
+        }
+    }
+
+    private func briefingStatusIcon(_ kind: BriefingSection.Status) -> String {
+        switch kind {
+        case .good: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .poor: return "xmark.octagon.fill"
+        case .info: return "info.circle.fill"
         }
     }
 
@@ -1798,6 +1916,7 @@ struct WorkspaceOverviewView: View {
     @Bindable var viewModel: TodayViewModel
     let jobClient: DesktopJobClient
     let kind: DesktopWorkspaceKind
+    var nocturnalClient: NocturnalTimeseriesClient?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -1809,6 +1928,10 @@ struct WorkspaceOverviewView: View {
     @State private var knowledgeDocumentFilter: KnowledgeDocumentFilter = .all
     @State private var guidanceActionStatus: String?
     @State private var runningGuidanceAction: DesktopWorkspaceGuidanceAction?
+    @State private var nocturnalSpO2: NocturnalSpO2Summary?
+    @State private var nocturnalLoading = false
+    @State private var nocturnalError: String?
+    @State private var nocturnalLoadedDate: String?
 
     var body: some View {
         ScrollView {
@@ -1858,6 +1981,7 @@ struct WorkspaceOverviewView: View {
             if viewModel.bootstrap == nil {
                 await viewModel.refresh()
             }
+            await loadNocturnalSpO2IfNeeded()
         }
         .sheet(item: $selectedGenomicDetail) { detail in
             switch detail {
@@ -2116,6 +2240,10 @@ struct WorkspaceOverviewView: View {
 
             dataTrendPanel
 
+            if kind == .data {
+                nocturnalSpO2Panel
+            }
+
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 16) {
                     dataGuidancePanel(summary)
@@ -2197,6 +2325,205 @@ struct WorkspaceOverviewView: View {
 
     private func trendAverageLabel(value: Double?, unit: String) -> String {
         "\(appText("Avg", appLanguageRaw)) \(formatCompactNumber(value ?? 0))\(appText(unit, appLanguageRaw))"
+    }
+
+    private var nocturnalTargetDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    @MainActor
+    private func loadNocturnalSpO2IfNeeded() async {
+        guard kind == .data, let client = nocturnalClient else { return }
+        let target = nocturnalTargetDate
+        if nocturnalLoadedDate == target { return }
+        nocturnalLoading = true
+        nocturnalError = nil
+        defer { nocturnalLoading = false }
+        do {
+            let summary = try await client.fetchNightlySpO2(date: target)
+            nocturnalSpO2 = summary
+            nocturnalLoadedDate = target
+        } catch {
+            nocturnalSpO2 = nil
+            nocturnalError = error.localizedDescription
+            nocturnalLoadedDate = target
+        }
+    }
+
+    private var nocturnalSpO2Panel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(appText("Nighttime SpO2", appLanguageRaw), systemImage: "lungs.fill")
+                    .font(.headline)
+                    .foregroundStyle(.cyan)
+                Spacer()
+                if let summary = nocturnalSpO2, !summary.samples.isEmpty {
+                    Text(summary.date)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    Task {
+                        nocturnalLoadedDate = nil
+                        await loadNocturnalSpO2IfNeeded()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(appText("Refresh", appLanguageRaw))
+            }
+
+            if nocturnalLoading && nocturnalSpO2 == nil {
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(appText("Loading nightly SpO2...", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
+            } else if let summary = nocturnalSpO2, !summary.samples.isEmpty {
+                nocturnalSpO2Body(summary: summary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(appText("No SpO2 data for last night.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                    Text(appText("Wear your Garmin during sleep to capture overnight SpO2.", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let nocturnalError {
+                        Text(nocturnalError)
+                            .font(.caption2)
+                            .foregroundStyle(.red.opacity(0.8))
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func nocturnalSpO2Body(summary: NocturnalSpO2Summary) -> some View {
+        let sparkValues = summary.samples.compactMap { $0.value }
+
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 6) {
+                spo2Stat(
+                    label: appText("Lowest", appLanguageRaw),
+                    value: summary.minValue.map { String(format: "%.0f%%", $0) } ?? "—",
+                    color: (summary.minValue ?? 100) < 90 ? .red : (summary.minValue ?? 100) < 94 ? .orange : .green
+                )
+                spo2Stat(
+                    label: appText("Average", appLanguageRaw),
+                    value: summary.avgValue.map { String(format: "%.1f%%", $0) } ?? "—",
+                    color: .cyan
+                )
+                spo2Stat(
+                    label: appText("Below 90%", appLanguageRaw),
+                    value: summary.percentBelow90.map { String(format: "%.1f%%", $0) } ?? "—",
+                    color: (summary.percentBelow90 ?? 0) > 1 ? .red : .secondary
+                )
+                spo2Stat(
+                    label: appText("Samples", appLanguageRaw),
+                    value: "\(summary.samples.count)",
+                    color: .secondary
+                )
+            }
+            .frame(width: 180, alignment: .leading)
+
+            SpO2Sparkline(values: sparkValues)
+                .frame(maxWidth: .infinity, minHeight: 120)
+        }
+
+        if !summary.lowestEpisodes.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(appText("Lowest episodes", appLanguageRaw))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(Array(summary.lowestEpisodes.enumerated()), id: \.offset) { _, point in
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.red)
+                        Text(point.sampleTime)
+                            .font(.caption.monospacedDigit())
+                        Text(point.value.map { String(format: "%.0f%%", $0) } ?? "—")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+        }
+
+        if let onAskAgent {
+            HStack(spacing: 10) {
+                Button {
+                    let prompt = nocturnalSpO2Prompt(summary: summary)
+                    onAskAgent(prompt, nocturnalSpO2ContextItem(summary: summary))
+                } label: {
+                    Label(appText("Ask Agent about this", appLanguageRaw), systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+
+                if let onAddContext {
+                    Button {
+                        onAddContext(nocturnalSpO2ContextItem(summary: summary))
+                    } label: {
+                        Label(appText("Add to context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    private func spo2Stat(label: String, value: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.callout.weight(.semibold).monospacedDigit())
+                .foregroundStyle(color)
+        }
+    }
+
+    private func nocturnalSpO2Prompt(summary: NocturnalSpO2Summary) -> String {
+        let minStr = summary.minValue.map { String(format: "%.0f%%", $0) } ?? "—"
+        let avgStr = summary.avgValue.map { String(format: "%.1f%%", $0) } ?? "—"
+        let belowStr = summary.percentBelow90.map { String(format: "%.1f%%", $0) } ?? "—"
+        return "请基于昨夜 SpO2 数据评估呼吸/睡眠风险（最低 \(minStr)，平均 \(avgStr)，低于 90% 占比 \(belowStr)），并给出后续监测建议。"
+    }
+
+    private func nocturnalSpO2ContextItem(summary: NocturnalSpO2Summary) -> AgentContextItem {
+        let minStr = summary.minValue.map { String(format: "%.0f%%", $0) } ?? "—"
+        let avgStr = summary.avgValue.map { String(format: "%.1f%%", $0) } ?? "—"
+        let belowStr = summary.percentBelow90.map { String(format: "%.1f%%", $0) } ?? "—"
+        return AgentContextItem(
+            sourceID: "nocturnal-spo2-\(summary.date)",
+            sourceKind: "nocturnal_spo2",
+            title: "Nighttime SpO2 · \(summary.date)",
+            summary: "Min \(minStr) · Avg \(avgStr) · Below 90% \(belowStr) · \(summary.samples.count) samples",
+            payload: [
+                "date": summary.date,
+                "min": summary.minValue.map { String(format: "%.1f", $0) } ?? "",
+                "avg": summary.avgValue.map { String(format: "%.2f", $0) } ?? "",
+                "below_90_pct": summary.percentBelow90.map { String(format: "%.2f", $0) } ?? "",
+                "sample_count": "\(summary.samples.count)"
+            ]
+        )
     }
 
     private var dataRangeDays: Int {
@@ -3827,6 +4154,67 @@ private struct DataTrendCard: View {
             return Array(repeating: 0.12, count: max(points.count, 7))
         }
         return values.map { max(0.08, $0 / maxValue) }
+    }
+}
+
+private struct SpO2Sparkline: View {
+    let values: [Double]
+
+    private let yMin: Double = 80
+    private let yMax: Double = 100
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                // Risk band: below 90% in light red
+                let normalizedLow = 1 - normalize(90)
+                Rectangle()
+                    .fill(Color.red.opacity(0.06))
+                    .frame(height: geo.size.height * (1 - normalizedLow))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+
+                // Reference line at 90%
+                Path { p in
+                    let y = geo.size.height * normalizedLow
+                    p.move(to: CGPoint(x: 0, y: y))
+                    p.addLine(to: CGPoint(x: geo.size.width, y: y))
+                }
+                .stroke(Color.red.opacity(0.35), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+
+                // SpO2 line
+                Path { p in
+                    guard !values.isEmpty else { return }
+                    for (idx, value) in values.enumerated() {
+                        let x = geo.size.width * CGFloat(idx) / CGFloat(max(values.count - 1, 1))
+                        let y = geo.size.height * (1 - normalize(value))
+                        if idx == 0 {
+                            p.move(to: CGPoint(x: x, y: y))
+                        } else {
+                            p.addLine(to: CGPoint(x: x, y: y))
+                        }
+                    }
+                }
+                .stroke(Color.cyan, lineWidth: 1.4)
+
+                // Y-axis labels
+                VStack {
+                    Text("100%")
+                        .font(.system(size: 9).monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Text("80%")
+                        .font(.system(size: 9).monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 2)
+            }
+        }
+    }
+
+    private func normalize(_ value: Double) -> Double {
+        let clamped = min(max(value, yMin), yMax)
+        return (clamped - yMin) / (yMax - yMin)
     }
 }
 

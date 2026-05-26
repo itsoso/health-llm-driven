@@ -748,43 +748,73 @@ struct AgentChatView: View {
             if !viewModel.toolActivities.isEmpty {
                 Divider()
 
-                Label(appText("Tool Timeline", appLanguageRaw), systemImage: "wrench.and.screwdriver")
-                    .font(.subheadline.bold())
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach(viewModel.toolActivities) { activity in
-                        Button {
-                            selectedToolActivity = activity
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: toolActivityIcon(activity.status))
-                                    .foregroundStyle(toolActivityColor(activity.status))
-                                    .frame(width: 18)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(activity.name)
-                                        .font(.caption.weight(.semibold))
-                                        .lineLimit(1)
-                                    if let summary = activity.resultText ?? activity.arguments {
-                                        Text(summary)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                                Text(appText(toolActivityText(activity.status), appLanguageRaw))
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(toolActivityColor(activity.status))
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2.weight(.bold))
+                HStack(spacing: 6) {
+                    Label(appText("Tool Timeline", appLanguageRaw), systemImage: "wrench.and.screwdriver")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    toolTimelineSummary
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(groupedToolActivities(), id: \.round) { group in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.caption2)
                                     .foregroundStyle(.tertiary)
+                                Text(roundLabel(group.round, count: group.activities.count))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if group.activities.contains(where: { $0.status == .running }) {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                }
                             }
-                            .contentShape(Rectangle())
+                            VStack(alignment: .leading, spacing: 5) {
+                                ForEach(group.activities) { activity in
+                                    Button {
+                                        selectedToolActivity = activity
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: toolActivityIcon(activity.status))
+                                                .foregroundStyle(toolActivityColor(activity.status))
+                                                .frame(width: 18)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(activity.name)
+                                                    .font(.caption.weight(.semibold))
+                                                    .lineLimit(1)
+                                                if let summary = activity.resultText ?? activity.arguments {
+                                                    Text(summary)
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+                                            Spacer(minLength: 0)
+                                            Text(appText(toolActivityText(activity.status), appLanguageRaw))
+                                                .font(.caption2.weight(.bold))
+                                                .foregroundStyle(toolActivityColor(activity.status))
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption2.weight(.bold))
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 7)
+                                    .background(toolActivityColor(activity.status).opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    .help(appText("View Tool Result", appLanguageRaw))
+                                }
+                            }
+                            .padding(.leading, 12)
+                            .overlay(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.secondary.opacity(0.18))
+                                    .frame(width: 1.5)
+                                    .padding(.leading, 4)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 7)
-                        .background(toolActivityColor(activity.status).opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .help(appText("View Tool Result", appLanguageRaw))
                     }
                 }
             }
@@ -877,6 +907,63 @@ struct AgentChatView: View {
         case .running: "Running"
         case .succeeded: "Succeeded"
         case .failed: "Failed"
+        }
+    }
+
+    private struct ToolActivityGroup {
+        let round: Int
+        let activities: [AgentToolActivity]
+    }
+
+    private func groupedToolActivities() -> [ToolActivityGroup] {
+        var buckets: [Int: [AgentToolActivity]] = [:]
+        var order: [Int] = []
+        for (idx, activity) in viewModel.toolActivities.enumerated() {
+            let key = activity.round ?? 0
+            if buckets[key] == nil {
+                buckets[key] = []
+                order.append(key)
+            }
+            buckets[key]?.append(activity)
+            _ = idx
+        }
+        return order.map { ToolActivityGroup(round: $0, activities: buckets[$0] ?? []) }
+    }
+
+    private func roundLabel(_ round: Int, count: Int) -> String {
+        let stepWord = count == 1
+            ? appText("step", appLanguageRaw)
+            : appText("steps", appLanguageRaw)
+        if round <= 0 {
+            return "\(appText("Initial", appLanguageRaw)) · \(count) \(stepWord)"
+        }
+        return "\(appText("Round", appLanguageRaw)) \(round) · \(count) \(stepWord)"
+    }
+
+    private var toolTimelineSummary: some View {
+        let total = viewModel.toolActivities.count
+        let running = viewModel.toolActivities.filter { $0.status == .running }.count
+        let failed = viewModel.toolActivities.filter { $0.status == .failed }.count
+        return HStack(spacing: 6) {
+            if running > 0 {
+                Text("\(running)")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+            }
+            if failed > 0 {
+                Text("\(failed)")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.red.opacity(0.12), in: Capsule())
+            }
+            Text("\(total)")
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
         }
     }
 
