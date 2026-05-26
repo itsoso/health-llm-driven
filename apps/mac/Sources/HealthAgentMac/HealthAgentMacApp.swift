@@ -103,7 +103,7 @@ final class HealthAgentAppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @MainActor
-final class SafetyMonitor {
+final class SafetyMonitor: NSObject, UNUserNotificationCenterDelegate {
     private let safetyClient: SafetyClient
     private let navigation: AppNavigationState
     private var task: Task<Void, Never>?
@@ -114,6 +114,30 @@ final class SafetyMonitor {
     init(safetyClient: SafetyClient, navigation: AppNavigationState) {
         self.safetyClient = safetyClient
         self.navigation = navigation
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if userInfo["rule_id"] is String {
+            Task { @MainActor [weak self] in
+                self?.navigation.selection = .today
+            }
+        }
+        completionHandler()
     }
 
     func start() {
@@ -172,12 +196,253 @@ final class SafetyMonitor {
         content.body = alert.message ?? alert.action ?? ""
         content.sound = .default
         content.userInfo = ["rule_id": alert.rule_id]
+
+        let trigger = quietHoursTrigger(now: Date())
+        let identifier: String
+        if trigger != nil {
+            // Stable id during quiet hours so re-polls within the same night don't pile up duplicates.
+            let dateKey = SafetyMonitor.quietHoursDateKey(for: Date())
+            identifier = "safety.\(alert.rule_id).quiet.\(dateKey)"
+        } else {
+            identifier = "safety.\(alert.rule_id).\(Int(Date().timeIntervalSince1970))"
+        }
+
         let request = UNNotificationRequest(
-            identifier: "safety.\(alert.rule_id).\(Int(Date().timeIntervalSince1970))",
+            identifier: identifier,
             content: content,
-            trigger: nil
+            trigger: trigger
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    // 22:00 – 08:30 local time: defer notifications to 08:30 so they don't wake the user.
+    // Memory: "推送严格不打扰睡眠" (2026-05-11). All severities (incl. Critical) are deferred.
+    private func quietHoursTrigger(now: Date) -> UNNotificationTrigger? {
+        let calendar = Calendar.current
+        let comps = calendar.dateComponents([.hour, .minute], from: now)
+        guard let hour = comps.hour, let minute = comps.minute else { return nil }
+        let totalMinutes = hour * 60 + minute
+        let quietStart = 22 * 60       // 22:00
+        let quietEnd = 8 * 60 + 30     // 08:30
+        let isQuiet = totalMinutes >= quietStart || totalMinutes < quietEnd
+        if !isQuiet { return nil }
+
+        // Compute next 08:30 in local calendar.
+        var target = calendar.dateComponents([.year, .month, .day], from: now)
+        target.hour = 8
+        target.minute = 30
+        target.second = 0
+        guard var fireDate = calendar.date(from: target) else { return nil }
+        if fireDate <= now {
+            // It's after midnight but before 08:30 — same day. If we computed 08:30 today and it's already
+            // past, push to tomorrow.
+            fireDate = calendar.date(byAdding: .day, value: 1, to: fireDate) ?? fireDate
+        }
+        // If we're in the 22:00-23:59 window, fireDate is today's 08:30 (already passed); push to tomorrow.
+        if totalMinutes >= quietStart {
+            fireDate = calendar.date(byAdding: .day, value: 1, to: calendar.date(from: target) ?? now) ?? fireDate
+        }
+
+        let fireComps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+        return UNCalendarNotificationTrigger(dateMatching: fireComps, repeats: false)
+    }
+
+    private static func quietHoursDateKey(for date: Date) -> String {
+        let calendar = Calendar.current
+        let comps = calendar.dateComponents([.hour], from: date)
+        let hour = comps.hour ?? 0
+        // Nights are keyed by the calendar date their 22:00 started on, so 02:00 still maps to the previous day.
+        let base: Date
+        if hour < 12 {
+            base = calendar.date(byAdding: .day, value: -1, to: date) ?? date
+        } else {
+            base = date
+        }
+        let dayComps = calendar.dateComponents([.year, .month, .day], from: base)
+        return String(format: "%04d-%02d-%02d", dayComps.year ?? 0, dayComps.month ?? 0, dayComps.day ?? 0)
+    }
+}
+
+// MARK: - Quick Capture (C1)
+
+@MainActor
+final class QuickCaptureManager {
+    private let recordClient: RecordClient
+    private var window: NSPanel?
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+
+    init(recordClient: RecordClient) {
+        self.recordClient = recordClient
+    }
+
+    func install() {
+        // Cmd+Shift+Space (keyCode 49 = space).
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if Self.matchesQuickCaptureShortcut(event) {
+                self.toggle()
+                return nil
+            }
+            return event
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return }
+            if Self.matchesQuickCaptureShortcut(event) {
+                Task { @MainActor in self.toggle() }
+            }
+        }
+    }
+
+    func uninstall() {
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        localMonitor = nil
+        globalMonitor = nil
+        window?.close()
+        window = nil
+    }
+
+    func show() {
+        let panel = ensureWindow()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func hide() {
+        window?.close()
+    }
+
+    private func toggle() {
+        if let window, window.isVisible {
+            window.close()
+        } else {
+            show()
+        }
+    }
+
+    private func ensureWindow() -> NSPanel {
+        if let window { return window }
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 200),
+            styleMask: [.titled, .closable, .hudWindow, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Quick Capture"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.titlebarAppearsTransparent = true
+        panel.center()
+
+        let host = NSHostingController(
+            rootView: QuickCaptureView(
+                client: recordClient,
+                onDismiss: { [weak self] in self?.hide() }
+            )
+        )
+        panel.contentViewController = host
+        window = panel
+        return panel
+    }
+
+    private static func matchesQuickCaptureShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command), flags.contains(.shift),
+              !flags.contains(.option), !flags.contains(.control) else {
+            return false
+        }
+        return event.keyCode == 49 // space
+    }
+}
+
+@MainActor
+private struct QuickCaptureView: View {
+    let client: RecordClient
+    let onDismiss: () -> Void
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @State private var text: String = ""
+    @State private var isSubmitting = false
+    @State private var resultMessage: String?
+    @State private var resultIsError = false
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "bolt.circle.fill")
+                    .foregroundStyle(.cyan)
+                Text(appText("Quick Capture", appLanguageRaw))
+                    .font(.headline)
+                Spacer()
+                Text("⌘⇧Space")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            TextField(
+                appText("Symptom, measurement, note...", appLanguageRaw),
+                text: $text,
+                axis: .vertical
+            )
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(3...6)
+            .focused($fieldFocused)
+            .onSubmit { submit() }
+
+            if let resultMessage {
+                Text(resultMessage)
+                    .font(.caption)
+                    .foregroundStyle(resultIsError ? Color.red : Color.green)
+            }
+
+            HStack {
+                Spacer()
+                Button(appText("Cancel", appLanguageRaw)) {
+                    onDismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button {
+                    submit()
+                } label: {
+                    if isSubmitting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(appText("Save", appLanguageRaw))
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(isSubmitting || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(width: 520)
+        .onAppear { fieldFocused = true }
+    }
+
+    private func submit() {
+        let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !payload.isEmpty, !isSubmitting else { return }
+        isSubmitting = true
+        resultMessage = nil
+        Task {
+            do {
+                _ = try await client.quickRecord(text: payload)
+                resultMessage = appText("Saved.", appLanguageRaw)
+                resultIsError = false
+                text = ""
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                onDismiss()
+            } catch {
+                resultMessage = error.localizedDescription
+                resultIsError = true
+            }
+            isSubmitting = false
+        }
     }
 }
 
@@ -321,7 +586,10 @@ struct AppServices {
     let safetyClient: SafetyClient
     let briefingClient: BriefingClient
     let nocturnalClient: NocturnalTimeseriesClient
+    let labClient: LabClient
+    let quickCaptureManager: QuickCaptureManager
 
+    @MainActor
     init() {
         let tokenProvider = UserDefaultsTokenStore()
         self.tokenProvider = tokenProvider
@@ -343,6 +611,8 @@ struct AppServices {
         self.safetyClient = SafetyClient(apiClient: apiClient)
         self.briefingClient = BriefingClient(apiClient: apiClient)
         self.nocturnalClient = NocturnalTimeseriesClient(apiClient: apiClient)
+        self.labClient = LabClient(apiClient: apiClient)
+        self.quickCaptureManager = QuickCaptureManager(recordClient: recordClient)
     }
 }
 
@@ -419,6 +689,7 @@ struct AppRootView: View {
             )
         }
         safetyMonitor?.start()
+        services.quickCaptureManager.install()
     }
 
     @ViewBuilder
@@ -452,6 +723,7 @@ struct AppRootView: View {
                 jobClient: services.desktopJobClient,
                 kind: .data,
                 nocturnalClient: services.nocturnalClient,
+                labClient: services.labClient,
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
@@ -1917,6 +2189,7 @@ struct WorkspaceOverviewView: View {
     let jobClient: DesktopJobClient
     let kind: DesktopWorkspaceKind
     var nocturnalClient: NocturnalTimeseriesClient?
+    var labClient: LabClient?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -1929,9 +2202,18 @@ struct WorkspaceOverviewView: View {
     @State private var guidanceActionStatus: String?
     @State private var runningGuidanceAction: DesktopWorkspaceGuidanceAction?
     @State private var nocturnalSpO2: NocturnalSpO2Summary?
+    @State private var nocturnalNight: NocturnalNightSnapshot?
     @State private var nocturnalLoading = false
     @State private var nocturnalError: String?
     @State private var nocturnalLoadedDate: String?
+    @State private var nocturnalWeek: [NocturnalWeekNight] = []
+    @State private var nocturnalWeekLoading = false
+    @State private var nocturnalWeekLoaded = false
+    @State private var labSeries: [LabIndicatorSeries] = []
+    @State private var labLoading = false
+    @State private var labError: String?
+    @State private var labLoaded = false
+    @State private var selectedLabCode: String?
 
     var body: some View {
         ScrollView {
@@ -1982,6 +2264,7 @@ struct WorkspaceOverviewView: View {
                 await viewModel.refresh()
             }
             await loadNocturnalSpO2IfNeeded()
+            await loadLabTrendsIfNeeded()
         }
         .sheet(item: $selectedGenomicDetail) { detail in
             switch detail {
@@ -2241,7 +2524,9 @@ struct WorkspaceOverviewView: View {
             dataTrendPanel
 
             if kind == .data {
+                nocturnalWeekStripPanel
                 nocturnalSpO2Panel
+                labTrendsPanel
             }
 
             ViewThatFits(in: .horizontal) {
@@ -2339,19 +2624,32 @@ struct WorkspaceOverviewView: View {
     private func loadNocturnalSpO2IfNeeded() async {
         guard kind == .data, let client = nocturnalClient else { return }
         let target = nocturnalTargetDate
+        await loadNocturnalWeekIfNeeded(client: client)
         if nocturnalLoadedDate == target { return }
         nocturnalLoading = true
         nocturnalError = nil
         defer { nocturnalLoading = false }
         do {
-            let summary = try await client.fetchNightlySpO2(date: target)
-            nocturnalSpO2 = summary
+            let snapshot = try await client.fetchNightly(date: target)
+            nocturnalNight = snapshot
+            nocturnalSpO2 = snapshot.spo2
             nocturnalLoadedDate = target
         } catch {
+            nocturnalNight = nil
             nocturnalSpO2 = nil
             nocturnalError = error.localizedDescription
             nocturnalLoadedDate = target
         }
+    }
+
+    @MainActor
+    private func loadNocturnalWeekIfNeeded(client: NocturnalTimeseriesClient) async {
+        if nocturnalWeekLoaded || nocturnalWeekLoading { return }
+        nocturnalWeekLoading = true
+        defer { nocturnalWeekLoading = false }
+        let nights = await client.fetchSpO2WeekSummary(endDate: Date(), days: 7)
+        nocturnalWeek = nights
+        nocturnalWeekLoaded = true
     }
 
     private var nocturnalSpO2Panel: some View {
@@ -2369,6 +2667,8 @@ struct WorkspaceOverviewView: View {
                 Button {
                     Task {
                         nocturnalLoadedDate = nil
+                        nocturnalWeekLoaded = false
+                        nocturnalWeek = []
                         await loadNocturnalSpO2IfNeeded()
                     }
                 } label: {
@@ -2443,6 +2743,10 @@ struct WorkspaceOverviewView: View {
 
             SpO2Sparkline(values: sparkValues)
                 .frame(maxWidth: .infinity, minHeight: 120)
+        }
+
+        if let snapshot = nocturnalNight {
+            nocturnalMultiMetricOverlay(snapshot: snapshot)
         }
 
         if !summary.lowestEpisodes.isEmpty {
@@ -2523,6 +2827,433 @@ struct WorkspaceOverviewView: View {
                 "below_90_pct": summary.percentBelow90.map { String(format: "%.2f", $0) } ?? "",
                 "sample_count": "\(summary.samples.count)"
             ]
+        )
+    }
+
+    @ViewBuilder
+    private func nocturnalMultiMetricOverlay(snapshot: NocturnalNightSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider().opacity(0.4)
+            Text(appText("Aligned overnight metrics", appLanguageRaw))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
+                metricMiniRow(
+                    label: appText("Heart rate", appLanguageRaw),
+                    summary: snapshot.heartRate,
+                    color: .pink,
+                    unit: "bpm",
+                    yMin: 35, yMax: 110
+                )
+                metricMiniRow(
+                    label: appText("Respiration", appLanguageRaw),
+                    summary: snapshot.respiration,
+                    color: .blue,
+                    unit: "rpm",
+                    yMin: 8, yMax: 22
+                )
+                metricMiniRow(
+                    label: appText("HRV", appLanguageRaw),
+                    summary: snapshot.hrv,
+                    color: .green,
+                    unit: "ms",
+                    yMin: 15, yMax: 90
+                )
+                metricMiniRow(
+                    label: appText("Stress", appLanguageRaw),
+                    summary: snapshot.stress,
+                    color: .orange,
+                    unit: "",
+                    yMin: 0, yMax: 100
+                )
+            }
+
+            if !snapshot.sleepStages.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appText("Sleep stages", appLanguageRaw))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    SleepStageBand(stages: snapshot.sleepStages)
+                        .frame(height: 18)
+                    SleepStageLegend(language: appLanguageRaw)
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func metricMiniRow(
+        label: String,
+        summary: NocturnalMetricSummary,
+        color: Color,
+        unit: String,
+        yMin: Double,
+        yMax: Double
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .leading)
+
+            MetricMiniSparkline(
+                values: summary.samples.compactMap { $0.value },
+                color: color,
+                yMin: yMin,
+                yMax: yMax
+            )
+            .frame(maxWidth: .infinity, minHeight: 28)
+
+            HStack(spacing: 4) {
+                if let avg = summary.avgValue {
+                    Text(String(format: "%.0f", avg))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(color)
+                } else {
+                    Text("—")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 60, alignment: .trailing)
+        }
+    }
+
+    private var nocturnalWeekStripPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(appText("Last 7 nights SpO2", appLanguageRaw), systemImage: "calendar")
+                    .font(.headline)
+                    .foregroundStyle(.cyan)
+                Spacer()
+                if nocturnalWeekLoading {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if nocturnalWeek.isEmpty && !nocturnalWeekLoading {
+                Text(appText("No SpO2 history available.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(alignment: .center, spacing: 8) {
+                    ForEach(nocturnalWeek) { night in
+                        VStack(spacing: 6) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(weekNightColor(night).opacity(0.85))
+                                if let summary = night.summary, let minValue = summary.minValue {
+                                    Text(String(format: "%.0f", minValue))
+                                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                        .foregroundStyle(.white)
+                                } else {
+                                    Image(systemName: "minus")
+                                        .font(.caption2)
+                                        .foregroundStyle(.white.opacity(0.7))
+                                }
+                            }
+                            .frame(height: 56)
+                            Text(weekNightLabel(night.date))
+                                .font(.system(size: 9).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    weekStripLegendItem(color: .green, text: ">= 94%")
+                    weekStripLegendItem(color: .yellow, text: "90–93%")
+                    weekStripLegendItem(color: .orange, text: "85–89%")
+                    weekStripLegendItem(color: .red, text: "< 85%")
+                    Spacer()
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func weekStripLegendItem(color: Color, text: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(color)
+                .frame(width: 10, height: 10)
+            Text(text)
+        }
+    }
+
+    private func weekNightColor(_ night: NocturnalWeekNight) -> Color {
+        guard let minValue = night.summary?.minValue else { return Color.gray.opacity(0.4) }
+        switch minValue {
+        case ..<85: return .red
+        case ..<90: return .orange
+        case ..<94: return .yellow
+        default: return .green
+        }
+    }
+
+    private func weekNightLabel(_ date: String) -> String {
+        // "yyyy-MM-dd" → "MM-dd"
+        let parts = date.split(separator: "-")
+        if parts.count == 3 {
+            return "\(parts[1])-\(parts[2])"
+        }
+        return date
+    }
+
+    // MARK: - Lab indicator trends (A2)
+
+    @MainActor
+    private func loadLabTrendsIfNeeded() async {
+        guard kind == .data, let client = labClient, !labLoaded, !labLoading else { return }
+        labLoading = true
+        labError = nil
+        defer { labLoading = false }
+        do {
+            let series = try await client.fetchIndicatorTrends()
+            let nonEmpty = series.filter { !$0.data.isEmpty }
+            labSeries = nonEmpty
+            if selectedLabCode == nil {
+                selectedLabCode = nonEmpty.first?.code
+            }
+            labLoaded = true
+        } catch {
+            labError = error.localizedDescription
+            labLoaded = true
+        }
+    }
+
+    private var labTrendsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(appText("Lab indicator trends", appLanguageRaw), systemImage: "chart.xyaxis.line")
+                    .font(.headline)
+                    .foregroundStyle(.purple)
+                Spacer()
+                if labLoading {
+                    ProgressView().controlSize(.small)
+                }
+                Button {
+                    Task {
+                        labLoaded = false
+                        await loadLabTrendsIfNeeded()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(appText("Refresh", appLanguageRaw))
+            }
+
+            if let labError {
+                Text(labError)
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.8))
+            } else if labSeries.isEmpty && !labLoading {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appText("No lab indicator data yet.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                    Text(appText("Import a medical exam PDF or photo to start tracking.", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            } else if let selected = selectedLabSeries {
+                labTrendsBody(selected: selected)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var selectedLabSeries: LabIndicatorSeries? {
+        guard let code = selectedLabCode else { return labSeries.first }
+        return labSeries.first { $0.code == code } ?? labSeries.first
+    }
+
+    @ViewBuilder
+    private func labTrendsBody(selected: LabIndicatorSeries) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(labSeries) { series in
+                    let isSelected = series.code == (selectedLabCode ?? labSeries.first?.code)
+                    Button {
+                        selectedLabCode = series.code
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(series.displayName)
+                                .font(.caption.weight(.semibold))
+                            HStack(spacing: 4) {
+                                if let latest = series.latest, let value = latest.value {
+                                    Text(formatLabValue(value))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(latest.isAbnormal == true ? Color.red : Color.primary)
+                                }
+                                if series.abnormalCount > 0 {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(isSelected ? Color.purple.opacity(0.18) : Color.secondary.opacity(0.08))
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(isSelected ? Color.purple.opacity(0.6) : Color.clear, lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(selected.displayName)
+                    .font(.title3.weight(.semibold))
+                if let unit = selected.unit, !unit.isEmpty {
+                    Text("(\(unit))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let low = selected.referenceLow, let high = selected.referenceHigh {
+                    Text("\(appText("Reference", appLanguageRaw)) \(formatLabValue(low))–\(formatLabValue(high))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LabSeriesChart(series: selected)
+                .frame(height: 160)
+
+            HStack(spacing: 18) {
+                if let latest = selected.latest, let value = latest.value {
+                    labStat(label: appText("Latest", appLanguageRaw), value: formatLabValue(value), date: latest.date, abnormal: latest.isAbnormal == true)
+                }
+                if let earliest = selected.earliest, let value = earliest.value {
+                    labStat(label: appText("First", appLanguageRaw), value: formatLabValue(value), date: earliest.date, abnormal: false)
+                }
+                labStat(label: appText("Visits", appLanguageRaw), value: "\(selected.data.count)", date: nil, abnormal: false)
+                if selected.abnormalCount > 0 {
+                    labStat(label: appText("Abnormal", appLanguageRaw), value: "\(selected.abnormalCount)", date: nil, abnormal: true)
+                }
+                Spacer()
+            }
+
+            if let onAskAgent {
+                HStack(spacing: 10) {
+                    Button {
+                        onAskAgent(labPromptText(series: selected), labContextItem(series: selected))
+                    } label: {
+                        Label(appText("Ask Agent about this", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.bordered)
+
+                    if let onAddContext {
+                        Button {
+                            onAddContext(labContextItem(series: selected))
+                        } label: {
+                            Label(appText("Add to context", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func labStat(label: String, value: String, date: String?, abnormal: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.monospacedDigit().weight(.semibold))
+                .foregroundStyle(abnormal ? Color.red : Color.primary)
+            if let date {
+                Text(date)
+                    .font(.system(size: 9).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func formatLabValue(_ value: Double) -> String {
+        if abs(value) >= 100 {
+            return String(format: "%.0f", value)
+        }
+        if abs(value) >= 10 {
+            return String(format: "%.1f", value)
+        }
+        return String(format: "%.2f", value)
+    }
+
+    private func labPromptText(series: LabIndicatorSeries) -> String {
+        let latest = series.latest.flatMap { $0.value }.map { formatLabValue($0) } ?? "—"
+        let earliest = series.earliest.flatMap { $0.value }.map { formatLabValue($0) } ?? "—"
+        let unit = series.unit ?? ""
+        var ref = ""
+        if let low = series.referenceLow, let high = series.referenceHigh {
+            ref = "（参考 \(formatLabValue(low))–\(formatLabValue(high))\(unit)）"
+        }
+        return "请分析我的 \(series.displayName)\(ref) 长期趋势：最早 \(earliest)\(unit)、最近 \(latest)\(unit)，共 \(series.data.count) 次。异常 \(series.abnormalCount) 次。结合我的基因和生活方式给出解读和建议。"
+    }
+
+    private func labContextItem(series: LabIndicatorSeries) -> AgentContextItem {
+        let sortedPoints = series.sortedData
+        let dataDescription = sortedPoints.compactMap { point -> String? in
+            guard let value = point.value else { return nil }
+            return "\(point.date)=\(formatLabValue(value))"
+        }.joined(separator: ", ")
+
+        var payload: [String: String] = [
+            "code": series.code,
+            "name": series.displayName,
+            "visits": "\(series.data.count)",
+            "abnormal_count": "\(series.abnormalCount)",
+        ]
+        if let unit = series.unit { payload["unit"] = unit }
+        if let low = series.referenceLow { payload["reference_low"] = formatLabValue(low) }
+        if let high = series.referenceHigh { payload["reference_high"] = formatLabValue(high) }
+        if let latest = series.latest, let value = latest.value {
+            payload["latest_date"] = latest.date
+            payload["latest_value"] = formatLabValue(value)
+        }
+        if !dataDescription.isEmpty {
+            payload["timeline"] = dataDescription
+        }
+        let summary = "\(series.data.count) visits · \(series.abnormalCount) abnormal"
+
+        return AgentContextItem(
+            sourceID: "lab-trend-\(series.code)",
+            sourceKind: "lab_trend",
+            title: "\(series.displayName) trend",
+            summary: summary,
+            payload: payload
         )
     }
 
@@ -4215,6 +4946,274 @@ private struct SpO2Sparkline: View {
     private func normalize(_ value: Double) -> Double {
         let clamped = min(max(value, yMin), yMax)
         return (clamped - yMin) / (yMax - yMin)
+    }
+}
+
+private struct MetricMiniSparkline: View {
+    let values: [Double]
+    let color: Color
+    let yMin: Double
+    let yMax: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                if values.isEmpty {
+                    Text("—")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Path { p in
+                        for (idx, value) in values.enumerated() {
+                            let x = geo.size.width * CGFloat(idx) / CGFloat(max(values.count - 1, 1))
+                            let y = geo.size.height * (1 - normalize(value))
+                            if idx == 0 {
+                                p.move(to: CGPoint(x: x, y: y))
+                            } else {
+                                p.addLine(to: CGPoint(x: x, y: y))
+                            }
+                        }
+                    }
+                    .stroke(color.opacity(0.85), lineWidth: 1.1)
+                }
+            }
+        }
+    }
+
+    private func normalize(_ value: Double) -> Double {
+        let clamped = min(max(value, yMin), yMax)
+        let range = yMax - yMin
+        if range <= 0 { return 0.5 }
+        return (clamped - yMin) / range
+    }
+}
+
+private struct SleepStageBand: View {
+    let stages: [NocturnalSleepStage]
+
+    var body: some View {
+        GeometryReader { geo in
+            let totalStart = stages.compactMap { $0.startMs }.min() ?? 0
+            let totalEnd = stages.compactMap { $0.endMs }.max() ?? 0
+            let span = max(Int64(1), totalEnd - totalStart)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.secondary.opacity(0.08))
+
+                ForEach(Array(stages.enumerated()), id: \.offset) { _, stage in
+                    if let start = stage.startMs, let end = stage.endMs, end > start {
+                        let x = CGFloat(start - totalStart) / CGFloat(span) * geo.size.width
+                        let w = CGFloat(end - start) / CGFloat(span) * geo.size.width
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(SleepStageBand.color(for: stage.level))
+                            .frame(width: max(1, w), height: geo.size.height)
+                            .offset(x: x)
+                    }
+                }
+            }
+        }
+    }
+
+    static func color(for level: String?) -> Color {
+        switch (level ?? "").lowercased() {
+        case "deep": return .indigo
+        case "light": return .blue.opacity(0.7)
+        case "rem": return .purple
+        case "awake", "wake": return .orange
+        default: return .gray.opacity(0.6)
+        }
+    }
+}
+
+private struct SleepStageLegend: View {
+    let language: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            legendItem(color: SleepStageBand.color(for: "deep"), label: appText("Deep", language))
+            legendItem(color: SleepStageBand.color(for: "light"), label: appText("Light", language))
+            legendItem(color: SleepStageBand.color(for: "rem"), label: appText("REM", language))
+            legendItem(color: SleepStageBand.color(for: "awake"), label: appText("Awake", language))
+            Spacer()
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+
+    private func legendItem(color: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+        }
+    }
+}
+
+private struct LabSeriesChart: View {
+    let series: LabIndicatorSeries
+
+    private struct PointEntry {
+        let index: Int
+        let date: String
+        let value: Double
+        let abnormal: Bool
+    }
+
+    private struct Scale {
+        let yMin: Double
+        let yMax: Double
+        let range: Double
+        let leftAxisWidth: CGFloat
+        let bottomAxisHeight: CGFloat
+        let plotWidth: CGFloat
+        let plotHeight: CGFloat
+        let pointCount: Int
+
+        func xPos(_ idx: Int) -> CGFloat {
+            if pointCount <= 1 { return plotWidth / 2 + leftAxisWidth }
+            return leftAxisWidth + plotWidth * CGFloat(idx) / CGFloat(pointCount - 1)
+        }
+
+        func yPos(_ value: Double) -> CGFloat {
+            let safeRange = range == 0 ? 1 : range
+            let normalized = (value - yMin) / safeRange
+            return plotHeight * (1 - CGFloat(normalized))
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let entries: [PointEntry] = series.sortedData.enumerated().compactMap { idx, point in
+                guard let v = point.value else { return nil }
+                return PointEntry(index: idx, date: point.date, value: v, abnormal: point.isAbnormal == true)
+            }
+            let scale = makeScale(entries: entries, size: geo.size)
+            ZStack(alignment: .topLeading) {
+                if entries.isEmpty {
+                    Text("—")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    chartContent(entries: entries, scale: scale)
+                }
+            }
+        }
+    }
+
+    private func makeScale(entries: [PointEntry], size: CGSize) -> Scale {
+        let leftAxisWidth: CGFloat = 36
+        let bottomAxisHeight: CGFloat = 18
+        let plotWidth = max(size.width - leftAxisWidth - 8, 10)
+        let plotHeight = max(size.height - bottomAxisHeight - 4, 10)
+
+        if entries.isEmpty {
+            return Scale(yMin: 0, yMax: 1, range: 1,
+                         leftAxisWidth: leftAxisWidth, bottomAxisHeight: bottomAxisHeight,
+                         plotWidth: plotWidth, plotHeight: plotHeight, pointCount: 0)
+        }
+        let values = entries.map { $0.value }
+        let refLow = series.referenceLow
+        let refHigh = series.referenceHigh
+        let minRaw = ([values.min(), refLow].compactMap { $0 }).min() ?? 0
+        let maxRaw = ([values.max(), refHigh].compactMap { $0 }).max() ?? 1
+        let padding = max((maxRaw - minRaw) * 0.12, 0.5)
+        let yMin = minRaw - padding
+        let yMax = maxRaw + padding
+        let range = max(yMax - yMin, 0.0001)
+        return Scale(yMin: yMin, yMax: yMax, range: range,
+                     leftAxisWidth: leftAxisWidth, bottomAxisHeight: bottomAxisHeight,
+                     plotWidth: plotWidth, plotHeight: plotHeight, pointCount: entries.count)
+    }
+
+    @ViewBuilder
+    private func chartContent(entries: [PointEntry], scale: Scale) -> some View {
+        // Reference range band
+        if let low = series.referenceLow, let high = series.referenceHigh, high > low {
+            let yHigh = scale.yPos(high)
+            let yLow = scale.yPos(low)
+            Rectangle()
+                .fill(Color.green.opacity(0.08))
+                .frame(width: scale.plotWidth, height: max(yLow - yHigh, 1))
+                .offset(x: scale.leftAxisWidth, y: yHigh)
+        }
+
+        if let high = series.referenceHigh {
+            Path { p in
+                p.move(to: CGPoint(x: scale.leftAxisWidth, y: scale.yPos(high)))
+                p.addLine(to: CGPoint(x: scale.leftAxisWidth + scale.plotWidth, y: scale.yPos(high)))
+            }
+            .stroke(Color.green.opacity(0.4), style: StrokeStyle(lineWidth: 0.6, dash: [3, 3]))
+        }
+        if let low = series.referenceLow {
+            Path { p in
+                p.move(to: CGPoint(x: scale.leftAxisWidth, y: scale.yPos(low)))
+                p.addLine(to: CGPoint(x: scale.leftAxisWidth + scale.plotWidth, y: scale.yPos(low)))
+            }
+            .stroke(Color.green.opacity(0.4), style: StrokeStyle(lineWidth: 0.6, dash: [3, 3]))
+        }
+
+        Path { p in
+            for entry in entries {
+                let position = CGPoint(x: scale.xPos(entry.index), y: scale.yPos(entry.value))
+                if entry.index == 0 {
+                    p.move(to: position)
+                } else {
+                    p.addLine(to: position)
+                }
+            }
+        }
+        .stroke(Color.purple, lineWidth: 1.6)
+
+        ForEach(entries, id: \.index) { entry in
+            Circle()
+                .fill(entry.abnormal ? Color.red : Color.purple)
+                .frame(width: 6, height: 6)
+                .offset(x: scale.xPos(entry.index) - 3, y: scale.yPos(entry.value) - 3)
+        }
+
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(LabSeriesChart.formatAxis(scale.yMax))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.tertiary)
+            Spacer()
+            Text(LabSeriesChart.formatAxis(scale.yMin))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.tertiary)
+        }
+        .frame(width: scale.leftAxisWidth - 4, height: scale.plotHeight, alignment: .trailing)
+
+        if let first = entries.first, let last = entries.last {
+            Text(LabSeriesChart.shortDate(first.date))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .offset(x: scale.leftAxisWidth, y: scale.plotHeight + 2)
+            Text(LabSeriesChart.shortDate(last.date))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .frame(width: 60, alignment: .trailing)
+                .offset(x: scale.leftAxisWidth + scale.plotWidth - 60, y: scale.plotHeight + 2)
+        }
+    }
+
+    static func formatAxis(_ value: Double) -> String {
+        if abs(value) >= 100 { return String(format: "%.0f", value) }
+        if abs(value) >= 10 { return String(format: "%.1f", value) }
+        return String(format: "%.2f", value)
+    }
+
+    static func shortDate(_ date: String) -> String {
+        // "yyyy-MM-dd" → "yy/MM"
+        let parts = date.split(separator: "-")
+        if parts.count == 3 {
+            let yearPart = String(parts[0])
+            let yy = yearPart.count >= 2 ? String(yearPart.suffix(2)) : yearPart
+            return "\(yy)/\(parts[1])"
+        }
+        return date
     }
 }
 
