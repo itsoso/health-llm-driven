@@ -3,6 +3,84 @@ import HealthAgentMacCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct ConversationCategoryBadge {
+    let icon: String
+    let label: String
+    let tint: Color
+}
+
+private func conversationCategory(_ snapshot: AgentConversationSnapshot) -> ConversationCategoryBadge {
+    let firstUser = snapshot.messages.first(where: { $0.role == .user })?.content
+    let text = (firstUser?.isEmpty == false ? firstUser! : snapshot.title)
+    let lower = text.lowercased()
+
+    if text.contains("基因") || lower.contains("snp") || lower.contains("mthfr") || lower.contains("apoe") || lower.contains("genome") {
+        return .init(icon: "atom", label: "基因", tint: .purple)
+    }
+    if text.contains("知识库") || text.contains("证据") || lower.contains("wiki") {
+        return .init(icon: "books.vertical", label: "知识库", tint: .indigo)
+    }
+    if text.contains("化验") || text.contains("血脂") || text.contains("肝酶") || text.contains("HbA1c") || text.contains("LDL") || text.contains("尿酸") {
+        return .init(icon: "drop", label: "化验", tint: .pink)
+    }
+    if text.contains("睡眠") || text.contains("血氧") || lower.contains("sleep") || lower.contains("spo2") || lower.contains("hrv") {
+        return .init(icon: "moon.zzz", label: "睡眠", tint: .blue)
+    }
+    if text.contains("运动") || text.contains("训练") || lower.contains("acwr") {
+        return .init(icon: "figure.run", label: "运动", tint: .green)
+    }
+    if text.contains("饮食") || text.contains("营养") || text.contains("补剂") || lower.contains("tdee") {
+        return .init(icon: "fork.knife", label: "饮食", tint: .orange)
+    }
+    if text.contains("趋势") || text.contains("纵向") || text.contains("长期") {
+        return .init(icon: "chart.line.uptrend.xyaxis", label: "趋势", tint: .teal)
+    }
+    if text.contains("安全") || text.contains("告警") || text.contains("风险") {
+        return .init(icon: "exclamationmark.shield", label: "风险", tint: .red)
+    }
+    if text.contains("计划") || text.contains("方案") || lower.contains("plan") {
+        return .init(icon: "list.clipboard", label: "计划", tint: .indigo)
+    }
+    return .init(icon: "bubble.left.and.bubble.right", label: "对话", tint: .secondary)
+}
+
+private func conversationDifferentiator(_ snapshot: AgentConversationSnapshot) -> String {
+    let firstUser = snapshot.messages.first(where: { $0.role == .user })?.content
+    let raw = (firstUser?.isEmpty == false ? firstUser! : snapshot.title)
+    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    func capture(_ pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              match.numberOfRanges > 1,
+              let r = Range(match.range(at: 1), in: text) else { return nil }
+        let captured = String(text[r]).trimmingCharacters(in: .whitespaces)
+        return captured.isEmpty ? nil : captured
+    }
+
+    if let c = capture(#"围绕\s*([^\s，,。]+?)\s*这个"#) { return c }
+    if let c = capture(#"关于\s*([^\s，,。]+)"#) { return c }
+    if let c = capture(#"分析这个([^，,。\s]+)"#) { return c }
+
+    let prefixesToStrip = [
+        "请基于我的真实基因报告，",
+        "请基于我的真实基因上下文，",
+        "请基于这条知识库证据，",
+        "请基于我的真实健康数据和当前上下文，",
+        "请基于"
+    ]
+    var stripped = text
+    for prefix in prefixesToStrip {
+        if stripped.hasPrefix(prefix) {
+            stripped = String(stripped.dropFirst(prefix.count))
+            break
+        }
+    }
+    stripped = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
+    return String(stripped.prefix(32))
+}
+
 struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -12,15 +90,14 @@ struct AgentChatView: View {
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
+    @State private var historyExpanded = false
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
-                conversationHistoryStrip
-                conversationSection
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 16) {
@@ -36,7 +113,11 @@ struct AgentChatView: View {
                     }
                 }
 
-                modelControls
+                if !viewModel.messages.isEmpty {
+                    conversationSection
+                }
+
+                conversationHistoryStrip
             }
             .padding(24)
         }
@@ -65,15 +146,11 @@ struct AgentChatView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(appText("Analysis", appLanguageRaw))
-                    .font(.largeTitle.bold())
-                Text(appText("Turn health context into an answer, plan, or evidence check.", appLanguageRaw))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+        HStack(alignment: .center, spacing: 12) {
+            Text(appText("Analysis", appLanguageRaw))
+                .font(.title2.bold())
             Spacer()
+            modelMenuButton
             Button {
                 draft = ""
                 viewModel.startNewConversation()
@@ -88,6 +165,61 @@ struct AgentChatView: View {
                     .controlSize(.small)
             }
         }
+    }
+
+    private var modelMenuButton: some View {
+        Menu {
+            Section(appText("Mode", appLanguageRaw)) {
+                Button {
+                    modelStrategy = "auto"
+                    viewModel.selectModel(nil)
+                } label: {
+                    Label(appText("Auto Select", appLanguageRaw), systemImage: modelStrategy == "auto" ? "checkmark" : "")
+                }
+                Button {
+                    modelStrategy = "default3"
+                    viewModel.selectModel(nil)
+                } label: {
+                    Label(appText("Default 3", appLanguageRaw), systemImage: modelStrategy == "default3" ? "checkmark" : "")
+                }
+            }
+            Section(appText("Manual", appLanguageRaw)) {
+                ForEach(modelOptions, id: \.id) { option in
+                    Button {
+                        modelStrategy = "manual"
+                        viewModel.selectModel(option.id)
+                    } label: {
+                        Label(
+                            "\(option.title) · \(option.tier)",
+                            systemImage: (modelStrategy == "manual" && viewModel.selectedModelID == option.id) ? "checkmark" : ""
+                        )
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3")
+                Text(modelMenuLabel)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(selectedModelDescription)
+    }
+
+    private var modelMenuLabel: String {
+        if modelStrategy == "manual",
+           let id = viewModel.selectedModelID,
+           let option = modelOptions.first(where: { $0.id == id }) {
+            return option.title
+        }
+        if modelStrategy == "default3" {
+            return appText("Default 3", appLanguageRaw)
+        }
+        return appText("Auto Select", appLanguageRaw)
     }
 
     private var composer: some View {
@@ -239,122 +371,69 @@ struct AgentChatView: View {
         ]
     }
 
-    private var modelControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                Label(appText("Model Routing", appLanguageRaw), systemImage: "slider.horizontal.3")
-                    .font(.headline)
-                Text(selectedModelDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Picker(appText("Mode", appLanguageRaw), selection: $modelStrategy) {
-                    Text(appText("Auto Select", appLanguageRaw)).tag("auto")
-                    Text(appText("Default 3", appLanguageRaw)).tag("default3")
-                    Text(appText("Manual", appLanguageRaw)).tag("manual")
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 270)
-                .onChange(of: modelStrategy) { _, newValue in
-                    if newValue == "auto" || newValue == "default3" {
-                        viewModel.selectModel(nil)
-                    }
-                }
-            }
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], spacing: 10) {
-                ForEach(modelOptions, id: \.id) { option in
-                    modelCard(option)
-                }
-            }
-        }
-        .padding(16)
-        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
     @ViewBuilder
     private var conversationHistoryStrip: some View {
         if !viewModel.conversationHistory.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
-                        .font(.headline)
-                    Text(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(viewModel.conversationHistory.count)")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.10), in: Capsule())
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(viewModel.conversationHistory.prefix(12)) { conversation in
-                            AgentConversationHistoryPill(
-                                conversation: conversation,
-                                isSelected: conversation.id == viewModel.currentConversationID,
-                                onLoad: {
-                                    viewModel.loadConversation(conversation)
-                                    editorFocusToken += 1
-                                },
-                                onDelete: {
-                                    viewModel.deleteConversation(conversation)
-                                }
-                            )
-                            .frame(width: 260)
-                        }
+            VStack(alignment: .leading, spacing: historyExpanded ? 10 : 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        historyExpanded.toggle()
                     }
-                    .padding(.vertical, 2)
+                } label: {
+                    HStack(spacing: 8) {
+                        Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                            .font(.subheadline.weight(.semibold))
+                        Text("\(viewModel.conversationHistory.count)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.10), in: Capsule())
+                        if !historyExpanded {
+                            Text(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: historyExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if historyExpanded {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(viewModel.conversationHistory.prefix(12)) { conversation in
+                                AgentConversationHistoryPill(
+                                    conversation: conversation,
+                                    isSelected: conversation.id == viewModel.currentConversationID,
+                                    onLoad: {
+                                        viewModel.loadConversation(conversation)
+                                        editorFocusToken += 1
+                                    },
+                                    onDelete: {
+                                        viewModel.deleteConversation(conversation)
+                                    }
+                                )
+                                .frame(width: 280)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
                 }
             }
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, historyExpanded ? 14 : 10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
             }
         }
-    }
-
-    private func modelCard(_ option: AgentModelOption) -> some View {
-        let isSelected = viewModel.selectedModelID == option.id
-        return Button {
-            modelStrategy = "manual"
-            viewModel.selectModel(option.id)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(option.title)
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(option.tier)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(option.provider)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor).opacity(0.8),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.secondary.opacity(0.08), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
     }
 
     private var selectedModelDescription: String {
@@ -429,34 +508,23 @@ struct AgentChatView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(maxWidth: 860)
+            .frame(maxWidth: .infinity, alignment: .center)
 
-            if viewModel.messages.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "text.magnifyingglass")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.secondary)
-                    Text(appText("Run an analysis to see the answer stream here.", appLanguageRaw))
-                        .font(.headline)
-                    Text(appText("Sources, model, and file context stay visible while you iterate.", appLanguageRaw))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 170)
-                .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            } else {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(viewModel.messages) { message in
-                        messageBubble(message)
-                    }
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(viewModel.messages) { message in
+                    messageBubble(message)
                 }
             }
+            .frame(maxWidth: 860)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
     private func messageBubble(_ message: AgentChatMessage) -> some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
-                Spacer(minLength: 90)
+                Spacer(minLength: 0)
             }
             VStack(alignment: .leading, spacing: 6) {
                 Label(
@@ -486,6 +554,9 @@ struct AgentChatView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
+                if shouldShowFollowUpChips(for: message) {
+                    followUpChips(for: message)
+                }
             }
             .padding(14)
             .background(
@@ -496,9 +567,9 @@ struct AgentChatView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(message.role == .user ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.08), lineWidth: 1)
             }
-            .frame(maxWidth: message.role == .user ? 720 : .infinity, alignment: message.role == .user ? .trailing : .leading)
+            .frame(maxWidth: message.role == .user ? 620 : .infinity, alignment: .leading)
             if message.role == .assistant {
-                Spacer(minLength: 70)
+                Spacer(minLength: 0)
             }
         }
     }
@@ -509,6 +580,44 @@ struct AgentChatView: View {
             MarkdownMessageText(markdown: viewModel.displayContent(for: message))
         } else {
             Text(message.content.isEmpty ? " " : message.content)
+        }
+    }
+
+    private func shouldShowFollowUpChips(for message: AgentChatMessage) -> Bool {
+        guard message.role == .assistant else { return false }
+        guard !viewModel.isStreaming else { return false }
+        guard !message.content.isEmpty else { return false }
+        guard let last = viewModel.messages.last(where: { $0.role == .assistant }) else { return false }
+        return last.id == message.id
+    }
+
+    private func followUpChips(for message: AgentChatMessage) -> some View {
+        let prompts: [(label: String, prompt: String, icon: String)] = [
+            ("Deeper", "深入这一点，给我更细的机制和细节。", "arrow.down.right.circle"),
+            ("Action steps", "把这件事拆成具体可执行的步骤，标注先后。", "checklist"),
+            ("Plain words", "用大白话再说一遍，假设我没医学背景。", "text.bubble"),
+            ("Find evidence", "给我支撑这个结论的证据来源和等级。", "books.vertical"),
+            ("Compare last", "和上次对比有什么变化，重点列差异。", "arrow.left.arrow.right.circle")
+        ]
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(prompts, id: \.label) { chip in
+                    Button {
+                        Task { await viewModel.send(chip.prompt) }
+                    } label: {
+                        Label(appText(chip.label, appLanguageRaw), systemImage: chip.icon)
+                            .labelStyle(.titleAndIcon)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color.accentColor.opacity(0.10), in: Capsule())
+                    .foregroundStyle(Color.accentColor)
+                    .help(chip.prompt)
+                }
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -702,8 +811,7 @@ struct AgentChatView: View {
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                     ForEach(viewModel.lastSourcesUsed, id: \.self) { source in
-                        Label(source, systemImage: "link")
-                            .font(.caption)
+                        evidenceSourceChip(source)
                     }
                 }
             }
@@ -834,6 +942,46 @@ struct AgentChatView: View {
             }
         }
         return accepted
+    }
+
+    @ViewBuilder
+    private func evidenceSourceChip(_ rawSource: String) -> some View {
+        let level = EvidenceLevel.classify(sourceLabel: rawSource)
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: "link")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(rawSource)
+                .font(.caption)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Label(appText(level.displayLabel, appLanguageRaw), systemImage: level.systemImage)
+                .labelStyle(.titleAndIcon)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(evidenceChipBackground(for: level), in: Capsule())
+                .foregroundStyle(evidenceChipForeground(for: level))
+        }
+    }
+
+    private func evidenceChipBackground(for level: EvidenceLevel) -> Color {
+        switch level {
+        case .high: Color.green.opacity(0.18)
+        case .medium: Color.yellow.opacity(0.22)
+        case .low: Color.gray.opacity(0.18)
+        case .medicalGrade: Color.red.opacity(0.18)
+        }
+    }
+
+    private func evidenceChipForeground(for level: EvidenceLevel) -> Color {
+        switch level {
+        case .high: Color.green
+        case .medium: Color.orange
+        case .low: Color.secondary
+        case .medicalGrade: Color.red
+        }
     }
 }
 
@@ -1237,22 +1385,34 @@ private struct AgentConversationHistoryPill: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        let category = conversationCategory(conversation)
+        let differentiator = conversationDifferentiator(conversation)
+
+        return HStack(alignment: .top, spacing: 10) {
             Button {
                 onLoad()
             } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "bubble.left.and.bubble.right")
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : category.icon)
                         .font(.callout)
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(isSelected ? Color.accentColor : category.tint)
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(conversation.title)
+                        HStack(spacing: 6) {
+                            Text(category.label)
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(category.tint.opacity(0.15), in: Capsule())
+                                .foregroundStyle(category.tint)
+                        }
+                        Text(differentiator)
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                         Text(historySubtitle)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -1437,6 +1597,7 @@ struct RecordHubView: View {
     let client: RecordClient
     let productClient: SupplementProductLibraryClient
     @Bindable var viewModel: TodayViewModel
+    var onAskAgent: ((String, AgentContextItem?) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var quickText = ""
     @State private var recordType = StructuredRecordDraftType.diet
@@ -2011,6 +2172,22 @@ struct RecordHubView: View {
                             .font(.callout)
                             .lineLimit(2)
                         Spacer()
+                        if let onAskAgent {
+                            Button {
+                                let contextItem = AgentContextItem(
+                                    sourceID: "record-\(record.hashValue)",
+                                    sourceKind: "record_hub_recent",
+                                    title: appText("Recent Local Records", appLanguageRaw),
+                                    summary: record
+                                )
+                                onAskAgent("基于这条刚记录的内容，给我一段简短分析和后续建议：\n\(record)", contextItem)
+                            } label: {
+                                Image(systemName: "sparkles")
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.tint)
+                            .help(appText("Ask Agent with Context", appLanguageRaw))
+                        }
                         Button {
                             quickText = record
                             quickFocusToken += 1
@@ -2474,6 +2651,7 @@ private extension StructuredRecordDraftType {
 
 struct ImportCenterView: View {
     let jobClient: DesktopJobClient
+    var onAskAgent: ((String, AgentContextItem?) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var isImporterPresented = false
     @State private var intakeItem: FileIntakeItem?
@@ -2481,6 +2659,7 @@ struct ImportCenterView: View {
     @State private var isWorking = false
     @State private var rawUploadConfirmed = false
     @State private var isDropTargeted = false
+    @State private var recommendedPrompt: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -2537,6 +2716,33 @@ struct ImportCenterView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let recommendedPrompt, let onAskAgent, let intakeItem {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "wand.and.stars")
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(appText("Recommended next step", appLanguageRaw))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(recommendedPrompt)
+                            .font(.callout)
+                    }
+                    Spacer()
+                    Button(appText("Open in Agent", appLanguageRaw)) {
+                        let item = AgentContextItem(
+                            sourceID: intakeItem.sha256,
+                            sourceKind: "import_" + intakeItem.sourceKind.rawValue,
+                            title: intakeItem.name,
+                            summary: appText("Detected Route", appLanguageRaw) + ": " + jobType(for: intakeItem.sourceKind)
+                        )
+                        onAskAgent(recommendedPrompt, item)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(12)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
             Spacer()
         }
         .padding(28)
@@ -2583,8 +2789,25 @@ struct ImportCenterView: View {
                 ]
             ))
             statusText = "Created job #\(job.id) (\(job.status))."
+            recommendedPrompt = pipelineRecommendation(for: intakeItem.sourceKind)
         } catch {
             statusText = "Job creation failed: \(error.localizedDescription)"
+            recommendedPrompt = nil
+        }
+    }
+
+    private func pipelineRecommendation(for kind: FileSourceKind) -> String {
+        switch kind {
+        case .genomeText:
+            return "新基因数据已入库。等解析完成后，结合最近化验和补剂清单，告诉我哪些 SNP 现在最该关注，以及对应的生活方式/补剂调整。"
+        case .medicalFile:
+            return "刚导入的化验/医疗文件解析完后，列出偏离参考范围的指标，按风险排序，每条给一段解释和下一步行动。"
+        case .appleHealthExport:
+            return "Apple Health 数据导入完毕后，给我最近 30 天的活动、睡眠、心率趋势综合摘要，并指出与基线的明显偏差。"
+        case .dedaoFolder:
+            return "得到知识库索引完成后，告诉我新增了哪些主题，以及和我当前健康问题最相关的 3 条结论。"
+        case .unknown:
+            return "导入完成后，请总结这份数据并建议怎么纳入我的日常分析。"
         }
     }
 

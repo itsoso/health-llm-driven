@@ -43,6 +43,10 @@ struct HealthAgentMacApp: App {
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 Button(appText("Jobs", appLanguageRaw)) { appServices.navigation.selection = .jobs }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
+                Button(appText("Trace", appLanguageRaw)) { appServices.navigation.selection = .trace }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                Button(appText("Settings", appLanguageRaw)) { appServices.navigation.selection = .settings }
+                    .keyboardShortcut(",", modifiers: [.command])
                 Divider()
                 Button(appText("Command Palette", appLanguageRaw)) {
                     appServices.navigation.isCommandPalettePresented = true
@@ -95,6 +99,85 @@ final class HealthAgentAppDelegate: NSObject, NSApplicationDelegate {
 
         existingInstance.activate(options: [.activateAllWindows])
         NSApplication.shared.terminate(nil)
+    }
+}
+
+@MainActor
+final class SafetyMonitor {
+    private let safetyClient: SafetyClient
+    private let navigation: AppNavigationState
+    private var task: Task<Void, Never>?
+    private var seenAlertIDs = Set<String>()
+    private var notificationsAuthorized = false
+    private var authorizationRequested = false
+
+    init(safetyClient: SafetyClient, navigation: AppNavigationState) {
+        self.safetyClient = safetyClient
+        self.navigation = navigation
+    }
+
+    func start() {
+        guard task == nil else { return }
+        ensureAuthorization()
+        task = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                await self?.pollOnce()
+                try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+            }
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        seenAlertIDs.removeAll()
+    }
+
+    private func ensureAuthorization() {
+        guard !authorizationRequested else { return }
+        authorizationRequested = true
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
+            Task { @MainActor in
+                self?.notificationsAuthorized = granted
+            }
+        }
+    }
+
+    private func pollOnce() async {
+        do {
+            let report = try await safetyClient.fetchReport()
+            await processReport(report)
+        } catch {
+            // Network/auth failures are silent — next tick retries.
+        }
+    }
+
+    private func processReport(_ report: SafetyReport) async {
+        let alerts = report.alerts.filter { $0.severity >= 2 }
+        let newAlerts = alerts.filter { !seenAlertIDs.contains($0.rule_id) }
+        for alert in newAlerts { seenAlertIDs.insert(alert.rule_id) }
+
+        // Only send notifications for High (3) and Critical (4) tier — Medium stays passive.
+        let urgent = newAlerts.filter { $0.severity >= 3 }
+        guard !urgent.isEmpty, notificationsAuthorized else { return }
+
+        for alert in urgent {
+            postNotification(alert)
+        }
+    }
+
+    private func postNotification(_ alert: SafetyAlert) {
+        let content = UNMutableNotificationContent()
+        content.title = "[\(alert.severityLabel)] \(alert.title)"
+        content.body = alert.message ?? alert.action ?? ""
+        content.sound = .default
+        content.userInfo = ["rule_id": alert.rule_id]
+        let request = UNNotificationRequest(
+            identifier: "safety.\(alert.rule_id).\(Int(Date().timeIntervalSince1970))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 }
 
@@ -235,6 +318,7 @@ struct AppServices {
     let desktopJobClient: DesktopJobClient
     let traceClient: TraceClient
     let authClient: AuthClient
+    let safetyClient: SafetyClient
 
     init() {
         let tokenProvider = UserDefaultsTokenStore()
@@ -254,6 +338,7 @@ struct AppServices {
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
         self.traceClient = TraceClient(apiClient: apiClient)
         self.authClient = AuthClient(apiClient: apiClient, tokenStore: tokenProvider)
+        self.safetyClient = SafetyClient(apiClient: apiClient)
     }
 }
 
@@ -263,6 +348,7 @@ struct AppRootView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var hasCheckedAuth = false
     @State private var isAuthenticated = false
+    @State private var safetyMonitor: SafetyMonitor?
 
     init(services: AppServices) {
         self.services = services
@@ -278,10 +364,11 @@ struct AppRootView: View {
                 LoginView(authClient: services.authClient) {
                     isAuthenticated = true
                     Task { await services.todayViewModel.refresh() }
+                    startSafetyMonitor()
                 }
             } else {
                 NavigationSplitView {
-                    List(SidebarDestination.allCases, selection: $navigation.selection) { destination in
+                    List(SidebarDestination.sidebarVisible, selection: $navigation.selection) { destination in
                         Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
                             .tag(destination)
                     }
@@ -296,6 +383,7 @@ struct AppRootView: View {
             guard !hasCheckedAuth else { return }
             isAuthenticated = await services.authClient.hasValidSession()
             hasCheckedAuth = true
+            if isAuthenticated { startSafetyMonitor() }
         }
         .sheet(isPresented: $navigation.isCommandPalettePresented) {
             CommandPaletteView(
@@ -303,6 +391,16 @@ struct AppRootView: View {
                 onSelect: handleCommand
             )
         }
+    }
+
+    private func startSafetyMonitor() {
+        if safetyMonitor == nil {
+            safetyMonitor = SafetyMonitor(
+                safetyClient: services.safetyClient,
+                navigation: services.navigation
+            )
+        }
+        safetyMonitor?.start()
     }
 
     @ViewBuilder
@@ -320,7 +418,8 @@ struct AppRootView: View {
             RecordHubView(
                 client: services.recordClient,
                 productClient: services.supplementProductClient,
-                viewModel: services.todayViewModel
+                viewModel: services.todayViewModel,
+                onAskAgent: askAgentWithContext
             )
         case .jobs:
             JobListView(client: services.desktopJobClient, viewModel: services.todayViewModel) { conversationID in
@@ -383,6 +482,17 @@ struct AppRootView: View {
             navigation.selection = .agent
         case .refresh:
             Task { await services.todayViewModel.refresh() }
+        case .newAgentConversation:
+            services.agentViewModel.startNewConversation()
+            navigation.selection = .agent
+        case .askPrompt(let prompt):
+            services.agentViewModel.prepareDraftForNewConversation(
+                prompt,
+                contextItems: services.agentViewModel.contextItems
+            )
+            navigation.selection = .agent
+        case .startQuickRecord:
+            navigation.selection = .record
         }
     }
 }
@@ -582,6 +692,7 @@ struct TodayView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dashboardRange: DashboardRange = .sevenDays
     @State private var inputInboxFilter: InputInboxFilter = .all
+    @State private var priorityActionIndex: Int = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -596,6 +707,7 @@ struct TodayView: View {
                         if let presentation {
                             HStack(alignment: .top, spacing: CGFloat(layout.columnSpacing)) {
                                 VStack(alignment: .leading, spacing: 18) {
+                                    priorityActionHero(presentation.actionRows)
                                     dashboardHero(presentation)
                                     inputInboxPanel(
                                         events: presentation.inputInboxEvents,
@@ -672,6 +784,97 @@ struct TodayView: View {
         .padding(14)
         .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(panelStroke(radius: 16))
+    }
+
+    private func priorityActionHero(_ actions: [DesktopDashboardRow]) -> some View {
+        let count = actions.count
+        let safeIndex = count > 0 ? min(priorityActionIndex, count - 1) : 0
+        let current = count > 0 ? actions[safeIndex] : nil
+        let tone = current.map { toneColor($0.tone) } ?? .secondary
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Label(appText("Now do this", appLanguageRaw), systemImage: "bolt.heart.fill")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(tone)
+                Spacer()
+                if count > 1 {
+                    Text("\(safeIndex + 1) / \(count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let row = current {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: row.systemImage)
+                        .font(.title.weight(.semibold))
+                        .foregroundStyle(tone)
+                        .frame(width: 40)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(row.title)
+                            .font(.title2.weight(.semibold))
+                            .lineLimit(2)
+                        if let subtitle = row.subtitle, !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                        if let value = row.value, !value.isEmpty {
+                            Text(value)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(tone)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        askAgent(row, section: "priority_action_start")
+                    } label: {
+                        Label(appText("Start", appLanguageRaw), systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(tone)
+
+                    if count > 1 {
+                        Button {
+                            priorityActionIndex = (safeIndex + 1) % count
+                        } label: {
+                            Label(appText("Switch", appLanguageRaw), systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button {
+                        let item = DesktopDashboardContextFactory.contextItem(for: row, section: "priority_action_why")
+                        onAskAgent?("为什么这件事现在最重要？给我一段简短解释和判断依据。", item)
+                    } label: {
+                        Label(appText("Why this?", appLanguageRaw), systemImage: "questionmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Spacer()
+                }
+            } else {
+                Text(appText("Nothing on deck. Take a breath.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            }
+        }
+        .padding(20)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(tone.opacity(0.08))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(tone.opacity(0.25), lineWidth: 1)
+                }
+        }
     }
 
     private func dashboardHero(_ presentation: DesktopDashboardPresentation) -> some View {
@@ -3979,7 +4182,7 @@ struct ImportWorkspaceView: View {
                 )
                     .frame(minHeight: 420)
                 Divider()
-                ImportCenterView(jobClient: jobClient)
+                ImportCenterView(jobClient: jobClient, onAskAgent: onAskAgent)
                     .frame(minHeight: 460)
             }
         }

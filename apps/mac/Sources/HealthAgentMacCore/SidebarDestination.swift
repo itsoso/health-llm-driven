@@ -11,6 +11,13 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
+    /// Compact 6-item set shown in the primary sidebar.
+    /// Jobs/Trace/Settings are reachable via right-rail panels,
+    /// command palette, or cmd+, keyboard shortcuts.
+    public static let sidebarVisible: [SidebarDestination] = [
+        .today, .agent, .record, .data, .genetics, .knowledge
+    ]
+
     public var title: String {
         title(language: .en)
     }

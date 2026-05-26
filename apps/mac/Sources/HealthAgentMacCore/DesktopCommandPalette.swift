@@ -4,6 +4,9 @@ public enum DesktopCommandPaletteIntent: Equatable, Sendable {
     case navigate(SidebarDestination)
     case quickPrompt
     case refresh
+    case newAgentConversation
+    case askPrompt(String)
+    case startQuickRecord
 }
 
 public struct DesktopCommandPaletteCommand: Equatable, Identifiable, Sendable {
@@ -57,6 +60,54 @@ public enum DesktopCommandPalette {
                 systemImage: "arrow.clockwise",
                 keywords: ["refresh", "reload", "sync", "刷新", "同步"],
                 intent: .refresh
+            ),
+            .init(
+                id: "new_conversation",
+                title: L10n.text("New Conversation", language: language),
+                subtitle: L10n.text("Start a fresh agent conversation with empty context.", language: language),
+                systemImage: "plus.bubble",
+                keywords: ["new", "conversation", "chat", "fresh", "新对话", "新建"],
+                intent: .newAgentConversation
+            ),
+            .init(
+                id: "quick_record",
+                title: L10n.text("Open Quick Record", language: language),
+                subtitle: L10n.text("Jump to record to log diet, water, supplement, or vitals.", language: language),
+                systemImage: "square.and.pencil",
+                keywords: ["record", "quick", "log", "记录", "快速", "打卡"],
+                intent: .startQuickRecord
+            ),
+            .init(
+                id: "ask_why_tired",
+                title: L10n.text("Why am I tired today?", language: language),
+                subtitle: L10n.text("Ask the agent to analyze readiness, sleep, and load.", language: language),
+                systemImage: "moon.zzz",
+                keywords: ["tired", "fatigue", "sleep", "readiness", "累", "疲劳", "状态"],
+                intent: .askPrompt("我今天为什么累？结合睡眠、HRV、训练负荷给出一段简短分析，并提一个可执行的恢复建议。")
+            ),
+            .init(
+                id: "ask_train_today",
+                title: L10n.text("Should I train today?", language: language),
+                subtitle: L10n.text("Ask the agent to weigh recovery against training load.", language: language),
+                systemImage: "figure.run",
+                keywords: ["train", "workout", "movement", "load", "训练", "运动", "今天练"],
+                intent: .askPrompt("根据今天的 readiness、ACWR 和最近 7 天训练量，告诉我今天该不该练、练什么强度。")
+            ),
+            .init(
+                id: "ask_lab_summary",
+                title: L10n.text("Summarize my latest labs", language: language),
+                subtitle: L10n.text("Ask the agent to summarize most-recent lab results.", language: language),
+                systemImage: "cross.case",
+                keywords: ["lab", "labs", "blood", "panel", "化验", "体检", "结果"],
+                intent: .askPrompt("总结我最近一次化验报告里偏离参考范围的指标，按风险高低排序，每条给一个解释和建议。")
+            ),
+            .init(
+                id: "ask_diet_today",
+                title: L10n.text("What should I eat today?", language: language),
+                subtitle: L10n.text("Ask the agent for a nutrition plan tailored to today.", language: language),
+                systemImage: "fork.knife",
+                keywords: ["diet", "food", "eat", "nutrition", "meal", "吃", "饮食", "营养"],
+                intent: .askPrompt("结合我今天的 TDEE、蛋白目标和基因驱动的营养偏好，给出今天的三餐+加餐建议。")
             )
         ]
     }
