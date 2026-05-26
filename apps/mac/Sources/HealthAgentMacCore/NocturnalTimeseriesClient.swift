@@ -70,6 +70,8 @@ public struct NocturnalSpO2Summary: Sendable, Equatable {
     public let avgValue: Double?
     public let percentBelow90: Double?
     public let lowestEpisodes: [NocturnalTimeseriesPoint]
+    /// Count of contiguous sub-90% segments lasting at least 5 minutes, computed from sample timestamps.
+    public let longHypoxicEpisodeCount: Int
 
     public init(date: String, samples: [NocturnalTimeseriesPoint]) {
         self.date = date
@@ -90,6 +92,41 @@ public struct NocturnalSpO2Summary: Sendable, Equatable {
             .sorted { ($0.value ?? 100) < ($1.value ?? 100) }
             .prefix(3)
             .map { $0 }
+        self.longHypoxicEpisodeCount = NocturnalSpO2Summary.computeLongHypoxicEpisodes(samples: samples, minDurationSeconds: 300)
+    }
+
+    /// Walk the sample series in epoch order, counting maximal runs of sub-90% samples whose
+    /// span (end - start) is at least `minDurationSeconds`. Samples without an `epochMs` are skipped.
+    static func computeLongHypoxicEpisodes(samples: [NocturnalTimeseriesPoint], minDurationSeconds: Int) -> Int {
+        let ordered = samples
+            .compactMap { sample -> (epoch: Int64, value: Double)? in
+                guard let v = sample.value, let e = sample.epochMs else { return nil }
+                return (e, v)
+            }
+            .sorted { $0.epoch < $1.epoch }
+        guard !ordered.isEmpty else { return 0 }
+
+        var count = 0
+        var segmentStart: Int64? = nil
+        var segmentEnd: Int64? = nil
+        let thresholdMs: Int64 = Int64(minDurationSeconds) * 1000
+
+        for sample in ordered {
+            if sample.value < 90 {
+                if segmentStart == nil { segmentStart = sample.epoch }
+                segmentEnd = sample.epoch
+            } else {
+                if let start = segmentStart, let end = segmentEnd, end - start >= thresholdMs {
+                    count += 1
+                }
+                segmentStart = nil
+                segmentEnd = nil
+            }
+        }
+        if let start = segmentStart, let end = segmentEnd, end - start >= thresholdMs {
+            count += 1
+        }
+        return count
     }
 }
 

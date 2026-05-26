@@ -1,7 +1,7 @@
 import HealthAgentMacCore
 import AppKit
 import SwiftUI
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @main
 struct HealthAgentMacApp: App {
@@ -587,6 +587,7 @@ struct AppServices {
     let briefingClient: BriefingClient
     let nocturnalClient: NocturnalTimeseriesClient
     let labClient: LabClient
+    let interventionsClient: InterventionsClient
     let quickCaptureManager: QuickCaptureManager
 
     @MainActor
@@ -612,6 +613,7 @@ struct AppServices {
         self.briefingClient = BriefingClient(apiClient: apiClient)
         self.nocturnalClient = NocturnalTimeseriesClient(apiClient: apiClient)
         self.labClient = LabClient(apiClient: apiClient)
+        self.interventionsClient = InterventionsClient(apiClient: apiClient)
         self.quickCaptureManager = QuickCaptureManager(recordClient: recordClient)
     }
 }
@@ -699,6 +701,7 @@ struct AppRootView: View {
             TodayView(
                 viewModel: services.todayViewModel,
                 briefingClient: services.briefingClient,
+                nocturnalClient: services.nocturnalClient,
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
@@ -724,6 +727,7 @@ struct AppRootView: View {
                 kind: .data,
                 nocturnalClient: services.nocturnalClient,
                 labClient: services.labClient,
+                interventionsClient: services.interventionsClient,
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
@@ -980,6 +984,7 @@ struct LoginView: View {
 struct TodayView: View {
     @Bindable var viewModel: TodayViewModel
     var briefingClient: BriefingClient?
+    var nocturnalClient: NocturnalTimeseriesClient?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -988,6 +993,9 @@ struct TodayView: View {
     @State private var priorityActionIndex: Int = 0
     @State private var briefing: DailyBriefing?
     @State private var briefingLoaded = false
+    @State private var spo2Week: [NocturnalWeekNight] = []
+    @State private var spo2WeekLoaded = false
+    @State private var briefingReminderStatus: String?
 
     var body: some View {
         GeometryReader { proxy in
@@ -1004,6 +1012,9 @@ struct TodayView: View {
                                 VStack(alignment: .leading, spacing: 18) {
                                     if let briefing, !briefing.sections.isEmpty {
                                         briefingCard(briefing)
+                                    }
+                                    if shouldShowSpO2Risk {
+                                        spo2RiskCard
                                     }
                                     priorityActionHero(presentation.actionRows)
                                     dashboardHero(presentation)
@@ -1040,6 +1051,7 @@ struct TodayView: View {
                 await viewModel.refresh()
             }
             await loadBriefingIfNeeded()
+            await loadSpO2WeekIfNeeded()
         }
     }
 
@@ -1051,6 +1063,122 @@ struct TodayView: View {
         } catch {
             briefing = nil
         }
+    }
+
+    private func loadSpO2WeekIfNeeded() async {
+        guard !spo2WeekLoaded, let client = nocturnalClient else { return }
+        spo2WeekLoaded = true
+        spo2Week = await client.fetchSpO2WeekSummary()
+    }
+
+    private var nightsWithLongHypoxicEpisode: Int {
+        spo2Week.filter { ($0.summary?.longHypoxicEpisodeCount ?? 0) > 0 }.count
+    }
+
+    private var spo2NightsWithData: Int {
+        spo2Week.filter { ($0.summary?.samples.isEmpty == false) }.count
+    }
+
+    private var shouldShowSpO2Risk: Bool {
+        spo2WeekLoaded && spo2NightsWithData >= 1
+    }
+
+    private var spo2RiskBadgeColor: Color {
+        switch nightsWithLongHypoxicEpisode {
+        case 0: return .green
+        case 1, 2: return .yellow
+        default: return .red
+        }
+    }
+
+    private var spo2RiskHeadline: String {
+        let nights = nightsWithLongHypoxicEpisode
+        switch nights {
+        case 0:
+            return appText("Overnight SpO2 looks steady this week.", appLanguageRaw)
+        case 1, 2:
+            let template = appText("%d night(s) with sustained low-SpO2 segments.", appLanguageRaw)
+            return String(format: template, nights)
+        default:
+            let template = appText("%d nights showed sustained low-SpO2 segments — consider follow-up.", appLanguageRaw)
+            return String(format: template, nights)
+        }
+    }
+
+    private var spo2RiskCard: some View {
+        SectionPanel(
+            title: appText("Overnight SpO2 risk · last 7 nights", appLanguageRaw),
+            systemImage: "lungs.fill"
+        ) {
+            HStack(alignment: .top, spacing: 14) {
+                Circle()
+                    .fill(spo2RiskBadgeColor)
+                    .frame(width: 12, height: 12)
+                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(spo2RiskHeadline)
+                        .font(.callout.weight(.medium))
+                    HStack(spacing: 8) {
+                        ForEach(spo2Week) { night in
+                            VStack(spacing: 2) {
+                                Circle()
+                                    .fill(nightDotColor(for: night))
+                                    .frame(width: 8, height: 8)
+                                Text(weekNightShortLabel(night.date))
+                                    .font(.system(size: 9).monospacedDigit())
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    if let onAskAgent {
+                        Button {
+                            onAskAgent(spo2RiskPrompt, spo2RiskContextItem)
+                        } label: {
+                            Label(appText("Ask Agent about this", appLanguageRaw), systemImage: "sparkles")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func nightDotColor(for night: NocturnalWeekNight) -> Color {
+        guard let summary = night.summary else { return Color.gray.opacity(0.3) }
+        let count = summary.longHypoxicEpisodeCount
+        if count == 0 { return .green }
+        if count == 1 { return .yellow }
+        return .red
+    }
+
+    private func weekNightShortLabel(_ date: String) -> String {
+        let parts = date.split(separator: "-")
+        if parts.count == 3 { return "\(parts[1])/\(parts[2])" }
+        return date
+    }
+
+    private var spo2RiskPrompt: String {
+        let nights = nightsWithLongHypoxicEpisode
+        return "近 7 夜中有 \(nights) 夜出现持续 ≥5 分钟的 SpO2<90% 段。请结合我已有的鼻炎、用药、睡眠数据评估是否需要进一步检查。"
+    }
+
+    private var spo2RiskContextItem: AgentContextItem? {
+        guard !spo2Week.isEmpty else { return nil }
+        let payload: [String: String] = [
+            "long_episode_nights": "\(nightsWithLongHypoxicEpisode)",
+            "nights_loaded": "\(spo2NightsWithData)",
+            "min_overall": spo2Week.compactMap { $0.summary?.minValue }.min().map { String(format: "%.1f", $0) } ?? "—"
+        ]
+        let summary = "近 7 夜，长低氧段夜数 \(nightsWithLongHypoxicEpisode)/\(spo2NightsWithData)"
+        return AgentContextItem(
+            sourceID: "spo2-week-risk",
+            sourceKind: "wearable",
+            title: "Overnight SpO2 weekly risk",
+            summary: summary,
+            payload: payload
+        )
     }
 
     private var presentation: DesktopDashboardPresentation? {
@@ -1242,11 +1370,110 @@ struct TodayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            briefingSectionActions(section)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(color.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func briefingSectionActions(_ section: BriefingSection) -> some View {
+        if !section.items.isEmpty {
+            HStack(spacing: 8) {
+                if let onAskAgent {
+                    Button {
+                        onAskAgent(briefingPromptText(section), briefingContextItem(section))
+                    } label: {
+                        Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                Button {
+                    scheduleBriefingReminder(section)
+                } label: {
+                    Label(appText("Remind me", appLanguageRaw), systemImage: "bell.badge")
+                        .font(.caption2)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                if let onAddContext {
+                    Button {
+                        onAddContext(briefingContextItem(section))
+                    } label: {
+                        Label(appText("Add to basket", appLanguageRaw), systemImage: "tray.and.arrow.down")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                if briefingReminderStatus == section.title {
+                    Text(appText("Reminder set", appLanguageRaw))
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func briefingPromptText(_ section: BriefingSection) -> String {
+        let body = section.items.joined(separator: "\n• ")
+        return "\(section.title)\n• \(body)\n\n请基于这个简报段落给出 1–2 个具体的行动建议。"
+    }
+
+    private func briefingContextItem(_ section: BriefingSection) -> AgentContextItem {
+        let summary = section.items.prefix(3).joined(separator: " / ")
+        var payload: [String: String] = [
+            "status": section.statusKind.rawValue
+        ]
+        for (idx, item) in section.items.enumerated() where idx < 5 {
+            payload["item_\(idx)"] = item
+        }
+        return AgentContextItem(
+            sourceID: "briefing-\(section.title)",
+            sourceKind: "briefing",
+            title: section.title,
+            summary: summary.isEmpty ? section.title : summary,
+            payload: payload
+        )
+    }
+
+    private func scheduleBriefingReminder(_ section: BriefingSection) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = section.title
+            content.body = section.items.first ?? section.title
+            content.sound = .default
+            // Fire at next 09:00 — quiet hours rule still applies via system if user enabled DND.
+            let now = Date()
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.year, .month, .day], from: now)
+            components.hour = 9
+            components.minute = 0
+            if let target = calendar.date(from: components), target <= now {
+                components = calendar.dateComponents([.year, .month, .day], from: calendar.date(byAdding: .day, value: 1, to: now) ?? now)
+                components.hour = 9
+                components.minute = 0
+            }
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let id = "briefing-\(section.title)-\(Int(now.timeIntervalSince1970))"
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+            center.add(request) { _ in
+                Task { @MainActor in
+                    briefingReminderStatus = section.title
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    if briefingReminderStatus == section.title {
+                        briefingReminderStatus = nil
+                    }
+                }
+            }
+        }
     }
 
     private func briefingStatusColor(_ kind: BriefingSection.Status) -> Color {
@@ -2190,6 +2417,7 @@ struct WorkspaceOverviewView: View {
     let kind: DesktopWorkspaceKind
     var nocturnalClient: NocturnalTimeseriesClient?
     var labClient: LabClient?
+    var interventionsClient: InterventionsClient?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -2214,6 +2442,8 @@ struct WorkspaceOverviewView: View {
     @State private var labError: String?
     @State private var labLoaded = false
     @State private var selectedLabCode: String?
+    @State private var interventionEvents: [InterventionEvent] = []
+    @State private var interventionsLoaded = false
 
     var body: some View {
         ScrollView {
@@ -2265,6 +2495,7 @@ struct WorkspaceOverviewView: View {
             }
             await loadNocturnalSpO2IfNeeded()
             await loadLabTrendsIfNeeded()
+            await loadInterventionsIfNeeded()
         }
         .sheet(item: $selectedGenomicDetail) { detail in
             switch detail {
@@ -3036,6 +3267,13 @@ struct WorkspaceOverviewView: View {
         }
     }
 
+    @MainActor
+    private func loadInterventionsIfNeeded() async {
+        guard kind == .data, let client = interventionsClient, !interventionsLoaded else { return }
+        interventionEvents = await client.fetchEvents()
+        interventionsLoaded = true
+    }
+
     private var labTrendsPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -3146,8 +3384,12 @@ struct WorkspaceOverviewView: View {
                 }
             }
 
-            LabSeriesChart(series: selected)
+            LabSeriesChart(series: selected, interventions: interventionEvents)
                 .frame(height: 160)
+
+            if !visibleInterventions(for: selected).isEmpty {
+                interventionLegend(for: selected)
+            }
 
             HStack(spacing: 18) {
                 if let latest = selected.latest, let value = latest.value {
@@ -3198,6 +3440,40 @@ struct WorkspaceOverviewView: View {
                 Text(date)
                     .font(.system(size: 9).monospacedDigit())
                     .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func visibleInterventions(for series: LabIndicatorSeries) -> [InterventionEvent] {
+        guard let first = series.sortedData.first?.date, let last = series.sortedData.last?.date else {
+            return []
+        }
+        return interventionEvents.filter { $0.date >= first && $0.date <= last }
+    }
+
+    private func interventionLegend(for series: LabIndicatorSeries) -> some View {
+        let events = visibleInterventions(for: series)
+        let preview = events.suffix(4)
+        return HStack(alignment: .top, spacing: 12) {
+            HStack(spacing: 6) {
+                Circle().fill(Color.orange).frame(width: 6, height: 6)
+                Text(appText("Medication started", appLanguageRaw))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Circle().fill(Color.teal).frame(width: 6, height: 6)
+                Text(appText("Supplement started", appLanguageRaw))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            if !preview.isEmpty {
+                VStack(alignment: .trailing, spacing: 1) {
+                    ForEach(Array(preview), id: \.id) { event in
+                        Text("\(event.date) · \(event.label)")
+                            .font(.system(size: 9).monospacedDigit())
+                            .foregroundStyle(event.kind == .medication ? Color.orange : Color.teal)
+                    }
+                }
             }
         }
     }
@@ -5054,12 +5330,18 @@ private struct SleepStageLegend: View {
 
 private struct LabSeriesChart: View {
     let series: LabIndicatorSeries
+    var interventions: [InterventionEvent] = []
 
     private struct PointEntry {
         let index: Int
         let date: String
         let value: Double
         let abnormal: Bool
+    }
+
+    private struct InterventionMark {
+        let event: InterventionEvent
+        let x: CGFloat
     }
 
     private struct Scale {
@@ -5091,6 +5373,7 @@ private struct LabSeriesChart: View {
                 return PointEntry(index: idx, date: point.date, value: v, abnormal: point.isAbnormal == true)
             }
             let scale = makeScale(entries: entries, size: geo.size)
+            let marks = mapInterventions(entries: entries, scale: scale)
             ZStack(alignment: .topLeading) {
                 if entries.isEmpty {
                     Text("—")
@@ -5098,7 +5381,7 @@ private struct LabSeriesChart: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    chartContent(entries: entries, scale: scale)
+                    chartContent(entries: entries, scale: scale, marks: marks)
                 }
             }
         }
@@ -5130,7 +5413,7 @@ private struct LabSeriesChart: View {
     }
 
     @ViewBuilder
-    private func chartContent(entries: [PointEntry], scale: Scale) -> some View {
+    private func chartContent(entries: [PointEntry], scale: Scale, marks: [InterventionMark]) -> some View {
         // Reference range band
         if let low = series.referenceLow, let high = series.referenceHigh, high > low {
             let yHigh = scale.yPos(high)
@@ -5139,6 +5422,21 @@ private struct LabSeriesChart: View {
                 .fill(Color.green.opacity(0.08))
                 .frame(width: scale.plotWidth, height: max(yLow - yHigh, 1))
                 .offset(x: scale.leftAxisWidth, y: yHigh)
+        }
+
+        // Intervention markers (dashed vertical lines) — render before reference axis lines so they sit underneath.
+        ForEach(Array(marks.enumerated()), id: \.offset) { _, mark in
+            let color: Color = mark.event.kind == .medication ? .orange : .teal
+            Path { p in
+                p.move(to: CGPoint(x: mark.x, y: 0))
+                p.addLine(to: CGPoint(x: mark.x, y: scale.plotHeight))
+            }
+            .stroke(color.opacity(0.55), style: StrokeStyle(lineWidth: 1.0, dash: [2, 3]))
+            Circle()
+                .fill(color)
+                .frame(width: 4, height: 4)
+                .offset(x: mark.x - 2, y: -2)
+                .help("\(mark.event.label) · \(mark.event.date)")
         }
 
         if let high = series.referenceHigh {
@@ -5214,6 +5512,56 @@ private struct LabSeriesChart: View {
             return "\(yy)/\(parts[1])"
         }
         return date
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = TimeZone.current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// Map intervention dates to absolute x-positions on the chart. Out-of-range events are dropped.
+    private func mapInterventions(entries: [PointEntry], scale: Scale) -> [InterventionMark] {
+        guard entries.count >= 2, !interventions.isEmpty else { return [] }
+        let firstDate = entries.first!.date
+        let lastDate = entries.last!.date
+        let formatter = LabSeriesChart.dateFormatter
+        guard let firstParsed = formatter.date(from: firstDate),
+              let lastParsed = formatter.date(from: lastDate),
+              lastParsed > firstParsed else { return [] }
+
+        // Precompute each entry's day offset from the first visit for interpolation.
+        let entryDays: [Double] = entries.map { entry in
+            guard let parsed = formatter.date(from: entry.date) else { return 0 }
+            return parsed.timeIntervalSince(firstParsed) / 86400.0
+        }
+        let totalDays = lastParsed.timeIntervalSince(firstParsed) / 86400.0
+        guard totalDays > 0 else { return [] }
+
+        return interventions.compactMap { event in
+            guard let parsed = formatter.date(from: event.date) else { return nil }
+            if parsed < firstParsed || parsed > lastParsed { return nil }
+            let dayOffset = parsed.timeIntervalSince(firstParsed) / 86400.0
+            // Find segment [i, i+1] where dayOffset falls; interpolate xPos linearly within it.
+            var segIdx = 0
+            for i in 0..<(entryDays.count - 1) {
+                if dayOffset >= entryDays[i] && dayOffset <= entryDays[i + 1] {
+                    segIdx = i
+                    break
+                }
+                if i == entryDays.count - 2 { segIdx = i }
+            }
+            let lo = entryDays[segIdx]
+            let hi = entryDays[segIdx + 1]
+            let frac: CGFloat = hi > lo ? CGFloat((dayOffset - lo) / (hi - lo)) : 0
+            let xLo = scale.xPos(segIdx)
+            let xHi = scale.xPos(segIdx + 1)
+            let x = xLo + frac * (xHi - xLo)
+            return InterventionMark(event: event, x: x)
+        }
     }
 }
 

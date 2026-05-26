@@ -589,6 +589,15 @@ public enum L10n {
         "Symptom, measurement, note...": "症状、测量值、备注…",
         "Cancel": "取消",
         "Saved.": "已保存。",
+        "Medication started": "用药开始",
+        "Supplement started": "补剂开始",
+        "Overnight SpO2 risk · last 7 nights": "夜间 SpO2 风险 · 最近 7 夜",
+        "Overnight SpO2 looks steady this week.": "本周夜间 SpO2 看起来稳定。",
+        "%d night(s) with sustained low-SpO2 segments.": "有 %d 夜出现持续低氧段。",
+        "%d nights showed sustained low-SpO2 segments — consider follow-up.": "有 %d 夜持续出现低氧段，建议复查或就医评估。",
+        "Remind me": "提醒我",
+        "Add to basket": "加入上下文",
+        "Reminder set": "已设提醒",
         "No knowledge documents loaded yet.": "还没有加载知识文档。"
     ]
 }
