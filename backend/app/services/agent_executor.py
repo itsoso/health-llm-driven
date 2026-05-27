@@ -263,6 +263,65 @@ def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     return ""
 
 
+def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Compact prompt for pure record/CRUD turns.
+
+    Pure logging should not send the full Twin, knowledge base, and long chat
+    history to a reasoning model. Tool extraction only needs the latest user
+    request plus strict routing instructions.
+    """
+
+    default_user_prompt = "请记录这条健康数据。"
+    user_messages = [m for m in messages if m.get("role") == "user"]
+    last_user = user_messages[-1] if user_messages else {"role": "user", "content": default_user_prompt}
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是健康记录工具路由器。用户要求记录、新增、修改、删除健康数据时，"
+                "必须调用 health_record 或 health_manage 工具。不要做健康分析，"
+                "不要输出长建议。若用户提到多条记录，尽量一次性发起多个 tool_call；"
+                "信息不足时只用一句中文追问。"
+            ),
+        },
+        {"role": "user", "content": last_user.get("content") or default_user_prompt},
+    ]
+
+
+def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
+    """Build a final user-visible reply directly from record tool results."""
+
+    replies: list[str] = []
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        if content.startswith("[NEEDS_CONFIRMATION]"):
+            replies.append(content.replace("[NEEDS_CONFIRMATION]", "", 1).strip())
+            continue
+        if content.startswith("Error"):
+            replies.append(content)
+            continue
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            tool_message = payload.get("message")
+            if isinstance(tool_message, str) and tool_message.strip():
+                replies.append(tool_message.strip())
+                continue
+        replies.append(content.replace("\n", " ")[:160])
+
+    deduped: list[str] = []
+    for reply in replies:
+        if reply and reply not in deduped:
+            deduped.append(reply)
+    return "\n".join(deduped).strip()
+
+
 # 2026-05-14 #4 可解释性 — tool 名 → 中文标签
 # 用户在 chat bubble 看到 "AI 用了什么数据" 时, 能看懂 (不是 raw tool name).
 _TOOL_TO_SOURCE_LABEL = {
@@ -775,6 +834,15 @@ class AgentExecutor:
                             "event": "tool_result",
                             "data": tool_event_data,
                         }
+
+                    if self._prefer_fast_record_model:
+                        final_text = _fast_record_reply_from_tool_results(messages)
+                        if final_text:
+                            for i in range(0, len(final_text), 20):
+                                chunk = final_text[i:i + 20]
+                                yield {"event": "token", "data": {"content": chunk}}
+                            full_reply += final_text
+                            break
 
                     # 继续循环让模型处理 tool_result
                     continue
@@ -1330,6 +1398,8 @@ class AgentExecutor:
         }
         if pass_tools:
             chat_kwargs["tools"] = pass_tools
+        if self._prefer_fast_record_model:
+            chat_kwargs["messages"] = _build_fast_record_messages(messages)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)

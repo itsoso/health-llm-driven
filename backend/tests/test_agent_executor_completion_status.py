@@ -126,11 +126,13 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
     executor._current_user_id = user.id
     executor._prefer_fast_record_model = True
     created_model_ids = []
+    captured_messages = []
 
     class FakeProvider:
         model = "MiniMax-M2.5"
 
-        async def chat(self, **_kwargs):
+        async def chat(self, **kwargs):
+            captured_messages.append(kwargs["messages"])
             return {"content": "ok", "finish_reason": "stop"}
 
     def fake_create_provider_for_model_id(model_id):
@@ -148,6 +150,66 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
 
     assert created_model_ids == ["minimax-m2.5"]
     assert executor._last_provider_model_name == "MiniMax-M2.5"
+    assert len(captured_messages[0]) == 2
+    assert "健康记录工具路由器" in captured_messages[0][0]["content"]
+    assert captured_messages[0][1]["content"] == "记录晚餐牛肉饭"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_user_and_headers):
+    """Pure record turns should not spend another LLM round synthesizing success text."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "call_record_diet",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "dinner",
+                                "food_items": "牛肉饭",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        return json.dumps({"message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录晚餐牛肉饭",
+            user_auth_token="test-token",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert len(calls) == 1
+    assert "已记录晚餐：牛肉饭" in rendered
+    assert events[-1]["event"] == "done"
 
 
 @pytest.mark.asyncio
