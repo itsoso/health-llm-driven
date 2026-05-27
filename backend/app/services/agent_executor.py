@@ -299,7 +299,11 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
         if not content:
             continue
         if content.startswith("[NEEDS_CONFIRMATION]"):
-            replies.append(content.replace("[NEEDS_CONFIRMATION]", "", 1).strip())
+            prompt = content.replace("[NEEDS_CONFIRMATION]", "", 1).strip()
+            prompt = prompt.split("请向用户", 1)[0].strip()
+            if prompt.endswith("."):
+                prompt = prompt[:-1].strip()
+            replies.append(f"{prompt}。是这样吗？")
             continue
         if content.startswith("Error"):
             replies.append(content)
@@ -320,6 +324,26 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
         if reply and reply not in deduped:
             deduped.append(reply)
     return "\n".join(deduped).strip()
+
+
+def _auto_confirm_fast_record_args(tool_name: str, func_args: Any) -> Any:
+    """Skip the two-turn confirmation gate for pure fast-record requests."""
+
+    if tool_name != "health_record":
+        return func_args
+    try:
+        args = json.loads(func_args) if isinstance(func_args, str) else dict(func_args or {})
+    except Exception:
+        return func_args
+    data = args.get("data")
+    if not isinstance(data, dict):
+        data = {}
+        args["data"] = data
+    args["confirmed"] = True
+    data["confirmed"] = True
+    if isinstance(func_args, str):
+        return json.dumps(args, ensure_ascii=False)
+    return args
 
 
 # 2026-05-14 #4 可解释性 — tool 名 → 中文标签
@@ -772,6 +796,8 @@ class AgentExecutor:
                     for tc in tool_calls:
                         func_name = tc["function"]["name"]
                         func_args = tc["function"]["arguments"]
+                        if self._prefer_fast_record_model:
+                            func_args = _auto_confirm_fast_record_args(func_name, func_args)
                         tool_id = tc["id"]
 
                         # 通知前端正在执行工具
@@ -794,7 +820,11 @@ class AgentExecutor:
                         )
 
                         # 写操作成功后内联安全检查
-                        if func_name == "health_record" and "Error" not in result:
+                        if (
+                            func_name == "health_record"
+                            and "Error" not in result
+                            and not result.startswith("[NEEDS_CONFIRMATION]")
+                        ):
                             try:
                                 from app.twin.builder import build_twin
                                 from app.agents.safety_guardian import evaluate_safety

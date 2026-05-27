@@ -213,6 +213,68 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_and_headers):
+    """Fast record turns should complete simple logging without a second confirmation round."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed_args = []
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "call_record_water",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "water",
+                            "data": {"amount": 1000},
+                        }, ensure_ascii=False),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        parsed = json.loads(args_raw)
+        executed_args.append(parsed)
+        if parsed.get("confirmed") is not True:
+            return (
+                "[NEEDS_CONFIRMATION] 我准备记录: 喝水 1000ml. "
+                "请向用户复述并问一次'是这样吗？'"
+            )
+        return json.dumps({"message": "已记录饮水 1000ml"}, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录饮水1000",
+            user_auth_token="test-token",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert executed_args[0]["confirmed"] is True
+    assert executed_args[0]["data"]["confirmed"] is True
+    assert "已记录饮水 1000ml" in rendered
+    assert "NEEDS_CONFIRMATION" not in rendered
+    assert "请向用户复述" not in rendered
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
