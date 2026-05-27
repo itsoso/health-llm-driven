@@ -29,6 +29,7 @@ INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
+FAST_RECORD_MODEL_ID = "minimax-m2.5"
 
 
 def _extract_model_id_from_extra_context(extra_context: Optional[str]) -> Optional[str]:
@@ -494,6 +495,8 @@ class AgentExecutor:
         self._current_user_id: Optional[int] = None
         self._http_client: Optional[httpx.AsyncClient] = None
         self._request_model_id: Optional[str] = None
+        self._prefer_fast_record_model = False
+        self._last_provider_model_name: Optional[str] = None
 
     async def run_stream(
         self,
@@ -519,6 +522,13 @@ class AgentExecutor:
         start_time = time.time()
         self._current_user_id = user_id
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
+        self._prefer_fast_record_model = (
+            not images
+            and not file_base64
+            and bool(_RECORD_INTENT_RE.search(message or ""))
+            and not bool(_ADVICE_OR_ANALYSIS_RE.search(message or ""))
+        )
+        self._last_provider_model_name = None
         # 可解释性: 记录本次回答用到的数据源. 必须在 system prompt / inspection 前初始化.
         sources_used: list = []
 
@@ -646,23 +656,26 @@ class AgentExecutor:
                     final_finish_reason = response.get("finish_reason") or final_finish_reason
                 llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
                 if model_name is None:
-                    try:
-                        # 2026-05-14: 显示给前端看的 model name 也走用户偏好
-                        # (之前 bug: get_llm_provider() 是全局, 用户切了仍显示 MiniMax)
-                        if self._request_model_id:
-                            from app.services.llm.model_registry import get_model
-                            entry = get_model(self._request_model_id)
-                            model_name = entry.model if entry else self._request_model_id
-                        elif self._current_user_id:
-                            from app.services.llm.factory import create_provider_for_user
-                            p = create_provider_for_user(self._current_user_id, self.db)
-                            model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
-                        else:
-                            from app.services.llm.factory import get_llm_provider
-                            p = get_llm_provider()
-                            model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
-                    except Exception:
-                        pass
+                    if self._last_provider_model_name:
+                        model_name = self._last_provider_model_name
+                    else:
+                        try:
+                            # 2026-05-14: 显示给前端看的 model name 也走用户偏好
+                            # (之前 bug: get_llm_provider() 是全局, 用户切了仍显示 MiniMax)
+                            if self._request_model_id:
+                                from app.services.llm.model_registry import get_model
+                                entry = get_model(self._request_model_id)
+                                model_name = entry.model if entry else self._request_model_id
+                            elif self._current_user_id:
+                                from app.services.llm.factory import create_provider_for_user
+                                p = create_provider_for_user(self._current_user_id, self.db)
+                                model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
+                            else:
+                                from app.services.llm.factory import get_llm_provider
+                                p = get_llm_provider()
+                                model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
+                        except Exception:
+                            pass
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
 
                 if isinstance(response, dict) and not response.get("tool_calls"):
@@ -1258,9 +1271,31 @@ class AgentExecutor:
             model = settings.agent_model or settings.llm_model
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
+        # Pure record/CRUD turns are latency-sensitive and do not need a
+        # reasoning model just to extract tool arguments. Keep explicit
+        # per-request model overrides intact; otherwise route to the fast
+        # TokenPlan model even if the user's default is Qwen3.6.
+        if self._prefer_fast_record_model and not self._request_model_id:
+            try:
+                from app.services.llm.factory import create_provider_for_model_id
+                provider = create_provider_for_model_id(FAST_RECORD_MODEL_ID)
+                logger.info(
+                    "[agent_executor] fast record model routing user=%s model=%s",
+                    self._current_user_id,
+                    FAST_RECORD_MODEL_ID,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[agent_executor] fast record model unavailable, fallback to user provider: %s",
+                    e,
+                )
+                provider = None
+        else:
+            provider = None
+
         # Mac/桌面端手动路由: extra_context.model_id 是 model_registry 里的 id,
         # 只影响本次请求, 不改 user_profile 持久偏好.
-        if self._request_model_id:
+        if provider is None and self._request_model_id:
             try:
                 from app.services.llm.factory import create_provider_for_model_id
                 provider = create_provider_for_model_id(self._request_model_id)
@@ -1271,8 +1306,6 @@ class AgentExecutor:
                     e,
                 )
                 provider = None
-        else:
-            provider = None
 
         # 回退到默认 provider — 不传 model, 让 provider 用 init 时的默认
         # 2026-05-13: 用户级 LLM 偏好 — 优先读 user_profile.llm_model_id
@@ -1297,6 +1330,11 @@ class AgentExecutor:
         }
         if pass_tools:
             chat_kwargs["tools"] = pass_tools
+        self._last_provider_model_name = (
+            getattr(provider, "model", None)
+            or getattr(provider, "default_model", None)
+            or getattr(provider, "provider_name", None)
+        )
         return await provider.chat(**chat_kwargs)
 
     async def _call_llm_fallback_provider(self, messages: List[Dict]) -> Any:

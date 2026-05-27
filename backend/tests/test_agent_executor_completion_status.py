@@ -116,6 +116,41 @@ async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(db, auth_
 
 
 @pytest.mark.asyncio
+async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_user_and_headers, monkeypatch):
+    """Pure record turns should not pay Qwen reasoning latency for tool extraction."""
+    user, _headers = auth_user_and_headers
+    db.add(UserProfile(user_id=user.id, llm_model_id="qwen3.6-plus"))
+    db.commit()
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._prefer_fast_record_model = True
+    created_model_ids = []
+
+    class FakeProvider:
+        model = "MiniMax-M2.5"
+
+        async def chat(self, **_kwargs):
+            return {"content": "ok", "finish_reason": "stop"}
+
+    def fake_create_provider_for_model_id(model_id):
+        created_model_ids.append(model_id)
+        return FakeProvider()
+
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        fake_create_provider_for_model_id,
+    )
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+
+    await executor._call_llm([{"role": "user", "content": "记录晚餐牛肉饭"}], [])
+
+    assert created_model_ids == ["minimax-m2.5"]
+    assert executor._last_provider_model_name == "MiniMax-M2.5"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
