@@ -129,7 +129,7 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
     captured_messages = []
 
     class FakeProvider:
-        model = "MiniMax-M2.5"
+        model = "glm-5"
 
         async def chat(self, **kwargs):
             captured_messages.append(kwargs["messages"])
@@ -148,8 +148,8 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
 
     await executor._call_llm([{"role": "user", "content": "记录晚餐牛肉饭"}], [])
 
-    assert created_model_ids == ["minimax-m2.5"]
-    assert executor._last_provider_model_name == "MiniMax-M2.5"
+    assert created_model_ids == ["glm-5"]
+    assert executor._last_provider_model_name == "glm-5"
     assert len(captured_messages[0]) == 2
     assert "健康记录工具路由器" in captured_messages[0][0]["content"]
     assert captured_messages[0][1]["content"] == "记录晚餐牛肉饭"
