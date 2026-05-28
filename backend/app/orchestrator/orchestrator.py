@@ -59,6 +59,20 @@ def _safety_wrap(text: str, *, source: str = "orchestrator") -> TextValidationRe
 # ───────────────────── 专家调度 ────────────────────────
 
 
+# perf (2026-05-28): trivial query 短路阈值. categories=['general'] 且 query 字符数
+# ≤ 这个值时跳过 specialist 全员 (hi/你好/在吗/thanks 等问候), 直接走 LLM + Twin.
+# 选 6 是因为 6 个中文字 ≈ "今天我累了" 这类已包含 keyword 触发 (不会到 general).
+_TRIVIAL_QUERY_MAX_LEN = 6
+
+
+def _is_trivial_query(intent: Intent) -> bool:
+    """问候/单词级 query: 无关键字命中 + 文本极短. 不需要 specialist 团队判断."""
+    if intent.categories != ["general"]:
+        return False
+    q = (intent.raw_query or "").strip()
+    return 0 < len(q) <= _TRIVIAL_QUERY_MAX_LEN
+
+
 def _select_specialists(
     intent: Intent, twin: HealthTwin, forced: Optional[List[str]]
 ) -> List:
@@ -71,71 +85,150 @@ def _select_specialists(
                 selected.append(s)
         return selected
 
+    if _is_trivial_query(intent):
+        logger.info(
+            f"[orchestrator] 跳过 specialist 全员: trivial query "
+            f"(len={len(intent.raw_query or '')}, categories=general)"
+        )
+        return []
+
     return [s for s in all_specialists() if s.applies_to(intent, twin)]
 
 
+_SPECIALIST_PARALLEL_TIMEOUT_S = 12.0  # 总墙钟上限, 防单个 stuck specialist 拖全链
+
+
 def _run_specialists(
-    twin: HealthTwin, specialists: List, context: Dict
+    twin: HealthTwin, specialists: List, context: Dict,
+    *, timings: Optional[Dict[str, Any]] = None,
 ) -> List[SpecialistFinding]:
     """
     并行调用 specialist，收集结构化 finding。
 
-    依赖关系: Recovery Coach 把 readiness_zone 写入 context，Movement Coach 读取。
-    策略: Recovery Coach 先同步执行 → 其余 specialist 并发执行。
+    依赖关系: Recovery Coach 把 readiness_zone 写入 context, Movement Coach 读取。
+    策略 (2026-05-28 优化):
+      - 如果 movement_coach 在列表 → recovery 同步先跑 (传 readiness_zone)
+      - 否则 → recovery 进并行池 (省 2-5s 串行等待)
+      - 并行池整体超时 12s, 超时的 specialist 进 failed[] 不阻塞其余 finding
+
+    Python 线程无法强杀, 超时只是停止等待; specialist 本身的 LLM 调用应有自己的
+    HTTP 超时 (provider 层 30s 默认).
+
+    perf (2026-05-28): 传 `timings={}` 时会原地填入:
+        - recovery_ms:        recovery_coach 同步阶段耗时 (并入池时为 0)
+        - parallel_wall_ms:   并行池墙钟时间 (含 recovery 如果并入)
+        - per_specialist_ms:  {name: ms} 每个 specialist 的独立耗时
+        - total_ms:           Phase 1 + Phase 2 之和
+        - failed:             [name, ...] 异常或超时的 specialist 名
+        - timed_out:          [name, ...] 因 12s 超时被丢的 specialist (subset of failed)
+        - recovery_inlined:   bool — recovery 是否被并入池 (无 movement 时 True)
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 
     ctx = dict(context)  # 不污染调用方
     findings: List[SpecialistFinding] = []
+    per_sp_ms: Dict[str, int] = {}
+    failed: List[str] = []
+    timed_out: List[str] = []
+    t_run_start = time.monotonic()
+    recovery_ms = 0
+    parallel_wall_ms = 0
 
-    # ---- Phase 1: 先跑 recovery_coach（如果在列表中）----
+    # ---- 分类: recovery / movement / rest ----
     recovery_sp = None
+    movement_present = False
     rest_specialists = []
     for sp in specialists:
         if sp.name == "recovery_coach":
             recovery_sp = sp
         else:
+            if sp.name == "movement_coach":
+                movement_present = True
             rest_specialists.append(sp)
 
-    if recovery_sp:
+    recovery_inlined = bool(recovery_sp) and not movement_present
+
+    # ---- Phase 1: movement_coach 在列表时才同步跑 recovery (才能传 readiness_zone) ----
+    if recovery_sp and movement_present:
+        t_sp = time.monotonic()
         try:
             finding = recovery_sp.run(twin, ctx)
+            recovery_ms = int((time.monotonic() - t_sp) * 1000)
+            per_sp_ms[recovery_sp.name] = recovery_ms
             findings.append(finding)
             zone = (finding.raw or {}).get("zone")
             if zone:
                 ctx["readiness_zone"] = zone
                 ctx["readiness_score"] = (finding.raw or {}).get("score")
         except Exception as e:  # noqa: BLE001
+            recovery_ms = int((time.monotonic() - t_sp) * 1000)
+            per_sp_ms[recovery_sp.name] = recovery_ms
+            failed.append(recovery_sp.name)
             logger.warning(f"[orchestrator] specialist {recovery_sp.name} 失败: {e}")
 
-    # ---- Phase 2: 其余 specialist 并发执行 ----
-    if not rest_specialists:
-        return findings
+    # ---- Phase 2: 其余 specialist 并发执行 (无 movement 时 recovery 也并入) ----
+    pool_specialists: List = list(rest_specialists)
+    if recovery_inlined:
+        pool_specialists.insert(0, recovery_sp)  # type: ignore[arg-type]
 
-    def _run_one(sp):
-        try:
-            return sp, sp.run(twin, ctx)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[orchestrator] specialist {sp.name} 失败: {e}")
-            return sp, None
+    if pool_specialists:
+        def _run_one(sp):
+            t_sp = time.monotonic()
+            try:
+                result = sp.run(twin, ctx)
+                return sp, result, int((time.monotonic() - t_sp) * 1000), None
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[orchestrator] specialist {sp.name} 失败: {e}")
+                return sp, None, int((time.monotonic() - t_sp) * 1000), str(e)
 
-    # 最多开 4 个线程（specialist 都是 CPU-bound 计算 + 少量 IO）
-    max_workers = min(len(rest_specialists), 4)
-    ordered_findings = [None] * len(rest_specialists)
+        # 最多开 4 个线程（specialist 都是 CPU-bound 计算 + 少量 IO）
+        max_workers = min(len(pool_specialists), 4)
+        ordered_findings: List[Optional[SpecialistFinding]] = [None] * len(pool_specialists)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_idx = {
-            executor.submit(_run_one, sp): idx
-            for idx, sp in enumerate(rest_specialists)
-        }
-        for future in as_completed(future_to_idx):
-            idx = future_to_idx[future]
-            sp, finding = future.result()
-            if finding:
-                ordered_findings[idx] = finding
+        t_parallel_start = time.monotonic()
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_run_one, sp): idx
+                for idx, sp in enumerate(pool_specialists)
+            }
+            try:
+                for future in as_completed(
+                    future_to_idx, timeout=_SPECIALIST_PARALLEL_TIMEOUT_S
+                ):
+                    idx = future_to_idx[future]
+                    sp, finding, sp_ms, err = future.result()
+                    per_sp_ms[sp.name] = sp_ms
+                    if err:
+                        failed.append(sp.name)
+                    if finding:
+                        ordered_findings[idx] = finding
+            except FutureTimeoutError:
+                elapsed = int((time.monotonic() - t_parallel_start) * 1000)
+                for future, idx in future_to_idx.items():
+                    if not future.done():
+                        sp = pool_specialists[idx]
+                        per_sp_ms[sp.name] = elapsed
+                        failed.append(sp.name)
+                        timed_out.append(sp.name)
+                        logger.warning(
+                            f"[orchestrator] specialist {sp.name} 超时 "
+                            f"({_SPECIALIST_PARALLEL_TIMEOUT_S}s wall) — 已丢弃"
+                        )
+                        future.cancel()  # best-effort, 线程无法强杀
+        parallel_wall_ms = int((time.monotonic() - t_parallel_start) * 1000)
 
-    # 保持原始注册顺序
-    findings.extend(f for f in ordered_findings if f is not None)
+        # 保持原始注册顺序: 如果 recovery 并入, 它在 pool[0], findings 顺序仍然 recovery 在前
+        findings.extend(f for f in ordered_findings if f is not None)
+
+    if timings is not None:
+        timings["recovery_ms"] = recovery_ms
+        timings["parallel_wall_ms"] = parallel_wall_ms
+        timings["per_specialist_ms"] = per_sp_ms
+        timings["total_ms"] = int((time.monotonic() - t_run_start) * 1000)
+        timings["failed"] = failed
+        timings["timed_out"] = timed_out
+        timings["recovery_inlined"] = recovery_inlined
+
     return findings
 
 
@@ -357,6 +450,7 @@ def _build_synthesis_prompt(
     db: Optional[Session] = None, user_id: Optional[int] = None,
     conflict_arb_block: str = "",
     source: Optional[str] = None,
+    lite_mode: bool = False,
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt).
 
@@ -366,6 +460,14 @@ def _build_synthesis_prompt(
     source: 'siri' → 走语音播报口语化 prompt (短句/无 markdown/数字口语化/250 字上限),
            其它值 (chat/widget/None) → 走常规详细 prompt.
 
+    lite_mode (2026-05-28): trivial/short query 走快路径时设为 True. 跳过:
+        - system_kb_text (DB + vector lookup)
+        - credit_text + track_text (30/90 天 audit_log 聚合)
+        - user_feedback_text (negative feedback 查询)
+        - persona_addendum (User 表查询)
+      保留: twin_blob + personal_matrix (内存计算) + cross_review (findings 空时无开销).
+      用在: _is_trivial_query 命中, 或 specialists 空 (无 finding 时这些块无意义).
+
     P3-1 (2026-05-11): 末尾按 user.coach_persona 切语气 (strict_coach /
     gentle_advisor / data_driven). 不改 specialist 输入也不改主 system 规则,
     只追加一条 12. 风格指令.
@@ -374,7 +476,7 @@ def _build_synthesis_prompt(
     twin_blob = twin_to_prompt_blob(twin)
     personal_matrix_text = _format_personal_evidence_matrix_for_prompt(twin)
     system_kb_text = ""
-    if db is not None:
+    if not lite_mode and db is not None:
         try:
             from app.services.system_knowledge_service import format_system_knowledge_for_prompt
 
@@ -410,9 +512,10 @@ def _build_synthesis_prompt(
     findings_text = "\n".join(findings_text_parts) or "(无 specialist 输出)"
 
     # 信任循环反馈: 把过去 30 天的 specialist 命中率注入 prompt
+    # lite_mode 跳过 — 没 specialist 的 trivial query 无需历史命中率上下文
     credit_text = ""
     track_text = ""
-    if db is not None and user_id is not None:
+    if not lite_mode and db is not None and user_id is not None:
         credit_text = _build_specialist_credit_block(db, user_id, days=30)
         # 本次 run 的 specialist 名单, 只拉它们的历史 — 避免 prompt 膨胀
         active_sp_names = [f.specialist_name for f in findings if f.specialist_name]
@@ -423,7 +526,7 @@ def _build_synthesis_prompt(
     # Trust Loop v2: 用户对过去判断的显式反馈 (not_helpful / irrelevant)
     # 让 LLM 看到"用户否定过的判断", 避免重复类似错误
     user_feedback_text = ""
-    if db is not None and user_id is not None:
+    if not lite_mode and db is not None and user_id is not None:
         try:
             from app.api.judgment_feedback import get_recent_negative_feedback
             neg = get_recent_negative_feedback(db, user_id, days=30, limit=5)
@@ -534,7 +637,8 @@ def _build_synthesis_prompt(
         )
 
         # P3-1 Coach Persona: 末尾追加风格指令 (不改前面规则, 只加语气)
-        if db is not None and user_id is not None:
+        # lite_mode 跳过 User 表查询 — trivial query 用默认温和风格即可
+        if not lite_mode and db is not None and user_id is not None:
             persona_addendum = _build_persona_addendum(db, user_id)
             if persona_addendum:
                 system_prompt = system_prompt + "\n\n" + persona_addendum
@@ -813,13 +917,18 @@ def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[s
 
 
 def _inject_memory(db: Session, user_id: int, user_prompt: str,
-                    findings: Optional[List[SpecialistFinding]] = None
+                    findings: Optional[List[SpecialistFinding]] = None,
+                    lite_mode: bool = False,
                     ) -> tuple[str, Dict[str, Any]]:
     """注入用户对话记忆 + Clinical Journal 相关 case timeline.
 
     每个 stage 显式跟踪 ok / chars / count / error, 最后写到 audit_log
     (agent_type='memory_injection') 给 observability dashboard 聚合.
     这是 T1.1 Memory 注入诊断 — 让"AI 真的记得我吗"可量化.
+
+    lite_mode (2026-05-28): trivial query 快路径设为 True. 跳过 hybrid retrieval
+        (BM25 + Graph + RRF over 个人 facts, 几百 ms+, 对 'hi' 无意义).
+        保留 conversation memory / directives — 这俩对任何 query 都重要 (过敏/医嘱).
 
     Returns:
         (prompt_with_memory, trace_dict). trace 已经写入 memory_injection audit,
@@ -901,20 +1010,24 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
 
     # 4) Hybrid Retrieval (BM25 + Graph + RRF) — LLM Wiki v2 阶段 C
     # 一路替换原来的 facts + KG 双路注入. 检索结果按 RRF 融合排序.
-    try:
-        from app.services.hybrid_search import hybrid_retrieve, render_hits_for_prompt
-        query_seed = (user_prompt or "")[:300]
-        hits = hybrid_retrieve(db, user_id, query_seed, top_k=10)
-        if hits:
-            rendered = render_hits_for_prompt(hits, max_lines=10)
-            block = f"\n\n{rendered}\n"
-            out += block
-            _record("hybrid", ok=True, chars=len(block), count=len(hits))
-        else:
-            _record("hybrid", ok=False, chars=0, count=0)
-    except Exception as e:  # noqa: BLE001
-        _record("hybrid", ok=False, chars=0, count=0, error=str(e))
-        logger.debug(f"[orchestrator] hybrid retrieval 注入失败 (跳过): {e}")
+    # lite_mode 跳过 — BM25 + Graph 对 trivial query 'hi' 没有信号.
+    if lite_mode:
+        _record("hybrid", ok=False, chars=0, count=0, error="lite_mode_skip")
+    else:
+        try:
+            from app.services.hybrid_search import hybrid_retrieve, render_hits_for_prompt
+            query_seed = (user_prompt or "")[:300]
+            hits = hybrid_retrieve(db, user_id, query_seed, top_k=10)
+            if hits:
+                rendered = render_hits_for_prompt(hits, max_lines=10)
+                block = f"\n\n{rendered}\n"
+                out += block
+                _record("hybrid", ok=True, chars=len(block), count=len(hits))
+            else:
+                _record("hybrid", ok=False, chars=0, count=0)
+        except Exception as e:  # noqa: BLE001
+            _record("hybrid", ok=False, chars=0, count=0, error=str(e))
+            logger.debug(f"[orchestrator] hybrid retrieval 注入失败 (跳过): {e}")
 
     trace["total_chars_added"] = len(out) - base_len
 
@@ -931,17 +1044,29 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
 # ───────────────────── LLM 调用（带回退） ─────────────────
 
 
-async def _call_llm(system_prompt: str, user_prompt: str) -> str:
+# perf (2026-05-28): lite_mode 的 max_tokens 上限. trivial query 通常 30-100 token 够,
+# 降到 300 给一些余量, 比默认 900 省 50%+ 生成时间 (尤其慢模型 reasoning tier).
+_LITE_MAX_TOKENS = 300
+_FULL_MAX_TOKENS = 900
+
+
+async def _call_llm(
+    system_prompt: str, user_prompt: str, *, lite_mode: bool = False,
+) -> str:
     """调用 LLM，失败时尝试 openai fallback。返回空字符串表示失败。
 
     主路径走 settings.llm_provider (默认 tokenplan / 阿里云 MiniMax),
     失败回退到 openai (DashScope vision key 也可作 OpenAI-兼容).
     OpenClaw 已退役为非默认 provider, 不再作为兜底.
+
+    lite_mode (2026-05-28): trivial query 走 lite path 时降 max_tokens 到 300
+        (默认 900). 不换模型 → 不影响 voice, 只省生成时长.
     """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+    max_toks = _LITE_MAX_TOKENS if lite_mode else _FULL_MAX_TOKENS
 
     async def _try(provider_type: Optional[str]) -> Optional[str]:
         try:
@@ -958,7 +1083,7 @@ async def _call_llm(system_prompt: str, user_prompt: str) -> str:
                 else:
                     provider = get_llm_provider()
             result = await provider.chat(
-                messages=messages, temperature=0.3, max_tokens=900
+                messages=messages, temperature=0.3, max_tokens=max_toks
             )
             if isinstance(result, dict):
                 return (result.get("content") or "").strip() or None
@@ -1043,13 +1168,18 @@ async def _run_cross_review_and_arbitration(
 
 
 async def _stream_llm(
-    system_prompt: str, user_prompt: str
+    system_prompt: str, user_prompt: str, *, lite_mode: bool = False,
 ) -> AsyncIterator[str]:
-    """流式调用 LLM。失败时一次性返回错误 fallback。"""
+    """流式调用 LLM。失败时一次性返回错误 fallback。
+
+    lite_mode (2026-05-28): trivial query 走 lite path 时降 max_tokens 到 300.
+        不换模型 → 不影响 voice, 只省尾部生成时长 (慢模型省 1-3s).
+    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+    max_toks = _LITE_MAX_TOKENS if lite_mode else _FULL_MAX_TOKENS
 
     async def _try_stream(provider_type: Optional[str]):
         try:
@@ -1066,7 +1196,7 @@ async def _stream_llm(
                 else:
                     provider = get_llm_provider()
             result = await provider.chat(
-                messages=messages, temperature=0.3, max_tokens=900, stream=True
+                messages=messages, temperature=0.3, max_tokens=max_toks, stream=True
             )
             if hasattr(result, "__aiter__"):
                 async for chunk in result:
@@ -1119,9 +1249,12 @@ async def run_orchestrator(
     # 2026-05-13: set 用户偏好 ctx, _call_llm 内部读取.
     _user_pref_ctx.set((user_id, db))
     t_start = time.monotonic()
+    perf: Dict[str, Any] = {}
 
     twin = build_twin(db, user_id)
+    t_intent = time.monotonic()
     intent = classify_intent(req.query)
+    perf["intent_ms"] = int((time.monotonic() - t_intent) * 1000)
     specialists = _select_specialists(intent, twin, req.specialists)
     # 注入 active case threads (STRATEGY 阶段 3): specialist 可读 context['recent_cases']
     # 了解用户有哪些"进行中的问题线"来决定是否开新 card / 避免重复.
@@ -1130,25 +1263,39 @@ async def run_orchestrator(
         recent_cases = get_active_case_briefs(db, user_id, limit=5)
     except Exception:
         recent_cases = []
+    sp_timings: Dict[str, Any] = {}
     findings = _run_specialists(
-        twin, specialists, {"query": req.query, "db": db, "recent_cases": recent_cases}
+        twin, specialists, {"query": req.query, "db": db, "recent_cases": recent_cases},
+        timings=sp_timings,
     )
+    perf["specialists"] = sp_timings
     _attach_kb_evidence_to_findings(db, twin, findings)
     findings, evidence_policy_trace = _apply_planner_evidence_policy(findings)
 
     # Cross-review + (可选) LLM 仲裁, 结果注入 synthesis prompt
     conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
 
+    # lite_mode: 无 specialist 时跳过 system_kb / credit / track / feedback / hybrid retrieve.
+    # 这是 trivial query 短路的下半场 — 上半场跳了 specialist, 下半场跳所有依赖 specialist
+    # 历史 / RAG 检索的 DB-heavy 块, 让 LLM 只看 twin + query.
+    lite_mode = not specialists
+    perf["lite_mode"] = lite_mode
+
     system_prompt, user_prompt = _build_synthesis_prompt(
         req.query, twin, findings, db=db, user_id=user_id,
         conflict_arb_block=conflict_arb_block,
         source=req.source,
+        lite_mode=lite_mode,
     )
 
     # 注入对话记忆（用户历史偏好/医嘱/过敏等）
-    user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=findings)
+    user_prompt, memory_trace = _inject_memory(
+        db, user_id, user_prompt, findings=findings, lite_mode=lite_mode,
+    )
 
-    synthesis = await _call_llm(system_prompt, user_prompt)
+    t_llm = time.monotonic()
+    synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
+    perf["llm_full_ms"] = int((time.monotonic() - t_llm) * 1000)
 
     # v3 cross-cutting safety: 所有 LLM 终态自由文本统一过 validator
     safety = _safety_wrap(synthesis, source="orchestrator.run")
@@ -1187,6 +1334,19 @@ async def run_orchestrator(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] specialist_findings audit bypass 失败: {e}")
 
+    total_ms = int((time.monotonic() - t_start) * 1000)
+    perf["twin_build_ms"] = twin.meta.build_ms
+    perf["total_ms"] = total_ms
+    logger.info(
+        f"[perf.orchestrator] user={user_id} mode=nonstream total={total_ms}ms "
+        f"twin={twin.meta.build_ms}ms intent={perf['intent_ms']}ms "
+        f"sp_wall={sp_timings.get('parallel_wall_ms', 0)}ms "
+        f"recovery={sp_timings.get('recovery_ms', 0)}ms "
+        f"llm_full={perf['llm_full_ms']}ms "
+        f"sp_count={len(specialists)} sp_failed={len(sp_timings.get('failed', []))} "
+        f"lite={lite_mode}"
+    )
+
     # Phase 0.3 (2026-05-04): non-stream 路径之前完全没写 orchestrator audit,
     # 历史 silent gap. 现在补齐, 与 stream / siri 路径对齐, 同时带 memory_trace
     # + output_text 给 memory 引用率看板.
@@ -1199,11 +1359,12 @@ async def run_orchestrator(
             used_specialists=[s.name for s in specialists],
             findings_count=sum(len(f.findings) for f in findings),
             twin_build_ms=twin.meta.build_ms,
-            total_ms=int((time.monotonic() - t_start) * 1000),
+            total_ms=total_ms,
             result_summary=(synthesis or "")[:200],
             source=req.source,
             memory_trace=memory_trace,
             output_text=synthesis,
+            perf_breakdown=perf,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] orchestrator_run audit bypass 失败: {e}")
@@ -1252,16 +1413,19 @@ async def _run_orchestrator_fast(
     intent = classify_intent(req.query)
 
     # 直接走口语化 synthesis, findings 传空 list —— prompt builder 会退化为
-    # "基于 twin 快照 + 用户原始问题" 的极简回答.
+    # "基于 twin 快照 + 用户原始问题" 的极简回答. lite_mode=True 跳过所有 DB-heavy block.
     system_prompt, user_prompt = _build_synthesis_prompt(
         req.query, twin, findings=[], db=db, user_id=user_id,
         conflict_arb_block="", source="siri",
+        lite_mode=True,
     )
 
     # 注入 conversation memory (用户历史偏好/医嘱/过敏), 保留连续对话感.
-    user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=[])
+    user_prompt, memory_trace = _inject_memory(
+        db, user_id, user_prompt, findings=[], lite_mode=True,
+    )
 
-    synthesis = await _call_llm(system_prompt, user_prompt)
+    synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=True)
 
     # v3 cross-cutting safety: Siri 路径同样过 validator
     safety = _safety_wrap(synthesis, source="orchestrator.siri_fast")
@@ -1330,12 +1494,15 @@ async def _stream_orchestrator_fast(
             system_prompt, user_prompt = _build_synthesis_prompt(
                 req.query, twin, findings=[], db=bg_db, user_id=user_id,
                 conflict_arb_block="", source="siri",
+                lite_mode=True,
             )
-            user_prompt, memory_trace = _inject_memory(bg_db, user_id, user_prompt, findings=[])
+            user_prompt, memory_trace = _inject_memory(
+                bg_db, user_id, user_prompt, findings=[], lite_mode=True,
+            )
 
             full = ""
             try:
-                async for chunk in _stream_llm(system_prompt, user_prompt):
+                async for chunk in _stream_llm(system_prompt, user_prompt, lite_mode=True):
                     full += chunk
                     await chunk_queue.put(_sse("chunk", chunk))
             except Exception as e:  # noqa: BLE001
@@ -1445,8 +1612,12 @@ async def stream_orchestrator(
         bg_db = _SessionLocal()
         try:
             try:
+                # perf 2026-05-28: 分阶段计时, 用于 done SSE + audit + 单行 grep 日志
+                perf: Dict[str, Any] = {}
                 twin = build_twin(bg_db, user_id)
+                t_intent = time.monotonic()
                 intent = classify_intent(req.query)
+                perf["intent_ms"] = int((time.monotonic() - t_intent) * 1000)
                 specialists = _select_specialists(intent, twin, req.specialists)
                 try:
                     from app.services.clinical_journal_service import get_active_case_briefs
@@ -1464,10 +1635,13 @@ async def stream_orchestrator(
                     },
                 ))
 
+                sp_timings: Dict[str, Any] = {}
                 findings = _run_specialists(
                     twin, specialists,
                     {"query": req.query, "db": bg_db, "recent_cases": recent_cases},
+                    timings=sp_timings,
                 )
+                perf["specialists"] = sp_timings
                 _attach_kb_evidence_to_findings(bg_db, twin, findings)
                 findings, evidence_policy_trace = _apply_planner_evidence_policy(findings)
                 if evidence_policy_trace.get("blocked_count"):
@@ -1513,25 +1687,52 @@ async def stream_orchestrator(
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
 
+                # lite_mode: 无 specialist 时跳过 system_kb / credit / track / feedback /
+                # hybrid retrieve (trivial query 短路下半场, 与 run_orchestrator 对齐).
+                lite_mode = not specialists
+                perf["lite_mode"] = lite_mode
+
                 system_prompt, user_prompt = _build_synthesis_prompt(
                     req.query, twin, findings, db=bg_db, user_id=user_id,
                     conflict_arb_block=conflict_arb_block,
                     source=req.source,
+                    lite_mode=lite_mode,
                 )
                 user_prompt, memory_trace = _inject_memory(
-                    bg_db, user_id, user_prompt, findings=findings
+                    bg_db, user_id, user_prompt, findings=findings, lite_mode=lite_mode,
                 )
 
                 full = ""
+                t_llm = time.monotonic()
+                llm_ttft_ms: Optional[int] = None
                 try:
-                    async for chunk in _stream_llm(system_prompt, user_prompt):
+                    async for chunk in _stream_llm(
+                        system_prompt, user_prompt, lite_mode=lite_mode,
+                    ):
+                        if llm_ttft_ms is None and chunk:
+                            llm_ttft_ms = int((time.monotonic() - t_llm) * 1000)
                         full += chunk
                         await chunk_queue.put(_sse("chunk", chunk))
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] LLM stream 失败: {e}")
+                perf["llm_ttft_ms"] = llm_ttft_ms
+                perf["llm_full_ms"] = int((time.monotonic() - t_llm) * 1000)
 
                 safety = _safety_wrap(full, source="orchestrator.stream")
                 total_ms = int((time.monotonic() - t_start) * 1000)
+                perf["twin_build_ms"] = twin.meta.build_ms
+                perf["total_ms"] = total_ms
+
+                # 单行 grep 日志, 在生产 journalctl 上方便 `grep '\[perf\.orchestrator\]'`
+                logger.info(
+                    f"[perf.orchestrator] user={user_id} total={total_ms}ms "
+                    f"twin={twin.meta.build_ms}ms intent={perf['intent_ms']}ms "
+                    f"sp_wall={sp_timings.get('parallel_wall_ms', 0)}ms "
+                    f"recovery={sp_timings.get('recovery_ms', 0)}ms "
+                    f"llm_ttft={llm_ttft_ms}ms llm_full={perf['llm_full_ms']}ms "
+                    f"sp_count={len(specialists)} sp_failed={len(sp_timings.get('failed', []))} "
+                    f"lite={lite_mode}"
+                )
 
                 try:
                     from app.agents.audit import log_orchestrator_run
@@ -1548,6 +1749,7 @@ async def stream_orchestrator(
                         source=req.source,
                         memory_trace=memory_trace,
                         output_text=full,
+                        perf_breakdown=perf,
                     )
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] orchestrator_run audit bypass 失败: {e}")
@@ -1556,6 +1758,7 @@ async def stream_orchestrator(
                     "total_ms": total_ms,
                     "persisted_card_ids": persisted_ids,
                     "safety_action": safety.action,
+                    "perf": perf,
                 }))
                 if safety.action == "replace":
                     await chunk_queue.put(_sse("safety_override", {"safe_text": safety.safe_text}))

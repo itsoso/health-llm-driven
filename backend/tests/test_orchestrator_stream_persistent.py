@@ -53,7 +53,7 @@ def _make_user(db, name="orch_stream"):
     return u
 
 
-async def _fake_stream_llm(system_prompt, user_prompt):
+async def _fake_stream_llm(system_prompt, user_prompt, *, lite_mode=False):
     for i in range(5):
         await asyncio.sleep(0.05)
         yield f"chunk{i}"

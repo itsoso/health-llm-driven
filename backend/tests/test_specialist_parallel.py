@@ -211,3 +211,126 @@ class TestParallelSpecialistExecution:
 
         _run_specialists(_twin(), specialists, original_ctx)
         assert original_ctx == ctx_copy
+
+    def test_timings_kwarg_collects_per_specialist_ms(self):
+        """perf (2026-05-28): 传 timings={} 时应填入完整 perf breakdown."""
+        # 无 movement → recovery 并入并行池
+        specialists = [
+            FakeRecoveryCoach(),
+            FakeSpecialist("alpha", sleep_sec=0.03),
+            FakeSpecialist("beta", sleep_sec=0.01),
+        ]
+        timings: Dict[str, Any] = {}
+        findings = _run_specialists(
+            _twin(), specialists, {"query": "test"}, timings=timings,
+        )
+        assert len(findings) == 3
+        # 字段齐全
+        assert set(timings.keys()) == {
+            "recovery_ms", "parallel_wall_ms", "per_specialist_ms",
+            "total_ms", "failed", "timed_out", "recovery_inlined",
+        }
+        # 每个 specialist 都有耗时
+        assert set(timings["per_specialist_ms"].keys()) == {"recovery_coach", "alpha", "beta"}
+        for sp_ms in timings["per_specialist_ms"].values():
+            assert sp_ms >= 0
+        # recovery 被并入池 → recovery_ms (Phase 1 同步时长) 为 0
+        assert timings["recovery_ms"] == 0
+        assert timings["recovery_inlined"] is True
+        # parallel_wall_ms 接近最慢的 specialist (recovery=50ms 因 sleep), 不是串行和
+        assert timings["parallel_wall_ms"] < 150  # 4 workers 全并发, 留余量
+        # 无失败 / 超时
+        assert timings["failed"] == []
+        assert timings["timed_out"] == []
+
+    def test_recovery_synced_when_movement_present(self):
+        """movement_coach 在列表时, recovery 必须同步先跑, 才能传 readiness_zone."""
+        timings: Dict[str, Any] = {}
+        findings = _run_specialists(
+            _twin(),
+            [FakeRecoveryCoach(), FakeMovementCoach(), FakeSpecialist("other")],
+            {"query": "test"},
+            timings=timings,
+        )
+        assert len(findings) == 3
+        # recovery 应有非 0 同步耗时
+        assert timings["recovery_ms"] > 0
+        assert timings["recovery_inlined"] is False
+        # movement_coach 应读到 readiness_zone='green'
+        mc = next(f for f in findings if f.specialist_name == "movement_coach")
+        assert mc.raw["readiness_zone_used"] == "green"
+
+    def test_recovery_inlined_without_movement_saves_serial_wait(self):
+        """无 movement_coach 时, recovery 进并行池, 不再消耗串行等待时间."""
+        timings: Dict[str, Any] = {}
+        # 故意让 recovery 慢 (sleep 0.05), 其它快 (0.01)
+        # 旧逻辑: 0.05 sync + 0.01 parallel = 60ms
+        # 新逻辑: max(0.05, 0.01) = 50ms parallel
+        _run_specialists(
+            _twin(),
+            [FakeRecoveryCoach(), FakeSpecialist("a", sleep_sec=0.01)],
+            {"q": "x"},
+            timings=timings,
+        )
+        assert timings["recovery_inlined"] is True
+        # parallel_wall_ms 接近 50ms (recovery), 不是 60ms (串行)
+        assert timings["parallel_wall_ms"] < 100
+
+    def test_timings_records_failed_specialist(self):
+        """异常的 specialist 也要记入 failed 列表 + per_specialist_ms."""
+        class FailingSp:
+            name = "broken"
+            category = "test"
+            def applies_to(self, intent, twin): return True
+            def run(self, twin, ctx): raise RuntimeError("boom")
+
+        timings: Dict[str, Any] = {}
+        _run_specialists(
+            _twin(),
+            [FakeRecoveryCoach(), FailingSp()],
+            {"query": "test"},
+            timings=timings,
+        )
+        assert "broken" in timings["failed"]
+        assert "broken" in timings["per_specialist_ms"]
+
+    def test_timings_kwarg_optional(self):
+        """不传 timings 时函数照常工作 (向后兼容)."""
+        findings = _run_specialists(_twin(), [FakeRecoveryCoach(), FakeSpecialist("a")], {"q": "x"})
+        assert len(findings) == 2
+
+    def test_parallel_pool_timeout_doesnt_block_other_findings(self):
+        """超时的 specialist 进 timed_out + failed[], 其余 finding 正常返回."""
+        import app.orchestrator.orchestrator as orch_mod
+
+        class StuckSpecialist:
+            name = "stuck"
+            category = "test"
+            def applies_to(self, intent, twin): return True
+            def run(self, twin, ctx):
+                time.sleep(2.0)  # 远超下面 patch 的 0.1s 超时
+                return SpecialistFinding(
+                    specialist_name=self.name, category=self.category,
+                    summary="ok", findings=[], raw={}, ms_elapsed=2000,
+                )
+
+        # 临时把整体超时拉到 100ms 以便测试快速完成
+        original_timeout = orch_mod._SPECIALIST_PARALLEL_TIMEOUT_S
+        orch_mod._SPECIALIST_PARALLEL_TIMEOUT_S = 0.1
+        try:
+            timings: Dict[str, Any] = {}
+            findings = _run_specialists(
+                _twin(),
+                [FakeSpecialist("fast_a", sleep_sec=0), StuckSpecialist(), FakeSpecialist("fast_b", sleep_sec=0)],
+                {"q": "x"},
+                timings=timings,
+            )
+        finally:
+            orch_mod._SPECIALIST_PARALLEL_TIMEOUT_S = original_timeout
+
+        # 卡住的 specialist 进 timed_out + failed
+        assert "stuck" in timings["timed_out"]
+        assert "stuck" in timings["failed"]
+        # 其余 2 个 finding 正常返回
+        names = {f.specialist_name for f in findings}
+        assert names == {"fast_a", "fast_b"}

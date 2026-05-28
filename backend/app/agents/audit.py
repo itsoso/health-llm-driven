@@ -56,6 +56,7 @@ def log_orchestrator_run(
     source: Optional[str] = None,
     memory_trace: Optional[Dict[str, Any]] = None,
     output_text: Optional[str] = None,
+    perf_breakdown: Optional[Dict[str, Any]] = None,
 ) -> None:
     """记录一次 Orchestrator 综合调度。
 
@@ -65,6 +66,9 @@ def log_orchestrator_run(
             为 None 时表示该路径没启用 memory 注入 (legacy).
         output_text: LLM 完整输出, 用于启发式判断是否引用了 memory. 不写入 audit
             (省空间), 只用于计算 memory_referenced 布尔字段.
+        perf_breakdown: 2026-05-28 — orchestrator 各阶段耗时分解 (intent / specialists
+            per-name / llm_ttft / llm_full / twin / total). 用来做"哪一段在拖时间"的
+            attribution. 落地到 result_detail['perf'].
 
     Phase 0.3 (2026-05-04): 加 memory_trace + memory_referenced. 之前 22 次
     orchestrator audit 中无人能判断 memory 是否真被 LLM 引用 — 修复后看板能算
@@ -92,6 +96,9 @@ def log_orchestrator_run(
         except Exception:  # noqa: BLE001
             # detector 永不应抛, 但保险起见旁路
             pass
+
+    if perf_breakdown:
+        detail["perf"] = perf_breakdown
 
     _write(
         db,
