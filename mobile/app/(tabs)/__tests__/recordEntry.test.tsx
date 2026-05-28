@@ -80,14 +80,10 @@ jest.mock('../../../hooks/useTheme', () => ({
   }),
 }));
 
-jest.mock('../../../components/dashboard/VitalsGrid', () => 'VitalsGrid');
-jest.mock('../../../components/dashboard/ActivityRingBar', () => 'ActivityRingBar');
-jest.mock('../../../components/dashboard/FitnessSnapshotCard', () => 'FitnessSnapshotCard');
 jest.mock('../../../components/dashboard/SupplementCheckin', () => 'SupplementCheckin');
 jest.mock('../../../components/dashboard/RhinitisCard', () => 'RhinitisCard');
 jest.mock('../../../components/dashboard/StrengthCard', () => 'StrengthCard');
 jest.mock('../../../components/dashboard/SymptomCard', () => 'SymptomCard');
-jest.mock('../../../components/dashboard/WorkoutWeekCard', () => 'WorkoutWeekCard');
 jest.mock('../../../components/design-system/HealthCard', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View, Text } = require('react-native');

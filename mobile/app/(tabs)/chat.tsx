@@ -12,7 +12,6 @@ import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
-import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
@@ -480,37 +479,24 @@ export default function ChatScreen() {
                 />
               )}
               <View style={styles.welcome}>
-                <BrandCircle size={56} style={{ marginBottom: 12 }}>
-                  <Ionicons name="sparkles" size={26} color="#fff" />
-                </BrandCircle>
-                <Text style={txt.welcomeTitle}>健康 Agent</Text>
-                <Text style={txt.welcomeSub}>
-                  {opener
-                    ? '或者问我别的'
-                    : '我可以帮你分析数据、解答疑问、提供建议'}
-                </Text>
-                <View style={styles.suggestionHeader}>
-                  <View>
-                    <Text style={txt.suggestionTitle}>直接开始</Text>
-                    <Text style={txt.suggestionSub}>会带上你的健康上下文</Text>
-                  </View>
-                  <Ionicons name="pulse-outline" size={18} color={c.brand} />
+                <View style={styles.welcomeInline}>
+                  <Ionicons name="sparkles" size={14} color={c.brand} />
+                  <Text style={txt.welcomeInline} numberOfLines={1}>
+                    健康 Agent · {opener ? '或者问我别的' : '会带上你的健康上下文'}
+                  </Text>
                 </View>
                 <View style={styles.sugGrid}>
                   {starterSuggestions.map(s => (
                     <TouchableOpacity
                       key={s.text}
-                      style={styles.sugCard}
+                      style={styles.sugChip}
                       onPress={() => handleSend(s.text, null)}
                       activeOpacity={0.72}
                       accessibilityRole="button"
                       accessibilityLabel={`向健康 Agent 提问: ${s.text}`}
                     >
-                      <View style={styles.sugIconWrap}>
-                        <Ionicons name={s.icon} size={17} color={c.brand} />
-                      </View>
-                      <Text style={txt.sugText} numberOfLines={2}>{s.text}</Text>
-                      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
+                      <Ionicons name={s.icon} size={13} color={c.brand} />
+                      <Text style={txt.sugChipText} numberOfLines={1}>{s.text}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -753,36 +739,30 @@ function createStyles(c: ColorPalette) {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: c.separator,
   },
-  welcome: { alignItems: 'center', paddingTop: 28 },
-  suggestionHeader: {
-    width: '100%',
-    marginTop: spacing.xl,
-    paddingHorizontal: spacing.lg,
+  welcome: { paddingTop: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.sm },
+  welcomeInline: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
+    paddingVertical: 6,
   },
-  sugGrid: { width: '100%', gap: spacing.sm, marginTop: spacing.sm, paddingHorizontal: spacing.lg },
-  sugCard: {
-    minHeight: 58,
-    backgroundColor: c.bgCard,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    gap: spacing.sm,
+  sugGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  sugChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: radii.full,
+    backgroundColor: c.bgCard,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.separator,
-    ...shadows.subtle,
-  },
-  sugIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: c.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    maxWidth: '100%',
   },
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -822,11 +802,8 @@ function createTxt(c: ColorPalette) {
   return {
   headerTitle: { fontSize: 20, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   headerMeta: { fontSize: 12, color: c.labelTertiary, marginTop: 2, fontWeight: '600' } as TextStyle,
-  welcomeTitle: { fontSize: 22, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-  welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
-  suggestionTitle: { fontSize: 15, color: c.labelPrimary, fontWeight: '800' } as TextStyle,
-  suggestionSub: { fontSize: 12, color: c.labelTertiary, marginTop: 2, fontWeight: '600' } as TextStyle,
-  sugText: { fontSize: 14, color: c.labelPrimary, lineHeight: 19, fontWeight: '600', flex: 1 } as TextStyle,
+  welcomeInline: { fontSize: 12, color: c.labelSecondary, fontWeight: '700', flexShrink: 1 } as TextStyle,
+  sugChipText: { fontSize: 12, color: c.labelPrimary, fontWeight: '600', flexShrink: 1 } as TextStyle,
   contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
   historyAction: { fontSize: 12, color: c.labelSecondary, fontWeight: '600' } as TextStyle,
   memoryLabel: { fontSize: 11, color: c.labelTertiary, fontWeight: '700' } as TextStyle,

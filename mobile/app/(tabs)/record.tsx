@@ -8,7 +8,6 @@ import { fetchDashboardData } from '../../services/dashboard';
 import api from '../../services/api';
 import { useRouter } from 'expo-router';
 import { emitClientEvent } from '../../services/clientEvents';
-import { useLatestGarmin } from '../../hooks/useDashboardData';
 import { recordWater, deleteWater } from '../../services/records';
 import { filterMedicationRecordItems } from '../../services/medicationFilters';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
@@ -18,14 +17,10 @@ import {
   createSupplementAgentContext,
   pushChatWithContext,
 } from '../../utils/agentContext';
-import VitalsGrid from '../../components/dashboard/VitalsGrid';
-import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
-import FitnessSnapshotCard from '../../components/dashboard/FitnessSnapshotCard';
 import SupplementCheckin from '../../components/dashboard/SupplementCheckin';
 import RhinitisCard from '../../components/dashboard/RhinitisCard';
 import StrengthCard from '../../components/dashboard/StrengthCard';
 import SymptomCard from '../../components/dashboard/SymptomCard';
-import WorkoutWeekCard from '../../components/dashboard/WorkoutWeekCard';
 import HealthCard from '../../components/design-system/HealthCard';
 import AgentFeedbackLink from '../../components/agent/AgentFeedbackLink';
 import { spacing, radii, shadows } from '../../constants/theme';
@@ -58,18 +53,12 @@ export default function RecordScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const { data, refetch, isRefetching } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboardData, staleTime: 60_000 });
-  const garmin = useLatestGarmin(data);
   const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
   const [weightInput, setWeightInput] = useState('');
   const [bpSysInput, setBpSysInput] = useState('');
   const [bpDiaInput, setBpDiaInput] = useState('');
   const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
 
-  const sleepH = garmin?.total_sleep_duration ? garmin.total_sleep_duration / 60 : null;
-  const deepH = garmin?.deep_sleep_duration ? garmin.deep_sleep_duration / 60 : null;
-  const steps = garmin?.steps ?? 0;
-  const activeMin = garmin?.active_minutes ?? 0;
-  const calories = garmin?.active_calories ?? 0;
   const exerciseToday = Array.isArray(data?.exerciseToday) ? data.exerciseToday : [];
   const medications = filterMedicationRecordItems(data?.medicationToday);
   const weightStats = data?.weightStats;
@@ -264,34 +253,7 @@ export default function RecordScreen() {
           </View>
         </View>
 
-        {/* 1. Vitals */}
-        <VitalsGrid
-          sleep={sleepH}
-          deepSleep={deepH}
-          sleepScore={garmin?.sleep_score}
-          heartRate={garmin?.resting_heart_rate}
-          hrv={garmin?.hrv}
-          bodyBatteryCurrent={garmin?.body_battery_current ?? garmin?.body_battery_most_charged}
-          bodyBatteryMax={garmin?.body_battery_most_charged}
-          garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []}
-          onTilePress={(metric) => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (metric === 'sleep') {
-              router.push('/sleep' as any);
-            } else {
-              router.push(`/indicator-history?type=${metric}` as any);
-            }
-          }}
-        />
-
-        {/* 2. Activity */}
-        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
-
-        {/* 2.5 Fitness Snapshot — 体能年龄 + 本周强度 */}
-        <FitnessSnapshotCard />
-
-        {/* 3. Workout Week */}
-        <WorkoutWeekCard />
+        {/* 看板回显已迁至首页 — 此页只保留录入相关模块 (2026-05-28) */}
 
         {/* 4. Rhinitis */}
         <RhinitisCard checkin={data?.checkin} medications={medications} onUpdate={refetch} />

@@ -306,9 +306,8 @@ describe('ChatScreen', () => {
     const { getByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByText('直接开始')).toBeTruthy();
+      expect(getByText(/健康 Agent · 会带上你的健康上下文/)).toBeTruthy();
     });
-    expect(getByText('会带上你的健康上下文')).toBeTruthy();
   });
 
   it('moves the chat composer above the iOS keyboard using the keyboard height', async () => {
