@@ -98,8 +98,12 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
 
     Some commercial proxy models ignore OpenAI `tools` semantics and print a
     payload like {"name":"health_manage","parameters":{...}} inside content.
-    Treat only trailing JSON objects whose name matches our registered tools as
-    tool calls; ordinary JSON snippets such as menu_share remain user-visible.
+    Treat any JSON object whose name matches our registered tools as a tool
+    call, even when surrounded by human text — weaker models often emit the
+    call JSON first and then a prose confirmation/analysis (the JSON must not
+    leak to the user, and the tool must actually run). Ordinary JSON snippets
+    such as menu_share stay user-visible: their name is not a registered tool,
+    so the `name not in allowed` guard below skips them.
     """
     raw = (text or "").strip()
     if not raw:
@@ -113,8 +117,6 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
         try:
             payload, end = decoder.raw_decode(raw[idx:])
         except json.JSONDecodeError:
-            continue
-        if raw[idx + end:].strip().strip("`").strip():
             continue
         if not isinstance(payload, dict):
             continue

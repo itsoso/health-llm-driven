@@ -500,7 +500,7 @@ async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         executed.append((tool_name, args_raw, user_token))
-        return '{"message":"删除成功","record_id":625}'
+        return '{"message":"已删除最后一条饮食记录","record_id":625}'
 
     executor._call_llm = fake_call_llm
     executor._execute_tool = fake_execute_tool
@@ -550,7 +550,11 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         args = json.loads(args_raw)
         executed.append((tool_name, args))
-        return '{"id":701,"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
+        # Real health_record returns a `message` the fast-record path renders.
+        return (
+            '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
+            '"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
+        )
 
     executor._call_llm = fake_call_llm
     executor._execute_tool = fake_execute_tool
@@ -577,11 +581,78 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         event.get("event") == "tool_result"
         and event["data"]["record_type"] == "diet"
         and event["data"]["record_data"]["calories"] == 520
-        and event["data"]["result"] == '{"id":701,"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
+        and event["data"]["result"] == (
+            '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
+            '"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
+        )
         for event in events
     )
     assert "已记录晚餐" in rendered
     assert '"name":"health_record"' not in rendered
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_user_and_headers):
+    """Regression: weaker fast-record models emit the tool-call JSON FIRST and a
+    human-readable confirmation/analysis AFTER it. Previously the inline extractor
+    bailed on any trailing text, so the raw JSON leaked to the user AND the tool
+    never ran (the '已记录' was a hallucination, data not saved). Now the call must
+    be recovered+executed and the JSON must never render."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append(1)
+        if len(calls) == 1:
+            # JSON first, then prose (mirrors the reported voice-chat screenshot).
+            return {
+                "content": (
+                    '{"name":"health_record","parameters":{"record_type":"symptom","data":{'
+                    '"symptom":"口腔溃疡","location":"右嘴角 + 上颚外嘴唇连接处","count":2,'
+                    '"severity":4}}} '
+                    "已记录：口腔溃疡 ×2（右嘴角、上颚外嘴唇连接处）\n\n原因分析（结合你的基因+近况）..."
+                ),
+                "finish_reason": "stop",
+            }
+        # Any follow-up synthesis turn (non-fast-record path) returns clean text.
+        return {"content": "已记录：口腔溃疡 ×2。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        executed.append((tool_name, json.loads(args_raw)))
+        return json.dumps(
+            {"message": "已记录：口腔溃疡 ×2", "record_type": "symptom"},
+            ensure_ascii=False,
+        )
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="右嘴角有口腔溃疡然后上颚外嘴唇连接处有口腔溃疡",
+            user_auth_token="test-token",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    # 1) the tool actually executed → data persisted (not a hallucinated 已记录)
+    assert executed and executed[0][0] == "health_record"
+    assert executed[0][1]["record_type"] == "symptom"
+    # 2) the raw tool-call JSON never leaks into the visible reply
+    assert '"name":"health_record"' not in rendered
+    assert '"parameters"' not in rendered
+    assert "record_type" not in rendered
+    # 3) the user still sees a confirmation
+    assert "已记录" in rendered
 
 
 @pytest.mark.asyncio
