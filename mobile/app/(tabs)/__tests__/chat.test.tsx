@@ -261,7 +261,7 @@ describe('ChatScreen', () => {
       })
       .mockResolvedValueOnce({
         opener: null,
-        suggestions: ['复盘昨晚夜间血氧和睡眠恢复'],
+        suggestions: [{ text: '复盘昨晚夜间血氧和睡眠恢复', key: 'recovery_history', priority: 60 }],
       });
 
     mockFetchMemoryOpener
@@ -291,7 +291,10 @@ describe('ChatScreen', () => {
   it('uses dynamic starter suggestions when backend provides them', async () => {
     mockFetchConversationStarters.mockResolvedValueOnce({
       opener: null,
-      suggestions: ['解读我最近一次体检（关注: LDL-C）', '帮我提升补剂依从率（近7天完成率 42.9%）'],
+      suggestions: [
+        { text: '解读我最近一次体检（关注: LDL-C）', key: 'exam', priority: 60 },
+        { text: '帮我提升补剂依从率（近7天完成率 42.9%）', key: 'supplement', priority: 70 },
+      ],
     });
 
     const { getByText } = render(<ChatScreen />);
@@ -335,11 +338,11 @@ describe('ChatScreen', () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
-        suggestions: ['今天饮水 300/2000ml，帮我安排剩余补水'],
+        suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
       })
       .mockResolvedValueOnce({
         opener: null,
-        suggestions: ['复盘我最近一次跑步（5.2km / 30min / 均心率 145）'],
+        suggestions: [{ text: '复盘我最近一次跑步（5.2km / 30min / 均心率 145）', key: 'workout', priority: 50 }],
       });
 
     const { getByLabelText, getByText } = render(<ChatScreen />);

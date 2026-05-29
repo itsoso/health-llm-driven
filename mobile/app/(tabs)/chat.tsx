@@ -21,7 +21,9 @@ import {
   buildConversationOpenerReplyMessage,
   fetchConversationStarters,
   type ConversationOpener,
+  type SuggestionMeta,
 } from '../../services/conversationOpener';
+import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
@@ -30,13 +32,18 @@ import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { sharePlainText } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 
-type SuggestionCard = { icon: keyof typeof Ionicons.glyphMap; text: string };
+type SuggestionCard = {
+  icon: keyof typeof Ionicons.glyphMap;
+  text: string;
+  key: string;       // generator identity for CTR analytics ("default" for static fallback)
+  priority: number;
+};
 
 const SUGGESTIONS: SuggestionCard[] = [
-  { icon: 'pulse-outline', text: '今天的健康状况如何？' },
-  { icon: 'moon-outline', text: '分析我的睡眠质量' },
-  { icon: 'fitness-outline', text: '给我运动建议' },
-  { icon: 'trending-up-outline', text: 'HRV趋势分析' },
+  { icon: 'pulse-outline', text: '今天的健康状况如何？', key: 'default', priority: 0 },
+  { icon: 'moon-outline', text: '分析我的睡眠质量', key: 'default', priority: 0 },
+  { icon: 'fitness-outline', text: '给我运动建议', key: 'default', priority: 0 },
+  { icon: 'trending-up-outline', text: 'HRV趋势分析', key: 'default', priority: 0 },
 ];
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
@@ -48,12 +55,18 @@ function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   return 'sparkles-outline';
 }
 
-function decorateSuggestions(texts: string[] | null | undefined): SuggestionCard[] | null {
-  if (!texts || !Array.isArray(texts) || texts.length === 0) return null;
-  return texts
-    .map((text) => ({ text: String(text), icon: guessSuggestionIcon(String(text)) }))
-    .filter((s) => s.text.trim().length > 0)
+function decorateSuggestions(items: SuggestionMeta[] | null | undefined): SuggestionCard[] | null {
+  if (!items || !Array.isArray(items) || items.length === 0) return null;
+  const decorated = items
+    .filter((s) => s && typeof s.text === 'string' && s.text.trim().length > 0)
+    .map((s) => ({
+      text: s.text,
+      icon: guessSuggestionIcon(s.text),
+      key: s.key || 'unknown',
+      priority: s.priority ?? 0,
+    }))
     .slice(0, 4);
+  return decorated.length > 0 ? decorated : null;
 }
 
 function formatMemoryOpenerText(items: MemoryOpenerItem[]): string {
@@ -114,13 +127,31 @@ export default function ChatScreen() {
   // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
+  const [startersReady, setStartersReady] = useState(false);
   const refreshConversationStarters = useCallback(async (shouldSkip?: () => boolean) => {
     const { opener: newOpener, suggestions } = await fetchConversationStarters();
     if (shouldSkip?.()) return;
     setOpener(newOpener);
     const decorated = decorateSuggestions(suggestions);
     setStarterSuggestions(decorated || SUGGESTIONS);
+    setStartersReady(true);
   }, []);
+
+  // 曝光埋点 (CTR 分母): 空状态 chips 真正展示给用户时发一次, 按 key 集合去重.
+  // 只在 fetch 落定后发, 避免统计到拉取前默认 chips 的一闪. messages 非空时重置,
+  // 这样新建对话回到空状态会重新计一次曝光.
+  const shownStarterSigRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!startersReady || messages.length > 0) {
+      if (messages.length > 0) shownStarterSigRef.current = null;
+      return;
+    }
+    const keys = starterSuggestions.map(s => s.key);
+    const sig = keys.join(',');
+    if (!sig || sig === shownStarterSigRef.current) return;
+    shownStarterSigRef.current = sig;
+    void emitClientEvent('starter_chips_shown', { keys, source: 'chat' });
+  }, [startersReady, messages.length, starterSuggestions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -486,11 +517,20 @@ export default function ChatScreen() {
                   </Text>
                 </View>
                 <View style={styles.sugGrid}>
-                  {starterSuggestions.map(s => (
+                  {starterSuggestions.map((s, position) => (
                     <TouchableOpacity
                       key={s.text}
                       style={styles.sugChip}
-                      onPress={() => handleSend(s.text, null)}
+                      onPress={() => {
+                        // 点击埋点 (CTR 分子) — 旁路, 不阻塞发送
+                        void emitClientEvent('starter_chip_clicked', {
+                          key: s.key,
+                          priority: s.priority,
+                          position,
+                          source: 'chat',
+                        });
+                        handleSend(s.text, null);
+                      }}
                       activeOpacity={0.72}
                       accessibilityRole="button"
                       accessibilityLabel={`向健康 Agent 提问: ${s.text}`}

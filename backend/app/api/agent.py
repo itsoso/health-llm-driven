@@ -493,7 +493,7 @@ def conversation_starters(
     """
     from dataclasses import asdict
     from app.services.conversation_opener import compute_conversation_opener
-    from app.services.conversation_starters import compute_conversation_suggestions
+    from app.services.conversation_starters import compute_conversation_suggestion_cards
 
     opener = None
     try:
@@ -501,11 +501,16 @@ def conversation_starters(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[conversation_starters] opener bypass: {e}")
 
-    suggestions = compute_conversation_suggestions(db, current_user.id, limit=4)
+    # Structured cards carry the generator `key` so the client can attribute
+    # impressions/clicks per generator (CTR). Clients tolerate the legacy
+    # plain-string shape too (see conversationOpener.ts / ai-assistant page).
+    cards = compute_conversation_suggestion_cards(db, current_user.id, limit=4)
 
     return {
         "opener": asdict(opener) if opener else None,
-        "suggestions": suggestions,
+        "suggestions": [
+            {"text": c.text, "key": c.key, "priority": c.priority} for c in cards
+        ],
     }
 
 

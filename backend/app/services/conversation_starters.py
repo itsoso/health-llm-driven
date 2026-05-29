@@ -17,7 +17,7 @@ Design constraints:
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -52,6 +52,10 @@ _DEFAULT_PRIORITY = 10
 class SuggestionCandidate:
     priority: int
     text: str
+    # Stable generator identity for analytics (CTR by generator). Derived from
+    # the generator function name in `_build_candidates`; generators don't set it.
+    # "default" for fallback suggestions.
+    key: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,21 +111,24 @@ class StarterSignals:
     is_weekend: bool = False
 
 
-def compute_conversation_suggestions(
+def compute_conversation_suggestion_cards(
     db: Session,
     user_id: int,
     *,
     limit: int = 4,
     rng: Optional[random.Random] = None,
-) -> list[str]:
-    """Return up to `limit` prompt-chip strings for a new conversation.
+) -> list[SuggestionCandidate]:
+    """Return up to `limit` suggestion cards (text + generator `key` + priority).
+
+    Same selection as `compute_conversation_suggestions`, but keeps the generator
+    identity so callers can attribute clicks/impressions per generator.
 
     Selection:
-      1) Collect candidates (priority, text) from all generators.
+      1) Collect candidates (priority, text, key) from all generators.
       2) Critical (priority >= 100) are always taken (up to limit).
       3) Remaining slots: weighted random sample from non-critical pool.
       4) Result is sorted by priority desc for stable display ordering.
-      5) DEFAULT_SUGGESTIONS fill any leftover slot (priority 10).
+      5) DEFAULT_SUGGESTIONS fill any leftover slot (priority 10, key="default").
     """
     if limit <= 0:
         return []
@@ -129,10 +136,31 @@ def compute_conversation_suggestions(
     try:
         signals = _collect_signals(db, user_id)
         candidates = _build_candidates(signals)
-        return _select(candidates, limit=limit, rng=rng)
+        return _select_cards(candidates, limit=limit, rng=rng)
     except Exception:  # noqa: BLE001
         # Fail-soft: empty-state prompts must never break chat launch.
-        return DEFAULT_SUGGESTIONS[:limit]
+        return _default_cards(limit)
+
+
+def compute_conversation_suggestions(
+    db: Session,
+    user_id: int,
+    *,
+    limit: int = 4,
+    rng: Optional[random.Random] = None,
+) -> list[str]:
+    """Return up to `limit` prompt-chip strings for a new conversation (text only)."""
+    return [
+        c.text
+        for c in compute_conversation_suggestion_cards(db, user_id, limit=limit, rng=rng)
+    ]
+
+
+def _default_cards(limit: int) -> list[SuggestionCandidate]:
+    return [
+        SuggestionCandidate(_DEFAULT_PRIORITY, text, "default")
+        for text in DEFAULT_SUGGESTIONS[:limit]
+    ]
 
 
 # ───────────────────────────── Signal collection ────────────────────────
@@ -739,7 +767,9 @@ def _build_candidates(signals: StarterSignals) -> list[SuggestionCandidate]:
         cand = gen(signals)
         if cand is None or cand.text in seen:
             continue
-        out.append(cand)
+        # Stamp generator identity (e.g. "readiness", "aqi") for click analytics.
+        key = gen.__name__.removeprefix("_suggest_")
+        out.append(replace(cand, key=key))
         seen.add(cand.text)
     return out
 
@@ -753,6 +783,16 @@ def _select(
     limit: int,
     rng: Optional[random.Random],
 ) -> list[str]:
+    """Text-only selection (legacy shape, kept for tests/back-compat)."""
+    return [c.text for c in _select_cards(candidates, limit=limit, rng=rng)]
+
+
+def _select_cards(
+    candidates: list[SuggestionCandidate],
+    *,
+    limit: int,
+    rng: Optional[random.Random],
+) -> list[SuggestionCandidate]:
     rng = rng or random.Random()
 
     critical = [c for c in candidates if c.priority >= _CRITICAL_PRIORITY]
@@ -776,12 +816,12 @@ def _select(
                 break
             if text in existing_texts:
                 continue
-            chosen.append(SuggestionCandidate(_DEFAULT_PRIORITY, text))
+            chosen.append(SuggestionCandidate(_DEFAULT_PRIORITY, text, "default"))
             existing_texts.add(text)
 
     # Display order: highest priority first.
     chosen.sort(key=lambda c: -c.priority)
-    return [c.text for c in chosen[:limit]]
+    return chosen[:limit]
 
 
 def _weighted_sample(

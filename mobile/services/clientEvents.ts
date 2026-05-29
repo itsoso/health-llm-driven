@@ -12,7 +12,10 @@ export type ClientEventName =
   | 'chat_message_sent'           // 用户发送对话 (chat / voice 入口)
   | 'quick_record_logged'         // 快速记录 (BP / 体重 / 用药 / 喝水) 提交
   // Phase 4 (2026-05-29) — cold start 观测
-  | 'home_cold_start_perf';       // 首页 critical query 全部就绪的耗时分布
+  | 'home_cold_start_perf'        // 首页 critical query 全部就绪的耗时分布
+  // Phase 5 (2026-05-29) — starter chip CTR (调权从拍脑袋变成有据)
+  | 'starter_chips_shown'         // 新对话空状态 chips 曝光 (CTR 分母)
+  | 'starter_chip_clicked';       // 新对话 chip 点击 (CTR 分子)
 
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.
@@ -24,6 +27,8 @@ export type ClientEventName =
  * - push_notification_opened: { kind?: string, deep_link?: string }
  * - chat_message_sent: { source: 'chat' | 'voice' | 'siri', has_image: boolean }
  * - quick_record_logged: { kind: 'bp' | 'weight' | 'water' | 'medication' | 'supplement' | 'mood' | ... }
+ * - starter_chips_shown: { keys: string[], source: 'chat' }
+ * - starter_chip_clicked: { key: string, priority: number, position: number, source: 'chat' }
  */
 export async function emitClientEvent(
   name: ClientEventName,

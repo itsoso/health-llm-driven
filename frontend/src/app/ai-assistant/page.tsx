@@ -130,7 +130,18 @@ export default function AIAssistantPage() {
       const res = await api.get('/agent/conversation-starters');
       const items = res.data?.suggestions;
       if (Array.isArray(items) && items.length > 0) {
-        setStarterSuggestions(items.slice(0, 4));
+        // Tolerate both the new {text,key,priority} object shape and the
+        // legacy plain-string shape; web only renders the text.
+        const texts = items
+          .map((s: unknown) =>
+            typeof s === 'string'
+              ? s
+              : s && typeof s === 'object' && typeof (s as { text?: unknown }).text === 'string'
+                ? (s as { text: string }).text
+                : null,
+          )
+          .filter((t: unknown): t is string => typeof t === 'string' && t.trim().length > 0);
+        setStarterSuggestions(texts.length > 0 ? texts.slice(0, 4) : DEFAULT_SUGGESTIONS);
       } else {
         setStarterSuggestions(DEFAULT_SUGGESTIONS);
       }

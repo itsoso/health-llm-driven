@@ -55,7 +55,11 @@ def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and
     assert r.status_code == 200
     payload = r.json()
     assert payload["opener"] is None
-    assert payload["suggestions"] == DEFAULT_SUGGESTIONS
+    # suggestions are structured cards: { text, key, priority }
+    assert [s["text"] for s in payload["suggestions"]] == DEFAULT_SUGGESTIONS
+    # fallback cards carry the "default" key for analytics attribution
+    assert all(s["key"] == "default" for s in payload["suggestions"])
+    assert all("priority" in s for s in payload["suggestions"])
 
 
 def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_user_and_headers):
@@ -91,8 +95,11 @@ def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_us
     assert r.status_code == 200
     payload = r.json()
     assert isinstance(payload["suggestions"], list)
-    assert any("体检" in text for text in payload["suggestions"])
-    assert any("LDL" in text for text in payload["suggestions"])
+    texts = [s["text"] for s in payload["suggestions"]]
+    assert any("体检" in t for t in texts)
+    assert any("LDL" in t for t in texts)
+    # the exam card is attributed to the _suggest_exam generator
+    assert any(s["key"] == "exam" for s in payload["suggestions"])
 
 
 def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and_headers):
@@ -128,9 +135,10 @@ def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and
     assert r.status_code == 200
     suggestions = r.json()["suggestions"]
     assert len(suggestions) == 4
-    assert any("把体重降到 75kg" in text for text in suggestions)
-    assert any("饮水 300/2000ml" in text for text in suggestions)
-    assert any("还没记录饮食" in text for text in suggestions)
+    texts = [s["text"] for s in suggestions]
+    assert any("把体重降到 75kg" in t for t in texts)
+    assert any("饮水 300/2000ml" in t for t in texts)
+    assert any("还没记录饮食" in t for t in texts)
 
 
 def test_endpoint_includes_latest_workout_detail_and_gene_risk(client, db, auth_user_and_headers):
@@ -176,8 +184,9 @@ def test_endpoint_includes_latest_workout_detail_and_gene_risk(client, db, auth_
 
     assert r.status_code == 200
     suggestions = r.json()["suggestions"]
-    assert any("最近一次跑步" in text and "5.2km" in text for text in suggestions)
-    assert any("MTHFR TT" in text for text in suggestions)
+    texts = [s["text"] for s in suggestions]
+    assert any("最近一次跑步" in t and "5.2km" in t for t in texts)
+    assert any("MTHFR TT" in t for t in texts)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -425,6 +434,62 @@ def test_noon_prompt_adapts_to_diet_records():
     sig_without = _make_signals(local_hour=12, diet_records_today=0, active_goal_title="减重")
     cand2 = _suggest_noon(sig_without)
     assert cand2 is not None and "午餐吃点什么" in cand2.text
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Analytics attribution — each card carries a stable generator `key` so the
+# client can compute CTR per generator. (Phase 5, 2026-05-29)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_cards_carry_generator_key_derived_from_function_name():
+    from app.services.conversation_starters import (
+        _build_candidates,
+        compute_conversation_suggestion_cards,  # noqa: F401  (import smoke)
+    )
+
+    # readiness + aqi → keys "readiness" and "aqi" (function name minus _suggest_)
+    signals = _make_signals(readiness_score=32, aqi=180, city="杭州")
+    cards = _build_candidates(signals)
+    keys = {c.key for c in cards}
+    assert "readiness" in keys
+    assert "aqi" in keys
+    # every candidate has a non-empty key
+    assert all(c.key for c in cards)
+
+
+def test_default_cards_use_default_key():
+    from app.services.conversation_starters import _default_cards
+
+    cards = _default_cards(4)
+    assert len(cards) == 4
+    assert all(c.key == "default" for c in cards)
+
+
+def test_endpoint_returns_structured_cards_with_key_and_priority(client, db, auth_user_and_headers):
+    from app.models.daily_health import WaterIntake
+
+    user, headers = auth_user_and_headers
+    db.add(WaterIntake(
+        user_id=user.id,
+        record_date=date.today(),
+        intake_time=datetime.now(timezone.utc),
+        amount_ml=300,
+        drink_type="water",
+    ))
+    db.commit()
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+    assert r.status_code == 200
+    suggestions = r.json()["suggestions"]
+    assert suggestions and isinstance(suggestions[0], dict)
+    for s in suggestions:
+        assert set(s.keys()) == {"text", "key", "priority"}
+        assert isinstance(s["text"], str) and s["text"]
+        assert isinstance(s["key"], str) and s["key"]
+        assert isinstance(s["priority"], int)
+    # the water card is attributed to _suggest_water
+    assert any(s["key"] == "water" for s in suggestions)
 
 
 def test_collect_signals_populates_local_time_fields(db, auth_user_and_headers):
