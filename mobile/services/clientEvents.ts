@@ -10,7 +10,9 @@ export type ClientEventName =
   | 'action_card_executed'        // ActionCard 执行/完成按钮
   | 'push_notification_opened'    // 从推送进 app (deep_link 路由后 emit)
   | 'chat_message_sent'           // 用户发送对话 (chat / voice 入口)
-  | 'quick_record_logged';        // 快速记录 (BP / 体重 / 用药 / 喝水) 提交
+  | 'quick_record_logged'         // 快速记录 (BP / 体重 / 用药 / 喝水) 提交
+  // Phase 4 (2026-05-29) — cold start 观测
+  | 'home_cold_start_perf';       // 首页 critical query 全部就绪的耗时分布
 
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.

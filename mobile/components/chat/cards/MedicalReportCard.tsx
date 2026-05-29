@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { colors } from '../../../constants/theme';
+import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface AbnormalItem {
@@ -25,39 +25,46 @@ const TREND_ICON: Record<string, string> = {
   stable: 'remove',
 };
 
-const TREND_COLOR: Record<string, string> = {
-  up: colors.red,
-  down: colors.green,
-  stable: colors.labelTertiary,
-};
+function trendColor(t: string | undefined, c: ColorPalette): string {
+  if (t === 'up') return c.red;
+  if (t === 'down') return c.green;
+  return c.labelTertiary;
+}
 
 export function MedicalReportCardView({ report_date, abnormal_count, abnormals }: MedicalReportData) {
   const router = useRouter();
+  const { c } = useTheme();
   return (
     <CardShell
       icon="document-text"
-      iconColor="#AF52DE"
+      iconColor={c.purple}
       title="体检报告"
       badge={abnormal_count > 0 ? `${abnormal_count} 项异常` : undefined}
-      badgeColor={abnormal_count > 0 ? colors.red : undefined}
-      bg="#FAF5FF"
+      badgeColor={abnormal_count > 0 ? c.red : undefined}
+      bg={c.tintPurple}
       onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'weight' } })}
     >
-      {report_date && <Text style={txt.date}>最近报告: {report_date}</Text>}
+      {report_date && (
+        <Text maxFontSizeMultiplier={1.3} style={[styles.date, { color: c.labelTertiary }]}>
+          最近报告: {report_date}
+        </Text>
+      )}
       {abnormals.length > 0 ? (
         <View style={styles.list}>
           {abnormals.slice(0, 5).map((item) => (
             <View key={item.name} style={styles.itemRow}>
-              <Text style={txt.itemName} numberOfLines={1}>{item.name}</Text>
+              <Text maxFontSizeMultiplier={1.3} style={[styles.itemName, { color: c.labelPrimary }]} numberOfLines={1}>
+                {item.name}
+              </Text>
               <View style={styles.valueRow}>
-                <Text style={[txt.itemValue, { color: colors.red }]}>
+                <Text maxFontSizeMultiplier={1.3} style={[styles.itemValue, { color: c.red }]}>
                   {item.value} {item.unit}
                 </Text>
                 {item.trend && (
                   <Ionicons
                     name={(TREND_ICON[item.trend] ?? 'remove') as any}
                     size={12}
-                    color={TREND_COLOR[item.trend] ?? colors.labelTertiary}
+                    color={trendColor(item.trend, c)}
                   />
                 )}
               </View>
@@ -65,7 +72,9 @@ export function MedicalReportCardView({ report_date, abnormal_count, abnormals }
           ))}
         </View>
       ) : (
-        <Text style={txt.allNormal}>所有指标正常</Text>
+        <Text maxFontSizeMultiplier={1.3} style={[styles.allNormal, { color: c.green }]}>
+          所有指标正常
+        </Text>
       )}
     </CardShell>
   );
@@ -115,11 +124,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-});
-
-const txt = {
-  date: { fontSize: 10, color: colors.labelTertiary, marginBottom: 4 } as TextStyle,
-  itemName: { fontSize: 12, color: colors.labelPrimary, flex: 1 } as TextStyle,
+  date: { fontSize: 10, marginBottom: 4 } as TextStyle,
+  itemName: { fontSize: 12, flex: 1 } as TextStyle,
   itemValue: { fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  allNormal: { fontSize: 13, color: colors.green, fontWeight: '600', marginTop: 4 } as TextStyle,
-};
+  allNormal: { fontSize: 13, fontWeight: '600', marginTop: 4 } as TextStyle,
+});

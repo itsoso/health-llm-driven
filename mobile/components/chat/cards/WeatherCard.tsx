@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { colors } from '../../../constants/theme';
+import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface WeatherData {
@@ -14,8 +14,9 @@ interface WeatherData {
   advice?: string;
 }
 
-function aqiLabel(aqi?: number): { label: string; color: string } {
-  if (aqi == null) return { label: '—', color: '#8E8E93' };
+// AQI 颜色按国标固定 (优良/轻中重度), 不随主题切换 — 红色就是红色, 不能因暗色变绿.
+function aqiLabel(aqi?: number, fallback?: string): { label: string; color: string } {
+  if (aqi == null) return { label: '—', color: fallback ?? '#8E8E93' };
   if (aqi <= 50) return { label: '优', color: '#30D158' };
   if (aqi <= 100) return { label: '良', color: '#FFCC00' };
   if (aqi <= 150) return { label: '轻度', color: '#FF9F0A' };
@@ -33,27 +34,40 @@ function exerciseAdvice(aqi?: number, temp?: number): string {
 }
 
 export function WeatherCardView({ temperature, weather, city, aqi, pm25, advice }: WeatherData) {
-  const q = aqiLabel(aqi);
+  const { c } = useTheme();
+  const q = aqiLabel(aqi, c.labelTertiary);
   return (
-    <CardShell icon="partly-sunny" iconColor="#5AC8FA" title={city ? `${city}环境` : '环境'} bg="#F0F9FF">
+    <CardShell icon="partly-sunny" iconColor={c.teal} title={city ? `${city}环境` : '环境'} bg={c.tintTeal}>
       <View style={styles.row}>
         <View style={styles.tempBlock}>
-          <Text style={txt.temp}>{temperature != null ? `${Math.round(temperature)}°` : '--'}</Text>
-          {weather && <Text style={txt.weatherLabel}>{weather}</Text>}
+          <Text maxFontSizeMultiplier={1.3} style={[styles.temp, { color: c.labelPrimary }]}>
+            {temperature != null ? `${Math.round(temperature)}°` : '--'}
+          </Text>
+          {weather && (
+            <Text maxFontSizeMultiplier={1.3} style={[styles.weatherLabel, { color: c.labelSecondary }]}>
+              {weather}
+            </Text>
+          )}
         </View>
         <View style={styles.aqiBlock}>
           <View style={styles.aqiRow}>
             <View style={[styles.aqiDot, { backgroundColor: q.color }]} />
-            <Text style={[txt.aqiVal, { color: q.color }]}>{aqi ?? '--'}</Text>
-            <Text style={[txt.aqiLabel, { color: q.color }]}>{q.label}</Text>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.aqiVal, { color: q.color }]}>{aqi ?? '--'}</Text>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.aqiLabel, { color: q.color }]}>{q.label}</Text>
           </View>
-          {pm25 != null && <Text style={txt.pm}>PM2.5 {pm25}</Text>}
+          {pm25 != null && (
+            <Text maxFontSizeMultiplier={1.3} style={[styles.pm, { color: c.labelTertiary }]}>
+              PM2.5 {pm25}
+            </Text>
+          )}
         </View>
       </View>
       {(advice || aqi != null || temperature != null) && (
         <View style={styles.adviceRow}>
-          <Ionicons name="fitness" size={12} color="#30D158" />
-          <Text style={txt.advice}>{advice || exerciseAdvice(aqi, temperature)}</Text>
+          <Ionicons name="fitness" size={12} color={c.green} />
+          <Text maxFontSizeMultiplier={1.3} style={[styles.advice, { color: c.labelSecondary }]}>
+            {advice || exerciseAdvice(aqi, temperature)}
+          </Text>
         </View>
       )}
     </CardShell>
@@ -89,13 +103,10 @@ const styles = StyleSheet.create({
   aqiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   aqiDot: { width: 8, height: 8, borderRadius: 4 },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
-});
-
-const txt = {
-  temp: { fontSize: 26, fontWeight: '800', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  weatherLabel: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
+  temp: { fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  weatherLabel: { fontSize: 12 } as TextStyle,
   aqiVal: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
   aqiLabel: { fontSize: 11, fontWeight: '600' } as TextStyle,
-  pm: { fontSize: 10, color: colors.labelTertiary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  advice: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
-};
+  pm: { fontSize: 10, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  advice: { fontSize: 11 } as TextStyle,
+});

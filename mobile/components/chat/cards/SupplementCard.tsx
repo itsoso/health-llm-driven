@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
-import { colors } from '../../../constants/theme';
+import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface SupplementData {
@@ -15,31 +15,48 @@ interface SupplementData {
 }
 
 export function SupplementCardView({ checked, total, pending_names, evidence_refs }: SupplementData) {
+  const { c } = useTheme();
   const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
+  // 进度颜色 = 完成度语义 (绿/橙/红), 不随主题切换
   const barColor = pct >= 80 ? '#30D158' : pct >= 50 ? '#FF9F0A' : '#FF453A';
   return (
-    <CardShell icon="medical" iconColor="#AF52DE" title="补剂打卡" badge={`${checked}/${total}`} badgeColor={barColor} bg="#FAF5FF">
-      <View style={styles.progressTrack}>
+    <CardShell
+      icon="medical"
+      iconColor={c.purple}
+      title="补剂打卡"
+      badge={`${checked}/${total}`}
+      badgeColor={barColor}
+      bg={c.tintPurple}
+    >
+      <View style={[styles.progressTrack, { backgroundColor: c.fill }]}>
         <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: barColor }]} />
       </View>
       {pending_names.length > 0 && (
         <View style={styles.pendingWrap}>
-          <Text style={txt.pendingLabel}>未打卡：</Text>
+          <Text maxFontSizeMultiplier={1.3} style={[styles.pendingLabel, { color: c.labelSecondary }]}>
+            未打卡：
+          </Text>
           <View style={styles.chips}>
             {pending_names.slice(0, 4).map((n) => (
-              <View key={n} style={styles.chip}>
-                <Ionicons name="time-outline" size={9} color="#8E8E93" />
-                <Text style={txt.chipText} numberOfLines={1}>{n}</Text>
+              <View key={n} style={[styles.chip, { backgroundColor: c.bgPrimary }]}>
+                <Ionicons name="time-outline" size={9} color={c.labelTertiary} />
+                <Text maxFontSizeMultiplier={1.3} style={[styles.chipText, { color: c.labelPrimary }]} numberOfLines={1}>
+                  {n}
+                </Text>
               </View>
             ))}
             {pending_names.length > 4 && (
-              <Text style={txt.more}>+{pending_names.length - 4}</Text>
+              <Text maxFontSizeMultiplier={1.3} style={[styles.more, { color: c.labelTertiary }]}>
+                +{pending_names.length - 4}
+              </Text>
             )}
           </View>
         </View>
       )}
       {pending_names.length === 0 && total > 0 && (
-        <Text style={txt.allDone}>✅ 今日补剂已全部打卡</Text>
+        <Text maxFontSizeMultiplier={1.3} style={[styles.allDone, { color: c.green }]}>
+          ✅ 今日补剂已全部打卡
+        </Text>
       )}
       <EvidenceRefsRow refs={evidence_refs} />
     </CardShell>
@@ -79,22 +96,17 @@ export const SupplementCardSpec: CardSpec<SupplementData> = {
 };
 
 const styles = StyleSheet.create({
-  progressTrack: {
-    height: 6, backgroundColor: '#E5E5EA', borderRadius: 3, overflow: 'hidden',
-  },
+  progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
   pendingWrap: { marginTop: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     paddingHorizontal: 6, paddingVertical: 2,
-    borderRadius: 8, backgroundColor: '#F2F2F7',
+    borderRadius: 8,
   },
+  pendingLabel: { fontSize: 10 } as TextStyle,
+  chipText: { fontSize: 10, maxWidth: 80 } as TextStyle,
+  more: { fontSize: 10, alignSelf: 'center' } as TextStyle,
+  allDone: { fontSize: 11, marginTop: 6, fontWeight: '600' } as TextStyle,
 });
-
-const txt = {
-  pendingLabel: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  chipText: { fontSize: 10, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
-  more: { fontSize: 10, color: colors.labelTertiary, alignSelf: 'center' } as TextStyle,
-  allDone: { fontSize: 11, color: '#30D158', marginTop: 6, fontWeight: '600' } as TextStyle,
-};

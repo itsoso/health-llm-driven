@@ -43,6 +43,7 @@ import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import HomeCommandCard from '../../components/home/HomeCommandCard';
 import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopicsRow';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
+import { useHomeColdStartTrace } from '../../services/perfTrace';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -135,6 +136,16 @@ export default function TodayScreen() {
   });
 
   const dashboardQuery = useDashboardData();
+
+  // perf (2026-05-29): 进程启动后第一次首页 mount 时, 测 4 个 critical query
+  // 全部就绪的耗时, emit 一次 home_cold_start_perf 客户端事件.
+  useHomeColdStartTrace({
+    twin: twinQuery,
+    safety: safetyQuery,
+    dailyPlan: dailyPlanQuery,
+    dashboard: dashboardQuery,
+  });
+
   const garmin = useLatestGarmin(dashboardQuery.data);
   const garminDays: any[] = Array.isArray(dashboardQuery.data?.garminDaily)
     ? (dashboardQuery.data as any).garminDaily

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { colors } from '../../../constants/theme';
+import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface KnowledgeClaim {
@@ -32,6 +32,7 @@ export function SystemKnowledgeEvidenceCardView({
   claims = [],
   claim_boundary,
 }: KnowledgeEvidenceData) {
+  const { c } = useTheme();
   const firstClaim = claims[0];
   const title = entity?.title || entity?.entity_id || '系统知识库';
   const sources = firstClaim?.sources?.slice(0, 3) || [];
@@ -39,36 +40,59 @@ export function SystemKnowledgeEvidenceCardView({
   return (
     <CardShell
       icon="library"
-      iconColor="#0A84FF"
+      iconColor={c.blue}
       title={title}
       badge={evidenceLabel(firstClaim?.evidence_level)}
-      badgeColor="#0A84FF"
-      bg="#F4F8FF"
+      badgeColor={c.blue}
+      bg={c.tintBlue}
     >
       {firstClaim?.title ? (
-        <Text style={txt.claimTitle} numberOfLines={2}>{firstClaim.title}</Text>
+        <Text
+          maxFontSizeMultiplier={1.3}
+          style={[styles.claimTitle, { color: c.labelPrimary }]}
+          numberOfLines={2}
+        >
+          {firstClaim.title}
+        </Text>
       ) : null}
 
       {typeof firstClaim?.confidence === 'number' ? (
         <View style={styles.confidenceRow}>
-          <Ionicons name="shield-checkmark-outline" size={12} color="#0A84FF" />
-          <Text style={txt.meta}>置信度 {Math.round(firstClaim.confidence * 100)}%</Text>
+          <Ionicons name="shield-checkmark-outline" size={12} color={c.blue} />
+          <Text maxFontSizeMultiplier={1.3} style={[styles.meta, { color: c.blue }]}>
+            置信度 {Math.round(firstClaim.confidence * 100)}%
+          </Text>
         </View>
       ) : null}
 
       {sources.length > 0 ? (
         <View style={styles.sources}>
           {sources.map((source) => (
-            <View key={source} style={styles.sourceChip}>
-              <Ionicons name="document-text-outline" size={10} color="#506174" />
-              <Text style={txt.source} numberOfLines={1}>{source}</Text>
+            <View
+              key={source}
+              style={[styles.sourceChip, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}
+            >
+              <Ionicons name="document-text-outline" size={10} color={c.labelSecondary} />
+              <Text
+                maxFontSizeMultiplier={1.3}
+                style={[styles.source, { color: c.labelSecondary }]}
+                numberOfLines={1}
+              >
+                {source}
+              </Text>
             </View>
           ))}
         </View>
       ) : null}
 
       {claim_boundary ? (
-        <Text style={txt.boundary} numberOfLines={3}>{claim_boundary}</Text>
+        <Text
+          maxFontSizeMultiplier={1.3}
+          style={[styles.boundary, { color: c.labelSecondary }]}
+          numberOfLines={3}
+        >
+          {claim_boundary}
+        </Text>
       ) : null}
     </CardShell>
   );
@@ -107,31 +131,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 7,
-    backgroundColor: '#EAF1FB',
+    borderWidth: StyleSheet.hairlineWidth,
   },
-});
-
-const txt = {
   claimTitle: {
-    color: colors.labelPrimary,
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
   } as TextStyle,
   meta: {
-    color: '#0A84FF',
     fontSize: 11,
     fontWeight: '600',
   } as TextStyle,
   source: {
-    color: '#506174',
     fontSize: 10,
     maxWidth: 160,
   } as TextStyle,
   boundary: {
     marginTop: 8,
-    color: colors.labelSecondary,
     fontSize: 10,
     lineHeight: 15,
   } as TextStyle,
-};
+});

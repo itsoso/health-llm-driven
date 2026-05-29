@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { colors } from '../../../constants/theme';
+import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface VitalsData {
@@ -14,26 +14,29 @@ interface VitalsData {
   stress?: string;
 }
 
-function Metric({ icon, color, label, value }: { icon: string; color: string; label: string; value: string }) {
+function Metric({
+  icon, color, label, value, c,
+}: { icon: string; color: string; label: string; value: string; c: ColorPalette }) {
   return (
     <View style={styles.item}>
       <Ionicons name={icon as any} size={12} color={color} />
-      <Text style={[txt.val, { color }]}>{value}</Text>
-      <Text style={txt.label}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={[styles.val, { color }]}>{value}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={[styles.label, { color: c.labelTertiary }]}>{label}</Text>
     </View>
   );
 }
 
 export function VitalsCardView({ sleep, hr, hrv, battery, steps, stress }: VitalsData) {
+  const { c } = useTheme();
   return (
-    <CardShell icon="pulse" iconColor="#0A8F8F" title="今日生理数据">
+    <CardShell icon="pulse" iconColor={c.brand} title="今日生理数据">
       <View style={styles.grid}>
-        {sleep && <Metric icon="moon" color="#BF5AF2" label="睡眠" value={sleep} />}
-        {hr && <Metric icon="heart" color="#FF375F" label="心率" value={hr} />}
-        {hrv && <Metric icon="pulse" color="#5AC8FA" label="HRV" value={hrv} />}
-        {battery && <Metric icon="battery-charging" color="#30D158" label="电量" value={battery} />}
-        {steps && <Metric icon="footsteps" color="#FF6723" label="步数" value={steps} />}
-        {stress && <Metric icon="cloudy" color="#FF9F0A" label="压力" value={stress} />}
+        {sleep && <Metric icon="moon" color={c.purple} label="睡眠" value={sleep} c={c} />}
+        {hr && <Metric icon="heart" color={c.pink} label="心率" value={hr} c={c} />}
+        {hrv && <Metric icon="pulse" color={c.teal} label="HRV" value={hrv} c={c} />}
+        {battery && <Metric icon="battery-charging" color={c.green} label="电量" value={battery} c={c} />}
+        {steps && <Metric icon="footsteps" color={c.orange} label="步数" value={steps} c={c} />}
+        {stress && <Metric icon="cloudy" color={c.amber} label="压力" value={stress} c={c} />}
       </View>
     </CardShell>
   );
@@ -45,7 +48,6 @@ export const VitalsCardSpec: CardSpec<VitalsData> = {
   match({ query_lower, toolsUsed }) {
     if (/记录|打卡|吃了|喝了|服药|补剂|体重/.test(query_lower)) return null;
     if (/综合|今日如何|整体|所有数据|健康如何/.test(query_lower)) return 10;
-    // 多维度一起问
     const hits = ['睡眠','心率','hrv','电量','步数','压力'].filter(k => query_lower.includes(k)).length;
     if (hits >= 2) return 8;
     return null;
@@ -68,9 +70,6 @@ export const VitalsCardSpec: CardSpec<VitalsData> = {
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   item: { alignItems: 'center', gap: 2, minWidth: 50 },
-});
-
-const txt = {
   val: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  label: { fontSize: 9, color: colors.labelTertiary } as TextStyle,
-};
+  label: { fontSize: 9 } as TextStyle,
+});

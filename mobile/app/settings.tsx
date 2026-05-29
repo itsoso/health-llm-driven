@@ -76,13 +76,21 @@ export default function SettingsScreen() {
     );
   };
 
+  // 同一组件被 /settings (stack) 和 (tabs)/me 共用. tab 模式下没"上一级"
+  // 可回, 隐藏返回按钮; stack 模式 (env card 齿轮 push) 保留.
+  const canGoBack = router.canGoBack();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
-        </TouchableOpacity>
-        <Text style={txt.title}>设置</Text>
+        {canGoBack ? (
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.backBtn} />
+        )}
+        <Text style={txt.title}>{canGoBack ? '设置' : '我'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -124,6 +132,10 @@ export default function SettingsScreen() {
 
         {/* Health tools */}
         <View style={styles.card}>
+          <SettingRow icon="warning-outline" label="安全告警"
+            onPress={() => router.push('/alerts' as any)} />
+          <SettingRow icon="reader-outline" label="健康日记"
+            onPress={() => router.push('/journal' as any)} />
           <SettingRow icon="medical-outline" label="健康咨询"
             onPress={() => router.push('/consultations' as any)} />
           <SettingRow icon="barbell-outline" label="运动记录"

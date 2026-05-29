@@ -15,7 +15,8 @@ import { View, Text, StyleSheet, TextStyle, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { colors, radii } from '../../../constants/theme';
+import { radii } from '../../../constants/theme';
+import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface MenuItem {
@@ -61,6 +62,7 @@ function buildShareText(d: MenuShareData): string {
 }
 
 export function MenuShareCardView(d: MenuShareData) {
+  const { c } = useTheme();
   const items = Array.isArray(d.items) ? d.items : [];
   const totals = d.totals || {};
 
@@ -76,38 +78,57 @@ export function MenuShareCardView(d: MenuShareData) {
   };
 
   const macros: { label: string; v?: number; color: string; unit: string }[] = [
-    { label: '蛋白', v: totals.protein, color: '#FF375F', unit: 'g' },
-    { label: '碳水', v: totals.carbs, color: '#FF9F0A', unit: 'g' },
-    { label: '脂肪', v: totals.fat, color: '#BF5AF2', unit: 'g' },
+    { label: '蛋白', v: totals.protein, color: c.pink, unit: 'g' },
+    { label: '碳水', v: totals.carbs, color: c.amber, unit: 'g' },
+    { label: '脂肪', v: totals.fat, color: c.purple, unit: 'g' },
   ].filter(m => m.v != null);
 
   return (
-    <CardShell icon="restaurant" iconColor="#FF6723" title={d.title || '菜单'} bg="#FFF7F0">
-      {d.reason ? <Text style={txt.reason}>{d.reason}</Text> : null}
+    <CardShell icon="restaurant" iconColor={c.orange} title={d.title || '菜单'} bg={c.tintOrange}>
+      {d.reason ? (
+        <Text maxFontSizeMultiplier={1.3} style={[styles.reason, { color: c.labelSecondary }]}>
+          {d.reason}
+        </Text>
+      ) : null}
 
       <View style={styles.itemList}>
         {items.map((it, i) => (
           <View key={i} style={styles.itemRow}>
-            <View style={styles.itemDot} />
-            <Text style={txt.itemName} numberOfLines={1} ellipsizeMode="tail">{it.name}</Text>
-            {it.qty ? <Text style={txt.itemQty}>{it.qty}</Text> : null}
-            {it.kcal != null ? <Text style={txt.itemKcal}>{Math.round(it.kcal)} kcal</Text> : null}
+            <View style={[styles.itemDot, { backgroundColor: c.orange }]} />
+            <Text maxFontSizeMultiplier={1.3} style={[styles.itemName, { color: c.labelPrimary }]} numberOfLines={1} ellipsizeMode="tail">
+              {it.name}
+            </Text>
+            {it.qty ? (
+              <Text maxFontSizeMultiplier={1.3} style={[styles.itemQty, { color: c.labelTertiary }]}>
+                {it.qty}
+              </Text>
+            ) : null}
+            {it.kcal != null ? (
+              <Text maxFontSizeMultiplier={1.3} style={[styles.itemKcal, { color: c.orange }]}>
+                {Math.round(it.kcal)} kcal
+              </Text>
+            ) : null}
           </View>
         ))}
       </View>
 
       {totals.kcal != null && (
-        <View style={styles.totalsRow}>
-          <Text style={txt.totalKcal}>
-            {Math.round(totals.kcal)}<Text style={txt.totalKcalUnit}> kcal</Text>
+        <View style={[styles.totalsRow, { borderTopColor: c.separator }]}>
+          <Text maxFontSizeMultiplier={1.3} style={[styles.totalKcal, { color: c.labelPrimary }]}>
+            {Math.round(totals.kcal)}
+            <Text style={[styles.totalKcalUnit, { color: c.labelTertiary }]}> kcal</Text>
           </Text>
           {macros.length > 0 && (
             <View style={styles.macros}>
               {macros.map(m => (
                 <View key={m.label} style={styles.macroChip}>
                   <View style={[styles.macroDot, { backgroundColor: m.color }]} />
-                  <Text style={txt.macroLabel}>{m.label}</Text>
-                  <Text style={[txt.macroVal, { color: m.color }]}>{m.v!.toFixed(0)}{m.unit}</Text>
+                  <Text maxFontSizeMultiplier={1.3} style={[styles.macroLabel, { color: c.labelSecondary }]}>
+                    {m.label}
+                  </Text>
+                  <Text maxFontSizeMultiplier={1.3} style={[styles.macroVal, { color: m.color }]}>
+                    {m.v!.toFixed(0)}{m.unit}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -115,9 +136,12 @@ export function MenuShareCardView(d: MenuShareData) {
         </View>
       )}
 
-      <Pressable onPress={handleShare} style={({ pressed }) => [styles.shareBtn, pressed && { opacity: 0.85 }]}>
+      <Pressable
+        onPress={handleShare}
+        style={({ pressed }) => [styles.shareBtn, { backgroundColor: c.orange }, pressed && { opacity: 0.85 }]}
+      >
         <Ionicons name="share-social-outline" size={14} color="#fff" />
-        <Text style={txt.shareText}>分享给家人</Text>
+        <Text maxFontSizeMultiplier={1.2} style={styles.shareText}>分享给家人</Text>
       </Pressable>
     </CardShell>
   );
@@ -135,11 +159,11 @@ export const MenuShareCardSpec: CardSpec<MenuShareData> = {
 const styles = StyleSheet.create({
   itemList: { marginTop: 4, gap: 4, minWidth: 0 },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FF6723' },
+  itemDot: { width: 4, height: 4, borderRadius: 2 },
   totalsRow: {
     flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
     marginTop: 8, paddingTop: 6,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.08)',
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   macros: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
   macroChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
@@ -147,18 +171,15 @@ const styles = StyleSheet.create({
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     marginTop: 10, paddingVertical: 8,
-    borderRadius: radii.md, backgroundColor: '#FF6723',
+    borderRadius: radii.md,
   },
-});
-
-const txt = {
-  reason: { fontSize: 12, color: colors.labelSecondary, lineHeight: 17, marginBottom: 4 } as TextStyle,
-  itemName: { flex: 1, minWidth: 0, fontSize: 13, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
-  itemQty: { flexShrink: 0, fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  itemKcal: { flexShrink: 0, fontSize: 11, color: '#FF6723', fontWeight: '600', fontVariant: ['tabular-nums'] as const, textAlign: 'right' } as TextStyle,
-  totalKcal: { fontSize: 18, fontWeight: '800', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  totalKcalUnit: { fontSize: 11, fontWeight: '400', color: colors.labelTertiary } as TextStyle,
-  macroLabel: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
+  reason: { fontSize: 12, lineHeight: 17, marginBottom: 4 } as TextStyle,
+  itemName: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '500' } as TextStyle,
+  itemQty: { flexShrink: 0, fontSize: 11 } as TextStyle,
+  itemKcal: { flexShrink: 0, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] as const, textAlign: 'right' } as TextStyle,
+  totalKcal: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  totalKcalUnit: { fontSize: 11, fontWeight: '400' } as TextStyle,
+  macroLabel: { fontSize: 10 } as TextStyle,
   macroVal: { fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
   shareText: { fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
-};
+});

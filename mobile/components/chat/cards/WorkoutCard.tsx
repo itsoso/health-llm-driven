@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
-import { colors } from '../../../constants/theme';
+import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface WorkoutData {
@@ -64,29 +64,32 @@ function parseDateWindow(q: string): { start: string; end: string } | null {
   return null;
 }
 
-function Stat({ icon, color, label, value }: { icon: string; color: string; label: string; value: string }) {
+function Stat({
+  icon, color, label, value, c,
+}: { icon: string; color: string; label: string; value: string; c: ColorPalette }) {
   return (
     <View style={styles.stat}>
       <Ionicons name={icon as any} size={12} color={color} />
-      <Text style={txt.statLabel}>{label}</Text>
-      <Text style={[txt.statVal, { color }]}>{value}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={[styles.statLabel, { color: c.labelSecondary }]}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={[styles.statVal, { color }]}>{value}</Text>
     </View>
   );
 }
 
 export function WorkoutCardView(d: WorkoutData) {
+  const { c } = useTheme();
   const baseTitle = d.activity_type ? `${d.activity_type}分析` : '运动分析';
   const title = d.workout_date ? `${baseTitle} · ${humanizeDate(d.workout_date)}` : baseTitle;
   return (
-    <CardShell icon="fitness" iconColor="#FF375F" title={title} bg="#FFF5F5">
+    <CardShell icon="fitness" iconColor={c.pink} title={title} bg={c.tintPink}>
       <View style={styles.grid}>
-        {d.duration_min != null && <Stat icon="time-outline" color="#0A8F8F" label="时长" value={`${d.duration_min}min`} />}
-        {d.distance_km != null && <Stat icon="navigate-outline" color="#64D2FF" label="距离" value={`${d.distance_km.toFixed(2)}km`} />}
-        {d.calories != null && <Stat icon="flame-outline" color="#FF6723" label="消耗" value={`${d.calories}kcal`} />}
-        {d.avg_hr != null && <Stat icon="heart-outline" color="#FF375F" label="均心率" value={`${d.avg_hr}bpm`} />}
-        {d.max_hr != null && <Stat icon="heart" color="#FF453A" label="最大心率" value={`${d.max_hr}bpm`} />}
-        {d.avg_pace && <Stat icon="speedometer-outline" color="#BF5AF2" label="配速" value={d.avg_pace} />}
-        {d.steps != null && <Stat icon="footsteps-outline" color="#FF9F0A" label="步数" value={d.steps.toLocaleString()} />}
+        {d.duration_min != null && <Stat icon="time-outline" color={c.brand} label="时长" value={`${d.duration_min}min`} c={c} />}
+        {d.distance_km != null && <Stat icon="navigate-outline" color={c.blue} label="距离" value={`${d.distance_km.toFixed(2)}km`} c={c} />}
+        {d.calories != null && <Stat icon="flame-outline" color={c.orange} label="消耗" value={`${d.calories}kcal`} c={c} />}
+        {d.avg_hr != null && <Stat icon="heart-outline" color={c.pink} label="均心率" value={`${d.avg_hr}bpm`} c={c} />}
+        {d.max_hr != null && <Stat icon="heart" color={c.red} label="最大心率" value={`${d.max_hr}bpm`} c={c} />}
+        {d.avg_pace && <Stat icon="speedometer-outline" color={c.purple} label="配速" value={d.avg_pace} c={c} />}
+        {d.steps != null && <Stat icon="footsteps-outline" color={c.amber} label="步数" value={d.steps.toLocaleString()} c={c} />}
       </View>
       <EvidenceRefsRow refs={d.evidence_refs} />
     </CardShell>
@@ -170,9 +173,6 @@ export const WorkoutCardSpec: CardSpec<WorkoutData> = {
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   stat: { alignItems: 'center', gap: 2, minWidth: 60 },
-});
-
-const txt = {
-  statLabel: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
+  statLabel: { fontSize: 10 } as TextStyle,
   statVal: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-};
+});

@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii } from '../../../constants/theme';
+import { radii } from '../../../constants/theme';
+import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface RecordData {
@@ -9,26 +10,32 @@ interface RecordData {
   detail: string;
 }
 
-const ICONS: Record<string, { icon: string; color: string; bg: string }> = {
-  water:           { icon: 'water',             color: '#64D2FF', bg: '#F0FAFF' },
-  supplement:      { icon: 'medical',           color: '#AF52DE', bg: '#FAF5FF' },
-  diet:            { icon: 'restaurant',        color: '#FF6723', bg: '#FFF7F0' },
-  exercise:        { icon: 'fitness',           color: '#FF375F', bg: '#FFF5F7' },
-  weight:          { icon: 'scale',             color: '#0A8F8F', bg: '#F0FFFD' },
-  blood_pressure:  { icon: 'heart',             color: '#FF453A', bg: '#FFF5F5' },
-  rhinitis:        { icon: 'water',             color: '#5AC8FA', bg: '#F0F9FF' },
-  checkin:         { icon: 'checkbox',          color: '#30D158', bg: '#F0FFF4' },
-  medication:      { icon: 'flask',             color: '#BF5AF2', bg: '#FAF5FF' },
-  default:         { icon: 'checkmark-circle',  color: '#30D158', bg: '#F0FFF4' },
-};
+// 颜色保留 (语义 accent, 亮/暗模式都用); tint 改成主题感知, 暗色自动反色.
+function _icons(c: ColorPalette): Record<string, { icon: string; color: string; bg: string }> {
+  return {
+    water:           { icon: 'water',             color: c.blue,   bg: c.tintBlue },
+    supplement:      { icon: 'medical',           color: c.purple, bg: c.tintPurple },
+    diet:            { icon: 'restaurant',        color: c.orange, bg: c.tintOrange },
+    exercise:        { icon: 'fitness',           color: c.pink,   bg: c.tintPink },
+    weight:          { icon: 'scale',             color: c.brand,  bg: c.brandLight },
+    blood_pressure:  { icon: 'heart',             color: c.red,    bg: c.tintRed },
+    rhinitis:        { icon: 'water',             color: c.teal,   bg: c.tintTeal },
+    checkin:         { icon: 'checkbox',          color: c.green,  bg: c.tintGreen },
+    medication:      { icon: 'flask',             color: c.purple, bg: c.tintPurple },
+    default:         { icon: 'checkmark-circle',  color: c.green,  bg: c.tintGreen },
+  };
+}
 
 export function RecordCardView({ type, detail }: RecordData) {
-  const cfg = ICONS[type] || ICONS.default;
+  const { c } = useTheme();
+  const cfg = _icons(c)[type] || _icons(c).default;
   return (
-    <View style={[styles.card, { backgroundColor: cfg.bg }]}>
+    <View style={[styles.card, { backgroundColor: cfg.bg, borderColor: c.separator }]}>
       <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
-      <Text style={txt.text}>{detail}</Text>
-      <Ionicons name="checkmark-circle" size={14} color="#30D158" />
+      <Text maxFontSizeMultiplier={1.3} style={[styles.text, { color: c.labelPrimary }]}>
+        {detail}
+      </Text>
+      <Ionicons name="checkmark-circle" size={14} color={c.green} />
     </View>
   );
 }
@@ -42,7 +49,6 @@ export const RecordCardSpec: CardSpec<RecordData> = {
     return null;
   },
   build({ query_lower }) {
-    // 记录类卡片数据由后端 handleDoneEvent 或 tool_result 决定, 这里给一个 fallback
     let type = 'default';
     if (/喝水|喝了.*水/.test(query_lower)) type = 'water';
     else if (/补剂|服药/.test(query_lower)) type = 'supplement';
@@ -60,9 +66,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderRadius: radii.md, padding: 10, marginVertical: 4,
+    borderWidth: StyleSheet.hairlineWidth,
   },
+  text: { fontSize: 13, flex: 1 } as TextStyle,
 });
-
-const txt = {
-  text: { fontSize: 13, color: colors.labelPrimary, flex: 1 } as TextStyle,
-};

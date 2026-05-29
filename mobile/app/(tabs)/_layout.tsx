@@ -6,6 +6,10 @@ import { useTheme } from '../../hooks/useTheme';
 import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
 
 /**
+ * Phase 4 (2026-05-29): Tab 3 → 4. 加 "我" tab — settings.tsx 已是完整 hub
+ * (20+ 入口) 但只能通过 EnvironmentCard 齿轮进; 暴露成 tab 解决深页"无家可回".
+ * 同一组件靠 router.canGoBack() 切 "设置"/"我" 标题.
+ *
  * Phase 3 (2026-05-14): Tab 2 → 3. "+" FAB 推进为第三 Tab "记录", 底部 3 个 tab
  * (今日 / 会诊 / 记录), 移除右下悬浮 "+" 按钮.
  *
@@ -18,6 +22,7 @@ import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
  *
  * 重新暴露:
  *   - chat (原 hidden, 现在是第二 Tab)
+ *   - me (settings 复用, 现在是第四 Tab)
  *
  * 备份: 旧 layout 在 git history. 文件没动, 只改 Tabs.Screen.options.href.
  */
@@ -69,6 +74,16 @@ export default function TabLayout() {
             tabBarAccessibilityLabel: '记录，快速记录饮水、体重、血压、打卡',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={26} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="me"
+          options={{
+            title: '我',
+            tabBarAccessibilityLabel: '我，设置、AI 模型、目标、化验、用药、通知',
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={22} color={color} />
             ),
           }}
         />

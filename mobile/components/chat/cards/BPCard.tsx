@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
-import { colors } from '../../../constants/theme';
+import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface BPData {
@@ -14,7 +14,7 @@ interface BPData {
   category_color: string;
 }
 
-/** ACC/AHA 2017 血压分级 */
+/** ACC/AHA 2017 血压分级. 颜色为医学语义 (红=高/绿=正常), 不随主题切换. */
 function classify(s: number, d: number): { label: string; color: string } {
   if (s >= 180 || d >= 120) return { label: '高血压急症', color: '#AF52DE' };
   if (s >= 140 || d >= 90) return { label: '高血压 2 期', color: '#FF453A' };
@@ -26,23 +26,36 @@ function classify(s: number, d: number): { label: string; color: string } {
 
 export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color }: BPData) {
   const router = useRouter();
+  const { c } = useTheme();
   return (
-    <CardShell icon="heart" iconColor="#FF453A" title="血压" badge={category} badgeColor={category_color} bg="#FFF5F5" onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'blood_pressure' } })}>
+    <CardShell
+      icon="heart"
+      iconColor={c.red}
+      title="血压"
+      badge={category}
+      badgeColor={category_color}
+      bg={c.tintRed}
+      onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'blood_pressure' } })}
+    >
       <View style={styles.row}>
         <View style={styles.bpBlock}>
-          <Text style={[txt.bpNum, { color: category_color }]}>
-            {systolic}<Text style={txt.bpSlash}> / </Text>{diastolic}
+          <Text maxFontSizeMultiplier={1.3} style={[styles.bpNum, { color: category_color }]}>
+            {systolic}
+            <Text style={[styles.bpSlash, { color: c.labelTertiary }]}> / </Text>
+            {diastolic}
           </Text>
-          <Text style={txt.unit}>mmHg</Text>
+          <Text maxFontSizeMultiplier={1.3} style={[styles.unit, { color: c.labelTertiary }]}>mmHg</Text>
         </View>
         {pulse != null && (
           <View style={styles.pulseBlock}>
-            <Text style={txt.pulseNum}>{pulse}</Text>
-            <Text style={txt.pulseLabel}>脉搏 bpm</Text>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.pulseNum, { color: c.labelPrimary }]}>{pulse}</Text>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.pulseLabel, { color: c.labelTertiary }]}>脉搏 bpm</Text>
           </View>
         )}
       </View>
-      {measured_at && <Text style={txt.time}>{measured_at}</Text>}
+      {measured_at && (
+        <Text maxFontSizeMultiplier={1.3} style={[styles.time, { color: c.labelTertiary }]}>{measured_at}</Text>
+      )}
     </CardShell>
   );
 }
@@ -61,14 +74,14 @@ export const BPCardSpec: CardSpec<BPData> = {
       if (!Array.isArray(list) || list.length === 0) return null;
       const r = list[0];
       if (!r || r.systolic == null || r.diastolic == null) return null;
-      const c = classify(r.systolic, r.diastolic);
+      const cls = classify(r.systolic, r.diastolic);
       return {
         systolic: r.systolic,
         diastolic: r.diastolic,
         pulse: r.pulse,
         measured_at: r.record_date ? String(r.record_date) : undefined,
-        category: c.label,
-        category_color: c.color,
+        category: cls.label,
+        category_color: cls.color,
       } as BPData;
     } catch {
       return null;
@@ -81,13 +94,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   bpBlock: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   pulseBlock: { alignItems: 'flex-end' },
-});
-
-const txt = {
   bpNum: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bpSlash: { fontSize: 18, fontWeight: '400', color: colors.labelTertiary } as TextStyle,
-  unit: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-  pulseNum: { fontSize: 18, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  pulseLabel: { fontSize: 9, color: colors.labelTertiary } as TextStyle,
-  time: { fontSize: 10, color: colors.labelTertiary, marginTop: 4 } as TextStyle,
-};
+  bpSlash: { fontSize: 18, fontWeight: '400' } as TextStyle,
+  unit: { fontSize: 10 } as TextStyle,
+  pulseNum: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  pulseLabel: { fontSize: 9 } as TextStyle,
+  time: { fontSize: 10, marginTop: 4 } as TextStyle,
+});

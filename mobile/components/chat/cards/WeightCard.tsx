@@ -4,12 +4,12 @@ import Svg, { Polyline, Circle as SvgCircle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
-import { colors } from '../../../constants/theme';
+import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
 interface WeightData {
   current_kg?: number;
-  trend_7d?: number[]; // 最近 7 天
+  trend_7d?: number[];
   change_7d_kg?: number;
   bmi?: number;
 }
@@ -25,6 +25,7 @@ function Sparkline({ points }: { points: number[] }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const trend = points[points.length - 1] - points[0];
+  // 趋势颜色为医学语义 (减重绿/增重红), 不随主题切换
   const color = trend < -0.1 ? '#30D158' : trend > 0.1 ? '#FF453A' : '#8E8E93';
   const last = pts.split(' ').pop() || '';
   const [lx, ly] = last.split(',').map(Number);
@@ -38,24 +39,37 @@ function Sparkline({ points }: { points: number[] }) {
 
 export function WeightCardView({ current_kg, trend_7d, change_7d_kg, bmi }: WeightData) {
   const router = useRouter();
+  const { c } = useTheme();
   const up = (change_7d_kg ?? 0) > 0;
   const changeColor = change_7d_kg == null || Math.abs(change_7d_kg) < 0.05
-    ? colors.labelTertiary : up ? '#FF453A' : '#30D158';
+    ? c.labelTertiary : up ? '#FF453A' : '#30D158';
   return (
-    <CardShell icon="scale" iconColor="#0A8F8F" title="体重" bg="#F0FFFD" onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'weight' } })}>
+    <CardShell
+      icon="scale"
+      iconColor={c.brand}
+      title="体重"
+      bg={c.brandLight}
+      onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'weight' } })}
+    >
       <View style={styles.row}>
         <View style={{ flex: 1 }}>
-          <Text style={txt.big}>{current_kg != null ? `${current_kg.toFixed(1)}kg` : '--'}</Text>
+          <Text maxFontSizeMultiplier={1.3} style={[styles.big, { color: c.labelPrimary }]}>
+            {current_kg != null ? `${current_kg.toFixed(1)}kg` : '--'}
+          </Text>
           <View style={styles.sub}>
             {change_7d_kg != null && (
               <View style={styles.changeRow}>
                 <Ionicons name={up ? 'trending-up' : 'trending-down'} size={11} color={changeColor} />
-                <Text style={[txt.change, { color: changeColor }]}>
+                <Text maxFontSizeMultiplier={1.3} style={[styles.change, { color: changeColor }]}>
                   {up ? '+' : ''}{change_7d_kg.toFixed(1)}kg · 7天
                 </Text>
               </View>
             )}
-            {bmi != null && <Text style={txt.bmi}>BMI {bmi.toFixed(1)}</Text>}
+            {bmi != null && (
+              <Text maxFontSizeMultiplier={1.3} style={[styles.bmi, { color: c.labelTertiary }]}>
+                BMI {bmi.toFixed(1)}
+              </Text>
+            )}
           </View>
         </View>
         {trend_7d && trend_7d.length >= 2 && <Sparkline points={trend_7d} />}
@@ -97,10 +111,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   sub: { marginTop: 4, gap: 2 },
   changeRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-});
-
-const txt = {
-  big: { fontSize: 22, fontWeight: '800', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  big: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
   change: { fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bmi: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-};
+  bmi: { fontSize: 10 } as TextStyle,
+});
