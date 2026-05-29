@@ -34,6 +34,22 @@ const DEFAULT_SUGGESTIONS = [
   '帮我复盘最近的睡眠质量',
 ];
 
+interface ConversationOpener {
+  text: string;
+  source: string;
+  source_id?: number | null;
+  quick_replies?: string[];
+  deep_link?: string | null;
+  priority?: number;
+}
+
+const OPENER_SOURCE_LABEL: Record<string, string> = {
+  action_card_due: '今日检验',
+  anomaly: '数据异常',
+  case_thread: '持续话题',
+  memory_fact: '记忆回顾',
+};
+
 export default function AIAssistantPage() {
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -55,6 +71,7 @@ export default function AIAssistantPage() {
   const [sharing, setSharing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
+  const [opener, setOpener] = useState<ConversationOpener | null>(null);
 
   // 自动滚到底
   useEffect(() => {
@@ -117,8 +134,22 @@ export default function AIAssistantPage() {
       } else {
         setStarterSuggestions(DEFAULT_SUGGESTIONS);
       }
+      const op = res.data?.opener;
+      setOpener(
+        op && typeof op.text === 'string' && op.text.trim()
+          ? {
+              text: op.text,
+              source: typeof op.source === 'string' ? op.source : '',
+              source_id: op.source_id ?? null,
+              quick_replies: Array.isArray(op.quick_replies) ? op.quick_replies.slice(0, 3) : [],
+              deep_link: typeof op.deep_link === 'string' ? op.deep_link : null,
+              priority: typeof op.priority === 'number' ? op.priority : 0,
+            }
+          : null,
+      );
     } catch {
       setStarterSuggestions(DEFAULT_SUGGESTIONS);
+      setOpener(null);
     }
   };
 
@@ -204,6 +235,7 @@ export default function AIAssistantPage() {
     setMessages([]);
     setShareSelectionMode(false);
     setSelectedMessageIds(new Set());
+    setOpener(null);
     refreshConversationStarters();
   };
 
@@ -359,6 +391,37 @@ export default function AIAssistantPage() {
                 <h1 className="mt-5 text-2xl font-semibold tracking-tight text-zinc-50 sm:text-3xl">
                   今天想了解什么？
                 </h1>
+                {opener && (
+                  <div className="mt-7 w-full">
+                    <button
+                      type="button"
+                      onClick={() => submitSuggestion(opener.text)}
+                      className="group w-full rounded-2xl border border-teal-300/25 bg-teal-400/[0.06] px-5 py-4 text-left transition-colors hover:border-teal-300/45 hover:bg-teal-400/[0.1]"
+                    >
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5 text-teal-300" />
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-teal-300/80">
+                          {OPENER_SOURCE_LABEL[opener.source] ?? 'AI 续接'}
+                        </span>
+                      </div>
+                      <div className="text-[15px] leading-6 text-zinc-100">{opener.text}</div>
+                    </button>
+                    {opener.quick_replies && opener.quick_replies.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {opener.quick_replies.map(reply => (
+                          <button
+                            key={reply}
+                            type="button"
+                            onClick={() => submitSuggestion(reply)}
+                            className="rounded-full border border-teal-300/25 bg-teal-400/[0.08] px-3 py-1.5 text-xs font-medium text-teal-100 transition-colors hover:border-teal-300/45 hover:bg-teal-400/[0.15]"
+                          >
+                            {reply}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="mt-8 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                   {starterSuggestions.map(item => (
                     <button

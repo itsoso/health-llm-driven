@@ -1,23 +1,32 @@
 """Conversation starters (new-chat prompt chips).
 
 This is used by the web `/ai-assistant` and mobile chat empty state to present
-context-aware prompts derived from recent user data (exams/workouts/supplements
-and basic recovery metrics).
+context-aware prompts derived from recent user data (exams/workouts/supplements,
+current body state from Twin, and live weather/AQI).
 
 Design constraints:
-- Deterministic & fast: no LLM calls.
+- Deterministic & fast: no LLM calls. Twin is Redis-cached (5min).
 - Safe: never returns paid-course raw text; only user-owned data signals.
-- Fail-soft: any error falls back to stable defaults.
+- Fail-soft: any error falls back to stable defaults; Twin failure falls back
+  to DB-only signals (existing behavior pre-2026-05).
+- Per-visit variety: when more candidates exist than slots, critical signals
+  (priority >= 100) are always included; remaining slots are randomly sampled
+  from the rest, weighted by priority. RNG is injectable for tests.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, timedelta
+import random
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+
+CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
 
 DEFAULT_SUGGESTIONS: list[str] = [
@@ -27,9 +36,27 @@ DEFAULT_SUGGESTIONS: list[str] = [
     "帮我复盘最近的睡眠质量",
 ]
 
+# Priority bands (higher = more likely to appear, critical always included):
+#   100+  critical / safety — readiness<40, BP critical, AQI hazardous, ACWR danger
+#    80   today body state — readiness/HRV/body battery/stress notable
+#    70   today environment — AQI/UV/weather opportunity
+#    60   personalized data signals — exam abnormal, gene, active goal
+#    50   personalized routine — workout history, supplement, water, diet
+#    30   data quality nudges — missing HRV
+#    10   stable defaults — fallback only
+_CRITICAL_PRIORITY = 100
+_DEFAULT_PRIORITY = 10
+
+
+@dataclass(frozen=True)
+class SuggestionCandidate:
+    priority: int
+    text: str
+
 
 @dataclass(frozen=True)
 class StarterSignals:
+    # ── Historical / aggregate (DB) ──────────────────────────────────────
     latest_exam_date: Optional[date]
     latest_exam_abnormal_items: list[str]
     active_goal_title: Optional[str]
@@ -51,64 +78,64 @@ class StarterSignals:
     avg_sleep_score_7d: Optional[float]
     missing_hrv_days_7d: Optional[int]
 
+    # ── Today / current (Twin — physiological + behavioral + env + labs) ─
+    readiness_score: Optional[int] = None
+    readiness_level: Optional[str] = None  # poor/low/moderate/high/prime
+    hrv_today: Optional[float] = None
+    hrv_7d_avg_twin: Optional[float] = None
+    sleep_score_today: Optional[int] = None
+    body_battery: Optional[int] = None
+    stress_today: Optional[int] = None
+    systolic_bp: Optional[int] = None
+    diastolic_bp: Optional[int] = None
+    acwr_zone: Optional[str] = None  # under/optimal/risky/danger
+    training_status: Optional[str] = None
+    should_rest_from_training: bool = False
+    illness_names: list[str] = field(default_factory=list)
+    aqi: Optional[int] = None
+    aqi_level: Optional[str] = None
+    pm25: Optional[float] = None
+    uv_index: Optional[float] = None
+    temperature_c: Optional[float] = None
+    weather_description: Optional[str] = None
+    city: Optional[str] = None
+    outdoor_exercise_suitability: Optional[str] = None  # suitable/caution/avoid
+
+    # ── Time context (Asia/Shanghai) ─────────────────────────────────────
+    local_hour: Optional[int] = None        # 0–23
+    local_weekday: Optional[int] = None     # 0=Mon … 6=Sun
+    is_weekend: bool = False
+
 
 def compute_conversation_suggestions(
     db: Session,
     user_id: int,
     *,
     limit: int = 4,
+    rng: Optional[random.Random] = None,
 ) -> list[str]:
-    """Return up to `limit` prompt-chip strings for a new conversation."""
+    """Return up to `limit` prompt-chip strings for a new conversation.
+
+    Selection:
+      1) Collect candidates (priority, text) from all generators.
+      2) Critical (priority >= 100) are always taken (up to limit).
+      3) Remaining slots: weighted random sample from non-critical pool.
+      4) Result is sorted by priority desc for stable display ordering.
+      5) DEFAULT_SUGGESTIONS fill any leftover slot (priority 10).
+    """
     if limit <= 0:
         return []
 
     try:
         signals = _collect_signals(db, user_id)
-        suggestions: list[str] = []
-
-        exam_hint = _suggest_exam(signals)
-        if exam_hint:
-            suggestions.append(exam_hint)
-
-        goal_hint = _suggest_goal(signals)
-        if goal_hint:
-            suggestions.append(goal_hint)
-
-        workout_hint = _suggest_workout(signals)
-        if workout_hint:
-            suggestions.append(workout_hint)
-
-        gene_hint = _suggest_gene(signals)
-        if gene_hint:
-            suggestions.append(gene_hint)
-
-        water_hint = _suggest_water(signals)
-        if water_hint:
-            suggestions.append(water_hint)
-
-        diet_hint = _suggest_diet(signals)
-        if diet_hint:
-            suggestions.append(diet_hint)
-
-        supplement_hint = _suggest_supplement(signals)
-        if supplement_hint:
-            suggestions.append(supplement_hint)
-
-        recovery_hint = _suggest_recovery(signals)
-        if recovery_hint:
-            suggestions.append(recovery_hint)
-
-        # Fill with stable defaults (deduped)
-        for text in DEFAULT_SUGGESTIONS:
-            if len(suggestions) >= limit:
-                break
-            if text not in suggestions:
-                suggestions.append(text)
-
-        return suggestions[:limit]
+        candidates = _build_candidates(signals)
+        return _select(candidates, limit=limit, rng=rng)
     except Exception:  # noqa: BLE001
         # Fail-soft: empty-state prompts must never break chat launch.
         return DEFAULT_SUGGESTIONS[:limit]
+
+
+# ───────────────────────────── Signal collection ────────────────────────
 
 
 def _collect_signals(db: Session, user_id: int) -> StarterSignals:
@@ -269,6 +296,53 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
     expected_dates = {start_7d + timedelta(days=i) for i in range(7)}
     missing_hrv_days_7d = None if total_garmin_rows_7d == 0 else len(expected_dates - available_dates)
 
+    # ── Twin overlay (today / current state). Fail-soft. ─────────────────
+    twin_kwargs: dict = {}
+    try:
+        from app.twin.builder import build_twin
+
+        twin = build_twin(db, user_id, use_cache=True)
+        phys = twin.physiological
+        labs = twin.labs
+        beh = twin.behavioral
+        env = twin.environment
+        acute = twin.acute
+
+        twin_kwargs = {
+            "readiness_score": phys.training_readiness_score,
+            "readiness_level": phys.training_readiness_level,
+            "hrv_today": phys.hrv_latest,
+            "hrv_7d_avg_twin": phys.hrv_7d_avg,
+            "sleep_score_today": phys.sleep_score_latest,
+            "body_battery": phys.body_battery_current,
+            "stress_today": phys.stress_level_current,
+            "systolic_bp": labs.blood_pressure_systolic,
+            "diastolic_bp": labs.blood_pressure_diastolic,
+            "acwr_zone": beh.acwr_zone,
+            "training_status": beh.training_status,
+            "should_rest_from_training": bool(acute.should_rest_from_training),
+            "illness_names": list(acute.illness_names or []),
+            "aqi": env.aqi,
+            "aqi_level": env.aqi_level,
+            "pm25": env.pm25,
+            "uv_index": env.uv_index,
+            "temperature_c": env.temperature_c,
+            "weather_description": env.weather_description,
+            "city": env.city,
+            "outdoor_exercise_suitability": env.outdoor_exercise_suitability,
+        }
+    except Exception:  # noqa: BLE001
+        # Twin unavailable — keep historical-only signals.
+        twin_kwargs = {}
+
+    # ── Time context (Asia/Shanghai). Always populated. ──────────────────
+    now_local = datetime.now(CHINA_TZ)
+    time_kwargs = {
+        "local_hour": now_local.hour,
+        "local_weekday": now_local.weekday(),
+        "is_weekend": now_local.weekday() >= 5,
+    }
+
     return StarterSignals(
         latest_exam_date=latest_exam_date,
         latest_exam_abnormal_items=abnormal_items,
@@ -296,6 +370,8 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
         supplement_completion_7d_pct=supplement_completion_7d_pct,
         avg_sleep_score_7d=avg_sleep_score_7d,
         missing_hrv_days_7d=missing_hrv_days_7d,
+        **twin_kwargs,
+        **time_kwargs,
     )
 
 
@@ -311,16 +387,25 @@ def _has_any_user_signal(signals: StarterSignals) -> bool:
         or signals.active_supplements > 0
         or signals.avg_sleep_score_7d is not None
         or signals.missing_hrv_days_7d is not None
+        or signals.readiness_score is not None
+        or signals.sleep_score_today is not None
+        or signals.body_battery is not None
+        or signals.stress_today is not None
+        or signals.hrv_today is not None
+        or signals.systolic_bp is not None
     )
 
 
-def _suggest_exam(signals: StarterSignals) -> str | None:
+# ─────────────────────────── Candidate generators ───────────────────────
+
+
+def _suggest_exam(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if not signals.latest_exam_date:
         return None
     if signals.latest_exam_abnormal_items:
         focus = "、".join(signals.latest_exam_abnormal_items[:2])
-        return f"解读我最近一次体检（关注: {focus}）"
-    return "解读我最近一次体检结果"
+        return SuggestionCandidate(60, f"解读我最近一次体检（关注: {focus}）")
+    return SuggestionCandidate(50, "解读我最近一次体检结果")
 
 
 def _format_number(value: float | None) -> str | None:
@@ -331,7 +416,7 @@ def _format_number(value: float | None) -> str | None:
     return f"{value:.1f}"
 
 
-def _suggest_goal(signals: StarterSignals) -> str | None:
+def _suggest_goal(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if not signals.active_goal_title:
         return None
     title = signals.active_goal_title[:28]
@@ -339,8 +424,8 @@ def _suggest_goal(signals: StarterSignals) -> str | None:
     target = _format_number(signals.active_goal_target_value)
     unit = signals.active_goal_unit or ""
     if cur and target:
-        return f"围绕「{title}」安排接下来7天行动（当前 {cur}{unit} → 目标 {target}{unit}）"
-    return f"围绕「{title}」安排接下来7天行动"
+        return SuggestionCandidate(60, f"围绕「{title}」安排接下来7天行动（当前 {cur}{unit} → 目标 {target}{unit}）")
+    return SuggestionCandidate(60, f"围绕「{title}」安排接下来7天行动")
 
 
 def _workout_type_label(value: str | None) -> str:
@@ -357,7 +442,7 @@ def _workout_type_label(value: str | None) -> str:
     }.get(value or "", value or "运动")
 
 
-def _suggest_workout(signals: StarterSignals) -> str | None:
+def _suggest_workout(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if signals.latest_workout_type:
         label = _workout_type_label(signals.latest_workout_type)
         details: list[str] = []
@@ -368,54 +453,354 @@ def _suggest_workout(signals: StarterSignals) -> str | None:
         if signals.latest_workout_avg_hr is not None:
             details.append(f"均心率 {signals.latest_workout_avg_hr}")
         suffix = f"（{' / '.join(details)}）" if details else ""
-        return f"复盘我最近一次{label}{suffix}"
-    # Only override defaults when we have a concrete workout history to summarize.
+        return SuggestionCandidate(50, f"复盘我最近一次{label}{suffix}")
     if signals.workouts_7d <= 0:
         return None
-    return "复盘我最近7天训练负荷与恢复情况"
+    return SuggestionCandidate(50, "复盘我最近7天训练负荷与恢复情况")
 
 
-def _suggest_gene(signals: StarterSignals) -> str | None:
+def _suggest_gene(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if not signals.top_gene_name:
         return None
     gene = signals.top_gene_name
     genotype = f" {signals.top_gene_genotype}" if signals.top_gene_genotype else ""
     result = f"（{signals.top_gene_result[:18]}）" if signals.top_gene_result else ""
-    return f"结合我的 {gene}{genotype} 基因结果{result}制定行动"
+    return SuggestionCandidate(60, f"结合我的 {gene}{genotype} 基因结果{result}制定行动")
 
 
-def _suggest_water(signals: StarterSignals) -> str | None:
+def _suggest_water(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if signals.water_today_ml is None:
         return None
     target = 2000
     if signals.water_today_ml >= target:
-        return "今天饮水已达标，帮我安排后续补水和睡前注意事项"
-    return f"今天饮水 {signals.water_today_ml}/{target}ml，帮我安排剩余补水"
+        return SuggestionCandidate(40, "今天饮水已达标，帮我安排后续补水和睡前注意事项")
+    return SuggestionCandidate(50, f"今天饮水 {signals.water_today_ml}/{target}ml，帮我安排剩余补水")
 
 
-def _suggest_diet(signals: StarterSignals) -> str | None:
+def _suggest_diet(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if not _has_any_user_signal(signals):
         return None
     if signals.diet_records_today is None or signals.diet_records_today > 0:
         return None
-    return "今天还没记录饮食，帮我快速补录并估算"
+    return SuggestionCandidate(50, "今天还没记录饮食，帮我快速补录并估算")
 
 
-def _suggest_supplement(signals: StarterSignals) -> str | None:
+def _suggest_supplement(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if signals.active_supplements <= 0:
         return None
     rate = signals.supplement_completion_7d_pct
     if rate is None:
-        return "帮我复盘最近的补剂服用情况并优化计划"
+        return SuggestionCandidate(50, "帮我复盘最近的补剂服用情况并优化计划")
     if rate < 60:
-        return f"帮我提升补剂依从率（近7天完成率 {rate:.1f}%）"
-    return "检查我的补剂方案是否需要调整"
+        return SuggestionCandidate(70, f"帮我提升补剂依从率（近7天完成率 {rate:.1f}%）")
+    return SuggestionCandidate(40, "检查我的补剂方案是否需要调整")
 
 
-def _suggest_recovery(signals: StarterSignals) -> str | None:
-    # Only override defaults when there's a clear signal (missing data or low sleep score).
+def _suggest_recovery_history(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if signals.missing_hrv_days_7d is not None and signals.missing_hrv_days_7d >= 3:
-        return "我的HRV数据不太完整，帮我排查并告诉我如何补齐"
+        return SuggestionCandidate(30, "我的HRV数据不太完整，帮我排查并告诉我如何补齐")
     if signals.avg_sleep_score_7d is not None and signals.avg_sleep_score_7d < 70:
-        return "帮我复盘最近的睡眠质量并给出可执行改进"
+        return SuggestionCandidate(60, "帮我复盘最近的睡眠质量并给出可执行改进")
     return None
+
+
+# ── Today body state (Twin-driven) ──────────────────────────────────────
+
+
+def _suggest_readiness(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    score = signals.readiness_score
+    if score is None:
+        return None
+    if score < 40:
+        return SuggestionCandidate(100, f"今天恢复评分 {score}，帮我安排轻负荷或休息日方案")
+    if score >= 85:
+        return SuggestionCandidate(80, f"今天恢复评分 {score}，能上多大强度的训练？")
+    if score < 60:
+        return SuggestionCandidate(80, f"今天恢复评分 {score}，怎么把训练调整成中低强度？")
+    return SuggestionCandidate(60, f"今天恢复评分 {score}，给我一份今日训练与恢复建议")
+
+
+def _suggest_hrv_today(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    hrv = signals.hrv_today
+    avg = signals.hrv_7d_avg_twin
+    if hrv is None or avg is None or avg <= 0:
+        return None
+    delta_pct = (hrv - avg) / avg * 100
+    if delta_pct <= -15:
+        return SuggestionCandidate(
+            90,
+            f"今天HRV {hrv:.0f}（较7日均值低 {abs(delta_pct):.0f}%），可能是什么原因？",
+        )
+    if delta_pct >= 15:
+        return SuggestionCandidate(
+            60,
+            f"今天HRV {hrv:.0f}（较7日均值高 {delta_pct:.0f}%），怎么用好这天？",
+        )
+    return None
+
+
+def _suggest_body_battery_stress(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    bb = signals.body_battery
+    stress = signals.stress_today
+    if bb is not None and bb < 30:
+        return SuggestionCandidate(80, f"身体电量只剩 {bb}，怎么快速恢复精力？")
+    if stress is not None and stress >= 75:
+        return SuggestionCandidate(80, f"今天压力指数 {stress}，给我一套降压方案")
+    if bb is not None and bb >= 80 and (stress is None or stress < 50):
+        return SuggestionCandidate(50, f"身体电量 {bb}，今天能怎么高效利用这份精力？")
+    return None
+
+
+def _suggest_bp(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    sys_bp = signals.systolic_bp
+    dia_bp = signals.diastolic_bp
+    if sys_bp is None and dia_bp is None:
+        return None
+    # ACC/AHA thresholds
+    if (sys_bp is not None and sys_bp >= 160) or (dia_bp is not None and dia_bp >= 100):
+        bp_text = f"{sys_bp or '?'}/{dia_bp or '?'}"
+        return SuggestionCandidate(100, f"最近一次血压 {bp_text} 偏高，我需要怎么处理？")
+    if (sys_bp is not None and sys_bp >= 140) or (dia_bp is not None and dia_bp >= 90):
+        bp_text = f"{sys_bp or '?'}/{dia_bp or '?'}"
+        return SuggestionCandidate(80, f"最近一次血压 {bp_text}，帮我分析趋势和生活方式调整")
+    if sys_bp is not None and sys_bp < 130 and (dia_bp is None or dia_bp < 80):
+        return SuggestionCandidate(40, "血压控制不错，帮我看看怎么继续保持")
+    return None
+
+
+def _suggest_acwr(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    zone = (signals.acwr_zone or "").lower()
+    if zone in ("danger", "overtraining", "risky"):
+        return SuggestionCandidate(100, "训练负荷进入风险区，帮我减量并安排恢复")
+    if zone == "undertraining":
+        return SuggestionCandidate(60, "训练负荷偏低，怎么循序加量不受伤？")
+    if zone == "optimal":
+        return SuggestionCandidate(40, "训练负荷在最佳区，下一周该怎么进阶？")
+    return None
+
+
+def _suggest_acute_illness(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    if signals.should_rest_from_training:
+        if signals.illness_names:
+            ill = "、".join(signals.illness_names[:2])
+            return SuggestionCandidate(100, f"我有{ill}症状，今天该怎么休息和恢复？")
+        return SuggestionCandidate(100, "我身体不太舒服，今天该怎么休息和恢复？")
+    return None
+
+
+# ── Environment (Twin-driven) ───────────────────────────────────────────
+
+
+def _suggest_aqi(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    aqi = signals.aqi
+    if aqi is None:
+        return None
+    city = signals.city or "本地"
+    if aqi >= 200:
+        return SuggestionCandidate(100, f"{city} AQI {aqi}（重污染），今天能不能出门活动？")
+    if aqi >= 150:
+        return SuggestionCandidate(90, f"{city} AQI {aqi}，怎么把今天的训练换成室内方案？")
+    if aqi >= 100:
+        return SuggestionCandidate(70, f"{city} AQI {aqi}，户外运动该注意什么？")
+    if aqi <= 50:
+        return SuggestionCandidate(50, f"{city} 空气质量很好（AQI {aqi}），适合什么户外活动？")
+    return None
+
+
+def _suggest_uv(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    uv = signals.uv_index
+    if uv is None:
+        return None
+    if uv >= 8:
+        return SuggestionCandidate(70, f"今天UV指数 {uv:g}（很强），户外训练怎么防晒？")
+    if uv >= 6:
+        return SuggestionCandidate(50, f"今天UV指数 {uv:g}，户外该几点出门更合适？")
+    return None
+
+
+def _suggest_weather(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    temp = signals.temperature_c
+    desc = signals.weather_description
+    if temp is None and not desc:
+        return None
+    city = signals.city or "本地"
+    if temp is not None and temp >= 32:
+        return SuggestionCandidate(70, f"{city}今天 {temp:.0f}℃ 高温，运动和补水怎么安排？")
+    if temp is not None and temp <= 5:
+        return SuggestionCandidate(70, f"{city}今天只有 {temp:.0f}℃，户外运动要注意什么？")
+    if desc and any(k in desc for k in ("雨", "雪", "雷")):
+        return SuggestionCandidate(60, f"{city}今天{desc}，给我一套室内训练方案")
+    return None
+
+
+def _suggest_outdoor_suitability(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    s = (signals.outdoor_exercise_suitability or "").lower()
+    if s == "avoid":
+        return SuggestionCandidate(80, "今天不适合户外运动，给我一份室内方案")
+    if s == "suitable":
+        return SuggestionCandidate(50, "今天适合户外运动，建议练什么、什么时段？")
+    return None
+
+
+# ── Time of day / weekday (Asia/Shanghai) ───────────────────────────────
+
+
+def _suggest_morning(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """早晨 6-10 点：复盘昨晚睡眠、规划今日。仅在用户已有数据时触发。"""
+    if signals.local_hour is None or not (6 <= signals.local_hour < 10):
+        return None
+    if not _has_any_user_signal(signals):
+        return None
+    if signals.sleep_score_today is not None:
+        return SuggestionCandidate(50, f"昨晚睡眠分 {signals.sleep_score_today}，帮我安排今天的节奏")
+    return SuggestionCandidate(40, "早安，帮我规划今天的训练、饮食和补剂时间表")
+
+
+def _suggest_noon(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """午饭点 11-13 点：午餐推荐（结合是否已记录）。"""
+    if signals.local_hour is None or not (11 <= signals.local_hour < 14):
+        return None
+    if not _has_any_user_signal(signals):
+        return None
+    if signals.diet_records_today is not None and signals.diet_records_today > 0:
+        return SuggestionCandidate(40, "结合今天已经吃的，午餐怎么补能更均衡？")
+    return SuggestionCandidate(50, "午餐吃点什么合适？给我 2-3 个搭配选项")
+
+
+def _suggest_evening(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """晚 20-23 点：今日总结 + 睡前准备。"""
+    if signals.local_hour is None or not (20 <= signals.local_hour < 24):
+        return None
+    if not _has_any_user_signal(signals):
+        return None
+    return SuggestionCandidate(50, "总结一下我今天的健康数据，并给睡前几个小建议")
+
+
+def _suggest_late_night(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """深夜 0-5 点：睡眠节律提醒。"""
+    if signals.local_hour is None or not (0 <= signals.local_hour < 5):
+        return None
+    if not _has_any_user_signal(signals):
+        return None
+    return SuggestionCandidate(60, "这个点还没睡，对身体影响有多大？怎么补救？")
+
+
+def _suggest_week_rhythm(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """周末 / 周日晚 / 周一早 的节律提醒。"""
+    if signals.local_weekday is None or signals.local_hour is None:
+        return None
+    if not _has_any_user_signal(signals):
+        return None
+    wd, hr = signals.local_weekday, signals.local_hour
+    if wd == 6 and 18 <= hr < 24:
+        return SuggestionCandidate(60, "帮我规划下一周的训练 / 饮食 / 复查安排")
+    if wd == 0 and 6 <= hr < 12:
+        return SuggestionCandidate(50, "复盘一下周末的训练和饮食，给本周开个头")
+    if signals.is_weekend and 9 <= hr < 18:
+        return SuggestionCandidate(40, "周末时间宽裕，安排一次长训练或户外活动")
+    return None
+
+
+_GENERATORS = (
+    # Historical / aggregate
+    _suggest_exam,
+    _suggest_goal,
+    _suggest_workout,
+    _suggest_gene,
+    _suggest_water,
+    _suggest_diet,
+    _suggest_supplement,
+    _suggest_recovery_history,
+    # Today body state
+    _suggest_readiness,
+    _suggest_hrv_today,
+    _suggest_body_battery_stress,
+    _suggest_bp,
+    _suggest_acwr,
+    _suggest_acute_illness,
+    # Environment
+    _suggest_aqi,
+    _suggest_uv,
+    _suggest_weather,
+    _suggest_outdoor_suitability,
+    # Time / weekday
+    _suggest_morning,
+    _suggest_noon,
+    _suggest_evening,
+    _suggest_late_night,
+    _suggest_week_rhythm,
+)
+
+
+def _build_candidates(signals: StarterSignals) -> list[SuggestionCandidate]:
+    out: list[SuggestionCandidate] = []
+    seen: set[str] = set()
+    for gen in _GENERATORS:
+        cand = gen(signals)
+        if cand is None or cand.text in seen:
+            continue
+        out.append(cand)
+        seen.add(cand.text)
+    return out
+
+
+# ────────────────────────────── Selection ───────────────────────────────
+
+
+def _select(
+    candidates: list[SuggestionCandidate],
+    *,
+    limit: int,
+    rng: Optional[random.Random],
+) -> list[str]:
+    rng = rng or random.Random()
+
+    critical = [c for c in candidates if c.priority >= _CRITICAL_PRIORITY]
+    rest = [c for c in candidates if c.priority < _CRITICAL_PRIORITY]
+
+    # Critical first (sorted desc by priority, deterministic).
+    critical.sort(key=lambda c: -c.priority)
+    chosen: list[SuggestionCandidate] = list(critical[:limit])
+
+    # Fill remaining slots from non-critical pool — weighted random sample.
+    slots = limit - len(chosen)
+    if slots > 0 and rest:
+        picked = _weighted_sample(rest, k=min(slots, len(rest)), rng=rng)
+        chosen.extend(picked)
+
+    # Fall back to defaults if still short.
+    if len(chosen) < limit:
+        existing_texts = {c.text for c in chosen}
+        for text in DEFAULT_SUGGESTIONS:
+            if len(chosen) >= limit:
+                break
+            if text in existing_texts:
+                continue
+            chosen.append(SuggestionCandidate(_DEFAULT_PRIORITY, text))
+            existing_texts.add(text)
+
+    # Display order: highest priority first.
+    chosen.sort(key=lambda c: -c.priority)
+    return [c.text for c in chosen[:limit]]
+
+
+def _weighted_sample(
+    pool: list[SuggestionCandidate],
+    *,
+    k: int,
+    rng: random.Random,
+) -> list[SuggestionCandidate]:
+    """Sample k items without replacement, biased by priority.
+
+    Uses the Efraimidis-Spirakis A-Res method (sort by `u**(1/w)`) — small `k`
+    and `len(pool)` here (both < 20) so a plain sort is fine.
+    """
+    if k >= len(pool):
+        return list(pool)
+    keyed = []
+    for c in pool:
+        w = max(c.priority, 1)  # guard against zero/negative
+        u = rng.random() or 1e-9
+        keyed.append((u ** (1.0 / w), c))
+    keyed.sort(key=lambda kv: kv[0], reverse=True)
+    return [c for _, c in keyed[:k]]
