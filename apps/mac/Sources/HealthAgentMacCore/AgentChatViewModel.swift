@@ -605,6 +605,7 @@ public final class AgentChatViewModel {
                 }
             }
         } catch {
+            AppLogger.agent.error("agent stream consumption failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
         }
 

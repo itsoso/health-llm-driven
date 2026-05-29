@@ -67,6 +67,9 @@ public final class AuthClient: Sendable {
         } catch APIError.unauthorized {
             return false
         } catch {
+            // Network / transient failure: keep the existing session optimistically and let later requests retry.
+            // Logged so a chain of these doesn't go unnoticed (e.g. server actually down vs. flaky wifi).
+            AppLogger.auth.error("hasValidSession check failed, assuming session still valid: \(error.localizedDescription, privacy: .public)")
             return true
         }
     }

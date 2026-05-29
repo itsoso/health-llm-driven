@@ -11,6 +11,9 @@ let package = Package(
         .executable(name: "HealthAgentMac", targets: ["HealthAgentMac"]),
         .library(name: "HealthAgentMacCore", targets: ["HealthAgentMacCore"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", from: "1.17.0")
+    ],
     targets: [
         .target(name: "HealthAgentMacCore"),
         .executableTarget(
@@ -23,6 +26,14 @@ let package = Package(
         .testTarget(
             name: "HealthAgentMacCoreTests",
             dependencies: ["HealthAgentMacCore"]
+        ),
+        .testTarget(
+            name: "HealthAgentMacTests",
+            dependencies: [
+                "HealthAgentMac",
+                .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
+            ],
+            exclude: ["__Snapshots__"]
         )
     ]
 )

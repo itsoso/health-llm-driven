@@ -73,6 +73,7 @@ public final class InterventionsClient: @unchecked Sendable {
                 )
             }
         } catch {
+            AppLogger.interventions.error("medications fetch failed, returning empty list: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -94,6 +95,7 @@ public final class InterventionsClient: @unchecked Sendable {
                 )
             }
         } catch {
+            AppLogger.interventions.error("supplements fetch failed, returning empty list: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }

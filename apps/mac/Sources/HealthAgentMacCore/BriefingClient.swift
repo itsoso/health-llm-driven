@@ -7,6 +7,12 @@ public struct BriefingSection: Decodable, Identifiable, Sendable, Equatable {
 
     public var id: String { title }
 
+    public init(title: String, status: String?, items: [String]) {
+        self.title = title
+        self.status = status
+        self.items = items
+    }
+
     public enum Status: String, Sendable {
         case good
         case warning
@@ -30,6 +36,12 @@ public struct DailyBriefing: Decodable, Sendable, Equatable {
     public let date: String?
     public let greeting: String?
     public let sections: [BriefingSection]
+
+    public init(date: String?, greeting: String?, sections: [BriefingSection]) {
+        self.date = date
+        self.greeting = greeting
+        self.sections = sections
+    }
 }
 
 public final class BriefingClient: @unchecked Sendable {

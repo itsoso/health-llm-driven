@@ -43,6 +43,7 @@ public final class TodayViewModel {
             topActions = payload.menuBarActions
             activeJobs = payload.activeJobs
         } catch {
+            AppLogger.dashboard.error("desktop bootstrap fetch failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = String(describing: error)
         }
     }

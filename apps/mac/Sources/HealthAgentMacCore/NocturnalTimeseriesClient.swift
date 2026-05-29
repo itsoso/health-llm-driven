@@ -11,6 +11,12 @@ public struct NocturnalTimeseriesPoint: Decodable, Sendable, Equatable {
         case epochMs = "epoch_ms"
     }
 
+    public init(sampleTime: String = "", value: Double?, epochMs: Int64?) {
+        self.sampleTime = sampleTime
+        self.value = value
+        self.epochMs = epochMs
+    }
+
     public var minutesFromMidnight: Int? {
         let parts = sampleTime.split(separator: ":")
         guard parts.count >= 2,
@@ -233,6 +239,7 @@ public final class NocturnalTimeseriesClient: @unchecked Sendable {
                         let summary = try await self.fetchNightlySpO2(date: date)
                         return NocturnalWeekNight(date: date, summary: summary)
                     } catch {
+                        AppLogger.nocturnal.error("spo2 fetch failed for \(date, privacy: .public): \(error.localizedDescription, privacy: .public)")
                         return NocturnalWeekNight(date: date, summary: nil, errorMessage: String(describing: error))
                     }
                 }

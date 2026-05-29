@@ -374,6 +374,15 @@ public struct DesktopDashboardMetric: Equatable, Identifiable, Sendable {
     public let detail: String
     public let tone: String
     public let systemImage: String
+
+    public init(id: String, titleKey: String, value: String, detail: String, tone: String, systemImage: String) {
+        self.id = id
+        self.titleKey = titleKey
+        self.value = value
+        self.detail = detail
+        self.tone = tone
+        self.systemImage = systemImage
+    }
 }
 
 public struct DesktopDashboardTrend: Equatable, Identifiable, Sendable {
@@ -442,4 +451,14 @@ public struct DesktopDashboardRow: Equatable, Identifiable, Sendable {
     public let tone: String
     public let systemImage: String
     public let progress: Double?
+
+    public init(id: String, title: String, subtitle: String?, value: String?, tone: String, systemImage: String, progress: Double?) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.value = value
+        self.tone = tone
+        self.systemImage = systemImage
+        self.progress = progress
+    }
 }
