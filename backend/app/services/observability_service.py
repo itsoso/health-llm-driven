@@ -365,24 +365,84 @@ def memory_injection_stats(db: Session, since: datetime, user_id: Optional[int])
 #    reasoning_sheet_opened / journal_timeline_entered / specialist_scorecard_entered
 # ---------------------------------------------------------------
 
+def _percentile(values: list, pct: float) -> Optional[float]:
+    """Linear-interpolated percentile. Returns None for an empty list."""
+    if not values:
+        return None
+    s = sorted(values)
+    if len(s) == 1:
+        return float(s[0])
+    k = (len(s) - 1) * (pct / 100.0)
+    lo = int(k)
+    hi = min(lo + 1, len(s) - 1)
+    if lo == hi:
+        return float(s[lo])
+    return float(s[lo]) + (float(s[hi]) - float(s[lo])) * (k - lo)
+
+
 def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
+    """Aggregate UI telemetry.
+
+    Beyond raw per-event counts this surfaces the two signals the events were
+    instrumented for:
+      - starter_ctr: per-generator CTR (clicks / impressions) — tells which
+        new-chat chip generators are useful vs dead, so priority bands can be
+        tuned from data instead of guesswork.
+      - home_cold_start_ms: p50/p95 of launch→first-screen-ready duration.
+    """
     from app.models.client_event import ClientEvent
 
     q = db.query(ClientEvent).filter(ClientEvent.created_at >= since)
     if user_id:
         q = q.filter(ClientEvent.user_id == user_id)
+    rows = q.with_entities(ClientEvent.event_name, ClientEvent.meta).all()
 
     by_event: Dict[str, int] = {}
-    for row in (
-        q.with_entities(ClientEvent.event_name, func.count(ClientEvent.id))
-        .group_by(ClientEvent.event_name)
-        .all()
-    ):
-        by_event[row[0]] = int(row[1])
+    impressions: Dict[str, int] = {}  # starter generator key → 曝光次数
+    clicks: Dict[str, int] = {}       # starter generator key → 点击次数
+    cold_start_ms: list = []
+    cold_start_incomplete = 0
 
+    for name, meta in rows:
+        by_event[name] = by_event.get(name, 0) + 1
+        meta = meta if isinstance(meta, dict) else {}
+        if name == "starter_chips_shown":
+            for key in meta.get("keys") or []:
+                if isinstance(key, str):
+                    impressions[key] = impressions.get(key, 0) + 1
+        elif name == "starter_chip_clicked":
+            key = meta.get("key")
+            if isinstance(key, str):
+                clicks[key] = clicks.get(key, 0) + 1
+        elif name == "home_cold_start_perf":
+            ms = meta.get("emitted_at_ms")
+            if isinstance(ms, (int, float)):
+                cold_start_ms.append(float(ms))
+            if meta.get("incomplete"):
+                cold_start_incomplete += 1
+
+    starter_ctr: Dict[str, dict] = {}
+    for key in sorted(set(impressions) | set(clicks)):
+        imp = impressions.get(key, 0)
+        clk = clicks.get(key, 0)
+        starter_ctr[key] = {
+            "impressions": imp,
+            "clicks": clk,
+            "ctr_pct": round(100.0 * clk / imp, 1) if imp else None,
+        }
+
+    p50 = _percentile(cold_start_ms, 50)
+    p95 = _percentile(cold_start_ms, 95)
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,
+        "starter_ctr": starter_ctr,
+        "home_cold_start_ms": {
+            "n": len(cold_start_ms),
+            "p50": round(p50) if p50 is not None else None,
+            "p95": round(p95) if p95 is not None else None,
+            "incomplete": cold_start_incomplete,
+        },
     }
 
 

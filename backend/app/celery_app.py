@@ -40,6 +40,7 @@ celery_app = Celery(
         "app.tasks.live_run_narrative",
         "app.tasks.live_run_hr_replay",
         "app.tasks.snp_prewarm",
+        "app.tasks.observability_digest",
     ]
 )
 
@@ -305,6 +306,13 @@ celery_app.conf.beat_schedule = {
     "episode-reflection": {
         "task": "app.tasks.episode_reflection.run_episode_reflection",
         "schedule": crontab(hour=9, minute=43),  # 北京 09:43
+    },
+
+    # 每周一 09:50 客户端遥测周报 — 聚合 client_events (starter CTR / 冷启动 p50p95 /
+    # 行为计数) 并 log 结构化摘要, 让埋点数据有人看 (push 半, pull 半在 /admin/observability).
+    "client-events-weekly-digest": {
+        "task": "app.tasks.observability_digest.client_events_weekly_digest",
+        "schedule": crontab(hour=9, minute=50, day_of_week=1),  # 北京 周一 09:50
     },
 }
 

@@ -8,6 +8,33 @@ import random
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _freeze_starters_clock(monkeypatch):
+    """Freeze the module wall-clock to a weekday afternoon (Wed 2026-05-27 15:00).
+
+    Endpoint tests go through `_collect_signals`, which reads the real clock to
+    decide which time-of-day / weekday generators fire. On a weekend, or at certain
+    hours, those add candidates beyond the 4 chip slots, and the endpoint's real
+    `random.Random()` weighted sampling then drops an asserted data signal → flaky
+    (this is why the suite went red on a Saturday). Freezing to a neutral weekday
+    afternoon means no time/weekday generator fires, so endpoint pools are exactly
+    the data signals and selection is deterministic. Direct generator tests pass
+    `local_hour` explicitly and are unaffected by this.
+    """
+    import app.services.conversation_starters as cs
+
+    _RealDT = cs.datetime
+
+    class _FrozenDT(_RealDT):
+        @classmethod
+        def now(cls, tz=None):
+            return _RealDT(2026, 5, 27, 15, 0, tzinfo=tz)
+
+    monkeypatch.setattr(cs, "datetime", _FrozenDT)
+
 
 DEFAULT_SUGGESTIONS = [
     "分析我最近的代谢健康",
@@ -47,7 +74,12 @@ def _make_signals(**overrides):
     return StarterSignals(**{**_EMPTY_SIGNALS_KWARGS, **overrides})
 
 
-def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and_headers):
+def test_endpoint_returns_onboarding_suggestions_for_zero_data_user(client, auth_user_and_headers):
+    """Cold-start: a brand-new user with no data gets onboarding activation chips
+    (connect device / log a meal / upload exam), NOT generic 'analyze my X' prompts
+    they have no data for. Chips carry key='onboarding' for activation CTR tracking."""
+    from app.services.conversation_starters import ONBOARDING_SUGGESTIONS
+
     _, headers = auth_user_and_headers
 
     r = client.get("/api/v1/agent/conversation-starters", headers=headers)
@@ -55,10 +87,8 @@ def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and
     assert r.status_code == 200
     payload = r.json()
     assert payload["opener"] is None
-    # suggestions are structured cards: { text, key, priority }
-    assert [s["text"] for s in payload["suggestions"]] == DEFAULT_SUGGESTIONS
-    # fallback cards carry the "default" key for analytics attribution
-    assert all(s["key"] == "default" for s in payload["suggestions"])
+    assert [s["text"] for s in payload["suggestions"]] == ONBOARDING_SUGGESTIONS
+    assert all(s["key"] == "onboarding" for s in payload["suggestions"])
     assert all("priority" in s for s in payload["suggestions"])
 
 

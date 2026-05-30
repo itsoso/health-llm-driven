@@ -417,6 +417,7 @@ public struct AgentToolActivity: Equatable, Identifiable, Sendable {
 @MainActor
 public final class AgentChatViewModel {
     public var isStreaming = false
+    private var streamingTask: Task<Void, Never>?
     public var runState: AgentRunState = .idle
     public var selectedModelID: String?
     public var webSearchEnabled = false
@@ -554,6 +555,25 @@ public final class AgentChatViewModel {
     public func deleteContextBundle(_ bundle: AgentContextBundle) {
         savedContextBundles.removeAll { $0.id == bundle.id }
         persistContextBundles()
+    }
+
+    /// Fire-and-forget entry point for the UI: wraps `send` in a tracked Task so
+    /// the composer's Stop button can cancel an in-flight stream via
+    /// `cancelStreaming()`. Cancelling the task unwinds the `for try await` loop,
+    /// which terminates the AsyncThrowingStream and cancels the URLSession task.
+    public func submit(_ text: String) {
+        streamingTask?.cancel()
+        streamingTask = Task { [weak self] in
+            await self?.send(text)
+        }
+    }
+
+    /// Stops the current stream. Partial content already received stays on screen
+    /// (send()'s CancellationError path leaves isStreaming=false without wiping it).
+    public func cancelStreaming() {
+        streamingTask?.cancel()
+        streamingTask = nil
+        isStreaming = false
     }
 
     public func send(_ text: String) async {

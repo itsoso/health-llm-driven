@@ -93,6 +93,7 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyExpanded = false
+    @State private var copiedMessageID: UUID?
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
@@ -248,7 +249,7 @@ struct AgentChatView: View {
                     text: $draft,
                     focusToken: editorFocusToken
                 ) {
-                    Task { await sendDraft() }
+                    sendDraft()
                 }
                 .frame(minHeight: 190, maxHeight: 300)
 
@@ -304,16 +305,27 @@ struct AgentChatView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                 }
-                Button {
-                    Task { await sendDraft() }
-                } label: {
-                    Label(appText(viewModel.isStreaming ? "Running" : "Run", appLanguageRaw), systemImage: "play.fill")
+                if viewModel.isStreaming {
+                    Button(role: .destructive) {
+                        viewModel.cancelStreaming()
+                    } label: {
+                        Label(appText("Stop", appLanguageRaw), systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .help(appText("Stop generating", appLanguageRaw))
+                } else {
+                    Button {
+                        sendDraft()
+                    } label: {
+                        Label(appText("Run", appLanguageRaw), systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!viewModel.canSubmit(draft))
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Command-Return")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!viewModel.canSubmit(draft))
-                .keyboardShortcut(.return, modifiers: .command)
-                .help("Command-Return")
             }
         }
         .padding(18)
@@ -332,7 +344,7 @@ struct AgentChatView: View {
                     attach(url)
                 }
             } catch {
-                viewModel.errorMessage = "Attach failed: \(error.localizedDescription)"
+                viewModel.errorMessage = "Attach failed: \(userFacingError(error, appLanguageRaw))"
             }
         }
     }
@@ -519,14 +531,34 @@ struct AgentChatView: View {
     /// arrangement (newest content above a fixed input).
     private var chatColumn: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                messagesArea
-                    .padding(.bottom, 8)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    messagesArea
+                        .padding(.bottom, 8)
+                    // Bottom anchor the auto-scroll targets so new messages and
+                    // streaming tokens stay in view (ChatBot convention).
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.scrollBottomAnchor)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onChange(of: scrollTrigger) { _, _ in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(Self.scrollBottomAnchor, anchor: .bottom)
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             composer
                 .padding(.top, 12)
         }
+    }
+
+    private static let scrollBottomAnchor = "agent-chat-bottom-anchor"
+
+    /// Changes whenever a message is added or the streaming reply grows, so the
+    /// transcript auto-scrolls to the bottom on both events.
+    private var scrollTrigger: Int {
+        viewModel.messages.count &+ (viewModel.messages.last?.content.count ?? 0)
     }
 
     /// The scrollable transcript: result header + message bubbles, or an empty
@@ -586,12 +618,18 @@ struct AgentChatView: View {
                 Spacer(minLength: 0)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Label(
-                    appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
-                    systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
-                )
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Label(
+                        appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
+                        systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
+                    )
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if message.role == .assistant && !message.content.isEmpty {
+                        copyButton(for: message)
+                    }
+                }
                 messageContent(message)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -633,6 +671,27 @@ struct AgentChatView: View {
         }
     }
 
+    private func copyButton(for message: AgentChatMessage) -> some View {
+        let copied = copiedMessageID == message.id
+        return Button {
+            let text = viewModel.displayContent(for: message)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copiedMessageID = message.id
+            // Clear the transient "copied" state shortly after.
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if copiedMessageID == message.id { copiedMessageID = nil }
+            }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption2)
+                .foregroundStyle(copied ? Color.green : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(appText(copied ? "Copied" : "Copy", appLanguageRaw))
+    }
+
     @ViewBuilder
     private func messageContent(_ message: AgentChatMessage) -> some View {
         if message.role == .assistant {
@@ -662,7 +721,7 @@ struct AgentChatView: View {
             HStack(spacing: 8) {
                 ForEach(prompts, id: \.label) { chip in
                     Button {
-                        Task { await viewModel.send(chip.prompt) }
+                        viewModel.submit(chip.prompt)
                     } label: {
                         Label(appText(chip.label, appLanguageRaw), systemImage: chip.icon)
                             .labelStyle(.titleAndIcon)
@@ -1042,11 +1101,11 @@ struct AgentChatView: View {
         }
     }
 
-    private func sendDraft() async {
+    private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard viewModel.canSubmit(text) else { return }
         draft = ""
-        await viewModel.send(text)
+        viewModel.submit(text)
         editorFocusToken += 1
     }
 
@@ -1064,7 +1123,7 @@ struct AgentChatView: View {
                 let item = try await FileIntakeService.inspect(url: url)
                 viewModel.addAttachment(item)
             } catch {
-                viewModel.errorMessage = "Attach failed: \(error.localizedDescription)"
+                viewModel.errorMessage = "Attach failed: \(userFacingError(error, appLanguageRaw))"
             }
         }
     }
@@ -2625,7 +2684,7 @@ struct RecordHubView: View {
                 : "\(response.total) \(appText("products found", appLanguageRaw))"
         } catch {
             supplementProductResults = []
-            supplementProductMessage = "\(appText("Search failed", appLanguageRaw)): \(error.localizedDescription)"
+            supplementProductMessage = "\(appText("Search failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2736,7 +2795,7 @@ struct RecordHubView: View {
                 await viewModel.refresh()
             }
         } catch {
-            resultMessage = "Save failed: \(error.localizedDescription)"
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2751,7 +2810,7 @@ struct RecordHubView: View {
                 await viewModel.refresh()
             }
         } catch {
-            resultMessage = "Save failed: \(error.localizedDescription)"
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2778,7 +2837,7 @@ struct RecordHubView: View {
             resultMessage = appText("Record undone.", appLanguageRaw)
             await viewModel.refresh()
         } catch {
-            resultMessage = "\(appText("Undo failed", appLanguageRaw)): \(error.localizedDescription)"
+            resultMessage = "\(appText("Undo failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2952,7 +3011,7 @@ struct ImportCenterView: View {
             rawUploadConfirmed = false
             statusText = "Ready to create import job."
         } catch {
-            statusText = "Inspect failed: \(error.localizedDescription)"
+            statusText = "Inspect failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2974,7 +3033,7 @@ struct ImportCenterView: View {
             statusText = "Created job #\(job.id) (\(job.status))."
             recommendedPrompt = pipelineRecommendation(for: intakeItem.sourceKind)
         } catch {
-            statusText = "Job creation failed: \(error.localizedDescription)"
+            statusText = "Job creation failed: \(userFacingError(error, appLanguageRaw))"
             recommendedPrompt = nil
         }
     }
@@ -3135,7 +3194,7 @@ struct JobListView: View {
             }
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 
@@ -3144,7 +3203,7 @@ struct JobListView: View {
             selectedJob = try await client.getJob(id: id)
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 
@@ -3153,7 +3212,7 @@ struct JobListView: View {
             selectedJob = try await client.retryJob(id: job.id)
             await refresh()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 }
@@ -3592,7 +3651,7 @@ struct TraceLookupView: View {
             trace = try await client.fetchTrace(conversationID: id)
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 
@@ -3758,7 +3817,7 @@ struct SettingsView: View {
         } catch {
             // Surface the failure instead of silently leaving the toggle wrong:
             // ad-hoc/unsigned local builds can be denied by the system here.
-            statusMessage = "\(appText("Launch at login change failed", appLanguageRaw)): \(error.localizedDescription)"
+            statusMessage = "\(appText("Launch at login change failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
@@ -3792,7 +3851,7 @@ struct SettingsView: View {
             statusMessage = "Token saved."
             token = ""
         } catch {
-            statusMessage = "Save failed: \(error.localizedDescription)"
+            statusMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
