@@ -36,6 +36,16 @@ DEFAULT_SUGGESTIONS: list[str] = [
     "帮我复盘最近的睡眠质量",
 ]
 
+# 冷启动: 零数据新用户没有可分析的信号,DEFAULT_SUGGESTIONS 的"分析我的 X"对他们是空的。
+# 这组 onboarding chip 驱动首次价值兑现(连设备 / 记一顿饭 / 传体检 / 定目标)。
+# key="onboarding" → 可用 starter CTR 埋点直接量化冷启动激活率。
+ONBOARDING_SUGGESTIONS: list[str] = [
+    "连接 Garmin 或 Apple 健康，马上看到你的恢复评分和睡眠质量",
+    "拍张餐照或说一句吃了什么，我帮你记录并估算热量营养",
+    "上传一份体检报告，我来逐项解读异常指标",
+    "告诉我你最想改善的健康目标，我帮你拆解第一步",
+]
+
 # Priority bands (higher = more likely to appear, critical always included):
 #   100+  critical / safety — readiness<40, BP critical, AQI hazardous, ACWR danger
 #    80   today body state — readiness/HRV/body battery/stress notable
@@ -135,6 +145,10 @@ def compute_conversation_suggestion_cards(
 
     try:
         signals = _collect_signals(db, user_id)
+        # 冷启动: 零数据新用户 → onboarding chips(驱动首次价值兑现),而不是泛泛的
+        # "分析我的 X"(他们还没有 X 可分析)。
+        if not _has_any_user_signal(signals):
+            return _onboarding_cards(limit)
         candidates = _build_candidates(signals)
         return _select_cards(candidates, limit=limit, rng=rng)
     except Exception:  # noqa: BLE001
@@ -160,6 +174,14 @@ def _default_cards(limit: int) -> list[SuggestionCandidate]:
     return [
         SuggestionCandidate(_DEFAULT_PRIORITY, text, "default")
         for text in DEFAULT_SUGGESTIONS[:limit]
+    ]
+
+
+def _onboarding_cards(limit: int) -> list[SuggestionCandidate]:
+    """Cold-start prompts for a zero-data user (key="onboarding" for CTR tracking)."""
+    return [
+        SuggestionCandidate(_DEFAULT_PRIORITY, text, "onboarding")
+        for text in ONBOARDING_SUGGESTIONS[:limit]
     ]
 
 

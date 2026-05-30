@@ -74,7 +74,12 @@ def _make_signals(**overrides):
     return StarterSignals(**{**_EMPTY_SIGNALS_KWARGS, **overrides})
 
 
-def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and_headers):
+def test_endpoint_returns_onboarding_suggestions_for_zero_data_user(client, auth_user_and_headers):
+    """Cold-start: a brand-new user with no data gets onboarding activation chips
+    (connect device / log a meal / upload exam), NOT generic 'analyze my X' prompts
+    they have no data for. Chips carry key='onboarding' for activation CTR tracking."""
+    from app.services.conversation_starters import ONBOARDING_SUGGESTIONS
+
     _, headers = auth_user_and_headers
 
     r = client.get("/api/v1/agent/conversation-starters", headers=headers)
@@ -82,10 +87,8 @@ def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and
     assert r.status_code == 200
     payload = r.json()
     assert payload["opener"] is None
-    # suggestions are structured cards: { text, key, priority }
-    assert [s["text"] for s in payload["suggestions"]] == DEFAULT_SUGGESTIONS
-    # fallback cards carry the "default" key for analytics attribution
-    assert all(s["key"] == "default" for s in payload["suggestions"])
+    assert [s["text"] for s in payload["suggestions"]] == ONBOARDING_SUGGESTIONS
+    assert all(s["key"] == "onboarding" for s in payload["suggestions"])
     assert all("priority" in s for s in payload["suggestions"])
 
 
