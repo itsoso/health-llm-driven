@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '../../services/safety';
 import { buildActionCockpitSections, getActiveCards, completeCard, reactivateCard, reviewActionCard } from '../../services/actionCards';
+import { completeActionWithUndo } from '../../services/actionCompletion';
 import InterventionCard from '../../components/actions/InterventionCard';
 import { ExplainButton } from '../../components/reasoning/ExplainButton';
 import { queryKeys } from '../../applib/queryKeys';
@@ -48,21 +49,18 @@ export default function ActionsScreen() {
   const { data: safetyData, refetch: refetchSafety, isRefetching: sr, isLoading: sl } = useQuery({ queryKey: queryKeys.safety, queryFn: getSafetyReport });
   const { data: cardsData, refetch: refetchCards, isRefetching: cr, isLoading: cl } = useQuery({ queryKey: queryKeys.actionCards, queryFn: getActiveCards });
 
-  // P8 (2026-05-04): 标记完成后 5s 内可撤销 — 用户点错"已完成"不至于丢失
-  const handleCompleteWithUndo = async (cardId: number, cardTitle: string) => {
-    await completeCard(cardId);
-    refetchCards();
-    toast.showUndoable(
-      `已完成「${cardTitle.slice(0, 14)}」`,
-      async () => {
-        try {
-          await reactivateCard(cardId);
-          refetchCards();
-        } catch { /* 静默 */ }
-      },
-      5000,
-    );
-  };
+  // P8 (2026-05-04): 标记完成后 5s 内可撤销 — 用户点错"已完成"不至于丢失.
+  // 逻辑抽到 services/actionCompletion.ts (可单测); rule#1: 完成/撤销失败都 error toast.
+  const handleCompleteWithUndo = (cardId: number, cardTitle: string) =>
+    completeActionWithUndo({
+      cardId,
+      cardTitle,
+      completeCard,
+      reactivateCard,
+      refetchCards,
+      showUndoable: toast.showUndoable,
+      showError: (msg) => toast.show(msg, 'error'),
+    });
 
   const alerts = safetyData?.alerts || [];
   const cards = cardsData || [];
