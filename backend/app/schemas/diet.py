@@ -114,6 +114,20 @@ class DietStats(BaseModel):
     days_recorded: int = 0
 
 
+class FrequentFood(BaseModel):
+    """常吃食物 —— 由历史 DietRecord 按 food_items 聚合得出, 供首页/记录页一键复用.
+
+    营养素取该食物历次记录的中位数 (历次数值可能不同), 是"按历史估算"非精确值.
+    """
+    food_items: str
+    meal_type: MealType
+    count: int  # 该食物在窗口内出现次数
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fat: Optional[float] = None
+
+
 # ========== AI食物识别相关 ==========
 
 class FoodItem(BaseModel):

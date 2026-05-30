@@ -19,10 +19,12 @@ from app.schemas.diet import (
     DietRecordResponse,
     DailyDietSummary,
     DietStats,
+    FrequentFood,
     FoodRecognitionRequest,
     FoodRecognitionResponse,
     CreateDietFromImageRequest,
 )
+from statistics import median
 from app.services.ai.food_recognition import food_recognition_service
 
 router = APIRouter()
@@ -336,6 +338,63 @@ def get_my_diet_stats(
         total_records=len(records),
         days_recorded=days_count
     )
+
+
+def _median_or_none(values: List[float]) -> Optional[float]:
+    """对非空数值取中位数, 全空返回 None (诚实表达"无历史营养数据")."""
+    nums = [v for v in values if v is not None]
+    if not nums:
+        return None
+    return round(float(median(nums)), 1)
+
+
+@router.get("/records/me/frequent", response_model=List[FrequentFood])
+def get_my_frequent_foods(
+    days: int = Query(default=30, ge=7, le=180),
+    limit: int = Query(default=8, ge=1, le=30),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """当前用户最近 N 天的"常吃"食物, 按出现频次倒序 (供一键复用).
+
+    按 food_items (去空白后) 分组; 同名食物的营养素取历次中位数, meal_type 取众数.
+    无历史营养数据的项营养素返回 null —— 不编造数值 (rule#1).
+    """
+    start_date = date.today() - timedelta(days=days)
+    records = db.query(DietRecordModel).filter(
+        DietRecordModel.user_id == current_user.id,
+        DietRecordModel.record_date >= start_date,
+    ).all()
+
+    # 按归一化 food_items 分组
+    groups: dict[str, list] = {}
+    for r in records:
+        key = (r.food_items or "").strip()
+        if not key:
+            continue
+        groups.setdefault(key, []).append(r)
+
+    items: List[FrequentFood] = []
+    for food, rs in groups.items():
+        # meal_type 众数 (并列时取最近一次)
+        meal_counts: dict[str, int] = {}
+        for r in rs:
+            mt = r.meal_type or "extra"
+            meal_counts[mt] = meal_counts.get(mt, 0) + 1
+        top_meal = max(meal_counts.items(), key=lambda kv: kv[1])[0]
+        items.append(FrequentFood(
+            food_items=food,
+            meal_type=MealType(top_meal) if top_meal in MealType._value2member_map_ else MealType.EXTRA,
+            count=len(rs),
+            calories=_median_or_none([r.calories for r in rs]),
+            protein=_median_or_none([r.protein for r in rs]),
+            carbs=_median_or_none([r.carbs for r in rs]),
+            fat=_median_or_none([r.fat for r in rs]),
+        ))
+
+    # 频次倒序, 同频次按字母稳定排序
+    items.sort(key=lambda f: (-f.count, f.food_items))
+    return items[:limit]
 
 
 @router.put("/records/{record_id}", response_model=DietRecordResponse)
