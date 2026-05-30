@@ -569,7 +569,10 @@ public final class AgentChatViewModel {
         lastPrompt = message
         messages.append(.init(role: .user, content: message))
         messages.append(.init(role: .assistant, content: ""))
-        let assistantIndex = messages.index(before: messages.endIndex)
+        // Track the streaming assistant message by its stable id, not a captured
+        // index: New Chat / loading a conversation / sending again resets `messages`
+        // mid-stream, which would make a captured index stale and crash on next token.
+        let assistantID = messages[messages.index(before: messages.endIndex)].id
 
         do {
             for try await event in streamService.stream(
