@@ -13,6 +13,8 @@ let mockWeeklyAdvice: any[] = [];
 let mockSafetyAlerts: any[] = [];
 let mockGeneticStats: { hits: number | null; total: number | null } = { hits: null, total: null };
 let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
+let mockStreakData: { current_streak: number; best_streak: number } | null = null;
+let mockStreakError = false;
 let mockRefetchingKeys = new Set<string>();
 
 jest.mock('expo-router', () => ({
@@ -43,6 +45,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('progress-stats')) {
       return { data: mockProgressStats, isLoading: false, isRefetching };
+    }
+    if (key.includes('checkin-streak')) {
+      return { data: mockStreakData, isLoading: false, isError: mockStreakError, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -137,6 +142,8 @@ describe('TodayScreen', () => {
     mockSafetyAlerts = [];
     mockGeneticStats = { hits: null, total: null };
     mockProgressStats = { improved: null, total: null };
+    mockStreakData = null;
+    mockStreakError = false;
     mockRefetchingKeys = new Set<string>();
   });
 
@@ -145,6 +152,33 @@ describe('TodayScreen', () => {
   it('does not surface the low-value Agent data visibility panel on the home feed', () => {
     const { queryByText } = render(<TodayScreen />);
     expect(queryByText('Agent 数据视野')).toBeNull();
+  });
+
+  it('surfaces the check-in streak badge on the home feed', () => {
+    mockStreakData = { current_streak: 6, best_streak: 14 };
+    const { getByText } = render(<TodayScreen />);
+    expect(getByText('连续 6 天')).toBeTruthy();
+    expect(getByText('· 最佳 14')).toBeTruthy();
+  });
+
+  it('shows an inviting streak zero-state instead of faking a streak', () => {
+    mockStreakData = { current_streak: 0, best_streak: 0 };
+    const { getByText, queryByText } = render(<TodayScreen />);
+    expect(getByText('今天开始记录')).toBeTruthy();
+    expect(queryByText(/连续 0 天/)).toBeNull();
+  });
+
+  it('shows an honest streak error state instead of degrading to zero', () => {
+    mockStreakError = true;
+    const { getByText } = render(<TodayScreen />);
+    expect(getByText('连续天数加载失败')).toBeTruthy();
+  });
+
+  it('opens the record tab when the streak badge is tapped', () => {
+    mockStreakData = { current_streak: 3, best_streak: 3 };
+    const { getByTestId } = render(<TodayScreen />);
+    fireEvent.press(getByTestId('home-streak-badge'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
 
   it('shows the health Agent identity with a calm background-monitoring status', () => {
