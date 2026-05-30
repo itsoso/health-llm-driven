@@ -582,7 +582,11 @@ public final class AgentChatViewModel {
                     conversationID = id ?? conversationID
                 case .token(let content):
                     runState = .streaming
-                    messages[assistantIndex].content += content
+                    guard let idx = messages.firstIndex(where: { $0.id == assistantID }) else {
+                        isStreaming = false
+                        return
+                    }
+                    messages[idx].content += content
                 case .tool(let name, let success):
                     applyToolEvent(AgentToolEvent(
                         name: name,
@@ -617,6 +621,12 @@ public final class AgentChatViewModel {
             errorMessage = error.localizedDescription
         }
 
+        // The conversation may have been reset while awaiting the stream; if the
+        // assistant message is gone, there's nothing left to finalize.
+        guard let assistantIndex = messages.firstIndex(where: { $0.id == assistantID }) else {
+            isStreaming = false
+            return
+        }
         if messages[assistantIndex].content.isEmpty, let errorMessage {
             messages[assistantIndex].content = errorMessage
         }
