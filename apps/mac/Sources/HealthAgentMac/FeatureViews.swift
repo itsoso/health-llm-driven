@@ -100,9 +100,18 @@ struct AgentChatView: View {
                 header
 
                 ViewThatFits(in: .horizontal) {
+                    // Wide: composer and its results share the left column so the
+                    // results sit directly under the input. Without this the tall
+                    // context panel on the right inflated the row height, leaving a
+                    // large empty gap under the short composer and pushing 结果 far down.
                     HStack(alignment: .top, spacing: 16) {
-                        composer
-                            .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
+                        VStack(alignment: .leading, spacing: 20) {
+                            composer
+                            if !viewModel.messages.isEmpty {
+                                conversationSection
+                            }
+                        }
+                        .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
                         contextPanel
                             .frame(width: 340, alignment: .topLeading)
                     }
@@ -110,11 +119,10 @@ struct AgentChatView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         composer
                         contextPanel
+                        if !viewModel.messages.isEmpty {
+                            conversationSection
+                        }
                     }
-                }
-
-                if !viewModel.messages.isEmpty {
-                    conversationSection
                 }
 
                 conversationHistoryStrip
