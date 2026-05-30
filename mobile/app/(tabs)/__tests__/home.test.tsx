@@ -15,6 +15,8 @@ let mockGeneticStats: { hits: number | null; total: number | null } = { hits: nu
 let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
 let mockStreakData: { current_streak: number; best_streak: number } | null = null;
 let mockStreakError = false;
+let mockProgressDashboard: { stats: Record<string, number> } | null = null;
+let mockProgressDashboardError = false;
 let mockRefetchingKeys = new Set<string>();
 
 jest.mock('expo-router', () => ({
@@ -48,6 +50,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('checkin-streak')) {
       return { data: mockStreakData, isLoading: false, isError: mockStreakError, isRefetching };
+    }
+    if (key.includes('progress-dashboard')) {
+      return { data: mockProgressDashboard, isLoading: false, isError: mockProgressDashboardError, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -144,6 +149,8 @@ describe('TodayScreen', () => {
     mockProgressStats = { improved: null, total: null };
     mockStreakData = null;
     mockStreakError = false;
+    mockProgressDashboard = null;
+    mockProgressDashboardError = false;
     mockRefetchingKeys = new Set<string>();
   });
 
@@ -179,6 +186,32 @@ describe('TodayScreen', () => {
     const { getByTestId } = render(<TodayScreen />);
     fireEvent.press(getByTestId('home-streak-badge'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
+  });
+
+  it('surfaces the AI outcome win metric on the home feed', () => {
+    mockProgressDashboard = { stats: { improved: 3, graded: 5, total_surfaced: 8 } };
+    const { getByText } = render(<TodayScreen />);
+    expect(getByText('AI 已帮你改善 3 项')).toBeTruthy();
+  });
+
+  it('shows the outcome verifying state instead of a fake win', () => {
+    mockProgressDashboard = { stats: { improved: 0, graded: 0, total_surfaced: 4 } };
+    const { getByText, queryByText } = render(<TodayScreen />);
+    expect(getByText('成果验证中')).toBeTruthy();
+    expect(queryByText(/已帮你改善/)).toBeNull();
+  });
+
+  it('shows an honest outcome error state instead of degrading to zero', () => {
+    mockProgressDashboardError = true;
+    const { getByText } = render(<TodayScreen />);
+    expect(getByText('成果加载失败')).toBeTruthy();
+  });
+
+  it('opens my-progress when the outcome win card is tapped', () => {
+    mockProgressDashboard = { stats: { improved: 2, graded: 4, total_surfaced: 6 } };
+    const { getByTestId } = render(<TodayScreen />);
+    fireEvent.press(getByTestId('home-outcome-win-card'));
+    expect(mockPush).toHaveBeenCalledWith('/my-progress');
   });
 
   it('shows the health Agent identity with a calm background-monitoring status', () => {
