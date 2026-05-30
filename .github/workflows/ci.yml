@@ -112,3 +112,22 @@ jobs:
       - name: Test (jest)
         working-directory: mobile
         run: npx jest --silent --passWithNoTests
+
+  mac-build:
+    # Catches non-compiling mac app pushes that the ubuntu jobs can't (the app is
+    # a SwiftPM package; only macOS runners have Swift + the SDKs to build it).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (swift build)
+        working-directory: apps/mac
+        run: swift build
+
+      - name: Test (logic suite only)
+        working-directory: apps/mac
+        # Only the logic/core suite. The HealthAgentMacTests snapshot suite does
+        # pixel diffs that are environment-sensitive (fonts/antialiasing differ on
+        # CI runners) — running it here would fail for rendering reasons, not real
+        # regressions. Snapshot tests stay a local/manual check.
+        run: swift test --filter HealthAgentMacCoreTests
