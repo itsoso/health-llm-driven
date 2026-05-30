@@ -3518,9 +3518,40 @@ struct SettingsView: View {
     @AppStorage("allowFileHashing") private var allowFileHashing = true
     @State private var token = ""
     @State private var statusMessage: String?
+    @State private var currentUser: AuthUser?
+    @State private var loadingUser = false
 
     var body: some View {
         Form {
+            Section(appText("Account", appLanguageRaw)) {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.teal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(appText("Signed in as", appLanguageRaw))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(currentUserPrimaryLabel)
+                            .font(.callout.weight(.semibold))
+                        if let secondary = currentUserSecondaryLabel {
+                            Text(secondary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+                Button(role: .destructive) {
+                    Task { await signOut() }
+                } label: {
+                    Label(appText("Switch Account", appLanguageRaw), systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                Text(appText("Sign out and return to the login screen.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section(appText("Language", appLanguageRaw)) {
                 Picker(appText("Display language", appLanguageRaw), selection: $appLanguageRaw) {
                     ForEach(AppLanguage.allCases) { language in
@@ -3539,9 +3570,6 @@ struct SettingsView: View {
                     }
                     Button(appText("Clear Token", appLanguageRaw)) {
                         Task { await clearToken() }
-                    }
-                    Button(appText("Sign Out", appLanguageRaw)) {
-                        Task { await signOut() }
                     }
                 }
             }
@@ -3572,6 +3600,30 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(28)
+        .task { await loadCurrentUser() }
+    }
+
+    private var currentUserPrimaryLabel: String {
+        if let user = currentUser {
+            return user.name ?? user.username
+        }
+        return loadingUser ? appText("Checking login...", appLanguageRaw) : "—"
+    }
+
+    private var currentUserSecondaryLabel: String? {
+        guard let user = currentUser else { return nil }
+        let primary = user.name ?? user.username
+        // Surface email (or username when a display name is shown) as a second line,
+        // but skip it when it would just duplicate the primary line.
+        let secondary = user.email ?? (user.name != nil ? user.username : nil)
+        guard let secondary, secondary != primary else { return nil }
+        return secondary
+    }
+
+    private func loadCurrentUser() async {
+        loadingUser = true
+        defer { loadingUser = false }
+        currentUser = try? await authClient.currentUser()
     }
 
     private func saveToken() async {
