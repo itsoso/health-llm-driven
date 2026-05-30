@@ -1,60 +1,53 @@
 import Foundation
 
-public struct Workout: Codable, Equatable, Sendable, Identifiable {
+/// Mirrors backend `WorkoutSummary` (GET /workout/me). Durations are in seconds
+/// and distances in meters on the wire; the UI converts for display.
+public struct WorkoutSummary: Codable, Equatable, Sendable, Identifiable {
     public let id: Int
+    public let workoutDate: String
     public let workoutType: String
-    public let name: String?
-    public let startTime: String
-    public let endTime: String?
-    public let durationMin: Double?
-    public let distanceKm: Double?
-    public let calories: Int?
+    public let workoutName: String?
+    public let durationSeconds: Int?
+    public let distanceMeters: Double?
     public let avgHeartRate: Int?
-    public let maxHeartRate: Int?
-    public let elevationGainM: Double?
-    public let avgPace: String?
-    public let perceivedExertion: Int?
-    public let notes: String?
-    public let source: String
+    public let calories: Int?
+    public let feeling: String?
+    public let hasAIAnalysis: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
+        case workoutDate = "workout_date"
         case workoutType = "workout_type"
-        case name
-        case startTime = "start_time"
-        case endTime = "end_time"
-        case durationMin = "duration_min"
-        case distanceKm = "distance_km"
-        case calories
+        case workoutName = "workout_name"
+        case durationSeconds = "duration_seconds"
+        case distanceMeters = "distance_meters"
         case avgHeartRate = "avg_heart_rate"
-        case maxHeartRate = "max_heart_rate"
-        case elevationGainM = "elevation_gain_m"
-        case avgPace = "avg_pace"
-        case perceivedExertion = "perceived_exertion"
-        case notes
-        case source
+        case calories
+        case feeling
+        case hasAIAnalysis = "has_ai_analysis"
     }
 }
 
+/// Mirrors backend `WorkoutStats` (GET /workout/me/stats).
 public struct WorkoutStats: Codable, Equatable, Sendable {
     public let totalWorkouts: Int
-    public let totalDurationMin: Double
-    public let totalCalories: Int
+    public let totalDurationMinutes: Int
     public let totalDistanceKm: Double
-    public let byType: [String: Int]
-    public let avgDurationMin: Double
-    public let weeklyFrequency: Double
-    public let periodDays: Int
+    public let totalCalories: Int
+    public let avgDurationMinutes: Double
+    public let avgDistanceKm: Double
+    public let workoutsByType: [String: Int]
+    public let recentTrend: String
 
     enum CodingKeys: String, CodingKey {
         case totalWorkouts = "total_workouts"
-        case totalDurationMin = "total_duration_min"
-        case totalCalories = "total_calories"
+        case totalDurationMinutes = "total_duration_minutes"
         case totalDistanceKm = "total_distance_km"
-        case byType = "by_type"
-        case avgDurationMin = "avg_duration_min"
-        case weeklyFrequency = "weekly_frequency"
-        case periodDays = "period_days"
+        case totalCalories = "total_calories"
+        case avgDurationMinutes = "avg_duration_minutes"
+        case avgDistanceKm = "avg_distance_km"
+        case workoutsByType = "workouts_by_type"
+        case recentTrend = "recent_trend"
     }
 }
 
@@ -65,11 +58,11 @@ public final class WorkoutClient: Sendable {
         self.apiClient = apiClient
     }
 
-    public func fetchWorkouts(limit: Int = 50) async throws -> [Workout] {
-        try await apiClient.get("workouts/?limit=\(limit)")
+    public func fetchWorkouts(limit: Int = 50) async throws -> [WorkoutSummary] {
+        try await apiClient.get("workout/me?limit=\(limit)")
     }
 
     public func fetchStats(days: Int = 30) async throws -> WorkoutStats {
-        try await apiClient.get("workouts/stats/summary?days=\(days)")
+        try await apiClient.get("workout/me/stats?days=\(days)")
     }
 }

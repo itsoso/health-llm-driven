@@ -169,6 +169,10 @@ public enum DesktopCommandPalette {
             L10n.text("Review genome findings, risk boundaries, and imports.", language: language)
         case .knowledge:
             L10n.text("Review source coverage, claims, and evidence.", language: language)
+        case .workouts:
+            L10n.text("Recent training and load.", language: language)
+        case .goals:
+            L10n.text("Health goals and progress.", language: language)
         case .jobs:
             L10n.text("Inspect import, reanalysis, and rebuild jobs.", language: language)
         case .trace:

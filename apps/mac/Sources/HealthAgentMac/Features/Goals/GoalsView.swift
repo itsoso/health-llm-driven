@@ -7,17 +7,18 @@ struct GoalsView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
     @State private var goals: [Goal] = []
-    @State private var stats: GoalStats?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var loaded = false
+
+    private var overview: GoalOverview { GoalOverview(goals: goals) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                if let stats {
-                    statsGrid(stats)
+                if !goals.isEmpty {
+                    statsGrid(overview)
                 }
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -67,13 +68,13 @@ struct GoalsView: View {
         }
     }
 
-    private func statsGrid(_ stats: GoalStats) -> some View {
+    private func statsGrid(_ overview: GoalOverview) -> some View {
         SectionPanel(title: appText("Overview", appLanguageRaw), systemImage: "chart.pie.fill") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
-                statTile(appText("Active", appLanguageRaw), "\(stats.active)", "bolt.fill", .indigo)
-                statTile(appText("Completed", appLanguageRaw), "\(stats.completed)", "checkmark.seal.fill", .green)
-                statTile(appText("Total", appLanguageRaw), "\(stats.total)", "list.bullet", .secondary)
-                statTile(appText("Completion rate", appLanguageRaw), "\(Int(stats.completionRate * 100))%", "percent", .teal)
+                statTile(appText("Active", appLanguageRaw), "\(overview.active)", "bolt.fill", .indigo)
+                statTile(appText("Completed", appLanguageRaw), "\(overview.completed)", "checkmark.seal.fill", .green)
+                statTile(appText("Total", appLanguageRaw), "\(overview.total)", "list.bullet", .secondary)
+                statTile(appText("Completion rate", appLanguageRaw), "\(Int(overview.completionRate * 100))%", "percent", .teal)
             }
         }
     }
@@ -120,10 +121,7 @@ struct GoalsView: View {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            async let list = client.fetchGoals(limit: 50)
-            async let summary = client.fetchStats()
-            goals = try await list
-            stats = try await summary
+            goals = try await client.fetchGoals()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -135,14 +133,12 @@ private struct GoalCard: View {
     let appLanguageRaw: String
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
 
-    private var progress: Double { min(max(goal.progressPercent / 100, 0), 1) }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: GoalPresentation.icon(for: goal.category))
+                Image(systemName: GoalPresentation.icon(for: goal.goalType))
                     .foregroundStyle(.indigo)
-                Text(goal.title)
+                Text(goal.title ?? appText("Goal", appLanguageRaw))
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)
@@ -159,15 +155,17 @@ private struct GoalCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            ProgressView(value: progress)
-                .tint(.indigo)
+            if let fraction = goal.progressFraction {
+                ProgressView(value: fraction)
+                    .tint(.indigo)
+            }
             HStack {
                 Text(progressLabel)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
-                if let targetDate = goal.targetDate {
-                    Label(String(targetDate.prefix(10)), systemImage: "calendar")
+                if let endDate = goal.endDate {
+                    Label(String(endDate.prefix(10)), systemImage: "calendar")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -187,16 +185,16 @@ private struct GoalCard: View {
     }
 
     private var progressLabel: String {
-        var label = "\(Int(goal.progressPercent))%"
         if let current = goal.currentValue, let target = goal.targetValue {
-            let unit = goal.unit ?? ""
-            label += " · \(formatNumber(current))/\(formatNumber(target))\(unit)"
+            let unit = goal.targetUnit ?? ""
+            return "\(formatNumber(current)) / \(formatNumber(target)) \(unit)"
         }
-        return label
+        return appText(GoalPresentation.periodKey(goal.goalPeriod), appLanguageRaw)
     }
 
     private var askPrompt: String {
-        "请评估我的健康目标「\(goal.title)」当前进度 \(Int(goal.progressPercent))%,结合我的真实数据给出能推进它的具体行动和复查指标。"
+        let title = goal.title ?? appText("Goal", appLanguageRaw)
+        return "请评估我的健康目标「\(title)」当前进度,结合我的真实数据给出能推进它的具体行动和复查指标。"
     }
 
     private func formatNumber(_ value: Double) -> String {
@@ -205,11 +203,11 @@ private struct GoalCard: View {
 }
 
 enum GoalPresentation {
-    static func icon(for category: String) -> String {
-        switch category.lowercased() {
+    static func icon(for goalType: String) -> String {
+        switch goalType.lowercased() {
         case "weight": return "scalemass.fill"
-        case "exercise": return "figure.run"
-        case "diet": return "fork.knife"
+        case "exercise", "fitness": return "figure.run"
+        case "diet", "nutrition": return "fork.knife"
         case "sleep": return "bed.double.fill"
         case "mental": return "brain.head.profile"
         case "medical": return "cross.case.fill"
@@ -235,6 +233,15 @@ enum GoalPresentation {
         case "paused": return .orange
         case "abandoned": return .secondary
         default: return .secondary
+        }
+    }
+
+    static func periodKey(_ period: String) -> String {
+        switch period.lowercased() {
+        case "daily": return "Daily"
+        case "weekly": return "Weekly"
+        case "monthly": return "Monthly"
+        default: return period
         }
     }
 }

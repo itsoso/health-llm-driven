@@ -6,7 +6,7 @@ struct WorkoutsView: View {
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
 
-    @State private var workouts: [Workout] = []
+    @State private var workouts: [WorkoutSummary] = []
     @State private var stats: WorkoutStats?
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -69,15 +69,15 @@ struct WorkoutsView: View {
 
     private func statsGrid(_ stats: WorkoutStats) -> some View {
         SectionPanel(
-            title: "\(appText("Last", appLanguageRaw)) \(stats.periodDays) \(appText("days", appLanguageRaw))",
+            title: appText("Last 30 days", appLanguageRaw),
             systemImage: "chart.bar.fill"
         ) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                 statTile(appText("Workouts", appLanguageRaw), "\(stats.totalWorkouts)", "figure.run", .orange)
-                statTile(appText("Total minutes", appLanguageRaw), "\(Int(stats.totalDurationMin))", "clock.fill", .blue)
+                statTile(appText("Total minutes", appLanguageRaw), "\(stats.totalDurationMinutes)", "clock.fill", .blue)
                 statTile(appText("Calories", appLanguageRaw), "\(stats.totalCalories)", "flame.fill", .red)
                 statTile(appText("Distance (km)", appLanguageRaw), formatNumber(stats.totalDistanceKm), "location.fill", .green)
-                statTile(appText("Weekly frequency", appLanguageRaw), formatNumber(stats.weeklyFrequency), "calendar", .purple)
+                statTile(appText("Trend", appLanguageRaw), appText(trendKey(stats.recentTrend), appLanguageRaw), trendIcon(stats.recentTrend), .purple)
             }
         }
     }
@@ -90,7 +90,7 @@ struct WorkoutsView: View {
                 .font(.system(size: 26, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.6)
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -139,10 +139,26 @@ struct WorkoutsView: View {
     private func formatNumber(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0...1)))
     }
+
+    private func trendKey(_ trend: String) -> String {
+        switch trend.lowercased() {
+        case "improving": return "Improving"
+        case "declining": return "Declining"
+        default: return "Stable"
+        }
+    }
+
+    private func trendIcon(_ trend: String) -> String {
+        switch trend.lowercased() {
+        case "improving": return "arrow.up.right"
+        case "declining": return "arrow.down.right"
+        default: return "arrow.right"
+        }
+    }
 }
 
 private struct WorkoutRow: View {
-    let workout: Workout
+    let workout: WorkoutSummary
     let appLanguageRaw: String
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
 
@@ -154,7 +170,7 @@ private struct WorkoutRow: View {
                 .frame(width: 30, height: 30)
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
-                Text(workout.name ?? appText(WorkoutPresentation.typeKey(workout.workoutType), appLanguageRaw))
+                Text(workout.workoutName ?? appText(WorkoutPresentation.typeKey(workout.workoutType), appLanguageRaw))
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Text(subtitle)
@@ -182,12 +198,13 @@ private struct WorkoutRow: View {
     }
 
     private var subtitle: String {
-        var parts: [String] = [WorkoutPresentation.dateLabel(workout.startTime)]
-        if let dur = workout.durationMin {
-            parts.append("\(Int(dur)) \(appText("min", appLanguageRaw))")
+        var parts: [String] = [String(workout.workoutDate.prefix(10))]
+        if let seconds = workout.durationSeconds {
+            parts.append("\(seconds / 60) \(appText("min", appLanguageRaw))")
         }
-        if let dist = workout.distanceKm, dist > 0 {
-            parts.append("\(dist.formatted(.number.precision(.fractionLength(0...1)))) km")
+        if let meters = workout.distanceMeters, meters > 0 {
+            let km = meters / 1000
+            parts.append("\(km.formatted(.number.precision(.fractionLength(0...1)))) km")
         }
         if let hr = workout.avgHeartRate {
             parts.append("\(hr) bpm")
@@ -196,7 +213,7 @@ private struct WorkoutRow: View {
     }
 
     private var askPrompt: String {
-        let name = workout.name ?? appText(WorkoutPresentation.typeKey(workout.workoutType), appLanguageRaw)
+        let name = workout.workoutName ?? appText(WorkoutPresentation.typeKey(workout.workoutType), appLanguageRaw)
         return "请结合我的恢复状态评估这次「\(name)」运动(\(subtitle))的训练负荷是否合适,并给出下一步建议。"
     }
 }
@@ -210,7 +227,9 @@ enum WorkoutPresentation {
         case "strength": return "dumbbell.fill"
         case "yoga": return "figure.yoga"
         case "walking": return "figure.walk"
+        case "hiking": return "figure.hiking"
         case "hiit": return "bolt.heart.fill"
+        case "cardio": return "heart.fill"
         default: return "figure.mixed.cardio"
         }
     }
@@ -223,13 +242,10 @@ enum WorkoutPresentation {
         case "strength": return "Strength"
         case "yoga": return "Yoga"
         case "walking": return "Walking"
+        case "hiking": return "Hiking"
         case "hiit": return "HIIT"
+        case "cardio": return "Cardio"
         default: return "Workout"
         }
-    }
-
-    /// Trims an ISO-8601 timestamp to its date portion for compact display.
-    static func dateLabel(_ iso: String) -> String {
-        String(iso.prefix(10))
     }
 }
