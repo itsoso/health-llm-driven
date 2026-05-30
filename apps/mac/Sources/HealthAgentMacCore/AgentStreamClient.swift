@@ -27,6 +27,13 @@ public protocol AgentStreamServicing: Sendable {
 }
 
 public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable {
+    /// Inter-byte timeout for the SSE stream: the max silence allowed between
+    /// chunks, NOT the total duration. An agentic turn goes quiet while a tool
+    /// runs and the next LLM round generates; the backend's per-round read
+    /// timeout is 120s, so the client must tolerate gaps comfortably beyond it
+    /// or a single tool call trips a spurious "请求超时" (the shared default is 60s).
+    private static let streamGapTimeout: TimeInterval = 300
+
     private let baseURL: URL
     private let tokenProvider: AuthTokenProviding
     private let session: URLSession
@@ -35,11 +42,21 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
     public init(
         baseURL: URL = APIEndpoint.defaultBaseURL,
         tokenProvider: AuthTokenProviding,
-        session: URLSession = .shared
+        session: URLSession? = nil
     ) {
         self.baseURL = baseURL
         self.tokenProvider = tokenProvider
-        self.session = session
+        self.session = session ?? Self.makeDefaultSession()
+    }
+
+    private static func makeDefaultSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = streamGapTimeout
+        // Whole-transfer ceiling: a long multi-tool turn can legitimately run
+        // several minutes end to end.
+        config.timeoutIntervalForResource = 600
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
     }
 
     public func stream(
@@ -100,6 +117,7 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.streamGapTimeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(body)
