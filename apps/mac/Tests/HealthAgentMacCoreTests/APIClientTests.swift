@@ -80,4 +80,48 @@ final class APIClientTests: XCTestCase {
             XCTAssertEqual(message, "无法识别体重记录")
         }
     }
+
+    func testServerErrorNeverLeaksRawHTMLBody() async throws {
+        // A 502 from nginx returns an HTML page; the user must never see it.
+        URLProtocolStub.handler = { request in
+            let html = "<html><head><title>502 Bad Gateway</title></head><body>nginx</body></html>"
+            return (HTTPURLResponse(url: request.url!, statusCode: 502, httpVersion: nil, headerFields: nil)!,
+                    html.data(using: .utf8)!)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "t"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        do {
+            let _: DesktopBootstrap = try await client.get("desktop/bootstrap")
+            XCTFail("Expected httpStatus error")
+        } catch let error as APIError {
+            let message = error.errorDescription ?? ""
+            XCTAssertFalse(message.contains("<"), "Raw HTML leaked: \(message)")
+            XCTAssertFalse(message.contains("nginx"), "Raw body leaked: \(message)")
+            XCTAssertEqual(message, "服务暂时不可用，请稍后再试。")
+        }
+    }
+
+    func testUnauthorizedPostsSessionExpiredNotification() async throws {
+        URLProtocolStub.handler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "expired"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let expectation = expectation(forNotification: .authSessionExpired, object: nil)
+        do {
+            let _: DesktopBootstrap = try await client.get("desktop/bootstrap")
+            XCTFail("Expected unauthorized error")
+        } catch APIError.unauthorized {
+            // expected
+        }
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
 }

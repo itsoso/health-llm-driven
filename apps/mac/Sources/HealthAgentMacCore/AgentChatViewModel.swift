@@ -604,6 +604,14 @@ public final class AgentChatViewModel {
                     errorMessage = message
                 }
             }
+        } catch is CancellationError {
+            // View reload / new request cancelled this stream — not a real failure.
+            isStreaming = false
+            return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // URLSession's -999 (NSURLErrorCancelled) — same benign case.
+            isStreaming = false
+            return
         } catch {
             AppLogger.agent.error("agent stream consumption failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription

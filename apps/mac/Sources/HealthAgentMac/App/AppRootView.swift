@@ -7,6 +7,7 @@ struct AppRootView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var hasCheckedAuth = false
     @State private var isAuthenticated = false
+    @State private var currentUser: AuthUser?
     @State private var safetyMonitor: SafetyMonitor?
 
     init(services: AppServices) {
@@ -23,10 +24,14 @@ struct AppRootView: View {
                 LoginView(authClient: services.authClient) {
                     isAuthenticated = true
                     Task { await services.todayViewModel.refresh() }
+                    Task { await loadCurrentUser() }
                     startSafetyMonitor()
                 }
             } else {
                 NavigationSplitView {
+                    if let currentUser {
+                        SidebarAccountHeader(user: currentUser)
+                    }
                     List(SidebarDestination.sidebarVisible, selection: $navigation.selection) { destination in
                         HStack(spacing: 6) {
                             Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
@@ -56,7 +61,17 @@ struct AppRootView: View {
             guard !hasCheckedAuth else { return }
             isAuthenticated = await services.authClient.hasValidSession()
             hasCheckedAuth = true
-            if isAuthenticated { startSafetyMonitor() }
+            if isAuthenticated {
+                startSafetyMonitor()
+                await loadCurrentUser()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .authSessionExpired)) { _ in
+            // A request hit 401 and cleared the token; drop back to login so the
+            // user isn't stranded in a logged-in shell where everything fails.
+            isAuthenticated = false
+            currentUser = nil
+            navigation.selection = .today
         }
         .sheet(isPresented: $navigation.isCommandPalettePresented) {
             CommandPaletteView(
@@ -64,6 +79,10 @@ struct AppRootView: View {
                 onSelect: handleCommand
             )
         }
+    }
+
+    private func loadCurrentUser() async {
+        currentUser = try? await services.authClient.currentUser()
     }
 
     private func startSafetyMonitor() {
@@ -133,6 +152,7 @@ struct AppRootView: View {
         case .settings:
             SettingsView(authClient: services.authClient, tokenStore: services.tokenProvider) {
                 isAuthenticated = false
+                currentUser = nil
                 navigation.selection = .today
             }
         }
@@ -173,6 +193,44 @@ struct AppRootView: View {
         case .startQuickRecord:
             navigation.selection = .record
         }
+    }
+}
+
+/// Compact identity strip pinned above the sidebar list so the logged-in
+/// account is always visible — important on a shared Mac where it's easy to
+/// forget whose session is active.
+private struct SidebarAccountHeader: View {
+    let user: AuthUser
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+
+    private var primaryLabel: String { user.name ?? user.username }
+    private var secondaryLabel: String? {
+        let secondary = user.email ?? (user.name != nil ? user.username : nil)
+        return secondary == primaryLabel ? nil : secondary
+    }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.teal)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(primaryLabel)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                if let secondaryLabel {
+                    Text(secondaryLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        .help(appText("Open Settings to switch account.", appLanguageRaw))
     }
 }
 

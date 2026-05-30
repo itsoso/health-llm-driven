@@ -1,5 +1,13 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted when the API rejects a request with 401 and the token has been
+    /// cleared. The app root observes this to drop back to the login screen,
+    /// so an expired session never leaves the UI in a "logged-in but every
+    /// request fails" limbo.
+    public static let authSessionExpired = Notification.Name("HealthAgentAuthSessionExpired")
+}
+
 public enum APIError: Error, Equatable, LocalizedError {
     case unauthorized
     case invalidURL
@@ -13,10 +21,23 @@ public enum APIError: Error, Equatable, LocalizedError {
         case .invalidURL:
             "API 地址无效。"
         case .httpStatus(let status, let message):
-            message.map { "HTTP \(status): \($0)" } ?? "HTTP \(status)"
+            Self.httpStatusMessage(code: status, detail: message)
         case .emptyResponse:
             "服务器没有返回有效响应。"
         }
+    }
+
+    /// User-facing copy for an HTTP error. 5xx is always generic (the raw body
+    /// is often an nginx HTML page — never show it). 4xx keeps a short sanitized
+    /// server detail when one is available.
+    private static func httpStatusMessage(code: Int, detail: String?) -> String {
+        if (500...599).contains(code) {
+            return "服务暂时不可用，请稍后再试。"
+        }
+        if let detail, !detail.isEmpty {
+            return "请求失败（HTTP \(code)）：\(detail)"
+        }
+        return "请求失败（HTTP \(code)）。"
     }
 }
 
@@ -95,6 +116,9 @@ public final class APIClient: @unchecked Sendable {
         }
         if http.statusCode == 401 {
             await tokenProvider.clearToken()
+            await MainActor.run {
+                NotificationCenter.default.post(name: .authSessionExpired, object: nil)
+            }
             throw APIError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
@@ -102,6 +126,10 @@ public final class APIClient: @unchecked Sendable {
         }
     }
 
+    /// Extracts a short, safe server-provided detail from an error body.
+    /// Only trusts the structured FastAPI `detail` string; raw HTML bodies
+    /// (e.g. an nginx 502 page) and overlong text are dropped so they never
+    /// reach the UI.
     private static func errorMessage(from data: Data) -> String? {
         guard !data.isEmpty else {
             return nil
@@ -109,15 +137,26 @@ public final class APIClient: @unchecked Sendable {
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let detail = object["detail"] {
             if let message = detail as? String {
-                return message
+                return sanitizedDetail(message)
             }
             if JSONSerialization.isValidJSONObject(detail),
                let detailData = try? JSONSerialization.data(withJSONObject: detail),
                let message = String(data: detailData, encoding: .utf8) {
-                return message
+                return sanitizedDetail(message)
             }
-            return String(describing: detail)
+            return sanitizedDetail(String(describing: detail))
         }
-        return String(data: data, encoding: .utf8)
+        // Non-JSON body (HTML error page, plain text, etc.) — not safe to show.
+        return nil
+    }
+
+    private static func sanitizedDetail(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // Drop anything that looks like markup or is too long to be a real message.
+        if trimmed.contains("<") || trimmed.contains(">") || trimmed.count > 200 {
+            return nil
+        }
+        return trimmed
     }
 }

@@ -3520,6 +3520,7 @@ struct SettingsView: View {
     @State private var statusMessage: String?
     @State private var currentUser: AuthUser?
     @State private var loadingUser = false
+    @State private var isConfirmingSignOut = false
 
     var body: some View {
         Form {
@@ -3543,9 +3544,19 @@ struct SettingsView: View {
                     Spacer()
                 }
                 Button(role: .destructive) {
-                    Task { await signOut() }
+                    isConfirmingSignOut = true
                 } label: {
                     Label(appText("Switch Account", appLanguageRaw), systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                .confirmationDialog(
+                    appText("Sign out of this account?", appLanguageRaw),
+                    isPresented: $isConfirmingSignOut,
+                    titleVisibility: .visible
+                ) {
+                    Button(appText("Sign Out", appLanguageRaw), role: .destructive) {
+                        Task { await signOut() }
+                    }
+                    Button(appText("Cancel", appLanguageRaw), role: .cancel) {}
                 }
                 Text(appText("Sign out and return to the login screen.", appLanguageRaw))
                     .font(.caption)
