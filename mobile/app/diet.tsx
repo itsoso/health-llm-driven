@@ -3,14 +3,16 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
-import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, type DietRecord, type DietRecordCreate } from '../services/diet';
+import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, getFrequentFoods, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
 import * as ImagePicker from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
+import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
+import { useToast } from '../hooks/useToast';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
@@ -36,8 +38,14 @@ export default function DietScreen() {
   const params = useLocalSearchParams<{ capture?: string }>();
   const captureConsumedRef = useRef(false);
   const qc = useQueryClient();
+  const toast = useToast();
   const [date, setDate] = useState(todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
+  const frequentQuery = useQuery({
+    queryKey: ['diet', 'frequent'],
+    queryFn: () => getFrequentFoods(8, 30),
+    staleTime: 10 * 60 * 1000,
+  });
   const [showForm, setShowForm] = useState(false);
   const [, setEstimating] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
@@ -59,6 +67,40 @@ export default function DietScreen() {
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
   }, [qc, editingRecord]);
+
+  // P1-b: 点「常吃」chip → 直接入库(用历史营养素中位数)+ 5s undo. 失败要让用户感知 (rule#1).
+  const handlePickFrequent = useCallback(async (f: FrequentFood) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    let created: DietRecord;
+    try {
+      created = await createDietRecord({
+        record_date: date,
+        meal_type: f.meal_type,
+        food_items: f.food_items,
+        calories: f.calories ?? undefined,
+        protein: f.protein ?? undefined,
+        carbs: f.carbs ?? undefined,
+        fat: f.fat ?? undefined,
+      });
+    } catch {
+      toast.show('记录失败，请重试', 'error');
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    qc.invalidateQueries({ queryKey: ['diet'] });
+    toast.showUndoable(
+      `已记录「${f.food_items.slice(0, 14)}」`,
+      async () => {
+        try {
+          await deleteDietRecord(created.id);
+          qc.invalidateQueries({ queryKey: ['diet'] });
+        } catch {
+          toast.show('撤销失败，请重试', 'error');
+        }
+      },
+      5000,
+    );
+  }, [date, qc, toast]);
 
   const handleEdit = useCallback((r: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -222,6 +264,14 @@ export default function DietScreen() {
             <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊{dateLabel}饮食</Text>
             <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
+        )}
+
+        {/* 常吃一键复用 (P1-b): 不在编辑/表单态时显示 */}
+        {!showForm && (
+          <FrequentFoodsRow
+            foods={frequentQuery.data ?? []}
+            onPick={handlePickFrequent}
+          />
         )}
 
         {/* Meal form */}

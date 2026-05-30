@@ -10,6 +10,7 @@ jest.mock('expo-router', () => ({
 
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+  useQuery: () => ({ data: [], isLoading: false, isError: false, isRefetching: false }),
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -46,6 +47,11 @@ jest.mock('../../services/diet', () => ({
   deleteDietRecord: jest.fn(),
   estimateNutrition: jest.fn(),
   recognizeFood: jest.fn(),
+  getFrequentFoods: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('../../hooks/useToast', () => ({
+  useToast: () => ({ show: jest.fn(), showUndoable: jest.fn() }),
 }));
 
 jest.mock('../../hooks/useTheme', () => ({

@@ -83,6 +83,27 @@ export async function getDietStats(days = 7): Promise<DietStats> {
   return data;
 }
 
+export interface FrequentFood {
+  food_items: string;
+  meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  count: number;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+}
+
+/**
+ * 常吃食物 (后端 /diet/records/me/frequent 按历史频次聚合). 用于一键复用.
+ * 营养素是按历史中位数估算, 可能为 null —— 调用方不应假装精确.
+ */
+export async function getFrequentFoods(limit = 8, days = 30): Promise<FrequentFood[]> {
+  const { data } = await api.get<FrequentFood[]>('/diet/records/me/frequent', {
+    params: { limit, days },
+  });
+  return data;
+}
+
 export async function createDietRecord(record: DietRecordCreate): Promise<DietRecord> {
   const { data } = await api.post<DietRecord>('/diet/records', record);
   return data;
