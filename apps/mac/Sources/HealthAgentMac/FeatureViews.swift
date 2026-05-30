@@ -1,5 +1,6 @@
 import AppKit
 import HealthAgentMacCore
+import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -3532,11 +3533,16 @@ struct SettingsView: View {
     @AppStorage(APIEndpoint.baseURLDefaultsKey) private var apiBaseURL = APIEndpoint.defaultBaseURL.absoluteString
     @AppStorage("preferredVoice") private var preferredVoice = "private_female"
     @AppStorage("allowFileHashing") private var allowFileHashing = true
+    @AppStorage(AppPreferences.Keys.safetyAlertsEnabled) private var safetyAlertsEnabled = AppPreferences.defaultSafetyAlertsEnabled
+    @AppStorage(AppPreferences.Keys.safetyAlertSound) private var safetyAlertSound = AppPreferences.defaultSafetyAlertSound
+    @AppStorage(AppPreferences.Keys.safetyAlertMinSeverity) private var safetyAlertMinSeverity = AppPreferences.defaultMinSeverity
+    @AppStorage(AppPreferences.Keys.safetyPollMinutes) private var safetyPollMinutes = AppPreferences.defaultPollMinutes
     @State private var token = ""
     @State private var statusMessage: String?
     @State private var currentUser: AuthUser?
     @State private var loadingUser = false
     @State private var isConfirmingSignOut = false
+    @State private var launchAtLogin = false
 
     var body: some View {
         Form {
@@ -3614,6 +3620,34 @@ struct SettingsView: View {
                 }
             }
 
+            Section(appText("Notifications", appLanguageRaw)) {
+                Toggle(appText("Enable safety alerts", appLanguageRaw), isOn: $safetyAlertsEnabled)
+                Toggle(appText("Play alert sound", appLanguageRaw), isOn: $safetyAlertSound)
+                    .disabled(!safetyAlertsEnabled)
+                Picker(appText("Minimum alert level", appLanguageRaw), selection: $safetyAlertMinSeverity) {
+                    Text(appText("Medium and above", appLanguageRaw)).tag(2)
+                    Text(appText("High and above", appLanguageRaw)).tag(3)
+                    Text(appText("Critical only", appLanguageRaw)).tag(4)
+                }
+                .disabled(!safetyAlertsEnabled)
+                Picker(appText("Check frequency", appLanguageRaw), selection: $safetyPollMinutes) {
+                    ForEach(AppPreferences.pollMinutesOptions, id: \.self) { minutes in
+                        Text("\(minutes) min").tag(minutes)
+                    }
+                }
+                .disabled(!safetyAlertsEnabled)
+                Text(appText("Enable/level/sound apply immediately; frequency takes effect after restarting the Mac app.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(appText("Startup", appLanguageRaw)) {
+                Toggle(appText("Launch at login", appLanguageRaw), isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        updateLaunchAtLogin(newValue)
+                    }
+            }
+
             Section(appText("Privacy and Files", appLanguageRaw)) {
                 Toggle(appText("Allow local file hashing before import", appLanguageRaw), isOn: $allowFileHashing)
                 Text(appText("Files stay local in this P0 client. Import jobs register source metadata and hashes unless a backend upload flow is added later.", appLanguageRaw))
@@ -3628,6 +3662,26 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .padding(28)
         .task { await loadCurrentUser() }
+        .onAppear { syncLaunchAtLoginState() }
+    }
+
+    private func syncLaunchAtLoginState() {
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    private func updateLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            // Surface the failure instead of silently leaving the toggle wrong:
+            // ad-hoc/unsigned local builds can be denied by the system here.
+            statusMessage = "\(appText("Launch at login change failed", appLanguageRaw)): \(error.localizedDescription)"
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 
     private var currentUserPrimaryLabel: String {

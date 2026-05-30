@@ -46,7 +46,11 @@ final class SafetyMonitor: NSObject, UNUserNotificationCenterDelegate {
         task = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 await self?.pollOnce()
-                try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+                // Re-read each loop so changing the frequency takes effect on the
+                // next tick (no app restart needed for the sleep interval itself;
+                // only the in-flight wait that already started won't shorten).
+                let minutes = AppPreferences.safetyPollMinutes()
+                try? await Task.sleep(nanoseconds: UInt64(minutes) * 60 * 1_000_000_000)
             }
         }
     }
@@ -79,12 +83,16 @@ final class SafetyMonitor: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func processReport(_ report: SafetyReport) async {
+        // Read fresh each poll so toggling alerts on/off or changing the
+        // threshold takes effect without restarting the app.
+        guard AppPreferences.safetyAlertsEnabled() else { return }
+        let minSeverity = AppPreferences.safetyAlertMinSeverity()
+
         let alerts = report.alerts.filter { $0.severity >= 2 }
         let newAlerts = alerts.filter { !seenAlertIDs.contains($0.rule_id) }
         for alert in newAlerts { seenAlertIDs.insert(alert.rule_id) }
 
-        // Only send notifications for High (3) and Critical (4) tier — Medium stays passive.
-        let urgent = newAlerts.filter { $0.severity >= 3 }
+        let urgent = newAlerts.filter { $0.severity >= minSeverity }
         guard !urgent.isEmpty, notificationsAuthorized else { return }
 
         for alert in urgent {
@@ -96,7 +104,7 @@ final class SafetyMonitor: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = "[\(alert.severityLabel)] \(alert.title)"
         content.body = alert.message ?? alert.action ?? ""
-        content.sound = .default
+        content.sound = AppPreferences.safetyAlertSound() ? .default : nil
         content.userInfo = ["rule_id": alert.rule_id]
 
         let trigger = quietHoursTrigger(now: Date())

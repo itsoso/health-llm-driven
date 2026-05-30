@@ -41,6 +41,7 @@ struct AppServices {
 
     @MainActor
     init() {
+        AppPreferences.registerDefaults()
         let tokenProvider = UserDefaultsTokenStore()
         self.tokenProvider = tokenProvider
         let baseURL = APIEndpoint.resolvedBaseURL()
