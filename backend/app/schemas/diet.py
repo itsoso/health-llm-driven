@@ -54,6 +54,15 @@ class DietRecordUpdate(BaseModel):
     health_tips: Optional[str] = None
 
 
+MEAL_TYPE_ZH = {
+    "breakfast": "早餐",
+    "lunch": "午餐",
+    "dinner": "晚餐",
+    "snack": "加餐",
+    "extra": "其他",
+}
+
+
 class DietRecordResponse(DietRecordBase):
     """饮食记录响应"""
     id: int
@@ -61,8 +70,26 @@ class DietRecordResponse(DietRecordBase):
     ai_confidence: Optional[float] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    display_message: str = ""
 
     model_config = ConfigDict(from_attributes=True)
+
+    def model_post_init(self, __context: Any) -> None:
+        meal_key = self.meal_type.value if hasattr(self.meal_type, "value") else str(self.meal_type)
+        meal_zh = MEAL_TYPE_ZH.get(meal_key, meal_key)
+        parts = [f"已记录{meal_zh}：{self.food_items}"]
+        if self.calories is not None:
+            parts.append(f"{int(self.calories)} 千卡")
+        macros = []
+        if self.protein is not None:
+            macros.append(f"蛋白 {self.protein:.0f}g")
+        if self.carbs is not None:
+            macros.append(f"碳水 {self.carbs:.0f}g")
+        if self.fat is not None:
+            macros.append(f"脂肪 {self.fat:.0f}g")
+        if macros:
+            parts.append("（" + " / ".join(macros) + "）")
+        object.__setattr__(self, "display_message", "✅ " + "，".join(parts[:2]) + ("".join(parts[2:]) if len(parts) > 2 else ""))
 
 
 class DailyDietSummary(BaseModel):

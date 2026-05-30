@@ -1,7 +1,7 @@
 ---
 name: health-record
 description: Record health data - water intake, weight, blood pressure, checkins, diet entries, and supplements. Use when the user wants to log drinking water, weight, blood pressure, checkins, meals, or supplement intake (vitamins, minerals, etc).
-version: 1.2.0
+version: 2.0.0
 metadata:
   openclaw:
     requires:
@@ -13,262 +13,233 @@ metadata:
 
 You can record health data via the Health Management System API.
 
+## 核心原则
+
+1. **立即执行，不二次确认** — 用户说"记录 XXX"就是明确指令，直接调用 API，不要问"确认吗？"
+2. **禁止输出原始 JSON** — 记录成功后只输出一句自然语言确认（见"回复格式"）
+3. **数值必须来自用户原话** — 不使用示例默认值替代用户说的数字
+4. **删除/修改例外** — 只有删除和修改操作需要先列出候选让用户确认，新增记录直接执行
+
 ## Authentication
-- URL: $HEALTH_API_URL
+- URL: `$HEALTH_API_URL`
 - Header: `Authorization: Bearer $HEALTH_API_TOKEN`
 - Content-Type: `application/json`
 
-## Available Actions
+---
 
-### 记录饮水（快速）
+## 记录饮水
+
 ```bash
-curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/water/records/quick?amount=250"
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" \
+  "$HEALTH_API_URL/water/records/quick?amount=<毫升数>"
 ```
-默认250ml，可修改 amount 参数。
 
-### 记录体重
+**amount 必须来自用户原话：**
+
+| 用户说 | amount |
+|--------|--------|
+| 喝了 500 毫升 / 500ml | 500 |
+| 喝了一杯水 | 250 |
+| 喝了两杯水 | 500 |
+| 喝了一大杯 | 350 |
+| 喝了半杯 | 125 |
+
+用户明确说了毫升数 → 必须用用户的数字，禁止使用任何默认值。
+
+**成功后回复格式：** `✅ 已记录喝水 {amount}ml`
+
+---
+
+## 记录体重
+
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/weight/records" \
-  -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","weight":72.5}'
+  -d '{"record_date":"$(date +%Y-%m-%d)","weight":72.5}'
 ```
 
-### 记录血压
+解析规则："体重72公斤" → 72.0，"72.5kg" → 72.5
+
+**成功后回复格式：** `✅ 已记录体重 {weight} kg`
+
+---
+
+## 记录血压
+
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/blood-pressure/records" \
-  -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","systolic":120,"diastolic":80,"pulse":72}'
+  -d '{"record_date":"$(date +%Y-%m-%d)","systolic":120,"diastolic":80,"pulse":72}'
 ```
 
-### 运动/习惯打卡
-先查询可用模板获取 template_id：
+解析规则："血压120/80" → systolic=120, diastolic=80，pulse 未提供可省略
+
+**成功后回复格式：** `✅ 已记录血压 {systolic}/{diastolic} mmHg`
+
+---
+
+## 运动/习惯打卡
+
+**常用模板（直接使用，无需每次查询）：**
+
+| template_id | 名称 | 单位 |
+|-------------|------|------|
+| 19 | 俯卧撑 | 个 |
+| 20 | 深蹲 | 个 |
+| 21 | 仰卧起坐 | 个 |
+| 22 | 平板支撑 | 秒 |
+| 23 | 跳绳 | 个 |
+| 24 | 爬楼梯 | 层 |
+| 25 | 拉伸 | 分钟 |
+| 26 | 洗鼻 | 次 |
+| 34 | 户外活动 | 分钟 |
+
+用户说的运动不在表中 → 先查询模板列表：
 ```bash
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/checkin/templates"
 ```
 
-常用模板（直接用 template_id 打卡，无需每次查询）：
-| template_id | 名称 | 单位 | 默认目标 |
-|-------------|------|------|---------|
-| 19 | 俯卧撑 | 个 | 20 |
-| 20 | 深蹲 | 个 | 30 |
-| 21 | 仰卧起坐 | 个 | 20 |
-| 22 | 平板支撑 | 秒 | 60 |
-| 23 | 跳绳 | 个 | 100 |
-| 24 | 爬楼梯 | 层 | 10 |
-| 25 | 拉伸 | 分钟 | 10 |
-| 26 | 洗鼻 | 次 | 1 |
-| 34 | 户外活动 | 分钟 | 30 |
+### 简单打卡（无组数）
 
-打卡（用模板ID + 实际完成值）：
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/checkin/records/quick" \
   -d '{"template_id":19,"value":43}'
 ```
-**必须参数：** template_id（整数）, value（数字，实际完成量）
-**示例：** 用户说"俯卧撑43个" → template_id=19, value=43
-**示例：** 用户说"深蹲50个" → template_id=20, value=50
 
-**重要：当用户说"记录运动"时，必须调用此打卡接口，不要只是口头确认。**
-
-### 力量训练详细记录（带 sets/reps）
-当用户描述带"组数"的力量训练（例：俯卧撑两组每组 15 个 / 深蹲三组每组 10 个）时，
-**必须**用此端点而非上面的 quick 打卡，因为它能保留 sets/reps 结构：
+### 力量训练（有组数/rep数）
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/daily-health/exercise" \
-  -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","exercise_type":"俯卧撑","sets":2,"reps":15,"intensity":"high"}'
+  -d '{"record_date":"$(date +%Y-%m-%d)","exercise_type":"俯卧撑","sets":2,"reps":15,"intensity":"high"}'
 ```
 
-**关键：sets 字段一次表达多组**
-- 用户说"两组俯卧撑 一组15个" → 一次 POST `{exercise_type:"俯卧撑", sets:2, reps:15}`
-- 用户说"做了 3 组深蹲" → 一次 POST `{exercise_type:"深蹲", sets:3, reps:10}` (问用户每组多少, 不知则估10)
-- ❌ **不要** 同一动作连续 POST 两次 (会被 1s dedup 视为双击吃掉)
+- duration 类（平板支撑等）用 `duration_seconds` 替代 `reps`
+- 多动作组合 → 每个动作单独 POST（不同 exercise_type 不会被去重）
+- ❌ 同一动作不要连续 POST 两次（1s dedup 会吃掉第二次）
 
-**duration 类训练 (倒立/平板支撑等)** 用 duration_seconds 字段:
-```bash
--d '{"record_date":"...","exercise_type":"平板支撑","sets":1,"duration_seconds":60,"intensity":"high"}'
-```
+**成功后回复格式：** `✅ 已记录{运动名} {value}{单位}`
 
-**多动作组合** (例: "俯卧撑两组 + 深蹲两组") → **多次 POST**, 每个 exercise_type 一次:
-```bash
-# 第 1 次: 俯卧撑
-curl ... -d '{"exercise_type":"俯卧撑","sets":2,"reps":15,...}'
-# 第 2 次: 深蹲 (不同 exercise_type, 不会被 dedup)
-curl ... -d '{"exercise_type":"深蹲","sets":2,"reps":10,...}'
-```
+---
 
-### 记录饮食（文字描述）
-端点：`POST $HEALTH_API_URL/diet/records`
+## 记录饮食
+
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/diet/records" \
-  -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","meal_type":"lunch","food_items":"鸡胸肉沙拉","calories":400,"protein":35,"carbs":20,"fat":12}'
+  -d '{"record_date":"$(date +%Y-%m-%d)","meal_type":"lunch","food_items":"鸡胸肉沙拉","calories":400,"protein":35,"carbs":20,"fat":12}'
 ```
-**必填字段：** record_date, meal_type, food_items
-**可选字段：** calories(kcal), protein(g), carbs(g), fat(g), fiber(g), notes, image_url
-**meal_type 取值：** breakfast / lunch / dinner / snack / extra（必须小写）
 
-### 记录饮食（图片识别 + 自动保存）
-当用户发送食物图片时，使用此接口一键识别并保存：
-端点：`POST $HEALTH_API_URL/diet/recognize-and-save`
+- **必填：** record_date, meal_type, food_items
+- **尽量填：** calories(kcal), protein(g), carbs(g), fat(g)
+- **meal_type：** breakfast / lunch / dinner / snack / extra（按当前时间自动判断：6-10点breakfast，10-14点lunch，14-17点snack，17-21点dinner，其他extra）
+
+**成功后：直接使用 API 响应中的 `display_message` 字段作为回复，不要自己格式化。**
+
+### 图片记录（用户发送食物图片）
+
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/diet/recognize-and-save" \
-  -d '{"image_base64":"<BASE64_IMAGE_DATA>","image_type":"jpeg","record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","meal_type":"lunch"}'
+  -d '{"image_base64":"<BASE64>","image_type":"jpeg","record_date":"$(date +%Y-%m-%d)","meal_type":"lunch"}'
 ```
-**必填字段：** image_base64, record_date, meal_type
-**可选字段：** image_type(默认jpeg), notes
-系统会自动 AI 识别食物并计算营养数据（热量、蛋白质、碳水、脂肪）后保存。
 
-### 仅识别食物（不保存记录）
-端点：`POST $HEALTH_API_URL/diet/recognize`
+### 修改饮食记录
+
+1. 先查当日记录拿 record_id：
 ```bash
-curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
-  "$HEALTH_API_URL/diet/recognize" \
-  -d '{"image_base64":"<BASE64_IMAGE_DATA>","image_type":"jpeg"}'
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/date/$(date +%Y-%m-%d)"
 ```
-返回识别结果（食物列表、营养数据），但不写入数据库。
-
-### 文字估算营养（不保存记录）
-端点：`GET $HEALTH_API_URL/diet/estimate-nutrition?food_description=一碗米饭加红烧肉`
-返回营养估算结果。
-
-### 查询饮食记录
-```bash
-# 查询最近N天的记录
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me?days=7"
-# 查询指定日期汇总
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/date/2026-03-08"
-# 查询饮食统计
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/stats?days=30"
-```
-
-### 更新饮食记录
-端点：`PUT $HEALTH_API_URL/diet/records/{record_id}`
-
-**操作规范（防误改）**：
-1. 先 GET 当日记录拿到 `record_id` 和当前内容（`/diet/records/me/date/<日期>`）
-2. 若用户描述能匹配多条（例如说"昨天的午餐"但当天有两条午餐），**列出候选让用户确认是哪一条**，不要自行猜测
-3. 确认后 PUT，body 只传要改的字段（exclude_unset）
-
+2. 若匹配多条 → 列出候选让用户选，不猜测
+3. 确认后 PUT（只传要改的字段）：
 ```bash
 curl -s -X PUT -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
-  "$HEALTH_API_URL/diet/records/123" \
-  -d '{"food_items":"鸡胸肉200g + 糙米饭一碗","calories":520}'
+  "$HEALTH_API_URL/diet/records/{id}" \
+  -d '{"calories":520}'
 ```
 
 ### 删除饮食记录
-端点：`DELETE $HEALTH_API_URL/diet/records/{record_id}`
 
-**操作规范（删除不可逆，必须严格执行）**：
-1. 先 GET 当日记录列出所有项及其 `record_id`（`/diet/records/me/date/<日期>`）
-2. 用户描述匹配到多条时，**先把候选列出来让用户确认**，禁止直接删除
-3. 单条匹配时，仍要在回复里**明确告诉用户即将删除什么**（如"将删除：午餐 鸡胸肉200g"），用户确认后再 DELETE
-4. 删除成功后回复用户已删除哪一条，方便用户复核
-
+1. GET 当日记录列出所有项
+2. 匹配多条 → 列出让用户确认
+3. 单条匹配 → 告知"将删除：{描述}"，用户确认后 DELETE
 ```bash
-# 先查记录拿 record_id
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/date/$(date +%Y-%m-%d)"
-# 拿到 record_id 后删除
-curl -s -X DELETE -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/123"
+curl -s -X DELETE -H "Authorization: Bearer $HEALTH_API_TOKEN" \
+  "$HEALTH_API_URL/diet/records/{id}"
 ```
 
-### 补剂记录
+---
 
-#### 1. 查询用户补剂列表（含今日打卡状态）
+## 补剂记录
+
+### 第一步：查用户补剂列表（拿 supplement_id）
+
 ```bash
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/supplements/me/records?record_date=$(date +%Y-%m-%d)"
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" \
+  "$HEALTH_API_URL/supplements/me/records?record_date=$(date +%Y-%m-%d)"
 ```
 
-#### 2. 创建新补剂定义（如果用户要记录的补剂不在列表中）
+响应里每条记录包含 `supplement_id`、`name`、`taken`（今日是否已打卡）。
+
+### 第二步：打卡
+
+单个：
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/supplements/records" \
+  -d '{"supplement_id":1,"record_date":"$(date +%Y-%m-%d)","taken":true}'
+```
+
+多个（优先用批量）：
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/supplements/records/batch" \
+  -d '{"record_date":"$(date +%Y-%m-%d)","checkins":[{"supplement_id":1,"taken":true},{"supplement_id":2,"taken":true}]}'
+```
+
+### 补剂不在列表中 → 先创建定义再打卡
+
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/supplements/definitions" \
   -d '{"name":"甘氨酸锌","dosage":"30mg","timing":"morning","category":"矿物质"}'
 ```
-- timing: morning / noon / evening / bedtime
-- category: 维生素 / 矿物质 / 氨基酸 / 抗氧化 / 益生菌 / 中药 / 其他
 
-#### 3. 补剂打卡（单个）
-```bash
-curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
-  "$HEALTH_API_URL/supplements/records" \
-  -d '{"supplement_id":1,"user_id":1,"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","taken":true,"notes":"早餐后服用"}'
-```
+timing: morning / noon / evening / bedtime  
+category: 维生素 / 矿物质 / 氨基酸 / 抗氧化 / 益生菌 / 中药 / 其他
 
-#### 4. 补剂批量打卡
-```bash
-curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
-  "$HEALTH_API_URL/supplements/records/batch" \
-  -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","checkins":[{"supplement_id":1,"taken":true},{"supplement_id":2,"taken":true}]}'
-```
+**成功后回复格式：** `✅ 已记录：{补剂名} {剂量} ✓`（多个用逗号分隔）
 
-#### 5. 查看补剂统计
-```bash
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/supplements/me/stats?days=30"
-```
-
-## Rules
-- Confirm the action with the user before recording
-- After successful recording, report what was saved
-- Parse natural language: "喝了一杯水" → 250ml, "喝了两杯" → 500ml
-- Parse weight: "体重72公斤" → 72.0, "72.5kg" → 72.5
-- Parse blood pressure: "血压120/80" → systolic=120, diastolic=80
-- Always respond in Chinese
-- **严格使用上面定义的 API 端点路径，不要自行猜测或构造其他路径**
-- **执行后验证**: 每次记录操作后，调用对应的查询接口验证数据已保存。如果验证失败，告知用户并建议重试。不要假设操作成功。
-
-### 饮食记录特殊规则
-- 用户发送食物图片时，使用 `/diet/recognize-and-save` 一键识别并保存
-- 用户用文字描述食物时，自行估算营养数据后使用 `/diet/records` 保存
-- meal_type 根据当前时间自动判断：6-10点=breakfast，10-14点=lunch，14-17点=snack，17-21点=dinner，其他=extra
-- 营养数据（calories, protein, carbs, fat）尽量填写，帮用户做好营养追踪
-
-### 补剂特殊规则
-- 记录补剂前，先查询用户补剂列表确认 supplement_id
-- 如果用户提到的补剂不在列表中，先自动创建补剂定义，再打卡
-- 多个补剂同时记录时，优先用批量打卡接口
-- "吃了NAC两粒" → 找到NAC的supplement_id，记录taken=true
-- "吃了甘氨酸锌" → 先查列表，不存在则创建定义，然后打卡
-
-## 执行验证
-
-记录完成后，必须调用查询接口确认数据已保存：
-
-### 验证饮水记录
-```bash
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/water/records/me/daily-summary?date=$(date +%Y-%m-%d)"
-```
-检查 total_amount 是否增加了。
-
-### 验证饮食记录
-```bash
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/date/$(date +%Y-%m-%d)"
-```
-检查是否有新增的记录。
-
-### 验证规则
-- 如果验证失败（数据未增加），告知用户记录可能未成功，建议重试
-- 不要假装记录成功 — 必须通过验证确认
+---
 
 ## 同步 Garmin 数据
 
-当用户说"同步Garmin"、"同步Garmin数据"、"同步数据"、"更新运动数据"、"拉取最新数据"、"sync garmin"时，**必须立即调用此 API**，不要让用户手动操作：
+触发词：同步Garmin / 同步数据 / 更新运动数据 / 拉取最新数据 / sync garmin
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" \
   "$HEALTH_API_URL/data-collection/garmin/me/sync?days=1"
 ```
 
-参数说明：
-- `days`: 同步最近N天的数据（默认1天），通过 URL query 参数传递
-- 返回同步结果，包含同步的天数和记录数
+- 404 → 提示去「设置 → Garmin」绑定账号
+- 400 → 提示去设置页面检查凭据
+- 收到请求直接调用，不要让用户手动操作
 
-错误处理：
-- 404: 用户未绑定 Garmin 账号，提示去「设置 → Garmin」页面绑定
-- 400: Garmin 同步已禁用或凭据无效，提示去设置页面检查
-- 成功后告知用户数据已同步，并简要说明同步了哪些数据
+---
 
-**重要**：收到同步请求后必须直接调用 API 执行同步，不要回复"请手动操作"。
+## 回复格式规范
+
+**禁止**输出原始 JSON、API 响应体、curl 命令。
+
+| 类型 | 格式 |
+|------|------|
+| 饮水 | `✅ 已记录喝水 500ml` |
+| 饮食 | 使用响应中的 `display_message` 字段 |
+| 体重 | `✅ 已记录体重 72.5 kg` |
+| 血压 | `✅ 已记录血压 120/80 mmHg` |
+| 运动 | `✅ 已记录俯卧撑 43 个` |
+| 补剂 | `✅ 已记录：NAC 600mg ✓` |
+| 失败 | 说明原因 + 建议重试，不输出错误 JSON |
+
+回复要简洁：一句话，包含类型和关键数值。
