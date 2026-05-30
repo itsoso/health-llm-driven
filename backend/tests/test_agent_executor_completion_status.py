@@ -656,6 +656,84 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
 
 
 @pytest.mark.asyncio
+async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_headers):
+    """#3 guard: a record-intent turn where the model only SAYS '已记录' but calls no
+    tool must be flagged (record_intent_no_tool=True) so silent data loss is observable
+    instead of looking like success."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        # No tool_calls, no inline JSON — the model hallucinates a successful record.
+        return {"content": "已记录晚餐：牛肉饭。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        executed.append(tool_name)
+        return "{}"
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id, message="记录晚餐 牛肉饭", user_auth_token="test-token",
+        )
+    ]
+
+    done = [e for e in events if e.get("event") == "done"]
+    assert done, "should yield a done event"
+    assert done[0]["data"]["record_intent_no_tool"] is True
+    assert executed == []  # confirms no tool ran — the flag caught real silent loss
+
+
+@pytest.mark.asyncio
+async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and_headers):
+    """Counterpart: when a record turn actually executes a write tool, the guard stays
+    off (record_intent_no_tool=False)."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append(1)
+        if len(calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "牛肉饭"}},
+                            ensure_ascii=False,
+                        ),
+                    },
+                }],
+            }
+        return {"content": "已记录晚餐。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        return json.dumps({"message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id, message="记录晚餐 牛肉饭", user_auth_token="test-token",
+        )
+    ]
+
+    done = [e for e in events if e.get("event") == "done"]
+    assert done and done[0]["data"]["record_intent_no_tool"] is False
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_empty(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
