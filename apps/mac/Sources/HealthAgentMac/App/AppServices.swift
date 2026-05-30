@@ -38,6 +38,7 @@ struct AppServices {
     let labClient: LabClient
     let interventionsClient: InterventionsClient
     let workoutClient: WorkoutClient
+    let goalClient: GoalClient
     let quickCaptureManager: QuickCaptureManager
 
     @MainActor
@@ -66,6 +67,7 @@ struct AppServices {
         self.labClient = LabClient(apiClient: apiClient)
         self.interventionsClient = InterventionsClient(apiClient: apiClient)
         self.workoutClient = WorkoutClient(apiClient: apiClient)
+        self.goalClient = GoalClient(apiClient: apiClient)
         self.quickCaptureManager = QuickCaptureManager(recordClient: recordClient)
     }
 }
