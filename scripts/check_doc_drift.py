@@ -46,7 +46,7 @@ EXPECTED: dict = {
         "cgm": 6,
     },
     "specialists_count": 11,
-    "twin_partitions": 14,
+    "twin_partitions": 15,
 }
 
 
