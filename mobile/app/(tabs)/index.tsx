@@ -44,7 +44,9 @@ import HomeCommandCard from '../../components/home/HomeCommandCard';
 import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopicsRow';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
+import OutcomeWinCard from '../../components/home/OutcomeWinCard';
 import { getCheckinStreak } from '../../services/streak';
+import { fetchMyProgress } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 
 interface TwinSnapshot {
@@ -143,6 +145,12 @@ export default function TodayScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const progressDashboardQuery = useQuery({
+    queryKey: ['progress-dashboard', 30],
+    queryFn: () => fetchMyProgress(30),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const dashboardQuery = useDashboardData();
 
   // perf (2026-05-29): 进程启动后第一次首页 mount 时, 测 4 个 critical query
@@ -211,6 +219,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['trajectory', 'me'] }),
         qc.invalidateQueries({ queryKey: ['checkin-streak'] }),
+        qc.invalidateQueries({ queryKey: ['progress-dashboard', 30] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
         qc.invalidateQueries({ queryKey: ['env', 'weather'] }),
         qc.invalidateQueries({ queryKey: ['env', 'aqi'] }),
@@ -443,6 +452,13 @@ export default function TodayScreen() {
           best={streakQuery.data?.best_streak}
           isError={streakQuery.isError}
           onPress={() => router.push('/(tabs)/record' as any)}
+        />
+        <OutcomeWinCard
+          improved={progressDashboardQuery.data?.stats?.improved}
+          graded={progressDashboardQuery.data?.stats?.graded}
+          totalSurfaced={progressDashboardQuery.data?.stats?.total_surfaced}
+          isError={progressDashboardQuery.isError}
+          onPress={() => router.push('/my-progress' as any)}
         />
         <HomeCommandCard
           agentJudgmentText={agentJudgmentText}
