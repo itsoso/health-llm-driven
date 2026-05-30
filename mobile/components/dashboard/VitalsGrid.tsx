@@ -4,15 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline, Circle } from 'react-native-svg';
 import { spacing, radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
-
-interface GarminDay {
-  record_date?: string;
-  total_sleep_duration?: number | null;
-  resting_heart_rate?: number | null;
-  hrv?: number | null;
-  body_battery_current?: number | null;
-  body_battery_most_charged?: number | null;
-}
+import { garminSleepHours, type GarminDailyRow } from '../../types/garmin';
 
 interface Props {
   sleep?: number | null;
@@ -22,7 +14,7 @@ interface Props {
   hrv?: number | null;
   bodyBatteryCurrent?: number | null;
   bodyBatteryMax?: number | null;
-  garminDays?: GarminDay[];
+  garminDays?: GarminDailyRow[];
   onTilePress?: (metric: 'sleep' | 'heart_rate' | 'hrv' | 'body_battery') => void;
 }
 
@@ -38,7 +30,7 @@ interface TileData {
   series: number[];
 }
 
-function pickSeries(days: GarminDay[], extract: (d: GarminDay) => number | null | undefined): number[] {
+function pickSeries(days: GarminDailyRow[], extract: (d: GarminDailyRow) => number | null | undefined): number[] {
   return days
     .slice(0, 7)
     .reverse()
@@ -93,8 +85,8 @@ export default function VitalsGrid({
 
   const days = Array.isArray(garminDays) ? garminDays : [];
 
-  // total_sleep_duration 单位为分钟 → /60 得小时;脏数据阈值 90min(1.5h)
-  const sleepSeries = pickSeries(days, d => d.total_sleep_duration && d.total_sleep_duration >= 90 ? d.total_sleep_duration / 60 : null);
+  // 睡眠单位换算 + 脏数据守卫走 types/garmin 的单一真相源
+  const sleepSeries = pickSeries(days, d => garminSleepHours(d));
   const hrSeries = pickSeries(days, d => d.resting_heart_rate);
   const hrvSeries = pickSeries(days, d => d.hrv);
   const batterySeries = pickSeries(days, d => d.body_battery_current ?? d.body_battery_most_charged);

@@ -27,6 +27,7 @@ import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
+import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
   getDailyOperatingPlan,
@@ -163,22 +164,17 @@ export default function TodayScreen() {
   });
 
   const garmin = useLatestGarmin(dashboardQuery.data);
-  const garminDays: any[] = Array.isArray(dashboardQuery.data?.garminDaily)
-    ? (dashboardQuery.data as any).garminDaily
+  const garminDays: GarminDailyRow[] = Array.isArray(dashboardQuery.data?.garminDaily)
+    ? dashboardQuery.data!.garminDaily!
     : [];
 
   const steps = garmin?.steps ?? 0;
   const activeMin = garmin?.active_minutes ?? 0;
   const calories = garmin?.active_calories ?? 0;
-  // total_sleep_duration / deep_sleep_duration 后端单位是「分钟」(见 GarminData 模型 +
-  // services/sleep.ts / trends.ts 都 /60)。此处之前误当秒 /3600,导致 7h 显示成 0.1h。
-  // 小于 1.5h(90min)视为脏数据（午睡片段 / 未完成同步），不展示。
-  const sleepHoursRaw = garmin?.total_sleep_duration && garmin.total_sleep_duration >= 90
-    ? garmin.total_sleep_duration / 60
-    : null;
-  const deepSleepRaw = garmin?.deep_sleep_duration && garmin.deep_sleep_duration >= 30
-    ? garmin.deep_sleep_duration / 60
-    : null;
+  // 睡眠时长单位换算 + 脏数据守卫的单一真相源在 types/garmin.ts。
+  // (此处曾误当秒 /3600,把 7h 显示成 0.1h —— 现在不再手算单位。)
+  const sleepHoursRaw = garminSleepHours(garmin);
+  const deepSleepRaw = garminDeepSleepHours(garmin);
 
   const geneticStatsQuery = useQuery({
     queryKey: ['genetic-stats'],

@@ -1,4 +1,5 @@
 import api from './api';
+import type { GarminDailyRow } from '../types/garmin';
 
 function today(): string {
   const d = new Date();
@@ -14,7 +15,7 @@ function twoWeeksAgo(): string {
 export interface DashboardData {
   healthScore: any;
   supplements: any;
-  garminDaily: any;
+  garminDaily: GarminDailyRow[] | null;
   waterRecords: any;
   weather: any;
   airQuality: any;

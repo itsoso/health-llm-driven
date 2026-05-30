@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchDashboardData, type DashboardData } from '../services/dashboard';
+import type { GarminDailyRow } from '../types/garmin';
 
 export function useDashboardData() {
   return useQuery<DashboardData>({
@@ -11,11 +12,11 @@ export function useDashboardData() {
 }
 
 // Helper to safely extract the most recent Garmin data
-export function useLatestGarmin(data: DashboardData | undefined) {
+export function useLatestGarmin(data: DashboardData | undefined): GarminDailyRow | null {
   if (!data?.garminDaily) return null;
   const days = Array.isArray(data.garminDaily)
     ? data.garminDaily
-    : [data.garminDaily];
+    : [data.garminDaily as GarminDailyRow];
   // API returns newest first, so take the first element
   return days.length > 0 ? days[0] : null;
 }
