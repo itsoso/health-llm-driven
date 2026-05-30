@@ -58,6 +58,29 @@ print_warning() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
+# 上传当前 HEAD 的 git bundle 到服务器,作为 GitHub 超时时的回退源。
+# 前端/后端部署都调用它,所以两边都能走 bundle 回退。
+upload_deploy_bundle() {
+    local bundle
+    bundle=$(mktemp)
+    git bundle create "$bundle" HEAD >/dev/null
+    scp "$bundle" "$SERVER:/tmp/health-app-deploy.bundle" >/dev/null
+    rm "$bundle"
+}
+
+# 远端 git 同步逻辑(嵌入 ssh 命令串)。
+# 无论服务器之前在 main / 其它分支 / detached HEAD,都强制干净 forward 到 origin/main;
+# `git checkout -B main <ref>` 始终落在 main 分支上,避免 `git checkout FETCH_HEAD` 那种
+# 自我维持的 detached HEAD 坑。GitHub fetch 超时时回退到 upload_deploy_bundle 上传的 bundle,
+# 同样用 -B 切回 main(而非 detached)。调用前需先 upload_deploy_bundle。
+REMOTE_GIT_SYNC="\
+        echo '暂存服务器本地改动...' && \
+        git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
+        echo '同步到 origin/main (强制 forward, 自动修复 detached HEAD)...' && \
+        ( (git fetch origin && git checkout -B main origin/main) || \
+          (echo 'git fetch origin 失败, 使用上传的 deploy bundle...' && \
+           git fetch /tmp/health-app-deploy.bundle HEAD && git checkout -B main FETCH_HEAD) )"
+
 # 显示使用帮助
 show_help() {
     echo "用法: ./deploy.sh [选项]"
@@ -328,11 +351,12 @@ push_code() {
 deploy_frontend() {
     print_step "部署前端..."
 
+    # 预上传 bundle,使前端也具备和后端一致的 GitHub 超时回退路径
+    upload_deploy_bundle
+
     ssh $SERVER "
         cd $REMOTE_PATH && \
-        echo '暂存服务器本地改动...' && \
-        git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
-        git pull && \
+        $REMOTE_GIT_SYNC && \
         cd frontend && \
         echo '安装依赖...' && \
         npm install && \
@@ -357,19 +381,14 @@ deploy_backend() {
     sync_env
 
     # GitHub 在服务器侧偶发超时；预先上传当前 HEAD 的 bundle，
-    # 远端 git pull 失败时仍可通过 deploy.sh 完成同一提交的部署。
-    DEPLOY_BUNDLE=$(mktemp)
-    git bundle create "$DEPLOY_BUNDLE" HEAD >/dev/null
-    scp "$DEPLOY_BUNDLE" "$SERVER:/tmp/health-app-deploy.bundle" >/dev/null
-    rm "$DEPLOY_BUNDLE"
+    # 远端 git fetch 失败时仍可通过 deploy.sh 完成同一提交的部署。
+    upload_deploy_bundle
 
     # 3. 部署代码 (skill 同步可能失败 → 我们自己处理回滚, 临时关闭 set -e)
     set +e
     ssh $SERVER "
         cd $REMOTE_PATH && \
-        echo '暂存服务器本地改动...' && \
-        git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
-        (git pull || (echo 'git pull 失败, 使用上传的 deploy bundle...' && git fetch /tmp/health-app-deploy.bundle HEAD && git checkout FETCH_HEAD)) && \
+        $REMOTE_GIT_SYNC && \
         cd backend && \
         echo '激活虚拟环境...' && \
         source venv/bin/activate && \

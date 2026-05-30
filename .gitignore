@@ -63,3 +63,7 @@ Thumbs.db
 backend/.coverage
 .coverage
 backend/.venv/
+
+# 运行时 / 调试目录 (非源码) — 否则 push_code 误判脏树, 非交互部署 EOF 退出
+backend/uploads/
+tmp/
