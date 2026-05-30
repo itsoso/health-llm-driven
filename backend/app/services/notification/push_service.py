@@ -47,6 +47,30 @@ def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
 
 
+def resolve_quiet_hours_policy(
+    severity: str,
+    quiet_hours_policy: Optional[QuietHoursPolicy],
+    respect_quiet_hours: bool,
+) -> QuietHoursPolicy:
+    """决定静默时段策略.
+
+    基线: 显式 quiet_hours_policy 优先; 否则 respect_quiet_hours=True→delay, False→bypass.
+
+    2026-05-30 (反转 2026-05-11 的"严格不打扰"): **critical 健康告警穿透静默时段**.
+    致命药物交互 (DDI/PGx) / 急性阈值不应压到早上 08:30 —— 原计划的"紧急联系人穿透
+    系统"从未落地, 不穿透等于半夜致命告警无任何投递路径. 故 critical 一律 bypass.
+    其余 severity 仍尊重 quiet-hours.
+    """
+    policy: QuietHoursPolicy = quiet_hours_policy or (
+        "delay" if respect_quiet_hours else "bypass"
+    )
+    if policy not in {"delay", "bypass", "drop"}:
+        raise ValueError(f"invalid quiet_hours_policy: {policy}")
+    if _severity_rank(severity) >= _severity_rank("critical"):
+        return "bypass"
+    return policy
+
+
 def _allows_telegram_fallback(notification_type: str) -> bool:
     """Global Telegram chat is an operator fallback, not a per-user reminder channel."""
 
@@ -251,7 +275,7 @@ class PushService:
         # 注: 静默时段不再在 can_send_notification 里检查.
         # is_quiet_hours 不是"拒绝", 而是"延迟"语义 — 由 send_notification 顶层处理:
         # 命中静默时段 → 写 status='delayed' log + scheduled_at, 由 Celery flush 任务后续 fire.
-        # 严格不打扰 (2026-05-11 决定): critical 也不穿透静默, 紧急穿透走紧急联系人系统.
+        # 2026-05-30: critical 健康告警穿透静默 (resolve_quiet_hours_policy), 其余 severity 延迟.
 
         # 检查具体类型开关
         type_switches = {
@@ -291,7 +315,7 @@ class PushService:
             respect_quiet_hours: 旧参数; False 等价于 quiet_hours_policy="bypass"
             quiet_hours_policy: 静默时段策略: delay=延迟, bypass=立即发, drop=丢弃
             severity: 严重程度 ("info"|"low"|"warning"|"medium"|"high"|"critical")；
-                      只有 "critical" 在免打扰时段放行.
+                      "critical" 穿透免打扰时段立即推送 (resolve_quiet_hours_policy, 2026-05-30).
                       < 用户 alert_severity_threshold 的 health_alert 也会被过滤 (H1-B).
             dedup_window_hours: 去重窗口（小时）。
                                 有 rule_id 时按 (user_id, notification_type, rule_id) 去重;
@@ -304,11 +328,10 @@ class PushService:
             发送结果 {"success": bool, "channels": {...}}
         """
         rule_id = (data or {}).get("rule_id") if data else None
-        effective_quiet_policy: QuietHoursPolicy = quiet_hours_policy or (
-            "delay" if respect_quiet_hours else "bypass"
+        # critical 穿透静默 (见 resolve_quiet_hours_policy docstring); 其余尊重 quiet-hours.
+        effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
+            severity, quiet_hours_policy, respect_quiet_hours
         )
-        if effective_quiet_policy not in {"delay", "bypass", "drop"}:
-            raise ValueError(f"invalid quiet_hours_policy: {effective_quiet_policy}")
 
         # WSCLA 深链注入: data 带 action_card_id → 自动生成 health://card/{id} 深链.
         # 客户端点击通知 → 调 P1-5 click endpoint 回写 push_clicked_at, 然后跳卡片详情页.
@@ -371,8 +394,8 @@ class PushService:
                 )
                 return {"success": False, "reason": "dedup"}
 
-        # 严格不打扰睡眠 (2026-05-11 决定): 静默时段对所有 severity (含 critical)
-        # 都不立刻推, 写 status='delayed' log + scheduled_at, 由 Celery 任务
+        # 静默时段: critical 已在 resolve_quiet_hours_policy 里被改成 bypass (穿透立即推);
+        # 其余 severity 仍写 status='delayed' log + scheduled_at, 由 Celery 任务
         # flush_delayed_pushes 在 quiet_hours_end 后再 fire.
         if effective_quiet_policy != "bypass" and self.is_quiet_hours(user_id):
             if effective_quiet_policy == "drop":

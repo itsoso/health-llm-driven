@@ -1,8 +1,11 @@
-"""test_push_quiet_hours_strict —— 严格不打扰睡眠 (2026-05-11 决定).
+"""test_push_quiet_hours_strict —— 静默时段策略.
+
+2026-05-30 (反转 2026-05-11): critical 健康告警穿透静默立即推送; 其余 severity 仍延迟.
 
 覆盖:
-- Critical 不再穿透静默时段, 进 delayed 队列
-- High/Medium/Low/Info 静默时段都进 delayed 队列
+- High/Medium 静默时段进 delayed 队列
+- Critical 静默时段穿透立即推 (不延迟)
+- Info/Low 被 threshold 拦截, 不进 delayed
 - Critical 非静默时段仍立刻推
 - next_quiet_hours_end 计算正确
 - flush_delayed_pushes 跳过未到点的, 处理已到点的
@@ -50,14 +53,13 @@ def _make_user(db, username="strict_user"):
     return user
 
 
-@pytest.mark.parametrize("severity", ["medium", "high", "critical"])
+@pytest.mark.parametrize("severity", ["medium", "high"])
 @pytest.mark.asyncio
-async def test_quiet_hours_delays_all_severities_including_critical(db, severity):
-    """所有 severity (含 critical) 在静默时段都延迟, 不穿透.
+async def test_quiet_hours_delays_non_critical_severities(db, severity):
+    """非 critical 的够级别告警在静默时段延迟到 08:30.
 
     注: info/low 在 alert_severity_threshold='warning' (默认) 下会被更早的
-    threshold 检查拦截, 不会走到 quiet_hours 路径 — 这是预期行为, 用户设门槛
-    就不该推. 严格不打扰只解决"够级别的也别夜里吵醒人"这一层.
+    threshold 检查拦截, 不会走到 quiet_hours 路径. critical 单独测 (穿透).
     """
     user = _make_user(db, username=f"strict_{severity}")
     svc = PushService(db)
@@ -94,6 +96,41 @@ async def test_quiet_hours_delays_all_severities_including_critical(db, severity
     assert log.scheduled_at.minute == 30
     # 还是同一天的 08:30 (因为 fake_now 是 03:00 之前)
     assert log.scheduled_at.day == fake_now.day
+
+
+@pytest.mark.asyncio
+async def test_quiet_hours_critical_bypasses_immediately(db):
+    """critical 健康告警穿透静默时段立即推送 (2026-05-30 反转"严格不打扰").
+
+    致命药物交互 / 急性阈值不应压到早上 08:30 —— 原计划的"紧急联系人穿透"从未落地.
+    """
+    user = _make_user(db, username="strict_critical_bypass")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 3, 0, 0)  # 凌晨静默时段
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="health_alert",
+            title="紧急: 致命药物交互",
+            content="content",
+            severity="critical",
+            data={"rule_id": "ddi.fatal"},
+        )
+
+    # 立即发送, 不进延迟队列
+    assert result.get("success") is True
+    assert result.get("reason") != "delayed_for_quiet_hours"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .count()
+    )
+    assert delayed == 0
 
 
 @pytest.mark.asyncio
