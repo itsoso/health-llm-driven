@@ -8,6 +8,33 @@ import random
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _freeze_starters_clock(monkeypatch):
+    """Freeze the module wall-clock to a weekday afternoon (Wed 2026-05-27 15:00).
+
+    Endpoint tests go through `_collect_signals`, which reads the real clock to
+    decide which time-of-day / weekday generators fire. On a weekend, or at certain
+    hours, those add candidates beyond the 4 chip slots, and the endpoint's real
+    `random.Random()` weighted sampling then drops an asserted data signal → flaky
+    (this is why the suite went red on a Saturday). Freezing to a neutral weekday
+    afternoon means no time/weekday generator fires, so endpoint pools are exactly
+    the data signals and selection is deterministic. Direct generator tests pass
+    `local_hour` explicitly and are unaffected by this.
+    """
+    import app.services.conversation_starters as cs
+
+    _RealDT = cs.datetime
+
+    class _FrozenDT(_RealDT):
+        @classmethod
+        def now(cls, tz=None):
+            return _RealDT(2026, 5, 27, 15, 0, tzinfo=tz)
+
+    monkeypatch.setattr(cs, "datetime", _FrozenDT)
+
 
 DEFAULT_SUGGESTIONS = [
     "分析我最近的代谢健康",

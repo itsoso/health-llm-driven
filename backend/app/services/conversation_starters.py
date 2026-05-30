@@ -600,7 +600,9 @@ def _suggest_acwr(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     zone = (signals.acwr_zone or "").lower()
     if zone in ("danger", "overtraining", "risky"):
         return SuggestionCandidate(100, "训练负荷进入风险区，帮我减量并安排恢复")
-    if zone == "undertraining":
+    # "undertraining" 只在用户确实有训练记录时才提示加量 —— Twin 对零训练数据的新用户
+    # 会把 acwr_zone 默认成 "undertraining",此时说"训练负荷偏低"是冷启动误报。
+    if zone == "undertraining" and signals.workouts_7d > 0:
         return SuggestionCandidate(60, "训练负荷偏低，怎么循序加量不受伤？")
     if zone == "optimal":
         return SuggestionCandidate(40, "训练负荷在最佳区，下一周该怎么进阶？")
