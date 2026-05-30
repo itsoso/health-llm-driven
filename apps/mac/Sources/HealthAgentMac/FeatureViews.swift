@@ -108,10 +108,10 @@ struct AgentChatView: View {
                     // large empty gap under the short composer and pushing 结果 far down.
                     HStack(alignment: .top, spacing: 16) {
                         VStack(alignment: .leading, spacing: 20) {
-                            composer
                             if !viewModel.messages.isEmpty {
                                 conversationSection
                             }
+                            composer
                         }
                         .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
                         contextPanel
@@ -119,11 +119,11 @@ struct AgentChatView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 16) {
-                        composer
-                        contextPanel
                         if !viewModel.messages.isEmpty {
                             conversationSection
                         }
+                        composer
+                        contextPanel
                     }
                 }
 
@@ -1051,23 +1051,60 @@ struct AgentChatView: View {
     @ViewBuilder
     private func evidenceSourceChip(_ rawSource: String) -> some View {
         let level = EvidenceLevel.classify(sourceLabel: rawSource)
-        HStack(alignment: .center, spacing: 6) {
-            Image(systemName: "link")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(rawSource)
-                .font(.caption)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            Label(appText(level.displayLabel, appLanguageRaw), systemImage: level.systemImage)
-                .labelStyle(.titleAndIcon)
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(evidenceChipBackground(for: level), in: Capsule())
-                .foregroundStyle(evidenceChipForeground(for: level))
+        let destination = evidenceDestination(for: rawSource)
+        Button {
+            if let destination {
+                navigation?.selection = destination
+            }
+        } label: {
+            HStack(alignment: .center, spacing: 6) {
+                Image(systemName: "link")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(rawSource)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if destination != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                Label(appText(level.displayLabel, appLanguageRaw), systemImage: level.systemImage)
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(evidenceChipBackground(for: level), in: Capsule())
+                    .foregroundStyle(evidenceChipForeground(for: level))
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(destination == nil)
+    }
+
+    /// Maps an evidence source label to the workspace it came from, so tapping a
+    /// source jumps there. nil → the chip stays non-interactive (no fake action).
+    private func evidenceDestination(for source: String) -> SidebarDestination? {
+        let lower = source.lowercased()
+        if source.contains("基因") || lower.contains("gene") || lower.contains("genom") {
+            return .genetics
+        }
+        if source.contains("知识") || source.contains("文献") || lower.contains("knowledge") || lower.contains("wiki") {
+            return .knowledge
+        }
+        if source.contains("运动") || lower.contains("workout") {
+            return .workouts
+        }
+        if source.contains("化验") || source.contains("检验") || lower.contains("lab")
+            || source.contains("Garmin") || source.contains("健康数据")
+            || source.contains("睡眠") || source.contains("血氧") || source.contains("HRV")
+            || source.contains("补剂") || source.contains("药物") || source.contains("指标") {
+            return .data
+        }
+        return nil
     }
 
     private func evidenceChipBackground(for level: EvidenceLevel) -> Color {
