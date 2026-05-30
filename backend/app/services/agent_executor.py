@@ -730,6 +730,9 @@ class AgentExecutor:
         llm_rounds_ms: list = []
         model_name: Optional[str] = None
         final_finish_reason: Optional[str] = None
+        # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
+        # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
+        tool_executed_count = 0
 
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
@@ -820,6 +823,7 @@ class AgentExecutor:
                         result = await self._execute_tool(
                             func_name, func_args, user_auth_token
                         )
+                        tool_executed_count += 1
 
                         # 写操作成功后内联安全检查
                         if (
@@ -1019,6 +1023,20 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
 
+        # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行 = 很可能模型只是嘴上
+        # 说"已记录"但没真写库(弱模型把 tool-call JSON 当正文吐出、提取失败的静默丢数据)。
+        # 把这种"假装成功"从不可见变成 WARNING 日志 + message.meta 标记, 可被监控/告警捕获。
+        record_intent_no_tool = bool(
+            self._prefer_fast_record_model and tool_executed_count == 0
+        )
+        if record_intent_no_tool:
+            logger.warning(
+                "[agent_executor] RECORD INTENT but 0 tools executed — possible silent "
+                "data loss (model may have claimed success without writing). user=%s msg=%r",
+                user_id,
+                (message or "")[:80],
+            )
+
         # 2026-05-14 FIX-7: 把性能 + 可解释性写到 message.meta, 用户回来 reload 能恢复 footer
         try:
             ai_msg.meta = {
@@ -1031,6 +1049,7 @@ class AgentExecutor:
                 "cards": evidence_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
+                "record_intent_no_tool": record_intent_no_tool,
             }
         except Exception as e:
             logger.warning(f"[agent_executor] write meta 失败: {e}")
@@ -1051,6 +1070,7 @@ class AgentExecutor:
                 "cards": evidence_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
+                "record_intent_no_tool": record_intent_no_tool,
             },
         }
 
