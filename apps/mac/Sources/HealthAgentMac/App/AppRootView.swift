@@ -153,6 +153,8 @@ struct AppRootView: View {
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
+        case .workouts:
+            WorkoutsView(client: services.workoutClient, onAskAgent: askAgentWithContext)
         case .settings:
             SettingsView(authClient: services.authClient, tokenStore: services.tokenProvider) {
                 isAuthenticated = false
