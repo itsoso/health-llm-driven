@@ -344,7 +344,7 @@ struct AgentChatView: View {
                     attach(url)
                 }
             } catch {
-                viewModel.errorMessage = "Attach failed: \(error.localizedDescription)"
+                viewModel.errorMessage = "Attach failed: \(userFacingError(error, appLanguageRaw))"
             }
         }
     }
@@ -1123,7 +1123,7 @@ struct AgentChatView: View {
                 let item = try await FileIntakeService.inspect(url: url)
                 viewModel.addAttachment(item)
             } catch {
-                viewModel.errorMessage = "Attach failed: \(error.localizedDescription)"
+                viewModel.errorMessage = "Attach failed: \(userFacingError(error, appLanguageRaw))"
             }
         }
     }
@@ -2684,7 +2684,7 @@ struct RecordHubView: View {
                 : "\(response.total) \(appText("products found", appLanguageRaw))"
         } catch {
             supplementProductResults = []
-            supplementProductMessage = "\(appText("Search failed", appLanguageRaw)): \(error.localizedDescription)"
+            supplementProductMessage = "\(appText("Search failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2795,7 +2795,7 @@ struct RecordHubView: View {
                 await viewModel.refresh()
             }
         } catch {
-            resultMessage = "Save failed: \(error.localizedDescription)"
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2810,7 +2810,7 @@ struct RecordHubView: View {
                 await viewModel.refresh()
             }
         } catch {
-            resultMessage = "Save failed: \(error.localizedDescription)"
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2837,7 +2837,7 @@ struct RecordHubView: View {
             resultMessage = appText("Record undone.", appLanguageRaw)
             await viewModel.refresh()
         } catch {
-            resultMessage = "\(appText("Undo failed", appLanguageRaw)): \(error.localizedDescription)"
+            resultMessage = "\(appText("Undo failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -3011,7 +3011,7 @@ struct ImportCenterView: View {
             rawUploadConfirmed = false
             statusText = "Ready to create import job."
         } catch {
-            statusText = "Inspect failed: \(error.localizedDescription)"
+            statusText = "Inspect failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -3033,7 +3033,7 @@ struct ImportCenterView: View {
             statusText = "Created job #\(job.id) (\(job.status))."
             recommendedPrompt = pipelineRecommendation(for: intakeItem.sourceKind)
         } catch {
-            statusText = "Job creation failed: \(error.localizedDescription)"
+            statusText = "Job creation failed: \(userFacingError(error, appLanguageRaw))"
             recommendedPrompt = nil
         }
     }
@@ -3194,7 +3194,7 @@ struct JobListView: View {
             }
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 
@@ -3203,7 +3203,7 @@ struct JobListView: View {
             selectedJob = try await client.getJob(id: id)
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 
@@ -3212,7 +3212,7 @@ struct JobListView: View {
             selectedJob = try await client.retryJob(id: job.id)
             await refresh()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 }
@@ -3651,7 +3651,7 @@ struct TraceLookupView: View {
             trace = try await client.fetchTrace(conversationID: id)
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingError(error, appLanguageRaw)
         }
     }
 
@@ -3817,7 +3817,7 @@ struct SettingsView: View {
         } catch {
             // Surface the failure instead of silently leaving the toggle wrong:
             // ad-hoc/unsigned local builds can be denied by the system here.
-            statusMessage = "\(appText("Launch at login change failed", appLanguageRaw)): \(error.localizedDescription)"
+            statusMessage = "\(appText("Launch at login change failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
@@ -3851,7 +3851,7 @@ struct SettingsView: View {
             statusMessage = "Token saved."
             token = ""
         } catch {
-            statusMessage = "Save failed: \(error.localizedDescription)"
+            statusMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 

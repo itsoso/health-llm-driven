@@ -260,6 +260,7 @@ public enum L10n {
         "No tool result yet.": "还没有工具执行结果。",
         "Running": "运行中",
         "Run": "运行",
+        "Something went wrong. Please try again.": "出了点问题，请稍后再试。",
         "Copy": "复制",
         "Copied": "已复制",
         "Stop": "停止",
