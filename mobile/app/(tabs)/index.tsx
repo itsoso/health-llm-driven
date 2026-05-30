@@ -154,11 +154,14 @@ export default function TodayScreen() {
   const steps = garmin?.steps ?? 0;
   const activeMin = garmin?.active_minutes ?? 0;
   const calories = garmin?.active_calories ?? 0;
-  const sleepHoursRaw = garmin?.total_sleep_duration
-    ? garmin.total_sleep_duration / 3600
+  // total_sleep_duration / deep_sleep_duration 后端单位是「分钟」(见 GarminData 模型 +
+  // services/sleep.ts / trends.ts 都 /60)。此处之前误当秒 /3600,导致 7h 显示成 0.1h。
+  // 小于 1.5h(90min)视为脏数据（午睡片段 / 未完成同步），不展示。
+  const sleepHoursRaw = garmin?.total_sleep_duration && garmin.total_sleep_duration >= 90
+    ? garmin.total_sleep_duration / 60
     : null;
-  const deepSleepRaw = garmin?.deep_sleep_duration
-    ? garmin.deep_sleep_duration / 3600
+  const deepSleepRaw = garmin?.deep_sleep_duration && garmin.deep_sleep_duration >= 30
+    ? garmin.deep_sleep_duration / 60
     : null;
 
   const geneticStatsQuery = useQuery({
@@ -426,17 +429,6 @@ export default function TodayScreen() {
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
         <EnvironmentCard />
-        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
-        <VitalsGrid
-          {...vitalsProps}
-          onTilePress={(metric) => {
-            if (metric === 'sleep') router.push('/sleep' as any);
-            else if (metric === 'heart_rate') router.push('/indicator-history?type=heart_rate' as any);
-            else if (metric === 'hrv') router.push('/indicator-history?type=hrv' as any);
-            else router.push('/indicator-history?type=body_battery' as any);
-          }}
-        />
-        <BodyStatsRow values={bodyStatsValues} />
         <HomeCommandCard
           agentJudgmentText={agentJudgmentText}
           nextStepActionText={nextStepActionText}
@@ -452,6 +444,17 @@ export default function TodayScreen() {
             canComplete && nextAction ? () => completeNextAction(nextAction) : undefined
           }
         />
+        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
+        <VitalsGrid
+          {...vitalsProps}
+          onTilePress={(metric) => {
+            if (metric === 'sleep') router.push('/sleep' as any);
+            else if (metric === 'heart_rate') router.push('/indicator-history?type=heart_rate' as any);
+            else if (metric === 'hrv') router.push('/indicator-history?type=hrv' as any);
+            else router.push('/indicator-history?type=body_battery' as any);
+          }}
+        />
+        <BodyStatsRow values={bodyStatsValues} />
         <AgentTopicsRow
           cards={topicCards}
           loading={trajectoryQuery.isLoading}

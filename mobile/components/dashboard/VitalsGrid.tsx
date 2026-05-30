@@ -93,7 +93,8 @@ export default function VitalsGrid({
 
   const days = Array.isArray(garminDays) ? garminDays : [];
 
-  const sleepSeries = pickSeries(days, d => d.total_sleep_duration ? d.total_sleep_duration / 60 : null);
+  // total_sleep_duration 单位为分钟 → /60 得小时;脏数据阈值 90min(1.5h)
+  const sleepSeries = pickSeries(days, d => d.total_sleep_duration && d.total_sleep_duration >= 90 ? d.total_sleep_duration / 60 : null);
   const hrSeries = pickSeries(days, d => d.resting_heart_rate);
   const hrvSeries = pickSeries(days, d => d.hrv);
   const batterySeries = pickSeries(days, d => d.body_battery_current ?? d.body_battery_most_charged);
@@ -167,7 +168,7 @@ function createStyles(c: ColorPalette, isDark: boolean) {
   return StyleSheet.create({
     grid: {
       flexDirection: 'row', flexWrap: 'wrap',
-      gap: spacing.md, marginBottom: spacing.lg,
+      gap: spacing.md, marginBottom: spacing.md,
     },
     tile: {
       width: '47.5%',

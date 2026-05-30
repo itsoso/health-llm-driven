@@ -19,8 +19,8 @@ function ActivityRing({ value, target, color, icon, label, displayValue }: RingP
   const styles = useMemo(() => createStyles(c, false), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
 
-  const size = 64;
-  const sw = 5;
+  const size = 52;
+  const sw = 4.5;
   const r = (size - sw) / 2;
   const circ = 2 * Math.PI * r;
   const progress = Math.min(value / target, 1);
@@ -36,7 +36,7 @@ function ActivityRing({ value, target, color, icon, label, displayValue }: RingP
             strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off}
             transform={`rotate(-90 ${size / 2} ${size / 2})`} />
         </Svg>
-        <Ionicons name={icon} size={18} color={color} style={{ position: 'absolute' }} />
+        <Ionicons name={icon} size={15} color={color} style={{ position: 'absolute' }} />
       </View>
       <Text style={txt.value}>{displayValue}</Text>
       <Text style={txt.label}>{label}</Text>
@@ -79,9 +79,9 @@ function createStyles(c: ColorPalette, isDark: boolean) {
       flexDirection: 'row',
       backgroundColor: c.bgCard,
       borderRadius: radii.xl,
-      paddingVertical: spacing.lg,
+      paddingVertical: spacing.md,
       paddingHorizontal: spacing.md,
-      marginBottom: spacing.lg,
+      marginBottom: spacing.md,
       justifyContent: 'space-around',
       alignItems: 'center',
       ...(isDark
@@ -89,7 +89,7 @@ function createStyles(c: ColorPalette, isDark: boolean) {
         : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
     },
     ringItem: { alignItems: 'center' },
-    divider: { width: StyleSheet.hairlineWidth, height: 60, backgroundColor: c.separator },
+    divider: { width: StyleSheet.hairlineWidth, height: 46, backgroundColor: c.separator },
   });
 }
 
