@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/medication", tags=["用药管理"])
 
+# 新增药物后即时安全检查只关心相互作用类别 (药-药 / 药-补剂 / 药-基因),
+# 急性阈值/化验等与"刚加了哪种药"无直接因果, 留给 23:00 批量评估.
+_INTERACTION_CATEGORIES = {"ddi", "dsi", "pgx"}
+
 
 class MedicationCreate(BaseModel):
     name: str
@@ -79,7 +83,69 @@ async def add_medication(
         db.rollback()
         logger.warning(f"[MedAPI] KG extract 失败 (旁路): {e}")
 
-    return _serialize_medication(med)
+    # Tier 0 ②: 即时跑 SafetyGuardian, 把 DDI/DSI/PGx 高危相互作用当场告诉用户,
+    # 而不是等到 23:00 批量异常检测 (最长 23h 延迟).
+    payload = _serialize_medication(med)
+    payload["safety_alerts"] = await _evaluate_medication_safety(db, current_user.id, med.name)
+    return payload
+
+
+async def _evaluate_medication_safety(db: Session, user_id: int, med_name: str) -> List[Dict[str, Any]]:
+    """新增药物后即时安全裁决 —— 返回与相互作用相关的 high/critical 告警 (前端内联预警)。
+
+    - 在**新鲜** Twin (use_cache=False) 上跑全部规则, 确保刚加的药已计入。
+    - 只回 DDI/DSI/PGx 类别且 severity ≥ HIGH 的告警 (见 _INTERACTION_CATEGORIES)。
+    - critical/high 同时触发 health_alert 推送: critical 穿透静默时段立即送
+      (resolve_quiet_hours_policy, #6), 保证用户离开页面也能收到。
+    - 防御式: 评估或推送失败**绝不**阻断药品保存, 但失败要进 error 日志 (exc_info),
+      不静默吞掉 (CLAUDE.md §不假装成功)。
+    """
+    try:
+        from app.agents.safety_guardian import Severity, evaluate_safety
+        from app.twin.builder import build_twin
+
+        twin = build_twin(db, user_id, use_cache=False)
+        report = evaluate_safety(twin)
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            f"[MedAPI] 新增药物 {med_name!r} 即时安全评估失败 (不阻断保存): {e}",
+            exc_info=True,
+        )
+        return []
+
+    relevant = [
+        a for a in report.alerts
+        if a.category in _INTERACTION_CATEGORIES and a.severity >= Severity.HIGH
+    ]
+    if not relevant:
+        return []
+
+    logger.warning(
+        f"[MedAPI] 用户 {user_id} 新增药物 {med_name!r} 触发 {len(relevant)} 条高危相互作用告警: "
+        f"{[a.rule_id for a in relevant]}"
+    )
+
+    # 推送 (旁路): 失败不影响内联返回, 但要可观测.
+    try:
+        from app.services.notification.push_service import PushService
+
+        push = PushService(db)
+        for alert in relevant:
+            await push.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title=f"⚠️ {alert.title}",
+                content=alert.message[:120],
+                data={"screen": "alerts", "rule_id": alert.rule_id},
+                severity=alert.severity.label,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            f"[MedAPI] 用户 {user_id} 新增药物安全告警推送失败: {e}",
+            exc_info=True,
+        )
+
+    return [a.model_dump_for_api() for a in relevant]
 
 
 @router.get("/medications/me")

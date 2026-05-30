@@ -109,7 +109,15 @@ export default function MedicationsScreen() {
           <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>用药管理</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          onPress={() => router.push('/medication-edit' as any)}
+          hitSlop={12}
+          style={styles.addBtn}
+          accessibilityRole="button"
+          accessibilityLabel="添加药品"
+        >
+          <Ionicons name="add" size={26} color={c.brand} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabBar}>
@@ -238,6 +246,7 @@ function createStyles(c: ColorPalette) {
       paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
     },
     backBtn: { width: 40, alignItems: 'flex-start' },
+    addBtn: { width: 40, alignItems: 'flex-end' },
     tabBar: {
       flexDirection: 'row',
       marginHorizontal: spacing.md, marginBottom: spacing.xs,
