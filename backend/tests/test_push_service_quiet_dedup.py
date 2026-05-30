@@ -55,7 +55,7 @@ def _make_settings(
 
 
 class TestQuietHoursSeverity:
-    """quiet_hours 严格不打扰 (2026-05-11 决定): 所有 severity 含 critical 都进 delayed 队列, 不立刻推."""
+    """quiet_hours 策略 (2026-05-30 反转 2026-05-11): critical 穿透静默立即推, 其余延迟."""
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_medium_alert_suppressed_at_night(self, mock_now, db):
@@ -104,29 +104,40 @@ class TestQuietHoursSeverity:
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_critical_alert_punches_through_at_night(self, mock_now, db):
-        """严格不打扰 (2026-05-11): critical 也不再穿透静默时段, 进 delayed 队列.
+        """critical 穿透静默时段立即推送 (2026-05-30 反转"严格不打扰").
 
-        紧急穿透走紧急联系人系统 (Telegram/SMS), 不在本流程.
+        致命药物交互 / 急性阈值不应压到早上 —— 原计划的"紧急联系人穿透"从未落地.
         """
         mock_now.return_value = datetime(2026, 5, 1, 23, 30)
         user_id = _make_user(db)
         _make_settings(db, user_id)
         svc = PushService(db)
-        # can_send 仍 True (不在 can_send 拦截), 但 send_notification 会延迟
         assert svc.can_send_notification(
             user_id, "health_alert", severity="critical"
         ) is True
 
-        result = asyncio.run(svc.send_notification(
-            user_id=user_id,
-            notification_type="health_alert",
-            title="critical 告警",
-            content="x",
-            severity="critical",
-            data={"rule_id": "test.critical"},
-        ))
-        assert result["success"] is False
-        assert result["reason"] == "delayed_for_quiet_hours"
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="critical 告警",
+                content="x",
+                severity="critical",
+                data={"rule_id": "test.critical"},
+                channels=["ios_apns"],
+            ))
+        # 立即发送, 不进延迟队列
+        assert result.get("success") is True
+        assert result.get("reason") != "delayed_for_quiet_hours"
+        delayed = (
+            db.query(NotificationLog)
+            .filter(
+                NotificationLog.user_id == user_id,
+                NotificationLog.status == NotificationStatus.DELAYED.value,
+            )
+            .count()
+        )
+        assert delayed == 0
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_default_quiet_hours_covers_0830(self, mock_now, db):
