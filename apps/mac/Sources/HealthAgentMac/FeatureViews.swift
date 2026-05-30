@@ -248,7 +248,7 @@ struct AgentChatView: View {
                     text: $draft,
                     focusToken: editorFocusToken
                 ) {
-                    Task { await sendDraft() }
+                    sendDraft()
                 }
                 .frame(minHeight: 190, maxHeight: 300)
 
@@ -304,16 +304,27 @@ struct AgentChatView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                 }
-                Button {
-                    Task { await sendDraft() }
-                } label: {
-                    Label(appText(viewModel.isStreaming ? "Running" : "Run", appLanguageRaw), systemImage: "play.fill")
+                if viewModel.isStreaming {
+                    Button(role: .destructive) {
+                        viewModel.cancelStreaming()
+                    } label: {
+                        Label(appText("Stop", appLanguageRaw), systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .help(appText("Stop generating", appLanguageRaw))
+                } else {
+                    Button {
+                        sendDraft()
+                    } label: {
+                        Label(appText("Run", appLanguageRaw), systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!viewModel.canSubmit(draft))
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Command-Return")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!viewModel.canSubmit(draft))
-                .keyboardShortcut(.return, modifiers: .command)
-                .help("Command-Return")
             }
         }
         .padding(18)
@@ -519,14 +530,34 @@ struct AgentChatView: View {
     /// arrangement (newest content above a fixed input).
     private var chatColumn: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                messagesArea
-                    .padding(.bottom, 8)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    messagesArea
+                        .padding(.bottom, 8)
+                    // Bottom anchor the auto-scroll targets so new messages and
+                    // streaming tokens stay in view (ChatBot convention).
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.scrollBottomAnchor)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onChange(of: scrollTrigger) { _, _ in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(Self.scrollBottomAnchor, anchor: .bottom)
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             composer
                 .padding(.top, 12)
         }
+    }
+
+    private static let scrollBottomAnchor = "agent-chat-bottom-anchor"
+
+    /// Changes whenever a message is added or the streaming reply grows, so the
+    /// transcript auto-scrolls to the bottom on both events.
+    private var scrollTrigger: Int {
+        viewModel.messages.count &+ (viewModel.messages.last?.content.count ?? 0)
     }
 
     /// The scrollable transcript: result header + message bubbles, or an empty
@@ -662,7 +693,7 @@ struct AgentChatView: View {
             HStack(spacing: 8) {
                 ForEach(prompts, id: \.label) { chip in
                     Button {
-                        Task { await viewModel.send(chip.prompt) }
+                        viewModel.submit(chip.prompt)
                     } label: {
                         Label(appText(chip.label, appLanguageRaw), systemImage: chip.icon)
                             .labelStyle(.titleAndIcon)
@@ -1042,11 +1073,11 @@ struct AgentChatView: View {
         }
     }
 
-    private func sendDraft() async {
+    private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard viewModel.canSubmit(text) else { return }
         draft = ""
-        await viewModel.send(text)
+        viewModel.submit(text)
         editorFocusToken += 1
     }
 
