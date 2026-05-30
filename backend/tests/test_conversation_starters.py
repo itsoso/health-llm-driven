@@ -102,9 +102,24 @@ def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_us
     assert any(s["key"] == "exam" for s in payload["suggestions"])
 
 
-def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and_headers):
+def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and_headers, monkeypatch):
     from app.models.daily_health import WaterIntake
     from app.models.goal import Goal, GoalPeriod, GoalStatus, GoalType
+    import app.services.conversation_starters as cs
+
+    # Freeze the module clock to a weekday afternoon (Wed 2026-05-27 15:00) so no
+    # time-of-day / weekday generator fires. This user already has 3 data signals
+    # (goal+water+diet); if a time generator added a 4th/5th, the pool would exceed
+    # the 4 chip slots and the weighted-random selection (endpoint uses a real RNG)
+    # could drop an asserted signal — that non-determinism made this test flaky.
+    _RealDT = cs.datetime
+
+    class _FrozenDT(_RealDT):
+        @classmethod
+        def now(cls, tz=None):
+            return _RealDT(2026, 5, 27, 15, 0, tzinfo=tz)
+
+    monkeypatch.setattr(cs, "datetime", _FrozenDT)
 
     user, headers = auth_user_and_headers
     today = date.today()
