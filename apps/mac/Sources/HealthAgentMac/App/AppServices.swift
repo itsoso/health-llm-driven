@@ -7,6 +7,12 @@ final class AppNavigationState {
     var selection: SidebarDestination? = .today
     var traceConversationID: Int?
     var isCommandPalettePresented = false
+    /// Bumped by the ⌘R command; observed at the app root to refresh the
+    /// shared dashboard data without coupling the menu to a specific view.
+    var refreshTick = 0
+    /// Bumped by ⌘N; observed by AgentChatView to start a fresh conversation
+    /// (and clear its local composer draft, which the app layer can't reach).
+    var newConversationTick = 0
 
     func openTrace(conversationID: Int) {
         traceConversationID = conversationID

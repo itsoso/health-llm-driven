@@ -48,6 +48,15 @@ struct HealthAgentMacApp: App {
                 Button(appText("Settings", appLanguageRaw)) { appServices.navigation.selection = .settings }
                     .keyboardShortcut(",", modifiers: [.command])
                 Divider()
+                Button(appText("New Chat", appLanguageRaw)) {
+                    appServices.navigation.selection = .agent
+                    appServices.navigation.newConversationTick += 1
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+                Button(appText("Refresh", appLanguageRaw)) {
+                    appServices.navigation.refreshTick += 1
+                }
+                .keyboardShortcut("r", modifiers: [.command])
                 Button(appText("Command Palette", appLanguageRaw)) {
                     appServices.navigation.isCommandPalettePresented = true
                 }

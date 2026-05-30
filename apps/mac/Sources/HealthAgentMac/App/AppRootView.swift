@@ -73,6 +73,10 @@ struct AppRootView: View {
             currentUser = nil
             navigation.selection = .today
         }
+        .onChange(of: navigation.refreshTick) { _, _ in
+            // ⌘R: refresh the shared dashboard data backing most pages.
+            Task { await services.todayViewModel.refresh() }
+        }
         .sheet(isPresented: $navigation.isCommandPalettePresented) {
             CommandPaletteView(
                 commands: DesktopCommandPalette.defaultCommands(language: AppLanguage(storedValue: appLanguageRaw)),
@@ -108,7 +112,7 @@ struct AppRootView: View {
                 onAddContext: addAgentContext
             )
         case .agent:
-            AgentChatView(viewModel: services.agentViewModel)
+            AgentChatView(viewModel: services.agentViewModel, navigation: navigation)
         case .record:
             RecordHubView(
                 client: services.recordClient,

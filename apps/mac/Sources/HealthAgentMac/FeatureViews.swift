@@ -83,6 +83,7 @@ private func conversationDifferentiator(_ snapshot: AgentConversationSnapshot) -
 
 struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
+    var navigation: AppNavigationState?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var draft = ""
     @State private var modelStrategy = "auto"
@@ -147,6 +148,13 @@ struct AgentChatView: View {
         }
         .onChange(of: viewModel.preparedDraft) { _, _ in
             ingestPreparedDraft()
+        }
+        .onChange(of: navigation?.newConversationTick) { _, _ in
+            // ⌘N: start a fresh conversation and clear the local composer draft
+            // (mirrors the header "New Chat" button).
+            draft = ""
+            viewModel.startNewConversation()
+            editorFocusToken += 1
         }
         .sheet(item: $selectedToolActivity) { activity in
             ToolActivityDetailSheet(activity: activity)
