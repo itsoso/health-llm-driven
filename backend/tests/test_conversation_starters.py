@@ -4,6 +4,8 @@ Goal: The new-chat empty state should show dynamic prompt chips derived from
 recent user data (exams/workouts/supplements/sleep) with a safe default fallback.
 """
 
+import random
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 
@@ -15,6 +17,36 @@ DEFAULT_SUGGESTIONS = [
 ]
 
 
+_EMPTY_SIGNALS_KWARGS = dict(
+    latest_exam_date=None,
+    latest_exam_abnormal_items=[],
+    active_goal_title=None,
+    active_goal_current_value=None,
+    active_goal_target_value=None,
+    active_goal_unit=None,
+    water_today_ml=None,
+    diet_records_today=None,
+    latest_workout_type=None,
+    latest_workout_distance_km=None,
+    latest_workout_duration_min=None,
+    latest_workout_avg_hr=None,
+    top_gene_name=None,
+    top_gene_genotype=None,
+    top_gene_result=None,
+    workouts_7d=0,
+    active_supplements=0,
+    supplement_completion_7d_pct=None,
+    avg_sleep_score_7d=None,
+    missing_hrv_days_7d=None,
+)
+
+
+def _make_signals(**overrides):
+    from app.services.conversation_starters import StarterSignals
+
+    return StarterSignals(**{**_EMPTY_SIGNALS_KWARGS, **overrides})
+
+
 def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and_headers):
     _, headers = auth_user_and_headers
 
@@ -23,7 +55,11 @@ def test_endpoint_returns_default_suggestions_when_no_data(client, auth_user_and
     assert r.status_code == 200
     payload = r.json()
     assert payload["opener"] is None
-    assert payload["suggestions"] == DEFAULT_SUGGESTIONS
+    # suggestions are structured cards: { text, key, priority }
+    assert [s["text"] for s in payload["suggestions"]] == DEFAULT_SUGGESTIONS
+    # fallback cards carry the "default" key for analytics attribution
+    assert all(s["key"] == "default" for s in payload["suggestions"])
+    assert all("priority" in s for s in payload["suggestions"])
 
 
 def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_user_and_headers):
@@ -59,8 +95,11 @@ def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_us
     assert r.status_code == 200
     payload = r.json()
     assert isinstance(payload["suggestions"], list)
-    assert any("体检" in text for text in payload["suggestions"])
-    assert any("LDL" in text for text in payload["suggestions"])
+    texts = [s["text"] for s in payload["suggestions"]]
+    assert any("体检" in t for t in texts)
+    assert any("LDL" in t for t in texts)
+    # the exam card is attributed to the _suggest_exam generator
+    assert any(s["key"] == "exam" for s in payload["suggestions"])
 
 
 def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and_headers):
@@ -96,9 +135,10 @@ def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and
     assert r.status_code == 200
     suggestions = r.json()["suggestions"]
     assert len(suggestions) == 4
-    assert any("把体重降到 75kg" in text for text in suggestions)
-    assert any("饮水 300/2000ml" in text for text in suggestions)
-    assert any("还没记录饮食" in text for text in suggestions)
+    texts = [s["text"] for s in suggestions]
+    assert any("把体重降到 75kg" in t for t in texts)
+    assert any("饮水 300/2000ml" in t for t in texts)
+    assert any("还没记录饮食" in t for t in texts)
 
 
 def test_endpoint_includes_latest_workout_detail_and_gene_risk(client, db, auth_user_and_headers):
@@ -144,5 +184,320 @@ def test_endpoint_includes_latest_workout_detail_and_gene_risk(client, db, auth_
 
     assert r.status_code == 200
     suggestions = r.json()["suggestions"]
-    assert any("最近一次跑步" in text and "5.2km" in text for text in suggestions)
-    assert any("MTHFR TT" in text for text in suggestions)
+    texts = [s["text"] for s in suggestions]
+    assert any("最近一次跑步" in t and "5.2km" in t for t in texts)
+    assert any("MTHFR TT" in t for t in texts)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Twin-driven (today body state + environment) — unit tests on the pure
+# selection layer so we don't have to seed half a dozen Garmin/Weather
+# rows. Twin overlay is wired in `_collect_signals` and proven by
+# `test_endpoint_surfaces_low_readiness_from_garmin` below.
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_low_readiness_generates_critical_prompt_and_is_always_selected():
+    from app.services.conversation_starters import (
+        _build_candidates,
+        _select,
+    )
+
+    signals = _make_signals(readiness_score=32)
+    candidates = _build_candidates(signals)
+    # The low-readiness candidate should be present and critical (>=100).
+    assert any("恢复评分 32" in c.text and c.priority >= 100 for c in candidates)
+
+    # Critical candidate must always survive selection, even with many competitors.
+    rng = random.Random(0)
+    out = _select(candidates, limit=4, rng=rng)
+    assert any("恢复评分 32" in s for s in out)
+
+
+def test_high_aqi_and_acwr_danger_both_surface_critical():
+    from app.services.conversation_starters import _build_candidates, _select
+
+    signals = _make_signals(aqi=180, city="杭州", acwr_zone="danger")
+    candidates = _build_candidates(signals)
+    out = _select(candidates, limit=4, rng=random.Random(7))
+    assert any("AQI 180" in s for s in out)
+    assert any("训练负荷进入风险区" in s for s in out)
+
+
+def test_weather_rain_and_uv_extreme_become_suggestions():
+    from app.services.conversation_starters import _build_candidates, _select
+
+    signals = _make_signals(
+        temperature_c=22,
+        weather_description="雷阵雨",
+        uv_index=9,
+        city="上海",
+    )
+    out = _select(_build_candidates(signals), limit=4, rng=random.Random(1))
+    assert any("雷阵雨" in s and "室内训练" in s for s in out)
+    assert any("UV指数 9" in s for s in out)
+
+
+def test_acute_illness_suppresses_training_and_marked_critical():
+    from app.services.conversation_starters import _build_candidates, _select
+
+    signals = _make_signals(
+        should_rest_from_training=True,
+        illness_names=["发热"],
+    )
+    candidates = _build_candidates(signals)
+    assert any(c.priority >= 100 and "发热" in c.text for c in candidates)
+    out = _select(candidates, limit=4, rng=random.Random(0))
+    assert any("发热" in s and "休息" in s for s in out)
+
+
+def test_bp_stage2_is_critical_and_normal_bp_is_lower_priority():
+    from app.services.conversation_starters import _build_candidates
+
+    crit = _build_candidates(_make_signals(systolic_bp=165, diastolic_bp=102))
+    assert any(c.priority >= 100 and "165/102" in c.text for c in crit)
+
+    norm = _build_candidates(_make_signals(systolic_bp=118, diastolic_bp=76))
+    bp_cands = [c for c in norm if "血压" in c.text]
+    assert bp_cands and all(c.priority < 100 for c in bp_cands)
+
+
+def test_default_fallbacks_fill_remaining_slots():
+    from app.services.conversation_starters import (
+        _build_candidates,
+        _select,
+    )
+
+    # Only one personalized candidate → defaults must fill the other 3 slots.
+    signals = _make_signals(active_goal_title="减重")
+    out = _select(_build_candidates(signals), limit=4, rng=random.Random(0))
+    assert len(out) == 4
+    assert any("减重" in s for s in out)
+    # At least 2 of the 4 should be DEFAULT_SUGGESTIONS.
+    assert sum(1 for s in out if s in DEFAULT_SUGGESTIONS) >= 2
+
+
+def test_selection_is_per_request_random_for_non_critical():
+    """When there are >4 non-critical candidates, two RNG seeds should yield
+    different selections (per-visit variety)."""
+    from app.services.conversation_starters import _build_candidates, _select
+
+    # Build a rich, all-non-critical signal set.
+    signals = _make_signals(
+        latest_exam_date=date.today(),
+        latest_exam_abnormal_items=["LDL-C"],
+        active_goal_title="把体重降到 75kg",
+        active_goal_current_value=78,
+        active_goal_target_value=75,
+        active_goal_unit="kg",
+        water_today_ml=500,
+        diet_records_today=0,
+        latest_workout_type="cycling",
+        latest_workout_distance_km=20.0,
+        latest_workout_duration_min=60,
+        workouts_7d=3,
+        top_gene_name="APOE",
+        top_gene_genotype="ε3/ε4",
+        top_gene_result="心血管关注",
+        active_supplements=2,
+        supplement_completion_7d_pct=85.0,
+        avg_sleep_score_7d=82,
+        readiness_score=70,
+        body_battery=85,
+        aqi=40,
+        city="杭州",
+        uv_index=6.5,
+    )
+    cands = _build_candidates(signals)
+    assert len(cands) >= 6  # enough room for variety
+
+    seen = set()
+    for seed in range(20):
+        out = tuple(_select(cands, limit=4, rng=random.Random(seed)))
+        seen.add(out)
+    # Across 20 seeds, at least 3 distinct orderings emerge.
+    assert len(seen) >= 3
+
+
+def test_collect_signals_overlays_twin_today_state(db, auth_user_and_headers):
+    """Direct check: when Twin returns today's body state, _collect_signals
+    surfaces it on StarterSignals. Proves the Twin → StarterSignals wiring."""
+    from unittest.mock import patch
+    from app.services.conversation_starters import (
+        _build_candidates,
+        _collect_signals,
+        _select,
+    )
+    from app.twin.schema import (
+        BehavioralState,
+        EnvironmentalState,
+        HealthTwin,
+        LabsContext,
+        PhysiologicalState,
+        TwinMeta,
+    )
+
+    user, _ = auth_user_and_headers
+    fake_twin = HealthTwin(
+        meta=TwinMeta(user_id=user.id, generated_at=datetime.now(timezone.utc)),
+        physiological=PhysiologicalState(
+            training_readiness_score=32,
+            training_readiness_level="poor",
+            body_battery_current=25,
+            stress_level_current=72,
+        ),
+        labs=LabsContext(blood_pressure_systolic=165, blood_pressure_diastolic=102),
+        behavioral=BehavioralState(acwr_zone="danger"),
+        environment=EnvironmentalState(city="杭州", aqi=180, aqi_level="unhealthy"),
+    )
+
+    with patch("app.twin.builder.build_twin", return_value=fake_twin):
+        signals = _collect_signals(db, user.id)
+
+    assert signals.readiness_score == 32
+    assert signals.body_battery == 25
+    assert signals.stress_today == 72
+    assert signals.systolic_bp == 165
+    assert signals.acwr_zone == "danger"
+    assert signals.aqi == 180
+    assert signals.city == "杭州"
+
+    candidates = _build_candidates(signals)
+    out = _select(candidates, limit=4, rng=random.Random(0))
+    assert any("恢复评分 32" in s for s in out)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Time-of-day / weekday generators — pure-function checks. Gated behind
+# _has_any_user_signal so they don't trigger for brand-new users.
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_morning_prompt_includes_last_night_sleep_when_available():
+    from app.services.conversation_starters import _suggest_morning
+
+    sig = _make_signals(local_hour=8, sleep_score_today=82)
+    cand = _suggest_morning(sig)
+    assert cand is not None
+    assert "睡眠分 82" in cand.text
+
+
+def test_morning_prompt_skipped_outside_window():
+    from app.services.conversation_starters import _suggest_morning
+
+    sig = _make_signals(local_hour=14, sleep_score_today=82)
+    assert _suggest_morning(sig) is None
+
+
+def test_time_prompts_gated_on_empty_user():
+    """A brand-new user with literally no data should still get DEFAULT_SUGGESTIONS,
+    not generic time-of-day prompts."""
+    from app.services.conversation_starters import (
+        _suggest_evening,
+        _suggest_morning,
+        _suggest_noon,
+        _suggest_week_rhythm,
+    )
+
+    # Empty user at any time of day — gate suppresses all time prompts.
+    for hour in (8, 12, 21, 2):
+        sig = _make_signals(local_hour=hour, local_weekday=2, is_weekend=False)
+        assert _suggest_morning(sig) is None
+        assert _suggest_noon(sig) is None
+        assert _suggest_evening(sig) is None
+        assert _suggest_week_rhythm(sig) is None
+
+
+def test_sunday_evening_surfaces_week_planning():
+    from app.services.conversation_starters import _suggest_week_rhythm
+
+    sig = _make_signals(
+        local_hour=20,
+        local_weekday=6,
+        is_weekend=True,
+        active_goal_title="减重",  # satisfies has_any_user_signal gate
+    )
+    cand = _suggest_week_rhythm(sig)
+    assert cand is not None
+    assert "下一周" in cand.text
+
+
+def test_noon_prompt_adapts_to_diet_records():
+    from app.services.conversation_starters import _suggest_noon
+
+    # Already logged something → "怎么补"
+    sig_with = _make_signals(local_hour=12, diet_records_today=2, active_goal_title="减重")
+    cand = _suggest_noon(sig_with)
+    assert cand is not None and "已经吃" in cand.text
+
+    # Nothing logged → "吃点什么"
+    sig_without = _make_signals(local_hour=12, diet_records_today=0, active_goal_title="减重")
+    cand2 = _suggest_noon(sig_without)
+    assert cand2 is not None and "午餐吃点什么" in cand2.text
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Analytics attribution — each card carries a stable generator `key` so the
+# client can compute CTR per generator. (Phase 5, 2026-05-29)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_cards_carry_generator_key_derived_from_function_name():
+    from app.services.conversation_starters import (
+        _build_candidates,
+        compute_conversation_suggestion_cards,  # noqa: F401  (import smoke)
+    )
+
+    # readiness + aqi → keys "readiness" and "aqi" (function name minus _suggest_)
+    signals = _make_signals(readiness_score=32, aqi=180, city="杭州")
+    cards = _build_candidates(signals)
+    keys = {c.key for c in cards}
+    assert "readiness" in keys
+    assert "aqi" in keys
+    # every candidate has a non-empty key
+    assert all(c.key for c in cards)
+
+
+def test_default_cards_use_default_key():
+    from app.services.conversation_starters import _default_cards
+
+    cards = _default_cards(4)
+    assert len(cards) == 4
+    assert all(c.key == "default" for c in cards)
+
+
+def test_endpoint_returns_structured_cards_with_key_and_priority(client, db, auth_user_and_headers):
+    from app.models.daily_health import WaterIntake
+
+    user, headers = auth_user_and_headers
+    db.add(WaterIntake(
+        user_id=user.id,
+        record_date=date.today(),
+        intake_time=datetime.now(timezone.utc),
+        amount_ml=300,
+        drink_type="water",
+    ))
+    db.commit()
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+    assert r.status_code == 200
+    suggestions = r.json()["suggestions"]
+    assert suggestions and isinstance(suggestions[0], dict)
+    for s in suggestions:
+        assert set(s.keys()) == {"text", "key", "priority"}
+        assert isinstance(s["text"], str) and s["text"]
+        assert isinstance(s["key"], str) and s["key"]
+        assert isinstance(s["priority"], int)
+    # the water card is attributed to _suggest_water
+    assert any(s["key"] == "water" for s in suggestions)
+
+
+def test_collect_signals_populates_local_time_fields(db, auth_user_and_headers):
+    """The Asia/Shanghai time context is always populated, independent of Twin."""
+    from app.services.conversation_starters import _collect_signals
+
+    user, _ = auth_user_and_headers
+    signals = _collect_signals(db, user.id)
+    assert signals.local_hour is not None and 0 <= signals.local_hour <= 23
+    assert signals.local_weekday is not None and 0 <= signals.local_weekday <= 6
+    assert isinstance(signals.is_weekend, bool)

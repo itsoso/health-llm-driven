@@ -34,6 +34,9 @@ _ALLOWED_EVENTS = frozenset({
     "push_notification_opened",   # meta: { kind, deep_link }
     "chat_message_sent",          # meta: { source: 'chat'|'voice'|'siri', has_image }
     "quick_record_logged",        # meta: { kind: 'bp'|'weight'|'water'|'medication'|... }
+    # Phase 5 (2026-05-29) — starter chip CTR (调权从拍脑袋变成有据)
+    "starter_chips_shown",        # meta: { keys: string[], source: 'chat' }  曝光(分母)
+    "starter_chip_clicked",       # meta: { key, priority, position, source: 'chat' }  点击(分子)
 })
 
 

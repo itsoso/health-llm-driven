@@ -20,9 +20,34 @@ export interface ConversationOpener {
   priority: number;
 }
 
+/** A starter chip carries its generator `key` so taps/impressions can be
+ *  attributed per generator (CTR). `key` is "default"/"legacy" for fallbacks. */
+export interface SuggestionMeta {
+  text: string;
+  key: string;
+  priority: number;
+}
+
 export interface ConversationStarters {
   opener: ConversationOpener | null;
-  suggestions: string[] | null;
+  suggestions: SuggestionMeta[] | null;
+}
+
+/** Tolerate both the new {text,key,priority} object shape and the legacy
+ *  plain-string shape (rollout / rollback safety). */
+function normalizeSuggestion(s: unknown): SuggestionMeta | null {
+  if (typeof s === 'string') return { text: s, key: 'legacy', priority: 0 };
+  if (s && typeof s === 'object') {
+    const o = s as Record<string, unknown>;
+    if (typeof o.text === 'string' && o.text) {
+      return {
+        text: o.text,
+        key: typeof o.key === 'string' && o.key ? o.key : 'unknown',
+        priority: typeof o.priority === 'number' ? o.priority : 0,
+      };
+    }
+  }
+  return null;
 }
 
 export function buildConversationOpenerReplyContext(
@@ -70,12 +95,16 @@ export async function fetchConversationOpener(): Promise<ConversationOpener | nu
  */
 export async function fetchConversationStarters(): Promise<ConversationStarters> {
   try {
-    const res = await api.get<ConversationStarters>(
+    const res = await api.get<{ opener: ConversationOpener | null; suggestions: unknown }>(
       '/agent/conversation-starters',
     );
+    const raw = res.data?.suggestions;
+    const suggestions = Array.isArray(raw)
+      ? (raw.map(normalizeSuggestion).filter(Boolean) as SuggestionMeta[])
+      : null;
     return {
       opener: res.data?.opener ?? null,
-      suggestions: Array.isArray(res.data?.suggestions) ? res.data!.suggestions : null,
+      suggestions: suggestions && suggestions.length > 0 ? suggestions : null,
     };
   } catch {
     return { opener: null, suggestions: null };
