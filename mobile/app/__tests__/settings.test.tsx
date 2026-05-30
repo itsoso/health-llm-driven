@@ -6,7 +6,7 @@ const mockBack = jest.fn();
 const mockPush = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: mockBack, push: mockPush }),
+  useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
 }));
 
 jest.mock('@tanstack/react-query', () => ({

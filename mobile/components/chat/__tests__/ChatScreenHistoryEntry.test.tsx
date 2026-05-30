@@ -15,6 +15,10 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void | (() => void)) => cb(),
 }));
 
+jest.mock('@react-navigation/bottom-tabs', () => ({
+  useBottomTabBarHeight: () => 83,
+}));
+
 jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
     messages: [],
@@ -94,6 +98,8 @@ describe('ChatScreen history entry', () => {
   it('opens conversation history from the coach header', async () => {
     const { getByLabelText, findByText } = render(<ChatScreen />);
 
+    // 历史入口已收进"会诊工具"菜单, 先展开再点
+    fireEvent.press(getByLabelText('更多会诊操作'));
     fireEvent.press(getByLabelText('对话历史'));
 
     await waitFor(() => expect(mockGetConversations).toHaveBeenCalled());
