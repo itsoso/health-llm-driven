@@ -97,40 +97,41 @@ struct AgentChatView: View {
     private let modelOptions = AgentModelCatalog.defaultOptions
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
+        VStack(spacing: 16) {
+            header
+            conversationHistoryStrip
 
-                ViewThatFits(in: .horizontal) {
-                    // Wide: composer and its results share the left column so the
-                    // results sit directly under the input. Without this the tall
-                    // context panel on the right inflated the row height, leaving a
-                    // large empty gap under the short composer and pushing 结果 far down.
-                    HStack(alignment: .top, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 20) {
-                            if !viewModel.messages.isEmpty {
-                                conversationSection
-                            }
-                            composer
-                        }
+            ViewThatFits(in: .horizontal) {
+                // Wide: a proper chat column (messages scroll, composer pinned to
+                // the bottom — ChatBot convention) on the left, scrollable context
+                // panel on the right.
+                HStack(alignment: .top, spacing: 16) {
+                    chatColumn
                         .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
-                        contextPanel
-                            .frame(width: 340, alignment: .topLeading)
-                    }
-
-                    VStack(alignment: .leading, spacing: 16) {
-                        if !viewModel.messages.isEmpty {
-                            conversationSection
-                        }
-                        composer
+                    ScrollView {
                         contextPanel
                     }
+                    .frame(width: 340)
                 }
 
-                conversationHistoryStrip
+                // Narrow: messages + context panel scroll together, composer stays
+                // pinned at the bottom.
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            messagesArea
+                            contextPanel
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    composer
+                        .padding(.top, 12)
+                }
             }
-            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             LinearGradient(
                 colors: [
@@ -511,6 +512,47 @@ struct AgentChatView: View {
         case .failed:
             return .red
         }
+    }
+
+    /// Wide-layout chat column: messages scroll in the upper area and the
+    /// composer stays pinned to the bottom edge — the standard ChatBot/ChatAgent
+    /// arrangement (newest content above a fixed input).
+    private var chatColumn: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                messagesArea
+                    .padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            composer
+                .padding(.top, 12)
+        }
+    }
+
+    /// The scrollable transcript: result header + message bubbles, or an empty
+    /// prompt when there's no conversation yet.
+    @ViewBuilder
+    private var messagesArea: some View {
+        if viewModel.messages.isEmpty {
+            emptyConversationState
+        } else {
+            conversationSection
+        }
+    }
+
+    private var emptyConversationState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 32))
+                .foregroundStyle(.tertiary)
+            Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.top, 40)
     }
 
     private var conversationSection: some View {
