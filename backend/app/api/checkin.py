@@ -546,9 +546,29 @@ async def get_stats(
     else:
         completion_rate_month = 0.0
 
-    # 计算连续打卡
+    # 计算连续打卡 —— 从有任意打卡记录的"天"往回数连续天数.
+    # 今天还没打卡不算断 (streak 仍以昨天结尾); 今天打了则以今天结尾.
+    # 查映射列本身 (而非 func.distinct(...)) 以保留 Date 类型还原;
+    # SQLite 下 func 结果会退化成字符串, 与 date 比较永远 miss.
+    checkin_dates: set[date] = set()
+    for (d,) in db.query(CheckinRecord.checkin_date).filter(
+        CheckinRecord.user_id == current_user.id,
+        CheckinRecord.checkin_date <= today,
+    ).distinct().all():
+        if isinstance(d, str):
+            d = date.fromisoformat(d)
+        checkin_dates.add(d)
     current_streak = 0
-    best_streak = max((t.best_streak for t in templates), default=0)
+    if checkin_dates:
+        cursor = today if today in checkin_dates else today - timedelta(days=1)
+        while cursor in checkin_dates:
+            current_streak += 1
+            cursor -= timedelta(days=1)
+    # best_streak 取「历史最佳」与「当前连续」的较大值, 避免老模板字段落后于刚算出的当前值
+    best_streak = max(
+        max((t.best_streak for t in templates), default=0),
+        current_streak,
+    )
 
     # 统计最近7天趋势 - 批量查询避免 N+1
     week_ago = today - timedelta(days=6)

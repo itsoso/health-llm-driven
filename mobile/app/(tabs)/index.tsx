@@ -43,6 +43,8 @@ import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import HomeCommandCard from '../../components/home/HomeCommandCard';
 import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopicsRow';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
+import StreakBadge from '../../components/home/StreakBadge';
+import { getCheckinStreak } from '../../services/streak';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 
 interface TwinSnapshot {
@@ -135,6 +137,12 @@ export default function TodayScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const streakQuery = useQuery({
+    queryKey: ['checkin-streak'],
+    queryFn: getCheckinStreak,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const dashboardQuery = useDashboardData();
 
   // perf (2026-05-29): 进程启动后第一次首页 mount 时, 测 4 个 critical query
@@ -202,6 +210,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['trajectory', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['checkin-streak'] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
         qc.invalidateQueries({ queryKey: ['env', 'weather'] }),
         qc.invalidateQueries({ queryKey: ['env', 'aqi'] }),
@@ -429,6 +438,12 @@ export default function TodayScreen() {
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
         <EnvironmentCard />
+        <StreakBadge
+          current={streakQuery.data?.current_streak}
+          best={streakQuery.data?.best_streak}
+          isError={streakQuery.isError}
+          onPress={() => router.push('/(tabs)/record' as any)}
+        />
         <HomeCommandCard
           agentJudgmentText={agentJudgmentText}
           nextStepActionText={nextStepActionText}
