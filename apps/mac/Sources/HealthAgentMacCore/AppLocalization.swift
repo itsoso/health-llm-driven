@@ -260,6 +260,8 @@ public enum L10n {
         "No tool result yet.": "还没有工具执行结果。",
         "Running": "运行中",
         "Run": "运行",
+        "Copy": "复制",
+        "Copied": "已复制",
         "Stop": "停止",
         "Stop generating": "停止生成",
         "Ask about health data, labs, genes, records, or a specific execution plan.": "询问健康数据、化验、基因、记录或具体执行方案。",

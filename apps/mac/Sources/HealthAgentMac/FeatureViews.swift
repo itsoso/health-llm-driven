@@ -93,6 +93,7 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyExpanded = false
+    @State private var copiedMessageID: UUID?
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
@@ -617,12 +618,18 @@ struct AgentChatView: View {
                 Spacer(minLength: 0)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Label(
-                    appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
-                    systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
-                )
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Label(
+                        appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
+                        systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
+                    )
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if message.role == .assistant && !message.content.isEmpty {
+                        copyButton(for: message)
+                    }
+                }
                 messageContent(message)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -662,6 +669,27 @@ struct AgentChatView: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private func copyButton(for message: AgentChatMessage) -> some View {
+        let copied = copiedMessageID == message.id
+        return Button {
+            let text = viewModel.displayContent(for: message)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copiedMessageID = message.id
+            // Clear the transient "copied" state shortly after.
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if copiedMessageID == message.id { copiedMessageID = nil }
+            }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption2)
+                .foregroundStyle(copied ? Color.green : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(appText(copied ? "Copied" : "Copy", appLanguageRaw))
     }
 
     @ViewBuilder
