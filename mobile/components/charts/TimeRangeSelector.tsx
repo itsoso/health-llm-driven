@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { colors, spacing, radii, typography } from '../../constants/theme';
+import { spacing, radii, typography } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import type { TimeRange } from '../../services/trends';
 
 const RANGES: TimeRange[] = ['1W', '1M', '3M', '6M', '1Y'];
@@ -19,6 +20,8 @@ interface Props {
 }
 
 export default function TimeRangeSelector({ selected, onChange }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <View style={styles.container}>
       {RANGES.map((r) => {
@@ -41,28 +44,30 @@ export default function TimeRangeSelector({ selected, onChange }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-  },
-  pill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: radii.full,
-    backgroundColor: colors.fill,
-  },
-  pillActive: {
-    backgroundColor: colors.brand,
-  },
-  label: {
-    ...typography.bodySmall,
-    color: colors.labelSecondary,
-  },
-  labelActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+    },
+    pill: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs + 2,
+      borderRadius: radii.full,
+      backgroundColor: c.fill,
+    },
+    pillActive: {
+      backgroundColor: c.brand,
+    },
+    label: {
+      ...typography.bodySmall,
+      color: c.labelSecondary,
+    },
+    labelActive: {
+      color: '#FFFFFF',
+      fontWeight: '600',
+    },
+  });
+}
