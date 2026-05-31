@@ -27,9 +27,32 @@ export async function getMedication(id: number): Promise<Medication> {
   return resp.data;
 }
 
-export async function addMedication(data: Partial<Medication>): Promise<Medication> {
-  const resp = await api.post<Medication>('/medication/medications', data);
-  return resp.data;
+/**
+ * 一条用药安全告警 (SafetyGuardian DDI/DSI/PGx 相互作用)。
+ * 形状对应后端 Alert.model_dump_for_api()。
+ */
+export interface MedicationSafetyAlert {
+  rule_id: string;
+  category: string; // ddi | dsi | pgx
+  severity: { value: number; label: string; label_zh: string };
+  title: string;
+  message: string;
+  action?: string | null;
+  requires_medical_attention?: boolean;
+}
+
+/**
+ * 新增药物的响应: 药品本体 + 即时安全检查命中的高危相互作用告警。
+ * safety_alerts 为空数组表示无高危相互作用 (诚实的三态之一: 已保存且未命中)。
+ */
+export type MedicationCreateResult = Medication & {
+  safety_alerts: MedicationSafetyAlert[];
+};
+
+export async function addMedication(data: Partial<Medication>): Promise<MedicationCreateResult> {
+  const resp = await api.post<MedicationCreateResult>('/medication/medications', data);
+  // 旧后端可能不带 safety_alerts; 兜底成空数组, 避免下游 .length 崩.
+  return { ...resp.data, safety_alerts: resp.data.safety_alerts ?? [] };
 }
 
 export async function deactivateMedication(id: number): Promise<void> {

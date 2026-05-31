@@ -1,12 +1,17 @@
 /**
- * 药品编辑页 (轻量).
+ * 药品 添加 / 编辑 页 (轻量).
  *
  * 入口:
- * - 用药管理页点击某个药品 → 跳转到本页
+ * - 用药管理页点击某个药品 → 编辑 (带 ?id=)
+ * - 用药管理页右上角 "+" → 添加 (无 id)
  *
  * 说明:
  * - 仅编辑基础字段, 避免引入复杂提醒/计划逻辑
- * - backend 已支持 `PUT /medication/medications/{id}`
+ * - 编辑: `PUT /medication/medications/{id}`
+ * - 添加: `POST /medication/medications` —— 响应体可能带 safety_alerts
+ *   (Tier 0 ②: 新增药物即时跑 SafetyGuardian, 命中 DDI/DSI/PGx high/critical
+ *   相互作用时当场预警, 而不是等 23:00 批量检测). 命中时**不**静默返回,
+ *   显著展示告警后再让用户离开 (诚实的三态).
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -28,10 +33,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 
-import { getMedication, updateMedication, type Medication } from '../services/medications';
+import {
+  getMedication, updateMedication, addMedication,
+  type Medication, type MedicationSafetyAlert,
+} from '../services/medications';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { useToast } from '../hooks/useToast';
+import MedicationSafetyAlerts from '../components/medication/MedicationSafetyAlerts';
 
 export default function MedicationEditScreen() {
   const router = useRouter();
@@ -44,6 +53,7 @@ export default function MedicationEditScreen() {
 
   const id = Number(params?.id);
   const validId = Number.isFinite(id) && id > 0;
+  const isAdd = !validId; // 无 id → 添加模式
 
   const medQuery = useQuery<Medication>({
     queryKey: ['medications', 'detail', id],
@@ -57,6 +67,8 @@ export default function MedicationEditScreen() {
   const [frequency, setFrequency] = useState('');
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
+  // 添加成功且命中高危相互作用时停在本页展示告警 (而不是立即 back).
+  const [safetyAlerts, setSafetyAlerts] = useState<MedicationSafetyAlert[] | null>(null);
 
   useEffect(() => {
     const m = medQuery.data;
@@ -78,41 +90,75 @@ export default function MedicationEditScreen() {
     onError: () => Alert.alert('保存失败', '请稍后再试'),
   });
 
+  const addMut = useMutation({
+    mutationFn: (payload: Partial<Medication>) => addMedication(payload),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['medications'] });
+      if (res.safety_alerts.length > 0) {
+        // 命中高危相互作用: 药已存, 但停在本页显著告警, 不静默 back.
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setSafetyAlerts(res.safety_alerts);
+      } else {
+        toast.show('已添加', 'success');
+        router.back();
+      }
+    },
+    onError: () => Alert.alert('添加失败', '请稍后再试'),
+  });
+
+  const saving = isAdd ? addMut.isPending : updateMut.isPending;
+
   const handleSave = () => {
-    if (!validId) return;
+    if (safetyAlerts) return; // 已是告警终态
     const trimmedName = name.trim();
     if (!trimmedName) {
       Alert.alert('请输入药品名称');
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    updateMut.mutate({
+    const payload = {
       name: trimmedName,
       dosage: dosage.trim() || null,
       frequency: frequency.trim() || null,
       purpose: purpose.trim() || null,
       notes: notes.trim() || null,
-    });
+    };
+    if (isAdd) {
+      addMut.mutate(payload);
+    } else {
+      updateMut.mutate(payload);
+    }
   };
 
-  if (!validId) {
+  // 添加命中高危相互作用 → 终态: 显著展示告警 + "我知道了" 离开.
+  if (safetyAlerts) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
-          </TouchableOpacity>
-          <Text style={txt.title}>编辑药品</Text>
+          <View style={{ width: 48 }} />
+          <Text style={txt.title}>用药风险提醒</Text>
           <View style={{ width: 64 }} />
         </View>
-        <View style={styles.center}>
-          <Text style={txt.hint}>参数错误: 缺少药品 id</Text>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <View style={{ paddingTop: spacing.md }}>
+            <MedicationSafetyAlerts alerts={safetyAlerts} />
+          </View>
+        </ScrollView>
+        <View style={styles.ackBar}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.ackBtn}
+            accessibilityRole="button"
+            accessibilityLabel="我知道了"
+          >
+            <Text style={txt.ackText}>我知道了</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  const isLoading = medQuery.isLoading;
+  const isLoading = !isAdd && medQuery.isLoading;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -120,7 +166,7 @@ export default function MedicationEditScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
         </TouchableOpacity>
-        <Text style={txt.title}>编辑药品</Text>
+        <Text style={txt.title}>{isAdd ? '添加药品' : '编辑药品'}</Text>
         <TouchableOpacity
           onPress={handleSave}
           hitSlop={10}
@@ -128,7 +174,7 @@ export default function MedicationEditScreen() {
           accessibilityRole="button"
           accessibilityLabel="保存药品"
         >
-          <Text style={txt.saveText}>{updateMut.isPending ? '保存中' : '保存'}</Text>
+          <Text style={txt.saveText}>{saving ? '保存中' : '保存'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -136,7 +182,7 @@ export default function MedicationEditScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {isLoading ? (
             <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
-          ) : medQuery.isError ? (
+          ) : !isAdd && medQuery.isError ? (
             <View style={styles.center}>
               <Ionicons name="alert-circle-outline" size={44} color={c.labelTertiary} />
               <Text style={txt.errorTitle}>加载失败</Text>
@@ -150,7 +196,7 @@ export default function MedicationEditScreen() {
                 <Text style={txt.retryText}>重试</Text>
               </TouchableOpacity>
             </View>
-          ) : !medQuery.data ? (
+          ) : !isAdd && !medQuery.data ? (
             <View style={styles.center}>
               <Ionicons name="help-circle-outline" size={44} color={c.labelTertiary} />
               <Text style={txt.errorTitle}>未找到药品</Text>
@@ -263,6 +309,17 @@ function createStyles(c: ColorPalette) {
       backgroundColor: c.bgCard,
       ...shadows.subtle,
     },
+    ackBar: {
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.lg,
+    },
+    ackBtn: {
+      backgroundColor: c.brand,
+      borderRadius: radii.lg,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
     form: { paddingTop: spacing.md, gap: spacing.md },
     input: {
       backgroundColor: c.bgCard,
@@ -283,5 +340,6 @@ function createTxt(c: ColorPalette) {
     errorTitle: { marginTop: 10, fontSize: 16, fontWeight: '700', color: c.labelPrimary } as TextStyle,
     retryText: { fontSize: 15, fontWeight: '700', color: c.brand } as TextStyle,
     saveText: { fontSize: 15, fontWeight: '700', color: c.brand } as TextStyle,
+    ackText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' } as TextStyle,
   };
 }

@@ -85,16 +85,18 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
         amount_ml=800,
         drink_type="water",
     ))
+    # 用相对日期落在 (7, 30] 天窗口内, 避免硬编码日期在月底 (如 5-31) 撞到
+    # last_30 的 30 天边界被排除, 造成 last_30_count 随当天日期 flaky.
     db.add(DietRecord(
         user_id=user.id,
-        record_date=date(2026, 5, 1),
+        record_date=date.today() - timedelta(days=20),
         meal_type="dinner",
         food_items="牛肉面",
         calories=650,
     ))
     db.add(WaterIntake(
         user_id=user.id,
-        record_date=date(2026, 5, 1),
+        record_date=date.today() - timedelta(days=20),
         amount_ml=700,
         drink_type="water",
     ))
