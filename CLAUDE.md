@@ -11,11 +11,14 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 | 项目结构 / 命令 / 架构总览 / Multi-Agent 系统 | 本文件 |
 | 安全 / 日志 / 测试 / 隐私 / 部署 / DB / 提交规范的硬约束 | `AGENTS.md` (992 行) |
 | LLM Harness 设计（source-aware fast path / verification before write / tool schema / memory 4-stage / streaming） | `docs/HARNESS.md` |
+| 编码 agent 如何在本仓库导航 / 验证 / 沉淀经验（**操作工具架**,≠ 上面那条产品 HARNESS.md） | `docs/design-agent-operating-harness.md` |
 | iOS / Expo 工作流通用经验（Metro / dev-client / EAS 异步双通道） | `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md` |
 | Expo local native module 手写规则 | `~/work/personal/PRACTICES/expo-local-module-podspec.md` |
 | 新功能起步（四问 + ASCII 数据流） | `~/work/personal/PRACTICES/feature-plan.md` |
 
 > **README.md 关于移动端的描述已过时**（仍写 Capacitor），以本文件 §"移动端构建方向" 为准。
+>
+> **两个 "harness" 别混**：`docs/HARNESS.md` 是**产品** LLM 方法论(健康 agent 怎么造);`docs/design-agent-operating-harness.md` 是**编码 agent 操作工具架**(本文件 + `AGENTS.md` 就是它的入口)。
 
 ## Project Overview
 
@@ -445,15 +448,15 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 
 ## Conventions
 
-硬规范的权威来源是 `AGENTS.md`（992 行，9 大章节）。下面只列本文件必要的提示，**细节别在这里重述,去读 `AGENTS.md` 对应章节**：
+硬规范的权威来源是 `AGENTS.md`（章节导航）+ `docs/governance/*.md`（安全/测试/部署三章全文已拆出，见 Operating Harness Phase 2）。下面只列本文件必要的提示，**细节别在这里重述,去读对应章节/文件**：
 
 | 触发场景 | 去读 |
 |---|---|
-| 新 API 路由 / 改认证 / 改 CORS | `AGENTS.md §1 安全` |
-| 加/改日志 | `§2 日志` |
-| 加测试 / 改 fixture | `§3 测试` |
-| 改 DB schema / 索引 / JSONB | `§9 数据库` |
-| 部署脚本 / CI 改动 | `§8 部署` |
+| 新 API 路由 / 改认证 / 改 CORS | `docs/governance/security.md`（= AGENTS.md §1） |
+| 加/改日志 | `AGENTS.md §2 日志` |
+| 加测试 / 改 fixture | `docs/governance/testing.md`（= AGENTS.md §3） |
+| 改 DB schema / 索引 / JSONB | `AGENTS.md §9 数据库` |
+| 部署脚本 / CI 改动 | `docs/governance/deploy.md`（= AGENTS.md §8） |
 | 处理敏感数据（基因、化验、CGM、消息） | `§5 数据安全与隐私` |
 | 写 commit / 发 PR | `§6 代码提交规范` |
 
