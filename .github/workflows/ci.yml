@@ -120,6 +120,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pin a recent stable Xcode so the type-checker/concurrency behavior is
+      # predictable across runner image updates (the default can lag and differ
+      # from local Xcode, surfacing toolchain-specific compile errors).
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - name: Build (swift build)
         working-directory: apps/mac
         run: swift build
