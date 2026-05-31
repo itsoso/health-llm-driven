@@ -5,13 +5,14 @@
  *   <JudgmentFeedbackBar targetType="anomaly_alert" targetId={alert.id}
  *                        snapshot={alert.message} existing={alert.feedback} />
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
-import { colors, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
+import { ColorPalette, useTheme } from '../hooks/useTheme';
 
 export type JudgmentFeedback = 'helpful' | 'not_helpful' | 'irrelevant' | 'already_knew';
 export type JudgmentTargetType =
@@ -37,6 +38,8 @@ const LABEL: Record<JudgmentFeedback, string> = {
 export default function JudgmentFeedbackBar({
   targetType, targetId, snapshot, existing, invalidateQueryKeys, compact,
 }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const qc = useQueryClient();
   const [local, setLocal] = useState<JudgmentFeedback | null>(existing ?? null);
 
@@ -68,7 +71,7 @@ export default function JudgmentFeedbackBar({
   if (local) {
     return (
       <View style={styles.done}>
-        <Ionicons name="checkmark-circle" size={12} color={colors.green} />
+        <Ionicons name="checkmark-circle" size={12} color={c.green} />
         <Text style={styles.doneText}>已反馈: {LABEL[local]}</Text>
         {submitMut.isPending && <Text style={styles.doneText}>(更新中)</Text>}
       </View>
@@ -84,49 +87,51 @@ export default function JudgmentFeedbackBar({
           onPress={() => handle('helpful')}
           accessibilityLabel="有用"
         >
-          <Ionicons name="thumbs-up-outline" size={13} color={colors.brand} />
-          {!compact && <Text style={[styles.btnText, { color: colors.brand }]}>有用</Text>}
+          <Ionicons name="thumbs-up-outline" size={13} color={c.brand} />
+          {!compact && <Text style={[styles.btnText, { color: c.brand }]}>有用</Text>}
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.btn, styles.btnNeutral]}
           onPress={() => handle('already_knew')}
           accessibilityLabel="我早知道"
         >
-          <Ionicons name="information-circle-outline" size={13} color={colors.labelSecondary} />
-          {!compact && <Text style={[styles.btnText, { color: colors.labelSecondary }]}>我知道</Text>}
+          <Ionicons name="information-circle-outline" size={13} color={c.labelSecondary} />
+          {!compact && <Text style={[styles.btnText, { color: c.labelSecondary }]}>我知道</Text>}
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.btn, styles.btnNo]}
           onPress={() => handle('not_helpful')}
           accessibilityLabel="不对"
         >
-          <Ionicons name="thumbs-down-outline" size={13} color={colors.red} />
-          {!compact && <Text style={[styles.btnText, { color: colors.red }]}>不对</Text>}
+          <Ionicons name="thumbs-down-outline" size={13} color={c.red} />
+          {!compact && <Text style={[styles.btnText, { color: c.red }]}>不对</Text>}
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  bar: {
-    gap: 6,
-    paddingVertical: spacing.sm,
-  },
-  prompt: { fontSize: 11, color: colors.labelTertiary },
-  btnRow: { flexDirection: 'row', gap: 6 },
-  btn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    paddingVertical: 8, borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  btnHelpful: { borderColor: colors.brand, backgroundColor: colors.brandLight },
-  btnNeutral: { borderColor: colors.separator, backgroundColor: colors.bgPrimary },
-  btnNo: { borderColor: `${colors.red}44`, backgroundColor: colors.tintRed },
-  btnText: { fontSize: 12, fontWeight: '600' as const },
-  done: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 6,
-  },
-  doneText: { fontSize: 11, color: colors.labelSecondary },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    bar: {
+      gap: 6,
+      paddingVertical: spacing.sm,
+    },
+    prompt: { fontSize: 11, color: c.labelTertiary },
+    btnRow: { flexDirection: 'row', gap: 6 },
+    btn: {
+      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+      paddingVertical: 8, borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    btnHelpful: { borderColor: c.brand, backgroundColor: c.brandLight },
+    btnNeutral: { borderColor: c.separator, backgroundColor: c.bgPrimary },
+    btnNo: { borderColor: `${c.red}44`, backgroundColor: c.tintRed },
+    btnText: { fontSize: 12, fontWeight: '600' as const },
+    done: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      paddingVertical: 6,
+    },
+    doneText: { fontSize: 11, color: c.labelSecondary },
+  });
+}
