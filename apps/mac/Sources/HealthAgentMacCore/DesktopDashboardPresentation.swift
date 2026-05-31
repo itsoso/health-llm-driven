@@ -120,35 +120,56 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
     }
 
     private static func rangeMetrics(from summary: RecentRecordsSummary, days: Int) -> [DesktopDashboardMetric] {
-        let dietValue: Double = days == 7
-            ? (summary.diet?.last7Calories ?? summary.diet?.last30Calories ?? summary.diet?.todayCalories ?? 0)
-            : (summary.diet?.last30Calories ?? summary.diet?.last7Calories ?? summary.diet?.todayCalories ?? 0)
-        let dietCount: Int = days == 7
-            ? (summary.diet?.last7Count ?? summary.diet?.last30Count ?? summary.diet?.todayCount ?? 0)
-            : (summary.diet?.last30Count ?? summary.diet?.last7Count ?? summary.diet?.todayCount ?? 0)
-        let dietAverage: Double = days == 7
-            ? (summary.diet?.last7AvgCalories ?? dietValue / 7)
-            : (summary.diet?.last30AvgCalories ?? dietValue / 30)
+        // Select the 7- or 30-day variant with plain if/else statements and
+        // pre-bound sub-summaries. Earlier ternary / generic-`pick` forms over
+        // these long `??` chains (especially with arithmetic inside the coalesce,
+        // e.g. `?? value / 7`) tripped the CI runner's type-checker
+        // ("unable to type-check this expression in reasonable time") even though
+        // local debug+release builds passed — the runner's checker is stricter.
+        // Single-`??`-chain statements are the most trivial form and avoid it.
+        let isSeven = days == 7
+        let diet = summary.diet
+        let water = summary.water
+        let supp = summary.supplements
 
-        let waterValue: Int = days == 7
-            ? (summary.water?.last7TotalMl ?? summary.water?.last30TotalMl ?? summary.water?.todayTotalMl ?? 0)
-            : (summary.water?.last30TotalMl ?? summary.water?.last7TotalMl ?? summary.water?.todayTotalMl ?? 0)
-        let waterCount: Int = days == 7
-            ? (summary.water?.last7Count ?? summary.water?.last30Count ?? summary.water?.todayCount ?? 0)
-            : (summary.water?.last30Count ?? summary.water?.last7Count ?? summary.water?.todayCount ?? 0)
-        let waterAverage: Double = days == 7
-            ? (summary.water?.last7AvgMl ?? Double(waterValue) / 7)
-            : (summary.water?.last30AvgMl ?? Double(waterValue) / 30)
+        let dietValue: Double
+        let dietCount: Int
+        let dietAverage: Double
+        if isSeven {
+            dietValue = diet?.last7Calories ?? diet?.last30Calories ?? diet?.todayCalories ?? 0
+            dietCount = diet?.last7Count ?? diet?.last30Count ?? diet?.todayCount ?? 0
+            dietAverage = diet?.last7AvgCalories ?? (dietValue / 7)
+        } else {
+            dietValue = diet?.last30Calories ?? diet?.last7Calories ?? diet?.todayCalories ?? 0
+            dietCount = diet?.last30Count ?? diet?.last7Count ?? diet?.todayCount ?? 0
+            dietAverage = diet?.last30AvgCalories ?? (dietValue / 30)
+        }
 
-        let supplementValue: Int = days == 7
-            ? (summary.supplements?.last7Count ?? summary.supplements?.todayCount ?? 0)
-            : (summary.supplements?.last30Count ?? summary.supplements?.last7Count ?? summary.supplements?.todayCount ?? 0)
-        let supplementAverage: Double = days == 7
-            ? (summary.supplements?.last7AvgPerDay ?? Double(supplementValue) / 7)
-            : (summary.supplements?.last30AvgPerDay ?? Double(supplementValue) / 30)
-        let supplementAdherence = days == 7
-            ? summary.supplements?.adherence7Pct
-            : summary.supplements?.adherence30Pct
+        let waterValue: Int
+        let waterCount: Int
+        let waterAverage: Double
+        if isSeven {
+            waterValue = water?.last7TotalMl ?? water?.last30TotalMl ?? water?.todayTotalMl ?? 0
+            waterCount = water?.last7Count ?? water?.last30Count ?? water?.todayCount ?? 0
+            waterAverage = water?.last7AvgMl ?? (Double(waterValue) / 7)
+        } else {
+            waterValue = water?.last30TotalMl ?? water?.last7TotalMl ?? water?.todayTotalMl ?? 0
+            waterCount = water?.last30Count ?? water?.last7Count ?? water?.todayCount ?? 0
+            waterAverage = water?.last30AvgMl ?? (Double(waterValue) / 30)
+        }
+
+        let supplementValue: Int
+        let supplementAverage: Double
+        let supplementAdherence: Double?
+        if isSeven {
+            supplementValue = supp?.last7Count ?? supp?.todayCount ?? 0
+            supplementAverage = supp?.last7AvgPerDay ?? (Double(supplementValue) / 7)
+            supplementAdherence = supp?.adherence7Pct
+        } else {
+            supplementValue = supp?.last30Count ?? supp?.last7Count ?? supp?.todayCount ?? 0
+            supplementAverage = supp?.last30AvgPerDay ?? (Double(supplementValue) / 30)
+            supplementAdherence = supp?.adherence30Pct
+        }
         let supplementDetail: String
         if let supplementAdherence {
             supplementDetail = "Avg \(formatNumber(supplementAverage))/day · Adherence \(formatNumber(supplementAdherence))%"

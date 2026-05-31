@@ -92,6 +92,11 @@ class StarterSignals:
     avg_sleep_score_7d: Optional[float]
     missing_hrv_days_7d: Optional[int]
 
+    # ── Follow-up signal reused from the push engine (#4b 增量) ──────────
+    # 顶部的"该复查"化验项,来自 open_loop_manager._detect_lab_overdue,让 chips 也
+    # 跟进随访(此前 chips 只看当前状态,push 才看随访)。
+    overdue_lab_name: Optional[str] = None
+
     # ── Today / current (Twin — physiological + behavioral + env + labs) ─
     readiness_score: Optional[int] = None
     readiness_level: Optional[str] = None  # poor/low/moderate/high/prime
@@ -168,6 +173,35 @@ def compute_conversation_suggestions(
         c.text
         for c in compute_conversation_suggestion_cards(db, user_id, limit=limit, rng=rng)
     ]
+
+
+def compute_salient_signals(
+    db: Session,
+    user_id: int,
+    *,
+    limit: int = 8,
+) -> list[SuggestionCandidate]:
+    """Shared "what matters now" engine — ranked health-state signals (priority desc).
+
+    This is the SINGLE source of salience, consumed by both surfaces that ask
+    "what's most important for this user right now":
+      - reactive chips: `compute_conversation_suggestion_cards` (this module)
+      - proactive push: `open_loop_manager._detect_salient_state`
+
+    Both run the same generators (`_collect_signals` → `_build_candidates`); they
+    differ only in PRESENTATION (chips do per-visit weighted-random + defaults;
+    push takes top criticals). Returning the raw ranked candidates here lets each
+    caller apply its own selection without re-deriving thresholds.
+
+    Critical signals carry priority >= 100 (readiness crash, acute illness, BP
+    critical, ACWR danger, hazardous AQI). Fail-soft: returns [] on any error.
+    """
+    try:
+        candidates = _build_candidates(_collect_signals(db, user_id))
+    except Exception:  # noqa: BLE001
+        return []
+    candidates.sort(key=lambda c: -c.priority)
+    return candidates[:limit] if limit else candidates
 
 
 def _default_cards(limit: int) -> list[SuggestionCandidate]:
@@ -346,6 +380,19 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
     expected_dates = {start_7d + timedelta(days=i) for i in range(7)}
     missing_hrv_days_7d = None if total_garmin_rows_7d == 0 else len(expected_dates - available_dates)
 
+    # ── Follow-up: 复用 push 侧的化验复查检测 (#4b 增量, chips↔push 双向统一)。
+    # 只取最高分的一项,fail-soft。注意只调 _detect_lab_overdue(不调 collect_open_loops,
+    # 后者含 _detect_salient_state → compute_salient_signals → _collect_signals 会递归)。
+    overdue_lab_name: Optional[str] = None
+    try:
+        from app.tasks.open_loop_manager import _detect_lab_overdue
+
+        _loops = _detect_lab_overdue(db, user_id) or []
+        if _loops:
+            overdue_lab_name = max(_loops, key=lambda lp: lp.score).signal_key or None
+    except Exception:  # noqa: BLE001
+        overdue_lab_name = None
+
     # ── Twin overlay (today / current state). Fail-soft. ─────────────────
     twin_kwargs: dict = {}
     try:
@@ -420,6 +467,7 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
         supplement_completion_7d_pct=supplement_completion_7d_pct,
         avg_sleep_score_7d=avg_sleep_score_7d,
         missing_hrv_days_7d=missing_hrv_days_7d,
+        overdue_lab_name=overdue_lab_name,
         **twin_kwargs,
         **time_kwargs,
     )
@@ -443,6 +491,7 @@ def _has_any_user_signal(signals: StarterSignals) -> bool:
         or signals.stress_today is not None
         or signals.hrv_today is not None
         or signals.systolic_bp is not None
+        or signals.overdue_lab_name is not None
     )
 
 
@@ -552,6 +601,16 @@ def _suggest_recovery_history(signals: StarterSignals) -> Optional[SuggestionCan
     if signals.avg_sleep_score_7d is not None and signals.avg_sleep_score_7d < 70:
         return SuggestionCandidate(60, "帮我复盘最近的睡眠质量并给出可执行改进")
     return None
+
+
+def _suggest_lab_recheck(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """随访: 关键化验已超期未复查(来自 push 侧 _detect_lab_overdue 同一检测)。"""
+    if not signals.overdue_lab_name:
+        return None
+    return SuggestionCandidate(
+        60,
+        f"我的 {signals.overdue_lab_name} 上次检查已超期，帮我安排复查并对比上次结果",
+    )
 
 
 # ── Today body state (Twin-driven) ──────────────────────────────────────
@@ -763,6 +822,7 @@ _GENERATORS = (
     _suggest_diet,
     _suggest_supplement,
     _suggest_recovery_history,
+    _suggest_lab_recheck,
     # Today body state
     _suggest_readiness,
     _suggest_hrv_today,

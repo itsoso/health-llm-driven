@@ -16,11 +16,17 @@ func toneColor(_ tone: String) -> Color {
     }
 }
 
+// These free helpers build SwiftUI views, whose initializers (Spacer, etc.) are
+// MainActor-isolated under the CI runner's stricter Swift concurrency checking.
+// Marking the functions @MainActor matches their only callers (SwiftUI view
+// bodies) and avoids "main actor-isolated initializer in nonisolated context".
+@MainActor
 func panelStroke(radius: CGFloat) -> some View {
     RoundedRectangle(cornerRadius: radius, style: .continuous)
         .stroke(Color.primary.opacity(0.07), lineWidth: 1)
 }
 
+@MainActor
 func sectionHeader(title: String, systemImage: String) -> some View {
     HStack(spacing: 8) {
         Image(systemName: systemImage)
@@ -31,6 +37,7 @@ func sectionHeader(title: String, systemImage: String) -> some View {
     }
 }
 
+@MainActor
 func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 12) {
         content()
