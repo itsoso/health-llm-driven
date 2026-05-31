@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Circle, Polyline, Rect, G, Text as SvgText } from 'react-native-svg';
-import { colors, spacing, typography } from '../../constants/theme';
+import { spacing, typography } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import type { TrendSeries } from '../../services/trends';
 import DataPointTooltip from './DataPointTooltip';
 
@@ -42,6 +43,8 @@ function niceStep(range: number, count: number): number {
 }
 
 export default function TrendChart({ series, height = 220 }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [chartWidth, setChartWidth] = useState(Dimensions.get('window').width - 32);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
 
@@ -147,7 +150,7 @@ export default function TrendChart({ series, height = 220 }: Props) {
             y1={scaleY(tick)}
             x2={chartWidth - PADDING.right}
             y2={scaleY(tick)}
-            stroke={colors.separator}
+            stroke={c.separator}
             strokeWidth={1}
           />
         ))}
@@ -160,7 +163,7 @@ export default function TrendChart({ series, height = 220 }: Props) {
             y={scaleY(tick) + 4}
             textAnchor="end"
             fontSize={10}
-            fill={colors.labelTertiary}
+            fill={c.labelTertiary}
           >
             {Number.isInteger(tick) ? tick : tick.toFixed(1)}
           </SvgText>
@@ -174,7 +177,7 @@ export default function TrendChart({ series, height = 220 }: Props) {
             y={height - 6}
             textAnchor="middle"
             fontSize={10}
-            fill={colors.labelTertiary}
+            fill={c.labelTertiary}
           >
             {formatDate(date)}
           </SvgText>
@@ -216,8 +219,8 @@ export default function TrendChart({ series, height = 220 }: Props) {
                   cx={scaleX(d.date)}
                   cy={scaleY(d.value)}
                   r={4}
-                  fill={d.isAbnormal ? colors.red : s.color}
-                  stroke={colors.bgCard}
+                  fill={d.isAbnormal ? c.red : s.color}
+                  stroke={c.bgCard}
                   strokeWidth={2}
                 />
               ))}
@@ -265,34 +268,36 @@ export default function TrendChart({ series, height = 220 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    position: 'relative',
-  },
-  emptyText: {
-    ...typography.bodyMedium,
-    color: colors.labelTertiary,
-    textAlign: 'center',
-    marginTop: 80,
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.lg,
-    marginTop: spacing.sm,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    ...typography.caption,
-    color: colors.labelSecondary,
-  },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: {
+      position: 'relative',
+    },
+    emptyText: {
+      ...typography.bodyMedium,
+      color: c.labelTertiary,
+      textAlign: 'center',
+      marginTop: 80,
+    },
+    legend: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing.lg,
+      marginTop: spacing.sm,
+    },
+    legendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    legendDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    legendText: {
+      ...typography.caption,
+      color: c.labelSecondary,
+    },
+  });
+}
