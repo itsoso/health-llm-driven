@@ -1,43 +1,35 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TextStyle } from 'react-native';
+import { StyleSheet, Text, TextStyle, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-interface EvidenceTierMeta {
-  label: string;
-  color: string;
-}
-
-function tierMeta(c: ColorPalette): Record<string, EvidenceTierMeta> {
-  return {
-    clinical_guideline: { label: '临床指南', color: c.green },
-    strong_behavioral: { label: '行为证据', color: c.teal },
-    wearable_proxy: { label: '穿戴推断', color: c.blue },
-    genetic_association: { label: '基因关联', color: c.purple },
-    experimental: { label: '实验性', color: c.amber },
-    default: { label: '一般', color: c.labelSecondary },
-  };
-}
-
 interface Props {
-  tier?: string;
-  confidence?: string;
-  note?: string;
+  label: string;
+  value: string;
+  tone?: 'default' | 'good' | 'warn' | 'bad';
+  icon?: keyof typeof Ionicons.glyphMap;
 }
 
-export default function ActionEvidenceRow({ tier, confidence, note }: Props) {
+function toneColor(c: ColorPalette, tone: NonNullable<Props['tone']>): string {
+  switch (tone) {
+    case 'good': return c.brand;
+    case 'warn': return c.amber;
+    case 'bad': return c.red;
+    case 'default':
+    default: return c.labelSecondary;
+  }
+}
+
+export default function ActionEvidenceRow({ label, value, tone = 'default', icon = 'analytics-outline' }: Props) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-
-  const meta = tierMeta(c);
-  const m = meta[tier || 'default'] || meta.default;
+  const color = toneColor(c, tone);
   return (
     <View style={styles.row}>
-      <View style={[styles.chip, { backgroundColor: m.color + '22' }]}>
-        <Text style={[styles.chipText, { color: m.color }]}>{m.label}</Text>
-      </View>
-      {confidence ? <Text style={styles.label}>{confidence}</Text> : null}
-      {note ? <Text style={styles.note}>{note}</Text> : null}
+      <Ionicons name={icon} size={13} color={color} />
+      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.value, { color }]} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
@@ -45,19 +37,16 @@ export default function ActionEvidenceRow({ tier, confidence, note }: Props) {
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
     row: {
+      minHeight: 28,
+      borderRadius: radii.sm,
+      backgroundColor: c.bgPrimary,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      paddingVertical: 4,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
     },
-    chip: {
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      borderRadius: radii.sm,
-      backgroundColor: c.bgPrimary,
-    },
-    chipText: { fontSize: 11, fontWeight: '600' as const },
     label: { fontSize: 11, color: c.labelTertiary } as TextStyle,
-    note: { fontSize: 12, color: c.labelSecondary, flex: 1 } as TextStyle,
+    value: { flex: 1, textAlign: 'right', fontSize: 11, fontWeight: '700' } as TextStyle,
   });
 }
