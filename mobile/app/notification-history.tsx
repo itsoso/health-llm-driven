@@ -1,19 +1,22 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle, SectionList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getLogs, type NotificationLog } from '../services/notifications';
-import { colors, spacing, radii, shadows } from '../constants/theme';
+import { spacing, radii, shadows } from '../constants/theme';
+import { ColorPalette, useTheme } from '../hooks/useTheme';
 
-const TYPE_META: Record<string, { icon: string; color: string }> = {
-  health_alert: { icon: 'warning', color: '#FF453A' },
-  morning_briefing: { icon: 'sunny', color: '#FF9F0A' },
-  reminder: { icon: 'alarm', color: colors.brand },
-  ai_advice: { icon: 'sparkles', color: '#AF52DE' },
-  test: { icon: 'flask', color: colors.labelSecondary },
-};
+function createTypeMeta(c: ColorPalette): Record<string, { icon: string; color: string }> {
+  return {
+    health_alert: { icon: 'warning', color: '#FF453A' },
+    morning_briefing: { icon: 'sunny', color: '#FF9F0A' },
+    reminder: { icon: 'alarm', color: c.brand },
+    ai_advice: { icon: 'sparkles', color: '#AF52DE' },
+    test: { icon: 'flask', color: c.labelSecondary },
+  };
+}
 
 function groupByDate(logs: NotificationLog[]) {
   const map = new Map<string, NotificationLog[]>();
@@ -73,6 +76,9 @@ function getLogDeepLink(log: NotificationLog): string | null {
 
 export default function NotificationHistoryScreen() {
   const router = useRouter();
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['notificationLogs'],
@@ -87,17 +93,17 @@ export default function NotificationHistoryScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>推送历史</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
       ) : logs.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons name="notifications-off-outline" size={48} color={colors.labelTertiary} />
+          <Ionicons name="notifications-off-outline" size={48} color={c.labelTertiary} />
           <Text style={txt.empty}>暂无推送记录</Text>
         </View>
       ) : (
@@ -118,7 +124,11 @@ export default function NotificationHistoryScreen() {
 
 function LogRow({ log }: { log: NotificationLog }) {
   const router = useRouter();
-  const meta = TYPE_META[log.notification_type] || TYPE_META.test;
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  const typeMeta = useMemo(() => createTypeMeta(c), [c]);
+  const meta = typeMeta[log.notification_type] || typeMeta.test;
   const time = log.sent_at?.slice(11, 16) || log.created_at?.slice(11, 16) || '';
   const deepLink = getLogDeepLink(log);
   const channelIcon: Record<string, string> = {
@@ -151,34 +161,38 @@ function LogRow({ log }: { log: NotificationLog }) {
       </View>
       <View style={styles.trailing}>
         <Text style={txt.logTime}>{time}</Text>
-        {deepLink && <Ionicons name="chevron-forward" size={16} color={colors.labelTertiary} />}
+        {deepLink && <Ionicons name="chevron-forward" size={16} color={c.labelTertiary} />}
       </View>
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  list: { padding: spacing.lg, paddingBottom: 40 },
-  logRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    marginBottom: spacing.xs, ...shadows.subtle,
-  },
-  iconCircle: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  trailing: { alignItems: 'flex-end', gap: 4 },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.bgPrimary },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
+    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+    backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    list: { padding: spacing.lg, paddingBottom: 40 },
+    logRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      backgroundColor: c.bgCard, borderRadius: radii.lg,
+      paddingHorizontal: spacing.md, paddingVertical: 12,
+      marginBottom: spacing.xs, ...shadows.subtle,
+    },
+    iconCircle: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+    trailing: { alignItems: 'flex-end', gap: 4 },
+  });
+}
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  empty: { fontSize: 15, color: colors.labelTertiary } as TextStyle,
-  sectionHeader: { fontSize: 13, fontWeight: '500', color: colors.labelSecondary, marginBottom: spacing.xs, marginTop: spacing.md } as TextStyle,
-  logTitle: { fontSize: 15, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  logContent: { fontSize: 13, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
-  logTime: { fontSize: 12, color: colors.labelTertiary } as TextStyle,
-  channelLine: { fontSize: 11, color: colors.labelTertiary, marginTop: 3 } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+    empty: { fontSize: 15, color: c.labelTertiary } as TextStyle,
+    sectionHeader: { fontSize: 13, fontWeight: '500', color: c.labelSecondary, marginBottom: spacing.xs, marginTop: spacing.md } as TextStyle,
+    logTitle: { fontSize: 15, fontWeight: '500', color: c.labelPrimary } as TextStyle,
+    logContent: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
+    logTime: { fontSize: 12, color: c.labelTertiary } as TextStyle,
+    channelLine: { fontSize: 11, color: c.labelTertiary, marginTop: 3 } as TextStyle,
+  };
+}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextStyle, ScrollView,
   ActivityIndicator, RefreshControl, Alert,
@@ -8,7 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { colors, spacing, radii, shadows } from '../../../constants/theme';
+import { spacing, radii, shadows } from '../../../constants/theme';
+import { ColorPalette, useTheme } from '../../../hooks/useTheme';
 import {
   getMonthlyReport, regenerateMonthlyReport, formatMonth, relativeTime,
   INTERVENTION_KIND_LABEL, DIRECTION_LABEL, DIRECTION_COLOR,
@@ -18,6 +19,9 @@ import AgentFeedbackLink from '../../../components/agent/AgentFeedbackLink';
 import { createMonthlyReportAgentContext } from '../../../utils/agentContext';
 
 export default function MonthlyReportDetailScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const params = useLocalSearchParams<{ year: string; month: string }>();
@@ -47,7 +51,7 @@ export default function MonthlyReportDetailScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.center}>
-          <ActivityIndicator color={colors.brand} />
+          <ActivityIndicator color={c.brand} />
         </View>
       </SafeAreaView>
     );
@@ -59,7 +63,7 @@ export default function MonthlyReportDetailScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>{formatMonth(year, month)} 复盘</Text>
         <TouchableOpacity
@@ -68,9 +72,9 @@ export default function MonthlyReportDetailScreen() {
           disabled={regenMut.isPending}
         >
           {regenMut.isPending ? (
-            <ActivityIndicator size="small" color={colors.brand} />
+            <ActivityIndicator size="small" color={c.brand} />
           ) : (
-            <Ionicons name="refresh" size={22} color={colors.brand} />
+            <Ionicons name="refresh" size={22} color={c.brand} />
           )}
         </TouchableOpacity>
       </View>
@@ -78,7 +82,7 @@ export default function MonthlyReportDetailScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />
+          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />
         }
       >
         <Text style={txt.generatedHint}>
@@ -118,7 +122,7 @@ export default function MonthlyReportDetailScreen() {
             <Text style={txt.section}>指标趋势 (对比上月)</Text>
             <View style={styles.card}>
               {r.metric_trends.map((t, i) => (
-                <TrendRow key={t.metric} trend={t} last={i === r.metric_trends.length - 1} />
+                <TrendRow key={t.metric} trend={t} last={i === r.metric_trends.length - 1} styles={styles} txt={txt} />
               ))}
             </View>
           </>
@@ -172,8 +176,8 @@ export default function MonthlyReportDetailScreen() {
             {r.ai_scorecard.top_hits.length > 0 && (
               <View style={styles.card}>
                 <Text style={txt.sectionTitle}>✅ 最贴合的建议</Text>
-                {r.ai_scorecard.top_hits.map((c) => (
-                  <CardRow key={c.card_id} card={c} good />
+                {r.ai_scorecard.top_hits.map((card) => (
+                  <CardRow key={card.card_id} card={card} good styles={styles} txt={txt} />
                 ))}
               </View>
             )}
@@ -181,8 +185,8 @@ export default function MonthlyReportDetailScreen() {
             {r.ai_scorecard.top_misses.length > 0 && (
               <View style={styles.card}>
                 <Text style={txt.sectionTitle}>❌ 偏离较多的建议</Text>
-                {r.ai_scorecard.top_misses.map((c) => (
-                  <CardRow key={c.card_id} card={c} good={false} />
+                {r.ai_scorecard.top_misses.map((card) => (
+                  <CardRow key={card.card_id} card={card} good={false} styles={styles} txt={txt} />
                 ))}
               </View>
             )}
@@ -224,7 +228,10 @@ export default function MonthlyReportDetailScreen() {
   );
 }
 
-function TrendRow({ trend, last }: { trend: MetricTrend; last: boolean }) {
+function TrendRow({ trend, last, styles, txt }: {
+  trend: MetricTrend; last: boolean;
+  styles: ReturnType<typeof createStyles>; txt: ReturnType<typeof createTxt>;
+}) {
   const color = DIRECTION_COLOR[trend.direction];
   const arrow = trend.direction === 'basically_flat' ? '→'
     : trend.delta > 0 ? '↑' : '↓';
@@ -252,7 +259,10 @@ function TrendRow({ trend, last }: { trend: MetricTrend; last: boolean }) {
   );
 }
 
-function CardRow({ card, good }: { card: ScorecardCard; good: boolean }) {
+function CardRow({ card, good, styles, txt }: {
+  card: ScorecardCard; good: boolean;
+  styles: ReturnType<typeof createStyles>; txt: ReturnType<typeof createTxt>;
+}) {
   return (
     <View style={styles.cardInner}>
       <View style={{ flex: 1 }}>
@@ -268,8 +278,8 @@ function CardRow({ card, good }: { card: ScorecardCard; good: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+function createStyles(c: ColorPalette) { return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -278,7 +288,7 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg, paddingBottom: 60 },
   card: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
     padding: spacing.lg, marginBottom: spacing.md,
     ...shadows.subtle,
   },
@@ -289,7 +299,7 @@ const styles = StyleSheet.create({
   },
   bulletDot: {
     width: 6, height: 6, borderRadius: 3,
-    backgroundColor: colors.brand, marginTop: 7,
+    backgroundColor: c.brand, marginTop: 7,
   },
   trendRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -297,12 +307,12 @@ const styles = StyleSheet.create({
   },
   trendRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
+    borderBottomColor: c.separator,
   },
   overallRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   rateBar: {
     width: 24, height: 100, borderRadius: 4,
-    backgroundColor: colors.fill, overflow: 'hidden',
+    backgroundColor: c.fill, overflow: 'hidden',
     justifyContent: 'flex-end',
   },
   rateBarFill: { width: '100%' },
@@ -312,7 +322,7 @@ const styles = StyleSheet.create({
   },
   spBar: {
     flex: 1, height: 8, borderRadius: 4,
-    backgroundColor: colors.fill, overflow: 'hidden',
+    backgroundColor: c.fill, overflow: 'hidden',
   },
   spBarFill: { height: '100%', borderRadius: 4 },
   cardInner: {
@@ -325,52 +335,52 @@ const styles = StyleSheet.create({
   },
   ivRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
+    borderBottomColor: c.separator,
   },
   ivBadge: {
     paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: radii.sm, backgroundColor: colors.fill,
+    borderRadius: radii.sm, backgroundColor: c.fill,
   },
-});
+}); }
 
-const txt = {
+function createTxt(c: ColorPalette) { return {
   title: {
-    fontSize: 17, fontWeight: '600', color: colors.labelPrimary,
+    fontSize: 17, fontWeight: '600', color: c.labelPrimary,
     flex: 1, textAlign: 'center',
   } as TextStyle,
   generatedHint: {
-    fontSize: 12, color: colors.labelTertiary,
+    fontSize: 12, color: c.labelTertiary,
     marginBottom: spacing.md,
   } as TextStyle,
   section: {
-    fontSize: 13, fontWeight: '500', color: colors.labelSecondary,
+    fontSize: 13, fontWeight: '500', color: c.labelSecondary,
     marginBottom: spacing.xs, marginTop: spacing.sm, marginLeft: spacing.xs,
   } as TextStyle,
   sectionTitle: {
-    fontSize: 15, fontWeight: '600', color: colors.labelPrimary,
+    fontSize: 15, fontWeight: '600', color: c.labelPrimary,
     marginBottom: spacing.sm,
   } as TextStyle,
-  narrative: { fontSize: 14, color: colors.labelPrimary, lineHeight: 21 } as TextStyle,
-  bulletText: { flex: 1, fontSize: 14, color: colors.labelPrimary, lineHeight: 20 } as TextStyle,
-  trendLabel: { fontSize: 14, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
-  trendValues: { fontSize: 12, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  narrative: { fontSize: 14, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
+  bulletText: { flex: 1, fontSize: 14, color: c.labelPrimary, lineHeight: 20 } as TextStyle,
+  trendLabel: { fontSize: 14, color: c.labelPrimary, fontWeight: '500' } as TextStyle,
+  trendValues: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   trendArrow: { fontSize: 13, fontWeight: '600' } as TextStyle,
   trendPct: { fontSize: 11, marginTop: 2 } as TextStyle,
-  hint: { fontSize: 11, color: colors.labelTertiary, marginTop: 4 } as TextStyle,
-  hitRateLabel: { fontSize: 12, color: colors.labelTertiary } as TextStyle,
+  hint: { fontSize: 11, color: c.labelTertiary, marginTop: 4 } as TextStyle,
+  hitRateLabel: { fontSize: 12, color: c.labelTertiary } as TextStyle,
   hitRateValue: {
-    fontSize: 36, fontWeight: '700', color: colors.labelPrimary,
+    fontSize: 36, fontWeight: '700', color: c.labelPrimary,
     marginVertical: 4,
   } as TextStyle,
-  spLabel: { fontSize: 13, color: colors.labelPrimary, width: 56 } as TextStyle,
-  spRate: { fontSize: 12, fontWeight: '600', color: colors.labelPrimary, width: 40, textAlign: 'right' } as TextStyle,
-  spCount: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  cardTitle: { fontSize: 14, color: colors.labelPrimary, lineHeight: 19 } as TextStyle,
-  cardMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  spLabel: { fontSize: 13, color: c.labelPrimary, width: 56 } as TextStyle,
+  spRate: { fontSize: 12, fontWeight: '600', color: c.labelPrimary, width: 40, textAlign: 'right' } as TextStyle,
+  spCount: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+  cardTitle: { fontSize: 14, color: c.labelPrimary, lineHeight: 19 } as TextStyle,
+  cardMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   cardScore: { fontSize: 20, fontWeight: '700', minWidth: 40, textAlign: 'right' } as TextStyle,
-  ivKind: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
-  ivTitle: { fontSize: 14, color: colors.labelPrimary } as TextStyle,
-  ivDate: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
-  ivDetail: { fontSize: 12, color: colors.labelSecondary, marginTop: 4, lineHeight: 17 } as TextStyle,
-  empty: { fontSize: 14, color: colors.labelTertiary, textAlign: 'center', paddingVertical: spacing.lg } as TextStyle,
-};
+  ivKind: { fontSize: 11, color: c.labelSecondary } as TextStyle,
+  ivTitle: { fontSize: 14, color: c.labelPrimary } as TextStyle,
+  ivDate: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
+  ivDetail: { fontSize: 12, color: c.labelSecondary, marginTop: 4, lineHeight: 17 } as TextStyle,
+  empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', paddingVertical: spacing.lg } as TextStyle,
+}; }

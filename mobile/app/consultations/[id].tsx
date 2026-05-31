@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextStyle, RefreshControl,
 } from 'react-native';
@@ -12,7 +12,8 @@ import {
   getConsultation, updateConsultationItem, verifyPredictions,
   type ConsultationItem, type ConsultationPredictionVerification,
 } from '../../services/consultations';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const ITEM_TYPE_LABEL: Record<string, string> = {
   hypothesis: '🧠 假设',
@@ -64,7 +65,15 @@ function getNextStatus(itemType: string, current: string): string | null {
   return null;
 }
 
-function StatusPill({ status }: { status: string }) {
+function StatusPill({
+  status,
+  styles,
+  txt,
+}: {
+  status: string;
+  styles: ReturnType<typeof createStyles>;
+  txt: ReturnType<typeof createTxt>;
+}) {
   const bg =
     status === 'completed' || status === 'verified' || status === 'met' ? '#D1FAE5' :
     status === 'in_progress' || status === 'active' ? '#DBEAFE' :
@@ -87,11 +96,19 @@ function ItemCard({
   verification,
   onAdvance,
   onConfirmVerification,
+  theme,
+  styles,
+  txt,
+  mdStyle,
 }: {
   item: ConsultationItem;
   verification?: ConsultationPredictionVerification;
   onAdvance: () => void;
   onConfirmVerification: () => void;
+  theme: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+  txt: ReturnType<typeof createTxt>;
+  mdStyle: any;
 }) {
   const c = ITEM_TYPE_COLOR[item.item_type] || ITEM_TYPE_COLOR.note;
   const canAdvance = getNextStatus(item.item_type, item.status);
@@ -104,7 +121,7 @@ function ItemCard({
             {item.item_code ? ` · ${item.item_code}` : ''}
           </Text>
         </View>
-        <StatusPill status={item.status} />
+        <StatusPill status={item.status} styles={styles} txt={txt} />
       </View>
       <Text style={txt.itemTitle}>{item.title}</Text>
       {item.content_markdown ? (
@@ -115,10 +132,10 @@ function ItemCard({
         <Text style={txt.itemMeta}>截止 {item.due_date}</Text>
       ) : null}
       {item.outcome ? (
-        <Text style={[txt.itemMeta, { color: colors.labelSecondary }]}>结果：{item.outcome}</Text>
+        <Text style={[txt.itemMeta, { color: theme.labelSecondary }]}>结果：{item.outcome}</Text>
       ) : null}
       {item.actual_value ? (
-        <Text style={[txt.itemMeta, { color: colors.labelSecondary }]}>实测：{item.actual_value}</Text>
+        <Text style={[txt.itemMeta, { color: theme.labelSecondary }]}>实测：{item.actual_value}</Text>
       ) : null}
 
       {verification ? (
@@ -150,6 +167,10 @@ function ItemCard({
 }
 
 export default function ConsultationDetailScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  const mdStyle = useMemo(() => createMdStyle(c), [c]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const consultationId = Number(id);
   const router = useRouter();
@@ -211,7 +232,7 @@ export default function ConsultationDetailScreen() {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
         <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.brand} />
+          <ActivityIndicator size="large" color={c.brand} />
         </View>
       </SafeAreaView>
     );
@@ -222,7 +243,7 @@ export default function ConsultationDetailScreen() {
       <SafeAreaView style={styles.screen} edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color={colors.labelPrimary} />
+            <Ionicons name="chevron-back" size={22} color={c.labelPrimary} />
           </TouchableOpacity>
           <Text style={txt.headerTitle}>咨询详情</Text>
           <View style={styles.backBtn} />
@@ -244,20 +265,20 @@ export default function ConsultationDetailScreen() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={22} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={22} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.headerTitle} numberOfLines={1}>{data.title}</Text>
         <TouchableOpacity onPress={handleVerify} style={styles.backBtn} hitSlop={8} disabled={verifying}>
           {verifying
-            ? <ActivityIndicator size="small" color={colors.brand} />
-            : <Ionicons name="refresh" size={22} color={colors.brand} />}
+            ? <ActivityIndicator size="small" color={c.brand} />
+            : <Ionicons name="refresh" size={22} color={c.brand} />}
         </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControlShim refreshing={isRefetching} onRefresh={refetch} />
+          <RefreshControlShim refreshing={isRefetching} onRefresh={refetch} tint={c.brand} />
         }
       >
         <View style={styles.metaBox}>
@@ -317,6 +338,10 @@ export default function ConsultationDetailScreen() {
                   <ItemCard
                     key={item.id}
                     item={item}
+                    theme={c}
+                    styles={styles}
+                    txt={txt}
+                    mdStyle={mdStyle}
                     verification={verificationSuggestions[item.id]}
                     onAdvance={() => advanceMut.mutate(item)}
                     onConfirmVerification={async () => {
@@ -360,8 +385,8 @@ export default function ConsultationDetailScreen() {
   );
 }
 
-function RefreshControlShim(props: { refreshing: boolean; onRefresh: () => void }) {
-  return <RefreshControl refreshing={props.refreshing} onRefresh={props.onRefresh} tintColor={colors.brand} />;
+function RefreshControlShim(props: { refreshing: boolean; onRefresh: () => void; tint: string }) {
+  return <RefreshControl refreshing={props.refreshing} onRefresh={props.onRefresh} tintColor={props.tint} />;
 }
 
 function groupByType(items: ConsultationItem[]): Record<string, ConsultationItem[]> {
@@ -375,30 +400,31 @@ function groupByType(items: ConsultationItem[]): Record<string, ConsultationItem
   return out;
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bgPrimary },
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.bgPrimary,
+    backgroundColor: c.bgPrimary,
   },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
-  retry: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: colors.brand, borderRadius: radii.md },
+  retry: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: c.brand, borderRadius: radii.md },
   scrollContent: { padding: spacing.lg, gap: spacing.lg },
   metaBox: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   section: { gap: spacing.sm },
   markdownCard: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg, padding: spacing.md, ...shadows.subtle,
+    backgroundColor: c.bgCard, borderRadius: radii.lg, padding: spacing.md, ...shadows.subtle,
   },
   verifyBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: colors.brand, borderRadius: radii.md,
+    backgroundColor: c.brand, borderRadius: radii.md,
     paddingVertical: spacing.md,
   },
   itemCard: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.lg,
     borderLeftWidth: 3,
     padding: spacing.md,
@@ -412,7 +438,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     alignSelf: 'flex-start', marginTop: 4,
     paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: radii.sm, borderWidth: 1, borderColor: colors.separator,
+    borderRadius: radii.sm, borderWidth: 1, borderColor: c.separator,
   },
   verificationBox: {
     backgroundColor: '#F8FAFC',
@@ -426,35 +452,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.brand,
+    backgroundColor: c.brand,
     borderRadius: radii.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
     marginTop: 4,
   },
-});
+  });
+}
 
-const txt = {
-  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  metaItem: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: colors.labelSecondary, textTransform: 'uppercase' } as TextStyle,
-  body: { fontSize: 14, color: colors.labelPrimary, lineHeight: 20 } as TextStyle,
+function createTxt(c: ColorPalette) {
+  return {
+  headerTitle: { fontSize: 17, fontWeight: '700', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+  metaItem: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: c.labelSecondary, textTransform: 'uppercase' } as TextStyle,
+  body: { fontSize: 14, color: c.labelPrimary, lineHeight: 20 } as TextStyle,
   itemTypeText: { fontSize: 10, fontWeight: '700' } as TextStyle,
-  itemTitle: { fontSize: 14, fontWeight: '700', color: colors.labelPrimary, marginTop: 2 } as TextStyle,
-  itemMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  itemTitle: { fontSize: 14, fontWeight: '700', color: c.labelPrimary, marginTop: 2 } as TextStyle,
+  itemMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' } as TextStyle,
   advanceText: { fontSize: 11, fontWeight: '600' } as TextStyle,
-  verificationTitle: { fontSize: 12, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  verificationText: { fontSize: 12, color: colors.labelSecondary, lineHeight: 17 } as TextStyle,
-  verificationNote: { fontSize: 11, color: colors.labelTertiary, lineHeight: 16 } as TextStyle,
+  verificationTitle: { fontSize: 12, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+  verificationText: { fontSize: 12, color: c.labelSecondary, lineHeight: 17 } as TextStyle,
+  verificationNote: { fontSize: 11, color: c.labelTertiary, lineHeight: 16 } as TextStyle,
   confirmText: { fontSize: 12, fontWeight: '700', color: '#fff' } as TextStyle,
   verifyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
-  emptyText: { fontSize: 13, color: colors.labelTertiary } as TextStyle,
+  emptyText: { fontSize: 13, color: c.labelTertiary } as TextStyle,
   retryText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-};
+  };
+}
 
-const mdStyle: any = {
-  body: { color: colors.labelPrimary, fontSize: 13, lineHeight: 20 },
+function createMdStyle(c: ColorPalette): any {
+  return {
+  body: { color: c.labelPrimary, fontSize: 13, lineHeight: 20 },
   heading1: { fontSize: 17, fontWeight: '700', marginTop: 8, marginBottom: 4 },
   heading2: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 4 },
   heading3: { fontSize: 13, fontWeight: '700', marginTop: 6, marginBottom: 3 },
@@ -462,4 +492,5 @@ const mdStyle: any = {
   em: { fontStyle: 'italic' },
   bullet_list: { marginVertical: 4 },
   list_item: { marginVertical: 2 },
-};
+  };
+}

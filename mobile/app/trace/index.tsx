@@ -10,7 +10,7 @@
  *
  * B 端意义: 可解释性护城河.
  */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, RefreshControl, ScrollView,
@@ -20,13 +20,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useRecentTraces } from '../../hooks/useReasoningTrace';
 import type { ReasoningTrace } from '../../services/reasoningTrace';
-import { colors, spacing, radii, typography } from '../../constants/theme';
+import { spacing, radii, typography } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-const SEV_COLOR: Record<string, string> = {
-  critical: colors.red,
-  warning: colors.amber,
-  info: colors.labelTertiary,
-};
+function createSevColor(c: ColorPalette): Record<string, string> {
+  return {
+    critical: c.red,
+    warning: c.amber,
+    info: c.labelTertiary,
+  };
+}
 const SEV_LABEL: Record<string, string> = {
   critical: '紧急',
   warning: '关注',
@@ -35,32 +38,34 @@ const SEV_LABEL: Record<string, string> = {
 
 // rule.id → 人话标题 + 主题图标. 后端 title 是 "metric_name rule_id" 的字面拼接 (如 "spo2_avg spo2_low"),
 // 这里重写为用户可读的一行. 未知 rule.id 降级为 t.title (能显示就行).
-const RULE_LABEL: Record<string, { title: string; icon: keyof typeof Ionicons.glyphMap; color: string }> = {
-  spo2_low: { title: '血氧偏低', icon: 'medkit-outline', color: colors.red },
-  spo2_drop: { title: '血氧下降', icon: 'trending-down-outline', color: colors.red },
-  battery_low: { title: '身体电量不足', icon: 'battery-dead-outline', color: colors.amber },
-  hrv_drop: { title: 'HRV 下降', icon: 'pulse-outline', color: colors.amber },
-  hrv_low: { title: 'HRV 偏低', icon: 'pulse-outline', color: colors.amber },
-  resting_hr_high: { title: '静息心率偏高', icon: 'heart-outline', color: colors.red },
-  resting_hr_drop: { title: '静息心率下降', icon: 'heart-outline', color: colors.labelTertiary },
-  sleep_short: { title: '睡眠偏短', icon: 'moon-outline', color: colors.amber },
-  sleep_debt: { title: '睡眠负债累积', icon: 'moon-outline', color: colors.amber },
-  stress_high: { title: '压力偏高', icon: 'alert-circle-outline', color: colors.amber },
-  steps_low: { title: '活动不足', icon: 'walk-outline', color: colors.labelTertiary },
-  weight_gain: { title: '体重上升', icon: 'trending-up-outline', color: colors.amber },
-  weight_loss: { title: '体重下降', icon: 'trending-down-outline', color: colors.amber },
-  bp_high: { title: '血压偏高', icon: 'heart-circle-outline', color: colors.red },
-  bp_low: { title: '血压偏低', icon: 'heart-circle-outline', color: colors.amber },
-};
+function createRuleLabel(c: ColorPalette): Record<string, { title: string; icon: keyof typeof Ionicons.glyphMap; color: string }> {
+  return {
+    spo2_low: { title: '血氧偏低', icon: 'medkit-outline', color: c.red },
+    spo2_drop: { title: '血氧下降', icon: 'trending-down-outline', color: c.red },
+    battery_low: { title: '身体电量不足', icon: 'battery-dead-outline', color: c.amber },
+    hrv_drop: { title: 'HRV 下降', icon: 'pulse-outline', color: c.amber },
+    hrv_low: { title: 'HRV 偏低', icon: 'pulse-outline', color: c.amber },
+    resting_hr_high: { title: '静息心率偏高', icon: 'heart-outline', color: c.red },
+    resting_hr_drop: { title: '静息心率下降', icon: 'heart-outline', color: c.labelTertiary },
+    sleep_short: { title: '睡眠偏短', icon: 'moon-outline', color: c.amber },
+    sleep_debt: { title: '睡眠负债累积', icon: 'moon-outline', color: c.amber },
+    stress_high: { title: '压力偏高', icon: 'alert-circle-outline', color: c.amber },
+    steps_low: { title: '活动不足', icon: 'walk-outline', color: c.labelTertiary },
+    weight_gain: { title: '体重上升', icon: 'trending-up-outline', color: c.amber },
+    weight_loss: { title: '体重下降', icon: 'trending-down-outline', color: c.amber },
+    bp_high: { title: '血压偏高', icon: 'heart-circle-outline', color: c.red },
+    bp_low: { title: '血压偏低', icon: 'heart-circle-outline', color: c.amber },
+  };
+}
 
-function humanize(t: ReasoningTrace): { title: string; icon: keyof typeof Ionicons.glyphMap; color: string } {
-  const cfg = RULE_LABEL[t.rule.id];
+function humanize(t: ReasoningTrace, c: ColorPalette): { title: string; icon: keyof typeof Ionicons.glyphMap; color: string } {
+  const cfg = createRuleLabel(c)[t.rule.id];
   if (cfg) return cfg;
   // 降级: 用原始 title, 按 severity 涂色, 通用图标
   return {
     title: t.title || t.rule.id || '未分类决策',
     icon: 'information-circle-outline',
-    color: SEV_COLOR[t.severity] ?? colors.labelTertiary,
+    color: createSevColor(c)[t.severity] ?? c.labelTertiary,
   };
 }
 
@@ -79,20 +84,20 @@ function fmtRelative(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN');
 }
 
-function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
-  const sevColor = SEV_COLOR[t.severity] ?? colors.labelTertiary;
+function TraceRow({ t, onPress, c, styles }: { t: ReasoningTrace; onPress: () => void; c: ColorPalette; styles: ReturnType<typeof createStyles> }) {
+  const sevColor = createSevColor(c)[t.severity] ?? c.labelTertiary;
   const hasOutcome = !!t.outcome;
   const hasMemory = t.related_memory.length > 0;
   const isArbitration = t.decision_type === 'llm_arbitration';
-  const { title, icon, color } = humanize(t);
+  const { title, icon, color } = humanize(t, c);
   const cleanMsg = cleanMessage(t.message);
 
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} accessibilityLabel={`${title}, ${cleanMsg}`}>
       <View style={styles.rowHeader}>
         {isArbitration ? (
-          <View style={[styles.typeBadge, { backgroundColor: `${colors.orange}18` }]}>
-            <Ionicons name="people" size={14} color={colors.orange} />
+          <View style={[styles.typeBadge, { backgroundColor: `${c.orange}18` }]}>
+            <Ionicons name="people" size={14} color={c.orange} />
           </View>
         ) : (
           <View style={[styles.typeBadge, { backgroundColor: `${color}18` }]}>
@@ -114,7 +119,7 @@ function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
             <Text style={styles.evidenceLabel}>当前</Text>
             <Text style={styles.evidenceValueAccent}>{t.evidence.current}</Text>
           </View>
-          <Ionicons name="arrow-forward" size={10} color={colors.labelTertiary} />
+          <Ionicons name="arrow-forward" size={10} color={c.labelTertiary} />
           <View style={styles.evidenceItem}>
             <Text style={styles.evidenceLabel}>基线</Text>
             <Text style={styles.evidenceValue}>{t.evidence.baseline}</Text>
@@ -132,15 +137,15 @@ function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
 
       <View style={styles.rowFooter}>
         {hasOutcome && (
-          <View style={[styles.outcomeChip, { backgroundColor: `${colors.brand}18` }]}>
-            <Ionicons name="flag-outline" size={11} color={colors.brand} />
-            <Text style={[styles.outcomeChipText, { color: colors.brand }]}>产出行动卡</Text>
+          <View style={[styles.outcomeChip, { backgroundColor: `${c.brand}18` }]}>
+            <Ionicons name="flag-outline" size={11} color={c.brand} />
+            <Text style={[styles.outcomeChipText, { color: c.brand }]}>产出行动卡</Text>
           </View>
         )}
         {hasMemory && (
           <View style={styles.memoryChip}>
-            <Ionicons name="git-branch-outline" size={11} color={colors.blue} />
-            <Text style={[styles.outcomeChipText, { color: colors.blue }]}>{t.related_memory.length} 记忆</Text>
+            <Ionicons name="git-branch-outline" size={11} color={c.blue} />
+            <Text style={[styles.outcomeChipText, { color: c.blue }]}>{t.related_memory.length} 记忆</Text>
           </View>
         )}
         <Text style={styles.rowTime}>{fmtRelative(t.timestamp)}</Text>
@@ -151,6 +156,8 @@ function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
 
 export default function TraceListScreen() {
   const router = useRouter();
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [includeSuppressed, setIncludeSuppressed] = useState(false);
   const { data, isLoading, isRefetching, refetch } = useRecentTraces({
     days: 30, limit: 50, include_suppressed: includeSuppressed,
@@ -163,7 +170,7 @@ export default function TraceListScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>推理回放</Text>
         <TouchableOpacity
@@ -174,7 +181,7 @@ export default function TraceListScreen() {
           <Ionicons
             name={includeSuppressed ? 'eye' : 'eye-off-outline'}
             size={20}
-            color={includeSuppressed ? colors.brand : colors.labelTertiary}
+            color={includeSuppressed ? c.brand : c.labelTertiary}
           />
         </TouchableOpacity>
       </View>
@@ -191,7 +198,7 @@ export default function TraceListScreen() {
           </View>
           {Object.entries(summary.by_severity).map(([sev, n]) => (
             <View key={sev} style={styles.summaryChip}>
-              <View style={[styles.sevDot, { backgroundColor: SEV_COLOR[sev] ?? colors.labelTertiary }]} />
+              <View style={[styles.sevDot, { backgroundColor: createSevColor(c)[sev] ?? c.labelTertiary }]} />
               <Text style={styles.summaryChipLabel}>{SEV_LABEL[sev] ?? sev}</Text>
               <Text style={styles.summaryChipValue}>{n}</Text>
             </View>
@@ -201,12 +208,12 @@ export default function TraceListScreen() {
 
       {isLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.brand} />
+          <ActivityIndicator size="large" color={c.brand} />
         </View>
       ) : traces.length === 0 ? (
         <View style={styles.center}>
           <View style={styles.emptyCircle}>
-            <Ionicons name="git-network-outline" size={40} color={colors.labelTertiary} />
+            <Ionicons name="git-network-outline" size={40} color={c.labelTertiary} />
           </View>
           <Text style={styles.emptyTitle}>暂无决策记录</Text>
           <Text style={styles.emptySub}>
@@ -220,10 +227,10 @@ export default function TraceListScreen() {
           keyExtractor={(t) => t.id}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />
           }
           renderItem={({ item }) => (
-            <TraceRow t={item} onPress={() => router.push(`/trace/${item.id}`)} />
+            <TraceRow t={item} onPress={() => router.push(`/trace/${item.id}`)} c={c} styles={styles} />
           )}
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         />
@@ -232,8 +239,9 @@ export default function TraceListScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
@@ -242,7 +250,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1, textAlign: 'center',
     fontSize: typography.titleSmall.fontSize, fontWeight: '600' as const,
-    color: colors.labelPrimary,
+    color: c.labelPrimary,
   },
   filterBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
 
@@ -252,24 +260,24 @@ const styles = StyleSheet.create({
   },
   summaryChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
   },
-  summaryChipLabel: { fontSize: 11, color: colors.labelSecondary },
-  summaryChipValue: { fontSize: 13, fontWeight: '600' as const, color: colors.labelPrimary },
+  summaryChipLabel: { fontSize: 11, color: c.labelSecondary },
+  summaryChipValue: { fontSize: 13, fontWeight: '600' as const, color: c.labelPrimary },
 
   list: { padding: spacing.md, paddingBottom: 100 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.lg },
   emptyCircle: {
     width: 80, height: 80, borderRadius: 40,
-    backgroundColor: colors.fill, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: c.fill, justifyContent: 'center', alignItems: 'center',
     marginBottom: spacing.md,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '600' as const, color: colors.labelPrimary, marginBottom: spacing.xs },
-  emptySub: { fontSize: 14, color: colors.labelSecondary, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '600' as const, color: c.labelPrimary, marginBottom: spacing.xs },
+  emptySub: { fontSize: 14, color: c.labelSecondary, textAlign: 'center', lineHeight: 20 },
 
   row: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.md,
     gap: spacing.sm,
@@ -280,40 +288,41 @@ const styles = StyleSheet.create({
     width: 24, height: 24, borderRadius: 8,
     justifyContent: 'center', alignItems: 'center',
   },
-  rowTitle: { flex: 1, fontSize: 15, fontWeight: '600' as const, color: colors.labelPrimary },
+  rowTitle: { flex: 1, fontSize: 15, fontWeight: '600' as const, color: c.labelPrimary },
   sevChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   sevText: { fontSize: 11, fontWeight: '600' as const },
-  rowMessage: { fontSize: 13, color: colors.labelSecondary, lineHeight: 18 },
+  rowMessage: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 },
 
   evidenceBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.bgPrimary, borderRadius: 8,
+    backgroundColor: c.bgPrimary, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 8,
   },
   evidenceItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  evidenceLabel: { fontSize: 10, color: colors.labelTertiary },
-  evidenceValue: { fontSize: 13, fontWeight: '600' as const, color: colors.labelSecondary, fontVariant: ['tabular-nums' as const] },
-  evidenceValueAccent: { fontSize: 13, fontWeight: '700' as const, color: colors.labelPrimary, fontVariant: ['tabular-nums' as const] },
+  evidenceLabel: { fontSize: 10, color: c.labelTertiary },
+  evidenceValue: { fontSize: 13, fontWeight: '600' as const, color: c.labelSecondary, fontVariant: ['tabular-nums' as const] },
+  evidenceValueAccent: { fontSize: 13, fontWeight: '700' as const, color: c.labelPrimary, fontVariant: ['tabular-nums' as const] },
 
   rowFooter: {
     flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const,
   },
   ruleChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.fill, borderRadius: 6,
+    backgroundColor: c.fill, borderRadius: 6,
     paddingHorizontal: 6, paddingVertical: 2,
   },
-  ruleChipText: { fontSize: 10, color: colors.labelSecondary, fontFamily: 'monospace' },
+  ruleChipText: { fontSize: 10, color: c.labelSecondary, fontFamily: 'monospace' },
   outcomeChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.tintTeal, borderRadius: 6,
+    backgroundColor: c.tintTeal, borderRadius: 6,
     paddingHorizontal: 6, paddingVertical: 2,
   },
   memoryChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.tintBlue, borderRadius: 6,
+    backgroundColor: c.tintBlue, borderRadius: 6,
     paddingHorizontal: 6, paddingVertical: 2,
   },
   outcomeChipText: { fontSize: 10, fontWeight: '600' as const },
-  rowTime: { marginLeft: 'auto', fontSize: 11, color: colors.labelTertiary },
-});
+  rowTime: { marginLeft: 'auto', fontSize: 11, color: c.labelTertiary },
+  });
+}
