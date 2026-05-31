@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
+import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 export default function NetworkBanner() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { isOnline } = useNetworkStatus();
 
   if (isOnline) return null;
@@ -17,18 +20,20 @@ export default function NetworkBanner() {
   );
 }
 
-const styles = StyleSheet.create({
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.labelSecondary,
-    paddingVertical: spacing.xs + 2,
-  },
-  text: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  } as TextStyle,
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    banner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      backgroundColor: c.labelSecondary,
+      paddingVertical: spacing.xs + 2,
+    },
+    text: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: '#fff',
+    } as TextStyle,
+  });
+}
