@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, spacing } from '../../constants/theme';
+import { radii, spacing } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface Props {
   index: number;
@@ -22,6 +23,9 @@ export default function SleepExperimentCard({
   onDone,
   onSkip,
 }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -35,7 +39,7 @@ export default function SleepExperimentCard({
           <Ionicons
             name={state === 'skipped' ? 'remove-circle-outline' : 'checkmark-circle'}
             size={14}
-            color={state === 'skipped' ? colors.labelTertiary : '#0A8F8F'}
+            color={state === 'skipped' ? c.labelTertiary : '#0A8F8F'}
           />
           <Text style={txt.status}>
             {state === 'queued' ? '已加入行动，明天复盘效果' : state === 'done' ? '已标记完成' : '已标记不适用'}
@@ -43,9 +47,9 @@ export default function SleepExperimentCard({
         </View>
       ) : null}
       <View style={styles.btnRow}>
-        <ExperimentButton label="今晚尝试" icon="moon-outline" primary disabled={isSaving} onPress={onTryTonight} loading={isSaving} />
-        <ExperimentButton label="已完成" icon="checkmark-outline" disabled={isSaving} onPress={onDone} />
-        <ExperimentButton label="不适用" icon="close-outline" disabled={isSaving} onPress={onSkip} />
+        <ExperimentButton label="今晚尝试" icon="moon-outline" primary disabled={isSaving} onPress={onTryTonight} loading={isSaving} brand={c.brand} txt={txt} styles={styles} />
+        <ExperimentButton label="已完成" icon="checkmark-outline" disabled={isSaving} onPress={onDone} brand={c.brand} txt={txt} styles={styles} />
+        <ExperimentButton label="不适用" icon="close-outline" disabled={isSaving} onPress={onSkip} brand={c.brand} txt={txt} styles={styles} />
       </View>
     </View>
   );
@@ -58,6 +62,9 @@ function ExperimentButton({
   disabled,
   loading,
   onPress,
+  brand,
+  txt,
+  styles,
 }: {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -65,6 +72,9 @@ function ExperimentButton({
   disabled?: boolean;
   loading?: boolean;
   onPress: () => void;
+  brand: string;
+  txt: ReturnType<typeof createTxt>;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <Pressable
@@ -82,52 +92,56 @@ function ExperimentButton({
       {loading ? (
         <ActivityIndicator size="small" color="#fff" />
       ) : (
-        <Ionicons name={icon} size={13} color={primary ? '#fff' : colors.brand} />
+        <Ionicons name={icon} size={13} color={primary ? '#fff' : brand} />
       )}
       <Text style={[txt.button, primary && txt.buttonPrimary]}>{label}</Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: radii.md,
-    backgroundColor: colors.bgPrimary,
-    padding: spacing.md,
-    gap: 10,
-  },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  indexBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  btnRow: { flexDirection: 'row', gap: 8 },
-  button: {
-    flex: 1,
-    minHeight: 34,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.brandLight,
-    backgroundColor: colors.bgCard,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  buttonPrimary: { backgroundColor: colors.brand, borderColor: colors.brand },
-  buttonPressed: { opacity: 0.82 },
-  buttonDisabled: { opacity: 0.55 },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    card: {
+      borderRadius: radii.md,
+      backgroundColor: c.bgPrimary,
+      padding: spacing.md,
+      gap: 10,
+    },
+    header: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    indexBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: c.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    btnRow: { flexDirection: 'row', gap: 8 },
+    button: {
+      flex: 1,
+      minHeight: 34,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      borderColor: c.brandLight,
+      backgroundColor: c.bgCard,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    },
+    buttonPrimary: { backgroundColor: c.brand, borderColor: c.brand },
+    buttonPressed: { opacity: 0.82 },
+    buttonDisabled: { opacity: 0.55 },
+  });
+}
 
-const txt = {
-  index: { fontSize: 12, fontWeight: '800', color: '#fff' } as TextStyle,
-  action: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  status: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
-  button: { fontSize: 12, fontWeight: '700', color: colors.brand } as TextStyle,
-  buttonPrimary: { color: '#fff' } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    index: { fontSize: 12, fontWeight: '800', color: '#fff' } as TextStyle,
+    action: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+    status: { fontSize: 12, color: c.labelSecondary } as TextStyle,
+    button: { fontSize: 12, fontWeight: '700', color: c.brand } as TextStyle,
+    buttonPrimary: { color: '#fff' } as TextStyle,
+  };
+}

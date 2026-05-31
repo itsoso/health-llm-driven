@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, LayoutChangeEvent, TextStyle } from 'react-native';
 import Svg, { Line, Polyline, Rect, G, Text as SvgText, Circle } from 'react-native-svg';
-import { colors, spacing } from '../../constants/theme';
+import { spacing } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import type { SpO2Point } from '../../services/spo2';
 
 interface Props {
@@ -63,6 +64,9 @@ function timeToMinutes(t: string): number {
 }
 
 export default function SpO2NightChart({ data, height = 180 }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const [chartWidth, setChartWidth] = useState(Dimensions.get('window').width - 32);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
@@ -147,11 +151,11 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
             <G key={v}>
               <Line
                 x1={PAD.left} y1={toY(v)} x2={chartWidth - PAD.right} y2={toY(v)}
-                stroke={v === 90 ? '#FF453A40' : v === 95 ? '#FF9F0A30' : colors.separator}
+                stroke={v === 90 ? '#FF453A40' : v === 95 ? '#FF9F0A30' : c.separator}
                 strokeWidth={v === 90 || v === 95 ? 1 : 0.5}
                 strokeDasharray={v === 90 || v === 95 ? '4,3' : undefined}
               />
-              <SvgText x={PAD.left - 6} y={toY(v) + 4} textAnchor="end" fontSize={10} fill={colors.labelTertiary}>
+              <SvgText x={PAD.left - 6} y={toY(v) + 4} textAnchor="end" fontSize={10} fill={c.labelTertiary}>
                 {v}
               </SvgText>
             </G>
@@ -183,7 +187,7 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
 
           {/* X labels */}
           {xLabels.map((t, i) => (
-            <SvgText key={i} x={toX(t)} y={height - 6} textAnchor="middle" fontSize={10} fill={colors.labelTertiary}>
+            <SvgText key={i} x={toX(t)} y={height - 6} textAnchor="middle" fontSize={10} fill={c.labelTertiary}>
               {t}
             </SvgText>
           ))}
@@ -227,21 +231,25 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { marginTop: 4 },
-  tooltip: {
-    position: 'absolute', top: 0, right: 12,
-    flexDirection: 'row', alignItems: 'baseline', gap: 6,
-    backgroundColor: colors.bgCard, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
-    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-  },
-  legend: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 4 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 6, height: 6, borderRadius: 3 },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: { marginTop: 4 },
+    tooltip: {
+      position: 'absolute', top: 0, right: 12,
+      flexDirection: 'row', alignItems: 'baseline', gap: 6,
+      backgroundColor: c.bgCard, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
+      shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    },
+    legend: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 4 },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    legendDot: { width: 6, height: 6, borderRadius: 3 },
+  });
+}
 
-const txt = {
-  tooltipTime: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
-  tooltipValue: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  legendText: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    tooltipTime: { fontSize: 12, color: c.labelSecondary } as TextStyle,
+    tooltipValue: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+    legendText: { fontSize: 10, color: c.labelTertiary } as TextStyle,
+  };
+}
