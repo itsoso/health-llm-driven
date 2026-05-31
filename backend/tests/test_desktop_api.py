@@ -87,14 +87,14 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     ))
     db.add(DietRecord(
         user_id=user.id,
-        record_date=date(2026, 5, 1),
+        record_date=date.today() - timedelta(days=29),
         meal_type="dinner",
         food_items="牛肉面",
         calories=650,
     ))
     db.add(WaterIntake(
         user_id=user.id,
-        record_date=date(2026, 5, 1),
+        record_date=date.today() - timedelta(days=29),
         amount_ml=700,
         drink_type="water",
     ))

@@ -132,6 +132,42 @@ def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_us
     assert any(s["key"] == "exam" for s in payload["suggestions"])
 
 
+def test_endpoint_surfaces_overdue_lab_recheck_as_chip(client, db, auth_user_and_headers):
+    """#4b 增量: chips 复用 push 侧的 _detect_lab_overdue —— 超期未复查的关键化验会作为
+    "该复查" chip 出现 (chips↔push 双向统一: push 消费 chip 引擎, chip 消费 push 检测)。"""
+    from app.models.medical_exam import MedicalExam, MedicalExamItem
+
+    user, headers = auth_user_and_headers
+
+    # LDL 复查间隔 180 天;200 天前的一次 → 已超期
+    exam = MedicalExam(
+        user_id=user.id,
+        exam_date=date.today() - timedelta(days=200),
+        exam_type="blood",
+    )
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+    db.add(MedicalExamItem(
+        exam_id=exam.id,
+        category="lipid",
+        item_name="LDL-C",
+        item_code="LDL",
+        value=4.0,
+        unit="mmol/L",
+        source="manual",
+    ))
+    db.commit()
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+
+    assert r.status_code == 200
+    suggestions = r.json()["suggestions"]
+    texts = [s["text"] for s in suggestions]
+    assert any("LDL" in t and "复查" in t for t in texts)
+    assert any(s["key"] == "lab_recheck" for s in suggestions)
+
+
 def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and_headers, monkeypatch):
     from app.models.daily_health import WaterIntake
     from app.models.goal import Goal, GoalPeriod, GoalStatus, GoalType
