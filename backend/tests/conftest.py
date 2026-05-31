@@ -26,6 +26,20 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
 from main import app  # noqa: E402 - env vars and JSONB SQLite compiler must be registered first
 
 
+# ── Tests must not share a real Redis ────────────────────────────────────────
+# Caches like the Twin cache (app/twin/cache.py) are keyed by user_id, and every
+# test's first user gets id=1 in its fresh in-memory DB. If a real Redis happens to
+# be running on the host (common on dev machines), a Twin cached by one test (e.g.
+# with no genetics) leaks into the next via build_twin(use_cache=True) → tests that
+# read the Twin (support_status / evidence_refs) flake nondeterministically (60s
+# TTL). CI has no Redis so it never sees this, but `redis-cli ping` on a dev box
+# does. CLAUDE.md states tests don't need Redis; enforce it so caching is a no-op.
+import app.utils.redis_cache as _redis_cache  # noqa: E402
+
+_redis_cache._redis_client = None
+_redis_cache.get_redis_client = lambda: None
+
+
 @pytest.fixture(scope="function")
 def db():
     """创建测试数据库.
