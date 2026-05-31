@@ -94,6 +94,17 @@ export const typography = {
   metricSmall: { fontSize: 20, fontWeight: '700' as const, lineHeight: 24, fontVariant: ['tabular-nums'] as const },
 } as const;
 
+// ── Dynamic Type 上限 ───────────────────────────────────
+// 统一 maxFontSizeMultiplier (此前散落 1.18 / 1.3 / 1.4 / 无, 见 docs/mobile-ui-audit.md).
+// default: 正文/标签放宽到 1.3 (照顾大字体用户);
+// metric: 数字密集卡片 (步数/卡路里等) 收 1.18, 防止 tabular 数字撑破布局;
+// compact: 极紧凑的 chip/badge 收 1.15.
+export const FONT_SIZE_CAPS = {
+  default: 1.3,
+  metric: 1.18,
+  compact: 1.15,
+} as const;
+
 // ── Spacing ─────────────────────────────────────────────
 
 export const spacing = {
