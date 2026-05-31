@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextStyle, RefreshControl,
 } from 'react-native';
@@ -12,7 +12,8 @@ import {
   getConsultation, updateConsultationItem, verifyPredictions,
   type ConsultationItem, type ConsultationPredictionVerification,
 } from '../../services/consultations';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const ITEM_TYPE_LABEL: Record<string, string> = {
   hypothesis: '🧠 假设',
@@ -65,6 +66,8 @@ function getNextStatus(itemType: string, current: string): string | null {
 }
 
 function StatusPill({ status }: { status: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const bg =
     status === 'completed' || status === 'verified' || status === 'met' ? '#D1FAE5' :
     status === 'in_progress' || status === 'active' ? '#DBEAFE' :
@@ -77,7 +80,7 @@ function StatusPill({ status }: { status: string }) {
     '#4B5563';
   return (
     <View style={[styles.statusPill, { backgroundColor: bg }]}>
-      <Text style={[txt.statusText, { color: fg }]}>{status}</Text>
+      <Text style={[styles.statusText, { color: fg }]}>{status}</Text>
     </View>
   );
 }
@@ -93,54 +96,57 @@ function ItemCard({
   onAdvance: () => void;
   onConfirmVerification: () => void;
 }) {
-  const c = ITEM_TYPE_COLOR[item.item_type] || ITEM_TYPE_COLOR.note;
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const mdStyle = useMemo(() => createMdStyle(c), [c]);
+  const typeColor = ITEM_TYPE_COLOR[item.item_type] || ITEM_TYPE_COLOR.note;
   const canAdvance = getNextStatus(item.item_type, item.status);
   return (
-    <View style={[styles.itemCard, { borderLeftColor: c.accent }]}>
+    <View style={[styles.itemCard, { borderLeftColor: typeColor.accent }]}>
       <View style={styles.itemHeader}>
-        <View style={[styles.itemTypeTag, { backgroundColor: c.bg }]}>
-          <Text style={[txt.itemTypeText, { color: c.fg }]}>
+        <View style={[styles.itemTypeTag, { backgroundColor: typeColor.bg }]}>
+          <Text style={[styles.itemTypeText, { color: typeColor.fg }]}>
             {ITEM_TYPE_LABEL[item.item_type]}
             {item.item_code ? ` · ${item.item_code}` : ''}
           </Text>
         </View>
         <StatusPill status={item.status} />
       </View>
-      <Text style={txt.itemTitle}>{item.title}</Text>
+      <Text style={styles.itemTitle}>{item.title}</Text>
       {item.content_markdown ? (
         <Markdown style={mdStyle}>{item.content_markdown}</Markdown>
       ) : null}
 
       {item.due_date ? (
-        <Text style={txt.itemMeta}>截止 {item.due_date}</Text>
+        <Text style={styles.itemMeta}>截止 {item.due_date}</Text>
       ) : null}
       {item.outcome ? (
-        <Text style={[txt.itemMeta, { color: colors.labelSecondary }]}>结果：{item.outcome}</Text>
+        <Text style={[styles.itemMeta, { color: c.labelSecondary }]}>结果：{item.outcome}</Text>
       ) : null}
       {item.actual_value ? (
-        <Text style={[txt.itemMeta, { color: colors.labelSecondary }]}>实测：{item.actual_value}</Text>
+        <Text style={[styles.itemMeta, { color: c.labelSecondary }]}>实测：{item.actual_value}</Text>
       ) : null}
 
       {verification ? (
         <View style={styles.verificationBox}>
-          <Text style={txt.verificationTitle}>验证建议：{verification.suggested_status}</Text>
-          <Text style={txt.verificationText}>
+          <Text style={styles.verificationTitle}>验证建议：{verification.suggested_status}</Text>
+          <Text style={styles.verificationText}>
             {verification.metric_name ? `${verification.metric_name} ` : ''}
             {verification.actual_value != null ? `实测 ${verification.actual_value}` : '暂无实测数据'}
             {verification.target ? ` · 目标 ${verification.target}` : ''}
           </Text>
-          {verification.note ? <Text style={txt.verificationNote}>{verification.note}</Text> : null}
+          {verification.note ? <Text style={styles.verificationNote}>{verification.note}</Text> : null}
           <TouchableOpacity style={styles.confirmBtn} onPress={onConfirmVerification} activeOpacity={0.75}>
             <Ionicons name="checkmark-done-outline" size={14} color="#fff" />
-            <Text style={txt.confirmText}>确认写入结果</Text>
+            <Text style={styles.confirmText}>确认写入结果</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
       {canAdvance ? (
         <TouchableOpacity style={styles.advanceBtn} onPress={onAdvance} activeOpacity={0.75}>
-          <Ionicons name="checkmark-circle-outline" size={14} color={c.accent} />
-          <Text style={[txt.advanceText, { color: c.accent }]}>
+          <Ionicons name="checkmark-circle-outline" size={14} color={typeColor.accent} />
+          <Text style={[styles.advanceText, { color: typeColor.accent }]}>
             标记为 {STATUS_LABEL_CN[canAdvance] ?? canAdvance}
           </Text>
         </TouchableOpacity>
@@ -150,6 +156,9 @@ function ItemCard({
 }
 
 export default function ConsultationDetailScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const mdStyle = useMemo(() => createMdStyle(c), [c]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const consultationId = Number(id);
   const router = useRouter();
@@ -211,7 +220,7 @@ export default function ConsultationDetailScreen() {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
         <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.brand} />
+          <ActivityIndicator size="large" color={c.brand} />
         </View>
       </SafeAreaView>
     );
@@ -222,15 +231,15 @@ export default function ConsultationDetailScreen() {
       <SafeAreaView style={styles.screen} edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color={colors.labelPrimary} />
+            <Ionicons name="chevron-back" size={22} color={c.labelPrimary} />
           </TouchableOpacity>
-          <Text style={txt.headerTitle}>咨询详情</Text>
+          <Text style={styles.headerTitle}>咨询详情</Text>
           <View style={styles.backBtn} />
         </View>
         <View style={styles.empty}>
-          <Text style={txt.emptyText}>加载失败</Text>
+          <Text style={styles.emptyText}>加载失败</Text>
           <TouchableOpacity onPress={() => refetch()} style={styles.retry}>
-            <Text style={txt.retryText}>重试</Text>
+            <Text style={styles.retryText}>重试</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -244,49 +253,49 @@ export default function ConsultationDetailScreen() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={22} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={22} color={c.labelPrimary} />
         </TouchableOpacity>
-        <Text style={txt.headerTitle} numberOfLines={1}>{data.title}</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>{data.title}</Text>
         <TouchableOpacity onPress={handleVerify} style={styles.backBtn} hitSlop={8} disabled={verifying}>
           {verifying
-            ? <ActivityIndicator size="small" color={colors.brand} />
-            : <Ionicons name="refresh" size={22} color={colors.brand} />}
+            ? <ActivityIndicator size="small" color={c.brand} />
+            : <Ionicons name="refresh" size={22} color={c.brand} />}
         </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControlShim refreshing={isRefetching} onRefresh={refetch} />
+          <RefreshControlShim refreshing={isRefetching} onRefresh={refetch} c={c} />
         }
       >
         <View style={styles.metaBox}>
-          <Text style={txt.metaItem}>版本 v{data.version}</Text>
-          <Text style={txt.metaItem}>· {data.consultation_type}</Text>
-          <Text style={txt.metaItem}>· {data.status}</Text>
+          <Text style={styles.metaItem}>版本 v{data.version}</Text>
+          <Text style={styles.metaItem}>· {data.consultation_type}</Text>
+          <Text style={styles.metaItem}>· {data.status}</Text>
           {data.verification_scheduled_at ? (
-            <Text style={txt.metaItem}>· 下次复盘 {data.verification_scheduled_at}</Text>
+            <Text style={styles.metaItem}>· 下次复盘 {data.verification_scheduled_at}</Text>
           ) : null}
         </View>
 
         {data.topic ? (
           <View style={styles.section}>
-            <Text style={txt.sectionLabel}>话题</Text>
-            <Text style={txt.body}>{data.topic}</Text>
+            <Text style={styles.sectionLabel}>话题</Text>
+            <Text style={styles.body}>{data.topic}</Text>
           </View>
         ) : null}
 
         {data.chief_complaint ? (
           <View style={styles.section}>
-            <Text style={txt.sectionLabel}>主诉</Text>
-            <Text style={txt.body}>{data.chief_complaint}</Text>
+            <Text style={styles.sectionLabel}>主诉</Text>
+            <Text style={styles.body}>{data.chief_complaint}</Text>
           </View>
         ) : null}
 
         {data.summary ? (
           <View style={styles.section}>
-            <Text style={txt.sectionLabel}>摘要</Text>
-            <Text style={txt.body}>{data.summary}</Text>
+            <Text style={styles.sectionLabel}>摘要</Text>
+            <Text style={styles.body}>{data.summary}</Text>
           </View>
         ) : null}
 
@@ -301,7 +310,7 @@ export default function ConsultationDetailScreen() {
           ) : (
             <Ionicons name="flash" size={16} color="#fff" />
           )}
-          <Text style={txt.verifyBtnText}>
+          <Text style={styles.verifyBtnText}>
             {verifying ? '验证中...' : '一键验证到期预测'}
           </Text>
         </TouchableOpacity>
@@ -311,7 +320,7 @@ export default function ConsultationDetailScreen() {
           if (list.length === 0) return null;
           return (
             <View key={t} style={styles.section}>
-              <Text style={txt.sectionLabel}>{ITEM_TYPE_LABEL[t]} · {list.length}</Text>
+              <Text style={styles.sectionLabel}>{ITEM_TYPE_LABEL[t]} · {list.length}</Text>
               <View style={{ gap: spacing.sm }}>
                 {list.map((item) => (
                   <ItemCard
@@ -348,7 +357,7 @@ export default function ConsultationDetailScreen() {
         })}
 
         <View style={styles.section}>
-          <Text style={txt.sectionLabel}>完整分析</Text>
+          <Text style={styles.sectionLabel}>完整分析</Text>
           <View style={styles.markdownCard}>
             <Markdown style={mdStyle}>{data.rationale_markdown}</Markdown>
           </View>
@@ -360,8 +369,8 @@ export default function ConsultationDetailScreen() {
   );
 }
 
-function RefreshControlShim(props: { refreshing: boolean; onRefresh: () => void }) {
-  return <RefreshControl refreshing={props.refreshing} onRefresh={props.onRefresh} tintColor={colors.brand} />;
+function RefreshControlShim(props: { refreshing: boolean; onRefresh: () => void; c: ColorPalette }) {
+  return <RefreshControl refreshing={props.refreshing} onRefresh={props.onRefresh} tintColor={props.c.brand} />;
 }
 
 function groupByType(items: ConsultationItem[]): Record<string, ConsultationItem[]> {
@@ -375,91 +384,92 @@ function groupByType(items: ConsultationItem[]): Record<string, ConsultationItem
   return out;
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bgPrimary },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.bgPrimary,
-  },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
-  retry: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: colors.brand, borderRadius: radii.md },
-  scrollContent: { padding: spacing.lg, gap: spacing.lg },
-  metaBox: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  section: { gap: spacing.sm },
-  markdownCard: {
-    backgroundColor: colors.bgCard, borderRadius: radii.lg, padding: spacing.md, ...shadows.subtle,
-  },
-  verifyBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: colors.brand, borderRadius: radii.md,
-    paddingVertical: spacing.md,
-  },
-  itemCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    borderLeftWidth: 3,
-    padding: spacing.md,
-    gap: 6,
-    ...shadows.subtle,
-  },
-  itemHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  itemTypeTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  advanceBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    alignSelf: 'flex-start', marginTop: 4,
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: radii.sm, borderWidth: 1, borderColor: colors.separator,
-  },
-  verificationBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    gap: 4,
-    marginTop: 4,
-  },
-  confirmBtn: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: colors.brand,
-    borderRadius: radii.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginTop: 4,
-  },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: c.bgPrimary },
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+      backgroundColor: c.bgPrimary,
+    },
+    backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
+    retry: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: c.brand, borderRadius: radii.md },
+    scrollContent: { padding: spacing.lg, gap: spacing.lg },
+    metaBox: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    section: { gap: spacing.sm },
+    markdownCard: {
+      backgroundColor: c.bgCard, borderRadius: radii.lg, padding: spacing.md, ...shadows.subtle,
+    },
+    verifyBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      backgroundColor: c.brand, borderRadius: radii.md,
+      paddingVertical: spacing.md,
+    },
+    itemCard: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.lg,
+      borderLeftWidth: 3,
+      padding: spacing.md,
+      gap: 6,
+      ...shadows.subtle,
+    },
+    itemHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    itemTypeTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+    statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+    advanceBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      alignSelf: 'flex-start', marginTop: 4,
+      paddingHorizontal: 10, paddingVertical: 4,
+      borderRadius: radii.sm, borderWidth: 1, borderColor: c.separator,
+    },
+    verificationBox: {
+      backgroundColor: '#F8FAFC',
+      borderRadius: radii.md,
+      padding: spacing.sm,
+      gap: 4,
+      marginTop: 4,
+    },
+    confirmBtn: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: c.brand,
+      borderRadius: radii.sm,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      marginTop: 4,
+    },
+    headerTitle: { fontSize: 17, fontWeight: '700', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+    metaItem: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+    sectionLabel: { fontSize: 12, fontWeight: '700', color: c.labelSecondary, textTransform: 'uppercase' } as TextStyle,
+    body: { fontSize: 14, color: c.labelPrimary, lineHeight: 20 } as TextStyle,
+    itemTypeText: { fontSize: 10, fontWeight: '700' } as TextStyle,
+    itemTitle: { fontSize: 14, fontWeight: '700', color: c.labelPrimary, marginTop: 2 } as TextStyle,
+    itemMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
+    statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' } as TextStyle,
+    advanceText: { fontSize: 11, fontWeight: '600' } as TextStyle,
+    verificationTitle: { fontSize: 12, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+    verificationText: { fontSize: 12, color: c.labelSecondary, lineHeight: 17 } as TextStyle,
+    verificationNote: { fontSize: 11, color: c.labelTertiary, lineHeight: 16 } as TextStyle,
+    confirmText: { fontSize: 12, fontWeight: '700', color: '#fff' } as TextStyle,
+    verifyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
+    emptyText: { fontSize: 13, color: c.labelTertiary } as TextStyle,
+    retryText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
+  });
+}
 
-const txt = {
-  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  metaItem: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: colors.labelSecondary, textTransform: 'uppercase' } as TextStyle,
-  body: { fontSize: 14, color: colors.labelPrimary, lineHeight: 20 } as TextStyle,
-  itemTypeText: { fontSize: 10, fontWeight: '700' } as TextStyle,
-  itemTitle: { fontSize: 14, fontWeight: '700', color: colors.labelPrimary, marginTop: 2 } as TextStyle,
-  itemMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
-  statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' } as TextStyle,
-  advanceText: { fontSize: 11, fontWeight: '600' } as TextStyle,
-  verificationTitle: { fontSize: 12, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  verificationText: { fontSize: 12, color: colors.labelSecondary, lineHeight: 17 } as TextStyle,
-  verificationNote: { fontSize: 11, color: colors.labelTertiary, lineHeight: 16 } as TextStyle,
-  confirmText: { fontSize: 12, fontWeight: '700', color: '#fff' } as TextStyle,
-  verifyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
-  emptyText: { fontSize: 13, color: colors.labelTertiary } as TextStyle,
-  retryText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-};
-
-const mdStyle: any = {
-  body: { color: colors.labelPrimary, fontSize: 13, lineHeight: 20 },
-  heading1: { fontSize: 17, fontWeight: '700', marginTop: 8, marginBottom: 4 },
-  heading2: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 4 },
-  heading3: { fontSize: 13, fontWeight: '700', marginTop: 6, marginBottom: 3 },
-  strong: { fontWeight: '700' },
-  em: { fontStyle: 'italic' },
-  bullet_list: { marginVertical: 4 },
-  list_item: { marginVertical: 2 },
-};
+function createMdStyle(c: ColorPalette): any {
+  return {
+    body: { color: c.labelPrimary, fontSize: 13, lineHeight: 20 },
+    heading1: { fontSize: 17, fontWeight: '700', marginTop: 8, marginBottom: 4 },
+    heading2: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 4 },
+    heading3: { fontSize: 13, fontWeight: '700', marginTop: 6, marginBottom: 3 },
+    strong: { fontWeight: '700' },
+    em: { fontStyle: 'italic' },
+    bullet_list: { marginVertical: 4 },
+    list_item: { marginVertical: 2 },
+  };
+}
