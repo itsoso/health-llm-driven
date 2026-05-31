@@ -170,6 +170,35 @@ def compute_conversation_suggestions(
     ]
 
 
+def compute_salient_signals(
+    db: Session,
+    user_id: int,
+    *,
+    limit: int = 8,
+) -> list[SuggestionCandidate]:
+    """Shared "what matters now" engine — ranked health-state signals (priority desc).
+
+    This is the SINGLE source of salience, consumed by both surfaces that ask
+    "what's most important for this user right now":
+      - reactive chips: `compute_conversation_suggestion_cards` (this module)
+      - proactive push: `open_loop_manager._detect_salient_state`
+
+    Both run the same generators (`_collect_signals` → `_build_candidates`); they
+    differ only in PRESENTATION (chips do per-visit weighted-random + defaults;
+    push takes top criticals). Returning the raw ranked candidates here lets each
+    caller apply its own selection without re-deriving thresholds.
+
+    Critical signals carry priority >= 100 (readiness crash, acute illness, BP
+    critical, ACWR danger, hazardous AQI). Fail-soft: returns [] on any error.
+    """
+    try:
+        candidates = _build_candidates(_collect_signals(db, user_id))
+    except Exception:  # noqa: BLE001
+        return []
+    candidates.sort(key=lambda c: -c.priority)
+    return candidates[:limit] if limit else candidates
+
+
 def _default_cards(limit: int) -> list[SuggestionCandidate]:
     return [
         SuggestionCandidate(_DEFAULT_PRIORITY, text, "default")

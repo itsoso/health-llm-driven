@@ -1395,15 +1395,24 @@ struct WorkspaceOverviewView: View {
             return summary.metrics
         }
         let days = dataRange == "30d" ? 30 : 7
-        let dietCalories = days == 30
-            ? (recordsSummary.diet?.last30Calories ?? recordsSummary.diet?.last7Calories ?? recordsSummary.diet?.todayCalories ?? 0)
-            : (recordsSummary.diet?.last7Calories ?? recordsSummary.diet?.last30Calories ?? recordsSummary.diet?.todayCalories ?? 0)
-        let waterMl = days == 30
-            ? (recordsSummary.water?.last30TotalMl ?? recordsSummary.water?.last7TotalMl ?? recordsSummary.water?.todayTotalMl ?? 0)
-            : (recordsSummary.water?.last7TotalMl ?? recordsSummary.water?.last30TotalMl ?? recordsSummary.water?.todayTotalMl ?? 0)
-        let supplements = days == 30
-            ? (recordsSummary.supplements?.last30Count ?? recordsSummary.supplements?.last7Count ?? recordsSummary.supplements?.todayCount ?? 0)
-            : (recordsSummary.supplements?.last7Count ?? recordsSummary.supplements?.last30Count ?? recordsSummary.supplements?.todayCount ?? 0)
+        // Plain if/else over single `??` chains — inline ternary-over-long-?? trips
+        // the CI runner's stricter type-checker ("unable to type-check in
+        // reasonable time"). See DesktopDashboardPresentation.rangeMetrics.
+        let diet = recordsSummary.diet
+        let water = recordsSummary.water
+        let supp = recordsSummary.supplements
+        let dietCalories: Double
+        let waterMl: Int
+        let supplements: Int
+        if days == 30 {
+            dietCalories = diet?.last30Calories ?? diet?.last7Calories ?? diet?.todayCalories ?? 0
+            waterMl = water?.last30TotalMl ?? water?.last7TotalMl ?? water?.todayTotalMl ?? 0
+            supplements = supp?.last30Count ?? supp?.last7Count ?? supp?.todayCount ?? 0
+        } else {
+            dietCalories = diet?.last7Calories ?? diet?.last30Calories ?? diet?.todayCalories ?? 0
+            waterMl = water?.last7TotalMl ?? water?.last30TotalMl ?? water?.todayTotalMl ?? 0
+            supplements = supp?.last7Count ?? supp?.last30Count ?? supp?.todayCount ?? 0
+        }
         return [
             .init(id: "diet_calories", title: days == 30 ? "Diet 30d" : "Diet 7d", value: "\(formatCompactNumber(dietCalories)) kcal"),
             .init(id: "water_ml", title: days == 30 ? "Water 30d" : "Water 7d", value: "\(formatCompactNumber(Double(waterMl))) ml"),
