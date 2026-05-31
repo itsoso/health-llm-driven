@@ -307,6 +307,45 @@ def _detect_plan_deviation(db, user_id: int) -> List[OpenLoop]:
     return loops
 
 
+# 这些 critical salience key 当前没有任何 push 路径覆盖(SafetyGuardian 规则不含 readiness/
+# 恢复状态;notifications 只用 readiness 做"抑制运动催促"的门控,不推送)。所以可安全转成
+# proactive push,不会和安全告警重复。ACWR / BP / AQI 故意排除 —— 已被 SafetyGuardian
+# (training_load / vitals)或环境告警覆盖,再推会双发。
+_PUSH_SAFE_SALIENCE_KEYS = {
+    "readiness": ("health://digital-twin", "今日恢复"),
+    "acute_illness": ("health://digital-twin", "今日休息"),
+}
+
+
+def _detect_salient_state(db, user_id: int) -> List[OpenLoop]:
+    """急性恢复状态 critical(恢复评分骤降 / 急性病症)→ 主动推送。
+
+    复用 conversation_starters 的 salience 引擎(与 chips 同源,统一"此刻什么最重要"
+    的判断),只取当前 push 链路尚未覆盖的 critical 信号,避免和 SafetyGuardian 重复。
+    """
+    from app.services.conversation_starters import compute_salient_signals
+
+    loops: List[OpenLoop] = []
+    for cand in compute_salient_signals(db, user_id, limit=8):
+        if cand.priority < 100:  # 仅 critical
+            continue
+        mapped = _PUSH_SAFE_SALIENCE_KEYS.get(cand.key)
+        if not mapped:
+            continue
+        deeplink, label = mapped
+        loops.append(OpenLoop(
+            user_id=user_id,
+            kind="salient_state",
+            title=f"{label}需要关注",
+            body=cand.text[:100],
+            score=min(cand.priority, 100),
+            deeplink=deeplink,
+            signal_key=cand.key,  # 同 key 7 天内不重复推
+            metadata={"salience_key": cand.key, "priority": cand.priority},
+        ))
+    return loops
+
+
 # ────────────────────── 主入口 ──────────────────────
 
 
@@ -319,6 +358,7 @@ def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
         _detect_sync_stale,
         _detect_trend_anomaly,
         _detect_plan_deviation,
+        _detect_salient_state,
     ):
         try:
             loops.extend(detector(db, user_id) or [])
