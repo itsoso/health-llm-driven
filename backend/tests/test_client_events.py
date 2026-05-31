@@ -93,7 +93,12 @@ def test_client_events_stats_empty(db):
 
     since = datetime.now(timezone.utc) - timedelta(days=7)
     stats = client_events_stats(db, since, user_id=None)
-    assert stats == {"total": 0, "by_event": {}}
+    assert stats == {
+        "total": 0,
+        "by_event": {},
+        "starter_ctr": {},
+        "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
+    }
 
 
 # ─────────────── Phase 0.4: 5 种新事件白名单 ───────────────
