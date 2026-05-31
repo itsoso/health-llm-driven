@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radii, shadows } from '../../constants/theme';
+import { shadows } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface Props {
   onPhoto: () => void;
@@ -10,6 +11,8 @@ interface Props {
 }
 
 export default function DietFAB({ onPhoto, onText }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [open, setOpen] = useState(false);
   const anim = React.useRef(new Animated.Value(0)).current;
 
@@ -27,15 +30,15 @@ export default function DietFAB({ onPhoto, onText }: Props) {
   return (
     <View style={styles.container} pointerEvents="box-none">
       <Animated.View style={[styles.subFab, { transform: [{ translateY: textY }], opacity: anim }]}>
-        <TouchableOpacity style={[styles.subBtn, { backgroundColor: colors.tintAmber }]}
+        <TouchableOpacity style={[styles.subBtn, { backgroundColor: c.tintAmber }]}
           onPress={() => { toggle(); onText(); }} activeOpacity={0.7}>
-          <Ionicons name="text-outline" size={20} color={colors.amber} />
+          <Ionicons name="text-outline" size={20} color={c.amber} />
         </TouchableOpacity>
       </Animated.View>
       <Animated.View style={[styles.subFab, { transform: [{ translateY: photoY }], opacity: anim }]}>
-        <TouchableOpacity style={[styles.subBtn, { backgroundColor: colors.tintGreen }]}
+        <TouchableOpacity style={[styles.subBtn, { backgroundColor: c.tintGreen }]}
           onPress={() => { toggle(); onPhoto(); }} activeOpacity={0.7}>
-          <Ionicons name="camera-outline" size={20} color={colors.green} />
+          <Ionicons name="camera-outline" size={20} color={c.green} />
         </TouchableOpacity>
       </Animated.View>
       <TouchableOpacity style={styles.mainFab} onPress={toggle} activeOpacity={0.8}>
@@ -47,17 +50,19 @@ export default function DietFAB({ onPhoto, onText }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { position: 'absolute', bottom: 110, right: 20, alignItems: 'center' },
-  mainFab: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center',
-    ...shadows.heavy,
-  },
-  subFab: { position: 'absolute', bottom: 0 },
-  subBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center',
-    ...shadows.medium,
-  },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: { position: 'absolute', bottom: 110, right: 20, alignItems: 'center' },
+    mainFab: {
+      width: 56, height: 56, borderRadius: 28,
+      backgroundColor: c.brand, alignItems: 'center', justifyContent: 'center',
+      ...shadows.heavy,
+    },
+    subFab: { position: 'absolute', bottom: 0 },
+    subBtn: {
+      width: 44, height: 44, borderRadius: 22,
+      alignItems: 'center', justifyContent: 'center',
+      ...shadows.medium,
+    },
+  });
+}
