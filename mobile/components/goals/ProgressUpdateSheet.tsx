@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import type { GoalResponse } from '../../services/goals';
 
 interface Props {
@@ -13,6 +13,9 @@ interface Props {
 }
 
 export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+
   const [value, setValue] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -32,12 +35,12 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.handle} />
-          <Text style={txt.title}>更新进度</Text>
-          {goal && <Text style={txt.goalName}>{goal.title} ({goal.current_value ?? 0} → ? {goal.target_unit || ''})</Text>}
+          <Text style={styles.title}>更新进度</Text>
+          {goal && <Text style={styles.goalName}>{goal.title} ({goal.current_value ?? 0} → ? {goal.target_unit || ''})</Text>}
           <TextInput
             style={styles.input}
             placeholder={`输入新的数值 (${goal?.target_unit || ''})`}
-            placeholderTextColor={colors.labelTertiary}
+            placeholderTextColor={c.labelTertiary}
             keyboardType="decimal-pad"
             value={value}
             onChangeText={setValue}
@@ -46,7 +49,7 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
           <TextInput
             style={[styles.input, { height: 60 }]}
             placeholder="备注（可选）"
-            placeholderTextColor={colors.labelTertiary}
+            placeholderTextColor={c.labelTertiary}
             value={notes}
             onChangeText={setNotes}
             multiline
@@ -57,7 +60,7 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
             disabled={!value}
             activeOpacity={0.7}
           >
-            <Text style={txt.submitText}>确认更新</Text>
+            <Text style={styles.submitText}>确认更新</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -65,27 +68,26 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { flex: 1 },
-  sheet: {
-    backgroundColor: colors.bgCard, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
-    padding: spacing.lg, paddingBottom: 40, ...shadows.heavy,
-  },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.labelQuaternary, alignSelf: 'center', marginBottom: spacing.lg },
-  input: {
-    backgroundColor: colors.bgPrimary, borderRadius: radii.md,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15,
-    color: colors.labelPrimary, marginBottom: spacing.md,
-  },
-  submitBtn: {
-    backgroundColor: colors.brand, borderRadius: radii.md,
-    paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm,
-  },
-});
-
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, marginBottom: 4 } as TextStyle,
-  goalName: { fontSize: 13, color: colors.labelSecondary, marginBottom: spacing.lg } as TextStyle,
-  submitText: { fontSize: 16, fontWeight: '600', color: '#fff' } as TextStyle,
-};
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    overlay: { flex: 1, justifyContent: 'flex-end' },
+    backdrop: { flex: 1 },
+    sheet: {
+      backgroundColor: c.bgCard, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+      padding: spacing.lg, paddingBottom: 40, ...shadows.heavy,
+    },
+    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: c.labelQuaternary, alignSelf: 'center', marginBottom: spacing.lg },
+    input: {
+      backgroundColor: c.bgPrimary, borderRadius: radii.md,
+      paddingHorizontal: 14, paddingVertical: 12, fontSize: 15,
+      color: c.labelPrimary, marginBottom: spacing.md,
+    },
+    submitBtn: {
+      backgroundColor: c.brand, borderRadius: radii.md,
+      paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm,
+    },
+    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, marginBottom: 4 },
+    goalName: { fontSize: 13, color: c.labelSecondary, marginBottom: spacing.lg },
+    submitText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  });
+}
