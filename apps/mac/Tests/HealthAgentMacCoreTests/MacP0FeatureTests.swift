@@ -523,6 +523,39 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(result.undoPath, "water/records/55")
     }
 
+    func testStructuredRecordDraftValidatesAndPreviewsSneezeCount() {
+        XCTAssertFalse(StructuredRecordDraft(type: .sneeze, sneezeCount: "").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .sneeze, sneezeCount: "0").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .sneeze, sneezeCount: "abc").canSubmit)
+        let draft = StructuredRecordDraft(type: .sneeze, sneezeCount: "7")
+        XCTAssertTrue(draft.canSubmit)
+        XCTAssertEqual(draft.previewText, "记录打喷嚏 7 次")
+    }
+
+    func testRecordClientPostsSneezeCountToCheckinEndpoint() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/checkin/")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertNotNil(body?["checkin_date"] as? String)
+            XCTAssertEqual(body?["sneeze_count"] as? Int, 9)
+            let data = #"{"id":31}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordSneeze(count: 9)
+
+        XCTAssertEqual(result.type, "sneeze")
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "已记录今天打喷嚏 9 次")
+        XCTAssertEqual(result.recordID, 31)
+    }
+
     func testStructuredRecordDraftRequiresValidWeightBeforeSubmitting() {
         XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "").canSubmit)
         XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "abc").canSubmit)

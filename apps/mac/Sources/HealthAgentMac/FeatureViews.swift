@@ -1966,6 +1966,7 @@ struct RecordHubView: View {
     @State private var systolic = ""
     @State private var diastolic = ""
     @State private var symptom = ""
+    @State private var sneezeCount = ""
     @State private var recentRecords: [String] = []
     @State private var resultMessage: String?
     @State private var lastSavedRecord: QuickRecordResult?
@@ -2625,6 +2626,8 @@ struct RecordHubView: View {
             }
         case .symptom:
             recordTextField(appText("Symptom, severity, and context", appLanguageRaw), text: $symptom)
+        case .sneeze:
+            recordTextField(appText("Sneeze count today", appLanguageRaw), text: $sneezeCount)
         }
     }
 
@@ -2940,6 +2943,8 @@ struct RecordHubView: View {
             return appText("mmHg", appLanguageRaw)
         case .symptom:
             return appText("context", appLanguageRaw)
+        case .sneeze:
+            return appText("times", appLanguageRaw)
         }
     }
 
@@ -2957,6 +2962,8 @@ struct RecordHubView: View {
             return .pink
         case .symptom:
             return .indigo
+        case .sneeze:
+            return .mint
         }
     }
 
@@ -2972,7 +2979,8 @@ struct RecordHubView: View {
             weightKg: weightKg,
             systolic: systolic,
             diastolic: diastolic,
-            symptom: symptom
+            symptom: symptom,
+            sneezeCount: sneezeCount
         )
     }
 
@@ -3016,6 +3024,9 @@ struct RecordHubView: View {
                 let text = symptom.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return }
                 result = try await client.recordSymptom(description: text)
+            case .sneeze:
+                guard let count = draft.positiveInt(sneezeCount) else { return }
+                result = try await client.recordSneeze(count: count)
             }
             let didSave = handleRecordResult(result, fallbackText: draft.previewText)
             if didSave {
@@ -3091,6 +3102,8 @@ struct RecordHubView: View {
             diastolic = ""
         case .symptom:
             symptom = ""
+        case .sneeze:
+            sneezeCount = ""
         }
     }
 }
@@ -3104,6 +3117,7 @@ private extension StructuredRecordDraftType {
         case .weight: "Weight"
         case .bloodPressure: "BP"
         case .symptom: "Symptom"
+        case .sneeze: "Sneeze"
         }
     }
 
@@ -3115,6 +3129,7 @@ private extension StructuredRecordDraftType {
         case .weight: "scalemass"
         case .bloodPressure: "heart.text.square"
         case .symptom: "cross.case"
+        case .sneeze: "wind"
         }
     }
 }

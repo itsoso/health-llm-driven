@@ -100,6 +100,16 @@ private struct SymptomRecordRequest: Encodable {
     }
 }
 
+private struct SneezeCheckinRequest: Encodable {
+    let checkinDate: String
+    let sneezeCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case checkinDate = "checkin_date"
+        case sneezeCount = "sneeze_count"
+    }
+}
+
 private struct SupplementCheckinRequest: Encodable {
     let recordDate: String
     let checkins: [Checkin]
@@ -269,6 +279,21 @@ public final class RecordClient: Sendable {
             success: true,
             recordID: saved.id,
             undoPath: undoPath(prefix: "blood-pressure/records", recordID: saved.id)
+        )
+    }
+
+    /// 记录今天的打喷嚏次数 (鼻炎症状)。走 POST /checkin/，按日期 upsert，
+    /// 后端把 sneeze_count 并入当天打卡，供鼻炎趋势聚合。次数为当日累计值。
+    public func recordSneeze(count: Int) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "checkin/",
+            body: SneezeCheckinRequest(checkinDate: Self.todayString(), sneezeCount: count)
+        )
+        return QuickRecordResult(
+            type: "sneeze",
+            message: "已记录今天打喷嚏 \(count) 次",
+            success: true,
+            recordID: saved.id
         )
     }
 

@@ -7,6 +7,7 @@ public enum StructuredRecordDraftType: String, CaseIterable, Identifiable, Senda
     case weight
     case bloodPressure
     case symptom
+    case sneeze
 
     public var id: String { rawValue }
 }
@@ -23,6 +24,7 @@ public struct StructuredRecordDraft: Equatable, Sendable {
     public let systolic: String
     public let diastolic: String
     public let symptom: String
+    public let sneezeCount: String
 
     public init(
         type: StructuredRecordDraftType,
@@ -35,7 +37,8 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         weightKg: String = "",
         systolic: String = "",
         diastolic: String = "",
-        symptom: String = ""
+        symptom: String = "",
+        sneezeCount: String = ""
     ) {
         self.type = type
         self.foodName = foodName
@@ -48,6 +51,7 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         self.systolic = systolic
         self.diastolic = diastolic
         self.symptom = symptom
+        self.sneezeCount = sneezeCount
     }
 
     public var canSubmit: Bool {
@@ -64,6 +68,8 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             positiveInt(systolic) != nil && positiveInt(diastolic) != nil
         case .symptom:
             !trim(symptom).isEmpty
+        case .sneeze:
+            positiveInt(sneezeCount) != nil
         }
     }
 
@@ -87,6 +93,8 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             return trim(systolic).isEmpty || trim(diastolic).isEmpty ? "" : "记录血压 \(trim(systolic))/\(trim(diastolic)) mmHg"
         case .symptom:
             return trim(symptom).isEmpty ? "" : "记录症状：\(trim(symptom))"
+        case .sneeze:
+            return trim(sneezeCount).isEmpty ? "" : "记录打喷嚏 \(trim(sneezeCount)) 次"
         }
     }
 
