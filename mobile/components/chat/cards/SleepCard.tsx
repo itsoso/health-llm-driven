@@ -15,11 +15,13 @@ interface SleepData {
 }
 
 function ScoreRing({ score, fillTrack }: { score: number; fillTrack: string }) {
+  const { s } = useTheme();
   const size = 52, sw = 5;
   const r = (size - sw) / 2;
   const circ = 2 * Math.PI * r;
   const off = circ * (1 - Math.min(score / 100, 1));
-  const color = score >= 80 ? '#30D158' : score >= 60 ? '#FF9F0A' : '#FF453A';
+  // 睡眠评分语义: ≥80 success / ≥60 warning / else danger
+  const color = score >= 80 ? s.success.solid : score >= 60 ? s.warning.solid : s.danger.solid;
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size}>

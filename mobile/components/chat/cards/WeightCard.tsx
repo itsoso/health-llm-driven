@@ -15,6 +15,7 @@ interface WeightData {
 }
 
 function Sparkline({ points }: { points: number[] }) {
+  const { s } = useTheme();
   if (points.length < 2) return null;
   const w = 100, h = 32, pad = 2;
   const min = Math.min(...points), max = Math.max(...points);
@@ -25,8 +26,8 @@ function Sparkline({ points }: { points: number[] }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const trend = points[points.length - 1] - points[0];
-  // 趋势颜色为医学语义 (减重绿/增重红), 不随主题切换
-  const color = trend < -0.1 ? '#30D158' : trend > 0.1 ? '#FF453A' : '#8E8E93';
+  // 趋势语义: 减重 success / 增重 danger / 持平 neutral (solid 明暗一致)
+  const color = trend < -0.1 ? s.success.solid : trend > 0.1 ? s.danger.solid : s.neutral.solid;
   const last = pts.split(' ').pop() || '';
   const [lx, ly] = last.split(',').map(Number);
   return (
@@ -39,10 +40,10 @@ function Sparkline({ points }: { points: number[] }) {
 
 export function WeightCardView({ current_kg, trend_7d, change_7d_kg, bmi }: WeightData) {
   const router = useRouter();
-  const { c } = useTheme();
+  const { c, s } = useTheme();
   const up = (change_7d_kg ?? 0) > 0;
   const changeColor = change_7d_kg == null || Math.abs(change_7d_kg) < 0.05
-    ? c.labelTertiary : up ? '#FF453A' : '#30D158';
+    ? c.labelTertiary : up ? s.danger.solid : s.success.solid;
   return (
     <CardShell
       icon="scale"
