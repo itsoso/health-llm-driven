@@ -347,12 +347,12 @@ struct TodayView: View {
                 .foregroundStyle(.red)
             }
         }
-        .padding(24)
+        .padding(AppCardStyle.padding)
         .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: AppCardStyle.cornerRadius, style: .continuous)
                 .fill(.background)
                 .overlay(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppCardStyle.cornerRadius, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [Color.teal.opacity(0.14), Color.blue.opacity(0.07), Color.clear],
@@ -362,7 +362,7 @@ struct TodayView: View {
                         )
                 }
         }
-        .overlay(panelStroke(radius: 22))
+        .overlay(panelStroke())
         .shadow(color: Color.black.opacity(0.045), radius: 18, y: 10)
     }
 

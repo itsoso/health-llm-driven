@@ -90,10 +90,10 @@ struct PriorityActionHeroView: View {
         }
         .padding(20)
         .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(tone.opacity(0.08))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(tone.opacity(0.25), lineWidth: 1)
                 }
         }

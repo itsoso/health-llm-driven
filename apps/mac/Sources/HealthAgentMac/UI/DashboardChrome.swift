@@ -16,14 +16,34 @@ func toneColor(_ tone: String) -> Color {
     }
 }
 
+// Single source of truth for the page-level card look so every panel on the
+// Today / Data surfaces reads as one design language (was: radii 10/16/18/22,
+// fills .background vs .regularMaterial, strokes primary.07 vs secondary.10).
+enum AppCardStyle {
+    static let cornerRadius: CGFloat = 16
+    static let padding: CGFloat = 18
+    static let strokeOpacity: Double = 0.07
+}
+
 // These free helpers build SwiftUI views, whose initializers (Spacer, etc.) are
 // MainActor-isolated under the CI runner's stricter Swift concurrency checking.
 // Marking the functions @MainActor matches their only callers (SwiftUI view
 // bodies) and avoids "main actor-isolated initializer in nonisolated context".
 @MainActor
-func panelStroke(radius: CGFloat) -> some View {
+func panelStroke(radius: CGFloat = AppCardStyle.cornerRadius) -> some View {
     RoundedRectangle(cornerRadius: radius, style: .continuous)
-        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        .stroke(Color.primary.opacity(AppCardStyle.strokeOpacity), lineWidth: 1)
+}
+
+extension View {
+    /// Standard page card: opaque background, unified radius + hairline stroke.
+    @MainActor
+    func appCard(padding: CGFloat = AppCardStyle.padding) -> some View {
+        self
+            .padding(padding)
+            .background(.background, in: RoundedRectangle(cornerRadius: AppCardStyle.cornerRadius, style: .continuous))
+            .overlay(panelStroke())
+    }
 }
 
 @MainActor
@@ -42,9 +62,7 @@ func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 12) {
         content()
     }
-    .padding(16)
-    .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    .overlay(panelStroke(radius: 18))
+    .appCard()
 }
 
 struct VitalRow: View {
