@@ -35,6 +35,7 @@ struct AppServices {
     let safetyClient: SafetyClient
     let briefingClient: BriefingClient
     let nocturnalClient: NocturnalTimeseriesClient
+    let garminTrendClient: GarminTrendClient
     let labClient: LabClient
     let interventionsClient: InterventionsClient
     let workoutClient: WorkoutClient
@@ -64,6 +65,7 @@ struct AppServices {
         self.safetyClient = SafetyClient(apiClient: apiClient)
         self.briefingClient = BriefingClient(apiClient: apiClient)
         self.nocturnalClient = NocturnalTimeseriesClient(apiClient: apiClient)
+        self.garminTrendClient = GarminTrendClient(apiClient: apiClient)
         self.labClient = LabClient(apiClient: apiClient)
         self.interventionsClient = InterventionsClient(apiClient: apiClient)
         self.workoutClient = WorkoutClient(apiClient: apiClient)

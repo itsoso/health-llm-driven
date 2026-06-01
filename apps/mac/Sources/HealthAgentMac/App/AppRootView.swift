@@ -132,6 +132,7 @@ struct AppRootView: View {
                 jobClient: services.desktopJobClient,
                 kind: .data,
                 nocturnalClient: services.nocturnalClient,
+                garminTrendClient: services.garminTrendClient,
                 labClient: services.labClient,
                 interventionsClient: services.interventionsClient,
                 onAskAgent: askAgentWithContext,

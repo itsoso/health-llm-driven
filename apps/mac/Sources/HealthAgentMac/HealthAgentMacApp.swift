@@ -1025,6 +1025,7 @@ struct WorkspaceOverviewView: View {
     let jobClient: DesktopJobClient
     let kind: DesktopWorkspaceKind
     var nocturnalClient: NocturnalTimeseriesClient?
+    var garminTrendClient: GarminTrendClient?
     var labClient: LabClient?
     var interventionsClient: InterventionsClient?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
@@ -1053,6 +1054,8 @@ struct WorkspaceOverviewView: View {
     @State private var selectedLabCode: String?
     @State private var interventionEvents: [InterventionEvent] = []
     @State private var interventionsLoaded = false
+    @State private var garminRecords: [GarminDailyRecord] = []
+    @State private var garminLoaded = false
 
     var body: some View {
         ScrollView {
@@ -1103,6 +1106,7 @@ struct WorkspaceOverviewView: View {
                 await viewModel.refresh()
             }
             await loadNocturnalSpO2IfNeeded()
+            await loadGarminTrendsIfNeeded()
             await loadLabTrendsIfNeeded()
             await loadInterventionsIfNeeded()
         }
@@ -1364,6 +1368,8 @@ struct WorkspaceOverviewView: View {
             dataTrendPanel
 
             if kind == .data {
+                vitalsSnapshotPanel
+                vitalsTrendPanel
                 nocturnalWeekStripPanel
                 nocturnalSpO2Panel
                 labTrendsPanel
@@ -1499,6 +1505,164 @@ struct WorkspaceOverviewView: View {
         let nights = await client.fetchSpO2WeekSummary(endDate: Date(), days: 7)
         nocturnalWeek = nights
         nocturnalWeekLoaded = true
+    }
+
+    @MainActor
+    private func loadGarminTrendsIfNeeded() async {
+        guard kind == .data, !garminLoaded, let client = garminTrendClient else { return }
+        garminLoaded = true
+        garminRecords = await client.fetchDaily(limit: 30)
+    }
+
+    /// 当前 range (7/30 天) 对应的生理趋势快照。
+    private var vitalsPresentation: VitalsTrendPresentation {
+        VitalsTrendPresentation(records: garminRecords, lastDays: dataRange == "30d" ? 30 : 7)
+    }
+
+    @ViewBuilder
+    private var vitalsSnapshotPanel: some View {
+        let p = vitalsPresentation
+        if p.hasData {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label(appText("Vitals & Sleep", appLanguageRaw), systemImage: "heart.text.square.fill")
+                        .font(.headline)
+                        .foregroundStyle(.pink)
+                    Spacer()
+                    if let date = p.latestDate {
+                        Text(date)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                    VitalSnapshotCard(icon: "waveform.path.ecg", color: .pink,
+                                      title: appText("HRV", appLanguageRaw),
+                                      value: p.latestHRV.map { "\(Int($0.rounded()))" } ?? "—",
+                                      unit: p.latestHRV == nil ? "" : "ms")
+                    VitalSnapshotCard(icon: "heart.fill", color: .red,
+                                      title: appText("Resting HR", appLanguageRaw),
+                                      value: p.latestRestingHR.map(String.init) ?? "—",
+                                      unit: p.latestRestingHR == nil ? "" : "bpm")
+                    VitalSnapshotCard(icon: "heart.circle.fill", color: .orange,
+                                      title: appText("Avg HR", appLanguageRaw),
+                                      value: p.latestAvgHR.map(String.init) ?? "—",
+                                      unit: p.latestAvgHR == nil ? "" : "bpm")
+                    VitalSnapshotCard(icon: "brain.head.profile", color: .purple,
+                                      title: appText("Stress", appLanguageRaw),
+                                      value: p.latestStress.map(String.init) ?? "—",
+                                      unit: "")
+                    VitalSnapshotCard(icon: "bolt.fill", color: .green,
+                                      title: appText("Body Battery", appLanguageRaw),
+                                      value: p.latestBodyBattery.map(String.init) ?? "—",
+                                      unit: p.latestBodyBatteryLowest.map { "\(appText("low", appLanguageRaw)) \($0)" } ?? "")
+                    VitalSnapshotCard(icon: "bed.double.fill", color: .indigo,
+                                      title: appText("Sleep", appLanguageRaw),
+                                      value: p.latestSleepHours.map { String(format: "%.1f", $0) } ?? "—",
+                                      unit: vitalsSleepUnit(p))
+                }
+                if let stages = p.sleepStages, stages.hasData {
+                    SleepStagesBar(
+                        stages: stages,
+                        deepLabel: appText("Deep", appLanguageRaw),
+                        lightLabel: appText("Light", appLanguageRaw),
+                        remLabel: appText("REM", appLanguageRaw),
+                        awakeLabel: appText("Awake", appLanguageRaw)
+                    )
+                }
+            }
+            .padding(18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            }
+        }
+    }
+
+    private func vitalsSleepUnit(_ p: VitalsTrendPresentation) -> String {
+        guard p.latestSleepHours != nil else { return "" }
+        if let score = p.latestSleepScore {
+            return "h · \(appText("score", appLanguageRaw)) \(score)"
+        }
+        return "h"
+    }
+
+    @ViewBuilder
+    private var vitalsTrendPanel: some View {
+        let p = vitalsPresentation
+        let cards = vitalsTrendCards(p)
+        if !cards.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Label(appText("Vitals & Sleep Trends", appLanguageRaw), systemImage: "chart.xyaxis.line")
+                        .font(.headline)
+                        .foregroundStyle(.pink)
+                    Spacer()
+                    Text(appText(dataRange == "30d" ? "30 days" : "7 days", appLanguageRaw))
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
+                    ForEach(cards) { card in
+                        DataTrendCard(
+                            title: card.title,
+                            value: card.value,
+                            color: card.color,
+                            points: card.points
+                        )
+                    }
+                }
+            }
+            .padding(18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            }
+        }
+    }
+
+    private struct VitalsTrendCardModel: Identifiable {
+        let id: String
+        let title: String
+        let value: String
+        let color: Color
+        let points: [Double]
+    }
+
+    private func vitalsTrendCards(_ p: VitalsTrendPresentation) -> [VitalsTrendCardModel] {
+        func avgLabel(_ series: VitalsTrendPresentation.Series, _ unit: String, decimals: Int = 0) -> String {
+            guard let avg = series.average else { return "—" }
+            let number = decimals > 0 ? String(format: "%.\(decimals)f", avg) : "\(Int(avg.rounded()))"
+            return "\(appText("Avg", appLanguageRaw)) \(number)\(unit)"
+        }
+        var cards: [VitalsTrendCardModel] = []
+        if p.hrvSeries.points.count >= 2 {
+            cards.append(.init(id: "hrv", title: appText("HRV", appLanguageRaw),
+                               value: avgLabel(p.hrvSeries, "ms"), color: .pink, points: p.hrvSeries.points))
+        }
+        if p.restingHRSeries.points.count >= 2 {
+            cards.append(.init(id: "rhr", title: appText("Resting HR", appLanguageRaw),
+                               value: avgLabel(p.restingHRSeries, "bpm"), color: .red, points: p.restingHRSeries.points))
+        }
+        if p.avgHRSeries.points.count >= 2 {
+            cards.append(.init(id: "avghr", title: appText("Avg HR", appLanguageRaw),
+                               value: avgLabel(p.avgHRSeries, "bpm"), color: .orange, points: p.avgHRSeries.points))
+        }
+        if p.stressSeries.points.count >= 2 {
+            cards.append(.init(id: "stress", title: appText("Stress", appLanguageRaw),
+                               value: avgLabel(p.stressSeries, ""), color: .purple, points: p.stressSeries.points))
+        }
+        if p.bodyBatterySeries.points.count >= 2 {
+            cards.append(.init(id: "battery", title: appText("Body Battery", appLanguageRaw),
+                               value: avgLabel(p.bodyBatterySeries, ""), color: .green, points: p.bodyBatterySeries.points))
+        }
+        if p.sleepHoursSeries.points.count >= 2 {
+            cards.append(.init(id: "sleep", title: appText("Sleep", appLanguageRaw),
+                               value: avgLabel(p.sleepHoursSeries, "h", decimals: 1), color: .indigo, points: p.sleepHoursSeries.points))
+        }
+        return cards
     }
 
     private var nocturnalSpO2Panel: some View {
@@ -3779,6 +3943,99 @@ private struct DataTrendCard: View {
             return Array(repeating: 0.12, count: max(points.count, 7))
         }
         return values.map { max(0.08, $0 / maxValue) }
+    }
+}
+
+private struct VitalSnapshotCard: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let value: String
+    let unit: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: icon)
+                .font(.headline)
+                .foregroundStyle(color)
+                .frame(width: 30, height: 30)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.title2.weight(.bold).monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .padding(14)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(color.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+/// 最新一晚睡眠分期的横向堆叠条 (深睡/浅睡/REM/清醒) + 图例。
+private struct SleepStagesBar: View {
+    let stages: VitalsTrendPresentation.SleepStages
+    let deepLabel: String
+    let lightLabel: String
+    let remLabel: String
+    let awakeLabel: String
+
+    private var segments: [(label: String, minutes: Int, color: Color)] {
+        [
+            (deepLabel, stages.deepMinutes, .indigo),
+            (lightLabel, stages.lightMinutes, .blue),
+            (remLabel, stages.remMinutes, .teal),
+            (awakeLabel, stages.awakeMinutes, .orange)
+        ].filter { $0.minutes > 0 }
+    }
+
+    private func durationLabel(_ minutes: Int) -> String {
+        let h = minutes / 60
+        let m = minutes % 60
+        if h > 0 { return m > 0 ? "\(h)h \(m)m" : "\(h)h" }
+        return "\(m)m"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                HStack(spacing: 2) {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
+                        seg.color.opacity(0.85)
+                            .frame(width: max(2, geo.size.width * CGFloat(seg.minutes) / CGFloat(max(stages.totalMinutes, 1))))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            }
+            .frame(height: 16)
+
+            HStack(spacing: 14) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
+                    HStack(spacing: 5) {
+                        Circle().fill(seg.color).frame(width: 8, height: 8)
+                        Text(seg.label)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(durationLabel(seg.minutes))
+                            .font(.caption2.weight(.semibold).monospacedDigit())
+                    }
+                }
+            }
+        }
     }
 }
 
