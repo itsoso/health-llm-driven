@@ -14,7 +14,7 @@ struct BriefingCardView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Label(appText("Today's Briefing", appLanguageRaw), systemImage: "sun.max.fill")
-                    .font(.headline.weight(.semibold))
+                    .font(.title3.weight(.bold))
                     .foregroundStyle(.orange)
                 Spacer()
                 if let date = briefing.date, !date.isEmpty {
@@ -26,7 +26,7 @@ struct BriefingCardView: View {
 
             if let greeting = briefing.greeting, !greeting.isEmpty {
                 Text(greeting)
-                    .font(.callout)
+                    .font(.body)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -53,18 +53,18 @@ struct BriefingCardView: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: Self.statusIcon(kind))
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(color)
                 Text(section.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline.weight(.semibold))
             }
             ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .top, spacing: 8) {
                     Text("•")
-                        .font(.callout)
+                        .font(.body)
                         .foregroundStyle(color)
                     Text(item)
-                        .font(.callout)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
