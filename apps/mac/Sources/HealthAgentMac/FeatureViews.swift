@@ -86,6 +86,7 @@ struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
     var navigation: AppNavigationState?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
     @State private var draft = ""
     @State private var modelStrategy = "auto"
     @State private var editorFocusToken = 0
@@ -774,7 +775,13 @@ struct AgentChatView: View {
         if message.role == .assistant {
             MarkdownMessageText(markdown: viewModel.displayContent(for: message))
         } else {
+            // Match the assistant body font (same scaled base) so the question and
+            // the answer read at one consistent size instead of the system .body
+            // default towering over the assistant text.
             Text(message.content.isEmpty ? " " : message.content)
+                .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1558,7 +1565,7 @@ private struct MarkdownMessageText: View {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                     inlineText(column)
-                        .font(scaledFont(base: 9.5))
+                        .font(scaledFont(base: 10.5))
                         .lineLimit(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
