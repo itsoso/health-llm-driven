@@ -326,44 +326,46 @@ struct AgentChatView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 14) {
-            promptToolbar
-            ZStack(alignment: .topLeading) {
-                PromptCommandTextEditor(
-                    text: $draft,
-                    focusToken: editorFocusToken,
-                    measuredHeight: $composerTextHeight
-                ) {
-                    sendDraft()
-                }
-                .frame(height: composerEditorHeight)
-                .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
-                // Leave room for the round send/stop button pinned bottom-trailing.
-                .padding(.trailing, 38)
+            // ChatGPT-style input box: text on top, a control bar inside the same
+            // rounded box — attach + web on the left, round send/stop on the right.
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topLeading) {
+                    PromptCommandTextEditor(
+                        text: $draft,
+                        focusToken: editorFocusToken,
+                        measuredHeight: $composerTextHeight
+                    ) {
+                        sendDraft()
+                    }
+                    .frame(height: composerEditorHeight)
+                    .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
 
-                if draft.isEmpty {
-                    Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 12)
-                        .padding(.leading, 8)
-                        .allowsHitTesting(false)
+                    if draft.isEmpty {
+                        Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 12)
+                            .padding(.leading, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    attachButton
+                    webSearchToggle
+                    Spacer(minLength: 0)
+                    composerSendButton
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.vertical, 8)
             // White input field (ChatGPT-style) instead of the grey fill.
             // `.textBackgroundColor` is the system text-field white and stays
             // correct in dark mode; a slightly stronger border keeps the white
             // box legible against the composer card.
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-            }
-            // ChatGPT-style round send (↑) / stop (■) button inside the input,
-            // bottom-right — replaces the old full-width Run/Stop action row.
-            .overlay(alignment: .bottomTrailing) {
-                composerSendButton
-                    .padding(7)
             }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
@@ -475,28 +477,41 @@ struct AgentChatView: View {
         }
     }
 
-    private var promptToolbar: some View {
-        HStack(spacing: 12) {
-            Label(appText("New Analysis", appLanguageRaw), systemImage: "sparkles")
-                .font(.headline)
-            Text(appText("Draft, attach, then run.", appLanguageRaw))
-                .font(.caption)
+    // Bottom-left input controls (ChatGPT-style). No verbose "New Analysis"
+    // headline — the icons speak for themselves.
+    private var attachButton: some View {
+        Button {
+            isAttachImporterPresented = true
+        } label: {
+            Image(systemName: "paperclip")
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
-            Spacer()
-            Button {
-                isAttachImporterPresented = true
-            } label: {
-                Label(appText("Attach", appLanguageRaw), systemImage: "paperclip")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
-            Toggle(isOn: $viewModel.webSearchEnabled) {
-                Label(appText("Web Search", appLanguageRaw), systemImage: "network")
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
+                .frame(width: 28, height: 28)
+                .background(Color.secondary.opacity(0.08), in: Circle())
         }
+        .buttonStyle(.plain)
+        .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
+    }
+
+    private var webSearchToggle: some View {
+        Button {
+            viewModel.webSearchEnabled.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "network")
+                Text(appText("Web Search", appLanguageRaw))
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(viewModel.webSearchEnabled ? Color.accentColor : .secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                (viewModel.webSearchEnabled ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .help(appText("Web Search", appLanguageRaw))
     }
 
     private var promptSuggestions: some View {
