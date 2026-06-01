@@ -379,12 +379,6 @@ struct AgentChatView: View {
                 }
             }
 
-            // ChatGPT-style: starter suggestions only on the empty/default state;
-            // once a conversation is going they'd just crowd the composer.
-            if viewModel.messages.isEmpty {
-                promptSuggestions
-            }
-
             composerStatusLine
         }
         .padding(18)
@@ -699,15 +693,21 @@ struct AgentChatView: View {
     }
 
     private var emptyConversationState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 32))
-                .foregroundStyle(.tertiary)
-            Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
+        VStack(spacing: 18) {
+            VStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.tertiary)
+                Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+            // Starter prompts live here on the blank page (ChatGPT-style), not in
+            // the composer — they seed a first question and disappear once chatting.
+            promptSuggestions
+                .frame(maxWidth: 540)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(.top, 40)
