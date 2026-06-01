@@ -1,5 +1,10 @@
 import { renderHook } from '@testing-library/react-native';
-import { colors, darkColors } from '../../constants/theme';
+import {
+  colors,
+  darkColors,
+  semanticColors,
+  darkSemanticColors,
+} from '../../constants/theme';
 
 let mockScheme: 'light' | 'dark' = 'light';
 jest.mock('react-native/Libraries/Utilities/useColorScheme', () => ({
@@ -7,7 +12,7 @@ jest.mock('react-native/Libraries/Utilities/useColorScheme', () => ({
   default: () => mockScheme,
 }));
 
-import { useThemeColors, useIsDarkMode } from '../useTheme';
+import { useThemeColors, useIsDarkMode, useTheme } from '../useTheme';
 
 describe('useThemeColors', () => {
   it('returns light colors by default', () => {
@@ -36,5 +41,21 @@ describe('useIsDarkMode', () => {
     mockScheme = 'dark';
     const { result } = renderHook(() => useIsDarkMode());
     expect(result.current).toBe(true);
+  });
+});
+
+describe('useTheme().s (semantic palette)', () => {
+  it('returns light semantic palette by default', () => {
+    mockScheme = 'light';
+    const { result } = renderHook(() => useTheme());
+    expect(result.current.s.success.bg).toBe(semanticColors.success.bg);
+    expect(result.current.s.danger.fg).toBe(semanticColors.danger.fg);
+  });
+
+  it('returns dark semantic palette in dark mode', () => {
+    mockScheme = 'dark';
+    const { result } = renderHook(() => useTheme());
+    expect(result.current.s.success.bg).toBe(darkSemanticColors.success.bg);
+    expect(result.current.s.danger.fg).toBe(darkSemanticColors.danger.fg);
   });
 });

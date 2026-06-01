@@ -3,28 +3,33 @@
  *
  * 在卡片列表 row 里露出 evidence_level 让用户一眼分辨"强证据可执行"vs
  * "需医生介入". 详情页用大 chip, 列表用 compact 这版.
+ *
+ * 2026-06-01: 4 档颜色从硬编码 hex 改走 semanticColors (useTheme().s), 自动暗色适配.
  */
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useTheme, type SemanticTone } from '../../hooks/useTheme';
 
 interface Props {
   level?: 'high' | 'medium' | 'low' | 'medical_grade' | string | null;
 }
 
-const CONF: Record<string, { bg: string; text: string; label: string }> = {
-  high: { bg: '#D1FAE5', text: '#065F46', label: '强证据' },
-  medium: { bg: '#FEF3C7', text: '#92400E', label: '中等' },
-  low: { bg: '#F1F5F9', text: '#475569', label: '弱证据' },
-  medical_grade: { bg: '#FEE2E2', text: '#991B1B', label: '需医生' },
+const CONF: Record<string, { tone: SemanticTone; label: string }> = {
+  high: { tone: 'success', label: '强证据' },
+  medium: { tone: 'warning', label: '中等' },
+  low: { tone: 'neutral', label: '弱证据' },
+  medical_grade: { tone: 'danger', label: '需医生' },
 };
 
 export default function EvidenceChip({ level }: Props) {
+  const { s } = useTheme();
   if (!level || !CONF[level]) return null;
-  const c = CONF[level];
+  const conf = CONF[level];
+  const tone = s[conf.tone];
   return (
-    <View style={[styles.chip, { backgroundColor: c.bg }]}>
-      <Text style={[styles.text, { color: c.text }]}>{c.label}</Text>
+    <View style={[styles.chip, { backgroundColor: tone.bg }]}>
+      <Text style={[styles.text, { color: tone.fg }]}>{conf.label}</Text>
     </View>
   );
 }
