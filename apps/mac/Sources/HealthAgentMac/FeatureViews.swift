@@ -93,7 +93,6 @@ struct AgentChatView: View {
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
-    @State private var historyExpanded = false
     @State private var historyPage = 0
     @State private var copiedMessageID: UUID?
     @State private var composerTextHeight: CGFloat = 0
@@ -190,9 +189,6 @@ struct AgentChatView: View {
             }
             Spacer()
             statusChip
-            if !viewModel.conversationHistory.isEmpty {
-                historyMenuButton
-            }
         }
     }
 
@@ -207,66 +203,6 @@ struct AgentChatView: View {
         }
         .buttonStyle(.borderless)
         .help(appText("New Chat", appLanguageRaw))
-    }
-
-    private var historyMenuButton: some View {
-        Button {
-            historyExpanded.toggle()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "clock.arrow.circlepath")
-                Text("\(viewModel.conversationHistory.count)")
-                    .font(.caption.bold())
-                    .monospacedDigit()
-            }
-        }
-        .buttonStyle(.borderless)
-        .help(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
-        .popover(isPresented: $historyExpanded, arrowEdge: .bottom) {
-            historyPopoverContent
-        }
-    }
-
-    private var historyPopoverContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
-                    .font(.headline)
-                Spacer()
-                Text("\(viewModel.conversationHistory.count)")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.10), in: Capsule())
-            }
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(historyPageItems) { conversation in
-                        AgentConversationHistoryPill(
-                            conversation: conversation,
-                            isSelected: conversation.id == viewModel.currentConversationID,
-                            onLoad: {
-                                viewModel.loadConversation(conversation)
-                                editorFocusToken += 1
-                                historyExpanded = false
-                            },
-                            onDelete: {
-                                viewModel.deleteConversation(conversation)
-                            }
-                        )
-                    }
-                }
-                .padding(.vertical, 1)
-            }
-            .frame(maxHeight: 360)
-
-            if historyPageCount > 1 {
-                historyPager
-            }
-        }
-        .padding(16)
-        .frame(width: 380)
     }
 
     private var modelMenuButton: some View {
@@ -917,10 +853,19 @@ struct AgentChatView: View {
             if !viewModel.conversationHistory.isEmpty {
                 Divider()
 
-                Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
-                    .font(.subheadline.bold())
+                HStack {
+                    Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Text("\(viewModel.conversationHistory.count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.10), in: Capsule())
+                }
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.conversationHistory.prefix(6)) { conversation in
+                    ForEach(historyPageItems) { conversation in
                         AgentConversationHistoryRow(
                             conversation: conversation,
                             isSelected: conversation.id == viewModel.currentConversationID,
@@ -932,6 +877,9 @@ struct AgentChatView: View {
                             }
                         )
                     }
+                }
+                if historyPageCount > 1 {
+                    historyPager
                 }
             }
 
