@@ -337,6 +337,8 @@ struct AgentChatView: View {
                 }
                 .frame(height: composerEditorHeight)
                 .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
+                // Leave room for the round send/stop button pinned bottom-trailing.
+                .padding(.trailing, 38)
 
                 if draft.isEmpty {
                     Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
@@ -357,6 +359,12 @@ struct AgentChatView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
             }
+            // ChatGPT-style round send (↑) / stop (■) button inside the input,
+            // bottom-right — replaces the old full-width Run/Stop action row.
+            .overlay(alignment: .bottomTrailing) {
+                composerSendButton
+                    .padding(7)
+            }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
             if !viewModel.attachments.isEmpty {
@@ -375,51 +383,7 @@ struct AgentChatView: View {
                 promptSuggestions
             }
 
-            HStack(alignment: .center, spacing: 10) {
-                if let error = viewModel.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
-                }
-                Spacer()
-                Text("⌘↩")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.secondary.opacity(0.10), in: Capsule())
-                if viewModel.canRetry {
-                    Button {
-                        Task { await viewModel.retryLastMessage() }
-                    } label: {
-                        Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                }
-                if viewModel.isStreaming {
-                    Button(role: .destructive) {
-                        viewModel.cancelStreaming()
-                    } label: {
-                        Label(appText("Stop", appLanguageRaw), systemImage: "stop.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .help(appText("Stop generating", appLanguageRaw))
-                } else {
-                    Button {
-                        sendDraft()
-                    } label: {
-                        Label(appText("Run", appLanguageRaw), systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!viewModel.canSubmit(draft))
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .help("Command-Return")
-                }
-            }
+            composerStatusLine
         }
         .padding(18)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -438,6 +402,75 @@ struct AgentChatView: View {
                 }
             } catch {
                 viewModel.errorMessage = "Attach failed: \(userFacingError(error, appLanguageRaw))"
+            }
+        }
+    }
+
+    // ChatGPT-style round button at the input's bottom-right: ↑ to send,
+    // ■ to stop while streaming. The ⌘↩ shortcut still triggers send.
+    @ViewBuilder
+    private var composerSendButton: some View {
+        if viewModel.isStreaming {
+            Button {
+                viewModel.cancelStreaming()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.secondary.opacity(0.22), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(appText("Stop generating", appLanguageRaw))
+        } else {
+            let canSend = viewModel.canSubmit(draft)
+            Button {
+                sendDraft()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(canSend ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .keyboardShortcut(.return, modifiers: .command)
+            .help("Command-Return")
+        }
+    }
+
+    // Contextual line below the input — only appears on error / retry, so the
+    // composer has no permanent bottom action row.
+    @ViewBuilder
+    private var composerStatusLine: some View {
+        if let error = viewModel.errorMessage {
+            HStack(spacing: 10) {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                if viewModel.canRetry && !viewModel.isStreaming {
+                    Button {
+                        Task { await viewModel.retryLastMessage() }
+                    } label: {
+                        Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                Spacer()
+            }
+        } else if viewModel.canRetry && !viewModel.isStreaming {
+            HStack {
+                Spacer()
+                Button {
+                    Task { await viewModel.retryLastMessage() }
+                } label: {
+                    Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
             }
         }
     }
@@ -667,18 +700,18 @@ struct AgentChatView: View {
 
     private var conversationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label(appText("Result", appLanguageRaw), systemImage: "text.bubble")
-                    .font(.headline)
-                Spacer()
-                if let status = viewModel.lastCompletionStatus {
+            // No "Result" header (ChatGPT-style); just show a tiny completion
+            // status line when present so the transcript starts at the messages.
+            if let status = viewModel.lastCompletionStatus {
+                HStack {
+                    Spacer()
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: 860)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(maxWidth: 860)
-            .frame(maxWidth: .infinity, alignment: .center)
 
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(viewModel.messages) { message in
