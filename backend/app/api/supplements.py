@@ -15,7 +15,8 @@ from app.schemas.supplement import (
     SupplementRecordCreate,
     SupplementRecordResponse,
     SupplementBatchCheckin,
-    SupplementWithRecord
+    SupplementWithRecord,
+    FrequentSupplement,
 )
 from app.services.supplement_recommendation import SupplementRecommendationService
 from app.services.daily_supplement_guide import get_daily_supplement_guide
@@ -279,6 +280,52 @@ def get_my_records(
     if supplement_id:
         query = query.filter(SupplementRecord.supplement_id == supplement_id)
     return query.order_by(SupplementRecord.record_date.desc()).limit(limit).all()
+
+
+@router.get("/me/frequent", response_model=List[FrequentSupplement])
+def get_my_frequent_supplements(
+    days: int = Query(default=30, ge=7, le=180),
+    limit: int = Query(default=8, ge=1, le=30),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """当前用户最近 N 天最常打卡的补剂, 按 taken 次数倒序 (供一键打卡).
+
+    只统计 taken=True 的打卡记录, 按 supplement_id 聚合; 只返回仍 active 的补剂
+    定义 (停用的不再推荐). 同频次按 name 稳定排序.
+    """
+    start_date = date.today() - timedelta(days=days)
+    records = db.query(SupplementRecord).filter(
+        SupplementRecord.user_id == current_user.id,
+        SupplementRecord.record_date >= start_date,
+        SupplementRecord.taken.is_(True),
+    ).all()
+
+    counts: dict[int, int] = {}
+    for r in records:
+        counts[r.supplement_id] = counts.get(r.supplement_id, 0) + 1
+    if not counts:
+        return []
+
+    # 取仍 active 的补剂定义, 拼上次数
+    defs = db.query(SupplementDefinition).filter(
+        SupplementDefinition.id.in_(counts.keys()),
+        SupplementDefinition.user_id == current_user.id,
+        SupplementDefinition.is_active,
+    ).all()
+
+    items = [
+        FrequentSupplement(
+            supplement_id=d.id,
+            name=d.name,
+            dosage=d.dosage,
+            timing=d.timing,
+            count=counts.get(d.id, 0),
+        )
+        for d in defs
+    ]
+    items.sort(key=lambda s: (-s.count, s.name))
+    return items[:limit]
 
 
 class CopyDayRequest(BaseModel):

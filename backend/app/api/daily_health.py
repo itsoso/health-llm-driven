@@ -1,9 +1,9 @@
 """日常健康记录API"""
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -24,6 +24,7 @@ from app.schemas.daily_health import (
     ExerciseRecordUpdate,
     GarminDataCreate,
     GarminDataResponse,
+    FrequentWater,
     OutdoorActivityCreate,
     SupplementIntakeCreate,
     WaterIntakeCreate,
@@ -265,6 +266,40 @@ def create_water_intake(
     db.commit()
     db.refresh(db_water)
     return {"message": "创建成功", "id": db_water.id}
+
+
+@router.get("/water/me/frequent", response_model=List[FrequentWater])
+def get_my_frequent_water(
+    days: int = Query(default=30, ge=7, le=180),
+    limit: int = Query(default=6, ge=1, le=20),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """当前用户最近 N 天最常用的「饮水量 + 饮品类型」组合, 按出现频次倒序 (供一键记录).
+
+    饮水没有名字, 故按 (amount_ml, drink_type) 组合聚合 —— 例如 "250ml 水"/"350ml 咖啡".
+    """
+    start_date = date.today() - timedelta(days=days)
+    records = db.query(WaterIntake).filter(
+        WaterIntake.user_id == current_user.id,
+        WaterIntake.record_date >= start_date,
+    ).all()
+
+    counts: dict[tuple[int, str], int] = {}
+    for r in records:
+        amount = r.amount_ml
+        if amount is None or amount <= 0:
+            continue
+        key = (int(amount), (r.drink_type or "").strip())
+        counts[key] = counts.get(key, 0) + 1
+
+    items = [
+        FrequentWater(amount_ml=amount, drink_type=dt or None, count=n)
+        for (amount, dt), n in counts.items()
+    ]
+    # 频次倒序, 同频次按量稳定排序
+    items.sort(key=lambda w: (-w.count, w.amount_ml))
+    return items[:limit]
 
 
 # 补剂记录
