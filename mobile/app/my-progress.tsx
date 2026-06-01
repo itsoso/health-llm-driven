@@ -28,7 +28,7 @@ import {
   type ReviewWindowDays,
 } from '../services/healthOperatingReview';
 import { spacing, radii } from '../constants/theme';
-import { useTheme } from '../hooks/useTheme';
+import { useTheme, type SemanticTone, type SemanticPalette } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
 import EvidenceChip from '../components/shared/EvidenceChip';
 
@@ -43,16 +43,17 @@ function pct(v: number | null): string {
   return `${(v * 100).toFixed(0)}%`;
 }
 
-const OUTCOME_COLORS: Record<string, { bg: string; text: string; label: string; arrow: string }> = {
-  improved: { bg: '#D1FAE5', text: '#065F46', label: '改善', arrow: '↑' },
-  unchanged: { bg: '#F1F5F9', text: '#475569', label: '稳定', arrow: '—' },
-  worsened: { bg: '#FEE2E2', text: '#991B1B', label: '反向', arrow: '↓' },
-  inconclusive: { bg: '#F1F5F9', text: '#94A3B8', label: '数据不足', arrow: '?' },
+// 颜色走 semanticColors (useTheme().s), 这里只定 tone + label/arrow.
+export const OUTCOME_COLORS: Record<string, { tone: SemanticTone; label: string; arrow: string }> = {
+  improved: { tone: 'success', label: '改善', arrow: '↑' },
+  unchanged: { tone: 'neutral', label: '稳定', arrow: '—' },
+  worsened: { tone: 'danger', label: '反向', arrow: '↓' },
+  inconclusive: { tone: 'neutral', label: '数据不足', arrow: '?' },
 };
 
 export default function MyProgressScreen() {
   const router = useRouter();
-  const { c } = useTheme();
+  const { c, s: sem } = useTheme();
   const qc = useQueryClient();
   const [days, setDays] = useState(30);
 
@@ -187,10 +188,10 @@ export default function MyProgressScreen() {
 
               {/* outcome 分布 */}
               <View style={[styles.outcomeRow, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-                <OutcomePill label="改善" count={s.improved} color="#10B981" total={s.graded} />
-                <OutcomePill label="稳定" count={s.unchanged} color="#94A3B8" total={s.graded} />
-                <OutcomePill label="反向" count={s.worsened} color="#EF4444" total={s.graded} />
-                <OutcomePill label="不足" count={s.inconclusive} color="#CBD5E1" total={s.graded} />
+                <OutcomePill label="改善" count={s.improved} color={sem.success.solid} total={s.graded} />
+                <OutcomePill label="稳定" count={s.unchanged} color={sem.neutral.solid} total={s.graded} />
+                <OutcomePill label="反向" count={s.worsened} color={sem.danger.solid} total={s.graded} />
+                <OutcomePill label="不足" count={s.inconclusive} color={c.labelQuaternary} total={s.graded} />
               </View>
 
               {/* 验证中 */}
@@ -208,6 +209,7 @@ export default function MyProgressScreen() {
                       card={card}
                       onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
                       c={c}
+                      sem={sem}
                     />
                   ))}
                 </View>
@@ -228,6 +230,7 @@ export default function MyProgressScreen() {
                       card={card}
                       onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
                       c={c}
+                      sem={sem}
                     />
                   ))}
                 </View>
@@ -243,12 +246,13 @@ export default function MyProgressScreen() {
 // ─── 子组件 ─────────────────────────────────────────────────────────────
 
 function OutcomePill({ label, count, color, total }: { label: string; count: number; color: string; total: number }) {
+  const { c } = useTheme();
   const pctVal = total > 0 ? (count / total) * 100 : 0;
   return (
     <View style={styles.outcomePill}>
       <Text style={[styles.outcomeLabel, { color }]}>{label}</Text>
       <Text style={[styles.outcomeCount, { color }]}>{count}</Text>
-      <View style={styles.outcomeBarBg}>
+      <View style={[styles.outcomeBarBg, { backgroundColor: c.fill }]}>
         <View style={[styles.outcomeBarFill, { width: `${pctVal}%`, backgroundColor: color }]} />
       </View>
     </View>
@@ -316,8 +320,9 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
   );
 }
 
-function CardRow({ card, onPress, c }: { card: ProgressCard; onPress: () => void; c: any }) {
+function CardRow({ card, onPress, c, sem }: { card: ProgressCard; onPress: () => void; c: any; sem: SemanticPalette }) {
   const oc = card.outcome ? OUTCOME_COLORS[card.outcome] : null;
+  const ocTone = oc ? sem[oc.tone] : null;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -341,9 +346,9 @@ function CardRow({ card, onPress, c }: { card: ProgressCard; onPress: () => void
           </Text>
         )}
       </View>
-      {oc && (
-        <View style={[styles.outcomeChip, { backgroundColor: oc.bg }]}>
-          <Text style={[styles.outcomeChipText, { color: oc.text }]}>
+      {oc && ocTone && (
+        <View style={[styles.outcomeChip, { backgroundColor: ocTone.bg }]}>
+          <Text style={[styles.outcomeChipText, { color: ocTone.fg }]}>
             {oc.arrow} {oc.label}
             {card.effect_size != null && card.outcome !== 'inconclusive' && (
               ` ${(Math.abs(card.effect_size) * 100).toFixed(0)}%`
@@ -484,7 +489,7 @@ const styles = StyleSheet.create({
   outcomePill: { flex: 1, gap: 4 },
   outcomeLabel: { fontSize: 11, fontWeight: '600' },
   outcomeCount: { fontSize: 18, fontWeight: '700' },
-  outcomeBarBg: { height: 4, borderRadius: 2, backgroundColor: '#F1F5F9' },
+  outcomeBarBg: { height: 4, borderRadius: 2 },
   outcomeBarFill: { height: '100%', borderRadius: 2 },
   section: { gap: spacing.sm, marginTop: spacing.sm },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
