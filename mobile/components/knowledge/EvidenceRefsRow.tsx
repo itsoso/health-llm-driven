@@ -9,6 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { GestureResponderEvent, StyleSheet, Text, TextStyle, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { KnowledgeClaimBundle } from '../../services/systemKnowledge';
+import { useTheme } from '../../hooks/useTheme';
 import { ClaimSheet } from './ClaimSheet';
 
 export type EvidenceRef = string | { claim_id?: string; doc_id?: string; id?: string };
@@ -37,6 +38,7 @@ export function normalizeEvidenceRefs(refs?: EvidenceRef[] | null): string[] {
 }
 
 export function EvidenceRefsRow({ refs, testID = 'system-kb-evidence-chip' }: EvidenceRefsRowProps) {
+  const { s } = useTheme();
   const claimIds = useMemo(() => normalizeEvidenceRefs(refs), [refs]);
   const [visible, setVisible] = useState(false);
 
@@ -52,12 +54,12 @@ export function EvidenceRefsRow({ refs, testID = 'system-kb-evidence-chip' }: Ev
       <TouchableOpacity
         testID={testID}
         activeOpacity={0.75}
-        style={styles.chip}
+        style={[styles.chip, { backgroundColor: s.info.bg }]}
         onPress={open}
       >
-        <Ionicons name="library-outline" size={11} color="#0A84FF" />
-        <Text style={txt.chipText}>系统证据 {claimIds.length}</Text>
-        <Ionicons name="chevron-forward" size={10} color="#0A84FF" />
+        <Ionicons name="library-outline" size={11} color={s.info.fg} />
+        <Text style={[styles.chipText, { color: s.info.fg }]}>系统证据 {claimIds.length}</Text>
+        <Ionicons name="chevron-forward" size={10} color={s.info.fg} />
       </TouchableOpacity>
 
       <ClaimSheet
@@ -79,10 +81,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 4,
     borderRadius: 7,
-    backgroundColor: '#EAF1FB',
   },
+  chipText: { fontSize: 10, fontWeight: '700' } as TextStyle,
 });
-
-const txt = {
-  chipText: { color: '#0A84FF', fontSize: 10, fontWeight: '700' } as TextStyle,
-};
