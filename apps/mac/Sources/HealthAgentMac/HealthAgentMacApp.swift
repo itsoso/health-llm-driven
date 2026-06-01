@@ -110,21 +110,32 @@ struct TodayView: View {
                         if let presentation {
                             HStack(alignment: .top, spacing: CGFloat(layout.columnSpacing)) {
                                 VStack(alignment: .leading, spacing: 18) {
-                                    if let briefing, !briefing.sections.isEmpty {
-                                        BriefingCardView(
-                                            briefing: briefing,
-                                            appLanguageRaw: appLanguageRaw,
-                                            onAskAgent: onAskAgent,
-                                            onAddContext: onAddContext,
-                                            onScheduleReminder: scheduleBriefingReminder
-                                        )
-                                    }
-                                    if SpO2WeekCard.shouldShow(nights: spo2Week, loaded: spo2WeekLoaded) {
-                                        SpO2WeekCard(
-                                            nights: spo2Week,
-                                            appLanguageRaw: appLanguageRaw,
-                                            onAskAgent: onAskAgent
-                                        )
+                                    let hasBriefing = (briefing?.sections.isEmpty == false)
+                                    let hasSpO2 = SpO2WeekCard.shouldShow(nights: spo2Week, loaded: spo2WeekLoaded)
+                                    if hasBriefing || hasSpO2 {
+                                        // 健康分组:今日简报 + 夜间 SpO2 归到一个带「健康」标题的板块,
+                                        // 与下方任务/看板内容在视觉上分开。
+                                        VStack(alignment: .leading, spacing: 12) {
+                                            Label(appText("Health", appLanguageRaw), systemImage: "heart.text.square.fill")
+                                                .font(.title3.bold())
+                                                .foregroundStyle(.pink)
+                                            if hasBriefing, let briefing {
+                                                BriefingCardView(
+                                                    briefing: briefing,
+                                                    appLanguageRaw: appLanguageRaw,
+                                                    onAskAgent: onAskAgent,
+                                                    onAddContext: onAddContext,
+                                                    onScheduleReminder: scheduleBriefingReminder
+                                                )
+                                            }
+                                            if hasSpO2 {
+                                                SpO2WeekCard(
+                                                    nights: spo2Week,
+                                                    appLanguageRaw: appLanguageRaw,
+                                                    onAskAgent: onAskAgent
+                                                )
+                                            }
+                                        }
                                     }
                                     PriorityActionHeroView(
                                         actions: presentation.actionRows,

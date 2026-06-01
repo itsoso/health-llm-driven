@@ -34,6 +34,7 @@ public enum L10n {
     private static let zhCN: [String: String] = [
         "Health Agent": "健康 Agent",
         "Today": "今日",
+        "Health": "健康",
         "Agent": "助手",
         "Record": "记录",
         "Data": "数据",
