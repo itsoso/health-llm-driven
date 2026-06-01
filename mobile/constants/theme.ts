@@ -79,6 +79,34 @@ export const darkColors = {
   tintTeal: '#0D1F2B',
 } as const;
 
+// ── Semantic Status Colors ──────────────────────────────
+// 消除散落各组件的 70+ 重复 hex (#34C759 / #FF9F0A / #FF453A / tailwind slate/emerald 系...).
+// 5 档语义, 每档 { fg, bg, solid }:
+//   fg    — 文字/图标前景 (在 bg 上可读)
+//   bg    — 浅色底 (chip / tint 卡片背景)
+//   solid — 实心填充 (进度条 / 实心 badge / 图标块)
+// light/dark 1:1 同键, 走 useTheme().s 自动切换. 业务档 (证据等级/命中率/风险) 映射到这 5 个 tone, 不再各造一套.
+export type SemanticTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+type SemanticEntry = { fg: string; bg: string; solid: string };
+
+export const semanticColors: Record<SemanticTone, SemanticEntry> = {
+  success: { fg: '#065F46', bg: '#D1FAE5', solid: '#30D158' },
+  warning: { fg: '#92400E', bg: '#FEF3C7', solid: '#FF9F0A' },
+  danger:  { fg: '#991B1B', bg: '#FEE2E2', solid: '#FF453A' },
+  info:    { fg: '#1E40AF', bg: '#DBEAFE', solid: '#0A84FF' },
+  neutral: { fg: '#475569', bg: '#F1F5F9', solid: '#8E8E93' },
+} as const;
+
+export const darkSemanticColors: Record<SemanticTone, SemanticEntry> = {
+  success: { fg: '#6EE7B7', bg: '#0D2B1A', solid: '#30D158' },
+  warning: { fg: '#FCD34D', bg: '#2B1F0D', solid: '#FF9F0A' },
+  danger:  { fg: '#FCA5A5', bg: '#2B0D0D', solid: '#FF453A' },
+  info:    { fg: '#93C5FD', bg: '#0D1A2B', solid: '#0A84FF' },
+  neutral: { fg: '#A1A1A6', bg: '#1C1C1E', solid: '#8E8E93' },
+} as const;
+
+export type SemanticPalette = typeof semanticColors;
+
 // ── Typography ──────────────────────────────────────────
 
 export const typography = {
