@@ -359,6 +359,8 @@ public enum L10n {
         "Calories kcal": "热量 kcal",
         "Protein g": "蛋白质 g",
         "Amount ml": "饮水量 ml",
+        "Frequent · one tap to log": "常喝 · 点一下直接记录",
+        "Frequent · one tap to check in": "常吃补剂 · 点一下打卡",
         "Supplement": "补剂",
         "Dose and timing": "剂量和时间",
         "Choose from Supplement Library": "从补剂库选择",

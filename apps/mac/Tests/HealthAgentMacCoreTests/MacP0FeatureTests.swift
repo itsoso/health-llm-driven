@@ -426,6 +426,103 @@ final class MacP0FeatureTests: XCTestCase {
         try await RecordClient(apiClient: client).undoSavedRecord(path: "weight/records/12")
     }
 
+    func testRecordClientFetchesFrequentSupplementsForOneTapCheckin() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/supplements/me/frequent?limit=8&days=30")
+            let data = """
+            [
+              {"supplement_id": 7, "name": "维生素D3", "dosage": "2000IU", "timing": "早餐后", "count": 21},
+              {"supplement_id": 3, "name": "鱼油", "dosage": null, "timing": null, "count": 9}
+            ]
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).fetchFrequentSupplements()
+
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.first?.supplementID, 7)
+        XCTAssertEqual(result.first?.name, "维生素D3")
+        XCTAssertEqual(result.first?.dosage, "2000IU")
+        XCTAssertEqual(result.first?.count, 21)
+        XCTAssertNil(result.last?.dosage)
+    }
+
+    func testRecordClientFetchesFrequentWaterForOneTapLogging() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/water/records/me/frequent?limit=6&days=30")
+            let data = #"[{"amount_ml": 300, "drink_type": "水", "count": 40}, {"amount_ml": 200, "drink_type": "咖啡", "count": 5}]"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).fetchFrequentWater()
+
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.first?.amountMl, 300)
+        XCTAssertEqual(result.first?.drinkType, "水")
+        XCTAssertEqual(result.last?.drinkType, "咖啡")
+    }
+
+    func testRecordClientChecksInFrequentSupplementForToday() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/supplements/records/batch")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertNotNil(body?["record_date"] as? String)
+            let checkins = body?["checkins"] as? [[String: Any]]
+            XCTAssertEqual(checkins?.first?["supplement_id"] as? Int, 7)
+            XCTAssertEqual(checkins?.first?["taken"] as? Bool, true)
+            let data = #"{"message":"批量打卡成功","results":[{"supplement_id":7,"action":"created"}]}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).checkinSupplement(supplementID: 7, name: "维生素D3")
+
+        XCTAssertEqual(result.type, "supplement")
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "已为今天补剂打卡：维生素D3")
+        XCTAssertNil(result.undoPath)
+    }
+
+    func testRecordClientLogsFrequentWaterWithDrinkType() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/water/records")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["amount"] as? Int, 200)
+            XCTAssertEqual(body?["drink_type"] as? String, "咖啡")
+            let data = #"{"id":55}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordWater(amountMl: 200, drinkType: "咖啡")
+
+        XCTAssertEqual(result.message, "已记录饮水 200ml 咖啡")
+        XCTAssertEqual(result.undoPath, "water/records/55")
+    }
+
     func testStructuredRecordDraftRequiresValidWeightBeforeSubmitting() {
         XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "").canSubmit)
         XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "abc").canSubmit)

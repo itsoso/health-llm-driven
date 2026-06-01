@@ -1960,6 +1960,8 @@ struct RecordHubView: View {
     @State private var selectedSupplementProduct: SupplementProductSummary?
     @State private var isSearchingSupplementProducts = false
     @State private var supplementProductMessage: String?
+    @State private var frequentSupplements: [FrequentSupplement] = []
+    @State private var frequentWater: [FrequentWater] = []
     @State private var weightKg = ""
     @State private var systolic = ""
     @State private var diastolic = ""
@@ -2020,6 +2022,15 @@ struct RecordHubView: View {
                 Task { await viewModel.refresh() }
             }
         }
+        .task { await loadFrequentSuggestions() }
+    }
+
+    /// 拉「常吃补剂 / 常喝饮水」建议；best-effort，失败静默成空(不打扰记录主流程)。
+    private func loadFrequentSuggestions() async {
+        async let supplements = try? client.fetchFrequentSupplements()
+        async let water = try? client.fetchFrequentWater()
+        frequentSupplements = await supplements ?? []
+        frequentWater = await water ?? []
     }
 
     private var recordHeader: some View {
@@ -2601,6 +2612,7 @@ struct RecordHubView: View {
                 recordTextField(appText("Protein g", appLanguageRaw), text: $protein)
             }
         case .water:
+            frequentWaterChips
             recordTextField(appText("Amount ml", appLanguageRaw), text: $waterMl)
         case .supplement:
             supplementFields
@@ -2630,6 +2642,7 @@ struct RecordHubView: View {
 
     private var supplementFields: some View {
         VStack(alignment: .leading, spacing: 10) {
+            frequentSupplementChips
             HStack {
                 recordTextField(appText("Supplement", appLanguageRaw), text: $supplementName)
                 Button {
@@ -2790,6 +2803,116 @@ struct RecordHubView: View {
         } catch {
             supplementProductResults = []
             supplementProductMessage = "\(appText("Search failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
+    private struct FrequentChipModel: Identifiable {
+        let id: String
+        let title: String
+        let meta: String?
+    }
+
+    @ViewBuilder
+    private var frequentWaterChips: some View {
+        if !frequentWater.isEmpty {
+            frequentChipsRow(
+                label: appText("Frequent · one tap to log", appLanguageRaw),
+                icon: "drop.fill",
+                tint: .cyan,
+                chips: frequentWater.map { water in
+                    let type = water.drinkType ?? ""
+                    let suffix = (type.isEmpty || type == "水") ? "" : " \(type)"
+                    return FrequentChipModel(id: water.id, title: "\(water.amountMl)ml\(suffix)", meta: nil)
+                }
+            ) { index in
+                let water = frequentWater[index]
+                Task { await recordFrequentWater(water) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var frequentSupplementChips: some View {
+        if !frequentSupplements.isEmpty {
+            frequentChipsRow(
+                label: appText("Frequent · one tap to check in", appLanguageRaw),
+                icon: "pills.fill",
+                tint: .purple,
+                chips: frequentSupplements.map { FrequentChipModel(id: "\($0.id)", title: $0.name, meta: $0.dosage) }
+            ) { index in
+                let supplement = frequentSupplements[index]
+                Task { await checkinFrequentSupplement(supplement) }
+            }
+        }
+    }
+
+    private func frequentChipsRow(
+        label: String,
+        icon: String,
+        tint: Color,
+        chips: [FrequentChipModel],
+        onPick: @escaping (Int) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(label, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(chips.enumerated()), id: \.element.id) { index, chip in
+                        Button {
+                            onPick(index)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(chip.title)
+                                    .font(.callout.weight(.semibold))
+                                    .lineLimit(1)
+                                if let meta = chip.meta, !meta.isEmpty {
+                                    Text(meta)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(tint.opacity(0.22), lineWidth: 1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSubmitting)
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+        }
+    }
+
+    private func recordFrequentWater(_ water: FrequentWater) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result = try await client.recordWater(amountMl: water.amountMl, drinkType: water.drinkType ?? "水")
+            if handleRecordResult(result, fallbackText: "\(water.amountMl)ml") {
+                await viewModel.refresh()
+            }
+        } catch {
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
+    private func checkinFrequentSupplement(_ supplement: FrequentSupplement) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result = try await client.checkinSupplement(supplementID: supplement.supplementID, name: supplement.name)
+            _ = handleRecordResult(result, fallbackText: supplement.name)
+            await viewModel.refresh()
+        } catch {
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 

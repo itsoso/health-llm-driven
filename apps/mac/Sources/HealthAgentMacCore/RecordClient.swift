@@ -100,6 +100,64 @@ private struct SymptomRecordRequest: Encodable {
     }
 }
 
+private struct SupplementCheckinRequest: Encodable {
+    let recordDate: String
+    let checkins: [Checkin]
+
+    struct Checkin: Encodable {
+        let supplementID: Int
+        let taken: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case supplementID = "supplement_id"
+            case taken
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case checkins
+    }
+}
+
+private struct BatchCheckinResponse: Decodable {
+    let message: String?
+}
+
+/// 最近最常打卡的补剂 (后端 GET /supplements/me/frequent, System A 定义+打卡).
+public struct FrequentSupplement: Decodable, Equatable, Sendable, Identifiable {
+    public let supplementID: Int
+    public let name: String
+    public let dosage: String?
+    public let timing: String?
+    public let count: Int
+
+    public var id: Int { supplementID }
+
+    enum CodingKeys: String, CodingKey {
+        case supplementID = "supplement_id"
+        case name
+        case dosage
+        case timing
+        case count
+    }
+}
+
+/// 最常用的「饮水量 + 饮品类型」组合 (后端 GET /water/records/me/frequent).
+public struct FrequentWater: Decodable, Equatable, Sendable, Identifiable {
+    public let amountMl: Int
+    public let drinkType: String?
+    public let count: Int
+
+    public var id: String { "\(amountMl)-\(drinkType ?? "")" }
+
+    enum CodingKeys: String, CodingKey {
+        case amountMl = "amount_ml"
+        case drinkType = "drink_type"
+        case count
+    }
+}
+
 public final class RecordClient: Sendable {
     private let apiClient: APIClient
 
@@ -131,22 +189,49 @@ public final class RecordClient: Sendable {
         )
     }
 
-    public func recordWater(amountMl: Int) async throws -> QuickRecordResult {
+    public func recordWater(amountMl: Int, drinkType: String = "水") async throws -> QuickRecordResult {
         let saved: SavedRecordResponse = try await apiClient.post(
             "water/records",
             body: WaterRecordRequest(
                 userID: 0,
                 recordDate: Self.todayString(),
                 amount: amountMl,
-                drinkType: "水"
+                drinkType: drinkType
             )
         )
+        let suffix = (drinkType.isEmpty || drinkType == "水") ? "" : " \(drinkType)"
         return QuickRecordResult(
             type: "water",
-            message: "已记录饮水 \(amountMl)ml",
+            message: "已记录饮水 \(amountMl)ml\(suffix)",
             success: true,
             recordID: saved.id,
             undoPath: undoPath(prefix: "water/records", recordID: saved.id)
+        )
+    }
+
+    /// 最近最常打卡的补剂，用于「常吃补剂」一键打卡建议。
+    public func fetchFrequentSupplements(limit: Int = 8, days: Int = 30) async throws -> [FrequentSupplement] {
+        try await apiClient.get("supplements/me/frequent?limit=\(limit)&days=\(days)")
+    }
+
+    /// 最常用的饮水量 + 饮品类型组合，用于「常喝」一键记录建议。
+    public func fetchFrequentWater(limit: Int = 6, days: Int = 30) async throws -> [FrequentWater] {
+        try await apiClient.get("water/records/me/frequent?limit=\(limit)&days=\(days)")
+    }
+
+    /// 给今天的某个补剂打卡 (System A 定义+打卡)。taken=false 即取消打卡。
+    public func checkinSupplement(supplementID: Int, name: String, taken: Bool = true) async throws -> QuickRecordResult {
+        let _: BatchCheckinResponse = try await apiClient.post(
+            "supplements/records/batch",
+            body: SupplementCheckinRequest(
+                recordDate: Self.todayString(),
+                checkins: [.init(supplementID: supplementID, taken: taken)]
+            )
+        )
+        return QuickRecordResult(
+            type: "supplement",
+            message: taken ? "已为今天补剂打卡：\(name)" : "已取消今天补剂打卡：\(name)",
+            success: true
         )
     }
 
