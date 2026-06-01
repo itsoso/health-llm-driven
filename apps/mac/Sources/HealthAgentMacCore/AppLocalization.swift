@@ -484,6 +484,7 @@ public enum L10n {
         "Recent training and load.": "近期训练与负荷。",
         "Recent Workouts": "近期运动",
         "No workouts loaded yet.": "暂无运动记录。",
+        "Could not load workouts. Pull to refresh.": "运动记录加载失败，点击刷新重试。",
         "Last": "近",
         "Total minutes": "总时长(分钟)",
         "Calories": "热量",
