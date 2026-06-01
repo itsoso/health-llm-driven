@@ -21,16 +21,17 @@ import { useQuery } from '@tanstack/react-query';
 
 import { fetchExamExplain, type ExamExplain, type ExplainAction } from '@/services/examExplain';
 import { spacing, radii } from '@/constants/theme';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, type SemanticTone, type SemanticPalette } from '@/hooks/useTheme';
 import MarkdownText from '@/components/shared/MarkdownText';
 import AgentFeedbackLink from '@/components/agent/AgentFeedbackLink';
 import { createExamExplainAgentContext } from '@/utils/agentContext';
 
-const EVIDENCE_CONF: Record<string, { bg: string; text: string; label: string }> = {
-  high: { bg: '#D1FAE5', text: '#065F46', label: '强证据' },
-  medium: { bg: '#FEF3C7', text: '#92400E', label: '中等证据' },
-  low: { bg: '#F1F5F9', text: '#475569', label: '弱证据' },
-  medical_grade: { bg: '#FEE2E2', text: '#991B1B', label: '需医生介入' },
+// 证据等级 → semanticColors tone (同 EvidenceChip), 颜色走 useTheme().s.
+const EVIDENCE_CONF: Record<string, { tone: SemanticTone; label: string }> = {
+  high: { tone: 'success', label: '强证据' },
+  medium: { tone: 'warning', label: '中等证据' },
+  low: { tone: 'neutral', label: '弱证据' },
+  medical_grade: { tone: 'danger', label: '需医生介入' },
 };
 
 const CATEGORY_CONF: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string; color: string }> = {
@@ -56,7 +57,7 @@ export default function ExamExplainScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const examId = Number(id);
   const router = useRouter();
-  const { c } = useTheme();
+  const { c, s } = useTheme();
 
   const { data, isLoading, error } = useQuery<ExamExplain>({
     queryKey: ['exam-explain', examId],
@@ -189,7 +190,7 @@ export default function ExamExplainScreen() {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>建议行动</Text>
               {expl.actions.map((a, i) => (
-                <ActionCard key={i} action={a} c={c} />
+                <ActionCard key={i} action={a} c={c} s={s} />
               ))}
             </View>
           )}
@@ -247,9 +248,10 @@ export default function ExamExplainScreen() {
   );
 }
 
-function ActionCard({ action, c }: { action: ExplainAction; c: any }) {
+function ActionCard({ action, c, s }: { action: ExplainAction; c: any; s: SemanticPalette }) {
   const cat = CATEGORY_CONF[action.category] ?? CATEGORY_CONF.lifestyle;
   const ev = EVIDENCE_CONF[action.evidence_level] ?? EVIDENCE_CONF.medium;
+  const evTone = s[ev.tone];
   return (
     <View style={[styles.actionCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
       <View style={styles.actionHead}>
@@ -257,8 +259,8 @@ function ActionCard({ action, c }: { action: ExplainAction; c: any }) {
           <Ionicons name={cat.icon} size={14} color={cat.color} />
         </View>
         <Text style={[styles.actionCat, { color: cat.color }]}>{cat.label}</Text>
-        <View style={[styles.evidenceChip, { backgroundColor: ev.bg }]}>
-          <Text style={[styles.evidenceChipText, { color: ev.text }]}>{ev.label}</Text>
+        <View style={[styles.evidenceChip, { backgroundColor: evTone.bg }]}>
+          <Text style={[styles.evidenceChipText, { color: evTone.fg }]}>{ev.label}</Text>
         </View>
       </View>
       <Text style={[styles.actionTitle, { color: c.labelPrimary }]}>{action.title}</Text>

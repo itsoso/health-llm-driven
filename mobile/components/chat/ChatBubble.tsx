@@ -24,7 +24,7 @@ import { buildInterventionDraft, type InterventionDraft } from '../../services/i
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import AttributionChips from './AttributionChips';
 import { radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { ColorPalette, useTheme, type SemanticPalette } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
@@ -40,7 +40,7 @@ interface Props {
 
 function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected }: Props) {
   const qc = useQueryClient();
-  const { c, isDark } = useTheme();
+  const { c, isDark, s } = useTheme();
   const toast = useToast();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
@@ -307,7 +307,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {structuredSummary ? (
-              <StructuredSummaryCard summary={structuredSummary} c={c} />
+              <StructuredSummaryCard summary={structuredSummary} c={c} s={s} />
             ) : null}
             {visibleMarkdown ? (
               <Markdown style={mdStyles}>{renderedMarkdown}</Markdown>
@@ -617,20 +617,22 @@ function stripStructuredHealthSummary(text: string): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function statusTone(status?: string): string {
-  if (!status) return '#8E8E93';
-  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return '#FF9F0A';
-  if (/❌|严重|急|失败/.test(status)) return '#FF453A';
-  if (/✅|正常|优秀|良好|充沛/.test(status)) return '#30D158';
-  return '#8E8E93';
+function statusTone(s: SemanticPalette, status?: string): string {
+  if (!status) return s.neutral.solid;
+  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return s.warning.solid;
+  if (/❌|严重|急|失败/.test(status)) return s.danger.solid;
+  if (/✅|正常|优秀|良好|充沛/.test(status)) return s.success.solid;
+  return s.neutral.solid;
 }
 
 function StructuredSummaryCard({
   summary,
   c,
+  s,
 }: {
   summary: StructuredHealthSummary;
   c: ColorPalette;
+  s: SemanticPalette;
 }) {
   return (
     <View style={[summaryStyles.card, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
@@ -650,7 +652,7 @@ function StructuredSummaryCard({
                   {metric.value}
                 </Text>
                 {metric.status ? (
-                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(metric.status) }]} />
+                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(s, metric.status) }]} />
                 ) : null}
               </View>
             ))}
