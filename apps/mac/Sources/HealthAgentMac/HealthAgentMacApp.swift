@@ -280,23 +280,8 @@ struct TodayView: View {
                 }
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
-                ForEach(presentation.heroMetrics) { metric in
-                    Button {
-                        askAgent(metric, section: "today_hero")
-                    } label: {
-                        HeroMetricTile(
-                            metric: metric,
-                            title: localizedMetricTitle(metric.titleKey),
-                            detail: localizedMetricDetail(metric.detail),
-                            showsDisclosure: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help(appText("Ask Agent with Context", appLanguageRaw))
-                }
-            }
-
+            // 步数/睡眠/血氧/体重 hero 指标格删除:与右栏「今日穿戴」WearablePanel
+            // 完全重复(同一批指标第三次出现)。本看板只保留下方独有的营养摄入趋势。
             Divider()
 
             HStack(spacing: 12) {
