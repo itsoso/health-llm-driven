@@ -1538,6 +1538,27 @@ struct WorkspaceOverviewView: View {
         VitalsTrendPresentation(records: garminRecords, lastDays: dataRange == "30d" ? 30 : 7)
     }
 
+    /// 快照卡：当该指标有 ≥2 个趋势点时，可点击进入与趋势卡相同的详情 sheet。
+    /// 点数不足时只展示静态卡（无法画出有意义的趋势）。
+    @ViewBuilder
+    private func vitalSnapshotTappable<Content: View>(
+        _ kind: VitalMetricKind,
+        points: Int,
+        @ViewBuilder card: (Bool) -> Content
+    ) -> some View {
+        if points >= 2 {
+            Button {
+                selectedVital = kind
+            } label: {
+                card(true)
+            }
+            .buttonStyle(.plain)
+            .help(appText("Click to inspect trend", appLanguageRaw))
+        } else {
+            card(false)
+        }
+    }
+
     @ViewBuilder
     private var vitalsSnapshotPanel: some View {
         let p = vitalsPresentation
@@ -1555,30 +1576,48 @@ struct WorkspaceOverviewView: View {
                     }
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                    VitalSnapshotCard(icon: "waveform.path.ecg", color: .pink,
-                                      title: appText("HRV", appLanguageRaw),
-                                      value: p.latestHRV.map { "\(Int($0.rounded()))" } ?? "—",
-                                      unit: p.latestHRV == nil ? "" : "ms")
-                    VitalSnapshotCard(icon: "heart.fill", color: .red,
-                                      title: appText("Resting HR", appLanguageRaw),
-                                      value: p.latestRestingHR.map(String.init) ?? "—",
-                                      unit: p.latestRestingHR == nil ? "" : "bpm")
-                    VitalSnapshotCard(icon: "heart.circle.fill", color: .orange,
-                                      title: appText("Avg HR", appLanguageRaw),
-                                      value: p.latestAvgHR.map(String.init) ?? "—",
-                                      unit: p.latestAvgHR == nil ? "" : "bpm")
-                    VitalSnapshotCard(icon: "brain.head.profile", color: .purple,
-                                      title: appText("Stress", appLanguageRaw),
-                                      value: p.latestStress.map(String.init) ?? "—",
-                                      unit: "")
-                    VitalSnapshotCard(icon: "bolt.fill", color: .green,
-                                      title: appText("Body Battery", appLanguageRaw),
-                                      value: p.latestBodyBattery.map(String.init) ?? "—",
-                                      unit: p.latestBodyBatteryLowest.map { "\(appText("low", appLanguageRaw)) \($0)" } ?? "")
-                    VitalSnapshotCard(icon: "bed.double.fill", color: .indigo,
-                                      title: appText("Sleep", appLanguageRaw),
-                                      value: p.latestSleepHours.map { String(format: "%.1f", $0) } ?? "—",
-                                      unit: vitalsSleepUnit(p))
+                    vitalSnapshotTappable(.hrv, points: p.hrvSeries.points.count) { tappable in
+                        VitalSnapshotCard(icon: "waveform.path.ecg", color: .pink,
+                                          title: appText("HRV", appLanguageRaw),
+                                          value: p.latestHRV.map { "\(Int($0.rounded()))" } ?? "—",
+                                          unit: p.latestHRV == nil ? "" : "ms",
+                                          showsDisclosure: tappable)
+                    }
+                    vitalSnapshotTappable(.restingHR, points: p.restingHRSeries.points.count) { tappable in
+                        VitalSnapshotCard(icon: "heart.fill", color: .red,
+                                          title: appText("Resting HR", appLanguageRaw),
+                                          value: p.latestRestingHR.map(String.init) ?? "—",
+                                          unit: p.latestRestingHR == nil ? "" : "bpm",
+                                          showsDisclosure: tappable)
+                    }
+                    vitalSnapshotTappable(.avgHR, points: p.avgHRSeries.points.count) { tappable in
+                        VitalSnapshotCard(icon: "heart.circle.fill", color: .orange,
+                                          title: appText("Avg HR", appLanguageRaw),
+                                          value: p.latestAvgHR.map(String.init) ?? "—",
+                                          unit: p.latestAvgHR == nil ? "" : "bpm",
+                                          showsDisclosure: tappable)
+                    }
+                    vitalSnapshotTappable(.stress, points: p.stressSeries.points.count) { tappable in
+                        VitalSnapshotCard(icon: "brain.head.profile", color: .purple,
+                                          title: appText("Stress", appLanguageRaw),
+                                          value: p.latestStress.map(String.init) ?? "—",
+                                          unit: "",
+                                          showsDisclosure: tappable)
+                    }
+                    vitalSnapshotTappable(.bodyBattery, points: p.bodyBatterySeries.points.count) { tappable in
+                        VitalSnapshotCard(icon: "bolt.fill", color: .green,
+                                          title: appText("Body Battery", appLanguageRaw),
+                                          value: p.latestBodyBattery.map(String.init) ?? "—",
+                                          unit: p.latestBodyBatteryLowest.map { "\(appText("low", appLanguageRaw)) \($0)" } ?? "",
+                                          showsDisclosure: tappable)
+                    }
+                    vitalSnapshotTappable(.sleepHours, points: p.sleepHoursSeries.points.count) { tappable in
+                        VitalSnapshotCard(icon: "bed.double.fill", color: .indigo,
+                                          title: appText("Sleep", appLanguageRaw),
+                                          value: p.latestSleepHours.map { String(format: "%.1f", $0) } ?? "—",
+                                          unit: vitalsSleepUnit(p),
+                                          showsDisclosure: tappable)
+                    }
                 }
                 if let stages = p.sleepStages, stages.hasData {
                     SleepStagesBar(
@@ -4014,14 +4053,23 @@ private struct VitalSnapshotCard: View {
     let title: String
     let value: String
     let unit: String
+    var showsDisclosure = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: icon)
-                .font(.headline)
-                .foregroundStyle(color)
-                .frame(width: 30, height: 30)
-                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            HStack {
+                Image(systemName: icon)
+                    .font(.headline)
+                    .foregroundStyle(color)
+                    .frame(width: 30, height: 30)
+                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Spacer()
+                if showsDisclosure {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(color.opacity(0.9))
+                }
+            }
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
