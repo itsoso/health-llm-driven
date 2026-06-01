@@ -109,9 +109,8 @@ struct AgentChatView: View {
     private let modelOptions = AgentModelCatalog.defaultOptions
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             header
-            conversationHistoryStrip
 
             ViewThatFits(in: .horizontal) {
                 // Wide: a proper chat column (messages scroll, composer pinned to
@@ -142,7 +141,9 @@ struct AgentChatView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(24)
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             LinearGradient(
@@ -175,26 +176,92 @@ struct AgentChatView: View {
         }
     }
 
+    // ChatGPT-style slim top bar: model selector on the left, lightweight history /
+    // new-chat affordances on the right. No big page title and no full-width history
+    // card — those used to eat the top third of the view and clip the transcript.
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(appText("Analysis", appLanguageRaw))
-                .font(.title2.bold())
-            Spacer()
+        HStack(alignment: .center, spacing: 10) {
             modelMenuButton
+            if viewModel.isStreaming {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Spacer()
+            statusChip
+            if !viewModel.conversationHistory.isEmpty {
+                historyMenuButton
+            }
             Button {
                 draft = ""
                 viewModel.startNewConversation()
                 editorFocusToken += 1
             } label: {
-                Label(appText("New Chat", appLanguageRaw), systemImage: "square.and.pencil")
+                Image(systemName: "square.and.pencil")
+                    .font(.body)
             }
-            .buttonStyle(.bordered)
-            statusChip
-            if viewModel.isStreaming {
-                ProgressView()
-                    .controlSize(.small)
+            .buttonStyle(.borderless)
+            .help(appText("New Chat", appLanguageRaw))
+        }
+    }
+
+    private var historyMenuButton: some View {
+        Button {
+            historyExpanded.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text("\(viewModel.conversationHistory.count)")
+                    .font(.caption.bold())
+                    .monospacedDigit()
             }
         }
+        .buttonStyle(.borderless)
+        .help(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
+        .popover(isPresented: $historyExpanded, arrowEdge: .bottom) {
+            historyPopoverContent
+        }
+    }
+
+    private var historyPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.conversationHistory.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(historyPageItems) { conversation in
+                        AgentConversationHistoryPill(
+                            conversation: conversation,
+                            isSelected: conversation.id == viewModel.currentConversationID,
+                            onLoad: {
+                                viewModel.loadConversation(conversation)
+                                editorFocusToken += 1
+                                historyExpanded = false
+                            },
+                            onDelete: {
+                                viewModel.deleteConversation(conversation)
+                            }
+                        )
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+            .frame(maxHeight: 360)
+
+            if historyPageCount > 1 {
+                historyPager
+            }
+        }
+        .padding(16)
+        .frame(width: 380)
     }
 
     private var modelMenuButton: some View {
@@ -419,74 +486,6 @@ struct AgentChatView: View {
     }
 
     @ViewBuilder
-    private var conversationHistoryStrip: some View {
-        if !viewModel.conversationHistory.isEmpty {
-            VStack(alignment: .leading, spacing: historyExpanded ? 10 : 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        historyExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
-                            .font(.subheadline.weight(.semibold))
-                        Text("\(viewModel.conversationHistory.count)")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.10), in: Capsule())
-                        if !historyExpanded {
-                            Text(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Image(systemName: historyExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if historyExpanded {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 260), spacing: 10)],
-                        spacing: 10
-                    ) {
-                        ForEach(historyPageItems) { conversation in
-                            AgentConversationHistoryPill(
-                                conversation: conversation,
-                                isSelected: conversation.id == viewModel.currentConversationID,
-                                onLoad: {
-                                    viewModel.loadConversation(conversation)
-                                    editorFocusToken += 1
-                                },
-                                onDelete: {
-                                    viewModel.deleteConversation(conversation)
-                                }
-                            )
-                        }
-                    }
-                    .padding(.vertical, 2)
-
-                    if historyPageCount > 1 {
-                        historyPager
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, historyExpanded ? 14 : 10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-            }
-        }
-    }
-
     private var historyPageCount: Int {
         let count = viewModel.conversationHistory.count
         guard count > 0 else { return 0 }
