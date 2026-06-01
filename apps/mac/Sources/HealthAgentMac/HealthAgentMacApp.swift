@@ -256,7 +256,7 @@ struct TodayView: View {
         return VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(appText("Health Dashboard", appLanguageRaw))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.title2.bold())
                 HStack(spacing: 8) {
                     Text(presentation.heroTitle)
                         .font(.headline.weight(.semibold))
