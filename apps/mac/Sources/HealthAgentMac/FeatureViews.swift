@@ -271,6 +271,11 @@ struct AgentChatView: View {
 
     private var modelMenuButton: some View {
         Menu {
+            // Surface the model the backend actually used on the last run (auto /
+            // default mode resolve server-side, so this is the honest answer).
+            if let raw = viewModel.lastModel, !raw.isEmpty {
+                Text("\(appText("Currently using", appLanguageRaw)): \(resolvedModelTitle(raw))")
+            }
             Section(appText("Mode", appLanguageRaw)) {
                 Button {
                     modelStrategy = "auto"
@@ -318,10 +323,25 @@ struct AgentChatView: View {
            let option = modelOptions.first(where: { $0.id == id }) {
             return option.title
         }
-        if modelStrategy == "default3" {
-            return appText("Default 3", appLanguageRaw)
+        // Auto / default mode: show the actual model used last run when known,
+        // prefixed with the mode so it's clear it was auto-resolved.
+        let modePrefix = modelStrategy == "default3" ? appText("Default 3", appLanguageRaw) : appText("Auto", appLanguageRaw)
+        if let raw = viewModel.lastModel, !raw.isEmpty {
+            return "\(modePrefix) · \(resolvedModelTitle(raw))"
         }
-        return appText("Auto Select", appLanguageRaw)
+        return modelStrategy == "default3" ? appText("Default 3", appLanguageRaw) : appText("Auto Select", appLanguageRaw)
+    }
+
+    /// Map a raw model id from the stream (e.g. "commercial/GPT-5.5") to a
+    /// friendly catalog title, falling back to the last path component.
+    private func resolvedModelTitle(_ raw: String) -> String {
+        if let option = modelOptions.first(where: { $0.id == raw || $0.title == raw }) {
+            return option.title
+        }
+        if let slash = raw.lastIndex(of: "/") {
+            return String(raw[raw.index(after: slash)...])
+        }
+        return raw
     }
 
     private var composer: some View {

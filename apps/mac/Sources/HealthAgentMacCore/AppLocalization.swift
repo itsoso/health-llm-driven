@@ -291,6 +291,7 @@ public enum L10n {
         "Default 3": "默认 3 个",
         "Manual": "手动",
         "Auto": "自动",
+        "Currently using": "当前使用",
         "Let the backend choose the best route.": "让后端自动选择最合适的路由。",
         "Use the default 3-model panel.": "使用默认 3 模型面板。",
         "Evidence": "证据",
