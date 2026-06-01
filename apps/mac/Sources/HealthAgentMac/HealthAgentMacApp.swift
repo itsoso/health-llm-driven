@@ -1370,6 +1370,7 @@ struct WorkspaceOverviewView: View {
             if kind == .data {
                 vitalsSnapshotPanel
                 vitalsTrendPanel
+                sleepStageTrendPanel
                 nocturnalWeekStripPanel
                 nocturnalSpO2Panel
                 labTrendsPanel
@@ -1663,6 +1664,37 @@ struct WorkspaceOverviewView: View {
                                value: avgLabel(p.sleepHoursSeries, "h", decimals: 1), color: .indigo, points: p.sleepHoursSeries.points))
         }
         return cards
+    }
+
+    @ViewBuilder
+    private var sleepStageTrendPanel: some View {
+        let days = vitalsPresentation.sleepStageDays
+        if days.count >= 2 {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Label(appText("Sleep Stages", appLanguageRaw), systemImage: "bed.double.fill")
+                        .font(.headline)
+                        .foregroundStyle(.indigo)
+                    Spacer()
+                    Text(appText(dataRange == "30d" ? "30 days" : "7 days", appLanguageRaw))
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+                SleepStageTrendChart(
+                    days: days,
+                    deepLabel: appText("Deep", appLanguageRaw),
+                    lightLabel: appText("Light", appLanguageRaw),
+                    remLabel: appText("REM", appLanguageRaw),
+                    awakeLabel: appText("Awake", appLanguageRaw)
+                )
+            }
+            .padding(18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            }
+        }
     }
 
     private var nocturnalSpO2Panel: some View {
@@ -4035,6 +4067,94 @@ private struct SleepStagesBar: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// 逐日睡眠分期堆叠柱状图 (深睡/浅睡/REM/清醒)，柱高按当天总睡眠时长归一化。
+private struct SleepStageTrendChart: View {
+    let days: [VitalsTrendPresentation.SleepStageDay]
+    let deepLabel: String
+    let lightLabel: String
+    let remLabel: String
+    let awakeLabel: String
+
+    private let deepColor = Color.indigo
+    private let lightColor = Color.blue
+    private let remColor = Color.teal
+    private let awakeColor = Color.orange
+
+    private var maxTotal: Int { max(days.map(\.totalMinutes).max() ?? 1, 1) }
+
+    private func avgHoursLabel() -> String {
+        guard !days.isEmpty else { return "—" }
+        let avgMin = Double(days.map(\.totalMinutes).reduce(0, +)) / Double(days.count)
+        return String(format: "%.1fh", avgMin / 60.0)
+    }
+
+    private func monthDay(_ date: String) -> String {
+        // "2026-05-30" → "05-30"
+        let parts = date.split(separator: "-")
+        return parts.count >= 3 ? "\(parts[1])-\(parts[2])" : date
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(deepLabel)/\(lightLabel)/\(remLabel)/\(awakeLabel) · \(avgHoursLabel())")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            GeometryReader { geo in
+                let spacing: CGFloat = days.count > 14 ? 2 : 4
+                HStack(alignment: .bottom, spacing: spacing) {
+                    ForEach(days) { day in
+                        stackedBar(day, fullHeight: geo.size.height)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: 96)
+
+            HStack {
+                Text(days.first.map { monthDay($0.date) } ?? "")
+                Spacer()
+                Text(days.last.map { monthDay($0.date) } ?? "")
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.tertiary)
+
+            HStack(spacing: 14) {
+                legendDot(deepColor, deepLabel)
+                legendDot(lightColor, lightLabel)
+                legendDot(remColor, remLabel)
+                legendDot(awakeColor, awakeLabel)
+            }
+        }
+    }
+
+    private func stackedBar(_ day: VitalsTrendPresentation.SleepStageDay, fullHeight: CGFloat) -> some View {
+        let barHeight = fullHeight * CGFloat(day.totalMinutes) / CGFloat(maxTotal)
+        func seg(_ minutes: Int) -> CGFloat {
+            guard day.totalMinutes > 0 else { return 0 }
+            return barHeight * CGFloat(minutes) / CGFloat(day.totalMinutes)
+        }
+        return VStack(spacing: 0) {
+            // 顺序自上而下：清醒 → REM → 浅睡 → 深睡 (深睡贴底)
+            Rectangle().fill(awakeColor.opacity(0.85)).frame(height: seg(day.awakeMinutes))
+            Rectangle().fill(remColor.opacity(0.85)).frame(height: seg(day.remMinutes))
+            Rectangle().fill(lightColor.opacity(0.85)).frame(height: seg(day.lightMinutes))
+            Rectangle().fill(deepColor.opacity(0.9)).frame(height: seg(day.deepMinutes))
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: barHeight, alignment: .bottom)
+        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+        .help("\(monthDay(day.date)) · \(String(format: "%.1fh", Double(day.totalMinutes) / 60.0))")
+    }
+
+    private func legendDot(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
         }
     }
 }

@@ -155,6 +155,7 @@ public enum L10n {
         "Awake": "清醒",
         "Vitals & Sleep": "生理与睡眠",
         "Vitals & Sleep Trends": "生理与睡眠趋势",
+        "Sleep Stages": "睡眠分期",
         "Avg HR": "平均心率",
         "Body Battery": "身体电量",
         "Sleep": "睡眠",

@@ -100,6 +100,26 @@ public struct VitalsTrendPresentation: Equatable, Sendable {
         public var hasData: Bool { totalMinutes > 0 }
     }
 
+    /// 单日睡眠分期 (逐日趋势用)。
+    public struct SleepStageDay: Equatable, Sendable, Identifiable {
+        public let date: String
+        public let deepMinutes: Int
+        public let lightMinutes: Int
+        public let remMinutes: Int
+        public let awakeMinutes: Int
+
+        public var id: String { date }
+        public var totalMinutes: Int { deepMinutes + lightMinutes + remMinutes + awakeMinutes }
+
+        public init(date: String, deepMinutes: Int, lightMinutes: Int, remMinutes: Int, awakeMinutes: Int) {
+            self.date = date
+            self.deepMinutes = deepMinutes
+            self.lightMinutes = lightMinutes
+            self.remMinutes = remMinutes
+            self.awakeMinutes = awakeMinutes
+        }
+    }
+
     public let hasData: Bool
     public let latestDate: String?
 
@@ -113,6 +133,8 @@ public struct VitalsTrendPresentation: Equatable, Sendable {
     public let latestSleepScore: Int?
     public let latestSleepHours: Double?
     public let sleepStages: SleepStages?
+    /// 窗口内每天的睡眠分期 (升序，仅含有分期数据的天)。
+    public let sleepStageDays: [SleepStageDay]
 
     // 趋势序列 (按日期升序)
     public let hrvSeries: Series
@@ -160,6 +182,16 @@ public struct VitalsTrendPresentation: Equatable, Sendable {
             )
         } else {
             self.sleepStages = nil
+        }
+
+        self.sleepStageDays = scoped.compactMap { rec in
+            guard let date = rec.recordDate else { return nil }
+            let deep = rec.deepSleepMinutes ?? 0
+            let light = rec.lightSleepMinutes ?? 0
+            let rem = rec.remSleepMinutes ?? 0
+            let awake = rec.awakeMinutes ?? 0
+            guard deep + light + rem + awake > 0 else { return nil }
+            return SleepStageDay(date: date, deepMinutes: deep, lightMinutes: light, remMinutes: rem, awakeMinutes: awake)
         }
 
         self.hrvSeries = Series(points: scoped.compactMap(\.hrv))

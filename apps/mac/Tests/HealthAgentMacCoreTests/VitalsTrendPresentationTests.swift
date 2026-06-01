@@ -94,6 +94,17 @@ final class VitalsTrendPresentationTests: XCTestCase {
         XCTAssertNil(noStages.sleepStages)
     }
 
+    func testSleepStageDaysAreChronologicalAndSkipDaysWithoutStages() {
+        let p = VitalsTrendPresentation(records: [
+            record("2026-05-30", deep: 90, light: 250, rem: 100, awake: 20),
+            record("2026-05-28", deep: 80, light: 240, rem: 90, awake: 15),
+            record("2026-05-29", sleepMin: 400)   // total sleep but no stage breakdown → skipped
+        ])
+        XCTAssertEqual(p.sleepStageDays.map(\.date), ["2026-05-28", "2026-05-30"])
+        XCTAssertEqual(p.sleepStageDays.first?.deepMinutes, 80)
+        XCTAssertEqual(p.sleepStageDays.last?.totalMinutes, 460)
+    }
+
     func testDecodesGarminDailyRecordFromBackendSnakeCaseJSON() throws {
         let json = """
         [{
