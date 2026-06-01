@@ -263,10 +263,14 @@ struct AgentChatView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // White input field (ChatGPT-style) instead of the grey fill.
+            // `.textBackgroundColor` is the system text-field white and stays
+            // correct in dark mode; a slightly stronger border keeps the white
+            // box legible against the composer card.
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
             }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
