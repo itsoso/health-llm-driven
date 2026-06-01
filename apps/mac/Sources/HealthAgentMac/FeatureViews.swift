@@ -93,7 +93,10 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyExpanded = false
+    @State private var historyPage = 0
     @State private var copiedMessageID: UUID?
+
+    private static let historyPageSize = 6
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
@@ -439,24 +442,28 @@ struct AgentChatView: View {
                 .buttonStyle(.plain)
 
                 if historyExpanded {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(viewModel.conversationHistory.prefix(12)) { conversation in
-                                AgentConversationHistoryPill(
-                                    conversation: conversation,
-                                    isSelected: conversation.id == viewModel.currentConversationID,
-                                    onLoad: {
-                                        viewModel.loadConversation(conversation)
-                                        editorFocusToken += 1
-                                    },
-                                    onDelete: {
-                                        viewModel.deleteConversation(conversation)
-                                    }
-                                )
-                                .frame(width: 280)
-                            }
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 260), spacing: 10)],
+                        spacing: 10
+                    ) {
+                        ForEach(historyPageItems) { conversation in
+                            AgentConversationHistoryPill(
+                                conversation: conversation,
+                                isSelected: conversation.id == viewModel.currentConversationID,
+                                onLoad: {
+                                    viewModel.loadConversation(conversation)
+                                    editorFocusToken += 1
+                                },
+                                onDelete: {
+                                    viewModel.deleteConversation(conversation)
+                                }
+                            )
                         }
-                        .padding(.vertical, 2)
+                    }
+                    .padding(.vertical, 2)
+
+                    if historyPageCount > 1 {
+                        historyPager
                     }
                 }
             }
@@ -468,6 +475,55 @@ struct AgentChatView: View {
                     .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
             }
         }
+    }
+
+    private var historyPageCount: Int {
+        let count = viewModel.conversationHistory.count
+        guard count > 0 else { return 0 }
+        return (count + Self.historyPageSize - 1) / Self.historyPageSize
+    }
+
+    /// Conversations for the current page, clamping the page index so a stale
+    /// index (e.g. after deleting the last item on the last page) can't slice
+    /// out of range.
+    private var historyPageItems: [AgentConversationSnapshot] {
+        let all = viewModel.conversationHistory
+        guard !all.isEmpty else { return [] }
+        let pageCount = historyPageCount
+        let page = min(max(historyPage, 0), pageCount - 1)
+        let start = page * Self.historyPageSize
+        let end = min(start + Self.historyPageSize, all.count)
+        return Array(all[start..<end])
+    }
+
+    private var historyPager: some View {
+        let pageCount = historyPageCount
+        let page = min(max(historyPage, 0), max(pageCount - 1, 0))
+        return HStack(spacing: 12) {
+            Button {
+                if historyPage > 0 { historyPage -= 1 }
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.plain)
+            .disabled(page <= 0)
+
+            Text("\(page + 1) / \(pageCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            Button {
+                if historyPage < pageCount - 1 { historyPage += 1 }
+            } label: {
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(page >= pageCount - 1)
+
+            Spacer()
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.top, 4)
     }
 
     private var selectedModelDescription: String {
