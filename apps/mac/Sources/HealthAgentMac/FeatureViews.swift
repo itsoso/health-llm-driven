@@ -95,8 +95,16 @@ struct AgentChatView: View {
     @State private var historyExpanded = false
     @State private var historyPage = 0
     @State private var copiedMessageID: UUID?
+    @State private var composerTextHeight: CGFloat = 0
 
     private static let historyPageSize = 6
+    // ChatGPT-style: start at ~1 line, grow with content, then scroll past a cap.
+    private static let composerMinHeight: CGFloat = 38
+    private static let composerMaxHeight: CGFloat = 260
+
+    private var composerEditorHeight: CGFloat {
+        min(max(composerTextHeight, Self.composerMinHeight), Self.composerMaxHeight)
+    }
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
@@ -250,11 +258,13 @@ struct AgentChatView: View {
             ZStack(alignment: .topLeading) {
                 PromptCommandTextEditor(
                     text: $draft,
-                    focusToken: editorFocusToken
+                    focusToken: editorFocusToken,
+                    measuredHeight: $composerTextHeight
                 ) {
                     sendDraft()
                 }
-                .frame(minHeight: 190, maxHeight: 300)
+                .frame(height: composerEditorHeight)
+                .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
 
                 if draft.isEmpty {
                     Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
@@ -1816,10 +1826,25 @@ private struct AgentConversationHistoryRow: View {
 private struct PromptCommandTextEditor: NSViewRepresentable {
     @Binding var text: String
     let focusToken: Int
+    // Reports laid-out content height for auto-growing composers; defaults to a
+    // throwaway binding for call sites that use a fixed frame instead.
+    var measuredHeight: Binding<CGFloat> = .constant(0)
     let onCommandReturn: () -> Void
 
+    init(
+        text: Binding<String>,
+        focusToken: Int,
+        measuredHeight: Binding<CGFloat> = .constant(0),
+        onCommandReturn: @escaping () -> Void
+    ) {
+        self._text = text
+        self.focusToken = focusToken
+        self.measuredHeight = measuredHeight
+        self.onCommandReturn = onCommandReturn
+    }
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, measuredHeight: measuredHeight)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -1847,6 +1872,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
 
         DispatchQueue.main.async {
             textView.window?.makeFirstResponder(textView)
+            context.coordinator.recomputeHeight()
         }
         return scrollView
     }
@@ -1856,6 +1882,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         textView.onCommandReturn = onCommandReturn
         if textView.string != text {
             textView.string = text
+            context.coordinator.recomputeHeight()
         }
         if context.coordinator.focusToken != focusToken {
             context.coordinator.focusToken = focusToken
@@ -1868,16 +1895,34 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        @Binding var measuredHeight: CGFloat
         weak var textView: CommandReturnTextView?
         var focusToken = 0
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, measuredHeight: Binding<CGFloat>) {
             self._text = text
+            self._measuredHeight = measuredHeight
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text = textView.string
+            recomputeHeight()
+        }
+
+        /// Measure the laid-out text height so the composer can grow with content.
+        /// Reports the glyph-box height + the text container's vertical insets;
+        /// the SwiftUI side clamps it between one line and a max before scrolling.
+        func recomputeHeight() {
+            guard let textView,
+                  let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer else { return }
+            layoutManager.ensureLayout(for: container)
+            let used = layoutManager.usedRect(for: container).height
+            let height = used + textView.textContainerInset.height * 2
+            if abs(height - measuredHeight) > 0.5 {
+                measuredHeight = height
+            }
         }
     }
 }
