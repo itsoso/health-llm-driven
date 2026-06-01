@@ -17,11 +17,37 @@ export const supplementApi = {
     api.post('/supplements/records/batch', { record_date: date, checkins: [{ supplement_id: supplementId, taken }] }),
 };
 
-export async function recordWater(amount: number): Promise<WaterRecord> {
+export interface FrequentSupplement {
+  supplement_id: number;
+  name: string;
+  dosage: string | null;
+  timing: string | null;
+  count: number;
+}
+
+/** 最近最常打卡的补剂 (后端 /supplements/me/frequent). 点一下给今天打卡. */
+export async function getFrequentSupplements(limit = 8, days = 30): Promise<FrequentSupplement[]> {
+  const { data } = await api.get<FrequentSupplement[]>('/supplements/me/frequent', { params: { limit, days } });
+  return data;
+}
+
+export interface FrequentWater {
+  amount_ml: number;
+  drink_type: string | null;
+  count: number;
+}
+
+/** 最常用的「饮水量+饮品类型」组合 (后端 /water/records/me/frequent). 点一下直接记录. */
+export async function getFrequentWater(limit = 6, days = 30): Promise<FrequentWater[]> {
+  const { data } = await api.get<FrequentWater[]>('/water/records/me/frequent', { params: { limit, days } });
+  return data;
+}
+
+export async function recordWater(amount: number, drinkType = '水'): Promise<WaterRecord> {
   const { data } = await api.post<WaterRecord>('/water/records', {
     record_date: today(),
     amount,
-    drink_type: '水',
+    drink_type: drinkType,
     user_id: 0,
   });
   return data;

@@ -8,7 +8,16 @@ import { fetchDashboardData } from '../../services/dashboard';
 import api from '../../services/api';
 import { useRouter } from 'expo-router';
 import { emitClientEvent } from '../../services/clientEvents';
-import { recordWater, deleteWater } from '../../services/records';
+import {
+  recordWater,
+  deleteWater,
+  getFrequentSupplements,
+  getFrequentWater,
+  supplementApi,
+  type FrequentSupplement,
+  type FrequentWater,
+} from '../../services/records';
+import FrequentChipsRow from '../../components/records/FrequentChipsRow';
 import { filterMedicationRecordItems } from '../../services/medicationFilters';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
 import {
@@ -138,10 +147,36 @@ export default function RecordScreen() {
   const shouldShowRecommendedRecord = recommendedRecord?.priority >= 60;
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
-  const doWater = useCallback(async (amt: number) => {
+  const doWater = useCallback(async (amt: number, drinkType = '水') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try { const rec = await recordWater(amt); await invalidateRecordMutation(qc); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); await invalidateRecordMutation(qc); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
+    try { const rec = await recordWater(amt, drinkType); await invalidateRecordMutation(qc); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); await invalidateRecordMutation(qc); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
   }, [qc]);
+
+  // 常用补剂 / 常用饮水 —— 一键记录 (后端按历史频次聚合)
+  const frequentSupplementsQuery = useQuery({
+    queryKey: ['supplements', 'frequent'],
+    queryFn: () => getFrequentSupplements(8, 30),
+    staleTime: 10 * 60 * 1000,
+  });
+  const frequentWaterQuery = useQuery({
+    queryKey: ['water', 'frequent'],
+    queryFn: () => getFrequentWater(6, 30),
+    staleTime: 10 * 60 * 1000,
+  });
+  const frequentSupplements: FrequentSupplement[] = Array.isArray(frequentSupplementsQuery.data) ? frequentSupplementsQuery.data : [];
+  const frequentWater: FrequentWater[] = Array.isArray(frequentWaterQuery.data) ? frequentWaterQuery.data : [];
+
+  const doFrequentSupplement = useCallback(async (s: FrequentSupplement) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await supplementApi.batchCheckin(today, s.supplement_id, true);
+      await invalidateRecordMutation(qc);
+      showUndo(`已打卡 ${s.name}`, async () => {
+        await supplementApi.batchCheckin(today, s.supplement_id, false);
+        await invalidateRecordMutation(qc);
+      });
+    } catch { Alert.alert('记录失败', '补剂打卡失败，请重试'); }
+  }, [qc, today]);
 
   const handleChatHydration = useCallback(() => {
     pushChatWithContext(router, {
@@ -280,6 +315,18 @@ export default function RecordScreen() {
         <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
 
         {/* 6. Supplements */}
+        {frequentSupplements.length > 0 && (
+          <FrequentChipsRow
+            label="常吃补剂 · 点一下打卡"
+            icon="medkit-outline"
+            chips={frequentSupplements.map(s => ({
+              key: String(s.supplement_id),
+              title: s.name,
+              meta: s.dosage ?? undefined,
+            }))}
+            onPick={(i) => doFrequentSupplement(frequentSupplements[i])}
+          />
+        )}
         <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} onChat={handleChatSupplements} />
 
         {/* 7. Body + Diet (tabbed) */}
@@ -462,6 +509,15 @@ export default function RecordScreen() {
         {/* 10. Water (low priority) */}
         <HealthCard title="饮水" icon="water-outline" iconColor={c.blue} iconBg={c.tintBlue}
           rightAccessory={<Text style={txt.waterTotal}>{waterTotal}/{waterTarget}ml</Text>}>
+          <FrequentChipsRow
+            label="常喝 · 点一下直接记录"
+            icon="water-outline"
+            chips={frequentWater.map(w => ({
+              key: `${w.amount_ml}-${w.drink_type ?? ''}`,
+              title: `${w.amount_ml}ml${w.drink_type && w.drink_type !== '水' ? ` ${w.drink_type}` : ''}`,
+            }))}
+            onPick={(i) => { const w = frequentWater[i]; doWater(w.amount_ml, w.drink_type ?? '水'); }}
+          />
           <View style={styles.waterBtnRow}>
             {[200, 300, 500].map(a => (
               <TouchableOpacity key={a} style={styles.waterBtn} onPress={() => doWater(a)} activeOpacity={0.7}>
