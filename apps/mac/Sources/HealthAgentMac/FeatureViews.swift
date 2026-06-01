@@ -1518,32 +1518,32 @@ private struct MarkdownMessageText: View {
         switch block {
         case .heading(let level, let text):
             inlineText(text)
-                .font(level <= 2 ? scaledFont(base: 15, weight: .bold) : scaledFont(base: 13, weight: .semibold))
+                .font(level <= 2 ? scaledFont(base: 13, weight: .bold) : scaledFont(base: 11.5, weight: .semibold))
                 .foregroundStyle(.primary)
                 .padding(.top, level <= 2 ? 4 : 2)
         case .paragraph(let text):
             inlineText(text)
-                .font(scaledFont(base: 11.5))
+                .font(scaledFont(base: 10.5))
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
-                    .font(scaledFont(base: 11.5, weight: .bold))
+                    .font(scaledFont(base: 10.5, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                 inlineText(text)
-                    .font(scaledFont(base: 11.5))
+                    .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .numbered(let index, let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(index).")
-                    .font(scaledFont(base: 11.5, weight: .bold))
+                    .font(scaledFont(base: 10.5, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                     .frame(minWidth: 22, alignment: .trailing)
                 inlineText(text)
-                    .font(scaledFont(base: 11.5))
+                    .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1551,7 +1551,7 @@ private struct MarkdownMessageText: View {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                     inlineText(column)
-                        .font(scaledFont(base: 10.5))
+                        .font(scaledFont(base: 9.5))
                         .lineLimit(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
