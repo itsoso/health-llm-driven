@@ -176,12 +176,13 @@ struct AgentChatView: View {
         }
     }
 
-    // ChatGPT-style slim top bar: model selector on the left, lightweight history /
-    // new-chat affordances on the right. No big page title and no full-width history
-    // card — those used to eat the top third of the view and clip the transcript.
+    // ChatGPT-style slim top bar: model selector + new-chat on the left, history /
+    // status on the right. No big page title and no full-width history card —
+    // those used to eat the top third of the view and clip the transcript.
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             modelMenuButton
+            newChatButton
             if viewModel.isStreaming {
                 ProgressView()
                     .controlSize(.small)
@@ -191,17 +192,20 @@ struct AgentChatView: View {
             if !viewModel.conversationHistory.isEmpty {
                 historyMenuButton
             }
-            Button {
-                draft = ""
-                viewModel.startNewConversation()
-                editorFocusToken += 1
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.body)
-            }
-            .buttonStyle(.borderless)
-            .help(appText("New Chat", appLanguageRaw))
         }
+    }
+
+    private var newChatButton: some View {
+        Button {
+            draft = ""
+            viewModel.startNewConversation()
+            editorFocusToken += 1
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .font(.body)
+        }
+        .buttonStyle(.borderless)
+        .help(appText("New Chat", appLanguageRaw))
     }
 
     private var historyMenuButton: some View {
@@ -364,7 +368,11 @@ struct AgentChatView: View {
                 }
             }
 
-            promptSuggestions
+            // ChatGPT-style: starter suggestions only on the empty/default state;
+            // once a conversation is going they'd just crowd the composer.
+            if viewModel.messages.isEmpty {
+                promptSuggestions
+            }
 
             HStack(alignment: .center, spacing: 10) {
                 if let error = viewModel.errorMessage {
