@@ -126,6 +126,43 @@ public enum DesktopWorkspaceContextFactory {
         ].compactMap { $0 }.joined()
     }
 
+    public static func contextItem(forVital detail: VitalTrendDetail, title: String) -> AgentContextItem {
+        let unitSuffix = detail.unit.isEmpty ? "" : " \(detail.unit)"
+        return AgentContextItem(
+            sourceID: "vital_trend:\(detail.kind.rawValue):\(detail.rangeDays)d",
+            sourceKind: "vital_trend",
+            title: "\(title) · \(detail.rangeDays)天",
+            summary: [
+                detail.average.map { "avg \(DesktopHealthTrendContext.format($0))\(unitSuffix)" },
+                detail.minValue.map { "min \(DesktopHealthTrendContext.format($0))" },
+                detail.maxValue.map { "max \(DesktopHealthTrendContext.format($0))" },
+                "\(detail.points.count) days"
+            ].compactMap { $0 }.joined(separator: " · "),
+            payload: [
+                "kind": detail.kind.rawValue,
+                "title": title,
+                "range_days": "\(detail.rangeDays)",
+                "unit": detail.unit,
+                "average": detail.average.map(DesktopHealthTrendContext.format) ?? "",
+                "min": detail.minValue.map(DesktopHealthTrendContext.format) ?? "",
+                "max": detail.maxValue.map(DesktopHealthTrendContext.format) ?? "",
+                "points": detail.pointSeriesText
+            ]
+        )
+    }
+
+    public static func prompt(forVital detail: VitalTrendDetail, title: String) -> String {
+        let unitSuffix = detail.unit.isEmpty ? "" : " \(detail.unit)"
+        return [
+            "请基于这段 \(detail.rangeDays) 天的\(title)做趋势分析。",
+            "逐日数据：\(detail.pointSeriesText)。",
+            detail.average.map { "区间均值：\(DesktopHealthTrendContext.format($0))\(unitSuffix)。" },
+            detail.minValue.map { "最低：\(DesktopHealthTrendContext.format($0))\(unitSuffix)。" },
+            detail.maxValue.map { "最高：\(DesktopHealthTrendContext.format($0))\(unitSuffix)。" },
+            "请结合我的睡眠、训练负荷、压力、用药/补剂和最近记录，判断这段趋势是否提示恢复不足、过载或需要调整作息/复查；列出不确定性边界，不要当作诊断。"
+        ].compactMap { $0 }.joined()
+    }
+
     public static func prompt(for row: DesktopWorkspaceGuidanceRow, workspace: DesktopWorkspaceSummary) -> String {
         switch row.action {
         case .reviewWeeklyIntake:

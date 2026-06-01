@@ -105,6 +105,54 @@ final class VitalsTrendPresentationTests: XCTestCase {
         XCTAssertEqual(p.sleepStageDays.last?.totalMinutes, 460)
     }
 
+    func testVitalTrendDetailBuildsDatedPointsAndSummaryForKind() {
+        let detail = VitalTrendDetail(kind: .restingHR, rangeDays: 30, records: [
+            record("2026-05-30", rhr: 50),
+            record("2026-05-28", rhr: 54),
+            record("2026-05-29")               // no rhr → skipped
+        ])
+        XCTAssertEqual(detail.points.map(\.date), ["2026-05-28", "2026-05-30"])
+        XCTAssertEqual(detail.points.map(\.value), [54, 50])
+        XCTAssertEqual(detail.average ?? 0, 52, accuracy: 0.001)
+        XCTAssertEqual(detail.minValue, 50)
+        XCTAssertEqual(detail.maxValue, 54)
+        XCTAssertEqual(detail.unit, "bpm")
+        XCTAssertTrue(detail.pointSeriesText.contains("2026-05-28=54 bpm"))
+    }
+
+    func testVitalTrendDetailScopesToRequestedRange() {
+        let records = (1...20).map { record(String(format: "2026-05-%02d", $0), hrv: Double($0)) }
+        let detail = VitalTrendDetail(kind: .hrv, rangeDays: 5, records: records)
+        XCTAssertEqual(detail.points.count, 5)
+        XCTAssertEqual(detail.points.map(\.value), [16, 17, 18, 19, 20])
+    }
+
+    func testVitalTrendDetailSleepHoursConvertsMinutes() {
+        let detail = VitalTrendDetail(kind: .sleepHours, rangeDays: 7, records: [
+            record("2026-05-30", sleepMin: 450)
+        ])
+        XCTAssertEqual(detail.points.first?.value ?? 0, 7.5, accuracy: 0.001)
+        XCTAssertEqual(detail.unit, "h")
+    }
+
+    func testVitalAgentContextAndPromptCarryMetricData() {
+        let detail = VitalTrendDetail(kind: .hrv, rangeDays: 30, records: [
+            record("2026-05-29", hrv: 44),
+            record("2026-05-30", hrv: 48)
+        ])
+        let item = DesktopWorkspaceContextFactory.contextItem(forVital: detail, title: "心率变异性")
+        XCTAssertEqual(item.sourceKind, "vital_trend")
+        XCTAssertEqual(item.sourceID, "vital_trend:hrv:30d")
+        XCTAssertEqual(item.payload["kind"], "hrv")
+        XCTAssertEqual(item.payload["unit"], "ms")
+        XCTAssertTrue(item.payload["points"]?.contains("2026-05-30=48 ms") ?? false)
+
+        let prompt = DesktopWorkspaceContextFactory.prompt(forVital: detail, title: "心率变异性")
+        XCTAssertTrue(prompt.contains("心率变异性"))
+        XCTAssertTrue(prompt.contains("30 天"))
+        XCTAssertTrue(prompt.contains("2026-05-29=44 ms"))
+    }
+
     func testDecodesGarminDailyRecordFromBackendSnakeCaseJSON() throws {
         let json = """
         [{

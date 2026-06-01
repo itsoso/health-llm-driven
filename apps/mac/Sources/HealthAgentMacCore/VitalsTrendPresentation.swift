@@ -206,6 +206,87 @@ public struct VitalsTrendPresentation: Equatable, Sendable {
     }
 }
 
+/// 「生理与睡眠趋势」的单项指标，用于卡片点击进入详情 + Agent 讨论。
+public enum VitalMetricKind: String, CaseIterable, Sendable, Identifiable {
+    case hrv
+    case restingHR
+    case avgHR
+    case stress
+    case bodyBattery
+    case sleepHours
+
+    public var id: String { rawValue }
+
+    /// 详情页/上下文标题键 (英文键，由 L10n 映射成中文)。
+    public var titleKey: String {
+        switch self {
+        case .hrv: "HRV"
+        case .restingHR: "Resting HR"
+        case .avgHR: "Avg HR"
+        case .stress: "Stress"
+        case .bodyBattery: "Body Battery"
+        case .sleepHours: "Sleep"
+        }
+    }
+
+    public var unit: String {
+        switch self {
+        case .hrv: "ms"
+        case .restingHR, .avgHR: "bpm"
+        case .stress, .bodyBattery: ""
+        case .sleepHours: "h"
+        }
+    }
+
+    /// 从一条 Garmin 记录抽取该指标值 (缺值返回 nil)。
+    func value(from record: GarminDailyRecord) -> Double? {
+        switch self {
+        case .hrv: return record.hrv
+        case .restingHR: return record.restingHeartRate.map(Double.init)
+        case .avgHR: return record.avgHeartRate.map(Double.init)
+        case .stress: return record.stressLevel.map(Double.init)
+        case .bodyBattery: return record.bodyBatteryCurrent.map(Double.init)
+        case .sleepHours:
+            guard let mins = record.totalSleepMinutes, mins > 0 else { return nil }
+            return Double(mins) / 60.0
+        }
+    }
+}
+
+/// 单项生理指标在某时间窗内的逐日序列 + 摘要，供详情页和 Agent 上下文复用。
+public struct VitalTrendDetail: Equatable, Sendable, Identifiable {
+    public let kind: VitalMetricKind
+    public let rangeDays: Int
+    public let points: [DesktopHealthTrendPoint]
+
+    public var id: String { "\(kind.rawValue)-\(rangeDays)d" }
+    public var titleKey: String { kind.titleKey }
+    public var unit: String { kind.unit }
+
+    public var average: Double? {
+        guard !points.isEmpty else { return nil }
+        return points.map(\.value).reduce(0, +) / Double(points.count)
+    }
+    public var minValue: Double? { points.map(\.value).min() }
+    public var maxValue: Double? { points.map(\.value).max() }
+
+    public init(kind: VitalMetricKind, rangeDays: Int, records: [GarminDailyRecord]) {
+        self.kind = kind
+        self.rangeDays = rangeDays
+        let sorted = records.sorted { ($0.recordDate ?? "") < ($1.recordDate ?? "") }
+        let scoped = (rangeDays > 0 && sorted.count > rangeDays) ? Array(sorted.suffix(rangeDays)) : sorted
+        self.points = scoped.compactMap { rec in
+            guard let date = rec.recordDate, let value = kind.value(from: rec) else { return nil }
+            return DesktopHealthTrendPoint(date: date, value: value)
+        }
+    }
+
+    public var pointSeriesText: String {
+        points.map { "\($0.date)=\(DesktopHealthTrendContext.format($0.value))\(unit.isEmpty ? "" : " " + unit)" }
+            .joined(separator: "; ")
+    }
+}
+
 /// 拉「数据指挥台」生理趋势用的多日 Garmin 记录。best-effort：失败返回空，
 /// 不打断页面其余部分 (与 NocturnalTimeseriesClient.fetchSpO2WeekSummary 同风格)。
 public final class GarminTrendClient: Sendable {

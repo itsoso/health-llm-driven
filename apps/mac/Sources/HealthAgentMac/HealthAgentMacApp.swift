@@ -1033,6 +1033,7 @@ struct WorkspaceOverviewView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @State private var dataRange = "7d"
     @State private var selectedHealthTrend: DesktopHealthTrendContext?
+    @State private var selectedVital: VitalMetricKind?
     @State private var selectedGenomicDetail: GenomicDetailRoute?
     @State private var selectedKnowledgeDocument: KnowledgeDocumentSummary?
     @State private var knowledgeSearchText = ""
@@ -1155,6 +1156,23 @@ struct WorkspaceOverviewView: View {
                 },
                 onAskAgent: onAskAgent.map { ask in
                     { ask(DesktopWorkspaceContextFactory.prompt(for: trend), DesktopWorkspaceContextFactory.contextItem(for: trend)) }
+                }
+            )
+        }
+        .sheet(item: $selectedVital) { kind in
+            VitalTrendDetailSheet(
+                kind: kind,
+                title: appText(kind.titleKey, appLanguageRaw),
+                color: vitalColor(kind),
+                initialRecords: garminRecords,
+                initialRange: dataRange == "30d" ? 30 : 7,
+                client: garminTrendClient,
+                onAddContext: onAddContext.map { add in
+                    { detail in add(DesktopWorkspaceContextFactory.contextItem(forVital: detail, title: appText(kind.titleKey, appLanguageRaw))) }
+                },
+                onAskAgent: onAskAgent.map { ask in
+                    { detail in ask(DesktopWorkspaceContextFactory.prompt(forVital: detail, title: appText(kind.titleKey, appLanguageRaw)),
+                                    DesktopWorkspaceContextFactory.contextItem(forVital: detail, title: appText(kind.titleKey, appLanguageRaw))) }
                 }
             )
         }
@@ -1606,12 +1624,19 @@ struct WorkspaceOverviewView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10)], spacing: 10) {
                     ForEach(cards) { card in
-                        DataTrendCard(
-                            title: card.title,
-                            value: card.value,
-                            color: card.color,
-                            points: card.points
-                        )
+                        Button {
+                            selectedVital = card.kind
+                        } label: {
+                            DataTrendCard(
+                                title: card.title,
+                                value: card.value,
+                                color: card.color,
+                                points: card.points,
+                                showsDisclosure: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help(appText("Click to inspect trend", appLanguageRaw))
                     }
                 }
             }
@@ -1626,10 +1651,22 @@ struct WorkspaceOverviewView: View {
 
     private struct VitalsTrendCardModel: Identifiable {
         let id: String
+        let kind: VitalMetricKind
         let title: String
         let value: String
         let color: Color
         let points: [Double]
+    }
+
+    private func vitalColor(_ kind: VitalMetricKind) -> Color {
+        switch kind {
+        case .hrv: return .pink
+        case .restingHR: return .red
+        case .avgHR: return .orange
+        case .stress: return .purple
+        case .bodyBattery: return .green
+        case .sleepHours: return .indigo
+        }
     }
 
     private func vitalsTrendCards(_ p: VitalsTrendPresentation) -> [VitalsTrendCardModel] {
@@ -1638,32 +1675,25 @@ struct WorkspaceOverviewView: View {
             let number = decimals > 0 ? String(format: "%.\(decimals)f", avg) : "\(Int(avg.rounded()))"
             return "\(appText("Avg", appLanguageRaw)) \(number)\(unit)"
         }
-        var cards: [VitalsTrendCardModel] = []
-        if p.hrvSeries.points.count >= 2 {
-            cards.append(.init(id: "hrv", title: appText("HRV", appLanguageRaw),
-                               value: avgLabel(p.hrvSeries, "ms"), color: .pink, points: p.hrvSeries.points))
+        func card(_ kind: VitalMetricKind, _ series: VitalsTrendPresentation.Series, _ unit: String, decimals: Int = 0) -> VitalsTrendCardModel? {
+            guard series.points.count >= 2 else { return nil }
+            return VitalsTrendCardModel(
+                id: kind.rawValue,
+                kind: kind,
+                title: appText(kind.titleKey, appLanguageRaw),
+                value: avgLabel(series, unit, decimals: decimals),
+                color: vitalColor(kind),
+                points: series.points
+            )
         }
-        if p.restingHRSeries.points.count >= 2 {
-            cards.append(.init(id: "rhr", title: appText("Resting HR", appLanguageRaw),
-                               value: avgLabel(p.restingHRSeries, "bpm"), color: .red, points: p.restingHRSeries.points))
-        }
-        if p.avgHRSeries.points.count >= 2 {
-            cards.append(.init(id: "avghr", title: appText("Avg HR", appLanguageRaw),
-                               value: avgLabel(p.avgHRSeries, "bpm"), color: .orange, points: p.avgHRSeries.points))
-        }
-        if p.stressSeries.points.count >= 2 {
-            cards.append(.init(id: "stress", title: appText("Stress", appLanguageRaw),
-                               value: avgLabel(p.stressSeries, ""), color: .purple, points: p.stressSeries.points))
-        }
-        if p.bodyBatterySeries.points.count >= 2 {
-            cards.append(.init(id: "battery", title: appText("Body Battery", appLanguageRaw),
-                               value: avgLabel(p.bodyBatterySeries, ""), color: .green, points: p.bodyBatterySeries.points))
-        }
-        if p.sleepHoursSeries.points.count >= 2 {
-            cards.append(.init(id: "sleep", title: appText("Sleep", appLanguageRaw),
-                               value: avgLabel(p.sleepHoursSeries, "h", decimals: 1), color: .indigo, points: p.sleepHoursSeries.points))
-        }
-        return cards
+        return [
+            card(.hrv, p.hrvSeries, "ms"),
+            card(.restingHR, p.restingHRSeries, "bpm"),
+            card(.avgHR, p.avgHRSeries, "bpm"),
+            card(.stress, p.stressSeries, ""),
+            card(.bodyBattery, p.bodyBatterySeries, ""),
+            card(.sleepHours, p.sleepHoursSeries, "h", decimals: 1)
+        ].compactMap { $0 }
     }
 
     @ViewBuilder
@@ -4688,6 +4718,199 @@ private struct HealthTrendDetailSheet: View {
     private func summaryValue(_ value: Double?) -> String {
         guard let value else { return "—" }
         return "\(formatTrendNumber(value)) \(context.unit)"
+    }
+}
+
+private struct VitalTrendDetailSheet: View {
+    let kind: VitalMetricKind
+    let title: String
+    let color: Color
+    let initialRecords: [GarminDailyRecord]
+    let initialRange: Int
+    var client: GarminTrendClient?
+    var onAddContext: ((VitalTrendDetail) -> Void)?
+    var onAskAgent: ((VitalTrendDetail) -> Void)?
+
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @State private var rangeDays: Int
+    @State private var records: [GarminDailyRecord]
+    @State private var fetchedLimit: Int
+    @State private var loading = false
+
+    private static let rangeOptions = [7, 30, 90, 180]
+
+    init(
+        kind: VitalMetricKind,
+        title: String,
+        color: Color,
+        initialRecords: [GarminDailyRecord],
+        initialRange: Int,
+        client: GarminTrendClient?,
+        onAddContext: ((VitalTrendDetail) -> Void)? = nil,
+        onAskAgent: ((VitalTrendDetail) -> Void)? = nil
+    ) {
+        self.kind = kind
+        self.title = title
+        self.color = color
+        self.initialRecords = initialRecords
+        self.initialRange = initialRange
+        self.client = client
+        self.onAddContext = onAddContext
+        self.onAskAgent = onAskAgent
+        _rangeDays = State(initialValue: initialRange)
+        _records = State(initialValue: initialRecords)
+        // 数据页按 30 天拉取，详情默认已有 30 天可用。
+        _fetchedLimit = State(initialValue: max(initialRange, 30))
+    }
+
+    private var detail: VitalTrendDetail {
+        VitalTrendDetail(kind: kind, rangeDays: rangeDays, records: records)
+    }
+
+    var body: some View {
+        let detail = self.detail
+        return VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(appText("Trend Detail", appLanguageRaw))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(title)
+                        .font(.title2.bold())
+                    Text("\(rangeDays) \(appText("days", appLanguageRaw))\(detail.unit.isEmpty ? "" : " · \(detail.unit)")")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Picker(appText("Range", appLanguageRaw), selection: $rangeDays) {
+                    ForEach(Self.rangeOptions, id: \.self) { days in
+                        Text("\(days)\(appText("d", appLanguageRaw))").tag(days)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 280)
+                if loading {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 10)], spacing: 10) {
+                trendSummaryTile(title: "Average", value: summaryValue(detail.average))
+                trendSummaryTile(title: "Min", value: summaryValue(detail.minValue))
+                trendSummaryTile(title: "Max", value: summaryValue(detail.maxValue))
+                trendSummaryTile(title: "Record Count", value: "\(detail.points.count)")
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(appText("Detailed Trend Chart", appLanguageRaw), systemImage: "chart.bar.xaxis")
+                    .font(.headline)
+                if detail.points.isEmpty {
+                    Text(appText("No trend points loaded.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 120)
+                } else {
+                    HealthTrendBarChart(points: detail.points, unit: detail.unit, color: color)
+                }
+            }
+            .padding(14)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(appText("Daily Points", appLanguageRaw), systemImage: "list.bullet.rectangle")
+                    .font(.headline)
+                if detail.points.isEmpty {
+                    Text(appText("No trend points loaded.", appLanguageRaw))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(detail.points.reversed()) { point in
+                                HStack {
+                                    Text(point.date)
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("\(formatTrendNumber(point.value))\(detail.unit.isEmpty ? "" : " \(detail.unit)")")
+                                        .font(.callout.weight(.semibold).monospacedDigit())
+                                }
+                                .padding(.vertical, 7)
+                                Divider()
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 180)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                if let onAddContext {
+                    Button(appText("Add Trend Context", appLanguageRaw)) {
+                        onAddContext(detail)
+                    }
+                }
+                Spacer()
+                if let onAskAgent {
+                    Button {
+                        onAskAgent(detail)
+                        dismiss()
+                    } label: {
+                        Label(appText("Ask Agent about Trend", appLanguageRaw), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 720)
+        .frame(minHeight: 620)
+        .onChange(of: rangeDays) { _, newValue in
+            Task { await loadIfNeeded(for: newValue) }
+        }
+    }
+
+    @MainActor
+    private func loadIfNeeded(for range: Int) async {
+        guard let client, range > fetchedLimit, !loading else { return }
+        loading = true
+        defer { loading = false }
+        let fetched = await client.fetchDaily(limit: range)
+        if !fetched.isEmpty {
+            records = fetched
+            fetchedLimit = range
+        }
+    }
+
+    private func trendSummaryTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(appText(title, appLanguageRaw))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func summaryValue(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return "\(formatTrendNumber(value))\(detail.unit.isEmpty ? "" : " \(detail.unit)")"
     }
 }
 
