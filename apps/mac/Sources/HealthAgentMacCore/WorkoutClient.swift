@@ -29,6 +29,11 @@ public struct WorkoutSummary: Codable, Equatable, Sendable, Identifiable {
 }
 
 /// Mirrors backend `WorkoutStats` (GET /workout/me/stats).
+///
+/// Note: backend `workouts_by_type` is a free-form dict whose shape has changed
+/// over time (`{type: count}` historically, now `{type: {count, duration_minutes}}`).
+/// The desktop UI doesn't render it, so it is decoded leniently (any JSON / nil)
+/// — a server-side shape change must never break the whole stats card again.
 public struct WorkoutStats: Codable, Equatable, Sendable {
     public let totalWorkouts: Int
     public let totalDurationMinutes: Int
@@ -36,7 +41,6 @@ public struct WorkoutStats: Codable, Equatable, Sendable {
     public let totalCalories: Int
     public let avgDurationMinutes: Double
     public let avgDistanceKm: Double
-    public let workoutsByType: [String: Int]
     public let recentTrend: String
 
     enum CodingKeys: String, CodingKey {
@@ -46,8 +50,25 @@ public struct WorkoutStats: Codable, Equatable, Sendable {
         case totalCalories = "total_calories"
         case avgDurationMinutes = "avg_duration_minutes"
         case avgDistanceKm = "avg_distance_km"
-        case workoutsByType = "workouts_by_type"
         case recentTrend = "recent_trend"
+    }
+
+    public init(
+        totalWorkouts: Int,
+        totalDurationMinutes: Int,
+        totalDistanceKm: Double,
+        totalCalories: Int,
+        avgDurationMinutes: Double,
+        avgDistanceKm: Double,
+        recentTrend: String
+    ) {
+        self.totalWorkouts = totalWorkouts
+        self.totalDurationMinutes = totalDurationMinutes
+        self.totalDistanceKm = totalDistanceKm
+        self.totalCalories = totalCalories
+        self.avgDurationMinutes = avgDurationMinutes
+        self.avgDistanceKm = avgDistanceKm
+        self.recentTrend = recentTrend
     }
 }
 
