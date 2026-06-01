@@ -14,6 +14,7 @@ from app.schemas.water import (
     WaterRecordResponse,
     DailyWaterSummary,
     WaterStats,
+    FrequentWater,
 )
 from app.api.deps import get_current_user_required
 
@@ -210,6 +211,39 @@ def get_my_water_records(
 
     records = query.order_by(desc(WaterIntakeModel.record_date), desc(WaterIntakeModel.created_at)).limit(limit).all()
     return [_convert_to_response(r) for r in records]
+
+
+@router.get("/records/me/frequent", response_model=List[FrequentWater])
+def get_my_frequent_water(
+    days: int = Query(default=30, ge=7, le=180),
+    limit: int = Query(default=6, ge=1, le=20),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """当前用户最近 N 天最常用的「饮水量 + 饮品类型」组合, 按频次倒序 (供一键记录).
+
+    饮水没有名字, 按 (amount_ml, drink_type) 组合聚合 —— 如 "250ml 水"/"350ml 咖啡".
+    """
+    start_date = date.today() - timedelta(days=days)
+    records = db.query(WaterIntakeModel).filter(
+        WaterIntakeModel.user_id == current_user.id,
+        WaterIntakeModel.record_date >= start_date,
+    ).all()
+
+    counts: dict[tuple[int, str], int] = {}
+    for r in records:
+        amount = r.amount_ml
+        if amount is None or amount <= 0:
+            continue
+        key = (int(amount), (r.drink_type or "").strip())
+        counts[key] = counts.get(key, 0) + 1
+
+    items = [
+        FrequentWater(amount_ml=amount, drink_type=dt or None, count=n)
+        for (amount, dt), n in counts.items()
+    ]
+    items.sort(key=lambda w: (-w.count, w.amount_ml))
+    return items[:limit]
 
 
 @router.get("/records/me/date/{record_date}", response_model=DailyWaterSummary)

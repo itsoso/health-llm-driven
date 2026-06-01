@@ -219,13 +219,6 @@ class WaterIntakeCreate(BaseModel):
     notes: Optional[str] = None
 
 
-class FrequentWater(BaseModel):
-    """最近最常用的「饮水量 + 饮品类型」组合(供一键记录)。"""
-    amount_ml: int
-    drink_type: Optional[str] = None
-    count: int  # 窗口内该组合出现次数
-
-
 class SupplementIntakeCreate(BaseModel):
     """创建补剂记录"""
     user_id: int

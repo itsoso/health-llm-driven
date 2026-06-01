@@ -55,3 +55,10 @@ class WaterStats(BaseModel):
     days_recorded: int = 0
     days_reached_target: int = 0  # 达标天数
     target_percentage: float = 0  # 达标率
+
+
+class FrequentWater(BaseModel):
+    """最近最常用的「饮水量 + 饮品类型」组合(供一键记录)。"""
+    amount_ml: int
+    drink_type: Optional[str] = None
+    count: int  # 窗口内该组合出现次数

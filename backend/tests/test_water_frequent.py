@@ -1,4 +1,4 @@
-"""GET /daily-health/water/me/frequent —— 常用饮水组合聚合的回归测试 (一键记录)."""
+"""GET /water/records/me/frequent —— 常用饮水组合聚合的回归测试 (一键记录)."""
 import uuid
 from datetime import date, timedelta
 
@@ -37,7 +37,7 @@ def _water(db, user_id, amount_ml, drink_type, days_ago):
 
 
 def _get(client, headers, **params):
-    resp = client.get("/api/v1/daily-health/water/me/frequent", headers=headers, params=params)
+    resp = client.get("/api/v1/water/records/me/frequent", headers=headers, params=params)
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -99,5 +99,5 @@ def test_user_isolation(client, auth, db):
 
 
 def test_requires_auth(client):
-    resp = client.get("/api/v1/daily-health/water/me/frequent")
+    resp = client.get("/api/v1/water/records/me/frequent")
     assert resp.status_code in (401, 403)
