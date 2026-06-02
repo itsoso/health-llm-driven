@@ -569,6 +569,72 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(dur.previewText, "记录运动：跑步 30分钟")
     }
 
+    func testStructuredRecordDraftConvertsAndPreviewsBloodGlucose() {
+        // mmol/L → mg/dL conversion (×18.0182) for the backend.
+        let mmol = StructuredRecordDraft(type: .bloodGlucose, glucoseValue: "5.5", glucoseUnit: "mmol")
+        XCTAssertTrue(mmol.canSubmit)
+        XCTAssertEqual(mmol.glucoseMgDl ?? 0, 99.1, accuracy: 0.1)
+        XCTAssertEqual(mmol.previewText, "记录血糖 5.5 mmol/L")
+        let mgdl = StructuredRecordDraft(type: .bloodGlucose, glucoseValue: "100", glucoseUnit: "mgdl")
+        XCTAssertEqual(mgdl.glucoseMgDl ?? 0, 100, accuracy: 0.001)
+        XCTAssertEqual(mgdl.previewText, "记录血糖 100 mg/dL")
+        // Out of range rejected.
+        XCTAssertNil(StructuredRecordDraft(type: .bloodGlucose, glucoseValue: "0.5", glucoseUnit: "mmol").glucoseMgDl)
+        XCTAssertFalse(StructuredRecordDraft(type: .bloodGlucose, glucoseValue: "abc").canSubmit)
+    }
+
+    func testStructuredRecordDraftPreviewsExcretion() {
+        let bowel = StructuredRecordDraft(type: .excretion, excretionType: "bowel", stoolType: "4")
+        XCTAssertTrue(bowel.canSubmit)
+        XCTAssertEqual(bowel.previewText, "记录排泄：大便（Bristol 4）")
+        let urine = StructuredRecordDraft(type: .excretion, excretionType: "urine")
+        XCTAssertEqual(urine.previewText, "记录排泄：小便")
+    }
+
+    func testRecordClientPostsBloodGlucoseReading() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/cgm/readings")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["glucose_mg_dl"] as? Double, 99.1)
+            XCTAssertEqual(body?["source"] as? String, "manual")
+            XCTAssertNotNil(body?["measured_at"] as? String)
+            let data = #"{"id":12,"measured_at":"2026-06-02T09:00:00Z","glucose_mg_dl":99.1}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordBloodGlucose(mgDl: 99.1, displayText: "5.5 mmol/L")
+        XCTAssertEqual(result.type, "blood_glucose")
+        XCTAssertEqual(result.message, "已记录血糖 5.5 mmol/L")
+    }
+
+    func testRecordClientPostsExcretionRecord() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/excretion/records")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["type"] as? String, "bowel")
+            XCTAssertEqual(body?["stool_type"] as? Int, 4)
+            XCTAssertNotNil(body?["record_date"] as? String)
+            let data = #"{"id":9,"record_date":"2026-06-02","type":"bowel"}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordExcretion(type: "bowel", stoolType: 4, notes: nil)
+        XCTAssertEqual(result.type, "excretion")
+        XCTAssertEqual(result.undoPath, "excretion/records/9")
+    }
+
     func testStructuredRecordDraftValidatesAndPreviewsMood() {
         XCTAssertFalse(StructuredRecordDraft(type: .mood, moodScore: "0").canSubmit)
         XCTAssertFalse(StructuredRecordDraft(type: .mood, moodScore: "11").canSubmit)

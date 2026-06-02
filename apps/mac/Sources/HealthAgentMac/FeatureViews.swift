@@ -1850,6 +1850,11 @@ struct RecordHubView: View {
     @State private var exerciseDuration = ""
     @State private var moodScore = ""
     @State private var moodNote = ""
+    @State private var glucoseValue = ""
+    @State private var glucoseUnit = "mmol"
+    @State private var excretionType = "bowel"
+    @State private var stoolType = ""
+    @State private var excretionNotes = ""
     @State private var myMedications: [MedicationOption] = []
     @State private var recentRecords: [String] = []
     @State private var resultMessage: String?
@@ -2525,6 +2530,32 @@ struct RecordHubView: View {
                 recordTextField(appText("Mood score 1-10", appLanguageRaw), text: $moodScore)
                 recordTextField(appText("Note (optional)", appLanguageRaw), text: $moodNote)
             }
+        case .bloodGlucose:
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    recordTextField(appText("Glucose value", appLanguageRaw), text: $glucoseValue)
+                    Picker("", selection: $glucoseUnit) {
+                        Text("mmol/L").tag("mmol")
+                        Text("mg/dL").tag("mgdl")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
+                    .labelsHidden()
+                }
+            }
+        case .excretion:
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("", selection: $excretionType) {
+                    Text(appText("Bowel", appLanguageRaw)).tag("bowel")
+                    Text(appText("Urine", appLanguageRaw)).tag("urine")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                if excretionType == "bowel" {
+                    recordTextField(appText("Bristol type 1-7 (optional)", appLanguageRaw), text: $stoolType)
+                }
+                recordTextField(appText("Note (optional)", appLanguageRaw), text: $excretionNotes)
+            }
         }
     }
 
@@ -2922,6 +2953,10 @@ struct RecordHubView: View {
             return appText("one tap", appLanguageRaw)
         case .mood:
             return appText("1-10", appLanguageRaw)
+        case .bloodGlucose:
+            return appText("mmol/L", appLanguageRaw)
+        case .excretion:
+            return appText("bowel/urine", appLanguageRaw)
         }
     }
 
@@ -2949,6 +2984,10 @@ struct RecordHubView: View {
             return .red
         case .mood:
             return .yellow
+        case .bloodGlucose:
+            return .pink
+        case .excretion:
+            return .brown
         }
     }
 
@@ -2972,7 +3011,12 @@ struct RecordHubView: View {
             sets: sets,
             exerciseDuration: exerciseDuration,
             moodScore: moodScore,
-            moodNote: moodNote
+            moodNote: moodNote,
+            glucoseValue: glucoseValue,
+            glucoseUnit: glucoseUnit,
+            excretionType: excretionType,
+            stoolType: stoolType,
+            excretionNotes: excretionNotes
         )
     }
 
@@ -3038,6 +3082,19 @@ struct RecordHubView: View {
             case .mood:
                 guard let score = draft.moodScoreValue else { return }
                 result = try await client.recordMood(score: score, note: moodNote)
+            case .bloodGlucose:
+                guard let mgDl = draft.glucoseMgDl else { return }
+                let unit = glucoseUnit == "mgdl" ? "mg/dL" : "mmol/L"
+                result = try await client.recordBloodGlucose(
+                    mgDl: mgDl,
+                    displayText: "\(glucoseValue.trimmingCharacters(in: .whitespaces)) \(unit)"
+                )
+            case .excretion:
+                result = try await client.recordExcretion(
+                    type: excretionType,
+                    stoolType: draft.positiveInt(stoolType),
+                    notes: excretionNotes
+                )
             }
             let didSave = handleRecordResult(result, fallbackText: draft.previewText)
             if didSave {
@@ -3127,6 +3184,11 @@ struct RecordHubView: View {
         case .mood:
             moodScore = ""
             moodNote = ""
+        case .bloodGlucose:
+            glucoseValue = ""
+        case .excretion:
+            stoolType = ""
+            excretionNotes = ""
         }
     }
 }
@@ -3145,6 +3207,8 @@ private extension StructuredRecordDraftType {
         case .exercise: "Workout"
         case .medication: "Medication"
         case .mood: "Mood"
+        case .bloodGlucose: "Blood Glucose"
+        case .excretion: "Excretion"
         }
     }
 
@@ -3161,6 +3225,8 @@ private extension StructuredRecordDraftType {
         case .exercise: "figure.run"
         case .medication: "cross.case.fill"
         case .mood: "face.smiling"
+        case .bloodGlucose: "drop.fill"
+        case .excretion: "toilet"
         }
     }
 }

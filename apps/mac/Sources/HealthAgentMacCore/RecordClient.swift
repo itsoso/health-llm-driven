@@ -166,6 +166,32 @@ private struct MoodRecordRequest: Encodable {
     }
 }
 
+private struct GlucoseReadingRequest: Encodable {
+    let measuredAt: String
+    let glucoseMgDl: Double
+    let source: String
+
+    enum CodingKeys: String, CodingKey {
+        case measuredAt = "measured_at"
+        case glucoseMgDl = "glucose_mg_dl"
+        case source
+    }
+}
+
+private struct ExcretionRecordRequest: Encodable {
+    let recordDate: String
+    let type: String
+    let stoolType: Int?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case type
+        case stoolType = "stool_type"
+        case notes
+    }
+}
+
 /// 用户的一种在用药物 (GET /medication/medications/me)，用于一键打卡 chip。
 public struct MedicationOption: Decodable, Equatable, Sendable, Identifiable {
     public let id: Int
@@ -426,6 +452,41 @@ public final class RecordClient: Sendable {
         )
     }
 
+    /// 记录一次血糖 (手动)。走 POST /cgm/readings；调用方负责换算成 mg/dL。
+    public func recordBloodGlucose(mgDl: Double, displayText: String) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "cgm/readings",
+            body: GlucoseReadingRequest(measuredAt: Self.nowISO8601(), glucoseMgDl: mgDl, source: "manual")
+        )
+        return QuickRecordResult(
+            type: "blood_glucose",
+            message: "已记录血糖 \(displayText)",
+            success: true,
+            recordID: saved.id
+        )
+    }
+
+    /// 记录一次排泄 (大便/小便)。走 POST /excretion/records。
+    public func recordExcretion(type: String, stoolType: Int?, notes: String?) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "excretion/records",
+            body: ExcretionRecordRequest(
+                recordDate: Self.todayString(),
+                type: type,
+                stoolType: type == "bowel" ? stoolType : nil,
+                notes: (notes?.isEmpty == false) ? notes : nil
+            )
+        )
+        let label = type == "urine" ? "小便" : "大便"
+        return QuickRecordResult(
+            type: "excretion",
+            message: "已记录排泄：\(label)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "excretion/records", recordID: saved.id)
+        )
+    }
+
     /// 记录一次运动 (俯卧撑/跑步等)。走 POST /daily-health/exercise，
     /// 强度按次数自动判定 (≥30 high / ≥15 medium / else low)，与 Web PushupCard 一致。
     public func recordExercise(
@@ -511,6 +572,12 @@ public final class RecordClient: Sendable {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
+        return formatter.string(from: Date())
+    }
+
+    private static func nowISO8601() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: Date())
     }
 
