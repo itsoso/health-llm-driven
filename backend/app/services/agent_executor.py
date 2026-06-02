@@ -290,6 +290,46 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     ]
 
 
+def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
+    """Turn a created-record JSON (which has no ``message`` field — it's the raw
+    API response) into a short human line, so the fast-record reply never dumps
+    raw JSON at the user. Falls back to a generic '已记录' for unknown shapes."""
+
+    def s(key: str) -> Optional[Any]:
+        value = record.get(key)
+        return value if value not in (None, "", []) else None
+
+    # symptom (/symptoms): body_part + description
+    if s("description") is not None and ("body_part" in record or "severity" in record):
+        return f"已记录症状：{record.get('description')}"
+    # blood pressure
+    if s("systolic") is not None and s("diastolic") is not None:
+        return f"已记录血压 {record.get('systolic')}/{record.get('diastolic')} mmHg"
+    # diet
+    if s("food_items") is not None:
+        return f"已记录饮食：{record.get('food_items')}"
+    # weight
+    if s("weight") is not None:
+        return f"已记录体重 {record.get('weight')} kg"
+    # exercise
+    if s("exercise_type") is not None:
+        reps = s("reps")
+        return f"已记录运动：{record.get('exercise_type')}" + (f" {reps} 次" if reps else "")
+    # blood glucose (CGM)
+    if s("glucose_mg_dl") is not None:
+        return f"已记录血糖 {record.get('glucose_mg_dl')} mg/dL"
+    # mood
+    if s("mood_score") is not None:
+        return f"已记录心情 {record.get('mood_score')}/10"
+    # water
+    if s("amount") is not None and "drink_type" in record:
+        return f"已记录饮水 {record.get('amount')}ml"
+    # illness episode
+    if s("illness_name") is not None or (s("name") is not None and "start_date" in record):
+        return f"已记录：{record.get('illness_name') or record.get('name')}"
+    return "✅ 已记录"
+
+
 def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """Build a final user-visible reply directly from record tool results."""
 
@@ -319,6 +359,15 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             if isinstance(tool_message, str) and tool_message.strip():
                 replies.append(tool_message.strip())
                 continue
+            # Created-record JSON with no `message` — synthesize a human line
+            # instead of dumping raw JSON (the user complaint).
+            replies.append(_friendly_record_confirmation(payload))
+            continue
+        if isinstance(payload, list):
+            # Array of created records (batch) — confirm count, never dump JSON.
+            replies.append(f"✅ 已记录 {len(payload)} 条")
+            continue
+        # Plain-text tool result (already human-readable) — show as-is.
         replies.append(content.replace("\n", " ")[:160])
 
     deduped: list[str] = []
