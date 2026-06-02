@@ -421,6 +421,8 @@ public final class AgentChatViewModel {
     public var runState: AgentRunState = .idle
     public var selectedModelID: String?
     public var webSearchEnabled = false
+    /// 「默认 3 个」模式 → 后端多模型综合分析 (商用三强 panel)。
+    public var multiModel = false
     public var attachments: [FileIntakeItem] = []
     public var conversationID: Int?
     public var messages: [AgentChatMessage] = []
@@ -831,7 +833,10 @@ public final class AgentChatViewModel {
             "response_format": "markdown",
             "desktop_markdown_response_instruction": Self.desktopMarkdownResponseInstruction,
         ]
-        if let selectedModelID {
+        if multiModel {
+            // 多模型综合分析: 不带 model_id, 后端用商用三强 panel。
+            context["multi_model"] = true
+        } else if let selectedModelID {
             context["model_id"] = selectedModelID
         }
         if webSearchEnabled {

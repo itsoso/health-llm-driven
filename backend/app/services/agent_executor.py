@@ -32,6 +32,57 @@ COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
 FAST_RECORD_MODEL_ID = "glm-5"
 
 
+# ──── 多模型综合分析 (参考 browser-llm-driven / LangBridge 平台) ────
+# 商用三强 panel: lead 跑一遍带工具的完整回合 (查询/记录只执行一次, 不重写),
+# 另两个在同一上下文上各出独立分析, 再由 lead 模型综合成一份报告。
+MULTI_MODEL_PANEL: list[tuple[str, str]] = [
+    ("claude-opus-4.7", "Claude Opus 4.7"),
+    ("gpt-5.5", "GPT-5.5"),
+    ("gemini-3.1-pro", "Gemini 3.1 Pro"),
+]
+MULTI_MODEL_LEAD_ID = "claude-opus-4.7"
+MULTI_MODEL_SYNTH_ID = "claude-opus-4.7"
+MULTI_MODEL_MAX_LEAD_ROUNDS = 6
+
+
+def _extract_multi_model_flag(extra_context: Optional[str]) -> bool:
+    """Mac「默认 3 个」模式在 extra_context 里带 {"multi_model": true}。"""
+    if not extra_context:
+        return False
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return False
+    return bool(isinstance(payload, dict) and payload.get("multi_model"))
+
+
+def _gathered_data_context(messages: List[Dict[str, Any]], limit: int = 6000) -> str:
+    """从 lead 回合的 messages 里抽出工具结果文本, 作为给其它模型的共享数据上下文。"""
+    chunks: list[str] = []
+    for m in messages:
+        if m.get("role") == "tool" and m.get("content"):
+            chunks.append(str(m["content"]).strip())
+    return "\n\n".join(c for c in chunks if c)[:limit]
+
+
+def _build_multi_model_synthesis_prompt(question: str, analyses: List[tuple[str, str]]) -> str:
+    """综合 prompt: 把各模型的独立分析合成一份「共识 / 各家补充 / 分歧」报告。"""
+    blocks = "\n\n".join(
+        f"【{label}】\n{(text or '').strip()}"
+        for label, text in analyses
+        if text and text.strip()
+    )
+    return (
+        f"用户的健康问题：{question}\n\n"
+        f"以下是多个模型对该问题各自独立给出的分析：\n\n{blocks}\n\n"
+        "请综合这几份分析，输出一份结构化中文报告：\n"
+        "1. **共识结论** —— 几方一致认同的要点；\n"
+        "2. **各模型补充** —— 每个模型独有且有价值的观点（标注来自哪个模型）；\n"
+        "3. **分歧与不确定性** —— 观点不一致或证据不足之处，说明你更倾向哪种及理由。\n"
+        "只基于上述分析与已知健康数据，不要编造数据。"
+    )
+
+
 def _extract_model_id_from_extra_context(extra_context: Optional[str]) -> Optional[str]:
     """Return a safe per-request model id from Mac/mobile extra context."""
 
@@ -632,6 +683,167 @@ class AgentExecutor:
         self._prefer_fast_record_model = False
         self._last_provider_model_name: Optional[str] = None
 
+    async def _run_multi_model_stream(
+        self,
+        user_id: int,
+        message: str,
+        conversation_id: Optional[int],
+        user_auth_token: Optional[str],
+        extra_context: Optional[str],
+    ) -> AsyncGenerator[Dict, None]:
+        """多模型综合分析 (商用三强 panel)。
+
+        lead (Claude Opus 4.7) 跑一遍带工具的完整回合 —— 查询/记录只执行一次,
+        不会被 panel 重复写库; GPT-5.5 + Gemini 3.1 Pro 在 lead 取到的同一份数据
+        上下文上各自独立分析 (并发, 不带工具); 最后由 Claude Opus 4.7 综合成一份
+        「共识 / 各家补充 / 分歧」报告。单次保存一条 assistant 消息 (综合结果)。
+        """
+        import asyncio as _asyncio
+        from app.services.llm.usage_tracker import set_caller
+        from app.services.llm.factory import create_provider_for_model_id
+
+        set_caller("agent_executor.multi_model", user_id=user_id)
+        start_time = time.time()
+        self._current_user_id = user_id
+        self._prefer_fast_record_model = False
+        self._last_provider_model_name = None
+        sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
+        model_label = "Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (综合)"
+
+        from app.services.openclaw_service import OpenClawService
+        svc = OpenClawService(self.db)
+        conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+        svc.save_message(conv.id, "user", message)
+
+        yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
+
+        system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        tools = get_health_tools()
+        full_reply = ""
+
+        def _progress(tool: str, text: str) -> Dict:
+            return {"event": "tool_result", "data": {"tool": tool, "success": True, "preview": text, "result": text}}
+
+        self._http_client = httpx.AsyncClient(timeout=90.0)
+        try:
+            # 1) Lead 回合 (带工具, Claude Opus 4.7)
+            yield _progress("多模型·主分析", "Claude Opus 4.7 正在查数据/记录并分析…")
+            self._request_model_id = MULTI_MODEL_LEAD_ID
+            lead_messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": message},
+            ]
+            lead_text = ""
+            for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
+                resp = await self._call_llm(lead_messages, tools)
+                tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
+                content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
+                if not tool_calls:
+                    recovered = _extract_inline_tool_call(content, tools)
+                    if recovered:
+                        tool_calls = [recovered]
+                        content = ""
+                if tool_calls:
+                    lead_messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+                    for tc in tool_calls:
+                        fn = tc["function"]["name"]
+                        fa = tc["function"]["arguments"]
+                        result = await self._execute_tool(fn, fa, user_auth_token)
+                        lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                        lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
+                        if lbl and lbl not in sources_used:
+                            sources_used.append(lbl)
+                        yield {"event": "tool_result", "data": {
+                            "tool": fn, "success": not result.startswith("Error"),
+                            "preview": result[:200], "result": result}}
+                    continue
+                lead_text = content
+                break
+
+            data_ctx = _gathered_data_context(lead_messages)
+
+            # 2) 两路独立分析 (GPT-5.5 + Gemini, 并发, 不带工具)
+            yield _progress("多模型·多方", "GPT-5.5、Gemini 3.1 Pro 正在各自分析…")
+            persp_system = (
+                "你是资深健康分析师。基于给定的用户健康数据，独立、简洁地分析用户的问题"
+                "（300-600 字）。只用给定数据，不要编造；没有数据时给出审慎的一般性建议。"
+            )
+            persp_user = (
+                f"用户问题：{message}\n\n已查到的用户健康数据：\n"
+                f"{data_ctx or '（本次未取到额外数据）'}\n\n请给出你的独立分析。"
+            )
+            persp_messages = [
+                {"role": "system", "content": persp_system},
+                {"role": "user", "content": persp_user},
+            ]
+
+            async def _perspective(model_id: str) -> str:
+                try:
+                    p = create_provider_for_model_id(model_id)
+                    r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
+                                     max_tokens=2000, stream=False, return_metadata=True)
+                    return (r.get("content") if isinstance(r, dict) else str(r)) or ""
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[multi_model] perspective %s failed: %s", model_id, e)
+                    return ""
+
+            gpt_text, gemini_text = await _asyncio.gather(
+                _perspective("gpt-5.5"), _perspective("gemini-3.1-pro")
+            )
+
+            # 3) 综合 (Claude Opus 4.7)
+            yield _progress("多模型·综合", "综合三方观点…")
+            analyses = [("Claude Opus 4.7", lead_text), ("GPT-5.5", gpt_text), ("Gemini 3.1 Pro", gemini_text)]
+            synth_messages = [
+                {"role": "system", "content": "你是健康分析综合专家，把多个模型的分析整合成一份清晰、专业、可执行的中文报告。"},
+                {"role": "user", "content": _build_multi_model_synthesis_prompt(message, analyses)},
+            ]
+            try:
+                synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
+                synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
+                                                       max_tokens=4000, stream=False, return_metadata=True)
+                final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
+            except Exception as e:  # noqa: BLE001
+                logger.error("[multi_model] synthesis failed: %s", e)
+                final_text = lead_text or "多模型综合分析未能生成最终结论，请重试或改用单模型。"
+
+            if not final_text.strip():
+                final_text = lead_text or "多模型综合分析未能生成最终结论，请重试。"
+            for i in range(0, len(final_text), 24):
+                yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
+            full_reply = final_text
+        except Exception as e:  # noqa: BLE001
+            logger.error("多模型综合执行异常: %s", e, exc_info=True)
+            full_reply = f"多模型综合分析遇到问题: {e}"
+            yield {"event": "token", "data": {"content": full_reply}}
+        finally:
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
+
+        ai_msg = svc.save_message(conv.id, "assistant", full_reply)
+        conv.updated_at = datetime.now(UTC)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        try:
+            ai_msg.meta = {
+                "elapsed_ms": elapsed_ms,
+                "model": model_label,
+                "sources_used": sources_used,
+                "mode": "multi_model",
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[multi_model] write meta 失败: %s", e)
+        self.db.commit()
+
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+            "elapsed_ms": elapsed_ms,
+            "model": model_label,
+            "sources_used": sources_used,
+            "mode": "multi_model",
+        }}
+
     async def run_stream(
         self,
         user_id: int,
@@ -650,6 +862,15 @@ class AgentExecutor:
         has_tools_support = bool(settings.agent_base_url and settings.agent_api_key) or settings.llm_provider != "openclaw"
         if not has_tools_support and (_needs_skill(message) or images or file_base64):
             async for evt in self._delegate_to_openclaw(user_id, message, conversation_id, user_auth_token, images, file_base64, file_name):
+                yield evt
+            return
+
+        # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
+        # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
+        if _extract_multi_model_flag(extra_context) and not images and not file_base64:
+            async for evt in self._run_multi_model_stream(
+                user_id, message, conversation_id, user_auth_token, extra_context
+            ):
                 yield evt
             return
 

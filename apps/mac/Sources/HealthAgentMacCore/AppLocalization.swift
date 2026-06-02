@@ -312,7 +312,7 @@ public enum L10n {
         "Model Routing": "模型路由",
         "Mode": "模式",
         "Auto Select": "自动选择",
-        "Default 3": "默认 3 个",
+        "Default 3": "多模型综合 (商用三强)",
         "Manual": "手动",
         "Auto": "自动",
         "Currently using": "当前使用",

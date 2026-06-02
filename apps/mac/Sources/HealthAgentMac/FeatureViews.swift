@@ -135,6 +135,7 @@ struct AgentChatView: View {
     /// Apply the persisted model selection to the view model on appear, so a fresh
     /// launch defaults to Qwen3.7 Max (manual) and later switches are remembered.
     private func applyPersistedModelSelection() {
+        viewModel.multiModel = (modelStrategy == "default3")
         if modelStrategy == "manual", !persistedModelID.isEmpty {
             if viewModel.selectedModelID != persistedModelID {
                 viewModel.selectModel(persistedModelID)
@@ -154,12 +155,14 @@ struct AgentChatView: View {
             Section(appText("Mode", appLanguageRaw)) {
                 Button {
                     modelStrategy = "auto"
+                    viewModel.multiModel = false
                     viewModel.selectModel(nil)
                 } label: {
                     Label(appText("Auto Select", appLanguageRaw), systemImage: modelStrategy == "auto" ? "checkmark" : "")
                 }
                 Button {
                     modelStrategy = "default3"
+                    viewModel.multiModel = true
                     viewModel.selectModel(nil)
                 } label: {
                     Label(appText("Default 3", appLanguageRaw), systemImage: modelStrategy == "default3" ? "checkmark" : "")
@@ -169,6 +172,7 @@ struct AgentChatView: View {
                 ForEach(modelOptions, id: \.id) { option in
                     Button {
                         modelStrategy = "manual"
+                        viewModel.multiModel = false
                         persistedModelID = option.id
                         viewModel.selectModel(option.id)
                     } label: {
