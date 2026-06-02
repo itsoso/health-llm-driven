@@ -140,6 +140,47 @@ private struct ExerciseRecordRequest: Encodable {
     }
 }
 
+private struct MedicationLogRequest: Encodable {
+    let medicationID: Int
+    let takenTime: String
+    let status: String
+    let actualDosage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case medicationID = "medication_id"
+        case takenTime = "taken_time"
+        case status
+        case actualDosage = "actual_dosage"
+    }
+}
+
+private struct MoodRecordRequest: Encodable {
+    let recordDate: String
+    let moodScore: Int
+    let journal: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case moodScore = "mood_score"
+        case journal
+    }
+}
+
+/// 用户的一种在用药物 (GET /medication/medications/me)，用于一键打卡 chip。
+public struct MedicationOption: Decodable, Equatable, Sendable, Identifiable {
+    public let id: Int
+    public let name: String
+    public let dosage: String?
+    public let frequency: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case dosage
+        case frequency
+    }
+}
+
 private struct SupplementCheckinRequest: Encodable {
     let recordDate: String
     let checkins: [Checkin]
@@ -342,6 +383,49 @@ public final class RecordClient: Sendable {
         )
     }
 
+    /// 用户在用药物列表 (供一键打卡 chip)。best-effort：失败返回空。
+    public func fetchMyMedications() async -> [MedicationOption] {
+        let meds: [MedicationOption]? = try? await apiClient.get("medication/medications/me?active_only=true")
+        return meds ?? []
+    }
+
+    /// 给某个药物打一次「已服用」(POST /medication/logs)。剂量缺省用药物定义的剂量。
+    public func logMedication(medicationID: Int, name: String, dosage: String?) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "medication/logs",
+            body: MedicationLogRequest(
+                medicationID: medicationID,
+                takenTime: Self.nowHHmm(),
+                status: "taken",
+                actualDosage: dosage
+            )
+        )
+        let suffix = (dosage?.isEmpty == false) ? " \(dosage!)" : ""
+        return QuickRecordResult(
+            type: "medication",
+            message: "已记录服药：\(name)\(suffix)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "medication/logs", recordID: saved.id)
+        )
+    }
+
+    /// 记录一次心情打分 (1–10) + 可选随记。走 POST /mood/records。
+    public func recordMood(score: Int, note: String?) async throws -> QuickRecordResult {
+        let journal = (note?.isEmpty == false) ? note : nil
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "mood/records",
+            body: MoodRecordRequest(recordDate: Self.todayString(), moodScore: score, journal: journal)
+        )
+        return QuickRecordResult(
+            type: "mood",
+            message: "已记录心情 \(score)/10",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "mood/records", recordID: saved.id)
+        )
+    }
+
     /// 记录一次运动 (俯卧撑/跑步等)。走 POST /daily-health/exercise，
     /// 强度按次数自动判定 (≥30 high / ≥15 medium / else low)，与 Web PushupCard 一致。
     public func recordExercise(
@@ -419,6 +503,14 @@ public final class RecordClient: Sendable {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    private static func nowHHmm() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
         return formatter.string(from: Date())
     }
 

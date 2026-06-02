@@ -10,6 +10,8 @@ public enum StructuredRecordDraftType: String, CaseIterable, Identifiable, Senda
     case sneeze
     case nasalWash
     case exercise
+    case medication
+    case mood
 
     public var id: String { rawValue }
 }
@@ -32,6 +34,8 @@ public struct StructuredRecordDraft: Equatable, Sendable {
     public let reps: String
     public let sets: String
     public let exerciseDuration: String
+    public let moodScore: String
+    public let moodNote: String
 
     public init(
         type: StructuredRecordDraftType,
@@ -50,7 +54,9 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         exerciseType: String = "",
         reps: String = "",
         sets: String = "",
-        exerciseDuration: String = ""
+        exerciseDuration: String = "",
+        moodScore: String = "",
+        moodNote: String = ""
     ) {
         self.type = type
         self.foodName = foodName
@@ -69,6 +75,14 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         self.reps = reps
         self.sets = sets
         self.exerciseDuration = exerciseDuration
+        self.moodScore = moodScore
+        self.moodNote = moodNote
+    }
+
+    /// 1–10 的有效心情分。
+    public var moodScoreValue: Int? {
+        guard let n = positiveInt(moodScore), (1...10).contains(n) else { return nil }
+        return n
     }
 
     public var canSubmit: Bool {
@@ -91,6 +105,10 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             positiveInt(nasalWashCount) != nil
         case .exercise:
             !trim(exerciseType).isEmpty && (positiveInt(reps) != nil || positiveInt(exerciseDuration) != nil)
+        case .medication:
+            false // 用药通过下方「我的用药」chip 一键打卡，无表单草稿
+        case .mood:
+            moodScoreValue != nil
         }
     }
 
@@ -130,6 +148,12 @@ public struct StructuredRecordDraft: Equatable, Sendable {
                 parts.append("\(d)分钟")
             }
             return parts.isEmpty ? "" : "记录运动：\(name) \(parts.joined(separator: "，"))"
+        case .medication:
+            return ""
+        case .mood:
+            guard let n = moodScoreValue else { return "" }
+            let note = trim(moodNote)
+            return note.isEmpty ? "记录心情 \(n)/10" : "记录心情 \(n)/10：\(note)"
         }
     }
 

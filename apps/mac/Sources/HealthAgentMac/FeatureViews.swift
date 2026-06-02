@@ -1848,6 +1848,9 @@ struct RecordHubView: View {
     @State private var reps = ""
     @State private var sets = "1"
     @State private var exerciseDuration = ""
+    @State private var moodScore = ""
+    @State private var moodNote = ""
+    @State private var myMedications: [MedicationOption] = []
     @State private var recentRecords: [String] = []
     @State private var resultMessage: String?
     @State private var lastSavedRecord: QuickRecordResult?
@@ -1911,8 +1914,10 @@ struct RecordHubView: View {
     private func loadFrequentSuggestions() async {
         async let supplements = try? client.fetchFrequentSupplements()
         async let water = try? client.fetchFrequentWater()
+        async let meds = client.fetchMyMedications()
         frequentSupplements = await supplements ?? []
         frequentWater = await water ?? []
+        myMedications = await meds
     }
 
     private var recordHeader: some View {
@@ -2513,6 +2518,44 @@ struct RecordHubView: View {
             recordTextField(appText("Nasal wash count today", appLanguageRaw), text: $nasalWashCount)
         case .exercise:
             exerciseFields
+        case .medication:
+            medicationChips
+        case .mood:
+            VStack(alignment: .leading, spacing: 10) {
+                recordTextField(appText("Mood score 1-10", appLanguageRaw), text: $moodScore)
+                recordTextField(appText("Note (optional)", appLanguageRaw), text: $moodNote)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var medicationChips: some View {
+        if myMedications.isEmpty {
+            Text(appText("No active medications. Add them on web first.", appLanguageRaw))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            frequentChipsRow(
+                label: appText("Tap a medication to log a dose", appLanguageRaw),
+                icon: "cross.case.fill",
+                tint: .red,
+                chips: myMedications.map { FrequentChipModel(id: "\($0.id)", title: $0.name, meta: $0.dosage) }
+            ) { index in
+                let med = myMedications[index]
+                Task { await logMedicationDose(med) }
+            }
+        }
+    }
+
+    private func logMedicationDose(_ med: MedicationOption) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result = try await client.logMedication(medicationID: med.id, name: med.name, dosage: med.dosage)
+            _ = handleRecordResult(result, fallbackText: med.name)
+            await viewModel.refresh()
+        } catch {
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
     }
 
@@ -2875,6 +2918,10 @@ struct RecordHubView: View {
             return appText("times", appLanguageRaw)
         case .exercise:
             return appText("reps/min", appLanguageRaw)
+        case .medication:
+            return appText("one tap", appLanguageRaw)
+        case .mood:
+            return appText("1-10", appLanguageRaw)
         }
     }
 
@@ -2898,6 +2945,10 @@ struct RecordHubView: View {
             return .teal
         case .exercise:
             return .green
+        case .medication:
+            return .red
+        case .mood:
+            return .yellow
         }
     }
 
@@ -2919,7 +2970,9 @@ struct RecordHubView: View {
             exerciseType: exerciseType,
             reps: reps,
             sets: sets,
-            exerciseDuration: exerciseDuration
+            exerciseDuration: exerciseDuration,
+            moodScore: moodScore,
+            moodNote: moodNote
         )
     }
 
@@ -2980,6 +3033,11 @@ struct RecordHubView: View {
                     sets: repsValue != nil ? (draft.positiveInt(sets) ?? 1) : nil,
                     durationMinutes: durationValue
                 )
+            case .medication:
+                return // 用药通过「我的用药」chip 一键打卡，不走表单提交
+            case .mood:
+                guard let score = draft.moodScoreValue else { return }
+                result = try await client.recordMood(score: score, note: moodNote)
             }
             let didSave = handleRecordResult(result, fallbackText: draft.previewText)
             if didSave {
@@ -3064,6 +3122,11 @@ struct RecordHubView: View {
             reps = ""
             sets = "1"
             exerciseDuration = ""
+        case .medication:
+            break // chip 即时打卡，无字段可清
+        case .mood:
+            moodScore = ""
+            moodNote = ""
         }
     }
 }
@@ -3080,6 +3143,8 @@ private extension StructuredRecordDraftType {
         case .sneeze: "Sneeze"
         case .nasalWash: "Nasal Wash"
         case .exercise: "Workout"
+        case .medication: "Medication"
+        case .mood: "Mood"
         }
     }
 
@@ -3094,6 +3159,8 @@ private extension StructuredRecordDraftType {
         case .sneeze: "wind"
         case .nasalWash: "humidity"
         case .exercise: "figure.run"
+        case .medication: "cross.case.fill"
+        case .mood: "face.smiling"
         }
     }
 }

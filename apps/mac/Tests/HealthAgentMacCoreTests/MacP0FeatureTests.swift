@@ -569,6 +569,90 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(dur.previewText, "记录运动：跑步 30分钟")
     }
 
+    func testStructuredRecordDraftValidatesAndPreviewsMood() {
+        XCTAssertFalse(StructuredRecordDraft(type: .mood, moodScore: "0").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .mood, moodScore: "11").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .mood, moodScore: "abc").canSubmit)
+        let bare = StructuredRecordDraft(type: .mood, moodScore: "7")
+        XCTAssertTrue(bare.canSubmit)
+        XCTAssertEqual(bare.previewText, "记录心情 7/10")
+        let noted = StructuredRecordDraft(type: .mood, moodScore: "8", moodNote: "睡得好")
+        XCTAssertEqual(noted.previewText, "记录心情 8/10：睡得好")
+    }
+
+    func testMedicationDraftIsChipOnlyNotFormSubmittable() {
+        XCTAssertFalse(StructuredRecordDraft(type: .medication).canSubmit)
+        XCTAssertEqual(StructuredRecordDraft(type: .medication).previewText, "")
+    }
+
+    func testRecordClientFetchesMyMedications() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/medication/medications/me?active_only=true")
+            let data = """
+            [{"id": 4, "name": "莫米松", "dosage": "每侧2喷", "frequency": "每日一次", "is_active": true}]
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let meds = await RecordClient(apiClient: client).fetchMyMedications()
+        XCTAssertEqual(meds.count, 1)
+        XCTAssertEqual(meds.first?.id, 4)
+        XCTAssertEqual(meds.first?.name, "莫米松")
+        XCTAssertEqual(meds.first?.dosage, "每侧2喷")
+    }
+
+    func testRecordClientLogsMedicationDose() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/medication/logs")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["medication_id"] as? Int, 4)
+            XCTAssertEqual(body?["status"] as? String, "taken")
+            XCTAssertEqual(body?["actual_dosage"] as? String, "每侧2喷")
+            XCTAssertNotNil(body?["taken_time"] as? String)
+            let data = #"{"id":88,"medication_id":4,"taken_date":"2026-06-02","taken_time":"09:00","status":"taken"}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).logMedication(medicationID: 4, name: "莫米松", dosage: "每侧2喷")
+        XCTAssertEqual(result.type, "medication")
+        XCTAssertEqual(result.message, "已记录服药：莫米松 每侧2喷")
+        XCTAssertEqual(result.undoPath, "medication/logs/88")
+    }
+
+    func testRecordClientPostsMoodRecord() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/mood/records")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["mood_score"] as? Int, 8)
+            XCTAssertEqual(body?["journal"] as? String, "睡得好")
+            XCTAssertNotNil(body?["record_date"] as? String)
+            let data = #"{"id":21}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordMood(score: 8, note: "睡得好")
+        XCTAssertEqual(result.type, "mood")
+        XCTAssertEqual(result.message, "已记录心情 8/10")
+    }
+
     func testStructuredRecordDraftValidatesAndPreviewsNasalWash() {
         XCTAssertFalse(StructuredRecordDraft(type: .nasalWash, nasalWashCount: "0").canSubmit)
         let draft = StructuredRecordDraft(type: .nasalWash, nasalWashCount: "2")
