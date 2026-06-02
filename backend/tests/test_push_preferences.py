@@ -190,12 +190,16 @@ class TestTelegramFallback:
         _mk_settings(db, user_id=3, ios_push_enabled=False, wechat_enabled=False)
         monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
 
+        # quiet_hours_policy="bypass": 本测试只验 telegram fallback 路由, 不验静默时段。
+        # 不加的话, #6 (be3b17ac) 起 warning 级 health_alert 在 22:00–08:30 会走延迟分支
+        # 返回 success=False → 测试随墙钟时间在夜间确定性失败 (CI 跑在 UTC 夜 = 北京凌晨).
         result = asyncio.run(PushService(db).send_notification(
             user_id=3,
             notification_type=NotificationType.HEALTH_ALERT.value,
             title="⚠️ 健康提醒",
             content="这是需要关注的健康提醒。",
             severity="warning",
+            quiet_hours_policy="bypass",
         ))
 
         assert result["success"] is True
