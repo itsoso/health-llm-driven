@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { loadCredentials, saveCredentials, clearCredentials } from '../services/auth';
 
 export default function LoginScreen() {
   const { c } = useTheme();
@@ -23,6 +24,22 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
+
+  // 启动时回填已记住的凭据 (存在 SecureStore / Keychain)
+  useEffect(() => {
+    let active = true;
+    loadCredentials().then((saved) => {
+      if (active && saved) {
+        setUsername(saved.username);
+        setPassword(saved.password);
+        setRemember(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -32,6 +49,12 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(username.trim(), password);
+      // 登录成功才落盘凭据; 取消勾选则清除旧记忆
+      if (remember) {
+        await saveCredentials(username.trim(), password);
+      } else {
+        await clearCredentials();
+      }
     } catch (err: any) {
       const msg =
         err?.response?.data?.detail || err?.message || '登录失败，请重试';
@@ -105,6 +128,23 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity
+            style={styles.rememberRow}
+            onPress={() => setRemember((v) => !v)}
+            activeOpacity={0.7}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: remember }}
+            accessibilityLabel="记住密码"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={remember ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={remember ? c.brand : c.labelTertiary}
+            />
+            <Text style={styles.rememberText}>记住密码</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
@@ -160,6 +200,17 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   },
   form: {
     gap: 16,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: -4,
+    paddingVertical: 2,
+  },
+  rememberText: {
+    fontSize: 14,
+    color: c.labelSecondary,
   },
   inputWrap: {
     flexDirection: 'row',

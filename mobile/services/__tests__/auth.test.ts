@@ -26,7 +26,10 @@ jest.mock('../../modules/shared-keychain', () => ({
   deleteTokenFromSharedKeychain: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { login, logout, getToken, isLoggedIn, fetchCurrentUser } from '../auth';
+import {
+  login, logout, getToken, isLoggedIn, fetchCurrentUser,
+  saveCredentials, loadCredentials, clearCredentials,
+} from '../auth';
 import api, { TOKEN_KEY } from '../api';
 import * as SecureStore from 'expo-secure-store';
 import {
@@ -132,6 +135,44 @@ describe('services/auth', () => {
 
       await expect(fetchCurrentUser()).resolves.toEqual({ id: 3, username: 'bob' });
       expect(mockedApi.get).toHaveBeenCalledWith('/auth/me');
+    });
+  });
+
+  describe('remember credentials', () => {
+    it('saveCredentials writes both username and password to SecureStore', async () => {
+      await saveCredentials('alice', 'hunter2');
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith('remember_username', 'alice');
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith('remember_password', 'hunter2');
+    });
+
+    it('loadCredentials returns the pair when both present', async () => {
+      (SecureStore.getItemAsync as jest.Mock)
+        .mockResolvedValueOnce('alice')
+        .mockResolvedValueOnce('hunter2');
+      await expect(loadCredentials()).resolves.toEqual({ username: 'alice', password: 'hunter2' });
+    });
+
+    it('loadCredentials returns null when password is missing', async () => {
+      (SecureStore.getItemAsync as jest.Mock)
+        .mockResolvedValueOnce('alice')
+        .mockResolvedValueOnce(null);
+      await expect(loadCredentials()).resolves.toBeNull();
+    });
+
+    it('loadCredentials returns null when SecureStore throws', async () => {
+      (SecureStore.getItemAsync as jest.Mock).mockRejectedValueOnce(new Error('no keychain'));
+      await expect(loadCredentials()).resolves.toBeNull();
+    });
+
+    it('clearCredentials deletes both keys', async () => {
+      await clearCredentials();
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('remember_username');
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('remember_password');
+    });
+
+    it('saveCredentials swallows SecureStore failure (does not throw)', async () => {
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('keychain locked'));
+      await expect(saveCredentials('a', 'b')).resolves.toBeUndefined();
     });
   });
 });
