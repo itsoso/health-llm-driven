@@ -44,6 +44,16 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(optionIDs.contains("minimax-m2.5"))
         XCTAssertTrue(optionIDs.contains("glm-5"))
         XCTAssertTrue(optionIDs.contains("deepseek-v3.2"))
+        // 2026-06-02 套餐刷新新增的对话模型
+        XCTAssertTrue(optionIDs.contains("qwen3.7-max"))
+        XCTAssertTrue(optionIDs.contains("qwen3.6-flash"))
+        XCTAssertTrue(optionIDs.contains("deepseek-v4-pro"))
+        XCTAssertTrue(optionIDs.contains("deepseek-v4-flash"))
+        XCTAssertTrue(optionIDs.contains("kimi-k2.6"))
+        XCTAssertTrue(optionIDs.contains("glm-5.1"))
+        // 图像生成模型不进对话 picker
+        XCTAssertFalse(optionIDs.contains("qwen-image-2.0"))
+        XCTAssertFalse(optionIDs.contains("wan2.7-image"))
         XCTAssertEqual(options.first(where: { $0.id == "qwen3.6-plus" })?.provider, "阿里 TokenPlan")
         XCTAssertEqual(optionIDs.count, options.count)
     }
