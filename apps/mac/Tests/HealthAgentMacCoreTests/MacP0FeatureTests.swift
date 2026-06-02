@@ -556,6 +556,77 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(result.recordID, 31)
     }
 
+    func testStructuredRecordDraftValidatesAndPreviewsExercise() {
+        XCTAssertFalse(StructuredRecordDraft(type: .exercise, exerciseType: "", reps: "20").canSubmit)
+        XCTAssertFalse(StructuredRecordDraft(type: .exercise, exerciseType: "俯卧撑").canSubmit) // no reps/duration
+        let reps = StructuredRecordDraft(type: .exercise, exerciseType: "俯卧撑", reps: "20", sets: "3")
+        XCTAssertTrue(reps.canSubmit)
+        XCTAssertEqual(reps.previewText, "记录运动：俯卧撑 20个×3组")
+        let single = StructuredRecordDraft(type: .exercise, exerciseType: "俯卧撑", reps: "15", sets: "1")
+        XCTAssertEqual(single.previewText, "记录运动：俯卧撑 15个")
+        let dur = StructuredRecordDraft(type: .exercise, exerciseType: "跑步", exerciseDuration: "30")
+        XCTAssertTrue(dur.canSubmit)
+        XCTAssertEqual(dur.previewText, "记录运动：跑步 30分钟")
+    }
+
+    func testStructuredRecordDraftValidatesAndPreviewsNasalWash() {
+        XCTAssertFalse(StructuredRecordDraft(type: .nasalWash, nasalWashCount: "0").canSubmit)
+        let draft = StructuredRecordDraft(type: .nasalWash, nasalWashCount: "2")
+        XCTAssertTrue(draft.canSubmit)
+        XCTAssertEqual(draft.previewText, "记录洗鼻 2 次")
+    }
+
+    func testRecordClientPostsExerciseWithAutoIntensity() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/daily-health/exercise")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["exercise_type"] as? String, "俯卧撑")
+            XCTAssertEqual(body?["reps"] as? Int, 30)
+            XCTAssertEqual(body?["sets"] as? Int, 2)
+            XCTAssertEqual(body?["intensity"] as? String, "high") // reps>=30
+            XCTAssertNotNil(body?["record_date"] as? String)
+            let data = #"{"id":77,"user_id":3,"record_date":"2026-06-02","exercise_type":"俯卧撑"}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordExercise(
+            exerciseType: "俯卧撑", reps: 30, sets: 2, durationMinutes: nil
+        )
+
+        XCTAssertEqual(result.type, "exercise")
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "已记录运动：俯卧撑 30个×2组")
+        XCTAssertEqual(result.recordID, 77)
+        XCTAssertEqual(result.undoPath, "daily-health/exercise/77")
+    }
+
+    func testRecordClientPostsNasalWashToCheckin() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/checkin/")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
+            XCTAssertEqual(body?["nasal_wash_count"] as? Int, 2)
+            let data = #"{"id":40}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).recordNasalWash(count: 2)
+
+        XCTAssertEqual(result.type, "nasal_wash")
+        XCTAssertEqual(result.message, "已记录今天洗鼻 2 次")
+    }
+
     func testStructuredRecordDraftRequiresValidWeightBeforeSubmitting() {
         XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "").canSubmit)
         XCTAssertFalse(StructuredRecordDraft(type: .weight, weightKg: "abc").canSubmit)

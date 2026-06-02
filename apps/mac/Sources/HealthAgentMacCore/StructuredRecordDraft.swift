@@ -8,6 +8,8 @@ public enum StructuredRecordDraftType: String, CaseIterable, Identifiable, Senda
     case bloodPressure
     case symptom
     case sneeze
+    case nasalWash
+    case exercise
 
     public var id: String { rawValue }
 }
@@ -25,6 +27,11 @@ public struct StructuredRecordDraft: Equatable, Sendable {
     public let diastolic: String
     public let symptom: String
     public let sneezeCount: String
+    public let nasalWashCount: String
+    public let exerciseType: String
+    public let reps: String
+    public let sets: String
+    public let exerciseDuration: String
 
     public init(
         type: StructuredRecordDraftType,
@@ -38,7 +45,12 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         systolic: String = "",
         diastolic: String = "",
         symptom: String = "",
-        sneezeCount: String = ""
+        sneezeCount: String = "",
+        nasalWashCount: String = "",
+        exerciseType: String = "",
+        reps: String = "",
+        sets: String = "",
+        exerciseDuration: String = ""
     ) {
         self.type = type
         self.foodName = foodName
@@ -52,6 +64,11 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         self.diastolic = diastolic
         self.symptom = symptom
         self.sneezeCount = sneezeCount
+        self.nasalWashCount = nasalWashCount
+        self.exerciseType = exerciseType
+        self.reps = reps
+        self.sets = sets
+        self.exerciseDuration = exerciseDuration
     }
 
     public var canSubmit: Bool {
@@ -70,6 +87,10 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             !trim(symptom).isEmpty
         case .sneeze:
             positiveInt(sneezeCount) != nil
+        case .nasalWash:
+            positiveInt(nasalWashCount) != nil
+        case .exercise:
+            !trim(exerciseType).isEmpty && (positiveInt(reps) != nil || positiveInt(exerciseDuration) != nil)
         }
     }
 
@@ -95,6 +116,20 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             return trim(symptom).isEmpty ? "" : "记录症状：\(trim(symptom))"
         case .sneeze:
             return trim(sneezeCount).isEmpty ? "" : "记录打喷嚏 \(trim(sneezeCount)) 次"
+        case .nasalWash:
+            return trim(nasalWashCount).isEmpty ? "" : "记录洗鼻 \(trim(nasalWashCount)) 次"
+        case .exercise:
+            let name = trim(exerciseType)
+            guard !name.isEmpty else { return "" }
+            var parts: [String] = []
+            if let r = positiveInt(reps) {
+                let s = positiveInt(sets) ?? 1
+                parts.append(s > 1 ? "\(r)个×\(s)组" : "\(r)个")
+            }
+            if let d = positiveInt(exerciseDuration) {
+                parts.append("\(d)分钟")
+            }
+            return parts.isEmpty ? "" : "记录运动：\(name) \(parts.joined(separator: "，"))"
         }
     }
 

@@ -1843,6 +1843,11 @@ struct RecordHubView: View {
     @State private var diastolic = ""
     @State private var symptom = ""
     @State private var sneezeCount = ""
+    @State private var nasalWashCount = ""
+    @State private var exerciseType = ""
+    @State private var reps = ""
+    @State private var sets = "1"
+    @State private var exerciseDuration = ""
     @State private var recentRecords: [String] = []
     @State private var resultMessage: String?
     @State private var lastSavedRecord: QuickRecordResult?
@@ -2504,6 +2509,51 @@ struct RecordHubView: View {
             recordTextField(appText("Symptom, severity, and context", appLanguageRaw), text: $symptom)
         case .sneeze:
             recordTextField(appText("Sneeze count today", appLanguageRaw), text: $sneezeCount)
+        case .nasalWash:
+            recordTextField(appText("Nasal wash count today", appLanguageRaw), text: $nasalWashCount)
+        case .exercise:
+            exerciseFields
+        }
+    }
+
+    private var exerciseFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            recordTextField(appText("Exercise type", appLanguageRaw), text: $exerciseType)
+            exerciseRepPresets
+            HStack {
+                recordTextField(appText("Reps", appLanguageRaw), text: $reps)
+                recordTextField(appText("Sets", appLanguageRaw), text: $sets)
+                recordTextField(appText("Duration min", appLanguageRaw), text: $exerciseDuration)
+            }
+        }
+    }
+
+    // Quick rep presets, mirroring the Web PushupCard (+10/+15/+20/+30/+50).
+    // Tapping fills reps; if no exercise type yet, defaults to 俯卧撑.
+    private var exerciseRepPresets: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(appText("Common reps · one tap to fill", appLanguageRaw), systemImage: "bolt.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach([10, 15, 20, 30, 50], id: \.self) { count in
+                    Button {
+                        reps = "\(count)"
+                        if sets.trimmingCharacters(in: .whitespaces).isEmpty { sets = "1" }
+                        if exerciseType.trimmingCharacters(in: .whitespaces).isEmpty {
+                            exerciseType = "俯卧撑"
+                        }
+                    } label: {
+                        Text("+\(count)")
+                            .font(.callout.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.green.opacity(0.12), in: Capsule())
+                            .overlay { Capsule().stroke(Color.green.opacity(0.22), lineWidth: 1) }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
@@ -2821,6 +2871,10 @@ struct RecordHubView: View {
             return appText("context", appLanguageRaw)
         case .sneeze:
             return appText("times", appLanguageRaw)
+        case .nasalWash:
+            return appText("times", appLanguageRaw)
+        case .exercise:
+            return appText("reps/min", appLanguageRaw)
         }
     }
 
@@ -2840,6 +2894,10 @@ struct RecordHubView: View {
             return .indigo
         case .sneeze:
             return .mint
+        case .nasalWash:
+            return .teal
+        case .exercise:
+            return .green
         }
     }
 
@@ -2856,7 +2914,12 @@ struct RecordHubView: View {
             systolic: systolic,
             diastolic: diastolic,
             symptom: symptom,
-            sneezeCount: sneezeCount
+            sneezeCount: sneezeCount,
+            nasalWashCount: nasalWashCount,
+            exerciseType: exerciseType,
+            reps: reps,
+            sets: sets,
+            exerciseDuration: exerciseDuration
         )
     }
 
@@ -2903,6 +2966,20 @@ struct RecordHubView: View {
             case .sneeze:
                 guard let count = draft.positiveInt(sneezeCount) else { return }
                 result = try await client.recordSneeze(count: count)
+            case .nasalWash:
+                guard let count = draft.positiveInt(nasalWashCount) else { return }
+                result = try await client.recordNasalWash(count: count)
+            case .exercise:
+                let name = exerciseType.trimmingCharacters(in: .whitespacesAndNewlines)
+                let repsValue = draft.positiveInt(reps)
+                let durationValue = draft.positiveInt(exerciseDuration)
+                guard !name.isEmpty, repsValue != nil || durationValue != nil else { return }
+                result = try await client.recordExercise(
+                    exerciseType: name,
+                    reps: repsValue,
+                    sets: repsValue != nil ? (draft.positiveInt(sets) ?? 1) : nil,
+                    durationMinutes: durationValue
+                )
             }
             let didSave = handleRecordResult(result, fallbackText: draft.previewText)
             if didSave {
@@ -2980,6 +3057,13 @@ struct RecordHubView: View {
             symptom = ""
         case .sneeze:
             sneezeCount = ""
+        case .nasalWash:
+            nasalWashCount = ""
+        case .exercise:
+            exerciseType = ""
+            reps = ""
+            sets = "1"
+            exerciseDuration = ""
         }
     }
 }
@@ -2994,6 +3078,8 @@ private extension StructuredRecordDraftType {
         case .bloodPressure: "BP"
         case .symptom: "Symptom"
         case .sneeze: "Sneeze"
+        case .nasalWash: "Nasal Wash"
+        case .exercise: "Workout"
         }
     }
 
@@ -3006,6 +3092,8 @@ private extension StructuredRecordDraftType {
         case .bloodPressure: "heart.text.square"
         case .symptom: "cross.case"
         case .sneeze: "wind"
+        case .nasalWash: "humidity"
+        case .exercise: "figure.run"
         }
     }
 }

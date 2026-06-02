@@ -110,6 +110,36 @@ private struct SneezeCheckinRequest: Encodable {
     }
 }
 
+private struct NasalWashCheckinRequest: Encodable {
+    let checkinDate: String
+    let nasalWashCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case checkinDate = "checkin_date"
+        case nasalWashCount = "nasal_wash_count"
+    }
+}
+
+private struct ExerciseRecordRequest: Encodable {
+    let recordDate: String
+    let exerciseType: String
+    let reps: Int?
+    let sets: Int?
+    let duration: Int?
+    let intensity: String?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case exerciseType = "exercise_type"
+        case reps
+        case sets
+        case duration
+        case intensity
+        case notes
+    }
+}
+
 private struct SupplementCheckinRequest: Encodable {
     let recordDate: String
     let checkins: [Checkin]
@@ -294,6 +324,64 @@ public final class RecordClient: Sendable {
             message: "已记录今天打喷嚏 \(count) 次",
             success: true,
             recordID: saved.id
+        )
+    }
+
+    /// 记录今天的洗鼻次数 (鼻炎护理)。走 POST /checkin/ (nasal_wash_count)，
+    /// 与打喷嚏同一套，按日期 upsert。次数为当日累计值。
+    public func recordNasalWash(count: Int) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "checkin/",
+            body: NasalWashCheckinRequest(checkinDate: Self.todayString(), nasalWashCount: count)
+        )
+        return QuickRecordResult(
+            type: "nasal_wash",
+            message: "已记录今天洗鼻 \(count) 次",
+            success: true,
+            recordID: saved.id
+        )
+    }
+
+    /// 记录一次运动 (俯卧撑/跑步等)。走 POST /daily-health/exercise，
+    /// 强度按次数自动判定 (≥30 high / ≥15 medium / else low)，与 Web PushupCard 一致。
+    public func recordExercise(
+        exerciseType: String,
+        reps: Int?,
+        sets: Int?,
+        durationMinutes: Int?,
+        notes: String? = nil
+    ) async throws -> QuickRecordResult {
+        let intensity: String?
+        if let reps {
+            intensity = reps >= 30 ? "high" : (reps >= 15 ? "medium" : "low")
+        } else {
+            intensity = nil
+        }
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "daily-health/exercise",
+            body: ExerciseRecordRequest(
+                recordDate: Self.todayString(),
+                exerciseType: exerciseType,
+                reps: reps,
+                sets: sets,
+                duration: durationMinutes,
+                intensity: intensity,
+                notes: notes
+            )
+        )
+        var detail: [String] = []
+        if let reps {
+            let s = sets ?? 1
+            detail.append(s > 1 ? "\(reps)个×\(s)组" : "\(reps)个")
+        }
+        if let durationMinutes { detail.append("\(durationMinutes)分钟") }
+        let suffix = detail.isEmpty ? "" : " " + detail.joined(separator: "，")
+        return QuickRecordResult(
+            type: "exercise",
+            message: "已记录运动：\(exerciseType)\(suffix)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "daily-health/exercise", recordID: saved.id)
         )
     }
 
