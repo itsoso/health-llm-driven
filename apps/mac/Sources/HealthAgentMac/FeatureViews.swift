@@ -10,7 +10,11 @@ struct AgentChatView: View {
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
     @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
     @State private var draft = ""
-    @State private var modelStrategy = "auto"
+    // Default model = Qwen3.7 Max, persisted across launches (also remembers the
+    // user's later choice). "auto" / "default3" / "manual"; when manual, the
+    // chosen model id is persistedModelID.
+    @AppStorage("agent.model.strategy") private var modelStrategy = "manual"
+    @AppStorage("agent.model.id") private var persistedModelID = "qwen3.7-max"
     @State private var editorFocusToken = 0
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
@@ -80,6 +84,7 @@ struct AgentChatView: View {
             .ignoresSafeArea()
         )
         .onAppear {
+            applyPersistedModelSelection()
             ingestPreparedDraft()
             editorFocusToken += 1
         }
@@ -127,6 +132,18 @@ struct AgentChatView: View {
         .help(appText("New Chat", appLanguageRaw))
     }
 
+    /// Apply the persisted model selection to the view model on appear, so a fresh
+    /// launch defaults to Qwen3.7 Max (manual) and later switches are remembered.
+    private func applyPersistedModelSelection() {
+        if modelStrategy == "manual", !persistedModelID.isEmpty {
+            if viewModel.selectedModelID != persistedModelID {
+                viewModel.selectModel(persistedModelID)
+            }
+        } else if viewModel.selectedModelID != nil {
+            viewModel.selectModel(nil)
+        }
+    }
+
     private var modelMenuButton: some View {
         Menu {
             // Surface the model the backend actually used on the last run (auto /
@@ -152,6 +169,7 @@ struct AgentChatView: View {
                 ForEach(modelOptions, id: \.id) { option in
                     Button {
                         modelStrategy = "manual"
+                        persistedModelID = option.id
                         viewModel.selectModel(option.id)
                     } label: {
                         Label(
