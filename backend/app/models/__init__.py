@@ -108,12 +108,17 @@ from app.models.episode import (
 from app.models.advice_ledger import AdviceLedger
 from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+# Personal Health OS P1 数据底座
+from app.models.twin_snapshot import TwinSnapshot
+from app.models.biomarker_observation import BiomarkerObservation
 
 __all__ = [
     "User",
     "BasicHealthData",
     "MedicalExam",
     "MedicalExamItem",
+    "TwinSnapshot",
+    "BiomarkerObservation",
     "DiseaseRecord",
     "GarminData",
     "ExerciseRecord",
