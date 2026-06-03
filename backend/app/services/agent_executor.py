@@ -2065,31 +2065,32 @@ class AgentExecutor:
         }
 
         path = endpoint_map.get(dim, endpoint_map["comprehensive"])
-        result = await self._api_get(f"{base}{path}", headers)
 
         # 如果查的是体检或基因指标，从结果中过滤特定指标
+        # 走 _api_get_json 拿完整数据 (体检/基因常 >3000 字符, 文本版会被截断导致过滤失效)
         if indicator and dim in ("medical_exam", "genetic"):
-            try:
-                parsed = json.loads(result)
-                items = parsed if isinstance(parsed, list) else parsed.get("data", [])
-                matched = []
-                if dim == "medical_exam":
-                    for exam in items:
-                        for item in (exam.get("items") or []):
-                            name = str(item.get("item_name", "") or item.get("name", "")).upper()
-                            if indicator.upper() in name:
-                                matched.append({"exam_date": exam.get("exam_date"), **item})
-                elif dim == "genetic":
-                    for v in items:
-                        gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
-                        if indicator.upper() in gene:
-                            matched.append(v)
-                if matched:
-                    return json.dumps(matched, ensure_ascii=False, default=str)
-            except Exception:
-                pass
+            parsed, err = await self._api_get_json(f"{base}{path}", headers)
+            if not err:
+                try:
+                    items = parsed if isinstance(parsed, list) else (parsed.get("data", []) if isinstance(parsed, dict) else [])
+                    matched = []
+                    if dim == "medical_exam":
+                        for exam in items:
+                            for item in (exam.get("items") or []):
+                                name = str(item.get("item_name", "") or item.get("name", "")).upper()
+                                if indicator.upper() in name:
+                                    matched.append({"exam_date": exam.get("exam_date"), **item})
+                    elif dim == "genetic":
+                        for v in items:
+                            gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
+                            if indicator.upper() in gene:
+                                matched.append(v)
+                    if matched:
+                        return json.dumps(matched, ensure_ascii=False, default=str)
+                except Exception:
+                    pass
 
-        return result
+        return await self._api_get(f"{base}{path}", headers)
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
@@ -2265,21 +2266,19 @@ class AgentExecutor:
         if rtype == "supplement":
             name = data.get("supplement_name", data.get("name", ""))
             if name:
-                # 查找匹配的补剂定义
-                lookup = await self._api_get(f"{base}/supplements/me/definitions", headers)
-                try:
-                    supps = json.loads(lookup)
-                    supps = supps if isinstance(supps, list) else supps.get("data", [])
-                    matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
-                    if matched:
-                        result = await self._api_post(
-                            f"{base}/nfc/tap", headers,
-                            {"action": "supplement", "supplement_id": matched["id"]}
-                        )
-                        return result
-                    return f"未找到名为 '{name}' 的活跃补剂"
-                except Exception as e:
-                    return f"Error: 补剂查找失败: {e}"
+                # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
+                supps, err = await self._api_get_json(f"{base}/supplements/me/definitions", headers)
+                if err:
+                    logger.warning(f"[health_record] supplement lookup 失败: {err}")
+                    return f"补剂记录暂时没成功(查询补剂列表时{err}),你可以稍后再试一次。"
+                supps = supps if isinstance(supps, list) else (supps.get("data", []) if isinstance(supps, dict) else [])
+                matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
+                if matched:
+                    return await self._api_post(
+                        f"{base}/nfc/tap", headers,
+                        {"action": "supplement", "supplement_id": matched["id"]}
+                    )
+                return f"未找到名为 '{name}' 的活跃补剂"
             return "Error: 需要提供补剂名称（supplement_name）"
 
         # medication: 用药记录
@@ -2287,22 +2286,20 @@ class AgentExecutor:
             med_name = data.get("medication_name", data.get("name", ""))
             if not med_name:
                 return "Error: 需要提供药物名称（medication_name）"
-            # 查找 medication_id
-            meds_raw = await self._api_get(f"{base}/medication/medications/me", headers)
-            try:
-                meds = json.loads(meds_raw)
-                meds = meds if isinstance(meds, list) else meds.get("data", [])
-                matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
-                if matched:
-                    taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
-                    result = await self._api_post(
-                        f"{base}/medication/logs", headers,
-                        {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
-                    )
-                    return result
-                return f"未找到名为 '{med_name}' 的活跃药物"
-            except Exception as e:
-                return f"Error: 用药记录失败: {e}"
+            # 查找 medication_id (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
+            meds, err = await self._api_get_json(f"{base}/medication/medications/me", headers)
+            if err:
+                logger.warning(f"[health_record] medication lookup 失败: {err}")
+                return f"用药记录暂时没成功(查询药物列表时{err}),你可以稍后再试一次。"
+            meds = meds if isinstance(meds, list) else (meds.get("data", []) if isinstance(meds, dict) else [])
+            matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
+            if matched:
+                taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
+                return await self._api_post(
+                    f"{base}/medication/logs", headers,
+                    {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
+                )
+            return f"未找到名为 '{med_name}' 的活跃药物"
 
         if rtype == "illness":
             payload = dict(data)
@@ -2690,8 +2687,34 @@ class AgentExecutor:
         ]
         return json.dumps({"count": len(items), "items": items}, ensure_ascii=False)
 
+    async def _api_get_json(self, url: str, headers: dict):
+        """HTTP GET, 返回解析后的 JSON (list/dict)。
+
+        与 _api_get 不同: 不做任何"显示截断"——后者会把超长响应按字符截到 3000,
+        切断 JSON token (如 'null'→'nul'), 导致调用方 json.loads 抛
+        'Invalid control character' / 'Extra data'。机器要解析的内部查找
+        (补剂/药物/症状 ID 匹配) 必须走这里, 拿干净可解析的数据。
+
+        返回 (data, None) 成功; (None, err_str) 失败 — 调用方据此给用户友好兜底。
+        """
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
+        try:
+            resp = await client.get(url, headers=headers)
+        except Exception as e:
+            return None, f"网络错误: {e}"
+        if resp.status_code != 200:
+            return None, f"API 返回 {resp.status_code}"
+        try:
+            return resp.json(), None
+        except Exception as e:
+            logger.warning(f"[agent] _api_get_json 解析失败 url={url}: {e}")
+            return None, "数据格式异常"
+
     async def _api_get(self, url: str, headers: dict) -> str:
-        """HTTP GET"""
+        """HTTP GET (返回文本, 给 LLM 当上下文; 超长会做显示截断)。
+
+        ⚠️ 注意: 返回值可能被字符截断, 不可直接 json.loads。机器解析请用 _api_get_json。
+        """
         client = self._http_client or httpx.AsyncClient(timeout=90.0)
         resp = await client.get(url, headers=headers)
         if resp.status_code != 200:

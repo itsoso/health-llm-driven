@@ -171,3 +171,72 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
         await stream.aclose()
 
     assert first["event"] == "agent_start"
+
+
+# === Regression (2026-06): _api_get 字符截断损坏 JSON → 用药/补剂查找崩溃并把原始错误泄漏给用户 ===
+# 截图复现: 大响应被 _api_get 截到 3000 字符切断 'null'→'nul', 调用方 json.loads 抛
+# 'Invalid control character' / 'Extra data', 然后 'Error: 用药记录失败: ...' 直接进了用户回复。
+# 修复: 内部 ID 查找改走 _api_get_json (不截断), 失败给友好兜底文案。
+
+@pytest.mark.asyncio
+async def test_medication_lookup_corrupt_json_no_raw_error_leak(db):
+    """药物列表响应损坏时, 给用户友好兜底, 不泄漏 'Invalid control character'/原始 JSON。"""
+    from app.services.agent_executor import AgentExecutor
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    class _Resp:
+        status_code = 200
+        # 模拟被截断的非法 JSON (含控制字符 + 截断的 token)
+        text = '{"data":[{"id":1,"name":"二甲双胍","is_active":true,"note":"' + "x" * 3000 + '\x00...'
+        def json(self):
+            import json as _j
+            return _j.loads(self.text)  # 必抛, 模拟真实损坏
+
+    class _Client:
+        async def get(self, url, headers=None): return _Resp()
+
+    executor._http_client = _Client()
+    result = await executor._execute_tool(
+        tool_name="health_record",
+        args_raw=json.dumps({"record_type": "medication", "data": {"medication_name": "二甲双胍"}}),
+        user_token="t",
+    )
+    s = str(result)
+    # 不得泄漏 python json 异常 / 原始 JSON / "Error:" 机器文案
+    assert "Invalid control character" not in s
+    assert "Extra data" not in s
+    assert "用药记录失败" not in s
+    assert '"is_active"' not in s  # 不回吐原始 JSON
+    # 应是友好中文兜底
+    assert "用药记录" in s and ("稍后再试" in s or "没成功" in s)
+
+
+@pytest.mark.asyncio
+async def test_supplement_lookup_clean_json_matches(db):
+    """补剂列表正常时, _api_get_json 拿干净数据并成功匹配打卡 (回归正路径)。"""
+    from app.services.agent_executor import AgentExecutor
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    class _Resp:
+        status_code = 200
+        def json(self):
+            return [{"id": 7, "name": "甘氨酸镁", "is_active": True}]
+    class _Client:
+        async def get(self, url, headers=None): return _Resp()
+    executor._http_client = _Client()
+
+    captured = {}
+    async def fake_post(url, headers, payload):
+        captured["payload"] = payload
+        return '{"ok": true}'
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({"record_type": "supplement", "data": {"supplement_name": "甘氨酸镁"}}),
+            user_token="t",
+        )
+    assert captured.get("payload", {}).get("supplement_id") == 7
+    assert "补剂查找失败" not in str(result)
