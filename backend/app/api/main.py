@@ -108,6 +108,8 @@ from app.api import (
     orchestrator,
     cgm,
     personal_outcome,
+    biomarkers,
+    intervention_cycles,
     monthly_report,
     doctor_report,
     action_card,
@@ -248,6 +250,8 @@ api_router.include_router(sleep_analysis.router)
 api_router.include_router(chronic_risk.router)
 api_router.include_router(multi_source_integration.router)
 api_router.include_router(personal_outcome.router, tags=["personal-outcome"])
+api_router.include_router(biomarkers.router)
+api_router.include_router(intervention_cycles.router)
 api_router.include_router(monthly_report.router, tags=["monthly-report"])
 api_router.include_router(doctor_report.router, tags=["doctor-report"])
 api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])
