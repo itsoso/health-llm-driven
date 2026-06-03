@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>复元 Reva · 核心闭环交互稿 (Personal Health OS)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#F7F6F2; --surface:#FFFFFF; --ink:#16201B; --ink-soft:#5B6B63;
+    --muted:#8A968F; --green:#1F8A5B; --green600:#176F49; --green-bright:#3AD29F;
+    --blue:#2A6FDB; --focus-bg:#0F1C17; --caution:#C98A1E; --risk:#D5503A;
+    --border:#E5E3DC; --track:#EBEAE3;
+    --cjk:'Noto Sans SC','Manrope',system-ui,sans-serif;
+    --sans:'Manrope','Noto Sans SC',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#E3E2DC;font-family:var(--cjk);color:var(--ink);padding:36px 28px 60px;-webkit-font-smoothing:antialiased;}
+  .doc-head{max-width:1400px;margin:0 auto 12px;}
+  .doc-head h1{font-size:23px;font-weight:700;}
+  .doc-head p{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.55;max-width:920px;}
+  .doc-head code{font-family:var(--mono);background:#fff;padding:1px 6px;border-radius:6px;border:1px solid var(--border);font-size:12px;}
+  .legend{max-width:1400px;margin:0 auto 24px;display:flex;flex-wrap:wrap;gap:8px;}
+  .legend .q{font-size:11.5px;color:var(--ink-soft);background:#fff;border:1px solid var(--border);border-radius:999px;padding:5px 12px;}
+  .legend .q b{color:var(--green600);}
+  .stage{display:flex;gap:30px;justify-content:flex-start;flex-wrap:wrap;max-width:1400px;margin:0 auto;}
+  .col{display:flex;flex-direction:column;gap:10px;align-items:center;}
+  .caption{font-size:12.5px;font-weight:600;color:var(--ink);text-align:center;}
+  .caption span{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:2px;}
+  .phone{width:372px;background:var(--paper);border-radius:34px;overflow:hidden;
+    box-shadow:0 20px 50px -16px rgba(22,32,27,.26);display:flex;flex-direction:column;border:1px solid rgba(0,0,0,.04);}
+  .statusbar{height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;font-family:var(--sans);font-weight:600;font-size:14px;}
+  .statusbar .ic{font-size:11px;letter-spacing:1px;}
+  .content{padding:6px 18px 22px;display:flex;flex-direction:column;gap:18px;flex:1;}
+  .htitle{font-size:24px;font-weight:700;}
+  .hsub{font-size:12.5px;color:var(--ink-soft);font-weight:500;margin-top:3px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;}
+  .pad{padding:16px;}
+  .seclabel{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;}
+  .seclabel .a{font-weight:600;letter-spacing:0;text-transform:none;color:var(--green600);}
+  /* ring */
+  .ringwrap{position:relative;width:128px;height:128px;flex:none;}
+  .ringwrap svg{transform:rotate(-90deg);}
+  .ringwrap .ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ringwrap .big{font-family:var(--mono);font-weight:500;font-size:40px;line-height:1;}
+  .ringwrap .cap{font-family:var(--sans);font-weight:600;font-size:9.5px;letter-spacing:1.4px;color:var(--muted);margin-top:3px;}
+  .hero{display:flex;align-items:center;gap:16px;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:600;width:fit-content;}
+  .chip .dot{width:8px;height:8px;border-radius:999px;}
+  .chip.caution{background:rgba(201,138,30,.12);color:var(--caution);} .chip.caution .dot{background:var(--caution);}
+  .chip.risk{background:rgba(213,80,58,.12);color:var(--risk);} .chip.risk .dot{background:var(--risk);}
+  .chip.ok{background:rgba(31,138,91,.12);color:var(--green600);} .chip.ok .dot{background:var(--green);}
+  .chip.blue{background:rgba(42,111,219,.12);color:var(--blue);} .chip.blue .dot{background:var(--blue);}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+  .badge{font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:8px;background:var(--track);color:var(--ink-soft);}
+  /* metric grid */
+  .grid2{display:flex;flex-direction:column;gap:8px;}
+  .mrow{display:flex;gap:8px;}
+  .tile{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:4px;}
+  .tile .l{font-size:10.5px;font-weight:600;color:var(--muted);}
+  .tile .v{display:flex;align-items:flex-end;gap:3px;}
+  .tile .n{font-family:var(--mono);font-weight:500;font-size:21px;line-height:1;}
+  .tile .u{font-size:10px;font-weight:500;color:var(--muted);margin-bottom:3px;}
+  /* list rows */
+  .listcard{display:flex;flex-direction:column;}
+  .lrow{display:flex;align-items:center;gap:11px;padding:12px 15px;border-bottom:1px solid var(--border);}
+  .lrow:last-child{border-bottom:none;}
+  .licon{width:34px;height:34px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;font-family:var(--sans);font-weight:700;font-size:15px;}
+  .ltext{flex:1;display:flex;flex-direction:column;gap:2px;}
+  .lt{font-size:13.5px;font-weight:600;}
+  .ls{font-size:11px;color:var(--muted);}
+  .lval{font-family:var(--mono);font-weight:500;font-size:15px;}
+  .ltag{padding:4px 9px;border-radius:999px;font-size:10.5px;font-weight:600;white-space:nowrap;}
+  .ltag.ok{background:rgba(31,138,91,.12);color:var(--green600);}
+  .ltag.warn{background:rgba(201,138,30,.12);color:var(--caution);}
+  .ltag.risk{background:rgba(213,80,58,.12);color:var(--risk);}
+  /* progress */
+  .ptrack{height:10px;border-radius:999px;background:var(--track);overflow:hidden;}
+  .ptrack .pf{height:100%;border-radius:999px;background:var(--green);}
+  .note{font-size:12px;line-height:1.45;color:var(--ink-soft);}
+  /* delta */
+  .delta{font-family:var(--mono);font-weight:500;font-size:13px;}
+  .delta.down{color:var(--green);} .delta.up{color:var(--risk);} .delta.flat{color:var(--muted);}
+  .arrow{display:flex;align-items:center;gap:7px;}
+  .arrow .b{font-family:var(--mono);font-size:13px;color:var(--ink-soft);}
+  .arrow .x{color:var(--muted);font-size:12px;}
+  /* prescription */
+  .rx{display:flex;gap:11px;align-items:flex-start;padding:13px 15px;border-bottom:1px solid var(--border);}
+  .rx:last-child{border-bottom:none;}
+  .rxhead{display:flex;justify-content:space-between;align-items:center;}
+  .rxbody{font-size:11.5px;line-height:1.45;color:var(--ink-soft);margin-top:3px;}
+  /* focus dark card */
+  .focus{background:var(--focus-bg);border-radius:18px;padding:16px;}
+  .focus .fl{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:#7FA694;}
+  .focus .ft{color:#fff;font-size:15px;font-weight:700;margin-top:5px;}
+  .focus .fs{color:var(--green-bright);font-size:12px;margin-top:4px;}
+  .barwrap{display:flex;align-items:flex-end;gap:6px;height:54px;margin-top:10px;}
+  .bar{flex:1;border-radius:5px;background:var(--track);}
+  .stopbox{background:rgba(201,138,30,.07);border:1px solid rgba(201,138,30,.22);border-radius:12px;padding:11px 13px;}
+  .stopbox .h{font-size:11.5px;font-weight:700;color:var(--caution);margin-bottom:4px;}
+  .stopbox .b{font-size:11px;line-height:1.45;color:var(--ink-soft);}
+  .review{background:rgba(42,111,219,.07);border:1px solid rgba(42,111,219,.22);border-radius:12px;padding:11px 13px;display:flex;gap:10px;align-items:center;}
+  .review .ri{width:28px;height:28px;border-radius:999px;background:rgba(42,111,219,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;font-family:var(--sans);font-weight:700;font-size:14px;flex:none;}
+  .sparkmini{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .pill-cta{margin-top:auto;background:var(--green);color:#fff;border-radius:14px;padding:13px;text-align:center;font-size:14px;font-weight:600;}
+</style>
+</head>
+<body>
+  <div class="doc-head">
+    <h1>复元 Reva — 核心闭环交互稿(Personal Health OS）</h1>
+    <p>对应 PRD「五个核心问题」与「Raw→Twin→风险→专家→安全/人审→处方→执行→复查」决策链路。数据沿用 <code>user_id=3</code>(男·41·杭州)做连续示例。
+       本稿是<b>交互结构</b>,非像素终稿;批准后落 RN(复用已建 Reva 设计语言)。</p>
+  </div>
+  <div class="legend">
+    <span class="q">① 代谢画像 → <b>Q1 我的风险</b></span>
+    <span class="q">② 干预周期 → <b>Q5 该改善什么</b></span>
+    <span class="q">③ 今日就绪+处方 → <b>Q2/Q3/Q4 怎么练/吃/恢复</b></span>
+    <span class="q">④ 复查对比 → <b>Q5 验证</b></span>
+    <span class="q">⑤ 安全审查 → <b>安全底线 + 人审</b></span>
+    <span class="q">⑥ 体检解读 → <b>归一化数据底座</b></span>
+  </div>
+
+  <div class="stage">
+
+    <!-- ① 代谢健康画像 -->
+    <div class="col">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="ic">●●● ⌁ 84%</span></div>
+        <div class="content">
+          <div><div class="htitle">代谢健康画像</div><div class="hsub">综合体检 + 可穿戴 · 5 月更新</div></div>
+          <div class="card pad hero">
+            <div class="ringwrap">
+              <svg width="128" height="128" viewBox="0 0 128 128">
+                <circle cx="64" cy="64" r="56" fill="none" stroke="#EBEAE3" stroke-width="10"/>
+                <circle cx="64" cy="64" r="56" fill="none" stroke="#C98A1E" stroke-width="10" stroke-linecap="round" stroke-dasharray="351.9" stroke-dashoffset="158.3"/>
+              </svg>
+              <div class="ctr"><div class="big" style="color:var(--caution)">中</div><div class="cap">代谢风险</div></div>
+            </div>
+            <div style="flex:1">
+              <span class="chip caution"><span class="dot"></span>中等风险 · 可逆</span>
+              <div class="note" style="margin-top:8px">血脂 + 尿酸偏高、肝酶比值异常。<b style="color:var(--ink)">8–12 周</b>干预窗口内可显著改善。</div>
+              <div class="badges">
+                <span class="badge">Framingham 10y · 9.4%</span>
+                <span class="badge">代谢综合征 3/5 项</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="seclabel">关键指标</div>
+            <div class="grid2">
+              <div class="mrow">
+                <div class="tile"><span class="l">LDL-C</span><span class="v"><span class="n" style="color:var(--risk)">3.8</span><span class="u">mmol/L</span></span></div>
+                <div class="tile"><span class="l">尿酸</span><span class="v"><span class="n" style="color:var(--caution)">418</span><span class="u">µmol/L</span></span></div>
+              </div>
+              <div class="mrow">
+                <div class="tile"><span class="l">空腹血糖</span><span class="v"><span class="n" style="color:var(--green)">5.1</span><span class="u">mmol/L</span></span></div>
+                <div class="tile"><span class="l">谷草/谷丙</span><span class="v"><span class="n" style="color:var(--caution)">0.78</span><span class="u">比值</span></span></div>
+              </div>
+              <div class="mrow">
+                <div class="tile"><span class="l">血压</span><span class="v"><span class="n" style="color:var(--green)">118/76</span><span class="u">mmHg</span></span></div>
+                <div class="tile"><span class="l">腰围</span><span class="v"><span class="n" style="color:var(--caution)">92</span><span class="u">cm</span></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="pill-cta">开始 90 天代谢干预 →</div>
+        </div>
+      </div>
+      <div class="caption">① 代谢健康画像<span>chronic_risk(Framingham/IDF)+ Twin</span></div>
+    </div>
+
+    <!-- ② 90 天干预周期 -->
+    <div class="col">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="ic">●●● ⌁ 84%</span></div>
+        <div class="content">
+          <div><div class="htitle">代谢干预 · 90 天</div><div class="hsub">第 20 / 90 天 · 进行中</div></div>
+          <div class="card pad">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <span style="font-size:14px;font-weight:700">周期进度</span>
+              <span class="delta" style="color:var(--green)">第 20 / 90 天</span>
+            </div>
+            <div class="ptrack"><div class="pf" style="width:22%"></div></div>
+            <div class="note" style="margin-top:10px">基线快照已锁定(5 月体检)· 第 84 天自动安排复查。</div>
+          </div>
+          <div>
+            <div class="seclabel">目标指标 <span class="a">baseline → target</span></div>
+            <div class="card listcard">
+              <div class="lrow"><div class="ltext"><span class="lt">LDL-C</span><span class="ls">降脂 + Zone2</span></div><div class="arrow"><span class="b">3.8</span><span class="x">→</span><span class="delta down">≤ 3.0</span></div></div>
+              <div class="lrow"><div class="ltext"><span class="lt">尿酸</span><span class="ls">控嘌呤 + 补水</span></div><div class="arrow"><span class="b">418</span><span class="x">→</span><span class="delta down">≤ 380</span></div></div>
+              <div class="lrow"><div class="ltext"><span class="lt">腰围</span><span class="ls">热量缺口</span></div><div class="arrow"><span class="b">92</span><span class="x">→</span><span class="delta down">≤ 88</span></div></div>
+              <div class="lrow"><div class="ltext"><span class="lt">谷草/谷丙比值</span><span class="ls">复查肝功能</span></div><div class="arrow"><span class="b">0.78</span><span class="x">→</span><span class="delta flat">复查</span></div></div>
+            </div>
+          </div>
+          <div class="stopbox">
+            <div class="h">⚠ 停止 / 升级条件</div>
+            <div class="b">出现肌痛 + CK 升高、或转氨酶 &gt; 3×ULN、或尿酸性关节痛 → 暂停干预并提示就医(Safety Guardian 监控)。</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">② 90 天干预周期<span>InterventionCycle + OutcomeMetric (新)</span></div>
+    </div>
+
+    <!-- ③ 今日:就绪 + 处方 -->
+    <div class="col">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="ic">●●● ⌁ 84%</span></div>
+        <div class="content">
+          <div><div class="htitle">今天</div><div class="hsub">6月3日 · 复元第 20 / 90 天</div></div>
+          <div class="focus">
+            <div style="display:flex;gap:14px;align-items:center">
+              <div class="ringwrap" style="width:84px;height:84px">
+                <svg width="84" height="84" viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="36" fill="none" stroke="#23332B" stroke-width="8"/>
+                  <circle cx="42" cy="42" r="36" fill="none" stroke="#3AD29F" stroke-width="8" stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="97.3"/>
+                </svg>
+                <div class="ctr"><div class="big" style="font-size:26px;color:#fff">57</div></div>
+              </div>
+              <div style="flex:1">
+                <div class="fl">TODAY · 恢复就绪度</div>
+                <div class="ft">中等 · 适合轻度活动</div>
+                <div class="fs">睡眠 7.2 小时、HRV 64ms,仍在恢复</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="seclabel">今日处方</div>
+            <div class="card listcard">
+              <div class="rx"><div class="licon" style="background:rgba(31,138,91,.12);color:var(--green)">运</div><div style="flex:1"><div class="rxhead"><span class="lt">Zone 2 有氧 35 分钟</span><span class="ltag ok">运动</span></div><div class="rxbody">心率 115–130 · 室内骑行(今日 AQI 良)</div></div></div>
+              <div class="rx"><div class="licon" style="background:rgba(42,111,219,.12);color:var(--blue)">食</div><div style="flex:1"><div class="rxhead"><span class="lt">蛋白 110g · 嘌呤↓</span><span class="ltag" style="background:rgba(42,111,219,.12);color:var(--blue)">饮食</span></div><div class="rxbody">尿酸偏高 → 少红肉/海鲜,多饮水 2L</div></div></div>
+              <div class="rx"><div class="licon" style="background:rgba(124,92,191,.12);color:#7C5CBF">眠</div><div style="flex:1"><div class="rxhead"><span class="lt">23:00 前入睡</span><span class="ltag" style="background:rgba(124,92,191,.12);color:#7C5CBF">睡眠</span></div><div class="rxbody">连续 2 晚 &lt; 7h,优先补觉</div></div></div>
+            </div>
+          </div>
+          <div class="note" style="display:flex;gap:7px;align-items:center"><span style="color:var(--green)">✦</span> 处方按今晨 HRV / 睡眠 / 天气动态调整</div>
+        </div>
+      </div>
+      <div class="caption">③ 今日:就绪 + 处方<span>RecoveryCoach + 6 类 prescription</span></div>
+    </div>
+
+    <!-- ④ 复查对比 -->
+    <div class="col">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="ic">●●● ⌁ 84%</span></div>
+        <div class="content">
+          <div><div class="htitle">复查对比</div><div class="hsub">第 84 天复查 · vs 基线(5 月)</div></div>
+          <div class="card pad" style="display:flex;gap:14px;align-items:center">
+            <div class="ringwrap" style="width:92px;height:92px">
+              <svg width="92" height="92" viewBox="0 0 92 92">
+                <circle cx="46" cy="46" r="40" fill="none" stroke="#EBEAE3" stroke-width="9"/>
+                <circle cx="46" cy="46" r="40" fill="none" stroke="#1F8A5B" stroke-width="9" stroke-linecap="round" stroke-dasharray="251.3" stroke-dashoffset="65.3"/>
+              </svg>
+              <div class="ctr"><div class="big" style="font-size:24px;color:var(--green)">74</div><div class="cap">完成率</div></div>
+            </div>
+            <div style="flex:1"><span class="chip ok"><span class="dot"></span>3/4 指标改善</span><div class="note" style="margin-top:8px">计划完成率 <b style="color:var(--ink)">74%</b> · 与指标改善正相关。</div></div>
+          </div>
+          <div>
+            <div class="seclabel">指标变化 <span class="a">baseline → latest</span></div>
+            <div class="card listcard">
+              <div class="lrow"><div class="ltext"><span class="lt">LDL-C</span></div><div class="arrow"><span class="b">3.8</span><span class="x">→</span><span class="b">3.1</span><span class="delta down">↓18%</span></div></div>
+              <div class="lrow"><div class="ltext"><span class="lt">尿酸</span></div><div class="arrow"><span class="b">418</span><span class="x">→</span><span class="b">372</span><span class="delta down">↓11%</span></div></div>
+              <div class="lrow"><div class="ltext"><span class="lt">腰围</span></div><div class="arrow"><span class="b">92</span><span class="x">→</span><span class="b">88</span><span class="delta down">↓4cm</span></div></div>
+              <div class="lrow"><div class="ltext"><span class="lt">谷草/谷丙</span></div><div class="arrow"><span class="b">0.78</span><span class="x">→</span><span class="b">0.91</span><span class="delta down">↑ 正常</span></div></div>
+            </div>
+          </div>
+          <div class="pill-cta" style="background:var(--focus-bg)">生成干预效果报告 →</div>
+        </div>
+      </div>
+      <div class="caption">④ 复查对比<span>OutcomeMetric + AdherenceOutcomeLink (新)</span></div>
+    </div>
+
+    <!-- ⑤ 安全审查 / 人审 -->
+    <div class="col">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="ic">●●● ⌁ 84%</span></div>
+        <div class="content">
+          <div><div class="htitle">安全审查</div><div class="hsub">确定性规则 · Safety Guardian</div></div>
+          <div>
+            <div class="seclabel">本周告警 <span class="a">2 条</span></div>
+            <div class="card listcard">
+              <div class="lrow"><div class="licon" style="background:rgba(201,138,30,.14);color:var(--caution)">!</div><div class="ltext"><span class="lt">尿酸偏高 + 高嘌呤饮食</span><span class="ls">DSI · 建议低嘌呤 + 限酒</span></div><span class="ltag warn">关注</span></div>
+              <div class="lrow"><div class="licon" style="background:rgba(213,80,58,.14);color:var(--risk)">✕</div><div class="ltext"><span class="lt">谷草/谷丙比值偏低</span><span class="ls">labs · 建议复查肝功能</span></div><span class="ltag risk">拦截高蛋白补剂</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="seclabel">待人工审核 <span class="a">medical-grade</span></div>
+            <div class="review">
+              <div class="ri">医</div>
+              <div style="flex:1"><div class="lt" style="font-size:13px">补剂方案:5-MTHF 活性叶酸</div><div class="ls" style="margin-top:2px">高证据建议 · 出给用户前需医生签核</div></div>
+              <span class="ltag" style="background:rgba(42,111,219,.12);color:var(--blue)">待审</span>
+            </div>
+          </div>
+          <div class="note" style="margin-top:2px">所有 high / medical-grade 建议先进人审队列;确定性红线(发烧不排训练、肾功能异常拦肌酸、用药×补剂冲突)在出建议前已拦截。</div>
+          <div class="card pad" style="margin-top:auto">
+            <div class="seclabel" style="margin-bottom:6px">这条建议基于什么?</div>
+            <div class="sparkmini">Twin 快照 #20260603 · 来源:体检(5月)+ Garmin(今日)· 数据新鲜度 ✓</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">⑤ 安全审查 / 人审<span>Safety Guardian + ReviewQueue (新) + TwinSnapshot (新)</span></div>
+    </div>
+
+    <!-- ⑥ 体检解读(归一化) -->
+    <div class="col">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="ic">●●● ⌁ 84%</span></div>
+        <div class="content">
+          <div><div class="htitle">体检解读</div><div class="hsub">5 月 · 已标准化 12 项</div></div>
+          <div class="card pad">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div><div style="font-size:15px;font-weight:700">谷丙转氨酶</div><div class="sparkmini" style="margin-top:3px">ALT · 肝功能域 · U/L</div></div>
+              <span class="ltag ok">正常</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px">
+              <span class="delta" style="font-size:24px;color:var(--ink)">26</span>
+              <span class="sparkmini">参考 9–50(男)· 趋势 ↘ 稳定</span>
+            </div>
+          </div>
+          <div>
+            <div class="seclabel">异常项 <span class="a">按风险域</span></div>
+            <div class="card listcard">
+              <div class="lrow"><div class="ltext"><span class="lt">低密度脂蛋白 · LDL-C</span><span class="ls">代谢域 · 2.6–3.4 · ↗ 上升</span></div><span class="lval" style="color:var(--risk)">3.8</span></div>
+              <div class="lrow"><div class="ltext"><span class="lt">尿酸 · UA</span><span class="ls">代谢域 · 208–428 · → 稳定</span></div><span class="lval" style="color:var(--caution)">418</span></div>
+              <div class="lrow"><div class="ltext"><span class="lt">谷草/谷丙 · AST/ALT</span><span class="ls">肝功能域 · 偏低</span></div><span class="lval" style="color:var(--caution)">0.78</span></div>
+            </div>
+          </div>
+          <div class="card pad" style="background:var(--track);border:none">
+            <div class="sparkmini" style="color:var(--ink-soft);line-height:1.5">归一化:别名(谷丙转氨酶/ALT/丙氨酸氨基转移酶)→ 统一 code <b style="color:var(--ink);font-family:var(--mono)">ALT</b>,单位换算 + 按性别/年龄参考范围,趋势与风险域自动归类。</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">⑥ 体检解读(归一化)<span>BiomarkerDefinition / Observation (新)</span></div>
+    </div>
+
+  </div>
+</body>
+</html>
