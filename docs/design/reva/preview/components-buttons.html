@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:26px 28px;display:flex;flex-direction:column;gap:16px;}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+  .btn{font-family:var(--font-sans);font-weight:700;font-size:15px;border:none;cursor:pointer;
+    padding:13px 22px;border-radius:var(--r-pill);display:inline-flex;align-items:center;gap:8px;}
+  .primary{background:var(--green-500);color:#fff;box-shadow:var(--shadow-sm);}
+  .press{background:var(--green-600);color:#fff;transform:scale(.97);}
+  .secondary{background:var(--surface);color:var(--ink-1);border:1.5px solid var(--line-strong);}
+  .tertiary{background:transparent;color:var(--green-600);padding:13px 8px;}
+  .dark{background:var(--focus-bg);color:var(--green-bright);}
+  .disabled{background:var(--paper-2);color:var(--ink-4);box-shadow:none;}
+  .sm{padding:8px 16px;font-size:13px;}
+  .lab{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);min-width:64px;}
+</style></head>
+<body><div class="card">
+  <div class="row"><span class="lab">primary</span>
+    <button class="btn primary">开始今天的计划</button>
+    <button class="btn primary press">按下 0.97×</button>
+    <button class="btn primary disabled">已完成</button>
+  </div>
+  <div class="row"><span class="lab">secondary</span>
+    <button class="btn secondary">查看全部指标</button>
+    <button class="btn tertiary">稍后再说</button>
+    <button class="btn dark">复元 · 对话</button>
+  </div>
+  <div class="row"><span class="lab">small</span>
+    <button class="btn primary sm">连接手环</button>
+    <button class="btn secondary sm">编辑</button>
+    <span style="font-size:12px;color:var(--ink-2);margin-left:auto">hover → green‑600 · focus → 2px ring · press → 0.97×</span>
+  </div>
+</div></body></html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;flex-direction:column;gap:16px;}
+  .row{display:flex;justify-content:space-between;}
+  .ic{display:flex;flex-direction:column;align-items:center;gap:7px;color:var(--ink-2);}
+  .ic svg{width:26px;height:26px;}
+  .ic span{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);}
+  .ic.st-n{color:var(--normal)}.ic.st-c{color:var(--caution)}.ic.st-r{color:var(--risk)}
+  .note{font-size:12px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:12px;}
+  .note b{color:var(--ink-1)}
+</style></head>
+<body><div class="card">
+  <div class="row">
+    <div class="ic"><i data-lucide="heart"></i><span>heart</span></div>
+    <div class="ic"><i data-lucide="activity"></i><span>activity</span></div>
+    <div class="ic"><i data-lucide="droplet"></i><span>droplet</span></div>
+    <div class="ic"><i data-lucide="gauge"></i><span>gauge</span></div>
+    <div class="ic"><i data-lucide="moon"></i><span>moon</span></div>
+    <div class="ic"><i data-lucide="footprints"></i><span>footprints</span></div>
+    <div class="ic"><i data-lucide="utensils"></i><span>utensils</span></div>
+    <div class="ic"><i data-lucide="flask-conical"></i><span>labs</span></div>
+  </div>
+  <div class="row">
+    <div class="ic"><i data-lucide="dumbbell"></i><span>dumbbell</span></div>
+    <div class="ic"><i data-lucide="watch"></i><span>watch</span></div>
+    <div class="ic"><i data-lucide="calendar-check"></i><span>recheck</span></div>
+    <div class="ic"><i data-lucide="messages-square"></i><span>agent</span></div>
+    <div class="ic st-n"><i data-lucide="trending-down"></i><span>improving</span></div>
+    <div class="ic st-c"><i data-lucide="triangle-alert"></i><span>watch</span></div>
+    <div class="ic st-r"><i data-lucide="trending-up"></i><span>risk</span></div>
+    <div class="ic"><i data-lucide="chevron-right"></i><span>chevron</span></div>
+  </div>
+  <div class="note"><b>Lucide</b> · outline · ~1.75px stroke · rounded caps · inherits currentColor. ⚠ substitution — no house set provided.</div>
+</div>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons({attrs:{'stroke-width':1.75}});</script>
+</body></html>

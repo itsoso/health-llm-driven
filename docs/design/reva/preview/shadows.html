@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:34px 28px;display:flex;gap:26px;align-items:center;justify-content:space-between;}
+  .sw{display:flex;flex-direction:column;gap:10px;align-items:center;}
+  .box{width:120px;height:62px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);}
+  .nm{font-size:12px;font-weight:600;}
+  .v{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);text-align:center;}
+  .dark{width:120px;height:62px;background:var(--focus-bg);border-radius:var(--r-lg);box-shadow:var(--shadow-focus);}
+</style></head>
+<body><div class="card">
+  <div class="sw"><div class="box" style="box-shadow:var(--shadow-sm)"></div><div class="nm">sm</div><div class="v">hairline lift</div></div>
+  <div class="sw"><div class="box" style="box-shadow:var(--shadow-md)"></div><div class="nm">md · card</div><div class="v">resting card</div></div>
+  <div class="sw"><div class="box" style="box-shadow:var(--shadow-lg)"></div><div class="nm">lg</div><div class="v">sheets / popovers</div></div>
+  <div class="sw"><div class="dark"></div><div class="nm">focus</div><div class="v">deep, on dark hero</div></div>
+</div></body></html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;gap:14px;align-items:flex-end;}
+  .sw{display:flex;flex-direction:column;gap:7px;align-items:center;flex:1;}
+  .box{width:100%;height:60px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-sm);}
+  .nm{font-size:12px;font-weight:600;}
+  .v{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);}
+</style></head>
+<body><div class="card">
+  <div class="sw"><div class="box" style="border-radius:var(--r-xs)"></div><div class="nm">xs</div><div class="v">6px</div></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-sm)"></div><div class="nm">sm</div><div class="v">10px</div></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-md)"></div><div class="nm">md</div><div class="v">14px</div></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-lg)"></div><div class="nm">lg · card</div><div class="v">18px</div></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-xl)"></div><div class="nm">xl · sheet</div><div class="v">24px</div></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-pill);height:40px"></div><div class="nm">pill · CTA</div><div class="v">999</div></div>
+</div></body></html>

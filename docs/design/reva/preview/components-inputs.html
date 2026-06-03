@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;flex-direction:column;gap:14px;}
+  .field{display:flex;flex-direction:column;gap:6px;}
+  label{font-size:12px;font-weight:600;color:var(--ink-2);}
+  .inp{font-family:var(--font-sans);font-size:15px;color:var(--ink-1);background:var(--surface);
+    border:1.5px solid var(--line-strong);border-radius:var(--r-md);padding:12px 14px;outline:none;}
+  .inp.focus{border-color:var(--green-500);box-shadow:0 0 0 3px rgba(31,138,91,.18);}
+  .ph{color:var(--ink-3);}
+  .row{display:flex;gap:14px;}
+  .row>*{flex:1;}
+  .toggle{width:46px;height:28px;border-radius:999px;background:var(--green-500);position:relative;}
+  .toggle::after{content:"";position:absolute;top:3px;left:21px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:var(--shadow-sm);}
+  .seg{display:flex;background:var(--paper-2);border-radius:var(--r-md);padding:3px;gap:3px;}
+  .seg span{flex:1;text-align:center;font-size:13px;font-weight:600;padding:8px;border-radius:10px;color:var(--ink-2);}
+  .seg span.on{background:var(--surface);color:var(--ink-1);box-shadow:var(--shadow-sm);}
+</style></head>
+<body><div class="card">
+  <div class="row">
+    <div class="field"><label>体检报告日期</label><div class="inp">2026‑05‑18</div></div>
+    <div class="field"><label>聚焦后的输入（focus）</label><div class="inp focus">3.8</div></div>
+  </div>
+  <div class="row" style="align-items:center;">
+    <div class="field"><label>占位 placeholder</label><div class="inp"><span class="ph">输入空腹血糖…</span></div></div>
+    <div style="display:flex;flex-direction:column;gap:6px;"><label>每日提醒</label><div style="display:flex;align-items:center;gap:10px;"><div class="toggle"></div><span style="font-size:13px;color:var(--ink-2)">开</span></div></div>
+  </div>
+  <div class="seg"><span class="on">今天</span><span>本周</span><span>90 天</span></div>
+</div></body></html>

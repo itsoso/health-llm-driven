@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;flex-direction:column;gap:14px;}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
+  .sw{display:flex;flex-direction:column;gap:5px;}
+  .chip{height:50px;border-radius:var(--r-sm);border:1px solid rgba(0,0,0,.04);}
+  .nm{font-size:11px;font-weight:600;color:var(--ink-1);}
+  .hex{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);}
+  .star{position:absolute;top:6px;right:8px;font-size:11px;color:#fff;}
+  .note{font-size:12px;color:var(--ink-2);}
+</style></head>
+<body><div class="card">
+  <div class="grid">
+    <div class="sw"><div class="chip" style="background:var(--green-50)"></div><div class="nm">50</div><div class="hex">E8F2EC</div></div>
+    <div class="sw"><div class="chip" style="background:var(--green-100)"></div><div class="nm">100</div><div class="hex">CDE6D8</div></div>
+    <div class="sw"><div class="chip" style="background:var(--green-300)"></div><div class="nm">300</div><div class="hex">6FBE94</div></div>
+    <div class="sw" style="position:relative"><div class="chip" style="background:var(--green-500)"><span class="star">★ primary</span></div><div class="nm">500</div><div class="hex">1F8A5B</div></div>
+    <div class="sw"><div class="chip" style="background:var(--green-600)"></div><div class="nm">600 press</div><div class="hex">176F49</div></div>
+    <div class="sw"><div class="chip" style="background:var(--green-700)"></div><div class="nm">700</div><div class="hex">115738</div></div>
+    <div class="sw"><div class="chip" style="background:var(--green-bright)"></div><div class="nm">bright</div><div class="hex">3AD29F</div></div>
+  </div>
+  <div class="note">Vital Green — the single hero color. Primary actions, recovery ring, “in range / improving”, brand mark. <b>bright</b> is for dark focus surfaces only.</div>
+</div></body></html>
