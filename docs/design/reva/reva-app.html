@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>复元 Reva · 真实数据设计稿 (user_id=3)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#F7F6F2; --surface:#FFFFFF; --ink:#16201B; --ink-soft:#5B6B63;
+    --muted:#8A968F; --green:#1F8A5B; --green600:#176F49; --green-bright:#3AD29F;
+    --blue:#2A6FDB; --focus-bg:#0F1C17; --caution:#C98A1E; --risk:#D5503A;
+    --border:#E5E3DC; --track:#EBEAE3;
+    --sans:'Manrope','Noto Sans SC',system-ui,sans-serif;
+    --cjk:'Noto Sans SC','Manrope',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#E9E8E2;font-family:var(--cjk);color:var(--ink);padding:40px;-webkit-font-smoothing:antialiased;}
+  .page-head{max-width:1280px;margin:0 auto 28px;}
+  .page-head h1{font-size:22px;font-weight:700;}
+  .page-head p{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
+  .page-head code{font-family:var(--mono);background:#fff;padding:1px 6px;border-radius:6px;border:1px solid var(--border);}
+  .stage{display:flex;gap:40px;justify-content:center;flex-wrap:wrap;max-width:1280px;margin:0 auto;}
+  .phone{width:390px;background:var(--paper);border-radius:36px;overflow:hidden;
+    box-shadow:0 24px 60px -16px rgba(22,32,27,.28);display:flex;flex-direction:column;}
+  .statusbar{height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;font-family:var(--sans);font-weight:600;font-size:14px;}
+  .statusbar .icons{font-size:12px;letter-spacing:1px;}
+  .content{padding:8px 20px 20px;display:flex;flex-direction:column;gap:22px;flex:1;}
+  .content.tight{gap:20px;}
+  .header{display:flex;justify-content:space-between;align-items:center;}
+  .header .hello{font-size:24px;font-weight:700;}
+  .header .sub{font-size:13px;color:var(--ink-soft);margin-top:4px;font-weight:500;}
+  .pagetitle{font-size:26px;font-weight:700;}
+  .pagetitle + .pagesub{font-size:13px;color:var(--ink-soft);font-weight:500;margin-top:3px;}
+  .mark{width:40px;height:40px;border-radius:999px;background:var(--focus-bg);color:var(--green-bright);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:20px;}
+  .hero{display:flex;align-items:center;gap:18px;padding:20px;box-shadow:0 6px 18px -6px rgba(22,32,27,.08);}
+  .ring{position:relative;width:120px;height:120px;flex:none;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring .score{font-family:var(--mono);font-weight:500;font-size:40px;line-height:1;}
+  .ring .rlabel{font-family:var(--sans);font-weight:600;font-size:10px;letter-spacing:1.5px;color:var(--muted);margin-top:2px;}
+  .herotext{display:flex;flex-direction:column;gap:8px;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600;width:fit-content;}
+  .chip .dot{width:8px;height:8px;border-radius:999px;}
+  .chip.caution{background:rgba(201,138,30,.10);color:var(--caution);}
+  .chip.caution .dot{background:var(--caution);}
+  .herotitle{font-size:19px;font-weight:700;}
+  .heronote{font-size:13px;line-height:1.45;color:var(--ink-soft);}
+  .mrow{display:flex;gap:10px;}
+  .tile{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px;}
+  .tile .l{font-size:11px;font-weight:600;color:var(--muted);}
+  .tile .v{display:flex;align-items:flex-end;gap:3px;}
+  .tile .n{font-family:var(--mono);font-weight:500;font-size:26px;line-height:1;}
+  .tile .u{font-size:11px;font-weight:500;color:var(--muted);margin-bottom:3px;}
+  .grid .tile .n{font-size:24px;}
+  .sec-h{display:flex;justify-content:space-between;align-items:center;}
+  .sec-h .t{font-size:15px;font-weight:700;}
+  .sec-h .c{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .listcard{display:flex;flex-direction:column;}
+  .litem{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border);}
+  .litem:last-child{border-bottom:none;}
+  .check{width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font-family:var(--sans);font-weight:700;font-size:13px;}
+  .check.done{background:var(--green);color:#fff;}
+  .check.todo{border:1.5px solid var(--muted);}
+  .litem .tx{display:flex;flex-direction:column;gap:2px;flex:1;}
+  .litem .tt{font-size:14px;font-weight:600;}
+  .litem .tt.done{text-decoration:line-through;color:var(--ink-soft);}
+  .litem .ss{font-size:11.5px;color:var(--muted);}
+  .alert{display:flex;gap:12px;align-items:flex-start;padding:14px;border-radius:16px;background:rgba(201,138,30,.07);border:1px solid rgba(201,138,30,.25);}
+  .alert .ai{width:30px;height:30px;flex:none;border-radius:999px;background:rgba(201,138,30,.13);color:var(--caution);display:flex;align-items:center;justify-content:center;font-family:var(--sans);font-weight:700;font-size:15px;}
+  .alert .ah{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .alert .at{font-size:13.5px;font-weight:700;}
+  .alert .atag{font-size:11px;font-weight:600;color:var(--caution);}
+  .alert .ab{font-size:12px;line-height:1.45;color:var(--ink-soft);margin-top:3px;}
+  .bars{display:flex;align-items:flex-end;gap:8px;height:90px;}
+  .barcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%;}
+  .bar{width:100%;border-radius:6px;background:var(--track);}
+  .bar.hl{background:var(--green);}
+  .barx{font-size:9.5px;font-weight:500;color:var(--muted);}
+  .trend-h{display:flex;justify-content:space-between;align-items:flex-end;}
+  .trend-h .tl{font-size:12px;font-weight:600;color:var(--muted);}
+  .trend-h .tv{font-family:var(--mono);font-weight:500;font-size:28px;line-height:1;}
+  .trend-h .tu{font-size:12px;color:var(--muted);margin-left:4px;}
+  .trend-h .delta{font-family:var(--sans);font-size:12px;font-weight:600;color:var(--green);}
+  .grid{display:flex;flex-direction:column;gap:10px;}
+  .labrow{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-bottom:1px solid var(--border);}
+  .labrow:last-child{border-bottom:none;}
+  .labrow .nn{font-size:13.5px;font-weight:600;}
+  .labrow .vv{font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .ltag{padding:4px 9px;border-radius:999px;font-size:11px;font-weight:600;}
+  .ltag.ok{background:rgba(31,138,91,.10);color:var(--green);}
+  .ltag.warn{background:rgba(201,138,30,.10);color:var(--caution);}
+  .profile{display:flex;align-items:center;gap:16px;padding:18px;border-radius:20px;background:var(--focus-bg);}
+  .profile .av{width:56px;height:56px;border-radius:999px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;flex:none;}
+  .profile .pn{font-size:17px;font-weight:700;color:#fff;}
+  .profile .pm{font-size:13px;font-weight:500;color:var(--green-bright);margin-top:5px;}
+  .prog{padding:18px;}
+  .prog .ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .prog .pt{font-size:15px;font-weight:700;}
+  .prog .pd{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--green);}
+  .ptrack{height:10px;border-radius:999px;background:var(--track);overflow:hidden;}
+  .ptrack .pf{height:100%;border-radius:999px;background:var(--green);}
+  .prog .pnote{font-size:12px;line-height:1.4;color:var(--ink-soft);margin-top:12px;}
+  .stats{display:flex;gap:10px;}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:3px;}
+  .stat .v{display:flex;align-items:flex-end;gap:3px;}
+  .stat .n{font-family:var(--mono);font-weight:500;font-size:22px;line-height:1;}
+  .stat .u{font-size:11px;font-weight:500;color:var(--muted);margin-bottom:2px;}
+  .stat .l{font-size:11.5px;font-weight:500;color:var(--muted);}
+  .setrow{display:flex;justify-content:space-between;align-items:center;padding:15px 16px;border-bottom:1px solid var(--border);}
+  .setrow:last-child{border-bottom:none;}
+  .setrow .t{font-size:14px;font-weight:600;}
+  .setrow .s{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .setrow .chev{font-family:var(--sans);font-size:18px;color:var(--muted);}
+  .tabbar{padding:6px 16px 18px;display:flex;justify-content:center;}
+  .capsule{flex:1;display:flex;align-items:center;height:56px;padding:6px;border-radius:28px;background:rgba(255,255,255,.7);backdrop-filter:blur(12px);border:1px solid var(--border);box-shadow:0 8px 24px -8px rgba(22,32,27,.13);}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:7px 0;border-radius:22px;}
+  .tab.active{background:rgba(31,138,91,.09);}
+  .tab .ti{font-family:var(--sans);font-weight:600;font-size:16px;color:var(--muted);}
+  .tab .tl{font-size:10px;font-weight:500;color:var(--muted);}
+  .tab.active .ti,.tab.active .tl{color:var(--green);}
+  .tab.active .tl{font-weight:700;}
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1>复元 Reva — 真实数据设计稿</h1>
+    <p>数据来源:<code>user_id = 3</code>(男 · 41 岁 · 杭州)真实账号 · readiness 57 / RHR 51 / HRV 64 / 睡眠 7h10m / 复元第 20·90 天。
+       与 <code>mobile/components/reva/</code> 实现、Pencil <code>reva-app.pen</code> 三屏同源。本文件可直接双击在浏览器打开。</p>
+  </div>
+  <div class="stage">
+
+    <!-- ============ 今天 ============ -->
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons">●●● ⌁ 84%</span></div>
+      <div class="content">
+        <div class="header">
+          <div>
+            <div class="hello">晚上好</div>
+            <div class="sub">6月3日 · 复元第 20 / 90 天</div>
+          </div>
+          <div class="mark">复</div>
+        </div>
+
+        <div class="card hero">
+          <div class="ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="#EBEAE3" stroke-width="10"/>
+              <circle cx="60" cy="60" r="52" fill="none" stroke="#1F8A5B" stroke-width="10"
+                      stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="140.5"/>
+            </svg>
+            <div class="ctr"><div class="score">57</div><div class="rlabel">READINESS</div></div>
+          </div>
+          <div class="herotext">
+            <span class="chip caution"><span class="dot"></span>中等恢复</span>
+            <div class="herotitle">今天适合轻度活动</div>
+            <div class="heronote">睡眠 7.2 小时、HRV 64ms 提示身体仍在恢复,避免高强度训练。</div>
+          </div>
+        </div>
+
+        <div class="mrow">
+          <div class="tile"><span class="l">静息心率</span><span class="v"><span class="n" style="color:var(--green)">51</span><span class="u">bpm</span></span></div>
+          <div class="tile"><span class="l">HRV</span><span class="v"><span class="n" style="color:var(--green)">64</span><span class="u">ms</span></span></div>
+          <div class="tile"><span class="l">睡眠</span><span class="v"><span class="n" style="color:var(--blue)">7.2</span><span class="u">小时</span></span></div>
+        </div>
+
+        <div>
+          <div class="sec-h" style="margin-bottom:10px"><span class="t">今日复元计划</span><span class="c">2 / 5</span></div>
+          <div class="card listcard">
+            <div class="litem"><div class="check done">✓</div><div class="tx"><span class="tt done">补水 2000 ml</span><span class="ss">已完成 1400 ml</span></div></div>
+            <div class="litem"><div class="check todo"></div><div class="tx"><span class="tt">低强度有氧 30 分钟</span><span class="ss">散步 / 骑行,心率 &lt; 120</span></div></div>
+            <div class="litem"><div class="check todo"></div><div class="tx"><span class="tt">蛋白质摄入 ≥ 100 g</span><span class="ss">午餐已记录 42 g</span></div></div>
+            <div class="litem"><div class="check done">✓</div><div class="tx"><span class="tt done">洗鼻 + 鼻炎用药</span><span class="ss">早晚各一次</span></div></div>
+            <div class="litem"><div class="check todo"></div><div class="tx"><span class="tt">23:00 前入睡</span><span class="ss">昨晚 23:42</span></div></div>
+          </div>
+        </div>
+
+        <div class="alert">
+          <div class="ai">!</div>
+          <div style="flex:1">
+            <div class="ah"><span class="at">谷草/谷丙比值偏低</span><span class="atag">需关注</span></div>
+            <div class="ab">最近一次体检 (5月) AST/ALT 比值低于参考区间,建议结合肝功能复查,Safety Guardian 已记录。</div>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar"><div class="capsule">
+        <div class="tab active"><span class="ti">◆</span><span class="tl">今天</span></div>
+        <div class="tab"><span class="ti">▦</span><span class="tl">数据</span></div>
+        <div class="tab"><span class="ti">✦</span><span class="tl">复元</span></div>
+        <div class="tab"><span class="ti">●</span><span class="tl">我的</span></div>
+      </div></div>
+    </div>
+
+    <!-- ============ 数据 ============ -->
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons">●●● ⌁ 84%</span></div>
+      <div class="content tight">
+        <div><div class="pagetitle">数据</div><div class="pagesub">Garmin 同步 · 今天 08:30 更新</div></div>
+
+        <div class="card" style="padding:18px;display:flex;flex-direction:column;gap:14px;">
+          <div class="trend-h">
+            <div>
+              <div class="tl">静息心率 · 近 7 天</div>
+              <div style="display:flex;align-items:flex-end;margin-top:2px"><span class="tv">51</span><span class="tu">bpm</span></div>
+            </div>
+            <span class="delta">↓ 2 比上周</span>
+          </div>
+          <div class="bars">
+            <div class="barcol"><div class="bar" style="height:54%"></div><span class="barx">周一</span></div>
+            <div class="barcol"><div class="bar" style="height:48%"></div><span class="barx">周二</span></div>
+            <div class="barcol"><div class="bar" style="height:60%"></div><span class="barx">周三</span></div>
+            <div class="barcol"><div class="bar" style="height:42%"></div><span class="barx">周四</span></div>
+            <div class="barcol"><div class="bar" style="height:36%"></div><span class="barx">周五</span></div>
+            <div class="barcol"><div class="bar" style="height:48%"></div><span class="barx">周六</span></div>
+            <div class="barcol"><div class="bar hl" style="height:42%"></div><span class="barx">今天</span></div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="mrow">
+            <div class="tile"><span class="l">心率(静息)</span><span class="v"><span class="n" style="color:var(--green)">51</span><span class="u">bpm</span></span></div>
+            <div class="tile"><span class="l">HRV</span><span class="v"><span class="n" style="color:var(--green)">64</span><span class="u">ms</span></span></div>
+          </div>
+          <div class="mrow">
+            <div class="tile"><span class="l">睡眠</span><span class="v"><span class="n" style="color:var(--blue)">7.2</span><span class="u">小时</span></span></div>
+            <div class="tile"><span class="l">步数</span><span class="v"><span class="n">6,240</span><span class="u">步</span></span></div>
+          </div>
+          <div class="mrow">
+            <div class="tile"><span class="l">血压</span><span class="v"><span class="n" style="color:var(--green)">118/76</span><span class="u">mmHg</span></span></div>
+            <div class="tile"><span class="l">身体电量</span><span class="v"><span class="n" style="color:var(--caution)">57</span><span class="u">%</span></span></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="sec-h" style="margin-bottom:10px"><span class="t">体检指标 · 5 月</span></div>
+          <div class="card listcard">
+            <div class="labrow"><div><div class="nn">谷草/谷丙比值</div><div class="vv">0.78</div></div><span class="ltag warn">偏低</span></div>
+            <div class="labrow"><div><div class="nn">低密度脂蛋白</div><div class="vv">2.9 mmol/L</div></div><span class="ltag ok">正常</span></div>
+            <div class="labrow"><div><div class="nn">空腹血糖</div><div class="vv">5.1 mmol/L</div></div><span class="ltag ok">正常</span></div>
+            <div class="labrow"><div><div class="nn">尿酸</div><div class="vv">418 µmol/L</div></div><span class="ltag warn">偏高</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar"><div class="capsule">
+        <div class="tab"><span class="ti">◆</span><span class="tl">今天</span></div>
+        <div class="tab active"><span class="ti">▦</span><span class="tl">数据</span></div>
+        <div class="tab"><span class="ti">✦</span><span class="tl">复元</span></div>
+        <div class="tab"><span class="ti">●</span><span class="tl">我的</span></div>
+      </div></div>
+    </div>
+
+    <!-- ============ 我的 ============ -->
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons">●●● ⌁ 84%</span></div>
+      <div class="content tight">
+        <div class="pagetitle">我的</div>
+
+        <div class="profile">
+          <div class="av">复</div>
+          <div><div class="pn">我的健康档案</div><div class="pm">男 · 41 岁 · 杭州</div></div>
+        </div>
+
+        <div class="card prog">
+          <div class="ph"><span class="pt">复元计划进度</span><span class="pd">第 20 / 90 天</span></div>
+          <div class="ptrack"><div class="pf" style="width:22%"></div></div>
+          <div class="pnote">已坚持 20 天 · 平均 readiness 59 · 较计划开始 ↑ 6 分</div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><span class="v"><span class="n">18</span><span class="u">天</span></span><span class="l">连续记录</span></div>
+          <div class="stat"><span class="v"><span class="n">3</span><span class="u">份</span></span><span class="l">体检报告</span></div>
+          <div class="stat"><span class="v"><span class="n">2</span><span class="u">条</span></span><span class="l">安全告警</span></div>
+        </div>
+
+        <div class="card listcard">
+          <div class="setrow"><div><div class="t">健康档案</div><div class="s">基础信息 · 慢病 · 用药</div></div><span class="chev">›</span></div>
+          <div class="setrow"><div><div class="t">连接设备</div><div class="s">Garmin 已连接</div></div><span class="chev">›</span></div>
+          <div class="setrow"><div><div class="t">AI 模型</div><div class="s">Qwen3.7 Max · 推理</div></div><span class="chev">›</span></div>
+          <div class="setrow"><div><div class="t">隐私与数据</div><div class="s">基因 / 化验数据加密</div></div><span class="chev">›</span></div>
+          <div class="setrow"><div><div class="t">关于复元</div><div class="s">版本 1.0.0</div></div><span class="chev">›</span></div>
+        </div>
+      </div>
+      <div class="tabbar"><div class="capsule">
+        <div class="tab"><span class="ti">◆</span><span class="tl">今天</span></div>
+        <div class="tab"><span class="ti">▦</span><span class="tl">数据</span></div>
+        <div class="tab"><span class="ti">✦</span><span class="tl">复元</span></div>
+        <div class="tab active"><span class="ti">●</span><span class="tl">我的</span></div>
+      </div></div>
+    </div>
+
+  </div>
+</body>
+</html>

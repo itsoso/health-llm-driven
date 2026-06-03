@@ -30,9 +30,10 @@ function greeting(): string {
   const m = ['一', '二', '三', '四', '五', '六', '日'][(new Date().getDay() + 6) % 7];
   return `${part} · ${new Date().getMonth() + 1}月${new Date().getDate()}日 周${m}`;
 }
+// 时长统一规范: 十进制小时 + 「小时」单位 (一位小数), 不用 "7:10"/"7h10" 这种像时间戳的写法
 function fmtSleep(min: number | null): string {
   if (min == null) return '—';
-  return `${Math.floor(min / 60)}h${min % 60}`;
+  return (min / 60).toFixed(1);
 }
 function readinessTitle(score: number | null): string {
   if (score == null) return '数据接入中';
@@ -94,7 +95,7 @@ export function TodayView({ onRisk }: { onRisk?: () => void }) {
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <MetricTile icon="gauge" label="血压" value={d.today.bp ?? '—'} unit={d.today.bp ? 'mmHg' : ''} status="normal" />
             <MetricTile icon="footprints" label="步数" value={d.today.steps != null ? `${(d.today.steps / 1000).toFixed(1)}k` : '—'} status="info" />
-            <MetricTile icon="moon" label="睡眠" value={fmtSleep(d.today.sleepMin)} status={d.today.sleepMin != null && d.today.sleepMin < 420 ? 'caution' : 'normal'} />
+            <MetricTile icon="moon" label="睡眠" value={fmtSleep(d.today.sleepMin)} unit={d.today.sleepMin != null ? '小时' : ''} status={d.today.sleepMin != null && d.today.sleepMin < 420 ? 'caution' : 'normal'} />
           </View>
         </View>
 
@@ -152,7 +153,7 @@ export function DataView({ onRisk }: { onRisk?: () => void }) {
             {d.rhrSeries.length >= 2 ? <Sparkline points={d.rhrSeries} /> : <Text style={{ fontSize: 12.5, color: C.ink3 }}>{d.hasGarmin ? '数据积累中' : '连接手环后显示趋势'}</Text>}
           </Card>
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            <MetricTile icon="moon" label="睡眠" value={fmtSleep(d.today.sleepMin)} status={d.today.sleepMin != null && d.today.sleepMin < 420 ? 'caution' : 'normal'} />
+            <MetricTile icon="moon" label="睡眠" value={fmtSleep(d.today.sleepMin)} unit={d.today.sleepMin != null ? '小时' : ''} status={d.today.sleepMin != null && d.today.sleepMin < 420 ? 'caution' : 'normal'} />
             <MetricTile icon="activity" label="HRV" value={d.today.hrv != null ? String(d.today.hrv) : '—'} unit={d.today.hrv != null ? 'ms' : ''} status="normal" />
             <MetricTile icon="flame" label="活动" value={d.today.activeCal != null ? String(d.today.activeCal) : '—'} unit={d.today.activeCal != null ? 'kcal' : ''} status="normal" />
           </View>

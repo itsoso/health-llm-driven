@@ -29,8 +29,9 @@ def age(bd):
     return TODAY.year - y.year - ((TODAY.month, TODAY.day) < (y.month, y.day))
 
 def sleep_fmt(mins):
+    # 时长统一规范: 十进制小时 + 小时 (一位小数), 不用 "7h10"/"7:10" 这种像时间戳的写法
     if mins is None: return "—"
-    return f"{mins//60}h{mins%60:02d}"
+    return f"{mins/60:.1f} 小时"
 
 name = user.get("username", "我")
 gender = {"male": "男", "female": "女"}.get(prof.get("gender"), "")
