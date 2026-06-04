@@ -24,7 +24,7 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 
 本仓库已应用 [revfactory/harness](https://github.com/revfactory/harness) 元 skill,为开发任务生成了一套**代理团队**(`.claude/`)。
 
-**触发**:在本仓库做跨端功能 / 修复 / 上线时(「加一个功能」「实现 X」「修 bug」「合并部署」「发 OTA / TestFlight」)→ 用 **`health-harness-orchestrator`** skill 组队;扩建/审计团队本身 → 用 **`harness`** skill。
+**触发**:在本仓库做跨端功能 / 修复 / 上线时(「加一个功能」「实现 X」「修 bug」「合并部署」「发 OTA / TestFlight」)→ 用 **`health-harness-orchestrator`** skill 组队;扩建/审计团队本身 → 用 **`harness`** skill(由 marketplace 插件 `harness@harness-marketplace` 提供,user scope,非仓库内 —— 若新克隆缺该 skill,`claude plugin install harness@harness-marketplace`)。
 
 **团队**(均 `model: opus`,定义在 `.claude/agents/`):
 - `backend-engineer` — `backend/` 实现(API/service/model/agents/twin/safety/迁移)
@@ -43,6 +43,7 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 - 2026-06-04 初次构建(5 agents + orchestrator skill)。
 - 2026-06-04 加 `mac-engineer` agent + `mac-build-deploy` skill(覆盖 apps/mac 开发与分发)。
 - 2026-06-04 加 `frontend-engineer` agent(覆盖 frontend/ Next.js Web,补齐 4 端)。
+- 2026-06-04 删仓库内 vendored 的 `harness` 工厂副本,改由 marketplace 插件 `harness@harness-marketplace` 提供(消除撞名;定制团队 agents + orchestrator + mac-build-deploy 仍随仓库)。
 
 harness 是演进系统,每次执行后把新坑沉淀回对应 agent 定义。
 
