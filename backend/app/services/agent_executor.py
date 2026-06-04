@@ -25,6 +25,10 @@ from app.services.tool_schema_registry import get_health_tools
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 8
+# 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
+# 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
+# Opus 4.7 / GPT-5.5 / Gemini 3.1 均支持远高于此, 8000 覆盖绝大多数长方案。
+ANSWER_MAX_TOKENS = 8000
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -781,7 +785,7 @@ class AgentExecutor:
                 try:
                     p = create_provider_for_model_id(model_id)
                     r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
-                                     max_tokens=2000, stream=False, return_metadata=True)
+                                     max_tokens=4000, stream=False, return_metadata=True)
                     return (r.get("content") if isinstance(r, dict) else str(r)) or ""
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[multi_model] perspective %s failed: %s", model_id, e)
@@ -801,7 +805,7 @@ class AgentExecutor:
             try:
                 synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
                 synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
-                                                       max_tokens=4000, stream=False, return_metadata=True)
+                                                       max_tokens=ANSWER_MAX_TOKENS, stream=False, return_metadata=True)
                 final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
             except Exception as e:  # noqa: BLE001
                 logger.error("[multi_model] synthesis failed: %s", e)
@@ -1719,7 +1723,7 @@ class AgentExecutor:
             "messages": messages,
             "model": None,
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": ANSWER_MAX_TOKENS,
             "stream": False,
             "return_metadata": True,
         }
@@ -1749,7 +1753,7 @@ class AgentExecutor:
             messages=messages,
             model=None,
             temperature=0.3,
-            max_tokens=3000,
+            max_tokens=ANSWER_MAX_TOKENS,
             stream=False,
             return_metadata=True,
         )
@@ -1772,7 +1776,7 @@ class AgentExecutor:
             "model": model,
             "messages": messages,
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": ANSWER_MAX_TOKENS,
         }
         if tools:
             payload["tools"] = [{"type": "function", "function": t["function"]} if "function" in t else t for t in tools]
