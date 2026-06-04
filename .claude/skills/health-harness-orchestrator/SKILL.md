@@ -16,7 +16,8 @@ description: "复元健康平台的代理团队编排器。当用户要在本仓
 |---|---|---|
 | backend-engineer | 自定义 | `backend/` 实现(API/service/model/agents/twin/safety/迁移) |
 | mobile-engineer | 自定义 | `mobile/` 实现(屏/组件/hooks/services/主题) |
-| qa-verifier | general-purpose | 跑闸门(pytest/doc-drift/tsc/jest)+ 跨界 shape 比对 + 真红/假红判别 |
+| mac-engineer | 自定义 | `apps/mac/` 实现(Swift/SwiftUI;`mac-build-deploy` skill) |
+| qa-verifier | general-purpose | 跑闸门(pytest/doc-drift/tsc/jest/swift)+ 跨界 shape 比对 + 真红/假红判别 |
 | safety-privacy-reviewer | 自定义 | AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险改动必经) |
 | release-engineer | 自定义 | deploy.sh / OTA / EAS TestFlight,先后端再 OTA |
 
