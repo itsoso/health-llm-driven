@@ -553,14 +553,12 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
   const adviceStart = lines.findIndex(line => /今日建议|建议/.test(line));
   if (adviceStart >= 0) {
     for (const line of lines.slice(adviceStart + 1)) {
-      const cleaned = line
-        .replace(/^\s*(?:[-*]|\d+[.)、])\s*/, '')
-        .trim();
+      if (/^\s*\|/.test(line)) continue;        // 跳过表格行
+      const cleaned = cleanAdviceMarkdown(line);
       if (!cleaned) {
         if (advice.length > 0) break;
         continue;
       }
-      if (/^\|/.test(cleaned)) continue;
       advice.push(cleaned);
       if (advice.length >= 3) break;
     }
@@ -568,6 +566,30 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
 
   if (metrics.length === 0 && advice.length === 0) return null;
   return { metrics, advice };
+}
+
+/**
+ * 清掉建议行里的 markdown 标记 (列表 / 标题 ### / 引用 / 粗体 ** / 行内代码),
+ * 让"今日建议"摘要卡显示纯净文本。修复 bug: 形如 "1. ### ✅ 你已有的(继续保持)"
+ * 的行被原样渲染成字面量 ###。行首标记可能叠加(列表+标题), 故循环剥离。
+ */
+function cleanAdviceMarkdown(line: string): string {
+  let t = line.trim();
+  let prev: string;
+  do {
+    prev = t;
+    t = t
+      .replace(/^\d+[.)、]\s*/, '')           // 数字列表 1.
+      .replace(/^[-*+]\s+/, '')               // 符号列表 (要求空格, 否则会吃掉 **粗体**)
+      .replace(/^#{1,6}\s*/, '')              // 标题 ###
+      .replace(/^>\s*/, '')                   // 引用 >
+      .trim();
+  } while (t !== prev);
+  return t
+    .replace(/\*\*(.+?)\*\*/g, '$1')         // 粗体
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')             // 行内代码
+    .trim();
 }
 
 function isMetricTableStart(lines: string[], index: number): boolean {

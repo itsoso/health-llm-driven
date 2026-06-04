@@ -115,6 +115,22 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText(/\| 指标 \| 数值 \| 状态 \|/)).toBeNull();
   });
 
+  it('strips markdown heading/list/bold markers from today advice items', () => {
+    const { getByText, queryByText } = renderBubble(`
+📌 今日建议：
+1. ### ✅ 你已有的（继续保持）
+2. **补水** 上午 500ml
+`);
+
+    expect(getByText('今日建议')).toBeTruthy();
+    // "### " heading marker stripped
+    expect(getByText('✅ 你已有的（继续保持）')).toBeTruthy();
+    // "**bold**" emphasis stripped
+    expect(getByText('补水 上午 500ml')).toBeTruthy();
+    // no literal markdown markers leak into the card
+    expect(queryByText(/###/)).toBeNull();
+  });
+
   it('shows executable actions for completed assistant replies and can save memory', async () => {
     saveAssistantReplyAsMemory.mockResolvedValueOnce(undefined);
 
