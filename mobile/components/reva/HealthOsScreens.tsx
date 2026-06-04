@@ -4,6 +4,7 @@
  */
 import React from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { revaColors as C, type RevaStatus } from '../../constants/revaTheme';
 import { Button, Card, Chip, DayProgress, Icon, LabRow, MetricTile, SectionLabel, TopBar } from './RevaKit';
 import { useActiveCycle, useMetabolicProfile, useRecheckCycle, useStartCycle } from '../../hooks/useHealthOs';
@@ -40,7 +41,9 @@ function fmt(v: number | null | undefined): string {
 
 // ── ① 代谢健康画像 ────────────────────────────────────────────────────────
 export function MetabolicProfileView() {
+  const router = useRouter();
   const { data, isLoading } = useMetabolicProfile();
+  const { data: activeCycle } = useActiveCycle();
   if (isLoading) return <Loading />;
   const risk = data?.risk ?? {};
   const level: string = risk.overall_risk_level ?? '未知';
@@ -118,6 +121,10 @@ export function MetabolicProfileView() {
             )}
           </Card>
         </View>
+
+        <Button full icon={activeCycle ? 'refresh-cw' : 'play'} onPress={() => router.push('/intervention-cycle' as any)}>
+          {activeCycle ? '查看 90 天干预计划' : '开始 90 天代谢干预'}
+        </Button>
       </ScrollView>
     </>
   );
