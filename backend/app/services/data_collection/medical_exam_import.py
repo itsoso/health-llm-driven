@@ -13,6 +13,16 @@ class MedicalExamImportService:
     """体检数据导入服务"""
 
     @staticmethod
+    def _ingest_biomarkers(db: Session, db_exam) -> None:
+        """旁路: 体检入库后归一化为 BiomarkerObservation (PRD P1 接通). 失败不影响导入。"""
+        try:
+            from app.services.biomarker_service import ingest_exam
+            ingest_exam(db, db_exam)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("biomarker ingest skipped for exam %s", getattr(db_exam, "id", "?"))
+
+    @staticmethod
     def import_from_items(
         db: Session,
         user_id: int,
@@ -80,6 +90,7 @@ class MedicalExamImportService:
 
         db.commit()
         db.refresh(db_exam)
+        MedicalExamImportService._ingest_biomarkers(db, db_exam)
         return db_exam
 
     @staticmethod
@@ -155,6 +166,7 @@ class MedicalExamImportService:
 
         db.commit()
         db.refresh(db_exam)
+        MedicalExamImportService._ingest_biomarkers(db, db_exam)
         return db_exam
 
     @staticmethod
