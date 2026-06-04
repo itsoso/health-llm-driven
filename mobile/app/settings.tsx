@@ -122,6 +122,14 @@ export default function SettingsScreen() {
             onPress={() => router.push('/genetic-report' as any)} />
         </View>
 
+        {/* 代谢健康 — Personal Health OS 闭环 */}
+        <View style={styles.card}>
+          <SettingRow icon="pulse-outline" label="代谢健康画像"
+            onPress={() => router.push('/metabolic-profile' as any)} />
+          <SettingRow icon="refresh-outline" label="代谢干预 · 90 天"
+            onPress={() => router.push('/intervention-cycle' as any)} />
+        </View>
+
         {/* Settings items */}
         <View style={styles.card}>
           <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
