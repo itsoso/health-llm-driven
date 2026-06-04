@@ -175,16 +175,8 @@ MODELS: List[ModelEntry] = [
         requires_env=("MOONSHOT_API_KEY",),
     ),
 
-    # ──── OpenClaw (内部) ────
-    ModelEntry(
-        id="openclaw-main",
-        label="OpenClaw · 内部",
-        provider="openclaw",
-        model="openclaw:main",
-        speed_tier="balanced",
-        note="内部网关, 多模型聚合",
-        requires_env=("OPENCLAW_API_KEY",),
-    ),
+    # OpenClaw 已从可选 LLM 通道下线 (2026-06: 无用户使用, 主链路走 tokenplan/langbridge)。
+    # 注意: OpenClawService/models 仍在为 Siri / 微信 bot / /agent 会话持久化服务, 那是另一回事。
 
     # ──── 商用模型 (经 browser-llm-orchestrator LangBridge gateway) ────
     # 透明走 https://base.executor.life/api/llm , OpenAI 协议兼容, 支持 vision.
