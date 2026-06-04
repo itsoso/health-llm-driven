@@ -18,7 +18,24 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 
 > **README.md 关于移动端的描述已过时**（仍写 Capacitor），以本文件 §"移动端构建方向" 为准。
 >
-> **两个 "harness" 别混**：`docs/HARNESS.md` 是**产品** LLM 方法论(健康 agent 怎么造);`docs/design-agent-operating-harness.md` 是**编码 agent 操作工具架**(本文件 + `AGENTS.md` 就是它的入口)。
+> **三个 "harness" 别混**：① `docs/HARNESS.md` 是**产品** LLM 方法论(健康 agent 怎么造);② `docs/design-agent-operating-harness.md` 是**编码 agent 操作工具架**(本文件 + `AGENTS.md` 就是它的入口);③ 下面这条 §"代理团队 Harness" 是 **Claude Code 开发代理团队**(`.claude/agents/` + `.claude/skills/`)。
+
+## 代理团队 Harness（开发用 · 2026-06-04 引入）
+
+本仓库已应用 [revfactory/harness](https://github.com/revfactory/harness) 元 skill,为开发任务生成了一套**代理团队**(`.claude/`)。
+
+**触发**:在本仓库做跨端功能 / 修复 / 上线时(「加一个功能」「实现 X」「修 bug」「合并部署」「发 OTA / TestFlight」)→ 用 **`health-harness-orchestrator`** skill 组队;扩建/审计团队本身 → 用 **`harness`** skill。
+
+**团队**(均 `model: opus`,定义在 `.claude/agents/`):
+- `backend-engineer` — `backend/` 实现(API/service/model/agents/twin/safety/迁移)
+- `mobile-engineer` — `mobile/` 实现(屏/组件/hooks/services/主题)
+- `qa-verifier` — 跑闸门 + 跨界 shape 比对 + 真红/假红判别
+- `safety-privacy-reviewer` — AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险必经)
+- `release-engineer` — deploy.sh / OTA / EAS TestFlight(先后端再 OTA)
+
+**工作流**:计划 → 实现(后端‖移动 fan-out)→ 增量 QA → 安全评审 → PR/上线。详见 `.claude/skills/health-harness-orchestrator/SKILL.md`。单文件小修/纯文档可降级单代理。
+
+**变更历史**:2026-06-04 初次构建(5 agents + orchestrator skill)。harness 是演进系统,每次执行后把新坑沉淀回对应 agent 定义。
 
 ## Project Overview
 
