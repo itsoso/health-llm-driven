@@ -19,6 +19,8 @@ python -m pytest tests/ -q --no-cov --tb=short
 python ../scripts/check_doc_drift.py    # EXIT=0 必须
 ```
 **移动端**:`cd mobile && npx tsc --noEmit && npx jest --silent --passWithNoTests`
+**前端**:`cd frontend && npm run test`(vitest)+ `npm run build` + `npm run lint`;CI 还跑 **page-freeze**(`bash scripts/check_frontend_page_freeze.sh origin/main` —— 新增 `frontend/src/app/**/page.tsx` 会拦截,admin/api 例外,commit 含 `FREEZE_OVERRIDE` 可绕)。
+**mac**:`cd apps/mac && swift build && swift test --filter HealthAgentMacCoreTests`(本地绿≠CI绿,见 `mac-build-deploy`)。
 
 ## 必须知道的"假红"判别(否则会误判)
 - **本地 Redis 跨测试污染**:`test_conversation_starters` / push / notification / twin 等只在**本地 Redis 存活**时偶发失败;CI 无 Redis 不复现。判别:`export REDIS_URL=redis://127.0.0.1:6399/0`(死端口=None,等价 CI)重跑 —— 过了就是这个假红,**不要去"修"测试**。但注意死端口会让全量跑变慢(~28min,因重试超时)。

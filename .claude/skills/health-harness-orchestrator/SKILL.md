@@ -17,7 +17,8 @@ description: "复元健康平台的代理团队编排器。当用户要在本仓
 | backend-engineer | 自定义 | `backend/` 实现(API/service/model/agents/twin/safety/迁移) |
 | mobile-engineer | 自定义 | `mobile/` 实现(屏/组件/hooks/services/主题) |
 | mac-engineer | 自定义 | `apps/mac/` 实现(Swift/SwiftUI;`mac-build-deploy` skill) |
-| qa-verifier | general-purpose | 跑闸门(pytest/doc-drift/tsc/jest/swift)+ 跨界 shape 比对 + 真红/假红判别 |
+| frontend-engineer | 自定义 | `frontend/` 实现(Next.js 14 Web;注意页面冻结) |
+| qa-verifier | general-purpose | 跑闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze)+ 跨界 shape 比对 + 真红/假红判别 |
 | safety-privacy-reviewer | 自定义 | AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险改动必经) |
 | release-engineer | 自定义 | deploy.sh / OTA / EAS TestFlight,先后端再 OTA |
 
@@ -32,7 +33,7 @@ description: "复元健康平台的代理团队编排器。当用户要在本仓
 leader 拆任务 → `TaskCreate`。跨端任务先定 **API 契约**(请求/响应 shape),写进 `_workspace/`,让前后端对齐。
 
 ### Phase 2:实现(fan-out,团队)
-- `backend-engineer` 与 `mobile-engineer` 并行;后端定下 shape 后 `SendMessage` 给移动端对齐类型/hook。
+- 按任务触及的端并行:`backend-engineer` ‖ `mobile-engineer` ‖ `mac-engineer` ‖ `frontend-engineer`;后端定下 shape 后 `SendMessage` 给各端对齐类型/hook(Web 注意页面冻结,默认不开新页)。
 - 隔离原则:并发 agent 会切分支 → 有状态编辑用 `git worktree`(显式 commit hash 建,见 `using-git-worktrees`),edit→build→commit 在隔离工作树里;别把 build+push 放进同一并行批次。
 
 ### Phase 3:增量 QA(每个模块完成即跑,非最后一次)

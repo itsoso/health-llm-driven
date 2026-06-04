@@ -30,17 +30,19 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 - `backend-engineer` — `backend/` 实现(API/service/model/agents/twin/safety/迁移)
 - `mobile-engineer` — `mobile/` 实现(屏/组件/hooks/services/主题)
 - `mac-engineer` — `apps/mac/` 实现(Swift 6/SwiftUI;配 `mac-build-deploy` skill)
-- `qa-verifier` — 跑闸门(pytest/doc-drift/tsc/jest/swift)+ 跨界 shape 比对 + 真红/假红判别
+- `frontend-engineer` — `frontend/` 实现(Next.js 14 Web;注意页面冻结 Phase 0-4)
+- `qa-verifier` — 跑闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze)+ 跨界 shape 比对 + 真红/假红判别
 - `safety-privacy-reviewer` — AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险必经)
 - `release-engineer` — deploy.sh / OTA / EAS TestFlight / mac 打包安装(先后端再 OTA)
 
 **专用 skill**:`mac-build-deploy`(apps/mac 的 swift build/test 闸门 + package-app.sh 安装 + CI 工具链坑)。
 
-**工作流**:计划 → 实现(后端‖移动‖mac fan-out)→ 增量 QA → 安全评审 → PR/上线。详见 `.claude/skills/health-harness-orchestrator/SKILL.md`。单文件小修/纯文档可降级单代理。
+**工作流**:计划 → 实现(后端‖移动‖mac‖前端 fan-out)→ 增量 QA → 安全评审 → PR/上线。详见 `.claude/skills/health-harness-orchestrator/SKILL.md`。单文件小修/纯文档可降级单代理。
 
 **变更历史**:
 - 2026-06-04 初次构建(5 agents + orchestrator skill)。
 - 2026-06-04 加 `mac-engineer` agent + `mac-build-deploy` skill(覆盖 apps/mac 开发与分发)。
+- 2026-06-04 加 `frontend-engineer` agent(覆盖 frontend/ Next.js Web,补齐 4 端)。
 
 harness 是演进系统,每次执行后把新坑沉淀回对应 agent 定义。
 
