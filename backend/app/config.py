@@ -197,6 +197,10 @@ class Settings(BaseSettings):
     # P2 RecoveryCoach: 用 hrv_readings 时序做 baseline (vs 旧的 hrv_latest/hrv_7d_avg)
     recovery_hrv_use_timeseries: bool = True
 
+    # Agent Native 化(RFC 方向一 Phase A): 把 specialist 暴露为 Agent 可自主调用的工具。
+    # 默认 False=行为与现状一致(specialist 仍由 orchestrator 编排); 开启进入灰度。
+    agent_specialist_tools: bool = False
+
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
 

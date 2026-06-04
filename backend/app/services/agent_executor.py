@@ -2026,6 +2026,14 @@ class AgentExecutor:
             elif tool_name == "query_lab_indicators":
                 return await self._exec_query_lab_indicators(base_url, headers, args)
             else:
+                # RFC 方向一 Phase A: specialist 分析工具(analyze_recovery 等)
+                from app.services.specialist_tools import is_specialist_tool, run_specialist_tool
+                if is_specialist_tool(tool_name):
+                    # specialist.run 是同步 CPU 计算, 丢线程池避免阻塞事件循环
+                    import asyncio as _aio
+                    return await _aio.to_thread(
+                        run_specialist_tool, self.db, self._current_user_id, tool_name
+                    )
                 return f"Error: 未知工具 {tool_name}"
         except Exception as e:
             logger.error(f"工具执行失败 {tool_name}: {e}")
