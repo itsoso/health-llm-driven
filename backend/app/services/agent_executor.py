@@ -1095,11 +1095,16 @@ class AgentExecutor:
                         )
                         tool_executed_count += 1
 
-                        # 写操作成功后内联安全检查
+                        # 写操作成功后内联安全检查。
+                        # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
+                        # 无关的安全告警拼到一条失败回复上(截图里"未找到活跃药物 ⚠️夜间血氧…"),
+                        # 故显式排除软失败。
+                        _soft_fail = any(m in result for m in ("未找到", "暂时没成功", "没成功", "记录失败"))
                         if (
                             func_name == "health_record"
                             and "Error" not in result
                             and not result.startswith("[NEEDS_CONFIRMATION]")
+                            and not _soft_fail
                         ):
                             try:
                                 from app.twin.builder import build_twin
@@ -2293,13 +2298,23 @@ class AgentExecutor:
                 return f"用药记录暂时没成功(查询药物列表时{err}),你可以稍后再试一次。"
             meds = meds if isinstance(meds, list) else (meds.get("data", []) if isinstance(meds, dict) else [])
             matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
-            if matched:
-                taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
-                return await self._api_post(
-                    f"{base}/medication/logs", headers,
-                    {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
-                )
-            return f"未找到名为 '{med_name}' 的活跃药物"
+            # 没匹配到活跃药物 → 自动登记 (短程/临时用药如抗生素, 用户不会预先建档), 再记录服用。
+            # 旧行为是直接报"未找到活跃药物"并放弃, 导致"吃了两粒阿奇霉素"这类记录失败。
+            if not matched:
+                create_payload = {"name": med_name}
+                for k in ("dosage", "frequency", "category", "purpose"):
+                    if data.get(k):
+                        create_payload[k] = data[k]
+                created, cerr = await self._api_post_json(f"{base}/medication/medications", headers, create_payload)
+                if cerr or not isinstance(created, dict) or not created.get("id"):
+                    logger.warning(f"[health_record] medication 自动登记失败: {cerr}")
+                    return f"用药记录暂时没成功(自动登记 '{med_name}' 时{cerr or '未知错误'}),你可以稍后再试一次。"
+                matched = created
+            taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
+            return await self._api_post(
+                f"{base}/medication/logs", headers,
+                {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
+            )
 
         if rtype == "illness":
             payload = dict(data)
@@ -2746,6 +2761,24 @@ class AgentExecutor:
         if resp.status_code not in (200, 201):
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
         return resp.text
+
+    async def _api_post_json(self, url: str, headers: dict, data: dict):
+        """HTTP POST, 返回解析后的 JSON (dict/list)。给机器解析(如取新建资源的 id)。
+
+        返回 (data, None) 成功; (None, err_str) 失败 —— 同 _api_get_json 约定。
+        """
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
+        try:
+            resp = await client.post(url, headers={**headers, "Content-Type": "application/json"}, json=data)
+        except Exception as e:
+            return None, f"网络错误: {e}"
+        if resp.status_code not in (200, 201):
+            return None, f"API 返回 {resp.status_code}"
+        try:
+            return resp.json(), None
+        except Exception as e:
+            logger.warning(f"[agent] _api_post_json 解析失败 url={url}: {e}")
+            return None, "数据格式异常"
 
     async def _api_patch(self, url: str, headers: dict, data: dict) -> str:
         """HTTP PATCH"""
