@@ -457,7 +457,19 @@ reminder: {"title":"明早复查血压","priority":"high"}
 
 
 def get_health_tools() -> List[Dict[str, Any]]:
-    """获取所有健康工具定义"""
+    """获取所有健康工具定义。
+
+    RFC 方向一 Phase A: 当 settings.agent_specialist_tools 开启时, 追加
+    specialist 分析工具(analyze_recovery 等), 让 Agent 自主调用。默认关闭,
+    行为与现状一致。
+    """
+    try:
+        from app.config import settings
+        if getattr(settings, "agent_specialist_tools", False):
+            from app.services.specialist_tools import specialist_tool_schemas
+            return HEALTH_TOOLS + specialist_tool_schemas()
+    except Exception:  # noqa: BLE001 — 配置/导入异常不应影响主链路
+        pass
     return HEALTH_TOOLS
 
 
