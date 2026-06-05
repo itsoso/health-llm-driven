@@ -47,6 +47,8 @@ import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
 import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
+import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
+import { extractPhenoAge } from '../../services/twinHelpers';
 import { getCheckinStreak } from '../../services/streak';
 import { fetchMyProgress } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
@@ -456,6 +458,11 @@ export default function TodayScreen() {
           totalSurfaced={progressDashboardQuery.data?.stats?.total_surfaced}
           isError={progressDashboardQuery.isError}
           onPress={() => router.push('/my-progress' as any)}
+        />
+        <BiologicalAgeCard
+          view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
+          isError={twinQuery.isError}
+          onPress={() => router.push('/indicator-history' as any)}
         />
         <MetabolicEntryCard />
         <HomeCommandCard
