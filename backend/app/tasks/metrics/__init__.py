@@ -286,6 +286,27 @@ def fetch_hba1c(db, user_id, end_date):
     return _fetch_lab_item(db, user_id, end_date, ["HbA1c", "糖化血红蛋白"])
 
 
+def fetch_phenotypic_age(db: Session, user_id: int, end_date: date) -> Optional[float]:
+    """生物年龄 (PhenoAge, 岁) — 抗衰 N-of-1 的 outcome 指标。
+
+    取用户最新一次"完整"血检 + 实足年龄重算 PhenoAge。12 周复检后即拿到
+    干预后的身体年龄,与 baseline 比较得 improved/worsened(越低越好)。
+    9 项血检任一缺失 → None(不猜算);无新复检 → 与基线相同(unchanged,诚实)。
+    单位映射复用 phenoage.phenoage_from_labs(单一来源,杜绝单位手抄)。
+    """
+    try:
+        from app.twin import _collectors
+        from app.services.phenoage import phenoage_from_labs
+    except ImportError:
+        return None
+    labs = _collectors.fetch_latest_labs(db, user_id)
+    if not labs:
+        return None
+    age = _collectors.fetch_user_age(db, user_id)
+    result = phenoage_from_labs(labs, age)
+    return result.phenotypic_age if result else None
+
+
 # ── 注册表: metric_key → fetcher ───────────────────────────────────────
 FETCHERS = {
     "hrv": fetch_hrv,
@@ -315,6 +336,9 @@ FETCHERS = {
     "ferritin": fetch_ferritin,
     "ldl": fetch_ldl,
     "hba1c": fetch_hba1c,
+    # 抗衰 N-of-1 — 生物年龄 (PhenoAge)
+    "phenotypic_age": fetch_phenotypic_age,
+    "biological_age": fetch_phenotypic_age,  # alias
 }
 
 
@@ -363,6 +387,9 @@ HIGHER_IS_BETTER = {
     "ferritin": True,                 # 在正常范围内越高越好 (女性贫血避免)
     "ldl": False,
     "hba1c": False,
+    # 生物年龄越低越好
+    "phenotypic_age": False,
+    "biological_age": False,
 }
 
 # 变化阈值: ≥5% 朝目标方向 = improved, ≥5% 反方向 = worsened

@@ -131,3 +131,33 @@ def compute_phenoage(
         phenotypic_age=round(phenotypic_age, 2),
         delta_years=round(phenotypic_age - age, 2),
     )
+
+
+# LabsContext 字段名 / dict 键 → compute_phenoage 参数名。
+# 单一映射源:builder 填 Twin、N-of-1 取值器评分都走这里,杜绝多处手抄单位(最大坑)。
+_LABS_FIELD_TO_ARG = {
+    "albumin": "albumin_g_per_l",
+    "creatinine": "creatinine_umol_per_l",
+    "blood_glucose": "glucose_mmol_per_l",
+    "crp": "crp_mg_per_dl",
+    "lymphocyte_pct": "lymphocyte_pct",
+    "mcv": "mcv_fl",
+    "rdw": "rdw_pct",
+    "alp": "alp_u_per_l",
+    "wbc": "wbc_10e9_per_l",
+}
+
+
+def phenoage_from_labs(labs: Any, age_years: Optional[float]) -> Optional[PhenoAgeResult]:
+    """从 LabsContext 对象或 dict(键=LabsContext 字段名)+ 年龄算 PhenoAge。
+
+    集中维护"字段名→单位参数"映射,builder._fill_phenoage 与 N-of-1
+    fetch_phenotypic_age 都调它 —— 单位假设只在 compute_phenoage 一处。
+    """
+    def _get(name: str):
+        if isinstance(labs, dict):
+            return labs.get(name)
+        return getattr(labs, name, None)
+
+    kwargs = {arg: _get(field) for field, arg in _LABS_FIELD_TO_ARG.items()}
+    return compute_phenoage(age_years=age_years, **kwargs)
