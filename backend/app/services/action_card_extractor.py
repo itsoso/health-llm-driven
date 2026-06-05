@@ -33,6 +33,7 @@ _ALLOWED_METRIC_KEYS = {
     "crp", "esr", "wbc", "rbc", "hgb", "plt", "lp_a", "apo_b",
     "ldl", "hdl", "tc", "tg", "fasting_glucose", "blood_glucose",
     "systolic_bp", "diastolic_bp", "bmi", "body_fat",
+    "phenotypic_age", "biological_age",
 }
 
 
@@ -54,6 +55,7 @@ _SYSTEM_PROMPT = """\
   fasting_glucose / blood_glucose / systolic_bp / diastolic_bp / bmi / body_fat /
   alt / ast / ggt / alp / creatinine / uric_acid / urea / vitamin_d / b12 /
   ferritin / crp / esr / wbc / rbc / hgb / plt / lp_a / apo_b / tsh / ft3 / ft4 /
+  phenotypic_age / biological_age (抗衰: 生物年龄/身体年龄/表型年龄) /
   custom (作为兜底, 但优先选其它具体 key)
   如果建议是泛泛的"多喝水/早睡" 没有可验证指标 → null.
 - baseline_value: 当前起点值 (如 "82kg", "48", "5.7%"), 抽不到 → null.

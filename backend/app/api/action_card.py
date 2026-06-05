@@ -42,7 +42,8 @@ LAB_METRIC_KEYS = {
     "systolic_bp", "diastolic_bp", "bmi", "body_fat",
 }
 ALLOWED_METRIC_KEYS = {"sleep_score", "hrv", "rhr", "weight", "bp",
-                       "spo2_odi", "custom"} | LAB_METRIC_KEYS
+                       "spo2_odi", "custom",
+                       "phenotypic_age", "biological_age"} | LAB_METRIC_KEYS
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

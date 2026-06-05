@@ -20,7 +20,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from app.orchestrator.schema import Intent, SpecialistFinding
+from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -132,11 +132,16 @@ class LongevitySpecialist:
 
             summary = _compose_summary(pa, chrono, delta, drags)
 
+            # 偏老(delta ≥ 1)→ 提一张 12 周抗衰 N-of-1 卡:把"单点身体年龄"
+            # 变成"干预后变年轻"的可验证闭环。outcome 指标=phenotypic_age(越低越好)。
+            proposed_cards = _propose_phenoage_episode(pa, chrono, delta)
+
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
                 summary=summary,
                 findings=findings,
+                proposed_cards=proposed_cards,
                 raw={
                     "phenotypic_age": pa,
                     "delta_years": delta,
@@ -144,7 +149,7 @@ class LongevitySpecialist:
                     "drags_count": len(drags),
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
-                evidence_refs=["levine_2018_phenoage"],
+                evidence_refs=["levine_2018_phenoage", "fitzgerald_2021_lifestyle"],
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[longevity] run failed: {e}")
@@ -159,6 +164,42 @@ class LongevitySpecialist:
 
 
 # ─────────────────────────── 内部工具 ───────────────────────────
+
+
+def _propose_phenoage_episode(
+    pa: float, chrono: Optional[float], delta: Optional[float],
+) -> List[ProposedCard]:
+    """偏老时提一张 12 周抗衰 N-of-1 卡(outcome=phenotypic_age,越低越好)。
+
+    证据:Fitzgerald 2021 RCT — 8 周生活方式干预 → 生物年龄 −3.23 岁。
+    只在 delta ≥ 1(略偏老及以上)提卡;年轻/持平不打扰。
+    目标设为下降 ≥2 岁(保守于 RCT 的 −3.23)。不开方、不诊断。
+    """
+    if delta is None or delta < 1.0:
+        return []
+    target_pa = round(pa - 2.0, 1)
+    chrono_txt = f"实足 {chrono} 岁," if chrono is not None else ""
+    return [
+        ProposedCard(
+            title=f"12 周抗衰 N-of-1:身体年龄降到 {target_pa} 岁以下",
+            content=(
+                f"当前表型年龄 **{pa} 岁**({chrono_txt}偏老 {delta:.1f} 岁)。\n"
+                "用 12 周系统性改善睡眠 / 运动 / 饮食 / 压力四件套,复检血检后重算 "
+                "PhenoAge,验证身体年龄是否真的下降(对照 Fitzgerald 2021:生活方式 "
+                "8 周可降约 3 岁)。\n\n"
+                "⚠️ PhenoAge 是血检代理指标,不作诊断、不等于真实衰老速度;"
+                "具体干预方案以四件套专家建议为准。"
+            ),
+            metric_key="phenotypic_age",
+            baseline_value=str(pa),
+            target_value=f"<{target_pa}",
+            verification_days=84,
+            card_type="plan",
+            priority=20,
+            evidence_level="high",
+        )
+    ]
+
 
 # LabsContext 字段名 → 中文展示名(用于"缺失输入"提示)
 _PHENOAGE_INPUT_LABELS = {

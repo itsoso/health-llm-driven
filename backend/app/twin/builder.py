@@ -1029,22 +1029,11 @@ def _fill_phenoage(db: Session, user_id: int, twin: HealthTwin) -> None:
       - 成功时同步写入 evidence_tier="validated" + claim_boundary,展示侧 must show
     """
     try:
-        from app.services.phenoage import compute_phenoage
+        from app.services.phenoage import phenoage_from_labs
 
         age = _collectors.fetch_user_age(db, user_id)
         L = twin.labs
-        result = compute_phenoage(
-            albumin_g_per_l=L.albumin,
-            creatinine_umol_per_l=L.creatinine,
-            glucose_mmol_per_l=L.blood_glucose,
-            crp_mg_per_dl=L.crp,
-            lymphocyte_pct=L.lymphocyte_pct,
-            mcv_fl=L.mcv,
-            rdw_pct=L.rdw,
-            alp_u_per_l=L.alp,
-            wbc_10e9_per_l=L.wbc,
-            age_years=age,
-        )
+        result = phenoage_from_labs(L, age)
         if result is None:
             # 缺值 — 不写;只在所有 9 项 + age 都到位时再算
             return

@@ -10,7 +10,7 @@
 golden 值的独立来源:用模块 docstring 声明的单位,按 Levine 2018 公式逐项手算
 (见 docs/design-longevity-mvp.md §3),与本实现互为交叉验证,非自证。
 """
-from app.services.phenoage import compute_phenoage
+from app.services.phenoage import compute_phenoage, phenoage_from_labs
 
 
 # 健康 50 岁样例(单位见 phenoage.py docstring)
@@ -69,6 +69,27 @@ def test_crp_floor_no_crash_on_zero():
     r = compute_phenoage(**z)
     assert r is not None
     assert r.phenotypic_age == r.phenotypic_age  # 非 NaN
+
+
+def test_phenoage_from_labs_dict_matches_direct():
+    """共享 helper(dict 键=LabsContext 字段名)结果 == 直接 compute_phenoage。"""
+    labs = {
+        "albumin": 45.0, "creatinine": 80.0, "blood_glucose": 5.0, "crp": 0.1,
+        "lymphocyte_pct": 30.0, "mcv": 90.0, "rdw": 13.0, "alp": 60.0, "wbc": 6.0,
+    }
+    via_helper = phenoage_from_labs(labs, 50.0)
+    direct = compute_phenoage(**_HEALTHY_50)
+    assert via_helper is not None and direct is not None
+    assert via_helper.phenotypic_age == direct.phenotypic_age
+
+
+def test_phenoage_from_labs_object_and_missing():
+    """helper 接受带属性的对象;缺字段 → None(不猜算)。"""
+    class L:  # 模拟 LabsContext
+        albumin = 45.0; creatinine = 80.0; blood_glucose = 5.0; crp = 0.1
+        lymphocyte_pct = 30.0; mcv = 90.0; rdw = 13.0; alp = 60.0; wbc = 6.0
+    assert phenoage_from_labs(L(), 50.0) is not None
+    assert phenoage_from_labs({"albumin": 45.0}, 50.0) is None  # 缺 8 项
 
 
 def test_unit_sensitivity_albumin():
