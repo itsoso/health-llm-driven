@@ -50,7 +50,7 @@ import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
 import { extractPhenoAge } from '../../services/twinHelpers';
 import { getCheckinStreak } from '../../services/streak';
-import { fetchMyProgress } from '../../services/myProgress';
+import { fetchMyProgress, pickBioAgeWin } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 
 interface TwinSnapshot {
@@ -461,6 +461,7 @@ export default function TodayScreen() {
         />
         <BiologicalAgeCard
           view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
+          win={pickBioAgeWin(progressDashboardQuery.data)}
           isError={twinQuery.isError}
           onPress={() => router.push('/indicator-history' as any)}
         />
