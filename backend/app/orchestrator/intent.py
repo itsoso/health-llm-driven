@@ -54,6 +54,11 @@ _CATEGORY_KEYWORDS = {
         "鼻炎", "喷嚏不停", "过敏性鼻炎", "高血压", "糖尿病", "甲状腺",
         "rhinitis", "diabetes", "thyroid",
     ],
+    "longevity": [
+        "抗衰", "抗老", "逆龄", "衰老",
+        "生物年龄", "身体年龄", "表型年龄", "phenoage", "phenotypic age",
+        "longevity", "aging", "biological age",
+    ],
 }
 
 

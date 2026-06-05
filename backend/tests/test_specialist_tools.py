@@ -20,6 +20,16 @@ def test_safety_guardian_not_exposed_as_tool():
     assert not any("safety" in t for t in SPECIALIST_TOOLS)
 
 
+def test_longevity_tool_exposed():
+    """LongevitySpecialist 被暴露为 Agent 工具 analyze_longevity → 'longevity'。"""
+    from app.services.specialist_tools import SPECIALIST_TOOLS, is_specialist_tool
+    assert "analyze_longevity" in SPECIALIST_TOOLS
+    assert SPECIALIST_TOOLS["analyze_longevity"][0] == "longevity"
+    assert is_specialist_tool("analyze_longevity") is True
+    # 仍守安全边界:工具名不含 safety
+    assert "safety" not in "analyze_longevity"
+
+
 def test_flag_gating_off_unchanged():
     """flag 默认关:工具列表不含 specialist 分析工具(现状不破坏)。"""
     from app.config import settings

@@ -24,7 +24,7 @@
 │                  health-api.executor.life · 135 API 路由 · 188 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
-│  │           │  │ dispatch │  │ (11 specialist) │  │ (tool-calling LLM) │            │
+│  │           │  │ dispatch │  │ (12 specialist) │  │ (tool-calling LLM) │            │
 │  └───────────┘  └──────────┘  └────────┬────────┘  └──────────┬─────────┘            │
 │                                        │                      │                      │
 │                                        ▼                      ▼                      │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 11 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 12 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -106,6 +106,7 @@
 | `backend/app/agents/chronic_specialists/` | 鼻炎/高血压/代谢 专科 |
 | `backend/app/agents/knowledge_librarian/` | 得到 wiki RAG (ChromaDB) |
 | `backend/app/agents/longitudinal_analyst/` | 6 月趋势 + 因果叙事 |
+| `backend/app/agents/longevity_specialist/` | PhenoAge(Levine 2018)解读 + 委托四件套(抗衰 MVP) |
 | `backend/app/orchestrator/` | 意图路由 + specialist 调度 + LLM 合成 |
 | `backend/app/agents/audit.py` | Agent 审计日志 |
 
@@ -160,7 +161,7 @@
                 │
                 ▼
 ┌────────────────────────────────────────────────────────────────┐
-│  11 Specialists                                                │
+│  12 Specialists                                                │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ SafetyGuardian  — 51 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
@@ -168,7 +169,7 @@
 │  ├─────────────────────────────────────────────────────────┤   │
 │  │ RecoveryCoach  · MovementCoach  · FuelStrategist        │   │
 │  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
-│  │ LongitudinalAnalyst                                     │   │
+│  │ LongitudinalAnalyst · LongevitySpecialist (PhenoAge)    │   │
 │  │ HypertensionSpecialist · MetabolicSpecialist            │   │
 │  │ RhinitisSpecialist                                      │   │
 │  └─────────────────────────────────────────────────────────┘   │

@@ -291,6 +291,92 @@ class TestBuilderWithPartialData:
         assert twin.freshness.blood_pressure == today.isoformat()
         assert twin.freshness.sleep == yesterday.isoformat()  # SleepRecord 更新
 
+    def test_build_computes_phenoage_when_all_9_inputs_present(self, db):
+        """抗衰 MVP Step 2: 9 项血检 + 实足年龄齐 → twin.labs.phenotypic_age 被填."""
+        from app.models.family_health import MedicalIndicator
+        from app.models.user import User
+
+        user = User(
+            username=f"pa_{uuid.uuid4().hex[:6]}",
+            email=f"pa_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="phenoage user",
+            birth_date=date(1980, 1, 1),  # 实足约 46 岁
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        today = date.today()
+        # 9 项血检 (单位对齐 phenoage.py docstring)
+        indicators = [
+            ("白蛋白", 45.0),
+            ("肌酐", 80.0),
+            ("空腹血糖", 5.2),
+            ("CRP", 0.08),
+            ("淋巴细胞百分比", 32.0),
+            ("MCV", 89.0),
+            ("RDW", 13.0),
+            ("ALP", 70.0),
+            ("WBC", 6.0),
+        ]
+        for name, value in indicators:
+            db.add(MedicalIndicator(
+                user_id=user.id,
+                name=name,
+                value=value,
+                record_date=today,
+                source="manual",
+            ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+
+        assert twin.labs.phenotypic_age is not None, (
+            "9 项血检 + age 齐应触发 compute_phenoage"
+        )
+        assert twin.labs.phenotypic_age_delta_years is not None
+        assert twin.labs.phenotypic_age_inputs_complete is True
+        assert twin.labs.phenoage_evidence_tier == "validated"
+        assert twin.labs.phenoage_claim_boundary  # 非空
+
+    def test_build_no_phenoage_when_inputs_missing(self, db):
+        """缺任一血检 → phenotypic_age 留 None,不猜算。"""
+        from app.models.family_health import MedicalIndicator
+        from app.models.user import User
+
+        user = User(
+            username=f"pa_{uuid.uuid4().hex[:6]}",
+            email=f"pa_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="phenoage missing",
+            birth_date=date(1980, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # 只录入 3 项(<9), phenoage 不应触发
+        for name, value in [("白蛋白", 45.0), ("CRP", 0.08), ("WBC", 6.0)]:
+            db.add(MedicalIndicator(
+                user_id=user.id,
+                name=name,
+                value=value,
+                record_date=date.today(),
+                source="manual",
+            ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        assert twin.labs.phenotypic_age is None
+        assert twin.labs.phenotypic_age_delta_years is None
+
     def test_metabolic_freshness_missing_returns_none(self, db):
         """3 项无任何记录 → freshness 字段保持 None, 不抛."""
         from app.models.user import User

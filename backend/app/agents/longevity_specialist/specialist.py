@@ -1,0 +1,266 @@
+"""
+Longevity Specialist —— 解读 PhenoAge(表型年龄)+ 委托四件套给出干预方向。
+
+设计文档:docs/design-longevity-mvp.md §4
+上游算子:app/services/phenoage.py(纯函数, Levine 2018)
+读取来源:twin.labs.phenotypic_age / delta / claim_boundary
+        twin.epigenetic(可选,DNAm 时钟做长期参考)
+        twin.body_composition / physiological / behavioral(用于"主要拖累"提示)
+
+诚实纪律(与 EpigeneticState 同款):
+- evidence_tier 在 finding 里显式带出
+- 不开方、不诊断、不宣称"逆龄/治疗"
+- claim_boundary 跟随 finding 输出,展示侧必须呈现
+- 干预建议**委托**给 Recovery/Fuel/Movement/Mental,本 specialist 不重复造科学
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any, Dict, List, Optional
+
+from app.orchestrator.schema import Intent, SpecialistFinding
+from app.twin.schema import HealthTwin
+
+logger = logging.getLogger(__name__)
+
+
+class LongevitySpecialist:
+    name = "longevity"
+    category = "longevity"
+
+    # 触发关键词(中英,大小写不敏感)
+    TRIGGER_KEYWORDS = {
+        "抗衰", "抗老", "逆龄", "衰老",
+        "生物年龄", "身体年龄", "表型年龄", "phenoage", "phenotypic age",
+        "longevity", "aging", "biological age",
+    }
+
+    def applies_to(self, intent: Intent, twin: HealthTwin) -> bool:
+        # 1) 显式 intent 命中
+        if "longevity" in intent.categories:
+            return True
+        # 2) 关键字命中
+        q = (intent.raw_query or "").lower()
+        if any(k in q for k in self.TRIGGER_KEYWORDS):
+            return True
+        # 3) 当 Twin 已经算出 PhenoAge,general 对话也带上一句年龄解读
+        if twin.labs.phenotypic_age is not None and "general" in intent.categories:
+            return True
+        return False
+
+    def run(self, twin: HealthTwin, context: Dict[str, Any]) -> SpecialistFinding:
+        t0 = time.monotonic()
+        try:
+            L = twin.labs
+
+            if L.phenotypic_age is None:
+                # 没算出来 → 给一个可解释的引导,不假装有结果
+                missing = _missing_phenoage_inputs(twin)
+                summary = (
+                    "暂无表型年龄(PhenoAge)结果 — 缺少必要的血检项,"
+                    f"补全后即可在体检后自动更新:{', '.join(missing)}"
+                ) if missing else (
+                    "暂无表型年龄(PhenoAge)结果 — 缺少近期完整血检报告。"
+                )
+                return SpecialistFinding(
+                    specialist_name=self.name,
+                    category=self.category,
+                    summary=summary,
+                    findings=[{
+                        "type": "phenoage_unavailable",
+                        "missing_inputs": missing,
+                        "claim_boundary": (
+                            "PhenoAge 需要 9 项常规血检 + 实足年龄齐全才能计算,"
+                            "缺任一项 → 不猜算,不展示结果。"
+                        ),
+                    }],
+                    raw={"phenoage_status": "unavailable", "missing": missing},
+                    ms_elapsed=int((time.monotonic() - t0) * 1000),
+                    evidence_refs=["levine_2018_phenoage"],
+                )
+
+            pa = round(L.phenotypic_age, 1)
+            delta = L.phenotypic_age_delta_years
+            chrono = round(pa - delta, 1) if delta is not None else None
+
+            drags = _identify_drags(twin)
+            findings: List[Dict[str, Any]] = [
+                {
+                    "type": "phenotypic_age",
+                    "phenotypic_age": pa,
+                    "chronological_age": chrono,
+                    "delta_years": delta,
+                    "evidence_tier": L.phenoage_evidence_tier or "validated",
+                    "claim_boundary": L.phenoage_claim_boundary or "",
+                    "interpretation": _interpret_delta(delta),
+                },
+            ]
+
+            if drags:
+                findings.append({
+                    "type": "drags",
+                    "items": drags,
+                    "note": "下列指标偏离参考区间,可能拉高生物年龄;具体干预由 Recovery/Fuel/Movement/Mental 给出。",
+                })
+
+            # DNAm 时钟作为长期参考(若用户做过)
+            if twin.epigenetic.has_methylation_report and twin.epigenetic.biological_age is not None:
+                findings.append({
+                    "type": "epigenetic_cross_ref",
+                    "biological_age": twin.epigenetic.biological_age,
+                    "delta_years": twin.epigenetic.biological_age_delta_years,
+                    "vendor": twin.epigenetic.vendor,
+                    "clock_type": twin.epigenetic.clock_type,
+                    "evidence_tier": twin.epigenetic.evidence_tier,
+                    "claim_boundary": twin.epigenetic.claim_boundary,
+                    "note": "甲基化时钟为长期/研究性参考,与 PhenoAge 互补,不直接相互替代。",
+                })
+
+            # 委托四件套(orchestrator 会同时跑这些 specialist;此处只是提示路径)
+            findings.append({
+                "type": "delegation",
+                "rationale": "PhenoAge 仅为生理状态代理指标。短期可逆改善的科学路径由四件套专家给出。",
+                "delegate_to": [
+                    "recovery_coach",
+                    "fuel_strategist",
+                    "movement_coach",
+                    "mental_health_companion",
+                ],
+            })
+
+            summary = _compose_summary(pa, chrono, delta, drags)
+
+            return SpecialistFinding(
+                specialist_name=self.name,
+                category=self.category,
+                summary=summary,
+                findings=findings,
+                raw={
+                    "phenotypic_age": pa,
+                    "delta_years": delta,
+                    "inputs_complete": L.phenotypic_age_inputs_complete,
+                    "drags_count": len(drags),
+                },
+                ms_elapsed=int((time.monotonic() - t0) * 1000),
+                evidence_refs=["levine_2018_phenoage"],
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[longevity] run failed: {e}")
+            return SpecialistFinding(
+                specialist_name=self.name,
+                category=self.category,
+                summary=f"抗衰分析失败: {e}",
+                findings=[],
+                raw={"error": str(e)},
+                ms_elapsed=int((time.monotonic() - t0) * 1000),
+            )
+
+
+# ─────────────────────────── 内部工具 ───────────────────────────
+
+# LabsContext 字段名 → 中文展示名(用于"缺失输入"提示)
+_PHENOAGE_INPUT_LABELS = {
+    "albumin": "白蛋白(ALB)",
+    "creatinine": "肌酐",
+    "blood_glucose": "空腹血糖",
+    "crp": "C 反应蛋白(CRP)",
+    "lymphocyte_pct": "淋巴细胞百分比",
+    "mcv": "红细胞平均体积(MCV)",
+    "rdw": "红细胞分布宽度(RDW)",
+    "alp": "碱性磷酸酶(ALP)",
+    "wbc": "白细胞(WBC)",
+}
+
+
+def _missing_phenoage_inputs(twin: HealthTwin) -> List[str]:
+    L = twin.labs
+    missing: List[str] = []
+    for key, label in _PHENOAGE_INPUT_LABELS.items():
+        if getattr(L, key, None) is None:
+            missing.append(label)
+    return missing
+
+
+def _interpret_delta(delta: Optional[float]) -> str:
+    if delta is None:
+        return ""
+    if delta <= -3:
+        return "明显年轻(身体年龄 < 实足年龄 ≥3 岁) — 维持当前生活方式即可。"
+    if delta <= -1:
+        return "略偏年轻(< 实足 1–3 岁)。"
+    if delta < 1:
+        return "接近实足年龄。"
+    if delta < 3:
+        return "略偏老化(> 实足 1–3 岁),关注下面的拖累项。"
+    return "明显偏老化(> 实足 3 岁),建议系统性改善睡眠/运动/饮食/压力四件套。"
+
+
+def _identify_drags(twin: HealthTwin) -> List[Dict[str, Any]]:
+    """从 Twin 上读几个高 signal 的"明显异常"作为拖累项提示。
+
+    这里只标"已知偏离参考区间"的指标,不做具体干预 — 干预走四件套。
+    """
+    L = twin.labs
+    drags: List[Dict[str, Any]] = []
+
+    # CRP 升高(炎症)→ 关联恢复/饮食
+    if L.crp is not None and L.crp >= 0.3:  # mg/dL,临床通常 > 3 mg/L = 0.3 mg/dL 算升高
+        drags.append({
+            "metric": "crp",
+            "value": L.crp,
+            "unit": "mg/dL",
+            "note": "炎症标志物升高",
+        })
+    # 空腹血糖
+    if L.blood_glucose is not None and L.blood_glucose >= 6.1:
+        drags.append({
+            "metric": "blood_glucose",
+            "value": L.blood_glucose,
+            "unit": "mmol/L",
+            "note": "空腹血糖偏高",
+        })
+    # LDL
+    if L.ldl is not None and L.ldl >= 3.4:
+        drags.append({
+            "metric": "ldl",
+            "value": L.ldl,
+            "unit": "mmol/L",
+            "note": "LDL 偏高",
+        })
+    # 血压
+    if L.blood_pressure_systolic is not None and L.blood_pressure_systolic >= 130:
+        drags.append({
+            "metric": "blood_pressure_systolic",
+            "value": L.blood_pressure_systolic,
+            "unit": "mmHg",
+            "note": "收缩压偏高",
+        })
+    # 睡眠
+    sleep = twin.physiological.sleep_duration_h_latest
+    if sleep is not None and sleep < 6.5:
+        drags.append({
+            "metric": "sleep_duration",
+            "value": sleep,
+            "unit": "h",
+            "note": "睡眠时长不足",
+        })
+
+    return drags[:5]
+
+
+def _compose_summary(
+    pa: float,
+    chrono: Optional[float],
+    delta: Optional[float],
+    drags: List[Dict[str, Any]],
+) -> str:
+    parts: List[str] = [f"表型年龄(PhenoAge) {pa} 岁"]
+    if chrono is not None and delta is not None:
+        sign = "+" if delta > 0 else ""
+        parts.append(f"实足 {chrono} 岁 ({sign}{delta:.1f})")
+    if drags:
+        names = "/".join(d["metric"] for d in drags[:3])
+        parts.append(f"可关注:{names}")
+    return " · ".join(parts)
