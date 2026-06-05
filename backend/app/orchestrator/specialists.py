@@ -138,6 +138,7 @@ def _build_registry() -> List[Specialist]:
     )
     from app.agents.fuel_strategist import FuelStrategistSpecialist
     from app.agents.knowledge_librarian.librarian import KnowledgeLibrarianSpecialist
+    from app.agents.longevity_specialist.specialist import LongevitySpecialist
     from app.agents.longitudinal_analyst.analyst import LongitudinalAnalystSpecialist
     from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
     from app.agents.movement_coach import MovementCoachSpecialist
@@ -155,9 +156,10 @@ def _build_registry() -> List[Specialist]:
         HypertensionSpecialist(),
         MetabolicSpecialist(),
         RhinitisSpecialist(),
-        # 知识 + 长期分析
+        # 知识 + 长期分析 + 抗衰
         KnowledgeLibrarianSpecialist(),
         LongitudinalAnalystSpecialist(),
+        LongevitySpecialist(),                 # PhenoAge 解读 + 委托四件套
     ]
 
 

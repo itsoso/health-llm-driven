@@ -33,6 +33,7 @@ SPECIALIST_TOOLS: Dict[str, tuple] = {
     "analyze_metabolic": ("metabolic_specialist", "代谢综合征判定 + CGM 血糖时间在范围(TIR)分析"),
     "analyze_rhinitis": ("rhinitis_specialist", "鼻炎症状分级 + 环境(AQI/湿度)关联与用药依从"),
     "analyze_longitudinal": ("longitudinal_analyst", "长期趋势 + 干预事件×指标变化的因果叙事"),
+    "analyze_longevity": ("longevity", "解读表型年龄(PhenoAge/生物年龄)+ 拖累项,委托四件套给抗衰方向(不诊断/不开方)"),
 }
 
 # 只暴露这些工具的 schema(其余 specialist 如 knowledge/supplement 已有专门工具,不重复)

@@ -259,7 +259,7 @@ psql $DATABASE_URL -f backend/migrations/create_xxx_tables.sql
     ↓
 Orchestrator (L4)  ← 意图路由 + 专家调度 + LLM 合成
     ↓
-11 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
+12 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
     ↓
 Digital Health Twin (L2) ← 14 语义分区的统一状态视图 (Redis 5min 缓存)
     ↓
@@ -267,14 +267,14 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 ```
 
 **Orchestrator** (`app/orchestrator/`):
-- `intent.py` — 关键字意图分类（safety/labs/recovery/fuel/movement/mental/chronic/knowledge/longitudinal）
+- `intent.py` — 关键字意图分类（safety/labs/recovery/fuel/movement/mental/chronic/longevity/knowledge/longitudinal）
 - `specialists.py` — specialist 注册表，按依赖顺序执行
 - `orchestrator.py` — `run_orchestrator` (非流式) / `stream_orchestrator` (SSE)
 - 共享 context：Recovery Coach 的 readiness_zone 自动传递给 Movement Coach
 - 对话记忆：注入 `conversation_memory_service` 到 LLM prompt
 - LLM 失败自动回退 OpenClaw provider
 
-**11 Specialists** (`app/agents/`):
+**12 Specialists** (`app/agents/`):
 
 | Specialist | 模块 | 职责 |
 |---|---|---|
@@ -289,6 +289,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 | KnowledgeLibrarian | `agents/knowledge_librarian/` | 得到 wiki → ChromaDB RAG 检索 |
 | LongitudinalAnalyst | `agents/longitudinal_analyst/` | 6 个月趋势 + 干预事件×指标变化因果叙事 |
 | SupplementAdvisor | `agents/supplement_advisor/` | SNP+化验驱动补剂建议 (MTHFR/APOE/HFE/COMT/VDR/FADS1) + Episode 12 周 N-of-1 闭环 + HFE 硬阻断 |
+| LongevitySpecialist | `agents/longevity_specialist/` | PhenoAge(Levine 2018)表型年龄解读 + 缺值列清单 + 委托四件套(抗衰 MVP) |
 
 **Safety Guardian 规则分类** (`agents/safety_guardian/rules/`, total 51):
 - `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值

@@ -15,6 +15,7 @@ from typing import List
 import pytest
 
 from app.agents.fuel_strategist import FuelStrategistSpecialist
+from app.agents.longevity_specialist.specialist import LongevitySpecialist
 from app.agents.movement_coach import MovementCoachSpecialist
 from app.agents.recovery_coach import RecoveryCoachSpecialist, compute_readiness
 from app.orchestrator.intent import classify_intent
@@ -527,6 +528,107 @@ class TestNeedsSkillRegex:
         pattern = r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐"
         assert re.search(pattern, "帮我记录体重72kg")
         assert re.search(pattern, "早餐吃的燕麦")
+
+
+# ───────────────────── Longevity (PhenoAge) ─────────────
+
+
+class TestLongevitySpecialist:
+    """LongevitySpecialist —— 解读 PhenoAge + 委托四件套(抗衰 MVP Step 2)。"""
+
+    @staticmethod
+    def _twin_with_phenoage() -> HealthTwin:
+        """模拟 builder 已填充 PhenoAge 派生字段的 Twin。"""
+        t = _empty_twin()
+        t.labs = LabsContext(
+            albumin=45.0,
+            creatinine=80.0,
+            blood_glucose=5.2,
+            crp=0.08,
+            lymphocyte_pct=32.0,
+            mcv=89.0,
+            rdw=13.0,
+            alp=70.0,
+            wbc=6.0,
+            phenotypic_age=47.0,
+            phenotypic_age_delta_years=5.0,
+            phenotypic_age_inputs_complete=True,
+            phenoage_evidence_tier="validated",
+            phenoage_claim_boundary="PhenoAge 是基于血检的死亡风险代理指标...",
+        )
+        return t
+
+    def test_applies_on_keyword(self):
+        sp = LongevitySpecialist()
+        intent = classify_intent("我的身体年龄是多少")
+        assert sp.applies_to(intent, _empty_twin())
+
+    def test_applies_on_phenoage_available_in_general(self):
+        """PhenoAge 已算出 + general 对话 → 也参与(给一句解读)。"""
+        sp = LongevitySpecialist()
+        intent = classify_intent("我的健康怎么样")  # → general
+        assert "general" in intent.categories
+        assert sp.applies_to(intent, self._twin_with_phenoage())
+
+    def test_does_not_apply_when_no_phenoage_no_keyword(self):
+        sp = LongevitySpecialist()
+        intent = classify_intent("今天HRV怎么样")
+        # 普通查询且 phenoage 缺失 → 不参与(避免噪声)
+        assert not sp.applies_to(intent, _empty_twin())
+
+    def test_run_with_phenoage_emits_age_finding(self):
+        sp = LongevitySpecialist()
+        twin = self._twin_with_phenoage()
+        finding = sp.run(twin, {})
+        assert isinstance(finding, SpecialistFinding)
+        assert finding.specialist_name == "longevity"
+        types = {f.get("type") for f in finding.findings}
+        assert "phenotypic_age" in types
+        assert "delegation" in types  # 必带委托提示,不重复造科学
+        # summary 含核心数字
+        assert "47" in finding.summary
+
+    def test_run_emits_claim_boundary(self):
+        """诚实纪律:展示侧能拿到 claim_boundary + evidence_tier。"""
+        sp = LongevitySpecialist()
+        finding = sp.run(self._twin_with_phenoage(), {})
+        pa = next(f for f in finding.findings if f.get("type") == "phenotypic_age")
+        assert pa["evidence_tier"] == "validated"
+        assert pa["claim_boundary"]  # 非空
+        assert "levine_2018_phenoage" in finding.evidence_refs
+
+    def test_run_without_phenoage_lists_missing_inputs(self):
+        """没算出来不假装有结果,列缺啥让用户补。"""
+        sp = LongevitySpecialist()
+        # 抗衰意图但 Twin 完全空 → 9 项全缺
+        finding = sp.run(_empty_twin(), {})
+        assert finding.findings
+        unavail = finding.findings[0]
+        assert unavail["type"] == "phenoage_unavailable"
+        assert len(unavail["missing_inputs"]) == 9  # 全部 9 项血检
+
+    def test_run_identifies_drags_when_present(self):
+        """高 CRP / 高血糖等明显异常应进入 drags(由 orchestrator 转发四件套处理)。"""
+        sp = LongevitySpecialist()
+        twin = self._twin_with_phenoage()
+        twin.labs.crp = 0.5      # 升高
+        twin.labs.blood_glucose = 6.5  # 偏高
+        finding = sp.run(twin, {})
+        drags = next((f for f in finding.findings if f.get("type") == "drags"), None)
+        assert drags is not None
+        metrics = {d["metric"] for d in drags["items"]}
+        assert "crp" in metrics
+        assert "blood_glucose" in metrics
+
+
+class TestLongevityRegistry:
+    def test_longevity_specialist_registered(self):
+        names = {s.name for s in all_specialists()}
+        assert "longevity" in names
+
+    def test_specialists_count_is_12(self):
+        """抗衰 MVP Step 2: specialists 注册表从 11 → 12(+ LongevitySpecialist)。"""
+        assert len(all_specialists()) == 12
 
 
 # ───────────────────── Orchestrator + memory ─────────

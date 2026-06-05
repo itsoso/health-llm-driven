@@ -1016,6 +1016,46 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
     except Exception:  # noqa: BLE001
         pass
 
+    # — PhenoAge (Levine 2018): labs 9 项 + 实足年龄齐才算; 任一缺失 → 留 None,不猜算
+    _fill_phenoage(db, user_id, twin)
+
+
+def _fill_phenoage(db: Session, user_id: int, twin: HealthTwin) -> None:
+    """聚合完 labs 后调用 compute_phenoage 填 LabsContext 派生字段。
+
+    设计纪律 (docs/design-longevity-mvp.md §3):
+      - 9 项血检任一缺失 → compute_phenoage 返回 None,这里全字段留 None,不写
+      - 单位假设与 LabsContext 字段注释一致 (collector 不做单位转换)
+      - 成功时同步写入 evidence_tier="validated" + claim_boundary,展示侧 must show
+    """
+    try:
+        from app.services.phenoage import compute_phenoage
+
+        age = _collectors.fetch_user_age(db, user_id)
+        L = twin.labs
+        result = compute_phenoage(
+            albumin_g_per_l=L.albumin,
+            creatinine_umol_per_l=L.creatinine,
+            glucose_mmol_per_l=L.blood_glucose,
+            crp_mg_per_dl=L.crp,
+            lymphocyte_pct=L.lymphocyte_pct,
+            mcv_fl=L.mcv,
+            rdw_pct=L.rdw,
+            alp_u_per_l=L.alp,
+            wbc_10e9_per_l=L.wbc,
+            age_years=age,
+        )
+        if result is None:
+            # 缺值 — 不写;只在所有 9 项 + age 都到位时再算
+            return
+        L.phenotypic_age = result.phenotypic_age
+        L.phenotypic_age_delta_years = result.delta_years
+        L.phenotypic_age_inputs_complete = result.inputs_complete
+        L.phenoage_evidence_tier = result.evidence_tier
+        L.phenoage_claim_boundary = result.claim_boundary
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] phenoage 计算失败: {e}")
+
 
 # ─────────────────────────── 工具 ─────────────────────────────────────
 
