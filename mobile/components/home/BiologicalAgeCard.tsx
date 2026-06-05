@@ -18,14 +18,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import type { PhenoAgeView } from '../../services/twinHelpers';
+import type { BioAgeWin } from '../../services/myProgress';
 
 interface Props {
   view: PhenoAgeView | null | undefined;
+  win?: BioAgeWin | null; // 12 周 N-of-1 评分出的生物年龄改善(信任时刻)
   isError?: boolean;
   onPress?: () => void;
 }
 
-export default function BiologicalAgeCard({ view, isError, onPress }: Props) {
+export default function BiologicalAgeCard({ view, win, isError, onPress }: Props) {
   const { c, s } = useTheme();
 
   // ── error
@@ -128,6 +130,14 @@ export default function BiologicalAgeCard({ view, isError, onPress }: Props) {
         <Text style={[styles.sub, { color: c.labelTertiary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {chrono != null ? `实足 ${chrono} 岁 · ` : ''}基于血检(PhenoAge)
         </Text>
+        {win && win.deltaYears > 0 ? (
+          <View style={[styles.winRow, { backgroundColor: s.success.bg }]}>
+            <Ionicons name="trending-down" size={12} color={s.success.fg} />
+            <Text style={[styles.winText, { color: s.success.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+              干预后 {win.baseline}→{win.actual} · 年轻 {win.deltaYears.toFixed(1)} 岁
+            </Text>
+          </View>
+        ) : null}
         {view.claimBoundary ? (
           <Text style={[styles.boundary, { color: c.labelQuaternary ?? c.labelTertiary }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
             {view.claimBoundary}
@@ -194,6 +204,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 14, fontWeight: '800' },
   sub: { fontSize: 11, fontWeight: '500' },
   boundary: { fontSize: 10, fontWeight: '400', lineHeight: 13, marginTop: 1 },
+  winRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 3,
+  },
+  winText: { fontSize: 11, fontWeight: '800' },
   badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
   badgeText: { fontSize: 11, fontWeight: '800' },
 });
