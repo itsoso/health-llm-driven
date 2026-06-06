@@ -262,6 +262,48 @@ def log_memory_injection(
         return None
 
 
+def log_longevity_trigger(
+    db: Session,
+    user_id: int,
+    *,
+    metric: str,
+    kind: str,
+    delta_years: float,
+    notable: bool,
+    notified: bool,
+) -> Optional[int]:
+    """记录一次抗衰主动 Agent 的生物年龄变化触发 (Phase2 W6 eval)。
+
+    agent_type='longevity_watch' — observability 据此算:
+      触发数 / notable 率 / 推送率 (notified) / 后续接受率(由 action_card 侧关联)。
+    旁路, 失败不抛。
+    """
+    if user_id is None:
+        return None
+    try:
+        summary = (
+            f"longevity {metric} {kind} {delta_years:+.1f}y "
+            f"notable={notable} notified={notified}"
+        )
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="longevity_watch",
+            action="proactive_trigger",
+            result_summary=summary,
+            result_detail={
+                "metric": metric,
+                "kind": kind,
+                "delta_years": delta_years,
+                "notable": notable,
+                "notified": notified,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_longevity_trigger 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,
