@@ -98,6 +98,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("hrv_nightly",           lambda s: _fill_hrv_nightly(s, user_id, twin, sources)),
         ("respiration_nightly",   lambda s: _fill_respiration_nightly(s, user_id, twin, sources)),
         ("garmin_official",       lambda s: _fill_garmin_official(s, user_id, twin, sources)),
+        ("vo2max",                lambda s: _fill_vo2max(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -287,6 +288,43 @@ def _fill_physiological_derived(db: Session, user_id: int, twin: HealthTwin) -> 
             twin.body_composition.tdee_kcal = float(tdee)
     except Exception as e:
         logger.warning(f"[twin] physiological_derived 失败: {e}")
+
+
+def _fill_vo2max(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """填充 VO2max / 体能年龄(抗衰第二信号)。
+
+    Twin 已有 vo2max_running/cycling 字段但此前无人填充(死字段);这里补齐。
+    VO2max 是全因死亡率最强单一预测因子;vo2max_fitness_age 是 Garmin 直接算的
+    "体能年龄",可与实足年龄对比,做 PhenoAge 之外的第二个生物年龄信号。
+    取最近 90 天里有 vo2max 的最新一天(VO2max 变化慢,窗口放宽)。
+    """
+    try:
+        from datetime import timedelta
+
+        from app.models.daily_health import GarminData
+
+        cutoff = (twin.meta.generated_at.date() if twin.meta.generated_at else date.today()) - timedelta(days=90)
+        row = (
+            db.query(GarminData)
+            .filter(GarminData.user_id == user_id)
+            .filter(GarminData.vo2max_running.isnot(None))
+            .filter(GarminData.record_date >= cutoff)
+            .order_by(GarminData.record_date.desc())
+            .limit(1)
+            .first()
+        )
+        if not row:
+            return
+        p = twin.physiological
+        if row.vo2max_running is not None:
+            p.vo2max_running = float(row.vo2max_running)
+        if row.vo2max_cycling is not None:
+            p.vo2max_cycling = float(row.vo2max_cycling)
+        if getattr(row, "vo2max_fitness_age", None) is not None:
+            p.vo2max_fitness_age = int(row.vo2max_fitness_age)
+        sources.add("garmin")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] vo2max 填充失败: {e}")
 
 
 def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:

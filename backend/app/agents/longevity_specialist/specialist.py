@@ -45,8 +45,11 @@ class LongevitySpecialist:
         q = (intent.raw_query or "").lower()
         if any(k in q for k in self.TRIGGER_KEYWORDS):
             return True
-        # 3) 当 Twin 已经算出 PhenoAge,general 对话也带上一句年龄解读
-        if twin.labs.phenotypic_age is not None and "general" in intent.categories:
+        # 3) 当 Twin 已有 PhenoAge 或体能年龄,general 对话也带上一句年龄解读
+        if "general" in intent.categories and (
+            twin.labs.phenotypic_age is not None
+            or twin.physiological.vo2max_fitness_age is not None
+        ):
             return True
         return False
 
@@ -56,27 +59,39 @@ class LongevitySpecialist:
             L = twin.labs
 
             if L.phenotypic_age is None:
-                # 没算出来 → 给一个可解释的引导,不假装有结果
+                # PhenoAge 没算出来 → 但 VO2max 体能年龄(若有)仍是可用的第二信号
                 missing = _missing_phenoage_inputs(twin)
-                summary = (
-                    "暂无表型年龄(PhenoAge)结果 — 缺少必要的血检项,"
-                    f"补全后即可在体检后自动更新:{', '.join(missing)}"
-                ) if missing else (
-                    "暂无表型年龄(PhenoAge)结果 — 缺少近期完整血检报告。"
-                )
+                cardio = _cardio_signal(twin, None)
+                findings: List[Dict[str, Any]] = [{
+                    "type": "phenoage_unavailable",
+                    "missing_inputs": missing,
+                    "claim_boundary": (
+                        "PhenoAge 需要 9 项常规血检 + 实足年龄齐全才能计算,"
+                        "缺任一项 → 不猜算,不展示结果。"
+                    ),
+                }]
+                if cardio:
+                    findings.append(cardio)
+                    fa = cardio.get("fitness_age")
+                    summary = (
+                        f"暂无 PhenoAge(缺血检),但有 VO2max 体能信号"
+                        + (f":体能年龄 {fa} 岁" if fa is not None else "")
+                        + ";补全血检后可加上表型年龄。"
+                    )
+                else:
+                    summary = (
+                        "暂无表型年龄(PhenoAge)结果 — 缺少必要的血检项,"
+                        f"补全后即可在体检后自动更新:{', '.join(missing)}"
+                    ) if missing else (
+                        "暂无表型年龄(PhenoAge)结果 — 缺少近期完整血检报告。"
+                    )
                 return SpecialistFinding(
                     specialist_name=self.name,
                     category=self.category,
                     summary=summary,
-                    findings=[{
-                        "type": "phenoage_unavailable",
-                        "missing_inputs": missing,
-                        "claim_boundary": (
-                            "PhenoAge 需要 9 项常规血检 + 实足年龄齐全才能计算,"
-                            "缺任一项 → 不猜算,不展示结果。"
-                        ),
-                    }],
-                    raw={"phenoage_status": "unavailable", "missing": missing},
+                    findings=findings,
+                    raw={"phenoage_status": "unavailable", "missing": missing,
+                         "has_cardio": cardio is not None},
                     ms_elapsed=int((time.monotonic() - t0) * 1000),
                     evidence_refs=["levine_2018_phenoage"],
                 )
@@ -117,6 +132,11 @@ class LongevitySpecialist:
                     "claim_boundary": twin.epigenetic.claim_boundary,
                     "note": "甲基化时钟为长期/研究性参考,与 PhenoAge 互补,不直接相互替代。",
                 })
+
+            # 第二生物年龄信号:VO2max / 体能年龄(与 PhenoAge 互补,不替代)
+            cardio = _cardio_signal(twin, chrono)
+            if cardio:
+                findings.append(cardio)
 
             # 委托四件套(orchestrator 会同时跑这些 specialist;此处只是提示路径)
             findings.append({
@@ -213,6 +233,35 @@ _PHENOAGE_INPUT_LABELS = {
     "alp": "碱性磷酸酶(ALP)",
     "wbc": "白细胞(WBC)",
 }
+
+
+def _cardio_signal(twin: HealthTwin, chrono: Optional[float]) -> Optional[Dict[str, Any]]:
+    """第二生物年龄信号:VO2max / 体能年龄(全因死亡率最强单一预测因子)。
+
+    chrono(实足年龄,来自 PhenoAge)已知时给出 fitness_age 与实足的差;
+    未知时只给绝对值。设备估算值,evidence_tier=validated,不作诊断。
+    """
+    p = twin.physiological
+    vo2 = p.vo2max_running or p.vo2max_cycling
+    fit_age = p.vo2max_fitness_age
+    if vo2 is None and fit_age is None:
+        return None
+    f: Dict[str, Any] = {
+        "type": "cardio_fitness",
+        "evidence_tier": "validated",
+        "claim_boundary": (
+            "VO2max / 体能年龄是心肺适能的设备估算值,是全因死亡率的强预测因子;"
+            "反映可逆的有氧能力,不作诊断。"
+        ),
+        "note": "VO2max 是全因死亡率最强单一预测因子之一;有氧 + 抗阻训练可改善。",
+    }
+    if vo2 is not None:
+        f["vo2max"] = round(float(vo2), 1)
+    if fit_age is not None:
+        f["fitness_age"] = int(fit_age)
+        if chrono is not None:
+            f["fitness_age_delta_years"] = round(int(fit_age) - chrono, 1)
+    return f
 
 
 def _missing_phenoage_inputs(twin: HealthTwin) -> List[str]:

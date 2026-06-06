@@ -33,7 +33,7 @@ _ALLOWED_METRIC_KEYS = {
     "crp", "esr", "wbc", "rbc", "hgb", "plt", "lp_a", "apo_b",
     "ldl", "hdl", "tc", "tg", "fasting_glucose", "blood_glucose",
     "systolic_bp", "diastolic_bp", "bmi", "body_fat",
-    "phenotypic_age", "biological_age",
+    "phenotypic_age", "biological_age", "vo2max", "fitness_age",
 }
 
 
