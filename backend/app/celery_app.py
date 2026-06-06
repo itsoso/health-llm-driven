@@ -41,6 +41,7 @@ celery_app = Celery(
         "app.tasks.live_run_hr_replay",
         "app.tasks.snp_prewarm",
         "app.tasks.observability_digest",
+        "app.tasks.longevity_watch",
     ]
 )
 
@@ -313,6 +314,12 @@ celery_app.conf.beat_schedule = {
     "client-events-weekly-digest": {
         "task": "app.tasks.observability_digest.client_events_weekly_digest",
         "schedule": crontab(hour=9, minute=50, day_of_week=1),  # 北京 周一 09:50
+    },
+
+    # 抗衰主动 Agent: 每周日 10:10 扫生物年龄跨快照显著变化 (Phase2 W1)
+    "longevity-watch-weekly": {
+        "task": "app.tasks.longevity_watch.longevity_watch",
+        "schedule": crontab(hour=10, minute=10, day_of_week=0),  # 北京 周日 10:10
     },
 }
 
