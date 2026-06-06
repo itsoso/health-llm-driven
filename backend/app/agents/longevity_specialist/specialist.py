@@ -147,11 +147,23 @@ class LongevitySpecialist:
                     "rationale": "PhenoAge 仅为代理指标;下列 12 周可逆改善路径由四件套专家实时生成。",
                 })
 
+            # 数据飞轮:若 context 带 db,取群体已验证证据反哺本次推荐(越多用户越准)
+            cohort = _cohort_evidence(context)
+            if cohort:
+                findings.append({
+                    "type": "cohort_evidence",
+                    "text": cohort["text"],
+                    "n": cohort["n"],
+                    "improvement_rate": cohort["improvement_rate"],
+                    "mean_improvement_years": cohort["mean_improvement_years"],
+                    "evidence_tier": cohort["evidence_tier"],
+                })
+
             summary = _compose_summary(pa, chrono, delta, drags)
 
             # 偏老(delta ≥ 1)→ 提一张 12 周抗衰 N-of-1 卡:把"单点身体年龄"
             # 变成"干预后变年轻"的可验证闭环。outcome 指标=phenotypic_age(越低越好)。
-            proposed_cards = _propose_phenoage_episode(pa, chrono, delta, protocol)
+            proposed_cards = _propose_phenoage_episode(pa, chrono, delta, protocol, cohort)
 
             return SpecialistFinding(
                 specialist_name=self.name,
@@ -183,9 +195,24 @@ class LongevitySpecialist:
 # ─────────────────────────── 内部工具 ───────────────────────────
 
 
+def _cohort_evidence(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """数据飞轮:从 context.db 取群体已验证证据(无 db / 样本不足 → None,不打扰)。"""
+    db = (context or {}).get("db")
+    if db is None:
+        return None
+    try:
+        from app.services.longevity_cohort_service import cohort_recommendation_snippet
+
+        return cohort_recommendation_snippet(db, "phenotypic_age")
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[longevity] cohort evidence 取用失败 (跳过): {e}")
+        return None
+
+
 def _propose_phenoage_episode(
     pa: float, chrono: Optional[float], delta: Optional[float],
     protocol: Optional[List[Dict[str, Any]]] = None,
+    cohort: Optional[Dict[str, Any]] = None,
 ) -> List[ProposedCard]:
     """偏老时提一张 12 周抗衰 N-of-1 卡(outcome=phenotypic_age,越低越好)。
 
@@ -203,6 +230,8 @@ def _propose_phenoage_episode(
         plan_lines = "\n\n**本周期行动(四件套整合):**\n" + "\n".join(
             f"- {p['pillar']}:{p['action']}" for p in protocol
         )
+    # 数据飞轮:有群体证据则挂一句(越多用户越有底气;observational 不说因果)
+    cohort_line = f"\n\n📊 {cohort['text']}" if cohort and cohort.get("text") else ""
     return [
         ProposedCard(
             title=f"12 周抗衰 N-of-1:身体年龄降到 {target_pa} 岁以下",
@@ -211,6 +240,7 @@ def _propose_phenoage_episode(
                 "12 周后复检血检重算 PhenoAge,验证身体年龄是否真的下降"
                 "(对照 Fitzgerald 2021:生活方式 8 周可降约 3 岁)。"
                 + plan_lines
+                + cohort_line
                 + "\n\n⚠️ PhenoAge 是血检代理指标,不作诊断、不等于真实衰老速度。"
             ),
             metric_key="phenotypic_age",

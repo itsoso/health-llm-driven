@@ -132,6 +132,35 @@ def test_episode_card_embeds_protocol():
     assert "运动:每周 3 次有氧" in cards[0].content
 
 
+def test_flywheel_cohort_evidence_in_recommendation(db):
+    """数据飞轮:context 带 db + 足量群体样本 → N-of-1 卡挂上群体证据。"""
+    from datetime import datetime as _dt
+    from app.models.action_card import ActionCard
+    from app.agents.longevity_specialist.specialist import LongevitySpecialist
+
+    for u, (b, a) in enumerate([(47, 44), (50, 46), (45, 43), (48, 45), (46, 44)], start=1):
+        db.add(ActionCard(user_id=u, title="t", content="x", metric_key="phenotypic_age",
+                          outcome="improved", baseline_value=str(b), actual_value=str(a),
+                          graded_at=_dt(2026, 6, 1)))
+    db.commit()
+
+    twin = _twin_with(phenotypic_age=47.0, delta=5.0)  # 偏老 → 会提卡
+    finding = LongevitySpecialist().run(twin, {"db": db})
+    types = {f.get("type") for f in finding.findings}
+    assert "cohort_evidence" in types
+    assert finding.proposed_cards and "群体证据" in finding.proposed_cards[0].content
+
+
+def test_flywheel_no_evidence_without_db():
+    """无 db(context 空)→ 不挂群体证据(向后兼容,不打扰)。"""
+    from app.agents.longevity_specialist.specialist import LongevitySpecialist
+    twin = _twin_with(phenotypic_age=47.0, delta=5.0)
+    finding = LongevitySpecialist().run(twin, {})  # 无 db
+    types = {f.get("type") for f in finding.findings}
+    assert "cohort_evidence" not in types
+    assert finding.proposed_cards and "群体证据" not in finding.proposed_cards[0].content
+
+
 def test_specialist_surfaces_cardio_even_without_phenoage():
     """无血检但有体能年龄 → specialist 仍给出心肺信号(不只报缺血检)。"""
     from app.agents.longevity_specialist.specialist import LongevitySpecialist

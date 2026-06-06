@@ -95,7 +95,8 @@ def run_specialist_tool(db, user_id: Optional[int], tool_name: str) -> str:
         if sp is None:
             return f"暂时无法调用「{sp_name}」专家。"
         twin = build_twin(db, user_id, use_cache=True)
-        finding = sp.run(twin, {})  # 工具化路径不依赖 orchestrator 的共享 ctx
+        # 传 db 进 ctx:让 longevity 等专家能取群体证据(数据飞轮);其余专家忽略即可
+        finding = sp.run(twin, {"db": db})
         return _finding_to_text(finding)
     except Exception as e:  # noqa: BLE001
         logger.warning("[specialist_tool] %s 执行失败: %s", tool_name, e)

@@ -97,3 +97,33 @@ def cohort_biological_age_outcomes(db: Session) -> dict[str, Any]:
             "不构成疗效证明,不替代医学结论。"
         ),
     }
+
+
+def cohort_recommendation_snippet(
+    db: Session, metric: str = "phenotypic_age",
+) -> Optional[dict[str, Any]]:
+    """数据飞轮:把群体已验证结果做成一句可挂在 N-of-1 推荐上的证据。
+
+    返回 {n, improvement_rate, mean_improvement_years, text, evidence_tier} 或 None。
+    样本不足(suppressed)/无改善数据 → None(不编造、不打扰)。
+    text 为 observational 口径,带样本量,不说因果。
+    """
+    agg = cohort_biological_age_outcomes(db)
+    m = (agg.get("metrics") or {}).get((metric or "").lower())
+    if not m or m.get("suppressed"):
+        return None
+    n = m.get("n") or 0
+    rate = m.get("improvement_rate")
+    years = m.get("mean_improvement_years")
+    if not n or rate is None:
+        return None
+    parts = [f"已完成同类 12 周计划的 {n} 位用户中,{round(rate * 100)}% 生物年龄改善"]
+    if years:
+        parts.append(f"平均年轻 {years} 岁")
+    return {
+        "n": n,
+        "improvement_rate": rate,
+        "mean_improvement_years": years,
+        "text": "群体证据:" + "、".join(parts) + "(观察性,非因果)",
+        "evidence_tier": "observational",
+    }
