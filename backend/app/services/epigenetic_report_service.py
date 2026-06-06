@@ -34,6 +34,46 @@ def epigenetic_report_summary(report: EpigeneticReport) -> dict[str, Any]:
     }
 
 
+def create_epigenetic_report(
+    db: Session,
+    user_id: int,
+    *,
+    vendor: str,
+    clock_type: str,
+    sample_date: date,
+    biological_age: float | None = None,
+    pace_of_aging: float | None = None,
+    raw_summary: dict[str, Any] | None = None,
+) -> EpigeneticReport:
+    """落库一份第三方 DNAm 时钟报告(W3 摄入侧)。
+
+    不自建时钟,只接第三方结果(vendor + clock_type + 生物年龄/衰老速率)。
+    evidence_tier 固定 experimental(由 latest_epigenetic_state 输出时带 claim_boundary)。
+    落库后使该用户 Twin 缓存失效,下次 build_twin 即纳入。
+    """
+    report = EpigeneticReport(
+        user_id=user_id,
+        vendor=vendor.strip(),
+        clock_type=clock_type.strip(),
+        sample_date=sample_date,
+        biological_age=biological_age,
+        pace_of_aging=pace_of_aging,
+        confidence="low",
+        raw_summary=raw_summary or {},
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    # Twin 缓存失效 → 新报告下次构建即生效(失败不影响落库)
+    try:
+        from app.twin.cache import invalidate_twin
+
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001
+        pass
+    return report
+
+
 def list_epigenetic_reports(db: Session, user_id: int, *, limit: int = 20) -> list[dict[str, Any]]:
     rows = (
         db.query(EpigeneticReport)
