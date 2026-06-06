@@ -61,6 +61,46 @@ def test_ignores_non_bioage_metrics(db):
     assert "weight" not in out["metrics"]
 
 
+def test_cohort_metric_outcomes_generalizes_to_weight(db):
+    """群体证据泛化:非生物年龄指标(体重,越低越好)也能聚合。"""
+    from app.services.longevity_cohort_service import cohort_metric_outcomes
+    for u, (b, a) in enumerate([(80, 76), (82, 79), (78, 76), (85, 80), (90, 86)], start=1):
+        _card(db, u, "weight", "improved", b, a)
+    db.commit()
+    out = cohort_metric_outcomes(db, ["weight"])
+    w = out["metrics"]["weight"]
+    assert w["n"] == 5 and w["improved"] == 5
+    # 越低越好 → mean_improvement = baseline-actual 均值 = (4+3+2+5+4)/5 = 3.6
+    assert w["mean_improvement"] == 3.6
+    assert out["evidence_tier"] == "observational"
+
+
+def test_cohort_metric_outcomes_all_metrics(db):
+    """metrics=None → 聚合全部已评分指标。"""
+    from app.services.longevity_cohort_service import cohort_metric_outcomes
+    for u in range(1, 6):
+        _card(db, u, "weight", "improved", 80, 77)
+        _card(db, u, "phenotypic_age", "improved", 47, 44)
+    db.commit()
+    out = cohort_metric_outcomes(db)
+    assert "weight" in out["metrics"] and "phenotypic_age" in out["metrics"]
+
+
+def test_cohort_metrics_endpoint_admin(client, db):
+    import uuid
+    from datetime import date as _date
+    from app.services.auth import auth_service
+    from app.models.user import User
+    admin = User(username=f"a_{uuid.uuid4().hex[:8]}", email=f"a_{uuid.uuid4().hex[:8]}@x.com",
+                 hashed_password="x", name="a", birth_date=_date(1990, 1, 1), gender="男",
+                 is_active=True, is_approved=True, is_admin=True)
+    db.add(admin); db.commit(); db.refresh(admin)
+    token = auth_service.create_access_token({"sub": str(admin.id)})
+    r = client.get("/api/v1/admin/longevity/cohort/metrics",
+                   headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200 and "metrics" in r.json()
+
+
 def test_recommendation_snippet_flywheel(db):
     """数据飞轮:足量样本 → 产出可挂在推荐上的群体证据(observational)。"""
     from app.services.longevity_cohort_service import cohort_recommendation_snippet
