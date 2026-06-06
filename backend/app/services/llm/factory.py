@@ -245,18 +245,37 @@ def create_provider_for_model_id(model_id: str) -> LLMProvider:
     return wrap_provider_pii_scrub(wrap_provider(raw))
 
 
-def create_provider_for_user(user_id: int, db) -> LLMProvider:
+def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> LLMProvider:
     """用户级 LLM 偏好 (2026-05-13).
 
-    优先级: user_profile.llm_model_id > admin global (set_active_model_id) > settings 默认.
+    优先级: 任务分级路由(flag 开+传 tier)> user_profile.llm_model_id
+            > admin global (set_active_model_id) > settings 默认.
     每次都新建 (不缓存), 确保用户切换立刻生效. 包了 usage_tracker + pii_scrub.
 
     Args:
         user_id: 用户 ID
         db: SQLAlchemy session
+        task_tier: 可选任务档(high_stakes/balanced/casual)。仅当 settings.task_tiered_routing
+            为真且匹配到可用模型时生效;否则忽略 = 零行为变更(成本/延迟路由,Tier 4)。
     """
+    from app.config import settings
     from app.services.llm.usage_tracker import wrap_provider
     from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+
+    # 0. 任务分级路由(flag 门控;失败/无匹配静默回退到下面的既有逻辑)
+    if task_tier and getattr(settings, "task_tiered_routing", False):
+        try:
+            from app.services.llm.model_registry import get_model
+            from app.services.llm.task_routing import pick_model_id_by_tier
+            tier_model = pick_model_id_by_tier(task_tier)
+            if tier_model:
+                entry = get_model(tier_model)
+                if entry:
+                    raw = _create_from_entry(entry)
+                    logger.info(f"[LLM Factory] user={user_id} 任务路由 tier={task_tier} model={tier_model}")
+                    return wrap_provider_pii_scrub(wrap_provider(raw))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[LLM Factory] user={user_id} 任务路由失败, 回退既有: {e}")
 
     # 1. 用户偏好
     try:
