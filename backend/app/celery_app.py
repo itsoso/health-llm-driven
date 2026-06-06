@@ -42,6 +42,7 @@ celery_app = Celery(
         "app.tasks.snp_prewarm",
         "app.tasks.observability_digest",
         "app.tasks.longevity_watch",
+        "app.tasks.trajectory_watch",
     ]
 )
 
@@ -320,6 +321,12 @@ celery_app.conf.beat_schedule = {
     "longevity-watch-weekly": {
         "task": "app.tasks.longevity_watch.longevity_watch",
         "schedule": crontab(hour=10, minute=10, day_of_week=0),  # 北京 周日 10:10
+    },
+
+    # 主动化推广: 每周日 10:25 扫代谢/心血管指标跨快照显著变化 (Phase3)
+    "trajectory-watch-weekly": {
+        "task": "app.tasks.trajectory_watch.trajectory_watch",
+        "schedule": crontab(hour=10, minute=25, day_of_week=0),  # 北京 周日 10:25
     },
 }
 
