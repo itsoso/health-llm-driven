@@ -202,6 +202,8 @@ class Settings(BaseSettings):
     agent_specialist_tools: bool = False
     # 主动触达全局打扰预算:每用户每周跨所有 *_watch 主动推送上限(0=不限)
     proactive_weekly_budget: int = 1
+    # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
+    task_tiered_routing: bool = False
 
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
