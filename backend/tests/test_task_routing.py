@@ -21,6 +21,20 @@ def test_pick_model_id_by_tier():
     assert pick_model_id_by_tier(None) is None
 
 
+def test_tier_for_intent_wiring():
+    """成本路由接线:orchestrator 按 intent 类别定 task_tier(高风险→reasoning)。"""
+    from app.orchestrator.orchestrator import _tier_for_intent
+
+    class _I:
+        def __init__(self, c): self.categories = c
+    assert _tier_for_intent(_I(["safety"])) == "high_stakes"
+    assert _tier_for_intent(_I(["longevity"])) == "high_stakes"
+    assert _tier_for_intent(_I(["recovery"])) == "balanced"
+    assert _tier_for_intent(_I(["fuel", "movement"])) == "balanced"
+    assert _tier_for_intent(_I(["general"])) == "casual"
+    assert _tier_for_intent(_I([])) == "casual"
+
+
 def test_routing_taken_when_flag_on():
     """flag 开 + tier 匹配 → 用 tier 模型(不落到用户偏好/默认)。"""
     from app.config import settings
