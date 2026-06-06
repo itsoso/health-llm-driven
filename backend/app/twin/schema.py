@@ -68,6 +68,7 @@ class PhysiologicalState(BaseModel):
     spo2_below_90_pct: Optional[float] = None
     vo2max_running: Optional[float] = None
     vo2max_cycling: Optional[float] = None
+    vo2max_fitness_age: Optional[int] = None  # Garmin 体能年龄(心肺) — 抗衰第二信号,可对比实足年龄
 
     # 夜间呼吸 (2026-05-07 接入 Garmin respiration_samples) —
     # OSAHS 筛查信号: 夜间 avg rate + 变异度 (stddev). 正常 12-20 brpm,

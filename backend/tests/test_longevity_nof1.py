@@ -65,3 +65,53 @@ def test_specialist_no_episode_when_younger_or_flat():
     assert _propose_phenoage_episode(pa=40.0, chrono=45.0, delta=-5.0) == []
     assert _propose_phenoage_episode(pa=45.0, chrono=45.0, delta=0.0) == []
     assert _propose_phenoage_episode(pa=45.0, chrono=45.0, delta=None) == []
+
+
+# ───────────── W2: VO2max / 体能年龄 第二信号 ─────────────
+
+def test_vo2max_registered_directions():
+    assert "vo2max" in FETCHERS and "fitness_age" in FETCHERS
+    assert HIGHER_IS_BETTER["vo2max"] is True       # VO2max 越高越好
+    assert HIGHER_IS_BETTER["fitness_age"] is False  # 体能年龄越低越好
+
+
+def test_grade_vo2max_higher_is_better():
+    improved, eff = grade_outcome("vo2max", "40", 44.0)  # 升 → 改善
+    assert improved == "improved" and eff > 0
+    worse, _ = grade_outcome("vo2max", "40", 36.0)
+    assert worse == "worsened"
+
+
+def _twin_with(vo2_fitness_age=None, vo2max_running=None, phenotypic_age=None, delta=None):
+    from datetime import datetime
+    from app.twin.schema import HealthTwin, TwinMeta
+    t = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime(2026, 6, 6)))
+    t.physiological.vo2max_fitness_age = vo2_fitness_age
+    t.physiological.vo2max_running = vo2max_running
+    t.labs.phenotypic_age = phenotypic_age
+    t.labs.phenotypic_age_delta_years = delta
+    return t
+
+
+def test_cardio_signal_helper():
+    from app.agents.longevity_specialist.specialist import _cardio_signal
+    f = _cardio_signal(_twin_with(vo2_fitness_age=38, vo2max_running=42.0), chrono=45.0)
+    assert f is not None
+    assert f["type"] == "cardio_fitness"
+    assert f["vo2max"] == 42.0
+    assert f["fitness_age"] == 38
+    assert f["fitness_age_delta_years"] == -7.0  # 体能年轻 7 岁
+    assert f["evidence_tier"] == "validated" and f["claim_boundary"]
+    # 无任何 vo2 数据 → None
+    assert _cardio_signal(_twin_with(), chrono=45.0) is None
+
+
+def test_specialist_surfaces_cardio_even_without_phenoage():
+    """无血检但有体能年龄 → specialist 仍给出心肺信号(不只报缺血检)。"""
+    from app.agents.longevity_specialist.specialist import LongevitySpecialist
+    from app.orchestrator.schema import Intent
+    twin = _twin_with(vo2_fitness_age=40, vo2max_running=45.0)  # 无 phenotypic_age
+    finding = LongevitySpecialist().run(twin, {})
+    types = {f.get("type") for f in finding.findings}
+    assert "cardio_fitness" in types
+    assert "体能" in finding.summary or "VO2max" in finding.summary

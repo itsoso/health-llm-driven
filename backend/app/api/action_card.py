@@ -43,7 +43,8 @@ LAB_METRIC_KEYS = {
 }
 ALLOWED_METRIC_KEYS = {"sleep_score", "hrv", "rhr", "weight", "bp",
                        "spo2_odi", "custom",
-                       "phenotypic_age", "biological_age"} | LAB_METRIC_KEYS
+                       "phenotypic_age", "biological_age",
+                       "vo2max", "fitness_age"} | LAB_METRIC_KEYS
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

@@ -73,6 +73,45 @@ def fetch_spo2_avg(db: Session, user_id: int, end_date: date) -> Optional[float]
     return _fetch_garmin_field(db, user_id, "spo2_avg", end_date)
 
 
+def fetch_vo2max(db: Session, user_id: int, end_date: date) -> Optional[float]:
+    """VO2max (mL/kg/min) — 抗衰第二信号, 运动 N-of-1 outcome(越高越好)。
+    VO2max 变化慢, 用 90 天窗口取最近有值的一天(不取 3 天均值)。"""
+    start = end_date - timedelta(days=90)
+    row = (
+        db.query(GarminData)
+        .filter(
+            GarminData.user_id == user_id,
+            GarminData.vo2max_running.isnot(None),
+            GarminData.record_date >= start,
+            GarminData.record_date <= end_date,
+        )
+        .order_by(desc(GarminData.record_date))
+        .first()
+    )
+    if row is None or row.vo2max_running is None:
+        return None
+    return float(row.vo2max_running)
+
+
+def fetch_fitness_age(db: Session, user_id: int, end_date: date) -> Optional[float]:
+    """Garmin 体能年龄(岁)— 越低越好。90 天窗口取最近有值的一天。"""
+    start = end_date - timedelta(days=90)
+    row = (
+        db.query(GarminData)
+        .filter(
+            GarminData.user_id == user_id,
+            GarminData.vo2max_fitness_age.isnot(None),
+            GarminData.record_date >= start,
+            GarminData.record_date <= end_date,
+        )
+        .order_by(desc(GarminData.record_date))
+        .first()
+    )
+    if row is None or row.vo2max_fitness_age is None:
+        return None
+    return float(row.vo2max_fitness_age)
+
+
 def fetch_weight(db: Session, user_id: int, end_date: date) -> Optional[float]:
     """体重 (kg) — WeightRecord 末尾 3 天均值."""
     try:
@@ -339,6 +378,9 @@ FETCHERS = {
     # 抗衰 N-of-1 — 生物年龄 (PhenoAge)
     "phenotypic_age": fetch_phenotypic_age,
     "biological_age": fetch_phenotypic_age,  # alias
+    # 抗衰第二信号 — 心肺适能
+    "vo2max": fetch_vo2max,
+    "fitness_age": fetch_fitness_age,
 }
 
 
@@ -390,6 +432,9 @@ HIGHER_IS_BETTER = {
     # 生物年龄越低越好
     "phenotypic_age": False,
     "biological_age": False,
+    # VO2max 越高越好;体能年龄越低越好
+    "vo2max": True,
+    "fitness_age": False,
 }
 
 # 变化阈值: ≥5% 朝目标方向 = improved, ≥5% 反方向 = worsened
