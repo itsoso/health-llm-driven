@@ -52,8 +52,8 @@ def agent_eval_dashboard(db: Session, days: int = 30) -> dict[str, Any]:
         # ② orchestrator 延迟
         if at == "orchestrator" and r.total_ms is not None:
             orch_ms.append(float(r.total_ms))
-        # ③ 主动 Agent(longevity_watch)命中/推送
-        if at == "longevity_watch":
+        # ③ 主动 Agent(所有 *_watch:longevity / trajectory / …)命中/推送
+        if at.endswith("_watch"):
             d = r.result_detail or {}
             proactive["triggers"] += 1
             if d.get("notable"):
