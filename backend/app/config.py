@@ -200,6 +200,8 @@ class Settings(BaseSettings):
     # Agent Native 化(RFC 方向一 Phase A): 把 specialist 暴露为 Agent 可自主调用的工具。
     # 默认 False=行为与现状一致(specialist 仍由 orchestrator 编排); 开启进入灰度。
     agent_specialist_tools: bool = False
+    # 主动触达全局打扰预算:每用户每周跨所有 *_watch 主动推送上限(0=不限)
+    proactive_weekly_budget: int = 1
 
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
