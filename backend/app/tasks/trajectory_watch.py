@@ -43,6 +43,7 @@ def trajectory_watch():
     """每周扫描:代谢/心血管指标主动播报(每人至多一条,埋点全部)。"""
     from app.agents.audit import log_proactive_trigger
     from app.services.notification.push_service import PushService
+    from app.services.proactive_coordinator import can_notify_proactively
 
     logger.info("[轨迹监测] 开始代谢/心血管跨快照扫描")
     triggered = notified = 0
@@ -55,23 +56,25 @@ def trajectory_watch():
                 if not changes:
                     continue
                 triggered += len(changes)
-                # 打扰预算:每人只推变化最大的一条
+                # 打扰预算:每人至多一条 + 全局 gate(longevity 已推过则本周让位)
                 top = max(changes, key=lambda c: abs(c.delta_pct))
-                run_async(push_service.send_notification(
-                    user_id=user_id,
-                    notification_type="insight",
-                    title=top.title,
-                    content=top.message,
-                    data={"kind": "trajectory", "metric": top.metric},
-                    severity="info",
-                ))
-                notified += 1
-                # 埋点:全部 notable 变化(eval 看板看命中/推送率)
+                do_notify = can_notify_proactively(db, user_id)
+                if do_notify:
+                    run_async(push_service.send_notification(
+                        user_id=user_id,
+                        notification_type="insight",
+                        title=top.title,
+                        content=top.message,
+                        data={"kind": "trajectory", "metric": top.metric},
+                        severity="info",
+                    ))
+                    notified += 1
+                # 埋点:全部 notable 变化(eval 看板看命中/推送率;notable-notified=被预算抑制)
                 for c in changes:
                     log_proactive_trigger(
                         db, user_id, agent_type=_AGENT_TYPE, metric=c.metric,
                         kind=c.kind, delta=c.delta_pct, notable=True,
-                        notified=(c.metric == top.metric),
+                        notified=(do_notify and c.metric == top.metric),
                     )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[轨迹监测] user={user_id} 处理失败: {e}")

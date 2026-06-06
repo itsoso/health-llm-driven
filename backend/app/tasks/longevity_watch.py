@@ -44,6 +44,7 @@ def longevity_watch():
     """每周扫描:主动播报生物年龄显著变化。"""
     from app.agents.audit import log_longevity_trigger
     from app.services.notification.push_service import PushService
+    from app.services.proactive_coordinator import can_notify_proactively
 
     logger.info("[抗衰监测] 开始生物年龄跨快照扫描")
     triggered = notified = 0
@@ -58,7 +59,9 @@ def longevity_watch():
                 if change is None:
                     continue
                 triggered += 1
-                if change.notable:
+                # 全局打扰预算 gate:显著 且 未超预算才推
+                do_notify = change.notable and can_notify_proactively(db, user_id)
+                if do_notify:
                     run_async(push_service.send_notification(
                         user_id=user_id,
                         notification_type="insight",
@@ -69,12 +72,12 @@ def longevity_watch():
                         severity="info",
                     ))
                     notified += 1
-                # W6 eval:无论推没推都埋点(算 notable 率 / 推送率)
+                # W6 eval:无论推没推都埋点(算 notable 率 / 推送率;notable-notified=被预算抑制)
                 log_longevity_trigger(
                     db, user_id,
                     metric=change.metric, kind=change.kind,
                     delta_years=change.delta_years, notable=change.notable,
-                    notified=change.notable,
+                    notified=do_notify,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[抗衰监测] user={user_id} 处理失败: {e}")
