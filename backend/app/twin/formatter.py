@@ -354,4 +354,15 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         if titles:
             lines.append(f"当前目标 ({twin.goals.active_goals_count}): {' / '.join(titles)}")
 
+    # 数据质量 → Agent 置信度门控:数据稀疏/陈旧时追加 hedge 指令(末尾,不破坏既有
+    # 首行格式),让 LLM 在低置信数据上多保守、少断言(Next Horizon Tier 5)。仅非空 blob。
+    if lines:
+        try:
+            from app.services.data_confidence import assess_data_confidence
+            hint = assess_data_confidence(twin).get("hedge_hint")
+            if hint:
+                lines.append(f"⚠️ {hint}")
+        except Exception:  # noqa: BLE001
+            pass
+
     return "\n".join(lines)
