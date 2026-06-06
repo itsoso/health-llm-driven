@@ -43,6 +43,7 @@ celery_app = Celery(
         "app.tasks.observability_digest",
         "app.tasks.longevity_watch",
         "app.tasks.trajectory_watch",
+        "app.tasks.adherence_watch",
     ]
 )
 
@@ -327,6 +328,12 @@ celery_app.conf.beat_schedule = {
     "trajectory-watch-weekly": {
         "task": "app.tasks.trajectory_watch.trajectory_watch",
         "schedule": crontab(hour=10, minute=25, day_of_week=0),  # 北京 周日 10:25
+    },
+
+    # 依从性智能: 每周日 10:40 扫 N-of-1 掉队风险, 温和再激活 (Next Horizon)
+    "adherence-watch-weekly": {
+        "task": "app.tasks.adherence_watch.adherence_watch",
+        "schedule": crontab(hour=10, minute=40, day_of_week=0),  # 北京 周日 10:40
     },
 }
 
