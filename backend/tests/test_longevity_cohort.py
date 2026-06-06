@@ -101,6 +101,65 @@ def test_cohort_metrics_endpoint_admin(client, db):
     assert r.status_code == 200 and "metrics" in r.json()
 
 
+def _mk_user(db, year, gender):
+    import uuid
+    from datetime import date as _date
+    from app.models.user import User
+    u = User(username=f"u_{uuid.uuid4().hex[:8]}", email=f"u_{uuid.uuid4().hex[:8]}@x.com",
+             hashed_password="x", name="u", birth_date=_date(year, 6, 1), gender=gender,
+             is_active=True, is_approved=True)
+    db.add(u); db.commit(); db.refresh(u)
+    return u
+
+
+def test_similar_user_ids_same_decade_gender(db):
+    from app.services.longevity_cohort_service import _similar_user_ids
+    target = _mk_user(db, 1985, "男")
+    same = _mk_user(db, 1988, "男")        # 同 80s 同性别
+    other_g = _mk_user(db, 1986, "女")     # 同段不同性别
+    other_d = _mk_user(db, 1975, "男")     # 不同段
+    ids = _similar_user_ids(db, target.id)
+    assert target.id in ids and same.id in ids
+    assert other_g.id not in ids and other_d.id not in ids
+
+
+def test_similar_user_ids_none_without_profile(db):
+    import uuid
+    from app.models.user import User
+    from app.services.longevity_cohort_service import _similar_user_ids
+    u = User(username=f"u_{uuid.uuid4().hex[:8]}", email=f"u_{uuid.uuid4().hex[:8]}@x.com",
+             hashed_password="x", name="u", is_active=True, is_approved=True)  # 无 birth_date/gender
+    db.add(u); db.commit(); db.refresh(u)
+    assert _similar_user_ids(db, u.id) is None
+
+
+def test_matched_cohort_snippet(db):
+    """飞轮 v2:足量相似用户 → '和你相似的人' 匹配证据。"""
+    from app.services.longevity_cohort_service import cohort_recommendation_snippet
+    target = _mk_user(db, 1985, "男")
+    for _ in range(5):
+        u = _mk_user(db, 1987, "男")  # 同段同性别
+        _card(db, u.id, "phenotypic_age", "improved", 47, 44)
+    db.commit()
+    snip = cohort_recommendation_snippet(db, "phenotypic_age", similar_to_user_id=target.id)
+    assert snip is not None and snip["matched"] is True
+    assert "和你相似的" in snip["text"] and "同龄段" in snip["text"]
+
+
+def test_matched_falls_back_to_population(db):
+    """相似用户不足 → 回退人群平均(仍给证据,不带'相似'声明)。"""
+    from app.services.longevity_cohort_service import cohort_recommendation_snippet
+    target = _mk_user(db, 1985, "男")
+    # 人群里有 5 张改善卡,但都是不相似用户(90s 女)
+    for _ in range(5):
+        u = _mk_user(db, 1995, "女")
+        _card(db, u.id, "phenotypic_age", "improved", 47, 44)
+    db.commit()
+    snip = cohort_recommendation_snippet(db, "phenotypic_age", similar_to_user_id=target.id)
+    assert snip is not None and snip["matched"] is False
+    assert "和你相似的" not in snip["text"]
+
+
 def test_recommendation_snippet_flywheel(db):
     """数据飞轮:足量样本 → 产出可挂在推荐上的群体证据(observational)。"""
     from app.services.longevity_cohort_service import cohort_recommendation_snippet

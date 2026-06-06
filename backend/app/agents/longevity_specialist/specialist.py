@@ -148,7 +148,7 @@ class LongevitySpecialist:
                 })
 
             # 数据飞轮:若 context 带 db,取群体已验证证据反哺本次推荐(越多用户越准)
-            cohort = _cohort_evidence(context)
+            cohort = _cohort_evidence(context, twin)
             if cohort:
                 findings.append({
                     "type": "cohort_evidence",
@@ -195,15 +195,19 @@ class LongevitySpecialist:
 # ─────────────────────────── 内部工具 ───────────────────────────
 
 
-def _cohort_evidence(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """数据飞轮:从 context.db 取群体已验证证据(无 db / 样本不足 → None,不打扰)。"""
+def _cohort_evidence(context: Dict[str, Any], twin: HealthTwin) -> Optional[Dict[str, Any]]:
+    """数据飞轮:从 context.db 取群体已验证证据(无 db / 样本不足 → None,不打扰)。
+
+    飞轮 v2:传 twin.meta.user_id → 优先"和你相似的人"(匹配队列),不足回退人群平均。
+    """
     db = (context or {}).get("db")
     if db is None:
         return None
     try:
         from app.services.longevity_cohort_service import cohort_recommendation_snippet
 
-        return cohort_recommendation_snippet(db, "phenotypic_age")
+        uid = getattr(twin.meta, "user_id", None) if twin and twin.meta else None
+        return cohort_recommendation_snippet(db, "phenotypic_age", similar_to_user_id=uid)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[longevity] cohort evidence 取用失败 (跳过): {e}")
         return None

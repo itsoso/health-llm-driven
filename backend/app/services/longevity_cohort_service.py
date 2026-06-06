@@ -40,8 +40,38 @@ def _num(v: Any) -> Optional[float]:
         return None
 
 
-def _aggregate(db: Session, metric_keys: Optional[set]) -> dict[str, Any]:
+def _similar_user_ids(db: Session, user_id: int) -> Optional[set]:
+    """飞轮 v2:与目标用户"相似"的 user_id 集(同年龄段 decade + 同性别)。
+
+    目标缺 birth_date/gender → None(无法分层,调用方回退人群平均)。
+    年龄段 = 出生年所在十年(如 1980s),用 birth_date 区间匹配,避免 SQL 日期算。
+    """
+    from datetime import date
+
+    from app.models.user import User
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target or not target.birth_date or not target.gender:
+        return None
+    by = target.birth_date.year
+    decade_lo = (by // 10) * 10          # 1980
+    lo, hi = date(decade_lo, 1, 1), date(decade_lo + 9, 12, 31)
+    rows = (
+        db.query(User.id)
+        .filter(
+            User.gender == target.gender,
+            User.birth_date >= lo,
+            User.birth_date <= hi,
+        )
+        .all()
+    )
+    return {uid for (uid,) in rows}
+
+
+def _aggregate(db: Session, metric_keys: Optional[set],
+               user_ids: Optional[set] = None) -> dict[str, Any]:
     """通用核心:跨用户聚合已评分 ActionCard。metric_keys=None → 全部指标。
+    user_ids 非 None → 仅这些用户(飞轮 v2 匹配队列)。
 
     mean_improvement = improved 卡朝目标方向的绝对改善均值(方向用 HIGHER_IS_BETTER;
     单位是该指标自身单位)。小样本 < MIN_COHORT → suppressed。去标识(无 user_id)。
@@ -49,6 +79,10 @@ def _aggregate(db: Session, metric_keys: Optional[set]) -> dict[str, Any]:
     q = db.query(ActionCard).filter(ActionCard.outcome.isnot(None))
     if metric_keys is not None:
         q = q.filter(ActionCard.metric_key.in_(tuple(metric_keys)))
+    if user_ids is not None:
+        if not user_ids:
+            return {}
+        q = q.filter(ActionCard.user_id.in_(tuple(user_ids)))
     rows = q.all()
 
     by_metric: dict[str, dict[str, Any]] = {}
@@ -95,49 +129,68 @@ def _wrap(metrics_out: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def cohort_biological_age_outcomes(db: Session) -> dict[str, Any]:
-    """生物年龄群体证据(去标识)。mean_improvement 即"年轻几岁",保留旧键名。"""
-    out = _aggregate(db, set(BIOAGE_METRICS))
+def cohort_biological_age_outcomes(
+    db: Session, similar_to_user_id: Optional[int] = None,
+) -> dict[str, Any]:
+    """生物年龄群体证据(去标识)。mean_improvement 即"年轻几岁",保留旧键名。
+    similar_to_user_id 非 None → 匹配队列(同龄段·同性别)。"""
+    user_ids = _similar_user_ids(db, similar_to_user_id) if similar_to_user_id else None
+    out = _aggregate(db, set(BIOAGE_METRICS), user_ids)
     for v in out.values():
         if "mean_improvement" in v:
             v["mean_improvement_years"] = v.pop("mean_improvement")
     return _wrap(out)
 
 
-def cohort_metric_outcomes(db: Session, metrics: Optional[list[str]] = None) -> dict[str, Any]:
+def cohort_metric_outcomes(
+    db: Session, metrics: Optional[list[str]] = None,
+    similar_to_user_id: Optional[int] = None,
+) -> dict[str, Any]:
     """群体证据泛化:任一 outcome 指标的去标识聚合。metrics=None → 全部已评分指标。
-
-    mean_improvement 为该指标自身单位的朝目标方向改善均值(非"岁")。
+    similar_to_user_id 非 None → 匹配队列。mean_improvement 为指标自身单位(非"岁")。
     """
     keys = {k.lower() for k in metrics} if metrics else None
-    return _wrap(_aggregate(db, keys))
+    user_ids = _similar_user_ids(db, similar_to_user_id) if similar_to_user_id else None
+    return _wrap(_aggregate(db, keys, user_ids))
 
 
-def cohort_recommendation_snippet(
-    db: Session, metric: str = "phenotypic_age",
-) -> Optional[dict[str, Any]]:
-    """数据飞轮:把群体已验证结果做成一句可挂在 N-of-1 推荐上的证据。
-
-    返回 {n, improvement_rate, mean_improvement_years, text, evidence_tier} 或 None。
-    样本不足(suppressed)/无改善数据 → None(不编造、不打扰)。
-    text 为 observational 口径,带样本量,不说因果。
-    """
-    agg = cohort_biological_age_outcomes(db)
-    m = (agg.get("metrics") or {}).get((metric or "").lower())
-    if not m or m.get("suppressed"):
-        return None
+def _snippet_from_metric(m: dict[str, Any], matched: bool) -> Optional[dict[str, Any]]:
     n = m.get("n") or 0
     rate = m.get("improvement_rate")
     years = m.get("mean_improvement_years")
     if not n or rate is None:
         return None
-    parts = [f"已完成同类 12 周计划的 {n} 位用户中,{round(rate * 100)}% 生物年龄改善"]
+    who = "和你相似的" if matched else "已完成同类 12 周计划的"
+    tail = "(同龄段·同性别,观察性,非因果)" if matched else "(观察性,非因果)"
+    parts = [f"{who} {n} 位用户中,{round(rate * 100)}% 生物年龄改善"]
     if years:
         parts.append(f"平均年轻 {years} 岁")
     return {
-        "n": n,
-        "improvement_rate": rate,
-        "mean_improvement_years": years,
-        "text": "群体证据:" + "、".join(parts) + "(观察性,非因果)",
+        "n": n, "improvement_rate": rate, "mean_improvement_years": years,
+        "matched": matched,
+        "text": "群体证据:" + "、".join(parts) + tail,
         "evidence_tier": "observational",
     }
+
+
+def cohort_recommendation_snippet(
+    db: Session, metric: str = "phenotypic_age",
+    similar_to_user_id: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    """数据飞轮:群体已验证结果做成可挂在 N-of-1 推荐上的证据。
+
+    飞轮 v2:有 similar_to_user_id 时优先"和你相似的人"(匹配队列);匹配队列样本
+    不足则回退到人群平均(仍给证据,只是不带"相似"声明)。都不足 → None(不编造)。
+    """
+    key = (metric or "").lower()
+    if similar_to_user_id:
+        matched = (cohort_biological_age_outcomes(db, similar_to_user_id)
+                   .get("metrics", {}).get(key))
+        if matched and not matched.get("suppressed"):
+            snip = _snippet_from_metric(matched, matched=True)
+            if snip:
+                return snip
+    pop = cohort_biological_age_outcomes(db).get("metrics", {}).get(key)
+    if not pop or pop.get("suppressed"):
+        return None
+    return _snippet_from_metric(pop, matched=False)
