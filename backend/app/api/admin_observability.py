@@ -38,6 +38,16 @@ def _cache_key(days: int, user_id: Optional[int], include_journalctl: bool) -> s
     return f"observability:dashboard:d={days}:u={uid}:j={int(include_journalctl)}"
 
 
+@router.get("/safety-eval", summary="安全 eval — red-team 规则覆盖(确定性)")
+async def get_safety_eval(
+    admin: User = Depends(get_admin_user),
+):
+    """对抗性危险场景集 → 安全规则必须命中预期严重度。pass_rate<1 = 覆盖回归。"""
+    from app.services.safety_eval import run_safety_eval
+
+    return run_safety_eval()
+
+
 @router.get("/funnel", summary="激活漏斗 — 注册→改善(去标识增长仪表)")
 async def get_activation_funnel(
     admin: User = Depends(get_admin_user),

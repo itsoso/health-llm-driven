@@ -120,6 +120,41 @@ def _aggregate(db: Session, metric_keys: Optional[set],
     return out
 
 
+# 反向飞轮:worsened 占比达此阈值且多于 improved → 群体 harm 信号
+HARM_RATE_THRESHOLD = 0.3
+
+
+def cohort_harm_signals(db: Session, metrics: Optional[list[str]] = None) -> dict[str, Any]:
+    """反向飞轮 / pharmacovigilance:flag「在群体里和 worsening 相关」的指标。
+
+    飞轮不只报喜——同一套去标识聚合,挑出 worsened 占比 ≥ 阈值且多于 improved 的指标,
+    作为安全/运营预警(observational,相关非因果,样本量门控)。
+    """
+    keys = {k.lower() for k in metrics} if metrics else None
+    agg = _aggregate(db, keys)
+    harms = []
+    for m, b in agg.items():
+        if b.get("suppressed"):
+            continue
+        n = b.get("n") or 0
+        worsened = b.get("worsened", 0)
+        improved = b.get("improved", 0)
+        rate = round(worsened / n, 3) if n else 0
+        if rate >= HARM_RATE_THRESHOLD and worsened > improved:
+            harms.append({
+                "metric": m, "n": n, "worsened": worsened, "improved": improved,
+                "worsened_rate": rate,
+                "note": f"{round(rate * 100)}% 出现恶化(>改善),建议复核该方向",
+            })
+    return {
+        "harm_signals": sorted(harms, key=lambda h: -h["worsened_rate"]),
+        "threshold": HARM_RATE_THRESHOLD,
+        "min_cohort": MIN_COHORT,
+        "evidence_tier": "observational",
+        "claim_boundary": _CLAIM_BOUNDARY + " harm 信号为相关性预警,非因果归因。",
+    }
+
+
 def _wrap(metrics_out: dict[str, Any]) -> dict[str, Any]:
     return {
         "metrics": metrics_out,
