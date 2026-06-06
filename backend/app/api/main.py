@@ -8,6 +8,7 @@ from app.api import (
     admin_open_loop,
     admin_wscla,
     admin_slo,
+    admin_longevity,
     movement_plan,
     diet_plan,
     daily_plan,
@@ -154,6 +155,7 @@ api_router.include_router(admin_llm.router)
 api_router.include_router(admin_open_loop.router, prefix="/admin/open-loop", tags=["admin-open-loop"])
 api_router.include_router(admin_wscla.router, prefix="/admin/wscla", tags=["admin-wscla"])
 api_router.include_router(admin_slo.router, prefix="/admin/slo", tags=["admin-slo"])
+api_router.include_router(admin_longevity.router, prefix="/admin/longevity", tags=["admin-longevity"])
 api_router.include_router(movement_plan.router)
 api_router.include_router(diet_plan.router)
 api_router.include_router(daily_plan.router)
