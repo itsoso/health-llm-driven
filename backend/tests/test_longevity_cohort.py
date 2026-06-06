@@ -61,6 +61,27 @@ def test_ignores_non_bioage_metrics(db):
     assert "weight" not in out["metrics"]
 
 
+def test_recommendation_snippet_flywheel(db):
+    """数据飞轮:足量样本 → 产出可挂在推荐上的群体证据(observational)。"""
+    from app.services.longevity_cohort_service import cohort_recommendation_snippet
+    for u, (b, a) in enumerate([(47, 44), (50, 46), (45, 43), (48, 45)], start=1):
+        _card(db, u, "phenotypic_age", "improved", b, a)
+    _card(db, 5, "phenotypic_age", "unchanged", 46, 46)
+    db.commit()
+    snip = cohort_recommendation_snippet(db, "phenotypic_age")
+    assert snip is not None
+    assert snip["n"] == 5 and snip["mean_improvement_years"] == 3.0
+    assert "群体证据" in snip["text"] and "观察性" in snip["text"]
+    assert snip["evidence_tier"] == "observational"
+
+
+def test_recommendation_snippet_none_when_insufficient(db):
+    from app.services.longevity_cohort_service import cohort_recommendation_snippet
+    _card(db, 1, "phenotypic_age", "improved", 47, 44)  # 仅 1 张 < MIN_COHORT
+    db.commit()
+    assert cohort_recommendation_snippet(db, "phenotypic_age") is None
+
+
 def test_admin_endpoint_requires_admin(client, auth_user_and_headers):
     user, headers = auth_user_and_headers  # 普通用户(非 admin)
     r = client.get("/api/v1/admin/longevity/cohort", headers=headers)
