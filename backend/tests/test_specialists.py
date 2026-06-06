@@ -584,7 +584,10 @@ class TestLongevitySpecialist:
         assert finding.specialist_name == "longevity"
         types = {f.get("type") for f in finding.findings}
         assert "phenotypic_age" in types
-        assert "delegation" in types  # 必带委托提示,不重复造科学
+        # W4: "委托文字" 升级为真实编排的四件套整合协议(科学仍由各专家产出)
+        assert "longevity_protocol" in types
+        proto = next(f for f in finding.findings if f.get("type") == "longevity_protocol")
+        assert proto["pillars"] and all(p.get("action") for p in proto["pillars"])
         # summary 含核心数字
         assert "47" in finding.summary
 

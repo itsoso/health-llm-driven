@@ -138,23 +138,20 @@ class LongevitySpecialist:
             if cardio:
                 findings.append(cardio)
 
-            # 委托四件套(orchestrator 会同时跑这些 specialist;此处只是提示路径)
-            findings.append({
-                "type": "delegation",
-                "rationale": "PhenoAge 仅为生理状态代理指标。短期可逆改善的科学路径由四件套专家给出。",
-                "delegate_to": [
-                    "recovery_coach",
-                    "fuel_strategist",
-                    "movement_coach",
-                    "mental_health_companion",
-                ],
-            })
+            # 真实编排四件套 → 整合 12 周抗衰协议(不再是"委托文字";科学仍由各专家给)
+            protocol = _compose_protocol(twin)
+            if protocol:
+                findings.append({
+                    "type": "longevity_protocol",
+                    "pillars": protocol,
+                    "rationale": "PhenoAge 仅为代理指标;下列 12 周可逆改善路径由四件套专家实时生成。",
+                })
 
             summary = _compose_summary(pa, chrono, delta, drags)
 
             # 偏老(delta ≥ 1)→ 提一张 12 周抗衰 N-of-1 卡:把"单点身体年龄"
             # 变成"干预后变年轻"的可验证闭环。outcome 指标=phenotypic_age(越低越好)。
-            proposed_cards = _propose_phenoage_episode(pa, chrono, delta)
+            proposed_cards = _propose_phenoage_episode(pa, chrono, delta, protocol)
 
             return SpecialistFinding(
                 specialist_name=self.name,
@@ -188,6 +185,7 @@ class LongevitySpecialist:
 
 def _propose_phenoage_episode(
     pa: float, chrono: Optional[float], delta: Optional[float],
+    protocol: Optional[List[Dict[str, Any]]] = None,
 ) -> List[ProposedCard]:
     """偏老时提一张 12 周抗衰 N-of-1 卡(outcome=phenotypic_age,越低越好)。
 
@@ -199,16 +197,21 @@ def _propose_phenoage_episode(
         return []
     target_pa = round(pa - 2.0, 1)
     chrono_txt = f"实足 {chrono} 岁," if chrono is not None else ""
+    # 把编排出的四件套协议写进卡片正文 → 用户拿到的是"具体做什么",不是"去看四件套"
+    plan_lines = ""
+    if protocol:
+        plan_lines = "\n\n**本周期行动(四件套整合):**\n" + "\n".join(
+            f"- {p['pillar']}:{p['action']}" for p in protocol
+        )
     return [
         ProposedCard(
             title=f"12 周抗衰 N-of-1:身体年龄降到 {target_pa} 岁以下",
             content=(
                 f"当前表型年龄 **{pa} 岁**({chrono_txt}偏老 {delta:.1f} 岁)。\n"
-                "用 12 周系统性改善睡眠 / 运动 / 饮食 / 压力四件套,复检血检后重算 "
-                "PhenoAge,验证身体年龄是否真的下降(对照 Fitzgerald 2021:生活方式 "
-                "8 周可降约 3 岁)。\n\n"
-                "⚠️ PhenoAge 是血检代理指标,不作诊断、不等于真实衰老速度;"
-                "具体干预方案以四件套专家建议为准。"
+                "12 周后复检血检重算 PhenoAge,验证身体年龄是否真的下降"
+                "(对照 Fitzgerald 2021:生活方式 8 周可降约 3 岁)。"
+                + plan_lines
+                + "\n\n⚠️ PhenoAge 是血检代理指标,不作诊断、不等于真实衰老速度。"
             ),
             metric_key="phenotypic_age",
             baseline_value=str(pa),
@@ -219,6 +222,47 @@ def _propose_phenoage_episode(
             evidence_level="high",
         )
     ]
+
+
+# 四件套 → 抗衰协议支柱(惰性 import 避免循环依赖;科学仍由各专家产出)
+_PROTOCOL_PILLARS = [
+    ("睡眠 / 恢复", "app.agents.recovery_coach.coach", "RecoveryCoachSpecialist"),
+    ("营养", "app.agents.fuel_strategist.strategist", "FuelStrategistSpecialist"),
+    ("运动", "app.agents.movement_coach.coach", "MovementCoachSpecialist"),
+    ("压力 / 心理", "app.agents.mental_health_companion.companion", "MentalHealthCompanionSpecialist"),
+]
+
+
+def _compose_protocol(twin: HealthTwin) -> List[Dict[str, Any]]:
+    """真实编排四件套:各跑一次,取其 summary 作该支柱的具体行动。
+
+    自含(不依赖 orchestrator 是否跑过同伴),所以 analyze_longevity 工具 / 主动建卡
+    场景也能拿到协议。任一专家失败 → 跳过该支柱,不影响整体(降级不假装)。
+    recovery 先跑以拿 readiness_zone 传给 movement(与 orchestrator 同款依赖)。
+    """
+    import importlib
+
+    pillars: List[Dict[str, Any]] = []
+    ctx: Dict[str, Any] = {}
+    for label, module_path, cls_name in _PROTOCOL_PILLARS:
+        try:
+            mod = importlib.import_module(module_path)
+            sp = getattr(mod, cls_name)()
+            finding = sp.run(twin, ctx)
+            # recovery 把 readiness_zone 透给后续 movement(若产出)
+            zone = (getattr(finding, "raw", None) or {}).get("readiness_zone")
+            if zone:
+                ctx["readiness_zone"] = zone
+            action = (getattr(finding, "summary", "") or "").strip()
+            if action:
+                pillars.append({
+                    "pillar": label,
+                    "action": action,
+                    "source": getattr(sp, "name", cls_name),
+                })
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[longevity] protocol pillar {label} 失败 (跳过): {e}")
+    return pillars
 
 
 # LabsContext 字段名 → 中文展示名(用于"缺失输入"提示)

@@ -106,6 +106,32 @@ def test_cardio_signal_helper():
     assert _cardio_signal(_twin_with(), chrono=45.0) is None
 
 
+def test_compose_protocol_runs_pillars():
+    """W4: 真实编排四件套 → 至少恢复支柱有具体行动(不再是委托文字)。"""
+    from app.agents.longevity_specialist.specialist import _compose_protocol
+    t = _twin_with(phenotypic_age=47.0, delta=5.0)
+    t.physiological.hrv_latest = 38.0
+    t.physiological.sleep_duration_h_latest = 6.0
+    t.physiological.sleep_score_latest = 60
+    protocol = _compose_protocol(t)
+    assert isinstance(protocol, list)
+    assert len(protocol) >= 1
+    for p in protocol:
+        assert p["pillar"] and p["action"] and p["source"]
+    # 睡眠/恢复支柱应在(recovery 对任意 twin 都能算 readiness)
+    assert any(p["pillar"].startswith("睡眠") for p in protocol)
+
+
+def test_episode_card_embeds_protocol():
+    """W4: 协议写进 N-of-1 卡正文 → 用户拿到"具体做什么"。"""
+    from app.agents.longevity_specialist.specialist import _propose_phenoage_episode
+    protocol = [{"pillar": "运动", "action": "每周 3 次有氧", "source": "movement_coach"}]
+    cards = _propose_phenoage_episode(pa=47.0, chrono=42.0, delta=5.0, protocol=protocol)
+    assert len(cards) == 1
+    assert "本周期行动" in cards[0].content
+    assert "运动:每周 3 次有氧" in cards[0].content
+
+
 def test_specialist_surfaces_cardio_even_without_phenoage():
     """无血检但有体能年龄 → specialist 仍给出心肺信号(不只报缺血检)。"""
     from app.agents.longevity_specialist.specialist import LongevitySpecialist
