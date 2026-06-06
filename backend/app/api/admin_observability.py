@@ -38,6 +38,18 @@ def _cache_key(days: int, user_id: Optional[int], include_journalctl: bool) -> s
     return f"observability:dashboard:d={days}:u={uid}:j={int(include_journalctl)}"
 
 
+@router.get("/eval", summary="Agent eval 看板 — 主动/闭环/延迟/活动(去标识)")
+async def get_agent_eval(
+    days: int = Query(30, ge=1, le=180),
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """RFC 方向九:agent_audit_log + ActionCard 去标识聚合,放量前的仪表盘。"""
+    from app.services.agent_eval_service import agent_eval_dashboard
+
+    return agent_eval_dashboard(db, days=days)
+
+
 @router.get("/dashboard", summary="观察期看板 — 7 模块聚合")
 async def get_observation_dashboard(
     days: int = Query(7, ge=1, le=90),
