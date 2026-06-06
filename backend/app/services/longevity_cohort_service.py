@@ -17,13 +17,17 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
+from app.tasks.metrics import HIGHER_IS_BETTER  # 方向单一真值源(越高/越低好)
 
-# 生物年龄类指标(越低越好的 phenotypic/fitness;越高越好的 vo2max)
+# 生物年龄类指标(bioage 版对外保留"年轻几岁"口径)
 BIOAGE_METRICS = ("phenotypic_age", "biological_age", "vo2max", "fitness_age")
-# 越低越好的指标(算"年轻了几岁" = baseline - actual)
-_LOWER_BETTER = {"phenotypic_age", "biological_age", "fitness_age"}
 # 去标识阈值:某 metric 已评分样本 < 此值 → 抑制具体数字
 MIN_COHORT = 5
+
+_CLAIM_BOUNDARY = (
+    "群体观察性聚合,非随机对照试验;反映已执行 N-of-1 的真实分布,"
+    "不构成疗效证明,不替代医学结论。"
+)
 
 
 def _num(v: Any) -> Optional[float]:
@@ -36,67 +40,77 @@ def _num(v: Any) -> Optional[float]:
         return None
 
 
-def cohort_biological_age_outcomes(db: Session) -> dict[str, Any]:
-    """跨用户聚合已评分的生物年龄 N-of-1 outcome(去标识)。
+def _aggregate(db: Session, metric_keys: Optional[set]) -> dict[str, Any]:
+    """通用核心:跨用户聚合已评分 ActionCard。metric_keys=None → 全部指标。
 
-    返回 per-metric:n / improved / worsened / unchanged / improvement_rate
-    / mean_improvement_years(仅"越低越好"指标的 improved 卡,baseline-actual 均值)。
-    小样本(< MIN_COHORT)→ suppressed=True,不出具体数。
+    mean_improvement = improved 卡朝目标方向的绝对改善均值(方向用 HIGHER_IS_BETTER;
+    单位是该指标自身单位)。小样本 < MIN_COHORT → suppressed。去标识(无 user_id)。
     """
-    rows = (
-        db.query(ActionCard)
-        .filter(
-            ActionCard.metric_key.in_(BIOAGE_METRICS),
-            ActionCard.outcome.isnot(None),  # 已评分
-        )
-        .all()
-    )
+    q = db.query(ActionCard).filter(ActionCard.outcome.isnot(None))
+    if metric_keys is not None:
+        q = q.filter(ActionCard.metric_key.in_(tuple(metric_keys)))
+    rows = q.all()
 
     by_metric: dict[str, dict[str, Any]] = {}
     for r in rows:
         m = (r.metric_key or "").lower()
-        if m not in BIOAGE_METRICS:
+        if not m or (metric_keys is not None and m not in metric_keys):
             continue
         b = by_metric.setdefault(m, {"n": 0, "improved": 0, "worsened": 0,
-                                     "unchanged": 0, "_impr_years": []})
+                                     "unchanged": 0, "_impr": []})
         b["n"] += 1
         oc = (r.outcome or "").lower()
         if oc in ("improved", "worsened", "unchanged"):
             b[oc] += 1
-        # 仅"越低越好"指标算"年轻了几岁"
-        if oc == "improved" and m in _LOWER_BETTER:
+        if oc == "improved":
             base, act = _num(r.baseline_value), _num(r.actual_value)
-            if base is not None and act is not None and base > act:
-                b["_impr_years"].append(round(base - act, 1))
+            if base is not None and act is not None:
+                higher = HIGHER_IS_BETTER.get(m, False)
+                imp = (act - base) if higher else (base - act)  # 朝目标方向的绝对改善
+                if imp > 0:
+                    b["_impr"].append(round(imp, 1))
 
-    metrics_out: dict[str, Any] = {}
+    out: dict[str, Any] = {}
     for m, b in by_metric.items():
         n = b["n"]
         if n < MIN_COHORT:
-            metrics_out[m] = {"n": n, "suppressed": True,
-                              "note": f"样本 < {MIN_COHORT},去标识抑制"}
+            out[m] = {"n": n, "suppressed": True, "note": f"样本 < {MIN_COHORT},去标识抑制"}
             continue
-        impr_years = b.pop("_impr_years")
-        metrics_out[m] = {
-            "n": n,
-            "improved": b["improved"],
-            "worsened": b["worsened"],
+        impr = b.pop("_impr")
+        out[m] = {
+            "n": n, "improved": b["improved"], "worsened": b["worsened"],
             "unchanged": b["unchanged"],
             "improvement_rate": round(b["improved"] / n, 3) if n else None,
-            "mean_improvement_years": (
-                round(sum(impr_years) / len(impr_years), 1) if impr_years else None
-            ),
+            "mean_improvement": round(sum(impr) / len(impr), 1) if impr else None,
         }
+    return out
 
+
+def _wrap(metrics_out: dict[str, Any]) -> dict[str, Any]:
     return {
         "metrics": metrics_out,
         "min_cohort": MIN_COHORT,
         "evidence_tier": "observational",  # 群体观察,非 RCT;不夸大成疗效
-        "claim_boundary": (
-            "群体观察性聚合,非随机对照试验;反映已执行 N-of-1 的真实分布,"
-            "不构成疗效证明,不替代医学结论。"
-        ),
+        "claim_boundary": _CLAIM_BOUNDARY,
     }
+
+
+def cohort_biological_age_outcomes(db: Session) -> dict[str, Any]:
+    """生物年龄群体证据(去标识)。mean_improvement 即"年轻几岁",保留旧键名。"""
+    out = _aggregate(db, set(BIOAGE_METRICS))
+    for v in out.values():
+        if "mean_improvement" in v:
+            v["mean_improvement_years"] = v.pop("mean_improvement")
+    return _wrap(out)
+
+
+def cohort_metric_outcomes(db: Session, metrics: Optional[list[str]] = None) -> dict[str, Any]:
+    """群体证据泛化:任一 outcome 指标的去标识聚合。metrics=None → 全部已评分指标。
+
+    mean_improvement 为该指标自身单位的朝目标方向改善均值(非"岁")。
+    """
+    keys = {k.lower() for k in metrics} if metrics else None
+    return _wrap(_aggregate(db, keys))
 
 
 def cohort_recommendation_snippet(
