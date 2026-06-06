@@ -227,6 +227,20 @@
 
 加一 `__init__.py` 自动注册 = 8 文件。数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
 
+### 抗衰 / Longevity 子系统(横切 L1-L4 + 闭环 + 群体)
+
+复用四层架构、加抗衰特有几块,构成「生物年龄 测量→主动监测→干预→验证→群体学习」闭环。详见 `docs/longevity-os-architecture.md`。
+
+- **算子**: `services/phenoage.py` — PhenoAge(Levine 2018)纯函数 + `phenoage_from_labs` 单一单位映射源(builder/评分/聚合三处复用)
+- **L2 信号(3 路, 分级)**: `labs.phenotypic_age`(血检, validated)· `physiological.vo2max_fitness_age`(心肺, validated)· `epigenetic.*`(DNAm 第三方, experimental)。builder `_fill_phenoage`/`_fill_vo2max` 填充; `epigenetic_reports` API + `epigenetic_report_service` 摄入第三方时钟
+- **L3 专家**: `agents/longevity_specialist/` — 解读 3 路信号 + `_compose_protocol` 真实编排四件套(Recovery/Fuel/Movement/Mental) + 提 12 周 N-of-1 ProposedCard
+- **闭环**: ProposedCard → ActionCard → `tasks/metrics` `fetch_phenotypic_age`/`vo2max` 取值 → `outcome_grader` 评分(越低越好)
+- **主动(Celery 周日 10:10)**: `tasks/longevity_watch` + `services/longevity_watch` 跨 `twin_snapshots` 比对生物年龄变化 → 推送(守打扰预算)+ `audit.log_longevity_trigger` 埋点
+- **群体(去标识)**: `services/longevity_cohort_service` 聚合已评分 ActionCard → `/admin/longevity/cohort`(observational, 小样本抑制)
+- **展示**: `mobile` `BiologicalAgeCard` + `twinHelpers`/`myProgress`(身体年龄卡 + 信任时刻对比)
+- 诚实纪律: evidence_tier 三档 + claim_boundary 随展示; 伪科学红线
+- 未落地(仅设计/规划): 无感硬件(W5, 依赖商务)、Concierge/商业化(P3-1/2, 依赖运营)、eval 看板(P3-4)、数据飞轮(下一步推荐方向)
+
 ---
 
 ## 五、数据流 — 一次对话的生命周期
