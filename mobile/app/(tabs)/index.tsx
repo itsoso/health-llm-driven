@@ -479,7 +479,7 @@ export default function TodayScreen() {
           view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
           win={pickBioAgeWin(progressDashboardQuery.data)}
           isError={twinQuery.isError}
-          onPress={() => router.push('/indicator-history' as any)}
+          onPress={() => router.push('/medical-exams' as any)}
         />
         <LongevityNextCard
           next={topNextData(nextDataQuery.data)}
