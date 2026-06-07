@@ -204,6 +204,8 @@ class Settings(BaseSettings):
     proactive_weekly_budget: int = 1
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
+    # 多模型 panel(高风险裁决多模型投票):primitive,默认关
+    multi_model_panel: bool = False
 
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
