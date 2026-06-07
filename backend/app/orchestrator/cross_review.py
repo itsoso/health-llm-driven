@@ -442,6 +442,36 @@ def _check_stopped_med_directive(
     return conflicts
 
 
+def _check_longevity_intensify_vs_low_readiness(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """LongevitySpecialist 提 12 周抗衰 N-of-1(含加量协议)+ RecoveryCoach readiness=rest
+    → 冲突:别在低恢复期硬启动强干预周期。"""
+    conflicts = []
+    longevity = _get_finding(findings, "longevity")
+    recovery = _get_finding(findings, "recovery_coach")
+    if not (longevity and recovery):
+        return conflicts
+    # 提了 N-of-1 卡 = 要启动 12 周强干预周期
+    if not getattr(longevity, "proposed_cards", None):
+        return conflicts
+    if (recovery.raw or {}).get("zone") == "rest":
+        conflicts.append(Conflict(
+            specialist_a="longevity",
+            specialist_b="recovery_coach",
+            severity="soft",
+            description=(
+                "LongevitySpecialist 建议启动 12 周抗衰 N-of-1(含运动/强度加量), "
+                "但 RecoveryCoach 评估 readiness=rest. 低恢复期硬启动强周期适得其反."
+            ),
+            resolution_hint=(
+                "先做 3-5 天主动恢复(睡眠/低强度), readiness 回到 moderate 再启动 "
+                "12 周计划; 计划里的营养/睡眠支柱可以先开始, 运动支柱缓启."
+            ),
+        ))
+    return conflicts
+
+
 # ─────────────────────── 主入口 ───────────────────────
 
 
@@ -454,6 +484,7 @@ CHECKS = [
     _check_supplement_bleeding_vs_anticoagulant,
     _check_rhinitis_dose_up_vs_adherence,
     _check_high_intensity_vs_sleep_debt,
+    _check_longevity_intensify_vs_low_readiness,
 ]
 
 
