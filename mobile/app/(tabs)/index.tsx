@@ -48,7 +48,11 @@ import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
 import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
+import LongevityNextCard from '../../components/home/LongevityNextCard';
 import { extractPhenoAge } from '../../services/twinHelpers';
+import {
+  getNextData, getCausalNotes, topNextData, pickCausalHighlight,
+} from '../../services/longevityHome';
 import { getCheckinStreak } from '../../services/streak';
 import { fetchMyProgress, pickBioAgeWin } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
@@ -129,6 +133,18 @@ export default function TodayScreen() {
       return data;
     },
     staleTime: 5 * 60 * 1000,
+  });
+
+  // 抗衰主页 v1:冷启动信息增益 + 因果记忆(后端已上线,此前无 UI)
+  const nextDataQuery = useQuery({
+    queryKey: ['longevity', 'next-data'],
+    queryFn: getNextData,
+    staleTime: 10 * 60 * 1000,
+  });
+  const causalNotesQuery = useQuery({
+    queryKey: ['longevity', 'causal-notes'],
+    queryFn: getCausalNotes,
+    staleTime: 10 * 60 * 1000,
   });
 
   const dailyPlanQuery = useQuery({
@@ -463,6 +479,11 @@ export default function TodayScreen() {
           view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
           win={pickBioAgeWin(progressDashboardQuery.data)}
           isError={twinQuery.isError}
+          onPress={() => router.push('/indicator-history' as any)}
+        />
+        <LongevityNextCard
+          next={topNextData(nextDataQuery.data)}
+          causal={pickCausalHighlight(causalNotesQuery.data)}
           onPress={() => router.push('/indicator-history' as any)}
         />
         <MetabolicEntryCard />
