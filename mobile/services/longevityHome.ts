@@ -7,6 +7,7 @@ export interface NextDataSuggestion {
   priority: number;
   missing_count?: number;
   have_count?: number;
+  route?: string; // 该建议对应的目标路由(后端给;前端 ?? fallback)
 }
 export interface NextDataResponse {
   suggestions: NextDataSuggestion[];

@@ -28,6 +28,18 @@ def test_empty_twin_suggests_all_three():
     assert out["suggestions"][0]["unlocks"].startswith("生物年龄")
 
 
+def test_each_suggestion_carries_its_route():
+    """每条建议带 route,前端点击才能跳对页(血检→化验、可穿戴→导入、体重→体重趋势)。"""
+    from app.services.data_acquisition_guidance import next_best_data
+    by_item = {s["item"]: s["route"] for s in next_best_data(_twin())["suggestions"]}
+    blood = next(r for it, r in by_item.items() if "血检" in it)
+    wearable = next(r for it, r in by_item.items() if "可穿戴" in it)
+    weight = next(r for it, r in by_item.items() if "体重" in it)
+    assert blood == "/medical-exams"
+    assert wearable == "/import"
+    assert weight == "/indicator-history?type=weight"
+
+
 def test_phenoage_priority_rises_with_more_data():
     from app.services.data_acquisition_guidance import next_best_data
     few = _twin(labs=LabsContext(albumin=45))                       # 有 1 项
