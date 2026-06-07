@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -47,7 +47,7 @@ export default function DietScreen() {
     staleTime: 10 * 60 * 1000,
   });
   const [showForm, setShowForm] = useState(false);
-  const [, setEstimating] = useState(false);
+  const [estimating, setEstimating] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
 
@@ -335,6 +335,16 @@ export default function DietScreen() {
       </ScrollView>
 
       <DietFAB onPhoto={handlePhoto} onText={handleText} />
+
+      <Modal visible={estimating} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.estimateOverlay}>
+          <View style={styles.estimateCard}>
+            <ActivityIndicator size="large" color={c.brand} />
+            <Text style={txt.estimateText}>AI 正在估算营养…</Text>
+            <Text style={txt.estimateHint}>通常需要 10 秒左右，请稍候</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -391,6 +401,16 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     marginTop: -spacing.sm,
     marginBottom: spacing.lg,
   },
+  estimateOverlay: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  estimateCard: {
+    alignItems: 'center', gap: spacing.md,
+    backgroundColor: c.bgCard, borderRadius: radii.lg,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.xl,
+    minWidth: 200, ...shadows.subtle,
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -405,4 +425,6 @@ const createTxt = (c: ColorPalette) => ({
   swipeText: { fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
   agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
   empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', paddingVertical: 30 } as TextStyle,
+  estimateText: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  estimateHint: { fontSize: 12, color: c.labelTertiary } as TextStyle,
 });
