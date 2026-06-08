@@ -40,6 +40,7 @@ def next_best_data(twin: Any) -> dict[str, Any]:
                 "missing_count": len(missing),
                 "have_count": got,
                 "priority": priority,
+                "route": "/medical-exams",
             })
 
     # 2) 心肺适能 VO2max / 体能年龄(可穿戴几乎零成本)
@@ -49,6 +50,7 @@ def next_best_data(twin: Any) -> dict[str, Any]:
             "item": "连接 Garmin/可穿戴并做一次有氧(跑/走)",
             "unlocks": "VO2max / 体能年龄(全因死亡率最强单一预测因子)",
             "priority": 40,
+            "route": "/import",
         })
 
     # 3) 体成分基线(体重/腰围)
@@ -57,6 +59,7 @@ def next_best_data(twin: Any) -> dict[str, Any]:
             "item": "记一次体重(可选腰围)",
             "unlocks": "BMI / 代谢基线 + 体重轨迹监测",
             "priority": 30,
+            "route": "/indicator-history?type=weight",
         })
 
     suggestions.sort(key=lambda s: -s["priority"])

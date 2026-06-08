@@ -454,6 +454,8 @@ export default function TodayScreen() {
     bmi: twinSnap.bmi ?? null,
     bodyFatPct: twinSnap.body_fat_pct ?? null,
   };
+  // 抗衰下一步:跳到该建议对应的目标(血检→/medical-exams、可穿戴→/import、体重→体重趋势);后端没给 route 时兜底体重趋势
+  const nextData = topNextData(nextDataQuery.data);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
@@ -482,9 +484,9 @@ export default function TodayScreen() {
           onPress={() => router.push('/medical-exams' as any)}
         />
         <LongevityNextCard
-          next={topNextData(nextDataQuery.data)}
+          next={nextData}
           causal={pickCausalHighlight(causalNotesQuery.data)}
-          onPress={() => router.push('/indicator-history' as any)}
+          onPress={() => router.push((nextData?.route ?? '/indicator-history?type=weight') as any)}
         />
         <MetabolicEntryCard />
         <HomeCommandCard
