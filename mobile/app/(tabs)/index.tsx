@@ -498,7 +498,7 @@ export default function TodayScreen() {
         />
         <DeviceCompareCard
           data={deviceCompareQuery.data}
-          onPress={() => router.push('/import' as any)}
+          onPress={() => router.push('/settings' as any)}
         />
         <MetabolicEntryCard />
         <HomeCommandCard

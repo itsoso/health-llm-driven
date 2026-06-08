@@ -8,16 +8,16 @@ import {
 } from '../deviceCompare';
 
 const mk = (comparisons: any[]): DeviceComparison => ({
-  sources: ['garmin', 'apple_watch'],
+  sources: ['garmin', 'apple-watch'],
   window_days: 7,
   comparisons,
   note: '',
 });
 
 describe('sourceLabel', () => {
-  it('已知来源映射展示名', () => {
+  it('已知来源映射展示名(后端连字符键)', () => {
     expect(sourceLabel('garmin')).toBe('Garmin');
-    expect(sourceLabel('apple_watch')).toBe('Apple Watch');
+    expect(sourceLabel('apple-watch')).toBe('Apple Watch');
   });
   it('未知来源原样返回', () => {
     expect(sourceLabel('whoop')).toBe('whoop');

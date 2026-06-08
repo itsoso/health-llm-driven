@@ -5,6 +5,9 @@
  * 诚实:
  *   - 不足两台来源 / 无可比指标 → 不渲染(返回 null),不占位造声势。
  *   - agreement 仅描述两台"一致性",不判谁更准(各家算法不同),文案点明。
+ *
+ * onPress 跳 /settings(那里的 AppleHealthRow 启用 Apple Health 同步)——
+ * 单设备用户由此接入第二台数据源,卡片才会出现。
  */
 
 import React from 'react';

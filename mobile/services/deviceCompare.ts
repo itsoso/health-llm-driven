@@ -24,11 +24,17 @@ export async function getDeviceComparison(days = 7): Promise<DeviceComparison> {
 
 // ── 纯 helper(UI 无关,可单测)──
 
+// 键必须与后端实际写库的 data_source 字符串一致(连字符,见
+// backend/app/services/device_adapters/healthkit.py 的 _ALLOWED_DATA_SOURCES)。
 const SOURCE_LABELS: Record<string, string> = {
-  garmin: 'Garmin',
-  apple_watch: 'Apple Watch',
-  apple_health: 'Apple Watch',
-  withings: 'Withings',
+  'garmin': 'Garmin',
+  'apple-watch': 'Apple Watch',
+  'ringconn': 'RingConn',
+  'oura': 'Oura',
+  'withings-app': 'Withings',
+  'garmin-app': 'Garmin (App)',
+  'manual': '手动',
+  'unknown': '未知来源',
 };
 
 /** data_source 原始值 → 展示名(未知则原样)。 */
