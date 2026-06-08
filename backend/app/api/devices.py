@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/compare", summary="双设备一致性对比(如 Apple Watch + Garmin 同指标)")
+def compare_devices(
+    days: int = Query(7, ge=1, le=90),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """同时戴多台穿戴时,同指标(HRV/静息心率/睡眠/VO2max/SpO2/步数)并排对比 + 一致度。"""
+    from app.services.device_comparison_service import device_comparison
+
+    return device_comparison(db, current_user.id, days=days)
+
+
 # ===== Pydantic 模型 =====
 
 class SupportedDevice(BaseModel):
