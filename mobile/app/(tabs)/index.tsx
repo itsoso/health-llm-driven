@@ -49,6 +49,8 @@ import OutcomeWinCard from '../../components/home/OutcomeWinCard';
 import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
 import LongevityNextCard from '../../components/home/LongevityNextCard';
+import DeviceCompareCard from '../../components/home/DeviceCompareCard';
+import { getDeviceComparison } from '../../services/deviceCompare';
 import { extractPhenoAge } from '../../services/twinHelpers';
 import {
   getNextData, getCausalNotes, topNextData, pickCausalHighlight,
@@ -145,6 +147,12 @@ export default function TodayScreen() {
     queryKey: ['longevity', 'causal-notes'],
     queryFn: getCausalNotes,
     staleTime: 10 * 60 * 1000,
+  });
+  // 双设备一致性对比(同时戴 Apple Watch + Garmin 时才有内容,否则卡片不渲染)
+  const deviceCompareQuery = useQuery({
+    queryKey: ['devices', 'compare', 7],
+    queryFn: () => getDeviceComparison(7),
+    staleTime: 30 * 60 * 1000,
   });
 
   const dailyPlanQuery = useQuery({
@@ -487,6 +495,10 @@ export default function TodayScreen() {
           next={nextData}
           causal={pickCausalHighlight(causalNotesQuery.data)}
           onPress={() => router.push((nextData?.route ?? '/indicator-history?type=weight') as any)}
+        />
+        <DeviceCompareCard
+          data={deviceCompareQuery.data}
+          onPress={() => router.push('/import' as any)}
         />
         <MetabolicEntryCard />
         <HomeCommandCard
