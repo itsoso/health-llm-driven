@@ -23,20 +23,26 @@ function Inner() {
   const [funnel, setFunnel] = useState<any>(null);
   const [cohort, setCohort] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [harm, setHarm] = useState<any>(null);
+  const [safetyEval, setSafetyEval] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErr(null);
     try {
-      const [e, f, c] = await Promise.all([
+      const [e, f, c, h, s] = await Promise.all([
         api.get('/admin/observability/eval'),
         api.get('/admin/observability/funnel'),
         api.get('/admin/longevity/cohort'),
+        api.get('/admin/longevity/cohort/harm'),
+        api.get('/admin/observability/safety-eval'),
       ]);
       setEvalData(e.data);
       setFunnel(f.data);
       setCohort(c.data);
+      setHarm(h.data);
+      setSafetyEval(s.data);
     } catch (ex: any) {
       setErr(ex?.message || '加载失败');
     } finally {
@@ -109,6 +115,33 @@ function Inner() {
               ) : (
                 <li className="text-gray-500">暂无已评分的生物年龄 N-of-1(需真实用户数据)</li>
               )}
+            </ul>
+          </section>
+
+          {/* 反向飞轮 — 群体 harm 信号 */}
+          <section className="border rounded-lg p-4">
+            <h2 className="font-semibold mb-2">⚠️ 群体 harm 信号(反向飞轮)</h2>
+            <ul className="text-sm space-y-1">
+              {harm?.harm_signals && harm.harm_signals.length > 0 ? (
+                harm.harm_signals.map((h: any) => (
+                  <li key={h.metric} className="text-red-600">
+                    {h.metric}:worsened {pct(h.worsened_rate)}(n={h.n},恶化 {h.worsened} &gt; 改善 {h.improved})
+                  </li>
+                ))
+              ) : (
+                <li className="text-gray-500">无 harm 信号(observational;需足量数据)</li>
+              )}
+            </ul>
+          </section>
+
+          {/* 安全 eval — red-team 规则覆盖 */}
+          <section className="border rounded-lg p-4">
+            <h2 className="font-semibold mb-2">安全 eval(red-team 规则)</h2>
+            <ul className="text-sm space-y-1">
+              <li>通过率:{pct(safetyEval?.pass_rate)}({safetyEval?.passed ?? '—'}/{safetyEval?.total ?? '—'})</li>
+              {safetyEval?.scenarios && safetyEval.scenarios.filter((s: any) => !s.passed).map((s: any) => (
+                <li key={s.name} className="text-red-600">未覆盖:{s.name}</li>
+              ))}
             </ul>
           </section>
         </div>
