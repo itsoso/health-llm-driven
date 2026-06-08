@@ -120,7 +120,9 @@ def episode_fixture(db, auth_user_and_headers):
         db,
         user_id=user.id,
         episode_type="run_recovery",
-        occurred_at=_utc(),
+        # 用「现在」而非硬编码日期: /episodes/me 默认只回滚动 30 天窗口,
+        # 固定日期会随时间漂出窗口 → 列表返回 0 的确定性红。
+        occurred_at=datetime.now(timezone.utc),
         graph=graph,
         source_type="workout",
         source_id=999,
