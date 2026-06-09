@@ -30,8 +30,8 @@ def _safe_rollback(db: Session) -> None:
     """静默回滚，防止一个失败的查询污染整个事务。"""
     try:
         db.rollback()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[twin] rollback failed (continuing): %s", e)
 
 
 # ─────────────────────────────── water ────────────────────────────────

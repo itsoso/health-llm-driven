@@ -547,7 +547,8 @@ class GarminConnectService(GarminGettersMixin):
             logger.info(f"{prefix} 尝试复用MFA会话: {self._mfa_session_id}")
             if self._mfa_session_id in _mfa_sessions:
                 session = _mfa_sessions[self._mfa_session_id]
-                logger.info(f"{prefix} 找到MFA会话: authenticated={session.get('authenticated')}, email={session.get('email')}, 当前email={self.email}")
+                from app.utils.redact import mask_email
+                logger.info(f"{prefix} 找到MFA会话: authenticated={session.get('authenticated')}, email={mask_email(session.get('email'))}, 当前email={mask_email(self.email)}")
                 if session.get("authenticated") and session.get("email") == self.email:
                     # 复用已认证的client
                     self.client = session.get("client")
