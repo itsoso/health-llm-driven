@@ -15,6 +15,14 @@ import ReactNativeHealth, {
   type HealthUnit,
 } from 'react-native-health';
 import api from './api';
+import type { components } from '../types/api.generated';
+
+// 契约护栏:import 出口 payload 显式标注为后端 OpenAPI 生成的 schema。
+// 后端改名/删字段(如历史上 sleep_hours→total_sleep_minutes)→ 下面 toApiRecord
+// 的对象字面量 excess-property 检查直接让 tsc 红,不再静默丢字段。
+// 注:float→int 是运行时值问题(TS 只有 number),由客户端 round + 后端 validator 兜,
+// 这层专抓"名字/结构漂移"。
+type ApiHealthKitRecord = components['schemas']['HealthKitDailyRecord'];
 
 type AppleHealthKitModule = typeof ReactNativeHealth & Record<string, any>;
 
@@ -419,6 +427,34 @@ function generateMonthRanges(start: Date, end: Date): { start: Date; end: Date; 
   return ranges;
 }
 
+// 本地聚合 record(superset)→ 后端 import schema。只挑后端认的字段;
+// 名字对齐(active_calories→calories_active);后端没有的(vo2_max / weight_kg /
+// waist_cm — 后两者走 /weight、/waist 端点)不发。对象字面量受生成类型约束。
+function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
+  const caloriesTotal =
+    r.active_calories !== undefined && r.basal_calories !== undefined
+      ? Math.round(r.active_calories + r.basal_calories)
+      : undefined;
+  return {
+    record_date: r.record_date,
+    data_source: r.data_source,
+    steps: r.steps,
+    resting_heart_rate: r.resting_heart_rate,
+    hrv: r.hrv,
+    spo2_avg: r.spo2_avg,
+    spo2_min: r.spo2_min,
+    total_sleep_minutes: r.total_sleep_minutes,
+    deep_sleep_minutes: r.deep_sleep_minutes,
+    rem_sleep_minutes: r.rem_sleep_minutes,
+    light_sleep_minutes: r.light_sleep_minutes,
+    calories_active: r.active_calories !== undefined ? Math.round(r.active_calories) : undefined,
+    calories_total: caloriesTotal,
+    respiration_rate_min: r.respiration_rate_min,
+    respiration_rate_max: r.respiration_rate_max,
+    body_temp_deviation_c: r.body_temp_deviation_c,
+  };
+}
+
 async function importBatch(records: HealthKitDailyRecord[]): Promise<{
   imported_count: number;
   source_breakdown: Record<string, number>;
@@ -428,7 +464,7 @@ async function importBatch(records: HealthKitDailyRecord[]): Promise<{
     return { imported_count: 0, source_breakdown: {}, errors: [] };
   }
   try {
-    const res = await api.post('/v1/devices/healthkit/import', { records });
+    const res = await api.post('/v1/devices/healthkit/import', { records: records.map(toApiRecord) });
     return res.data;
   } catch (e: any) {
     return {
