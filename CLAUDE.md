@@ -150,6 +150,7 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 - **Architecture**: `services/` (API clients) → `hooks/` (React Query wrappers) → `components/` (domain-split UI) → `app/(tabs)/` (Home, AI Chat, Quick Record, Safety Alerts, Health Cards).
 - **Native deps worth knowing**: `react-native-maps`, `@react-native-voice/voice`, `expo-haptics`, `expo-notifications`, `expo-local-authentication` (Face ID), `react-native-reanimated`, `expo-image-picker`, `react-native-markdown-display`.
 - **API URL**: `services/api.ts` reads `EXPO_PUBLIC_API_URL` (defaults to `https://health.executor.life/api`). For local backend dev, export `EXPO_PUBLIC_API_URL=http://<your-lan-ip>:8000/api/v1` before `npm run start`.
+- **API 契约类型(防静默漂移)**: `mobile/types/api.generated.ts` 由后端 OpenAPI 生成(`npm run generate-types`,镜像 frontend)。**改了后端 request/response schema 后必须重跑 `npm run generate-types` 并提交**,否则 mobile 手写类型与后端漂移会静默坏(历史教训:`sleep_hours` vs `total_sleep_minutes`、float→int 422)。已接护栏的出口:`services/appleHealth.ts` 的 `toApiRecord` 把 import payload 标注为生成 schema——后端改名/删字段 → 该处 tsc 直接红。新增 mobile→backend 写接口时,同样用 `components['schemas'][...]` 标注出口 payload。
 
 #### iOS 反馈环：本地 Sim 默认，EAS / TestFlight 异步（2026-05-06 工作流）
 
