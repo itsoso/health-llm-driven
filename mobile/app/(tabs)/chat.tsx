@@ -5,7 +5,7 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useFloatingTabBarHeight } from '../../hooks/useFloatingTabBarHeight';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
@@ -422,7 +422,9 @@ export default function ChatScreen() {
   ), [selectedMessageIds, selectionMode, toggleMessageSelection]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const tabBarHeight = useBottomTabBarHeight();
+  // 悬浮胶囊 tab bar 是 absolute 定位,useBottomTabBarHeight() 测不准(真机返回 0),
+  // 会让输入框落到屏幕底被 tab bar 盖住 → 无法输入。用真实几何高度。
+  const tabBarHeight = useFloatingTabBarHeight();
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
     : tabBarHeight;
