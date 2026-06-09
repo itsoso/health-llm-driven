@@ -348,11 +348,17 @@ export async function fetchDailyAggregates(
   const spo2Avg = avg(spo2);
   const spo2Min = min(spo2);
 
+  // 后端 steps / resting_heart_rate 是 Optional[int],Pydantic v2 拒绝带小数的
+  // float(avg(rhr)=52.5 → 整批 422 → 0 导入)。int 目标字段在客户端先取整。
+  const intOr = (n: number | undefined) => (n !== undefined ? Math.round(n) : undefined);
+  const stepsSum = sum(steps);
+  const rhrAvg = avg(rhr);
+
   return {
     record_date,
     data_source,
-    steps: sum(steps),
-    resting_heart_rate: avg(rhr),
+    steps: intOr(stepsSum),
+    resting_heart_rate: intOr(rhrAvg),
     hrv: avg(hrv),
     spo2_avg: spo2Avg !== undefined ? spo2Avg * 100 : undefined,
     spo2_min: spo2Min !== undefined && spo2Min !== Infinity ? spo2Min * 100 : undefined,
