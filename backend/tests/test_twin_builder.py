@@ -291,6 +291,60 @@ class TestBuilderWithPartialData:
         assert twin.freshness.blood_pressure == today.isoformat()
         assert twin.freshness.sleep == yesterday.isoformat()  # SleepRecord 更新
 
+    def test_nocturnal_spo2_fallback_from_non_garmin_source(self, db):
+        """戒指/手表用户(无逐秒 SpO2Sample)的夜间低血氧应进 spo2_min_overnight,
+        否则夜间严重低氧规则永不触发。取跨源最小(worst-value)。
+        直接测 _fill_spo2_overnight(避开 build_twin 并行 phase 的独立会话)。"""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin
+
+        user = User(
+            username=f"sp_{uuid.uuid4().hex[:6]}",
+            email=f"sp_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="ring user",
+            birth_date=date(1990, 1, 1), gender="男",
+            is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+
+        today = date.today()
+        # 同一天:戒指夜间低点 82,手表 85 → 取最差 82。无 SpO2Sample。
+        db.add(GarminData(user_id=user.id, record_date=today,
+                          data_source="ringconn", spo2_min=82.0, spo2_avg=90.0))
+        db.add(GarminData(user_id=user.id, record_date=today,
+                          data_source="apple-watch", spo2_min=85.0, spo2_avg=93.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight == 82.0
+        assert twin.physiological.spo2_avg == 90.0  # 跨源最差日均
+
+    def test_nocturnal_spo2_fallback_skipped_for_garmin_only(self, db):
+        """纯 garmin 用户(无 SpO2Sample)行为不变:不从日 spo2_min 兜底夜间值。"""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin
+
+        user = User(
+            username=f"gm_{uuid.uuid4().hex[:6]}",
+            email=f"gm_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="garmin user",
+            birth_date=date(1990, 1, 1), gender="男",
+            is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        db.add(GarminData(user_id=user.id, record_date=date.today(),
+                          data_source="garmin", spo2_min=82.0, spo2_avg=90.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight is None  # 纯 garmin 不兜底夜间值
+
     def test_build_computes_phenoage_when_all_9_inputs_present(self, db):
         """抗衰 MVP Step 2: 9 项血检 + 实足年龄齐 → twin.labs.phenotypic_age 被填."""
         from app.models.family_health import MedicalIndicator
@@ -399,6 +453,85 @@ class TestBuilderWithPartialData:
         assert twin.freshness.waist is None
         assert twin.freshness.blood_pressure is None
         assert twin.freshness.sleep is None
+
+    def test_physiological_merges_latest_date_multi_source(self, db):
+        """同一最新日期下,Apple Watch + RingConn + Garmin 三行 → twin.physiological
+        按 per-metric 优先级合并 (hrv→ring, resting_hr→garmin, steps→watch)。
+        """
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="multi source user",
+            birth_date=date(1990, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        today = date.today()
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="garmin",
+            hrv=45.0, resting_heart_rate=52, steps=9200, sleep_score=70,
+        ))
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="apple-watch",
+            hrv=48.0, resting_heart_rate=54, steps=8500, sleep_score=78,
+        ))
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="ringconn",
+            hrv=52.0, resting_heart_rate=55, sleep_score=85,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        p = twin.physiological
+        assert p.hrv_latest == 52.0          # ringconn 优先
+        assert p.resting_hr == 52            # garmin 优先
+        assert p.steps_today == 8500         # apple-watch 优先
+        assert p.sleep_score_latest == 85    # ringconn 优先
+        # field_sources 暴露每指标中标源,便于 LLM source-aware
+        assert p.field_sources.get("hrv") == "ringconn"
+        assert p.field_sources.get("resting_heart_rate") == "garmin"
+
+    def test_physiological_single_garmin_row_back_compat(self, db):
+        """旧 garmin-only 单行用户 → 合并结果 == 该行 (additive 不破坏)."""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="legacy garmin user",
+            birth_date=date(1990, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        today = date.today()
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="garmin",
+            hrv=48.0, resting_heart_rate=58, steps=8000, sleep_score=75,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        p = twin.physiological
+        assert p.hrv_latest == 48.0
+        assert p.resting_hr == 58
+        assert p.steps_today == 8000
+        assert p.sleep_score_latest == 75
 
 
 # ─────────────────────── 端到端：API 端点 ─────────────────────

@@ -344,17 +344,13 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
         total_expected = active_supplements * 7
         supplement_completion_7d_pct = round(taken_week / total_expected * 100, 1) if total_expected > 0 else 0.0
 
-    avg_sleep_score_7d = (
-        db.query(func.avg(GarminData.sleep_score))
-        .filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_7d,
-            GarminData.record_date <= today,
-            GarminData.sleep_score.isnot(None),
-        )
-        .scalar()
+    # 多源按日合并后再平均 (否则报睡眠分的设备多 → 均值被重复计入拉偏)
+    from app.services.garmin_daily_merged import merged_metric_series
+    _sleep_series = merged_metric_series(
+        db, user_id, "sleep_score", since=start_7d, until=today,
     )
-    avg_sleep_score_7d = float(avg_sleep_score_7d) if avg_sleep_score_7d is not None else None
+    _sleep_vals = [v for _, v in _sleep_series]
+    avg_sleep_score_7d = float(sum(_sleep_vals) / len(_sleep_vals)) if _sleep_vals else None
 
     # HRV missing days in the last 7 days (data completeness signal)
     total_garmin_rows_7d = (

@@ -47,21 +47,13 @@ def get_daily_supplement_guide(
         .all()
     }
 
-    # 今日 Garmin 数据（睡眠、HRV）
-    garmin = (
-        db.query(GarminData)
-        .filter(GarminData.user_id == user_id, GarminData.record_date == today)
-        .first()
-    )
-    # 昨日 Garmin（用于昨晚睡眠）
-    garmin_yesterday = (
-        db.query(GarminData)
-        .filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date == today - timedelta(days=1),
-        )
-        .first()
-    )
+    # 今日/昨日 Garmin (多源按日合并 → 每指标取优先级源,不漏其他设备字段)
+    from app.services.garmin_daily_merged import merged_daily_rows
+    _today_rows = merged_daily_rows(db, user_id, since=today, until=today)
+    garmin = _today_rows[0] if _today_rows else None
+    _yday = today - timedelta(days=1)
+    _yday_rows = merged_daily_rows(db, user_id, since=_yday, until=_yday)
+    garmin_yesterday = _yday_rows[0] if _yday_rows else None
 
     # 今日运动
     exercises = (

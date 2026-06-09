@@ -1,4 +1,8 @@
-"""Phase 4: Twin builder 多源合并 — 同一日期不同源,各字段独立选源."""
+"""Phase 4: Twin builder 多源合并 — 同一日期不同源,各字段独立选源.
+
+优先级策略由 device_source_priority 决定 (single source of truth);
+本文件验证 merge_field/merge_rows wrapper 正确委托。
+"""
 from app.services.multi_source_merger import merge_field, merge_rows
 
 
@@ -11,7 +15,7 @@ class _Row:
 
 
 def test_merge_field_picks_highest_priority_source_for_hrv():
-    """HRV 优先级: ringconn > oura > apple-watch > garmin."""
+    """HRV 优先级: ringconn > garmin > apple-watch (戒指贴肤光路稳)."""
     rows = [
         _Row(data_source="garmin", hrv=45.0),
         _Row(data_source="apple-watch", hrv=48.0),
@@ -22,39 +26,51 @@ def test_merge_field_picks_highest_priority_source_for_hrv():
     assert s == "ringconn"
 
 
-def test_merge_field_steps_prefers_garmin_over_watch():
-    """步数 / 卡路里 — Garmin 优先 (户外 GPS 准)."""
+def test_merge_field_steps_prefers_watch_over_garmin():
+    """步数 — Apple Watch 优先 (全天腕上佩戴 + 高采样)."""
     rows = [
-        _Row(data_source="apple-watch", steps=8500),
-        _Row(data_source="garmin", steps=9200),  # 优先
+        _Row(data_source="apple-watch", steps=8500),  # 优先
+        _Row(data_source="garmin", steps=9200),
     ]
     v, s = merge_field(rows, "steps")
-    assert v == 9200
-    assert s == "garmin"
+    assert v == 8500
+    assert s == "apple-watch"
 
 
-def test_merge_field_sleep_prefers_oura():
-    """睡眠 — Oura 戒指 > Apple Watch > Garmin."""
+def test_merge_field_sleep_prefers_ring():
+    """睡眠 — RingConn 戒指 > Garmin > Apple Watch."""
     rows = [
         _Row(data_source="garmin", sleep_score=72),
-        _Row(data_source="oura", sleep_score=84),  # 优先
+        _Row(data_source="ringconn", sleep_score=84),  # 优先
         _Row(data_source="apple-watch", sleep_score=78),
     ]
     v, s = merge_field(rows, "sleep_score")
     assert v == 84
-    assert s == "oura"
+    assert s == "ringconn"
+
+
+def test_merge_field_resting_hr_prefers_garmin():
+    """静息心率 — Garmin 专有算法优先."""
+    rows = [
+        _Row(data_source="ringconn", resting_heart_rate=55),
+        _Row(data_source="garmin", resting_heart_rate=52),  # 优先
+        _Row(data_source="apple-watch", resting_heart_rate=54),
+    ]
+    v, s = merge_field(rows, "resting_heart_rate")
+    assert v == 52
+    assert s == "garmin"
 
 
 def test_merge_field_falls_back_to_lower_priority_when_top_missing():
-    """高优先级源没值时降级."""
+    """高优先级源没值时降级 (ringconn 缺 → garmin)."""
     rows = [
-        _Row(data_source="oura", hrv=None),       # 戒指当晚没戴
-        _Row(data_source="apple-watch", hrv=51.0),  # 表 fallback
-        _Row(data_source="garmin", hrv=49.0),
+        _Row(data_source="ringconn", hrv=None),     # 戒指当晚没戴
+        _Row(data_source="apple-watch", hrv=51.0),
+        _Row(data_source="garmin", hrv=49.0),       # garmin 次优,中标
     ]
     v, s = merge_field(rows, "hrv")
-    assert v == 51.0
-    assert s == "apple-watch"
+    assert v == 49.0
+    assert s == "garmin"
 
 
 def test_merge_field_returns_none_when_no_source_has_value():
@@ -68,29 +84,29 @@ def test_merge_field_returns_none_when_no_source_has_value():
 
 
 def test_merge_field_unknown_source_used_as_last_resort():
-    """白名单外 source (如 'unknown')—仍可中标如果别的都没值."""
+    """白名单外 source (如 'fitbit')—仍可中标如果别的都没值."""
     rows = [
-        _Row(data_source="unknown", hrv=47.0),
+        _Row(data_source="fitbit", hrv=47.0),
     ]
     v, s = merge_field(rows, "hrv")
     assert v == 47.0
-    assert s == "unknown"
+    assert s == "fitbit"
 
 
 def test_merge_rows_returns_per_field_source_dict():
     """同 (user, date) 多行 — 每字段独立选源,sources dict 反映每字段实际中标源."""
     rows = [
         _Row(data_source="garmin", hrv=45.0, steps=9000, sleep_score=70),
-        _Row(data_source="oura", hrv=None, steps=None, sleep_score=85),
-        _Row(data_source="ringconn", hrv=52.0, steps=None, sleep_score=None),
+        _Row(data_source="apple-watch", hrv=None, steps=9500, sleep_score=None),
+        _Row(data_source="ringconn", hrv=52.0, steps=None, sleep_score=85),
     ]
     out = merge_rows(rows, ["hrv", "steps", "sleep_score"])
-    assert out["values"]["hrv"] == 52.0
-    assert out["values"]["steps"] == 9000
-    assert out["values"]["sleep_score"] == 85
+    assert out["values"]["hrv"] == 52.0          # ringconn
+    assert out["values"]["steps"] == 9500        # apple-watch
+    assert out["values"]["sleep_score"] == 85    # ringconn
     assert out["sources"]["hrv"] == "ringconn"
-    assert out["sources"]["steps"] == "garmin"
-    assert out["sources"]["sleep_score"] == "oura"
+    assert out["sources"]["steps"] == "apple-watch"
+    assert out["sources"]["sleep_score"] == "ringconn"
 
 
 def test_merge_rows_single_garmin_row_back_compat():
@@ -102,12 +118,12 @@ def test_merge_rows_single_garmin_row_back_compat():
     assert out["sources"]["resting_heart_rate"] == "garmin"
 
 
-def test_merge_field_body_temp_prefers_oura():
-    """体温偏差 - Oura 夜间持续监测最准."""
+def test_merge_field_body_temp_prefers_ring():
+    """体温偏差 - RingConn 戒指夜间持续监测最准."""
     rows = [
         _Row(data_source="apple-watch", body_temp_deviation_c=0.3),
-        _Row(data_source="oura", body_temp_deviation_c=0.5),
+        _Row(data_source="ringconn", body_temp_deviation_c=0.5),
     ]
     v, s = merge_field(rows, "body_temp_deviation_c")
     assert v == 0.5
-    assert s == "oura"
+    assert s == "ringconn"

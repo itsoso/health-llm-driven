@@ -254,8 +254,9 @@ class WeeklyReportService:
 
         # HRV 采集类: 优先查模型映射的 hrv 字段, fallback 到生产独有的 hrv_last_night
         if "hrv" in title or ("garmin" in title and "hrv" in title):
+            # distinct 日期: note 把它当"天数"显示,多源同一天多行会虚高
             has_hrv = (
-                db.query(func.count(GarminData.id))
+                db.query(func.count(func.distinct(GarminData.record_date)))
                 .filter(
                     GarminData.user_id == user_id,
                     GarminData.record_date >= week_start,
@@ -270,7 +271,7 @@ class WeeklyReportService:
                     from sqlalchemy import text
                     row = db.execute(
                         text(
-                            "SELECT COUNT(*) FROM garmin_data WHERE user_id=:u "
+                            "SELECT COUNT(DISTINCT record_date) FROM garmin_data WHERE user_id=:u "
                             "AND record_date BETWEEN :s AND :e AND hrv_last_night IS NOT NULL"
                         ),
                         {"u": user_id, "s": week_start, "e": week_end},

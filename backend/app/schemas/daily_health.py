@@ -143,6 +143,9 @@ class GarminDataResponse(_CoerceIntMixin, BaseModel):
     hydration_ml: Optional[int] = None
     vo2max_fitness_age: Optional[int] = None
 
+    # 多源:数据来源 (garmin / apple-watch / ringconn / oura / withings-app / unknown)
+    data_source: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -172,12 +172,11 @@ class PersonalOutcomeService:
     ) -> List[TimelinePoint]:
         """从 garmin_data + weight + bp 聚合成桶序列。"""
 
-        # ---- Garmin ----
-        garmin_q = db.query(GarminData).filter(GarminData.user_id == user_id)
-        if start_date:
-            garmin_q = garmin_q.filter(GarminData.record_date >= start_date)
-        garmin_q = garmin_q.filter(GarminData.record_date <= end_date)
-        garmin_rows = garmin_q.order_by(GarminData.record_date.asc()).all()
+        # ---- Garmin (多源按日合并 → 每天一行,防同一天多设备重复计入桶均值) ----
+        from app.services.garmin_daily_merged import merged_daily_rows
+        garmin_rows = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date, ascending=True,
+        )
 
         buckets: Dict[str, Dict[str, List[Any]]] = {}
 
@@ -399,8 +398,9 @@ class PersonalOutcomeService:
             if earliest:
                 total_days = (end_date - earliest).days
 
+        # distinct: 多源下同一天有多行,按 distinct 日期计覆盖天数,否则虚高
         covered_days = (
-            db.query(func.count(GarminData.record_date))
+            db.query(func.count(func.distinct(GarminData.record_date)))
             .filter(GarminData.user_id == user_id)
             .scalar()
             or 0
@@ -513,15 +513,9 @@ class PersonalOutcomeService:
         after_end = event_date + timedelta(days=window_days)
 
         def _window_avg(start: date, end: date) -> Dict[str, Optional[float]]:
-            rows = (
-                db.query(GarminData)
-                .filter(
-                    GarminData.user_id == user_id,
-                    GarminData.record_date >= start,
-                    GarminData.record_date <= end,
-                )
-                .all()
-            )
+            # 多源按日合并 → samples=真实天数, 各指标均值不被多设备重复拉偏
+            from app.services.garmin_daily_merged import merged_daily_rows
+            rows = merged_daily_rows(db, user_id, since=start, until=end)
             return {
                 "hrv": _avg([r.hrv for r in rows]),
                 "rhr": _avg([r.resting_heart_rate for r in rows]),

@@ -162,14 +162,13 @@ def _sleep_lows(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
 
     out = []
     try:
-        rows = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= since,
-        ).all()
+        # 多源按日合并 → 每天最多一个睡眠事件 (否则同一天多设备各发一条重复)
+        from app.services.garmin_daily_merged import merged_daily_rows
+        rows = merged_daily_rows(db, user_id, since=since)
         for g in rows:
             if g.sleep_score is not None and g.sleep_score < 65:
                 out.append(TimelineEvent(
-                    id=f"sleep_low_{g.id}",
+                    id=f"sleep_low_{g.record_date.isoformat()}",
                     source="sleep",
                     title=f"睡眠分数 {g.sleep_score}",
                     subtitle=f"{int((g.total_sleep_duration or 0) / 60)}h 偏低" if g.total_sleep_duration else "偏低",

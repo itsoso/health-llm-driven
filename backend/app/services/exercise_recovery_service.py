@@ -54,11 +54,9 @@ class ExerciseRecoveryService:
     def get_recovery_readiness(self, db: Session, user_id: int) -> dict:
         """综合恢复就绪度: f(HRV, sleep, stress, body_battery)"""
         today = date.today()
-        recent = (
-            db.query(GarminData)
-            .filter(GarminData.user_id == user_id, GarminData.record_date >= today - timedelta(days=7))
-            .order_by(desc(GarminData.record_date)).all()
-        )
+        # 多源按日合并 → g(最新一天) 各指标取优先级源,hrv_trend 按真实天数
+        from app.services.garmin_daily_merged import merged_daily_rows
+        recent = merged_daily_rows(db, user_id, since=today - timedelta(days=7))
         if not recent:
             return {"readiness_score": None, "readiness_level": "unknown", "components": {},
                     "hrv_trend": "unknown", "recommendation": "暂无 Garmin 数据，无法评估恢复状态", "record_date": str(today)}

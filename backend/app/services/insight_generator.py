@@ -244,18 +244,12 @@ def _gen_abnormal_lab_trend(db: Session, user_id: int) -> Optional[InsightCandid
 
 def _gen_hrv_stressor_pattern(db: Session, user_id: int) -> Optional[InsightCandidate]:
     """最近 14 天 HRV 最低 3 天 vs 其他天的睡眠/压力差异."""
-    from app.models.daily_health import GarminData
+    # 多源按日合并 → 每天一行,rows 即天数 (low3 vs others 的对比才成立)
+    from app.services.garmin_daily_merged import merged_daily_rows
 
     cutoff = date.today() - timedelta(days=14)
-    rows = (
-        db.query(GarminData)
-        .filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= cutoff,
-            GarminData.hrv.isnot(None),
-        )
-        .order_by(GarminData.record_date)
-        .all()
+    rows = merged_daily_rows(
+        db, user_id, since=cutoff, require_metrics=["hrv"], ascending=True,
     )
     if len(rows) < 7:  # 至少 7 天才有对比意义
         return None
@@ -411,13 +405,10 @@ def _gen_llm_pattern_mining(db: Session, user_id: int) -> Optional[InsightCandid
         return None  # 数据不足, 走确定性 fallback
 
     from datetime import date as _date, timedelta as _td
+    from app.services.garmin_daily_merged import merged_daily_rows
     since_gar = _date.today() - _td(days=14)
-    garmin = (
-        db.query(GarminData)
-        .filter(GarminData.user_id == user_id, GarminData.record_date >= since_gar)
-        .order_by(GarminData.record_date.desc())
-        .all()
-    )
+    # 多源按日合并 → 每天一行,prompt block 不出现重复日期,len 即真实天数
+    garmin = merged_daily_rows(db, user_id, since=since_gar)
     if len(garmin) < 7:
         return None
 

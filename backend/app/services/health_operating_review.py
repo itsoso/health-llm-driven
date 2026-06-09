@@ -177,10 +177,7 @@ def _query_bp(db: Session, user_id: int, start: date, end: date, field: str):
 
 
 def _query_garmin(db: Session, user_id: int, start: date, end: date, field: str):
-    rows = (
-        db.query(GarminData)
-        .filter(GarminData.user_id == user_id, GarminData.record_date >= start, GarminData.record_date <= end)
-        .order_by(GarminData.record_date.asc(), GarminData.id.asc())
-        .all()
-    )
-    return [(row.record_date, getattr(row, field)) for row in rows]
+    # 单指标按日去重: 多源同一天多行,按该指标优先级源取一个值 (含 None 占位以保留天)
+    from app.services.garmin_daily_merged import merged_daily_rows
+    rows = merged_daily_rows(db, user_id, since=start, until=end, ascending=True)
+    return [(row.record_date, getattr(row, field, None)) for row in rows]

@@ -37,11 +37,10 @@ def _build_vitals(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]
     if not kw_any and multi_hits < 2:
         return None
     try:
-        from app.models.daily_health import GarminData
-        today_str = date.today().isoformat()
-        g = (db.query(GarminData)
-               .filter(GarminData.user_id == user_id, GarminData.record_date == today_str)
-               .first())
+        from app.services.garmin_daily_merged import merged_daily_rows
+        _t = date.today()
+        _rows = merged_daily_rows(db, user_id, since=_t, until=_t)
+        g = _rows[0] if _rows else None
         if not g:
             return None
         d: Dict[str, Any] = {}
@@ -62,11 +61,10 @@ def _build_sleep(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     if not re.search(r"睡眠|深睡|rem|浅睡|睡得|入睡", q.lower()):
         return None
     try:
-        from app.models.daily_health import GarminData
-        today_str = date.today().isoformat()
-        g = (db.query(GarminData)
-               .filter(GarminData.user_id == user_id, GarminData.record_date == today_str)
-               .first())
+        from app.services.garmin_daily_merged import merged_daily_rows
+        _t = date.today()
+        _rows = merged_daily_rows(db, user_id, since=_t, until=_t)
+        g = _rows[0] if _rows else None
         if not g: return None
         d: Dict[str, Any] = {}
         if getattr(g, "sleep_score", None) is not None: d["score"] = g.sleep_score

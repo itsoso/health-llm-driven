@@ -64,3 +64,54 @@ def test_device_comparison_single_source_note(db):
 def test_endpoint_requires_auth(client):
     r = client.get("/api/v1/devices/compare")
     assert r.status_code in (401, 403)
+
+
+# ── /devices/sources/summary ──
+
+def test_sources_summary_per_source_coverage_and_latest(db):
+    from app.models.daily_health import GarminData
+    from app.services.device_comparison_service import sources_summary
+    from app.utils.timezone import get_china_today
+
+    today = get_china_today()
+    # apple-watch: 2 天覆盖, 最新 today (steps=8800 latest)
+    db.add(GarminData(user_id=7, record_date=today, data_source="apple-watch", steps=8800, resting_heart_rate=54))
+    db.add(GarminData(user_id=7, record_date=today - timedelta(days=1), data_source="apple-watch", steps=7000))
+    # ringconn: 1 天覆盖
+    db.add(GarminData(user_id=7, record_date=today, data_source="ringconn", hrv=61.0, spo2_avg=97.0))
+    db.commit()
+
+    out = sources_summary(db, 7, days=30)
+    assert out["window_days"] == 30
+    srcs = {s["data_source"]: s for s in out["sources"]}
+    assert srcs["apple-watch"]["days_covered"] == 2
+    assert srcs["ringconn"]["days_covered"] == 1
+    # 按 days_covered 降序 → apple-watch 在前
+    assert out["sources"][0]["data_source"] == "apple-watch"
+    assert srcs["apple-watch"]["latest_date"] == today.isoformat()
+    # metrics: 最近一天的非空值
+    assert srcs["apple-watch"]["metrics"]["steps"] == 8800
+    assert srcs["ringconn"]["metrics"]["hrv"] == 61.0
+    assert srcs["ringconn"]["metrics"]["spo2_avg"] == 97.0
+
+
+def test_sources_summary_latest_nonnull_picks_most_recent(db):
+    from app.models.daily_health import GarminData
+    from app.services.device_comparison_service import sources_summary
+    from app.utils.timezone import get_china_today
+
+    today = get_china_today()
+    # 最新一天 steps 为空, 上一天有 → 取上一天的值 (most-recent non-null)
+    db.add(GarminData(user_id=8, record_date=today, data_source="garmin", hrv=40.0))
+    db.add(GarminData(user_id=8, record_date=today - timedelta(days=1), data_source="garmin", steps=5000))
+    db.commit()
+
+    out = sources_summary(db, 8, days=30)
+    g = out["sources"][0]
+    assert g["metrics"]["hrv"] == 40.0
+    assert g["metrics"]["steps"] == 5000
+
+
+def test_sources_summary_endpoint_requires_auth(client):
+    r = client.get("/api/v1/devices/sources/summary")
+    assert r.status_code in (401, 403)

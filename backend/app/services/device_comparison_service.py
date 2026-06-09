@@ -90,3 +90,68 @@ def device_comparison(db, user_id: int, days: int = 7) -> dict[str, Any]:
             if comparisons else "需 ≥2 个来源(如 Apple Watch + Garmin)同期数据才能对比。"
         ),
     }
+
+
+# 每源摘要要展示的指标 (key → GarminData 列名). 取窗口内最近一条非空值.
+_SUMMARY_METRICS = [
+    "steps",
+    "resting_heart_rate",
+    "avg_heart_rate",
+    "hrv",
+    "total_sleep_duration",
+    "sleep_score",
+    "spo2_avg",
+    "spo2_min",
+    "active_calories",
+    "distance_meters",
+]
+
+
+def sources_summary(db, user_id: int, days: int = 30) -> dict[str, Any]:
+    """近 days 天每个 data_source 的覆盖与最新指标快照.
+
+    每源:
+      - days_covered: 窗口内 distinct record_date 数
+      - latest_date:  窗口内最新一天
+      - metrics:      每指标取窗口内"最近一天的非空值" (按 record_date 倒序第一个非空)
+    按 days_covered 降序排列 (主力设备在前).
+    """
+    from app.models.daily_health import GarminData
+    from app.utils.timezone import get_china_today
+
+    cutoff = get_china_today() - timedelta(days=days)
+    rows = (
+        db.query(GarminData)
+        .filter(GarminData.user_id == user_id, GarminData.record_date >= cutoff)
+        # 最新日期在前 → 每指标第一个非空即"最近值"
+        .order_by(GarminData.record_date.desc())
+        .all()
+    )
+
+    by_source: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        src = r.data_source or "garmin"
+        agg = by_source.setdefault(
+            src, {"dates": set(), "latest_date": None, "metrics": {}}
+        )
+        agg["dates"].add(r.record_date)
+        if agg["latest_date"] is None or r.record_date > agg["latest_date"]:
+            agg["latest_date"] = r.record_date
+        for key in _SUMMARY_METRICS:
+            if key in agg["metrics"]:
+                continue  # 已拿到更近的非空值 (rows 已按日期倒序)
+            v = getattr(r, key, None)
+            if v is not None:
+                agg["metrics"][key] = v
+
+    out_sources = [
+        {
+            "data_source": src,
+            "days_covered": len(agg["dates"]),
+            "latest_date": agg["latest_date"].isoformat() if agg["latest_date"] else None,
+            "metrics": agg["metrics"],
+        }
+        for src, agg in by_source.items()
+    ]
+    out_sources.sort(key=lambda s: s["days_covered"], reverse=True)
+    return {"window_days": days, "sources": out_sources}
