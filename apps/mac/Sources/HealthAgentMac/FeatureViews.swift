@@ -1468,8 +1468,46 @@ private struct AgentProposedActionCard: View {
 }
 
 private struct MarkdownMessageText: View {
-    let markdown: String
     @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
+
+    // 一次性解析:markdown→blocks 和内联 AttributedString 都在 init 里算好缓存,
+    // body 不再解析。否则滚动时每帧重解析整段(含表格的多单元格)→ 助手页滑动卡顿。
+    private let blocks: [MarkdownRenderBlock]
+    private let inlineCache: [String: AttributedString]
+
+    init(markdown: String) {
+        let src = markdown.isEmpty ? " " : markdown
+        let parsed = MarkdownRenderSupport.blocks(from: src)
+        let finalBlocks: [MarkdownRenderBlock] = parsed.isEmpty
+            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
+            : parsed
+        self.blocks = finalBlocks
+
+        var cache: [String: AttributedString] = [:]
+        for block in finalBlocks {
+            for text in MarkdownMessageText.texts(in: block) where cache[text] == nil {
+                let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
+                if let attributed = try? AttributedString(
+                    markdown: cleaned,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                ) {
+                    cache[text] = attributed
+                }
+            }
+        }
+        self.inlineCache = cache
+    }
+
+    private static func texts(in block: MarkdownRenderBlock) -> [String] {
+        switch block {
+        case .heading(_, let t): return [t]
+        case .paragraph(let t): return [t]
+        case .bullet(let t): return [t]
+        case .numbered(_, let t): return [t]
+        case .tableRow(let cols): return cols
+        case .divider: return []
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1477,14 +1515,6 @@ private struct MarkdownMessageText: View {
                 blockView(block)
             }
         }
-    }
-
-    private var blocks: [MarkdownRenderBlock] {
-        let blocks = MarkdownRenderSupport.blocks(from: markdown.isEmpty ? " " : markdown)
-        if blocks.isEmpty {
-            return [.paragraph(MarkdownRenderSupport.readableFallback(markdown.isEmpty ? " " : markdown))]
-        }
-        return blocks
     }
 
     @ViewBuilder
@@ -1541,11 +1571,8 @@ private struct MarkdownMessageText: View {
     }
 
     private func inlineText(_ text: String) -> Text {
-        let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
-        if let attributed = try? AttributedString(
-            markdown: cleaned,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        // 命中 init 缓存,不在渲染期重解析 markdown。
+        if let attributed = inlineCache[text] {
             return Text(attributed)
         }
         return Text(MarkdownRenderSupport.readableFallback(text))
@@ -1791,6 +1818,20 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         _ = scrollView
     }
 
+    /// Return a DEFINITE size from the proposal instead of letting SwiftUI probe
+    /// the NSScrollView/NSTextView intrinsic size. Without this, nested flexible
+    /// frames (.frame(minHeight:maxHeight:)) inside an unbounded-height ScrollView
+    /// probe this representable's size combinatorially → an exponential sizeThatFits
+    /// pass that never completes (the Record-screen freeze; confirmed via CPU sample:
+    /// leaf = PlatformViewRepresentableAdaptor.sizeThatFits under _FlexFrameLayout fan-out).
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        let w: CGFloat
+        if let pw = proposal.width, pw.isFinite { w = pw } else { w = 320 }
+        let h: CGFloat
+        if let ph = proposal.height, ph.isFinite { h = ph } else { h = 120 }
+        return CGSize(width: w, height: h)
+    }
+
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
         @Binding var measuredHeight: CGFloat
@@ -1886,55 +1927,62 @@ struct RecordHubView: View {
     @State private var quickFocusToken = 0
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                recordHeader
-                recordSnapshotSection
+        // 用 GeometryReader 读一次确定宽度来选布局,替代 ViewThatFits。
+        // ViewThatFits 会为测量把整张重表单(含 NSViewRepresentable 编辑器 +
+        // 自适应 LazyVGrid)构建两遍,且在 ScrollView 内反复测量 → macOS 上卡死/性能悬崖。
+        // 确定性阈值布局只构建一遍,宽度稳定不震荡。
+        GeometryReader { geo in
+            let wide = geo.size.width >= 1000
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    recordHeader
+                    recordSnapshotSection(wide: wide)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 16) {
+                    if wide {
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                quickCaptureCard
+                                structuredCaptureCard
+                            }
+                            .frame(minWidth: 600, maxWidth: .infinity, alignment: .topLeading)
+
+                            VStack(alignment: .leading, spacing: 16) {
+                                saveStatusPanel
+                                recentRecordsPanel
+                            }
+                            .frame(width: 360, alignment: .topLeading)
+                        }
+                    } else {
                         VStack(alignment: .leading, spacing: 16) {
                             quickCaptureCard
                             structuredCaptureCard
-                        }
-                        .frame(minWidth: 600, maxWidth: .infinity, alignment: .topLeading)
-
-                        VStack(alignment: .leading, spacing: 16) {
                             saveStatusPanel
                             recentRecordsPanel
                         }
-                        .frame(width: 360, alignment: .topLeading)
-                    }
-
-                    VStack(alignment: .leading, spacing: 16) {
-                        quickCaptureCard
-                        structuredCaptureCard
-                        saveStatusPanel
-                        recentRecordsPanel
                     }
                 }
+                .padding(24)
             }
-            .padding(24)
-        }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(nsColor: .windowBackgroundColor),
-                    Color.green.opacity(0.05),
-                    Color(nsColor: .windowBackgroundColor)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(nsColor: .windowBackgroundColor),
+                        Color.green.opacity(0.05),
+                        Color(nsColor: .windowBackgroundColor)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
             )
-            .ignoresSafeArea()
-        )
-        .onAppear {
-            quickFocusToken += 1
-            if viewModel.bootstrap == nil {
-                Task { await viewModel.refresh() }
+            .onAppear {
+                quickFocusToken += 1
+                if viewModel.bootstrap == nil {
+                    Task { await viewModel.refresh() }
+                }
             }
+            .task { await loadFrequentSuggestions() }
         }
-        .task { await loadFrequentSuggestions() }
     }
 
     /// 拉「常吃补剂 / 常喝饮水」建议；best-effort，失败静默成空(不打扰记录主流程)。
@@ -1971,9 +2019,9 @@ struct RecordHubView: View {
     }
 
     @ViewBuilder
-    private var recordSnapshotSection: some View {
+    private func recordSnapshotSection(wide: Bool) -> some View {
         if let presentation = recordPresentation {
-            recordSnapshotPanel(presentation)
+            recordSnapshotPanel(presentation, wide: wide)
         } else {
             HStack(spacing: 10) {
                 ProgressView()
@@ -1996,7 +2044,7 @@ struct RecordHubView: View {
         viewModel.bootstrap.map { DesktopRecordHubPresentation(summary: $0.recentRecordsSummary) }
     }
 
-    private func recordSnapshotPanel(_ presentation: DesktopRecordHubPresentation) -> some View {
+    private func recordSnapshotPanel(_ presentation: DesktopRecordHubPresentation, wide: Bool) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
                 Label(appText("Recent Record Snapshot", appLanguageRaw), systemImage: "calendar.badge.clock")
@@ -2016,7 +2064,7 @@ struct RecordHubView: View {
                 .disabled(viewModel.isLoading)
             }
 
-            ViewThatFits(in: .horizontal) {
+            if wide {
                 HStack(alignment: .top, spacing: 12) {
                     recordMetricGroup(
                         title: appText("Today", appLanguageRaw),
@@ -2031,7 +2079,7 @@ struct RecordHubView: View {
                     recentServerRecords(presentation.recentRows)
                         .frame(width: 320)
                 }
-
+            } else {
                 VStack(alignment: .leading, spacing: 12) {
                     recordMetricGroup(
                         title: appText("Today", appLanguageRaw),
