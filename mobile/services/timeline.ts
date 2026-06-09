@@ -19,7 +19,7 @@ export interface TimelineResponse {
 }
 
 export async function fetchTimeline(days = 30, limit = 40): Promise<TimelineResponse> {
-  const resp = await api.get<TimelineResponse>('/v1/timeline', {
+  const resp = await api.get<TimelineResponse>('/timeline', {
     params: { days, limit },
   });
   return resp.data;

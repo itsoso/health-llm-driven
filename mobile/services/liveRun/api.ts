@@ -66,25 +66,25 @@ export interface LiveRunSession {
 }
 
 export async function startLiveRun(req: LiveRunStartRequest): Promise<LiveRunSession> {
-  const r = await api.post<LiveRunSession>('/v1/live-run/start', req);
+  const r = await api.post<LiveRunSession>('/live-run/start', req);
   return r.data;
 }
 
 export async function endLiveRun(id: number, req: LiveRunEndRequest): Promise<LiveRunSession> {
-  const r = await api.post<LiveRunSession>(`/v1/live-run/${id}/end`, req);
+  const r = await api.post<LiveRunSession>(`/live-run/${id}/end`, req);
   return r.data;
 }
 
 export async function getLiveRun(id: number): Promise<LiveRunSession> {
-  const r = await api.get<LiveRunSession>(`/v1/live-run/${id}`);
+  const r = await api.get<LiveRunSession>(`/live-run/${id}`);
   return r.data;
 }
 
 export async function listMyLiveRuns(): Promise<LiveRunSession[]> {
-  const r = await api.get<LiveRunSession[]>('/v1/live-run/me');
+  const r = await api.get<LiveRunSession[]>('/live-run/me');
   return r.data;
 }
 
 export async function deleteLiveRun(id: number): Promise<void> {
-  await api.delete(`/v1/live-run/${id}`);
+  await api.delete(`/live-run/${id}`);
 }

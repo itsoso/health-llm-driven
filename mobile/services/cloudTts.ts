@@ -45,7 +45,7 @@ export async function synthesize(opts: SynthesizeOpts): Promise<SynthesizedAudio
   const token = await SecureStore.getItemAsync('auth_token').catch(() => null);
   if (!token) throw new Error('no auth token');
 
-  const url = `${BASE_URL}/v1/tts/synthesize`;
+  const url = `${BASE_URL}/tts/synthesize`;
 
   // axios 拿 arraybuffer 再写入文件. fetch + FileSystem.writeAsStringAsync(base64)
   // 也能做到, 但 axios 统一了超时和拦截器.
