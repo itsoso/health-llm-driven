@@ -148,6 +148,35 @@ def _append_interrupted_notice(text: str, finish_reason: Optional[str]) -> str:
     return f"{text.rstrip()}{INTERRUPTED_COMPLETION_NOTICE}"
 
 
+def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
+    """Infer health_record ``record_type`` from a *naked* record data dict.
+
+    Some models (e.g. glm-5) ignore the tool schema and print the record's raw
+    ``data`` (``{"record_date":...,"meal_type":"breakfast","food_items":...}``)
+    as visible text — no ``name`` wrapper, no ``record_type``. That both leaks
+    JSON to the user AND skips the write. We detect the shape by field signals
+    (mirrors ``_friendly_record_confirmation``) so the caller can recover it into
+    a real health_record call. Returns None when there's no confident signal —
+    caller must still avoid leaking the JSON.
+    """
+    def has(key: str) -> bool:
+        return payload.get(key) not in (None, "", [])
+
+    if has("food_items") or payload.get("meal_type"):
+        return "diet"
+    if has("systolic") and has("diastolic"):
+        return "blood_pressure"
+    if has("exercise_type"):
+        return "exercise"
+    if has("amount") and "drink_type" in payload:
+        return "water"
+    if has("description") and ("body_part" in payload or "severity" in payload):
+        return "symptom"
+    if has("weight"):
+        return "weight"
+    return None
+
+
 def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
     """Recover tool calls emitted as visible JSON text by weaker gateways/models.
 
@@ -179,6 +208,22 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
         fn = payload.get("function") if isinstance(payload.get("function"), dict) else None
         name = payload.get("name") or payload.get("tool") or (fn or {}).get("name")
         if name not in allowed:
+            # 模型可能直接吐 record 的裸 data(无 name 包装,无 record_type)。
+            # 按字段推断 record_type → 包成 health_record 调用,既写库又不泄漏 JSON。
+            if "health_record" in allowed:
+                inferred = _infer_record_type_from_payload(payload)
+                if inferred:
+                    return {
+                        "id": "inline_tool_call_0",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {"record_type": inferred, "data": payload},
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
             continue
 
         args = (
