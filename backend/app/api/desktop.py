@@ -91,7 +91,7 @@ def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
 
 def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
     today = date.today()
-    since_30 = today - timedelta(days=29)
+    since_30 = today - timedelta(days=30)
     since_7 = today - timedelta(days=6)
     diet_records = (
         db.query(DietRecord)
@@ -237,7 +237,7 @@ def _water_summary(today_records: list[WaterIntake], records_30d: list[WaterInta
 
 
 def _supplement_summary(db: Session, user_id: int, *, today: date) -> dict[str, Any]:
-    since_30 = today - timedelta(days=29)
+    since_30 = today - timedelta(days=30)
     since_7 = today - timedelta(days=6)
     active_defs = (
         db.query(SupplementDefinition)
