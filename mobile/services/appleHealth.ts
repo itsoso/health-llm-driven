@@ -8,6 +8,7 @@
  * 同一天可能多源,按样本数多数派选定。
  */
 import { Platform, NativeModules } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ReactNativeHealth, {
   type HealthKitPermissions,
   type HealthInputOptions,
@@ -15,6 +16,26 @@ import ReactNativeHealth, {
   type HealthUnit,
 } from 'react-native-health';
 import api from './api';
+
+// ── 授权状态持久化 ────────────────────────────────────────────────────────────
+// iOS 出于隐私**不暴露 read 授权状态**,且组件 authorized state 重挂载即丢 →
+// "授权后仍显示未授权"。这里持久化"是否已授权 + 最近同步时间",挂载时 rehydrate。
+// 授权铁证 = 某次同步真读到了数据(见 syncRecentDays 的 coverage)。
+const HK_AUTH_FLAG = 'healthkit_authorized_v1';
+const HK_LAST_SYNC = 'healthkit_last_sync_v1';
+
+export async function persistHealthKitAuthorized(): Promise<void> {
+  try { await AsyncStorage.setItem(HK_AUTH_FLAG, '1'); } catch { /* 存储失败 → 下次同步自愈 */ }
+}
+export async function getHealthKitAuthorized(): Promise<boolean> {
+  try { return (await AsyncStorage.getItem(HK_AUTH_FLAG)) === '1'; } catch { return false; }
+}
+export async function persistHealthKitLastSync(ts: number): Promise<void> {
+  try { await AsyncStorage.setItem(HK_LAST_SYNC, String(ts)); } catch { /* 非关键 */ }
+}
+export async function getHealthKitLastSync(): Promise<number | null> {
+  try { const v = await AsyncStorage.getItem(HK_LAST_SYNC); return v ? Number(v) : null; } catch { return null; }
+}
 import type { components } from '../types/api.generated';
 
 // 契约护栏:import 出口 payload 显式标注为后端 OpenAPI 生成的 schema。

@@ -11,7 +11,7 @@
  *  - 未授权 → requestPermissions
  *  - 已授权 → 弹菜单 (近 7 天 / 全量回填)
  */
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,10 @@ import {
   requestPermissions,
   syncRecentDays,
   backfillAll,
+  getHealthKitAuthorized,
+  persistHealthKitAuthorized,
+  getHealthKitLastSync,
+  persistHealthKitLastSync,
   type BackfillProgress,
 } from '../services/appleHealth';
 import { spacing } from '../constants/theme';
@@ -39,6 +43,23 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // 挂载时 rehydrate 持久化的授权状态 + 最近同步时间。
+  // 修复"授权后仍显示未授权":authorized 本是纯本地 state,导航离开/冷启即丢,
+  // 而 iOS 不暴露 read 授权状态无法直接查 → 用持久化标记还原。
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [auth, lastTs] = await Promise.all([
+        getHealthKitAuthorized(),
+        getHealthKitLastSync(),
+      ]);
+      if (cancelled) return;
+      if (auth) setAuthorized(true);
+      if (lastTs) setLastSyncAt(new Date(lastTs));
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const dotColor = (() => {
     if (state === 'syncing') return '#FF9F0A';
@@ -71,8 +92,14 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     setProgress(null);
     try {
       const { totalImported, errors, coverage } = await syncRecentDays(7);
-      setLastSyncAt(new Date());
+      const now = new Date();
+      setLastSyncAt(now);
       setState('idle');
+      // 同步成功即说明已授权(initHealthKit 通过);读到数据更是铁证 → 持久化授权 + 时间
+      const readAny = coverage.steps + coverage.hr + coverage.hrv + coverage.spo2 + coverage.sleep > 0;
+      if (readAny || totalImported > 0) setAuthorized(true);
+      persistHealthKitAuthorized();
+      persistHealthKitLastSync(now.getTime());
       // 列出每项本机读到几天 —— 某项为 0 = HealthKit 没给(权限没勾/设备没录),不是上传失败
       const cov = `本机读取(近${coverage.days}天): 步数${coverage.steps} 心率${coverage.hr} HRV${coverage.hrv} 血氧${coverage.spo2} 睡眠${coverage.sleep}`;
       const zeros: string[] = [];
@@ -98,8 +125,12 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     setProgress(null);
     try {
       const { totalImported, errors } = await backfillAll((p) => setProgress(p));
-      setLastSyncAt(new Date());
+      const now = new Date();
+      setLastSyncAt(now);
       setState('idle');
+      setAuthorized(true);
+      persistHealthKitAuthorized();
+      persistHealthKitLastSync(now.getTime());
       Alert.alert(
         '回填完成',
         `共导入 ${totalImported} 条记录${errors.length > 0 ? `\n${errors.length} 条错误` : ''}`,
@@ -116,6 +147,7 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     try {
       await requestPermissions();
       setAuthorized(true);
+      persistHealthKitAuthorized();  // 持久化 → 重挂载/冷启不再回退"未授权"
       // 授权后立即同步近 7 天
       doRecentSync();
     } catch (e: any) {
