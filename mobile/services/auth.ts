@@ -57,40 +57,58 @@ export async function fetchCurrentUser(): Promise<User> {
 
 // ── 记住用户名 / 密码 ─────────────────────────────────────────
 // 凭据存 SecureStore (iOS Keychain), 与 token 同等安全级别, 绝不明文存 AsyncStorage.
-// 仅在用户勾选"记住密码"时写入; 取消勾选 / 登录失败时清除.
-const REMEMBER_USERNAME_KEY = 'remember_username';
+// 两层记忆,解耦:
+//   - LAST_USERNAME: 每次登录成功**都**记(记住"最后登录的用户"),与"记住密码"无关。
+//   - REMEMBER_PASSWORD: 仅勾选"记住密码"时记;取消勾选只清密码,不清用户名。
+const LAST_USERNAME_KEY = 'last_username';
 const REMEMBER_PASSWORD_KEY = 'remember_password';
+const REMEMBER_USERNAME_KEY = 'remember_username'; // 旧键, 仅用于读时迁移兜底
 
 export interface SavedCredentials {
   username: string;
-  password: string;
+  password: string; // 没记密码时为空串
 }
 
-export async function saveCredentials(username: string, password: string): Promise<void> {
+/**
+ * 登录成功后持久化。username 总是记(最后登录用户),password 仅 remember=true 时记。
+ * 失败不再静默吞(Rule#1):console.warn 暴露,便于排查"记不住"。
+ */
+export async function saveCredentials(
+  username: string,
+  password: string,
+  remember: boolean,
+): Promise<void> {
   try {
-    await SecureStore.setItemAsync(REMEMBER_USERNAME_KEY, username);
-    await SecureStore.setItemAsync(REMEMBER_PASSWORD_KEY, password);
-  } catch {
-    // SecureStore 不可用时静默放弃记忆 (不影响登录本身)
+    await SecureStore.setItemAsync(LAST_USERNAME_KEY, username);
+    if (remember) {
+      await SecureStore.setItemAsync(REMEMBER_PASSWORD_KEY, password);
+    } else {
+      await SecureStore.deleteItemAsync(REMEMBER_PASSWORD_KEY);
+    }
+  } catch (e) {
+    console.warn('[auth] saveCredentials failed (记忆未落盘):', e);
   }
 }
 
 export async function loadCredentials(): Promise<SavedCredentials | null> {
   try {
-    const username = await SecureStore.getItemAsync(REMEMBER_USERNAME_KEY);
+    const username =
+      (await SecureStore.getItemAsync(LAST_USERNAME_KEY)) ||
+      (await SecureStore.getItemAsync(REMEMBER_USERNAME_KEY)); // 旧版本迁移兜底
     const password = await SecureStore.getItemAsync(REMEMBER_PASSWORD_KEY);
-    if (username && password) return { username, password };
-    return null;
-  } catch {
+    if (!username && !password) return null;
+    return { username: username || '', password: password || '' };
+  } catch (e) {
+    console.warn('[auth] loadCredentials failed:', e);
     return null;
   }
 }
 
+/** 取消"记住密码"时调用:只清密码,保留最后登录用户名。 */
 export async function clearCredentials(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(REMEMBER_USERNAME_KEY);
     await SecureStore.deleteItemAsync(REMEMBER_PASSWORD_KEY);
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('[auth] clearCredentials failed:', e);
   }
 }

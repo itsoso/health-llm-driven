@@ -139,40 +139,62 @@ describe('services/auth', () => {
   });
 
   describe('remember credentials', () => {
-    it('saveCredentials writes both username and password to SecureStore', async () => {
-      await saveCredentials('alice', 'hunter2');
-      expect(SecureStore.setItemAsync).toHaveBeenCalledWith('remember_username', 'alice');
+    it('remember=true: 记最后登录用户名 + 密码', async () => {
+      await saveCredentials('alice', 'hunter2', true);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith('last_username', 'alice');
       expect(SecureStore.setItemAsync).toHaveBeenCalledWith('remember_password', 'hunter2');
     });
 
-    it('loadCredentials returns the pair when both present', async () => {
+    it('remember=false: 仍记用户名, 但删除密码', async () => {
+      await saveCredentials('alice', 'hunter2', false);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith('last_username', 'alice');
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('remember_password');
+    });
+
+    it('loadCredentials 用户名+密码都在 → 返回 pair', async () => {
       (SecureStore.getItemAsync as jest.Mock)
-        .mockResolvedValueOnce('alice')
-        .mockResolvedValueOnce('hunter2');
+        .mockResolvedValueOnce('alice')     // last_username
+        .mockResolvedValueOnce('hunter2');  // remember_password
       await expect(loadCredentials()).resolves.toEqual({ username: 'alice', password: 'hunter2' });
     });
 
-    it('loadCredentials returns null when password is missing', async () => {
+    it('loadCredentials 只有用户名(没记密码)→ 用户名 + 空密码(不再 null)', async () => {
       (SecureStore.getItemAsync as jest.Mock)
-        .mockResolvedValueOnce('alice')
+        .mockResolvedValueOnce('alice') // last_username
+        .mockResolvedValueOnce(null);   // remember_password
+      await expect(loadCredentials()).resolves.toEqual({ username: 'alice', password: '' });
+    });
+
+    it('loadCredentials 旧键迁移兜底(无 last_username, 有 remember_username)', async () => {
+      (SecureStore.getItemAsync as jest.Mock)
+        .mockResolvedValueOnce(null)     // last_username 空
+        .mockResolvedValueOnce('legacy') // remember_username 旧键
+        .mockResolvedValueOnce('pw');    // remember_password
+      await expect(loadCredentials()).resolves.toEqual({ username: 'legacy', password: 'pw' });
+    });
+
+    it('loadCredentials 全空 → null', async () => {
+      (SecureStore.getItemAsync as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
       await expect(loadCredentials()).resolves.toBeNull();
     });
 
-    it('loadCredentials returns null when SecureStore throws', async () => {
+    it('loadCredentials SecureStore 抛错 → null', async () => {
       (SecureStore.getItemAsync as jest.Mock).mockRejectedValueOnce(new Error('no keychain'));
       await expect(loadCredentials()).resolves.toBeNull();
     });
 
-    it('clearCredentials deletes both keys', async () => {
+    it('clearCredentials 只删密码(保留最后登录用户名)', async () => {
       await clearCredentials();
-      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('remember_username');
       expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('remember_password');
+      expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith('last_username');
     });
 
-    it('saveCredentials swallows SecureStore failure (does not throw)', async () => {
+    it('saveCredentials SecureStore 失败不抛(但会 warn)', async () => {
       (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('keychain locked'));
-      await expect(saveCredentials('a', 'b')).resolves.toBeUndefined();
+      await expect(saveCredentials('a', 'b', true)).resolves.toBeUndefined();
     });
   });
 });
