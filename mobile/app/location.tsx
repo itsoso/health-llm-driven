@@ -62,7 +62,7 @@ export default function LocationScreen() {
   const { data, isLoading } = useQuery<ProfileLocation>({
     queryKey: ['profileLocation'],
     queryFn: async () => {
-      const resp = await api.get('/v1/profile/me');
+      const resp = await api.get('/profile/me');
       return {
         use_manual_location: resp.data?.use_manual_location || false,
         manual_location: resp.data?.manual_location,
@@ -79,7 +79,7 @@ export default function LocationScreen() {
   }>({
     queryKey: ['effectiveLocation'],
     queryFn: async () => {
-      const resp = await api.get('/v1/profile/me/effective-location');
+      const resp = await api.get('/profile/me/effective-location');
       return resp.data;
     },
     staleTime: 30_000,

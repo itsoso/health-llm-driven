@@ -12,7 +12,7 @@ export interface BriefingVoiceScript {
  * 后端走 build_twin + 规则抽取, 缓存 10min, 多次调用便宜.
  */
 export async function fetchBriefingVoiceScript(): Promise<BriefingVoiceScript> {
-  const resp = await api.get<BriefingVoiceScript>('/v1/briefing/voice-script');
+  const resp = await api.get<BriefingVoiceScript>('/briefing/voice-script');
   return resp.data;
 }
 
@@ -21,7 +21,7 @@ export async function fetchBriefingVoiceScript(): Promise<BriefingVoiceScript> {
  * 80-150 字, 口语化, 末尾问"下周想..."引导用户接话.
  */
 export async function fetchWeeklyVoiceScript(): Promise<BriefingVoiceScript> {
-  const resp = await api.get<BriefingVoiceScript>('/v1/briefing/weekly-voice-script');
+  const resp = await api.get<BriefingVoiceScript>('/briefing/weekly-voice-script');
   return resp.data;
 }
 
@@ -31,7 +31,7 @@ export async function fetchWeeklyVoiceScript(): Promise<BriefingVoiceScript> {
  * 60-100 字, 私享女声播完进 listening 接你说"好,准备出门"等.
  */
 export async function fetchPreWorkoutVoiceScript(workoutType?: string): Promise<BriefingVoiceScript> {
-  const resp = await api.get<BriefingVoiceScript>('/v1/briefing/preworkout-voice-script', {
+  const resp = await api.get<BriefingVoiceScript>('/briefing/preworkout-voice-script', {
     params: workoutType ? { workout_type: workoutType } : undefined,
   });
   return resp.data;
@@ -49,7 +49,7 @@ export interface ClarificationOpener {
  * 拿到 opener 后 speakDirect 播 + 进 listening 接话, AI 像主动开口的教练.
  */
 export async function fetchClarificationOpener(alertId: number): Promise<ClarificationOpener> {
-  const resp = await api.get<ClarificationOpener>('/v1/clarification/opener', {
+  const resp = await api.get<ClarificationOpener>('/clarification/opener', {
     params: { alert_id: alertId },
   });
   return resp.data;
@@ -81,7 +81,7 @@ export async function extractMemoryFromDialog(
 ): Promise<ExtractMemoryResponse | null> {
   if (!userTurns || userTurns.length === 0) return null;
   try {
-    const resp = await api.post<ExtractMemoryResponse>('/v1/clarification/extract-memory', {
+    const resp = await api.post<ExtractMemoryResponse>('/clarification/extract-memory', {
       user_turns: userTurns,
       alert_id: alertId,
     });

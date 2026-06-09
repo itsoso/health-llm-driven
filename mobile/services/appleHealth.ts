@@ -464,7 +464,7 @@ async function importBatch(records: HealthKitDailyRecord[]): Promise<{
     return { imported_count: 0, source_breakdown: {}, errors: [] };
   }
   try {
-    const res = await api.post('/v1/devices/healthkit/import', { records: records.map(toApiRecord) });
+    const res = await api.post('/devices/healthkit/import', { records: records.map(toApiRecord) });
     return res.data;
   } catch (e: any) {
     return {
