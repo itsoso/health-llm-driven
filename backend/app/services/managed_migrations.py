@@ -90,7 +90,12 @@ def _applied_checksums(engine: Engine) -> dict[str, str]:
 
 
 def _split_sql_statements(sql: str) -> list[str]:
-    return [part.strip() for part in sql.split(";") if part.strip()]
+    # 先剥掉整行 `--` 注释,再按 ; 切分:否则注释里出现的 ; 会把语句从中间切断,
+    # 产生纯注释片段 → psycopg2 执行报错(踩过:garmin 约束迁移的中文注释含 ;)。
+    no_comments = "\n".join(
+        line for line in sql.splitlines() if not line.lstrip().startswith("--")
+    )
+    return [part.strip() for part in no_comments.split(";") if part.strip()]
 
 
 def apply_managed_migrations(engine: Engine, migrations_dir: str | Path) -> MigrationRunResult:

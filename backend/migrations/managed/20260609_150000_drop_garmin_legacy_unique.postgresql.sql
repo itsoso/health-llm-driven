@@ -6,6 +6,7 @@
 -- 双设备对比也因此永远拿不到第二源数据。
 --
 -- 多源唯一性已由 20260520 迁移建的 idx_garmin_user_date_source
--- (user_id, record_date, data_source) 保证;那次迁移加了新索引但漏删旧约束,造成并存。
+-- (user_id, record_date, data_source) 保证。那次迁移加了新索引但漏删旧约束,造成并存。
 -- 此处删除遗留约束。幂等(IF EXISTS),只清理 schema,不动数据。
+-- 注:本 runner 按裸 ; 切分语句,注释里不能出现 ; (会切断成纯注释片段 → 执行报错)。
 ALTER TABLE garmin_data DROP CONSTRAINT IF EXISTS garmin_data_user_id_record_date_key;
