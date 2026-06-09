@@ -688,6 +688,17 @@ public enum L10n {
         "Remind me": "提醒我",
         "Add to basket": "加入上下文",
         "Reminder set": "已设提醒",
-        "No knowledge documents loaded yet.": "还没有加载知识文档。"
+        "No knowledge documents loaded yet.": "还没有加载知识文档。",
+        "Data Sources": "数据来源",
+        "Wearable records grouped by device.": "按设备分组的穿戴数据记录。",
+        "Active Calories": "活动卡路里",
+        "No data": "暂无数据",
+        "Device consistency": "设备一致性对比",
+        "Metrics reported by two or more sources.": "两个及以上来源共同上报的指标。",
+        "No wearable data yet — sync Apple Health on your iPhone and it will show up here.":
+            "还没有穿戴数据 — 在 iPhone 上同步 Apple Health 后出现。",
+        "Could not load data sources. Try refresh.": "无法加载数据来源，请刷新重试。",
+        "Last %d days": "最近 %d 天",
+        "Latest %@": "最新 %@"
     ]
 }

@@ -165,6 +165,8 @@ public enum DesktopCommandPalette {
             L10n.text("Record diet, water, supplements, vitals, and symptoms.", language: language)
         case .data:
             L10n.text("Inspect records, trends, labs, and wearable summaries.", language: language)
+        case .dataSources:
+            L10n.text("Wearable records grouped by device.", language: language)
         case .genetics:
             L10n.text("Review genome findings, risk boundaries, and imports.", language: language)
         case .knowledge:
