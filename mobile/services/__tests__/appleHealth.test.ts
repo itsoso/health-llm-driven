@@ -144,7 +144,11 @@ describe('fetchDailyAggregates', () => {
       ]),
     );
     const rec = await fetchDailyAggregates(day);
-    expect(rec.sleep_hours).toBeCloseTo(3, 1);
+    // CORE 2h→浅睡 120,REM 1h→60,DEEP 0;总 180 分钟(按后端契约发分钟)
+    expect(rec.total_sleep_minutes).toBe(180);
+    expect(rec.light_sleep_minutes).toBe(120);
+    expect(rec.rem_sleep_minutes).toBe(60);
+    expect(rec.deep_sleep_minutes).toBeUndefined();
   });
 
   it('无样本返回 unknown source 和大部分字段 undefined', async () => {
@@ -152,7 +156,7 @@ describe('fetchDailyAggregates', () => {
     expect(rec.data_source).toBe('unknown');
     expect(rec.steps).toBeUndefined();
     expect(rec.spo2_avg).toBeUndefined();
-    expect(rec.sleep_hours).toBeUndefined();
+    expect(rec.total_sleep_minutes).toBeUndefined();
   });
 
   it('多源样本按多数派定 data_source', async () => {

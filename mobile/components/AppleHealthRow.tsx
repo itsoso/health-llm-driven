@@ -70,12 +70,20 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     setErrorMsg(null);
     setProgress(null);
     try {
-      const { totalImported, errors } = await syncRecentDays(7);
+      const { totalImported, errors, coverage } = await syncRecentDays(7);
       setLastSyncAt(new Date());
       setState('idle');
+      // 列出每项本机读到几天 —— 某项为 0 = HealthKit 没给(权限没勾/设备没录),不是上传失败
+      const cov = `本机读取(近${coverage.days}天): 步数${coverage.steps} 心率${coverage.hr} HRV${coverage.hrv} 血氧${coverage.spo2} 睡眠${coverage.sleep}`;
+      const zeros: string[] = [];
+      if (coverage.spo2 === 0) zeros.push('血氧');
+      if (coverage.sleep === 0) zeros.push('睡眠');
+      const hint = zeros.length > 0
+        ? `\n\n${zeros.join('/')} 读到 0 天 —— 多半是「健康」App 没给本 App 这些读取权限,或手表未记录(部分地区 Apple Watch 血氧被停用)。请到 设置 > 健康 > 数据访问与设备 检查授权。`
+        : '';
       Alert.alert(
         '同步完成',
-        `已导入 ${totalImported} 天数据${errors.length > 0 ? `\n${errors.length} 条错误` : ''}`,
+        `已导入 ${totalImported} 天数据\n${cov}${errors.length > 0 ? `\n${errors.length} 条错误` : ''}${hint}`,
       );
       onSyncComplete?.();
     } catch (e: any) {
