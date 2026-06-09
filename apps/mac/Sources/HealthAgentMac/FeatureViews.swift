@@ -1468,8 +1468,46 @@ private struct AgentProposedActionCard: View {
 }
 
 private struct MarkdownMessageText: View {
-    let markdown: String
     @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
+
+    // 一次性解析:markdown→blocks 和内联 AttributedString 都在 init 里算好缓存,
+    // body 不再解析。否则滚动时每帧重解析整段(含表格的多单元格)→ 助手页滑动卡顿。
+    private let blocks: [MarkdownRenderBlock]
+    private let inlineCache: [String: AttributedString]
+
+    init(markdown: String) {
+        let src = markdown.isEmpty ? " " : markdown
+        let parsed = MarkdownRenderSupport.blocks(from: src)
+        let finalBlocks: [MarkdownRenderBlock] = parsed.isEmpty
+            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
+            : parsed
+        self.blocks = finalBlocks
+
+        var cache: [String: AttributedString] = [:]
+        for block in finalBlocks {
+            for text in MarkdownMessageText.texts(in: block) where cache[text] == nil {
+                let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
+                if let attributed = try? AttributedString(
+                    markdown: cleaned,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                ) {
+                    cache[text] = attributed
+                }
+            }
+        }
+        self.inlineCache = cache
+    }
+
+    private static func texts(in block: MarkdownRenderBlock) -> [String] {
+        switch block {
+        case .heading(_, let t): return [t]
+        case .paragraph(let t): return [t]
+        case .bullet(let t): return [t]
+        case .numbered(_, let t): return [t]
+        case .tableRow(let cols): return cols
+        case .divider: return []
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1477,14 +1515,6 @@ private struct MarkdownMessageText: View {
                 blockView(block)
             }
         }
-    }
-
-    private var blocks: [MarkdownRenderBlock] {
-        let blocks = MarkdownRenderSupport.blocks(from: markdown.isEmpty ? " " : markdown)
-        if blocks.isEmpty {
-            return [.paragraph(MarkdownRenderSupport.readableFallback(markdown.isEmpty ? " " : markdown))]
-        }
-        return blocks
     }
 
     @ViewBuilder
@@ -1541,11 +1571,8 @@ private struct MarkdownMessageText: View {
     }
 
     private func inlineText(_ text: String) -> Text {
-        let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
-        if let attributed = try? AttributedString(
-            markdown: cleaned,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        // 命中 init 缓存,不在渲染期重解析 markdown。
+        if let attributed = inlineCache[text] {
             return Text(attributed)
         }
         return Text(MarkdownRenderSupport.readableFallback(text))
