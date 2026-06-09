@@ -128,7 +128,7 @@ final class DeviceSourcesClientTests: XCTestCase {
               "unit": "bpm",
               "by_source": {"apple-watch": 54.0, "ringconn": 56.0},
               "diff": 2.0,
-              "agreement": "high"
+              "agreement": 0.93
             }
           ],
           "note": ""
@@ -146,7 +146,7 @@ final class DeviceSourcesClientTests: XCTestCase {
         XCTAssertEqual(row.bySource["apple-watch"], 54.0)
         XCTAssertEqual(row.bySource["ringconn"], 56.0)
         XCTAssertEqual(row.diff, 2.0)
-        XCTAssertEqual(row.agreement, "high")
+        XCTAssertEqual(row.agreement, 0.93)
         XCTAssertEqual(row.id, "resting_heart_rate")
     }
 

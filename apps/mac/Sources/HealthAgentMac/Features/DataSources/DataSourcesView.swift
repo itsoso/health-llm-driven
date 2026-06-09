@@ -284,8 +284,8 @@ private struct ComparisonRow: View {
                 Text(row.label)
                     .font(.callout.weight(.semibold))
                 Spacer()
-                if let agreement = row.agreement, !agreement.isEmpty {
-                    Text(agreement)
+                if let agreement = row.agreement {
+                    Text("\(Int((agreement * 100).rounded()))%")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)

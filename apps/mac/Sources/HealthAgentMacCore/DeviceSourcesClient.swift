@@ -127,7 +127,7 @@ public struct DeviceComparison: Codable, Equatable, Sendable, Identifiable {
     public let unit: String?
     public let bySource: [String: Double]
     public let diff: Double?
-    public let agreement: String?
+    public let agreement: Double?   // 0–1 一致度 (后端发数字, 非字符串)
 
     public var id: String { metric }
 
@@ -146,7 +146,7 @@ public struct DeviceComparison: Codable, Equatable, Sendable, Identifiable {
         unit: String? = nil,
         bySource: [String: Double] = [:],
         diff: Double? = nil,
-        agreement: String? = nil
+        agreement: Double? = nil
     ) {
         self.metric = metric
         self.label = label
@@ -164,7 +164,7 @@ public struct DeviceComparison: Codable, Equatable, Sendable, Identifiable {
         self.unit = try container.decodeIfPresent(String.self, forKey: .unit)
         self.bySource = try container.decodeIfPresent([String: Double].self, forKey: .bySource) ?? [:]
         self.diff = try container.decodeIfPresent(Double.self, forKey: .diff)
-        self.agreement = try container.decodeIfPresent(String.self, forKey: .agreement)
+        self.agreement = try container.decodeIfPresent(Double.self, forKey: .agreement)
     }
 }
 
