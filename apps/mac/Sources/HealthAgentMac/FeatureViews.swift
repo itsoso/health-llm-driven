@@ -1886,55 +1886,62 @@ struct RecordHubView: View {
     @State private var quickFocusToken = 0
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                recordHeader
-                recordSnapshotSection
+        // 用 GeometryReader 读一次确定宽度来选布局,替代 ViewThatFits。
+        // ViewThatFits 会为测量把整张重表单(含 NSViewRepresentable 编辑器 +
+        // 自适应 LazyVGrid)构建两遍,且在 ScrollView 内反复测量 → macOS 上卡死/性能悬崖。
+        // 确定性阈值布局只构建一遍,宽度稳定不震荡。
+        GeometryReader { geo in
+            let wide = geo.size.width >= 1000
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    recordHeader
+                    recordSnapshotSection(wide: wide)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 16) {
+                    if wide {
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                quickCaptureCard
+                                structuredCaptureCard
+                            }
+                            .frame(minWidth: 600, maxWidth: .infinity, alignment: .topLeading)
+
+                            VStack(alignment: .leading, spacing: 16) {
+                                saveStatusPanel
+                                recentRecordsPanel
+                            }
+                            .frame(width: 360, alignment: .topLeading)
+                        }
+                    } else {
                         VStack(alignment: .leading, spacing: 16) {
                             quickCaptureCard
                             structuredCaptureCard
-                        }
-                        .frame(minWidth: 600, maxWidth: .infinity, alignment: .topLeading)
-
-                        VStack(alignment: .leading, spacing: 16) {
                             saveStatusPanel
                             recentRecordsPanel
                         }
-                        .frame(width: 360, alignment: .topLeading)
-                    }
-
-                    VStack(alignment: .leading, spacing: 16) {
-                        quickCaptureCard
-                        structuredCaptureCard
-                        saveStatusPanel
-                        recentRecordsPanel
                     }
                 }
+                .padding(24)
             }
-            .padding(24)
-        }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(nsColor: .windowBackgroundColor),
-                    Color.green.opacity(0.05),
-                    Color(nsColor: .windowBackgroundColor)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(nsColor: .windowBackgroundColor),
+                        Color.green.opacity(0.05),
+                        Color(nsColor: .windowBackgroundColor)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
             )
-            .ignoresSafeArea()
-        )
-        .onAppear {
-            quickFocusToken += 1
-            if viewModel.bootstrap == nil {
-                Task { await viewModel.refresh() }
+            .onAppear {
+                quickFocusToken += 1
+                if viewModel.bootstrap == nil {
+                    Task { await viewModel.refresh() }
+                }
             }
+            .task { await loadFrequentSuggestions() }
         }
-        .task { await loadFrequentSuggestions() }
     }
 
     /// 拉「常吃补剂 / 常喝饮水」建议；best-effort，失败静默成空(不打扰记录主流程)。
@@ -1971,9 +1978,9 @@ struct RecordHubView: View {
     }
 
     @ViewBuilder
-    private var recordSnapshotSection: some View {
+    private func recordSnapshotSection(wide: Bool) -> some View {
         if let presentation = recordPresentation {
-            recordSnapshotPanel(presentation)
+            recordSnapshotPanel(presentation, wide: wide)
         } else {
             HStack(spacing: 10) {
                 ProgressView()
@@ -1996,7 +2003,7 @@ struct RecordHubView: View {
         viewModel.bootstrap.map { DesktopRecordHubPresentation(summary: $0.recentRecordsSummary) }
     }
 
-    private func recordSnapshotPanel(_ presentation: DesktopRecordHubPresentation) -> some View {
+    private func recordSnapshotPanel(_ presentation: DesktopRecordHubPresentation, wide: Bool) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
                 Label(appText("Recent Record Snapshot", appLanguageRaw), systemImage: "calendar.badge.clock")
@@ -2016,7 +2023,7 @@ struct RecordHubView: View {
                 .disabled(viewModel.isLoading)
             }
 
-            ViewThatFits(in: .horizontal) {
+            if wide {
                 HStack(alignment: .top, spacing: 12) {
                     recordMetricGroup(
                         title: appText("Today", appLanguageRaw),
@@ -2031,7 +2038,7 @@ struct RecordHubView: View {
                     recentServerRecords(presentation.recentRows)
                         .frame(width: 320)
                 }
-
+            } else {
                 VStack(alignment: .leading, spacing: 12) {
                     recordMetricGroup(
                         title: appText("Today", appLanguageRaw),
