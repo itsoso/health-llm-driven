@@ -68,6 +68,7 @@ class PhysiologicalState(BaseModel):
     spo2_below_90_pct: Optional[float] = None
     vo2max_running: Optional[float] = None
     vo2max_cycling: Optional[float] = None
+    vo2max_fitness_age: Optional[int] = None  # Garmin 体能年龄(心肺) — 抗衰第二信号,可对比实足年龄
 
     # 夜间呼吸 (2026-05-07 接入 Garmin respiration_samples) —
     # OSAHS 筛查信号: 夜间 avg rate + 变异度 (stddev). 正常 12-20 brpm,
@@ -122,6 +123,27 @@ class LabsContext(BaseModel):
     creatinine: Optional[float] = None      # μmol/L
     egfr: Optional[float] = None            # eGFR mL/min/1.73m²
     uric_acid: Optional[float] = None
+
+    # PhenoAge 输入项 (Levine 2018) — 单位严格对齐 app/services/phenoage.py:
+    #   albumin g/L · crp mg/dL · lymphocyte/rdw % · mcv fL · alp U/L · wbc 10⁹/L
+    # 中国体检报告默认单位通常已对齐,例外: CRP 常报 mg/L (需 ÷10), albumin 偶报 g/dL。
+    # 当前 collector 直存原始数值,不做单位转换 — 错单位 → phenoage 失真 (跟踪在 design-longevity-mvp §3.2)。
+    albumin: Optional[float] = None         # 白蛋白 g/L
+    crp: Optional[float] = None             # CRP mg/dL (hs-CRP)
+    lymphocyte_pct: Optional[float] = None  # 淋巴细胞百分比 %
+    mcv: Optional[float] = None             # 红细胞平均体积 fL
+    rdw: Optional[float] = None             # 红细胞分布宽度 %
+    alp: Optional[float] = None             # 碱性磷酸酶 U/L
+    wbc: Optional[float] = None             # 白细胞 10⁹/L
+
+    # PhenoAge 派生 (twin/builder 在所有 9 项 + age 齐时调用 compute_phenoage 填充)。
+    # 缺任一输入 → 全部留 None,不猜算。证据等级独立于 EpigeneticState (后者 experimental,
+    # PhenoAge 是 validated)。展示侧必须同时呈现 claim_boundary 文案。
+    phenotypic_age: Optional[float] = None
+    phenotypic_age_delta_years: Optional[float] = None  # = phenotypic_age - 实足年龄
+    phenotypic_age_inputs_complete: Optional[bool] = None
+    phenoage_evidence_tier: Optional[str] = None        # "validated"
+    phenoage_claim_boundary: Optional[str] = None
 
     last_exam_date: Optional[date] = None
     last_exam_type: Optional[str] = None

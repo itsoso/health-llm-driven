@@ -36,6 +36,21 @@ logger = logging.getLogger(__name__)
 _user_pref_ctx: ContextVar[Optional[Tuple[int, Session]]] = ContextVar(
     "orch_user_pref", default=None
 )
+# 成本/延迟分级路由(Tier 4):按 intent 设任务档,_call_llm 读取传给 factory。
+# flag(settings.task_tiered_routing)默认关 → task_tier 被忽略 = 零行为变更。
+_task_tier_ctx: ContextVar[Optional[str]] = ContextVar("orch_task_tier", default=None)
+
+# 高风险类别 → reasoning 强模型;纯 general → fast;其余 → balanced
+_HIGH_STAKES_CATEGORIES = {"safety", "chronic", "mental", "labs", "longevity"}
+
+
+def _tier_for_intent(intent) -> str:
+    cats = set(getattr(intent, "categories", []) or [])
+    if cats & _HIGH_STAKES_CATEGORIES:
+        return "high_stakes"
+    if cats == {"general"} or not cats:
+        return "casual"
+    return "balanced"
 
 
 # G-W9: 客户端断开后 bg task 继续跑完 audit / memory / journal.
@@ -1079,7 +1094,7 @@ async def _call_llm(
                 pref = _user_pref_ctx.get()
                 if pref is not None:
                     uid, _db = pref
-                    provider = create_provider_for_user(uid, _db)
+                    provider = create_provider_for_user(uid, _db, task_tier=_task_tier_ctx.get())
                 else:
                     provider = get_llm_provider()
             result = await provider.chat(
@@ -1192,7 +1207,7 @@ async def _stream_llm(
                 pref = _user_pref_ctx.get()
                 if pref is not None:
                     uid, _db = pref
-                    provider = create_provider_for_user(uid, _db)
+                    provider = create_provider_for_user(uid, _db, task_tier=_task_tier_ctx.get())
                 else:
                     provider = get_llm_provider()
             result = await provider.chat(
@@ -1254,6 +1269,7 @@ async def run_orchestrator(
     twin = build_twin(db, user_id)
     t_intent = time.monotonic()
     intent = classify_intent(req.query)
+    _task_tier_ctx.set(_tier_for_intent(intent))  # 成本路由(flag 默认关时无效)
     perf["intent_ms"] = int((time.monotonic() - t_intent) * 1000)
     specialists = _select_specialists(intent, twin, req.specialists)
     # 注入 active case threads (STRATEGY 阶段 3): specialist 可读 context['recent_cases']
@@ -1617,6 +1633,7 @@ async def stream_orchestrator(
                 twin = build_twin(bg_db, user_id)
                 t_intent = time.monotonic()
                 intent = classify_intent(req.query)
+                _task_tier_ctx.set(_tier_for_intent(intent))  # 成本路由(flag 默认关时无效)
                 perf["intent_ms"] = int((time.monotonic() - t_intent) * 1000)
                 specialists = _select_specialists(intent, twin, req.specialists)
                 try:

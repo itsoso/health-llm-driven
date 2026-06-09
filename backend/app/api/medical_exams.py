@@ -31,6 +31,27 @@ class MedicalExamTextImportRequest(BaseModel):
     exam_type: str | None = Field(default="biochemistry", max_length=80)
 
 
+class LabPhotoParseRequest(BaseModel):
+    image_base64: str = Field(..., min_length=1, description="化验单照片 base64")
+    image_type: str = Field(default="jpeg", max_length=10)
+
+
+@router.post("/parse-photo", summary="多模态录入:化验单拍照 → 结构化项(待用户确认)")
+async def parse_lab_photo_endpoint(
+    req: LabPhotoParseRequest,
+    current_user: User = Depends(get_current_user_required),
+):
+    """vision 解析化验单照片为 {项目,值,单位};**返回供用户确认,不直接入库**(OCR 可能出错)。"""
+    from app.services.lab_photo_parse import parse_lab_photo
+    try:
+        items = await parse_lab_photo(req.image_base64, req.image_type)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[lab_photo] 解析失败 user={current_user.id}: {e}")
+        raise HTTPException(status_code=503, detail="解析服务暂不可用,请手动录入或重试")
+    return {"items": items, "count": len(items),
+            "note": "OCR 结果可能有误,请确认后再导入。"}
+
+
 def parse_date(date_str) -> date:
     """将日期字符串转换为date对象"""
     if isinstance(date_str, date):

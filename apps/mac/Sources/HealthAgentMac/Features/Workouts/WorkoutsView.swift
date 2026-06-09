@@ -126,13 +126,22 @@ struct WorkoutsView: View {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
+
+        // 列表与统计各自独立失败: 一个挂掉不应连累另一个, 也不把原始系统解码错误抛给用户.
+        async let listResult = client.fetchWorkouts(limit: 50)
+        async let statsResult = client.fetchStats(days: 30)
+
         do {
-            async let list = client.fetchWorkouts(limit: 50)
-            async let summary = client.fetchStats(days: 30)
-            workouts = try await list
-            stats = try await summary
+            workouts = try await listResult
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = appText("Could not load workouts. Pull to refresh.", appLanguageRaw)
+        }
+
+        do {
+            stats = try await statsResult
+        } catch {
+            // 统计是次要信息: 失败时静默隐藏统计卡, 保留已加载的列表, 不打扰用户.
+            stats = nil
         }
     }
 

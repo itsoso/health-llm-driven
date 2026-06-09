@@ -46,8 +46,17 @@ import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopic
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
+import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
+import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
+import LongevityNextCard from '../../components/home/LongevityNextCard';
+import DeviceCompareCard from '../../components/home/DeviceCompareCard';
+import { getDeviceComparison } from '../../services/deviceCompare';
+import { extractPhenoAge } from '../../services/twinHelpers';
+import {
+  getNextData, getCausalNotes, topNextData, pickCausalHighlight,
+} from '../../services/longevityHome';
 import { getCheckinStreak } from '../../services/streak';
-import { fetchMyProgress } from '../../services/myProgress';
+import { fetchMyProgress, pickBioAgeWin } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 
 interface TwinSnapshot {
@@ -126,6 +135,24 @@ export default function TodayScreen() {
       return data;
     },
     staleTime: 5 * 60 * 1000,
+  });
+
+  // 抗衰主页 v1:冷启动信息增益 + 因果记忆(后端已上线,此前无 UI)
+  const nextDataQuery = useQuery({
+    queryKey: ['longevity', 'next-data'],
+    queryFn: getNextData,
+    staleTime: 10 * 60 * 1000,
+  });
+  const causalNotesQuery = useQuery({
+    queryKey: ['longevity', 'causal-notes'],
+    queryFn: getCausalNotes,
+    staleTime: 10 * 60 * 1000,
+  });
+  // 双设备一致性对比(同时戴 Apple Watch + Garmin 时才有内容,否则卡片不渲染)
+  const deviceCompareQuery = useQuery({
+    queryKey: ['devices', 'compare', 7],
+    queryFn: () => getDeviceComparison(7),
+    staleTime: 30 * 60 * 1000,
   });
 
   const dailyPlanQuery = useQuery({
@@ -435,6 +462,8 @@ export default function TodayScreen() {
     bmi: twinSnap.bmi ?? null,
     bodyFatPct: twinSnap.body_fat_pct ?? null,
   };
+  // 抗衰下一步:跳到该建议对应的目标(血检→/medical-exams、可穿戴→/import、体重→体重趋势);后端没给 route 时兜底体重趋势
+  const nextData = topNextData(nextDataQuery.data);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
@@ -456,6 +485,22 @@ export default function TodayScreen() {
           isError={progressDashboardQuery.isError}
           onPress={() => router.push('/my-progress' as any)}
         />
+        <BiologicalAgeCard
+          view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
+          win={pickBioAgeWin(progressDashboardQuery.data)}
+          isError={twinQuery.isError}
+          onPress={() => router.push('/medical-exams' as any)}
+        />
+        <LongevityNextCard
+          next={nextData}
+          causal={pickCausalHighlight(causalNotesQuery.data)}
+          onPress={() => router.push((nextData?.route ?? '/indicator-history?type=weight') as any)}
+        />
+        <DeviceCompareCard
+          data={deviceCompareQuery.data}
+          onPress={() => router.push('/settings' as any)}
+        />
+        <MetabolicEntryCard />
         <HomeCommandCard
           agentJudgmentText={agentJudgmentText}
           nextStepActionText={nextStepActionText}

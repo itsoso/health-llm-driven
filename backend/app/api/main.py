@@ -8,12 +8,14 @@ from app.api import (
     admin_open_loop,
     admin_wscla,
     admin_slo,
+    admin_longevity,
     movement_plan,
     diet_plan,
     daily_plan,
     trajectory,
     users,
     basic_health,
+    epigenetic_reports,
     medical_exams,
     diseases,
     daily_health,
@@ -108,6 +110,8 @@ from app.api import (
     orchestrator,
     cgm,
     personal_outcome,
+    biomarkers,
+    intervention_cycles,
     monthly_report,
     doctor_report,
     action_card,
@@ -151,6 +155,7 @@ api_router.include_router(admin_llm.router)
 api_router.include_router(admin_open_loop.router, prefix="/admin/open-loop", tags=["admin-open-loop"])
 api_router.include_router(admin_wscla.router, prefix="/admin/wscla", tags=["admin-wscla"])
 api_router.include_router(admin_slo.router, prefix="/admin/slo", tags=["admin-slo"])
+api_router.include_router(admin_longevity.router, prefix="/admin/longevity", tags=["admin-longevity"])
 api_router.include_router(movement_plan.router)
 api_router.include_router(diet_plan.router)
 api_router.include_router(daily_plan.router)
@@ -169,6 +174,7 @@ api_router.include_router(weekly_briefing.router, tags=["weekly-briefing"])
 # ── Health Data (Vitals & Records) ─────────────────────────────────
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])
 api_router.include_router(medical_exams.router, prefix="/medical-exams", tags=["medical-exams"])
+api_router.include_router(epigenetic_reports.router, prefix="/epigenetic-reports", tags=["epigenetic-reports"])
 api_router.include_router(diseases.router, prefix="/diseases", tags=["diseases"])
 api_router.include_router(disease_tracking.router, tags=["disease-tracking"])
 api_router.include_router(daily_health.router, prefix="/daily-health", tags=["daily-health"])
@@ -248,6 +254,8 @@ api_router.include_router(sleep_analysis.router)
 api_router.include_router(chronic_risk.router)
 api_router.include_router(multi_source_integration.router)
 api_router.include_router(personal_outcome.router, tags=["personal-outcome"])
+api_router.include_router(biomarkers.router)
+api_router.include_router(intervention_cycles.router)
 api_router.include_router(monthly_report.router, tags=["monthly-report"])
 api_router.include_router(doctor_report.router, tags=["doctor-report"])
 api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])

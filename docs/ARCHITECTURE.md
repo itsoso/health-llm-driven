@@ -10,7 +10,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (75 路由)              │      │
+                        │   mobile/app/*.tsx (81 路由)              │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -21,10 +21,10 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 133 API 路由 · 184 services              │
+│                  health-api.executor.life · 137 API 路由 · 203 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
-│  │           │  │ dispatch │  │ (11 specialist) │  │ (tool-calling LLM) │            │
+│  │           │  │ dispatch │  │ (12 specialist) │  │ (tool-calling LLM) │            │
 │  └───────────┘  └──────────┘  └────────┬────────┘  └──────────┬─────────┘            │
 │                                        │                      │                      │
 │                                        ▼                      ▼                      │
@@ -43,7 +43,7 @@
          ▼           ▼                ▼                    ▼                  ▼
   ┌──────────┐ ┌──────────┐  ┌─────────────┐    ┌──────────────────┐  ┌─────────────┐
   │ Postgres │ │  Redis   │  │  Celery     │    │  LLM Providers   │  │  3rd-party  │
-  │ (多表)   │ │ (cache + │  │ (50 任务)   │    │ openai-proxy /   │  │ Garmin API  │
+  │ (多表)   │ │ (cache + │  │ (54 任务)   │    │ openai-proxy /   │  │ Garmin API  │
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 11 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 12 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 133 API 路由, 184 services, 79 models, 50 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 137 API 路由, 203 services, 82 models, 54 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -106,6 +106,7 @@
 | `backend/app/agents/chronic_specialists/` | 鼻炎/高血压/代谢 专科 |
 | `backend/app/agents/knowledge_librarian/` | 得到 wiki RAG (ChromaDB) |
 | `backend/app/agents/longitudinal_analyst/` | 6 月趋势 + 因果叙事 |
+| `backend/app/agents/longevity_specialist/` | PhenoAge(Levine 2018)解读 + 委托四件套(抗衰 MVP) |
 | `backend/app/orchestrator/` | 意图路由 + specialist 调度 + LLM 合成 |
 | `backend/app/agents/audit.py` | Agent 审计日志 |
 
@@ -113,12 +114,12 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 133 条 API 路由 |
+| `backend/app/api/*.py` | 137 条 API 路由 |
 | `backend/app/services/*.py` | 173 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`) |
-| `backend/app/tasks/*.py` | 50 Celery 异步任务 |
+| `backend/app/tasks/*.py` | 54 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 75 RN 路由 + Tab 导航 |
+| `mobile/app/` | 81 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -160,7 +161,7 @@
                 │
                 ▼
 ┌────────────────────────────────────────────────────────────────┐
-│  11 Specialists                                                │
+│  12 Specialists                                                │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ SafetyGuardian  — 51 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
@@ -168,7 +169,7 @@
 │  ├─────────────────────────────────────────────────────────┤   │
 │  │ RecoveryCoach  · MovementCoach  · FuelStrategist        │   │
 │  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
-│  │ LongitudinalAnalyst                                     │   │
+│  │ LongitudinalAnalyst · LongevitySpecialist (PhenoAge)    │   │
 │  │ HypertensionSpecialist · MetabolicSpecialist            │   │
 │  │ RhinitisSpecialist                                      │   │
 │  └─────────────────────────────────────────────────────────┘   │
@@ -225,6 +226,20 @@
 - `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
 
 加一 `__init__.py` 自动注册 = 8 文件。数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
+
+### 抗衰 / Longevity 子系统(横切 L1-L4 + 闭环 + 群体)
+
+复用四层架构、加抗衰特有几块,构成「生物年龄 测量→主动监测→干预→验证→群体学习」闭环。详见 `docs/longevity-os-architecture.md`。
+
+- **算子**: `services/phenoage.py` — PhenoAge(Levine 2018)纯函数 + `phenoage_from_labs` 单一单位映射源(builder/评分/聚合三处复用)
+- **L2 信号(3 路, 分级)**: `labs.phenotypic_age`(血检, validated)· `physiological.vo2max_fitness_age`(心肺, validated)· `epigenetic.*`(DNAm 第三方, experimental)。builder `_fill_phenoage`/`_fill_vo2max` 填充; `epigenetic_reports` API + `epigenetic_report_service` 摄入第三方时钟
+- **L3 专家**: `agents/longevity_specialist/` — 解读 3 路信号 + `_compose_protocol` 真实编排四件套(Recovery/Fuel/Movement/Mental) + 提 12 周 N-of-1 ProposedCard
+- **闭环**: ProposedCard → ActionCard → `tasks/metrics` `fetch_phenotypic_age`/`vo2max` 取值 → `outcome_grader` 评分(越低越好)
+- **主动(Celery 周日 10:10)**: `tasks/longevity_watch` + `services/longevity_watch` 跨 `twin_snapshots` 比对生物年龄变化 → 推送(守打扰预算)+ `audit.log_longevity_trigger` 埋点
+- **群体(去标识)**: `services/longevity_cohort_service` 聚合已评分 ActionCard → `/admin/longevity/cohort`(observational, 小样本抑制)
+- **展示**: `mobile` `BiologicalAgeCard` + `twinHelpers`/`myProgress`(身体年龄卡 + 信任时刻对比)
+- 诚实纪律: evidence_tier 三档 + claim_boundary 随展示; 伪科学红线
+- 未落地(仅设计/规划): 无感硬件(W5, 依赖商务)、Concierge/商业化(P3-1/2, 依赖运营)、eval 看板(P3-4)、数据飞轮(下一步推荐方向)
 
 ---
 
@@ -411,7 +426,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(50 个任务)
+## 九、Celery 调度(54 个任务)
 
 `backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
 

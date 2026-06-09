@@ -7,6 +7,10 @@ from app.models.action_card import ActionCard
 from app.models.user import User
 from app.services.auth import auth_service
 
+# 固定宽窗口起点 —— 避免默认 window_start=_week_start(now) 在周一/月初把
+# now-Nh 的测试数据切到上一周外(确定性边界红,见 docs MEMORY)。until 默认 now。
+_WSCLA = "/api/v1/admin/wscla?since=2020-01-01T00:00:00Z"
+
 
 def _admin_headers(db):
     admin = User(
@@ -43,13 +47,13 @@ def _regular_headers(db):
 
 def test_wscla_requires_admin(client, db):
     _, headers = _regular_headers(db)
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     assert resp.status_code == 403
 
 
 def test_wscla_empty_shape(client, db):
     _, headers = _admin_headers(db)
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     assert resp.status_code == 200
     body = resp.json()
 
@@ -108,7 +112,7 @@ def test_wscla_counts_closed_loop_only(client, db):
     card(user_decision="declined", decided_at=now - timedelta(days=1))
     db.commit()
 
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     assert resp.status_code == 200
     m = resp.json()["metrics"]
     assert m["wscla_count"] == 2
@@ -129,7 +133,7 @@ def test_wscla_acceptance_rate(client, db):
     card(user_decision="dismissed", decided_at=now - timedelta(hours=4))
     db.commit()
 
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     body = resp.json()
     assert body["counts"]["decided"] == 4
     assert body["counts"]["accepted"] == 2
@@ -151,7 +155,7 @@ def test_wscla_push_ctr(client, db):
     card(push_sent_at=now - timedelta(minutes=60))  # 未点击
     db.commit()
 
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     body = resp.json()
     assert body["counts"]["push_sent"] == 4
     assert body["counts"]["push_clicked"] == 2
@@ -173,7 +177,7 @@ def test_wscla_safety_fp_rate(client, db):
     card(user_decision="dismissed", decided_at=now - timedelta(hours=4))
     db.commit()
 
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     body = resp.json()
     assert body["counts"]["safety_decided"] == 4
     assert body["counts"]["safety_false_positive"] == 2
@@ -207,9 +211,10 @@ def test_wscla_filter_by_user(client, db):
     db.commit()
 
     # 不过滤
-    resp = client.get("/api/v1/admin/wscla", headers=headers)
+    resp = client.get(_WSCLA, headers=headers)
     assert resp.json()["metrics"]["wscla_count"] == 2
 
     # 只看 admin
-    resp = client.get(f"/api/v1/admin/wscla?user_id={admin.id}", headers=headers)
+    resp = client.get(
+        f"/api/v1/admin/wscla?user_id={admin.id}&since=2020-01-01T00:00:00Z", headers=headers)
     assert resp.json()["metrics"]["wscla_count"] == 1

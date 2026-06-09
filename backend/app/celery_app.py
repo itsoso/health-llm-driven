@@ -41,6 +41,9 @@ celery_app = Celery(
         "app.tasks.live_run_hr_replay",
         "app.tasks.snp_prewarm",
         "app.tasks.observability_digest",
+        "app.tasks.longevity_watch",
+        "app.tasks.trajectory_watch",
+        "app.tasks.adherence_watch",
     ]
 )
 
@@ -313,6 +316,24 @@ celery_app.conf.beat_schedule = {
     "client-events-weekly-digest": {
         "task": "app.tasks.observability_digest.client_events_weekly_digest",
         "schedule": crontab(hour=9, minute=50, day_of_week=1),  # 北京 周一 09:50
+    },
+
+    # 抗衰主动 Agent: 每周日 10:10 扫生物年龄跨快照显著变化 (Phase2 W1)
+    "longevity-watch-weekly": {
+        "task": "app.tasks.longevity_watch.longevity_watch",
+        "schedule": crontab(hour=10, minute=10, day_of_week=0),  # 北京 周日 10:10
+    },
+
+    # 主动化推广: 每周日 10:25 扫代谢/心血管指标跨快照显著变化 (Phase3)
+    "trajectory-watch-weekly": {
+        "task": "app.tasks.trajectory_watch.trajectory_watch",
+        "schedule": crontab(hour=10, minute=25, day_of_week=0),  # 北京 周日 10:25
+    },
+
+    # 依从性智能: 每周日 10:40 扫 N-of-1 掉队风险, 温和再激活 (Next Horizon)
+    "adherence-watch-weekly": {
+        "task": "app.tasks.adherence_watch.adherence_watch",
+        "schedule": crontab(hour=10, minute=40, day_of_week=0),  # 北京 周日 10:40
     },
 }
 

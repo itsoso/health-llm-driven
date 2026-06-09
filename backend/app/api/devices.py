@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.database import get_db
 from app.api.deps import get_current_user_required
@@ -23,6 +23,18 @@ from app.services.device_adapters import DeviceManager, DeviceType
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/compare", summary="双设备一致性对比(如 Apple Watch + Garmin 同指标)")
+def compare_devices(
+    days: int = Query(7, ge=1, le=90),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """同时戴多台穿戴时,同指标(HRV/静息心率/睡眠/VO2max/SpO2/步数)并排对比 + 一致度。"""
+    from app.services.device_comparison_service import device_comparison
+
+    return device_comparison(db, current_user.id, days=days)
 
 
 # ===== Pydantic 模型 =====
@@ -823,6 +835,24 @@ class HealthKitDailyRecord(BaseModel):
     body_temp_deviation_c: Optional[float] = None
 
     raw_data: Optional[dict] = None
+
+    # 客户端用 avg()/sum() 聚合,常把小数 float 喂给 int 字段(如 resting_heart_rate
+    # =52.5)。Pydantic v2 默认拒绝带小数的 float→int,而且这发生在请求级校验,
+    # 一条坏值会让整批 422 → 0 导入(用户实测过)。这里对所有 int 字段做 before
+    # 取整,让契约容错:坏值最多被四舍五入,不再拖垮整批。
+    @field_validator(
+        "sleep_score", "total_sleep_minutes", "deep_sleep_minutes",
+        "rem_sleep_minutes", "light_sleep_minutes", "awake_minutes",
+        "resting_heart_rate", "avg_heart_rate", "max_heart_rate", "min_heart_rate",
+        "steps", "floors_climbed", "active_minutes", "calories_total", "calories_active",
+        "stress_level", "body_battery_high", "body_battery_low",
+        mode="before",
+    )
+    @classmethod
+    def _round_floats_to_int(cls, v):
+        if isinstance(v, float):
+            return round(v)
+        return v
 
 
 class HealthKitImportRequest(BaseModel):

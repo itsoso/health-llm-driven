@@ -25,11 +25,66 @@ from app.services.tool_schema_registry import get_health_tools
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 8
+# 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
+# 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
+# Opus 4.7 / GPT-5.5 / Gemini 3.1 均支持远高于此, 8000 覆盖绝大多数长方案。
+ANSWER_MAX_TOKENS = 8000
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
 FAST_RECORD_MODEL_ID = "glm-5"
+
+
+# ──── 多模型综合分析 (参考 browser-llm-driven / LangBridge 平台) ────
+# 商用三强 panel: lead 跑一遍带工具的完整回合 (查询/记录只执行一次, 不重写),
+# 另两个在同一上下文上各出独立分析, 再由 lead 模型综合成一份报告。
+MULTI_MODEL_PANEL: list[tuple[str, str]] = [
+    ("claude-opus-4.7", "Claude Opus 4.7"),
+    ("gpt-5.5", "GPT-5.5"),
+    ("gemini-3.1-pro", "Gemini 3.1 Pro"),
+]
+MULTI_MODEL_LEAD_ID = "claude-opus-4.7"
+MULTI_MODEL_SYNTH_ID = "claude-opus-4.7"
+MULTI_MODEL_MAX_LEAD_ROUNDS = 6
+
+
+def _extract_multi_model_flag(extra_context: Optional[str]) -> bool:
+    """Mac「默认 3 个」模式在 extra_context 里带 {"multi_model": true}。"""
+    if not extra_context:
+        return False
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return False
+    return bool(isinstance(payload, dict) and payload.get("multi_model"))
+
+
+def _gathered_data_context(messages: List[Dict[str, Any]], limit: int = 6000) -> str:
+    """从 lead 回合的 messages 里抽出工具结果文本, 作为给其它模型的共享数据上下文。"""
+    chunks: list[str] = []
+    for m in messages:
+        if m.get("role") == "tool" and m.get("content"):
+            chunks.append(str(m["content"]).strip())
+    return "\n\n".join(c for c in chunks if c)[:limit]
+
+
+def _build_multi_model_synthesis_prompt(question: str, analyses: List[tuple[str, str]]) -> str:
+    """综合 prompt: 把各模型的独立分析合成一份「共识 / 各家补充 / 分歧」报告。"""
+    blocks = "\n\n".join(
+        f"【{label}】\n{(text or '').strip()}"
+        for label, text in analyses
+        if text and text.strip()
+    )
+    return (
+        f"用户的健康问题：{question}\n\n"
+        f"以下是多个模型对该问题各自独立给出的分析：\n\n{blocks}\n\n"
+        "请综合这几份分析，输出一份结构化中文报告：\n"
+        "1. **共识结论** —— 几方一致认同的要点；\n"
+        "2. **各模型补充** —— 每个模型独有且有价值的观点（标注来自哪个模型）；\n"
+        "3. **分歧与不确定性** —— 观点不一致或证据不足之处，说明你更倾向哪种及理由。\n"
+        "只基于上述分析与已知健康数据，不要编造数据。"
+    )
 
 
 def _extract_model_id_from_extra_context(extra_context: Optional[str]) -> Optional[str]:
@@ -93,6 +148,35 @@ def _append_interrupted_notice(text: str, finish_reason: Optional[str]) -> str:
     return f"{text.rstrip()}{INTERRUPTED_COMPLETION_NOTICE}"
 
 
+def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
+    """Infer health_record ``record_type`` from a *naked* record data dict.
+
+    Some models (e.g. glm-5) ignore the tool schema and print the record's raw
+    ``data`` (``{"record_date":...,"meal_type":"breakfast","food_items":...}``)
+    as visible text — no ``name`` wrapper, no ``record_type``. That both leaks
+    JSON to the user AND skips the write. We detect the shape by field signals
+    (mirrors ``_friendly_record_confirmation``) so the caller can recover it into
+    a real health_record call. Returns None when there's no confident signal —
+    caller must still avoid leaking the JSON.
+    """
+    def has(key: str) -> bool:
+        return payload.get(key) not in (None, "", [])
+
+    if has("food_items") or payload.get("meal_type"):
+        return "diet"
+    if has("systolic") and has("diastolic"):
+        return "blood_pressure"
+    if has("exercise_type"):
+        return "exercise"
+    if has("amount") and "drink_type" in payload:
+        return "water"
+    if has("description") and ("body_part" in payload or "severity" in payload):
+        return "symptom"
+    if has("weight"):
+        return "weight"
+    return None
+
+
 def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
     """Recover tool calls emitted as visible JSON text by weaker gateways/models.
 
@@ -124,6 +208,22 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
         fn = payload.get("function") if isinstance(payload.get("function"), dict) else None
         name = payload.get("name") or payload.get("tool") or (fn or {}).get("name")
         if name not in allowed:
+            # 模型可能直接吐 record 的裸 data(无 name 包装,无 record_type)。
+            # 按字段推断 record_type → 包成 health_record 调用,既写库又不泄漏 JSON。
+            if "health_record" in allowed:
+                inferred = _infer_record_type_from_payload(payload)
+                if inferred:
+                    return {
+                        "id": "inline_tool_call_0",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {"record_type": inferred, "data": payload},
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
             continue
 
         args = (
@@ -290,6 +390,46 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     ]
 
 
+def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
+    """Turn a created-record JSON (which has no ``message`` field — it's the raw
+    API response) into a short human line, so the fast-record reply never dumps
+    raw JSON at the user. Falls back to a generic '已记录' for unknown shapes."""
+
+    def s(key: str) -> Optional[Any]:
+        value = record.get(key)
+        return value if value not in (None, "", []) else None
+
+    # symptom (/symptoms): body_part + description
+    if s("description") is not None and ("body_part" in record or "severity" in record):
+        return f"已记录症状：{record.get('description')}"
+    # blood pressure
+    if s("systolic") is not None and s("diastolic") is not None:
+        return f"已记录血压 {record.get('systolic')}/{record.get('diastolic')} mmHg"
+    # diet
+    if s("food_items") is not None:
+        return f"已记录饮食：{record.get('food_items')}"
+    # weight
+    if s("weight") is not None:
+        return f"已记录体重 {record.get('weight')} kg"
+    # exercise
+    if s("exercise_type") is not None:
+        reps = s("reps")
+        return f"已记录运动：{record.get('exercise_type')}" + (f" {reps} 次" if reps else "")
+    # blood glucose (CGM)
+    if s("glucose_mg_dl") is not None:
+        return f"已记录血糖 {record.get('glucose_mg_dl')} mg/dL"
+    # mood
+    if s("mood_score") is not None:
+        return f"已记录心情 {record.get('mood_score')}/10"
+    # water
+    if s("amount") is not None and "drink_type" in record:
+        return f"已记录饮水 {record.get('amount')}ml"
+    # illness episode
+    if s("illness_name") is not None or (s("name") is not None and "start_date" in record):
+        return f"已记录：{record.get('illness_name') or record.get('name')}"
+    return "✅ 已记录"
+
+
 def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """Build a final user-visible reply directly from record tool results."""
 
@@ -319,6 +459,15 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             if isinstance(tool_message, str) and tool_message.strip():
                 replies.append(tool_message.strip())
                 continue
+            # Created-record JSON with no `message` — synthesize a human line
+            # instead of dumping raw JSON (the user complaint).
+            replies.append(_friendly_record_confirmation(payload))
+            continue
+        if isinstance(payload, list):
+            # Array of created records (batch) — confirm count, never dump JSON.
+            replies.append(f"✅ 已记录 {len(payload)} 条")
+            continue
+        # Plain-text tool result (already human-readable) — show as-is.
         replies.append(content.replace("\n", " ")[:160])
 
     deduped: list[str] = []
@@ -583,6 +732,167 @@ class AgentExecutor:
         self._prefer_fast_record_model = False
         self._last_provider_model_name: Optional[str] = None
 
+    async def _run_multi_model_stream(
+        self,
+        user_id: int,
+        message: str,
+        conversation_id: Optional[int],
+        user_auth_token: Optional[str],
+        extra_context: Optional[str],
+    ) -> AsyncGenerator[Dict, None]:
+        """多模型综合分析 (商用三强 panel)。
+
+        lead (Claude Opus 4.7) 跑一遍带工具的完整回合 —— 查询/记录只执行一次,
+        不会被 panel 重复写库; GPT-5.5 + Gemini 3.1 Pro 在 lead 取到的同一份数据
+        上下文上各自独立分析 (并发, 不带工具); 最后由 Claude Opus 4.7 综合成一份
+        「共识 / 各家补充 / 分歧」报告。单次保存一条 assistant 消息 (综合结果)。
+        """
+        import asyncio as _asyncio
+        from app.services.llm.usage_tracker import set_caller
+        from app.services.llm.factory import create_provider_for_model_id
+
+        set_caller("agent_executor.multi_model", user_id=user_id)
+        start_time = time.time()
+        self._current_user_id = user_id
+        self._prefer_fast_record_model = False
+        self._last_provider_model_name = None
+        sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
+        model_label = "Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (综合)"
+
+        from app.services.openclaw_service import OpenClawService
+        svc = OpenClawService(self.db)
+        conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+        svc.save_message(conv.id, "user", message)
+
+        yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
+
+        system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        tools = get_health_tools()
+        full_reply = ""
+
+        def _progress(tool: str, text: str) -> Dict:
+            return {"event": "tool_result", "data": {"tool": tool, "success": True, "preview": text, "result": text}}
+
+        self._http_client = httpx.AsyncClient(timeout=90.0)
+        try:
+            # 1) Lead 回合 (带工具, Claude Opus 4.7)
+            yield _progress("多模型·主分析", "Claude Opus 4.7 正在查数据/记录并分析…")
+            self._request_model_id = MULTI_MODEL_LEAD_ID
+            lead_messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": message},
+            ]
+            lead_text = ""
+            for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
+                resp = await self._call_llm(lead_messages, tools)
+                tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
+                content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
+                if not tool_calls:
+                    recovered = _extract_inline_tool_call(content, tools)
+                    if recovered:
+                        tool_calls = [recovered]
+                        content = ""
+                if tool_calls:
+                    lead_messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+                    for tc in tool_calls:
+                        fn = tc["function"]["name"]
+                        fa = tc["function"]["arguments"]
+                        result = await self._execute_tool(fn, fa, user_auth_token)
+                        lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                        lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
+                        if lbl and lbl not in sources_used:
+                            sources_used.append(lbl)
+                        yield {"event": "tool_result", "data": {
+                            "tool": fn, "success": not result.startswith("Error"),
+                            "preview": result[:200], "result": result}}
+                    continue
+                lead_text = content
+                break
+
+            data_ctx = _gathered_data_context(lead_messages)
+
+            # 2) 两路独立分析 (GPT-5.5 + Gemini, 并发, 不带工具)
+            yield _progress("多模型·多方", "GPT-5.5、Gemini 3.1 Pro 正在各自分析…")
+            persp_system = (
+                "你是资深健康分析师。基于给定的用户健康数据，独立、简洁地分析用户的问题"
+                "（300-600 字）。只用给定数据，不要编造；没有数据时给出审慎的一般性建议。"
+            )
+            persp_user = (
+                f"用户问题：{message}\n\n已查到的用户健康数据：\n"
+                f"{data_ctx or '（本次未取到额外数据）'}\n\n请给出你的独立分析。"
+            )
+            persp_messages = [
+                {"role": "system", "content": persp_system},
+                {"role": "user", "content": persp_user},
+            ]
+
+            async def _perspective(model_id: str) -> str:
+                try:
+                    p = create_provider_for_model_id(model_id)
+                    r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
+                                     max_tokens=4000, stream=False, return_metadata=True)
+                    return (r.get("content") if isinstance(r, dict) else str(r)) or ""
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[multi_model] perspective %s failed: %s", model_id, e)
+                    return ""
+
+            gpt_text, gemini_text = await _asyncio.gather(
+                _perspective("gpt-5.5"), _perspective("gemini-3.1-pro")
+            )
+
+            # 3) 综合 (Claude Opus 4.7)
+            yield _progress("多模型·综合", "综合三方观点…")
+            analyses = [("Claude Opus 4.7", lead_text), ("GPT-5.5", gpt_text), ("Gemini 3.1 Pro", gemini_text)]
+            synth_messages = [
+                {"role": "system", "content": "你是健康分析综合专家，把多个模型的分析整合成一份清晰、专业、可执行的中文报告。"},
+                {"role": "user", "content": _build_multi_model_synthesis_prompt(message, analyses)},
+            ]
+            try:
+                synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
+                synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
+                                                       max_tokens=ANSWER_MAX_TOKENS, stream=False, return_metadata=True)
+                final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
+            except Exception as e:  # noqa: BLE001
+                logger.error("[multi_model] synthesis failed: %s", e)
+                final_text = lead_text or "多模型综合分析未能生成最终结论，请重试或改用单模型。"
+
+            if not final_text.strip():
+                final_text = lead_text or "多模型综合分析未能生成最终结论，请重试。"
+            for i in range(0, len(final_text), 24):
+                yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
+            full_reply = final_text
+        except Exception as e:  # noqa: BLE001
+            logger.error("多模型综合执行异常: %s", e, exc_info=True)
+            full_reply = f"多模型综合分析遇到问题: {e}"
+            yield {"event": "token", "data": {"content": full_reply}}
+        finally:
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
+
+        ai_msg = svc.save_message(conv.id, "assistant", full_reply)
+        conv.updated_at = datetime.now(UTC)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        try:
+            ai_msg.meta = {
+                "elapsed_ms": elapsed_ms,
+                "model": model_label,
+                "sources_used": sources_used,
+                "mode": "multi_model",
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[multi_model] write meta 失败: %s", e)
+        self.db.commit()
+
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+            "elapsed_ms": elapsed_ms,
+            "model": model_label,
+            "sources_used": sources_used,
+            "mode": "multi_model",
+        }}
+
     async def run_stream(
         self,
         user_id: int,
@@ -601,6 +911,15 @@ class AgentExecutor:
         has_tools_support = bool(settings.agent_base_url and settings.agent_api_key) or settings.llm_provider != "openclaw"
         if not has_tools_support and (_needs_skill(message) or images or file_base64):
             async for evt in self._delegate_to_openclaw(user_id, message, conversation_id, user_auth_token, images, file_base64, file_name):
+                yield evt
+            return
+
+        # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
+        # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
+        if _extract_multi_model_flag(extra_context) and not images and not file_base64:
+            async for evt in self._run_multi_model_stream(
+                user_id, message, conversation_id, user_auth_token, extra_context
+            ):
                 yield evt
             return
 
@@ -825,11 +1144,16 @@ class AgentExecutor:
                         )
                         tool_executed_count += 1
 
-                        # 写操作成功后内联安全检查
+                        # 写操作成功后内联安全检查。
+                        # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
+                        # 无关的安全告警拼到一条失败回复上(截图里"未找到活跃药物 ⚠️夜间血氧…"),
+                        # 故显式排除软失败。
+                        _soft_fail = any(m in result for m in ("未找到", "暂时没成功", "没成功", "记录失败"))
                         if (
                             func_name == "health_record"
                             and "Error" not in result
                             and not result.startswith("[NEEDS_CONFIRMATION]")
+                            and not _soft_fail
                         ):
                             try:
                                 from app.twin.builder import build_twin
@@ -1444,7 +1768,7 @@ class AgentExecutor:
             "messages": messages,
             "model": None,
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": ANSWER_MAX_TOKENS,
             "stream": False,
             "return_metadata": True,
         }
@@ -1474,7 +1798,7 @@ class AgentExecutor:
             messages=messages,
             model=None,
             temperature=0.3,
-            max_tokens=3000,
+            max_tokens=ANSWER_MAX_TOKENS,
             stream=False,
             return_metadata=True,
         )
@@ -1497,7 +1821,7 @@ class AgentExecutor:
             "model": model,
             "messages": messages,
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": ANSWER_MAX_TOKENS,
         }
         if tools:
             payload["tools"] = [{"type": "function", "function": t["function"]} if "function" in t else t for t in tools]
@@ -1747,6 +2071,14 @@ class AgentExecutor:
             elif tool_name == "query_lab_indicators":
                 return await self._exec_query_lab_indicators(base_url, headers, args)
             else:
+                # RFC 方向一 Phase A: specialist 分析工具(analyze_recovery 等)
+                from app.services.specialist_tools import is_specialist_tool, run_specialist_tool
+                if is_specialist_tool(tool_name):
+                    # specialist.run 是同步 CPU 计算, 丢线程池避免阻塞事件循环
+                    import asyncio as _aio
+                    return await _aio.to_thread(
+                        run_specialist_tool, self.db, self._current_user_id, tool_name
+                    )
                 return f"Error: 未知工具 {tool_name}"
         except Exception as e:
             logger.error(f"工具执行失败 {tool_name}: {e}")
@@ -1795,31 +2127,32 @@ class AgentExecutor:
         }
 
         path = endpoint_map.get(dim, endpoint_map["comprehensive"])
-        result = await self._api_get(f"{base}{path}", headers)
 
         # 如果查的是体检或基因指标，从结果中过滤特定指标
+        # 走 _api_get_json 拿完整数据 (体检/基因常 >3000 字符, 文本版会被截断导致过滤失效)
         if indicator and dim in ("medical_exam", "genetic"):
-            try:
-                parsed = json.loads(result)
-                items = parsed if isinstance(parsed, list) else parsed.get("data", [])
-                matched = []
-                if dim == "medical_exam":
-                    for exam in items:
-                        for item in (exam.get("items") or []):
-                            name = str(item.get("item_name", "") or item.get("name", "")).upper()
-                            if indicator.upper() in name:
-                                matched.append({"exam_date": exam.get("exam_date"), **item})
-                elif dim == "genetic":
-                    for v in items:
-                        gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
-                        if indicator.upper() in gene:
-                            matched.append(v)
-                if matched:
-                    return json.dumps(matched, ensure_ascii=False, default=str)
-            except Exception:
-                pass
+            parsed, err = await self._api_get_json(f"{base}{path}", headers)
+            if not err:
+                try:
+                    items = parsed if isinstance(parsed, list) else (parsed.get("data", []) if isinstance(parsed, dict) else [])
+                    matched = []
+                    if dim == "medical_exam":
+                        for exam in items:
+                            for item in (exam.get("items") or []):
+                                name = str(item.get("item_name", "") or item.get("name", "")).upper()
+                                if indicator.upper() in name:
+                                    matched.append({"exam_date": exam.get("exam_date"), **item})
+                    elif dim == "genetic":
+                        for v in items:
+                            gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
+                            if indicator.upper() in gene:
+                                matched.append(v)
+                    if matched:
+                        return json.dumps(matched, ensure_ascii=False, default=str)
+                except Exception:
+                    pass
 
-        return result
+        return await self._api_get(f"{base}{path}", headers)
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
@@ -1995,21 +2328,19 @@ class AgentExecutor:
         if rtype == "supplement":
             name = data.get("supplement_name", data.get("name", ""))
             if name:
-                # 查找匹配的补剂定义
-                lookup = await self._api_get(f"{base}/supplements/me/definitions", headers)
-                try:
-                    supps = json.loads(lookup)
-                    supps = supps if isinstance(supps, list) else supps.get("data", [])
-                    matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
-                    if matched:
-                        result = await self._api_post(
-                            f"{base}/nfc/tap", headers,
-                            {"action": "supplement", "supplement_id": matched["id"]}
-                        )
-                        return result
-                    return f"未找到名为 '{name}' 的活跃补剂"
-                except Exception as e:
-                    return f"Error: 补剂查找失败: {e}"
+                # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
+                supps, err = await self._api_get_json(f"{base}/supplements/me/definitions", headers)
+                if err:
+                    logger.warning(f"[health_record] supplement lookup 失败: {err}")
+                    return f"补剂记录暂时没成功(查询补剂列表时{err}),你可以稍后再试一次。"
+                supps = supps if isinstance(supps, list) else (supps.get("data", []) if isinstance(supps, dict) else [])
+                matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
+                if matched:
+                    return await self._api_post(
+                        f"{base}/nfc/tap", headers,
+                        {"action": "supplement", "supplement_id": matched["id"]}
+                    )
+                return f"未找到名为 '{name}' 的活跃补剂"
             return "Error: 需要提供补剂名称（supplement_name）"
 
         # medication: 用药记录
@@ -2017,22 +2348,30 @@ class AgentExecutor:
             med_name = data.get("medication_name", data.get("name", ""))
             if not med_name:
                 return "Error: 需要提供药物名称（medication_name）"
-            # 查找 medication_id
-            meds_raw = await self._api_get(f"{base}/medication/medications/me", headers)
-            try:
-                meds = json.loads(meds_raw)
-                meds = meds if isinstance(meds, list) else meds.get("data", [])
-                matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
-                if matched:
-                    taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
-                    result = await self._api_post(
-                        f"{base}/medication/logs", headers,
-                        {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
-                    )
-                    return result
-                return f"未找到名为 '{med_name}' 的活跃药物"
-            except Exception as e:
-                return f"Error: 用药记录失败: {e}"
+            # 查找 medication_id (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
+            meds, err = await self._api_get_json(f"{base}/medication/medications/me", headers)
+            if err:
+                logger.warning(f"[health_record] medication lookup 失败: {err}")
+                return f"用药记录暂时没成功(查询药物列表时{err}),你可以稍后再试一次。"
+            meds = meds if isinstance(meds, list) else (meds.get("data", []) if isinstance(meds, dict) else [])
+            matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
+            # 没匹配到活跃药物 → 自动登记 (短程/临时用药如抗生素, 用户不会预先建档), 再记录服用。
+            # 旧行为是直接报"未找到活跃药物"并放弃, 导致"吃了两粒阿奇霉素"这类记录失败。
+            if not matched:
+                create_payload = {"name": med_name}
+                for k in ("dosage", "frequency", "category", "purpose"):
+                    if data.get(k):
+                        create_payload[k] = data[k]
+                created, cerr = await self._api_post_json(f"{base}/medication/medications", headers, create_payload)
+                if cerr or not isinstance(created, dict) or not created.get("id"):
+                    logger.warning(f"[health_record] medication 自动登记失败: {cerr}")
+                    return f"用药记录暂时没成功(自动登记 '{med_name}' 时{cerr or '未知错误'}),你可以稍后再试一次。"
+                matched = created
+            taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
+            return await self._api_post(
+                f"{base}/medication/logs", headers,
+                {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
+            )
 
         if rtype == "illness":
             payload = dict(data)
@@ -2420,8 +2759,34 @@ class AgentExecutor:
         ]
         return json.dumps({"count": len(items), "items": items}, ensure_ascii=False)
 
+    async def _api_get_json(self, url: str, headers: dict):
+        """HTTP GET, 返回解析后的 JSON (list/dict)。
+
+        与 _api_get 不同: 不做任何"显示截断"——后者会把超长响应按字符截到 3000,
+        切断 JSON token (如 'null'→'nul'), 导致调用方 json.loads 抛
+        'Invalid control character' / 'Extra data'。机器要解析的内部查找
+        (补剂/药物/症状 ID 匹配) 必须走这里, 拿干净可解析的数据。
+
+        返回 (data, None) 成功; (None, err_str) 失败 — 调用方据此给用户友好兜底。
+        """
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
+        try:
+            resp = await client.get(url, headers=headers)
+        except Exception as e:
+            return None, f"网络错误: {e}"
+        if resp.status_code != 200:
+            return None, f"API 返回 {resp.status_code}"
+        try:
+            return resp.json(), None
+        except Exception as e:
+            logger.warning(f"[agent] _api_get_json 解析失败 url={url}: {e}")
+            return None, "数据格式异常"
+
     async def _api_get(self, url: str, headers: dict) -> str:
-        """HTTP GET"""
+        """HTTP GET (返回文本, 给 LLM 当上下文; 超长会做显示截断)。
+
+        ⚠️ 注意: 返回值可能被字符截断, 不可直接 json.loads。机器解析请用 _api_get_json。
+        """
         client = self._http_client or httpx.AsyncClient(timeout=90.0)
         resp = await client.get(url, headers=headers)
         if resp.status_code != 200:
@@ -2453,6 +2818,24 @@ class AgentExecutor:
         if resp.status_code not in (200, 201):
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
         return resp.text
+
+    async def _api_post_json(self, url: str, headers: dict, data: dict):
+        """HTTP POST, 返回解析后的 JSON (dict/list)。给机器解析(如取新建资源的 id)。
+
+        返回 (data, None) 成功; (None, err_str) 失败 —— 同 _api_get_json 约定。
+        """
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
+        try:
+            resp = await client.post(url, headers={**headers, "Content-Type": "application/json"}, json=data)
+        except Exception as e:
+            return None, f"网络错误: {e}"
+        if resp.status_code not in (200, 201):
+            return None, f"API 返回 {resp.status_code}"
+        try:
+            return resp.json(), None
+        except Exception as e:
+            logger.warning(f"[agent] _api_post_json 解析失败 url={url}: {e}")
+            return None, "数据格式异常"
 
     async def _api_patch(self, url: str, headers: dict, data: dict) -> str:
         """HTTP PATCH"""

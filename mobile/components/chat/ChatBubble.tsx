@@ -24,7 +24,7 @@ import { buildInterventionDraft, type InterventionDraft } from '../../services/i
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import AttributionChips from './AttributionChips';
 import { radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { ColorPalette, useTheme, type SemanticPalette } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
@@ -40,7 +40,7 @@ interface Props {
 
 function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected }: Props) {
   const qc = useQueryClient();
-  const { c, isDark } = useTheme();
+  const { c, isDark, s } = useTheme();
   const toast = useToast();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
@@ -307,7 +307,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {structuredSummary ? (
-              <StructuredSummaryCard summary={structuredSummary} c={c} />
+              <StructuredSummaryCard summary={structuredSummary} c={c} s={s} />
             ) : null}
             {visibleMarkdown ? (
               <Markdown style={mdStyles}>{renderedMarkdown}</Markdown>
@@ -553,14 +553,12 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
   const adviceStart = lines.findIndex(line => /今日建议|建议/.test(line));
   if (adviceStart >= 0) {
     for (const line of lines.slice(adviceStart + 1)) {
-      const cleaned = line
-        .replace(/^\s*(?:[-*]|\d+[.)、])\s*/, '')
-        .trim();
+      if (/^\s*\|/.test(line)) continue;        // 跳过表格行
+      const cleaned = cleanAdviceMarkdown(line);
       if (!cleaned) {
         if (advice.length > 0) break;
         continue;
       }
-      if (/^\|/.test(cleaned)) continue;
       advice.push(cleaned);
       if (advice.length >= 3) break;
     }
@@ -568,6 +566,30 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
 
   if (metrics.length === 0 && advice.length === 0) return null;
   return { metrics, advice };
+}
+
+/**
+ * 清掉建议行里的 markdown 标记 (列表 / 标题 ### / 引用 / 粗体 ** / 行内代码),
+ * 让"今日建议"摘要卡显示纯净文本。修复 bug: 形如 "1. ### ✅ 你已有的(继续保持)"
+ * 的行被原样渲染成字面量 ###。行首标记可能叠加(列表+标题), 故循环剥离。
+ */
+function cleanAdviceMarkdown(line: string): string {
+  let t = line.trim();
+  let prev: string;
+  do {
+    prev = t;
+    t = t
+      .replace(/^\d+[.)、]\s*/, '')           // 数字列表 1.
+      .replace(/^[-*+]\s+/, '')               // 符号列表 (要求空格, 否则会吃掉 **粗体**)
+      .replace(/^#{1,6}\s*/, '')              // 标题 ###
+      .replace(/^>\s*/, '')                   // 引用 >
+      .trim();
+  } while (t !== prev);
+  return t
+    .replace(/\*\*(.+?)\*\*/g, '$1')         // 粗体
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')             // 行内代码
+    .trim();
 }
 
 function isMetricTableStart(lines: string[], index: number): boolean {
@@ -617,20 +639,22 @@ function stripStructuredHealthSummary(text: string): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function statusTone(status?: string): string {
-  if (!status) return '#8E8E93';
-  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return '#FF9F0A';
-  if (/❌|严重|急|失败/.test(status)) return '#FF453A';
-  if (/✅|正常|优秀|良好|充沛/.test(status)) return '#30D158';
-  return '#8E8E93';
+function statusTone(s: SemanticPalette, status?: string): string {
+  if (!status) return s.neutral.solid;
+  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return s.warning.solid;
+  if (/❌|严重|急|失败/.test(status)) return s.danger.solid;
+  if (/✅|正常|优秀|良好|充沛/.test(status)) return s.success.solid;
+  return s.neutral.solid;
 }
 
 function StructuredSummaryCard({
   summary,
   c,
+  s,
 }: {
   summary: StructuredHealthSummary;
   c: ColorPalette;
+  s: SemanticPalette;
 }) {
   return (
     <View style={[summaryStyles.card, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
@@ -650,7 +674,7 @@ function StructuredSummaryCard({
                   {metric.value}
                 </Text>
                 {metric.status ? (
-                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(metric.status) }]} />
+                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(s, metric.status) }]} />
                 ) : null}
               </View>
             ))}

@@ -15,6 +15,14 @@ import ReactNativeHealth, {
   type HealthUnit,
 } from 'react-native-health';
 import api from './api';
+import type { components } from '../types/api.generated';
+
+// 契约护栏:import 出口 payload 显式标注为后端 OpenAPI 生成的 schema。
+// 后端改名/删字段(如历史上 sleep_hours→total_sleep_minutes)→ 下面 toApiRecord
+// 的对象字面量 excess-property 检查直接让 tsc 红,不再静默丢字段。
+// 注:float→int 是运行时值问题(TS 只有 number),由客户端 round + 后端 validator 兜,
+// 这层专抓"名字/结构漂移"。
+type ApiHealthKitRecord = components['schemas']['HealthKitDailyRecord'];
 
 type AppleHealthKitModule = typeof ReactNativeHealth & Record<string, any>;
 
@@ -67,8 +75,12 @@ export interface HealthKitDailyRecord {
   hrv?: number;
   spo2_avg?: number;
   spo2_min?: number;
-  sleep_hours?: number;
-  sleep_score?: number;
+  // 睡眠按后端契约发分钟分期。后端 HealthKitDailyRecord 只认 total_sleep_minutes
+  // 等字段;历史上 mobile 发的 sleep_hours 会被 Pydantic 静默丢弃 → 睡眠永不入库。
+  total_sleep_minutes?: number;
+  deep_sleep_minutes?: number;
+  rem_sleep_minutes?: number;
+  light_sleep_minutes?: number;
   active_calories?: number;
   basal_calories?: number;
   respiration_rate_min?: number;
@@ -300,13 +312,26 @@ export async function fetchDailyAggregates(
     }),
   ]);
 
-  // sleep 样本有 inBed / asleep 等多状态,只统计 asleep 时长
-  const sleepHours = sleep
-    .filter((s: any) => s.value === 'ASLEEP' || s.value === 'CORE' || s.value === 'DEEP' || s.value === 'REM')
-    .reduce((acc, s) => {
-      const ms = new Date(s.endDate).getTime() - new Date(s.startDate).getTime();
-      return acc + ms / 3_600_000;
-    }, 0);
+  // sleep 样本是分期片段 (INBED/ASLEEP/CORE/DEEP/REM/AWAKE,见 react-native-health
+  // Queries.m)。按后端契约累计各期分钟:DEEP→深睡、REM→REM、CORE→浅睡(core≈light),
+  // ASLEEP(旧版未分期)只计入总睡眠。INBED/AWAKE/UNKNOWN 不算睡着。
+  let deepMin = 0;
+  let remMin = 0;
+  let lightMin = 0; // CORE
+  let asleepUnspecMin = 0; // 旧 iOS 只给 ASLEEP
+  for (const s of sleep as any[]) {
+    const min = (new Date(s.endDate).getTime() - new Date(s.startDate).getTime()) / 60_000;
+    if (min <= 0) continue;
+    switch (s.value) {
+      case 'DEEP': deepMin += min; break;
+      case 'REM': remMin += min; break;
+      case 'CORE': lightMin += min; break;
+      case 'ASLEEP': asleepUnspecMin += min; break;
+      default: break; // INBED / AWAKE / UNKNOWN 不计
+    }
+  }
+  const totalSleepMin = deepMin + remMin + lightMin + asleepUnspecMin;
+  const round = (n: number) => Math.round(n);
 
   // 多源 majority vote — 用样本最多的一类 (HR / steps) 决定 data_source
   const allSamples = [
@@ -331,15 +356,24 @@ export async function fetchDailyAggregates(
   const spo2Avg = avg(spo2);
   const spo2Min = min(spo2);
 
+  // 后端 steps / resting_heart_rate 是 Optional[int],Pydantic v2 拒绝带小数的
+  // float(avg(rhr)=52.5 → 整批 422 → 0 导入)。int 目标字段在客户端先取整。
+  const intOr = (n: number | undefined) => (n !== undefined ? Math.round(n) : undefined);
+  const stepsSum = sum(steps);
+  const rhrAvg = avg(rhr);
+
   return {
     record_date,
     data_source,
-    steps: sum(steps),
-    resting_heart_rate: avg(rhr),
+    steps: intOr(stepsSum),
+    resting_heart_rate: intOr(rhrAvg),
     hrv: avg(hrv),
     spo2_avg: spo2Avg !== undefined ? spo2Avg * 100 : undefined,
     spo2_min: spo2Min !== undefined && spo2Min !== Infinity ? spo2Min * 100 : undefined,
-    sleep_hours: sleepHours > 0 ? sleepHours : undefined,
+    total_sleep_minutes: totalSleepMin > 0 ? round(totalSleepMin) : undefined,
+    deep_sleep_minutes: deepMin > 0 ? round(deepMin) : undefined,
+    rem_sleep_minutes: remMin > 0 ? round(remMin) : undefined,
+    light_sleep_minutes: lightMin > 0 ? round(lightMin) : undefined,
     active_calories: sum(activeCal),
     basal_calories: sum(basalCal),
     respiration_rate_min: min(respRate),
@@ -393,6 +427,34 @@ function generateMonthRanges(start: Date, end: Date): { start: Date; end: Date; 
   return ranges;
 }
 
+// 本地聚合 record(superset)→ 后端 import schema。只挑后端认的字段;
+// 名字对齐(active_calories→calories_active);后端没有的(vo2_max / weight_kg /
+// waist_cm — 后两者走 /weight、/waist 端点)不发。对象字面量受生成类型约束。
+function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
+  const caloriesTotal =
+    r.active_calories !== undefined && r.basal_calories !== undefined
+      ? Math.round(r.active_calories + r.basal_calories)
+      : undefined;
+  return {
+    record_date: r.record_date,
+    data_source: r.data_source,
+    steps: r.steps,
+    resting_heart_rate: r.resting_heart_rate,
+    hrv: r.hrv,
+    spo2_avg: r.spo2_avg,
+    spo2_min: r.spo2_min,
+    total_sleep_minutes: r.total_sleep_minutes,
+    deep_sleep_minutes: r.deep_sleep_minutes,
+    rem_sleep_minutes: r.rem_sleep_minutes,
+    light_sleep_minutes: r.light_sleep_minutes,
+    calories_active: r.active_calories !== undefined ? Math.round(r.active_calories) : undefined,
+    calories_total: caloriesTotal,
+    respiration_rate_min: r.respiration_rate_min,
+    respiration_rate_max: r.respiration_rate_max,
+    body_temp_deviation_c: r.body_temp_deviation_c,
+  };
+}
+
 async function importBatch(records: HealthKitDailyRecord[]): Promise<{
   imported_count: number;
   source_breakdown: Record<string, number>;
@@ -402,7 +464,7 @@ async function importBatch(records: HealthKitDailyRecord[]): Promise<{
     return { imported_count: 0, source_breakdown: {}, errors: [] };
   }
   try {
-    const res = await api.post('/v1/devices/healthkit/import', { records });
+    const res = await api.post('/devices/healthkit/import', { records: records.map(toApiRecord) });
     return res.data;
   } catch (e: any) {
     return {
@@ -469,7 +531,7 @@ export async function backfillAll(
           rec.resting_heart_rate !== undefined ||
           rec.hrv !== undefined ||
           rec.spo2_avg !== undefined ||
-          rec.sleep_hours !== undefined
+          rec.total_sleep_minutes !== undefined
         ) {
           records.push(rec);
         }
@@ -499,10 +561,34 @@ export async function backfillAll(
   return { totalImported, errors: allErrors };
 }
 
+// 本机从 HealthKit 实际读到几天有各项指标 —— 用于诊断:
+// 若某项为 0,说明 HealthKit 没给数据(多半权限没勾 / 设备没录,如美版 Apple Watch
+// 血氧被禁),而不是后端管线问题。
+export interface SyncCoverage {
+  days: number;
+  steps: number;
+  hr: number;
+  hrv: number;
+  spo2: number;
+  sleep: number;
+}
+
+export function summarizeCoverage(records: HealthKitDailyRecord[]): SyncCoverage {
+  const count = (pred: (r: HealthKitDailyRecord) => boolean) => records.filter(pred).length;
+  return {
+    days: records.length,
+    steps: count((r) => r.steps !== undefined),
+    hr: count((r) => r.resting_heart_rate !== undefined),
+    hrv: count((r) => r.hrv !== undefined),
+    spo2: count((r) => r.spo2_avg !== undefined),
+    sleep: count((r) => r.total_sleep_minutes !== undefined),
+  };
+}
+
 // ── 增量同步 (只取最近 N 天) ──────────────────────────────────────────────────
 export async function syncRecentDays(
   days: number = 7,
-): Promise<{ totalImported: number; errors: string[] }> {
+): Promise<{ totalImported: number; errors: string[]; coverage: SyncCoverage }> {
   if (!initialized) await requestPermissions();
 
   const records: HealthKitDailyRecord[] = [];
@@ -518,7 +604,12 @@ export async function syncRecentDays(
     }
   }
 
+  const coverage = summarizeCoverage(records);
   const result = await importBatch(records);
   const bodyErrors = await importBodyMeasurements(records);
-  return { totalImported: result.imported_count, errors: [...result.errors, ...bodyErrors] };
+  return {
+    totalImported: result.imported_count,
+    errors: [...result.errors, ...bodyErrors],
+    coverage,
+  };
 }

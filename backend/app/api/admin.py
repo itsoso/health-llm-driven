@@ -418,7 +418,8 @@ async def reset_password_by_email(
     user.hashed_password = hashed_password
     db.commit()
 
-    logger.info(f"管理员 {admin_user.name} 通过邮箱重置了用户 {user.name} (email: {request.email}) 的密码")
+    from app.utils.redact import mask_email
+    logger.info(f"管理员 {admin_user.name} 通过邮箱重置了用户 {user.name} (email: {mask_email(request.email)}) 的密码")
 
     return {"message": f"已重置用户 {user.name} ({request.email}) 的密码"}
 

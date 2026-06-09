@@ -401,12 +401,22 @@ async def update_gps_location(
 
     old_city = profile.detected_city
     # 即使 city/region 都没反查到, lat/lon 仍写入 — environment.py 优先读坐标.
+    #
+    # 原子写入: city/region/country 是同一次反查的结果, 必须整组替换。
+    # 旧实现对三者各用独立 if, 当新反查出了 city 但没 region 时, 会保留上一个
+    # 不相干位置的旧 region → 出现 "California · 北京市" 这种省市错配。
+    # 因此只要这次拿到了 city (有了新位置), 就连 region/country 一起覆盖,
+    # 没反查到的字段显式清空, 不让旧值残留。
     if city:
         profile.detected_city = city
-    if region:
-        profile.detected_region = region
-    if country:
-        profile.detected_country = country
+        profile.detected_region = region or None
+        profile.detected_country = country or None
+    elif region or country:
+        # 没 city 但有 region/country (罕见): 仍整组更新, 同样不残留旧 city
+        profile.detected_city = None
+        profile.detected_region = region or None
+        profile.detected_country = country or None
+    # else: city/region/country 全空 → 只更新 lat/lon, 保留旧文字标签
     # 2026-05-12: 同时存用户实际 GPS 坐标. environment.py 直接透传给 weather/AQ service.
     profile.detected_lat = lat
     profile.detected_lon = lon

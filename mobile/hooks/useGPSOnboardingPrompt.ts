@@ -49,7 +49,7 @@ export function useGPSOnboardingPrompt(enabled: boolean): GPSOnboardingPromptSta
 
         // (c) profile manual mode → 不需要 GPS
         try {
-          const resp = await api.get('/v1/profile/me');
+          const resp = await api.get('/profile/me');
           if (resp.data?.use_manual_location) return;
         } catch {
           // profile 拉不到不算 fatal, 继续弹

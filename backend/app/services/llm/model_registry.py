@@ -54,17 +54,59 @@ MODELS: List[ModelEntry] = [
     ),
 
     # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
-    # 当前套餐 (2026-05-07) 支持的模型: qwen3.6-plus / deepseek-v3.2 / glm-5 /
-    # MiniMax-M2.5 + qwen-image / wan2.7-image (图像生成, 暂不接).
-    # 全部走同一个 base_url + 同一个 API Key, 只换 model 字段.
-    # qwen-turbo/plus/max 不在套餐里, 保留是 fallback 提示 (运行时若被选会走 base_url 默认报错).
+    # 套餐专属 base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+    # (OpenAI 协议兼容; 另有 Anthropic 协议兼容 /apps/anthropic, 本应用走 OpenAI 兼容).
+    # 全部走同一个 base_url + 同一个 API Key (TOKENPLAN_API_KEY), 只换 model 字段.
+    # 当前套餐 (2026-06-02) 支持的对话模型见下; qwen-image-2.0 / wan2.7-image 是
+    # 图像生成模型, 非对话, 故不进对话 picker.
+    #   千问: qwen3.7-max(推理) / qwen3.6-plus(推理+视觉) / qwen3.6-flash(快+视觉)
+    #   DeepSeek: deepseek-v4-pro(推理) / deepseek-v4-flash(快) / deepseek-v3.2(推理)
+    #   月之暗面: kimi-k2.6 / kimi-k2.5 (推理+视觉, 长上下文) —— 现已进套餐, 无需独立 Key
+    #   智谱: glm-5.1 / glm-5 (文本)
+    #   MiniMax: MiniMax-M2.5 (推理)
+    ModelEntry(
+        id="qwen3.7-max",
+        label="Qwen3.7 Max 推理 · 阿里",
+        provider="tokenplan",
+        model="qwen3.7-max",
+        speed_tier="reasoning",
+        note="千问旗舰推理, 深度强 (套餐内)",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
     ModelEntry(
         id="qwen3.6-plus",
         label="Qwen3.6 Plus 推理 · 阿里",
         provider="tokenplan",
         model="qwen3.6-plus",
         speed_tier="reasoning",
-        note="thinking 模型, 慢但深度强 (10-50s)",
+        note="thinking + 视觉, 慢但深度强 (10-50s)",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="qwen3.6-flash",
+        label="Qwen3.6 Flash 快 · 阿里",
+        provider="tokenplan",
+        model="qwen3.6-flash",
+        speed_tier="fast",
+        note="快 + 视觉, 工具调用/轻分析 (套餐内)",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="deepseek-v4-pro",
+        label="DeepSeek V4 Pro 推理 · 阿里直连",
+        provider="tokenplan",
+        model="deepseek-v4-pro",
+        speed_tier="reasoning",
+        note="V4 旗舰推理, 中文强 (套餐内)",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="deepseek-v4-flash",
+        label="DeepSeek V4 Flash 快 · 阿里直连",
+        provider="tokenplan",
+        model="deepseek-v4-flash",
+        speed_tier="fast",
+        note="V4 快版, 性价比高 (套餐内)",
         requires_env=("TOKENPLAN_API_KEY",),
     ),
     ModelEntry(
@@ -74,6 +116,33 @@ MODELS: List[ModelEntry] = [
         model="deepseek-v3.2",
         speed_tier="reasoning",
         note="推理模型, 中文强, 套餐内",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="kimi-k2.6",
+        label="Kimi K2.6 · 月之暗面 (阿里直连)",
+        provider="tokenplan",
+        model="kimi-k2.6",
+        speed_tier="balanced",
+        note="推理 + 视觉, 长上下文, 现进套餐",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="kimi-k2.5",
+        label="Kimi K2.5 · 月之暗面 (阿里直连)",
+        provider="tokenplan",
+        model="kimi-k2.5",
+        speed_tier="balanced",
+        note="推理 + 视觉, 长上下文, 套餐内",
+        requires_env=("TOKENPLAN_API_KEY",),
+    ),
+    ModelEntry(
+        id="glm-5.1",
+        label="GLM-5.1 · 智谱 (阿里直连)",
+        provider="tokenplan",
+        model="glm-5.1",
+        speed_tier="balanced",
+        note="智谱新版, 文本生成 (套餐内)",
         requires_env=("TOKENPLAN_API_KEY",),
     ),
     ModelEntry(
@@ -95,10 +164,10 @@ MODELS: List[ModelEntry] = [
         requires_env=("TOKENPLAN_API_KEY",),
     ),
 
-    # ──── Kimi (不在 TokenPlan 套餐, 需独立 Moonshot Key) ────
+    # ──── Kimi 官方直连 (套餐外回退, 需独立 Moonshot Key; 套餐内优先用 kimi-k2.6/2.5) ────
     ModelEntry(
         id="kimi-k2",
-        label="Kimi K2 · 月之暗面 (需独立 Key)",
+        label="Kimi K2 · 月之暗面官方 (需独立 Key)",
         provider="moonshot",
         model="kimi-k2-turbo-preview",
         speed_tier="balanced",
@@ -106,16 +175,8 @@ MODELS: List[ModelEntry] = [
         requires_env=("MOONSHOT_API_KEY",),
     ),
 
-    # ──── OpenClaw (内部) ────
-    ModelEntry(
-        id="openclaw-main",
-        label="OpenClaw · 内部",
-        provider="openclaw",
-        model="openclaw:main",
-        speed_tier="balanced",
-        note="内部网关, 多模型聚合",
-        requires_env=("OPENCLAW_API_KEY",),
-    ),
+    # OpenClaw 已从可选 LLM 通道下线 (2026-06: 无用户使用, 主链路走 tokenplan/langbridge)。
+    # 注意: OpenClawService/models 仍在为 Siri / 微信 bot / /agent 会话持久化服务, 那是另一回事。
 
     # ──── 商用模型 (经 browser-llm-orchestrator LangBridge gateway) ────
     # 透明走 https://base.executor.life/api/llm , OpenAI 协议兼容, 支持 vision.

@@ -1,4 +1,11 @@
-import { scoreColor, scoreGrade, colors, darkColors } from '../theme';
+import {
+  scoreColor,
+  scoreGrade,
+  colors,
+  darkColors,
+  semanticColors,
+  darkSemanticColors,
+} from '../theme';
 
 describe('scoreColor', () => {
   it('returns green for score >= 80', () => {
@@ -51,5 +58,36 @@ describe('theme tokens', () => {
     const lightKeys = Object.keys(colors).sort();
     const darkKeys = Object.keys(darkColors).sort();
     expect(darkKeys).toEqual(lightKeys);
+  });
+});
+
+describe('semanticColors', () => {
+  const TONES = ['success', 'warning', 'danger', 'info', 'neutral'] as const;
+
+  it('exports all 5 tones with fg/bg/solid', () => {
+    for (const tone of TONES) {
+      expect(semanticColors[tone].fg).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      expect(semanticColors[tone].bg).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      expect(semanticColors[tone].solid).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+  });
+
+  it('darkSemanticColors has identical tone + sub keys', () => {
+    expect(Object.keys(darkSemanticColors).sort()).toEqual(
+      Object.keys(semanticColors).sort(),
+    );
+    for (const tone of TONES) {
+      expect(Object.keys(darkSemanticColors[tone]).sort()).toEqual(
+        Object.keys(semanticColors[tone]).sort(),
+      );
+    }
+  });
+
+  it('keeps solid hue stable across light/dark (only fg/bg adapt)', () => {
+    // solid 是品牌/状态主色, 明暗一致; 只有前景/底色随主题切换.
+    for (const tone of TONES) {
+      expect(darkSemanticColors[tone].solid).toBe(semanticColors[tone].solid);
+      expect(darkSemanticColors[tone].bg).not.toBe(semanticColors[tone].bg);
+    }
   });
 });

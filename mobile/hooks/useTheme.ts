@@ -14,13 +14,24 @@
  *   function createStyles(c: ColorPalette) {
  *     return StyleSheet.create({ card: { backgroundColor: c.bgCard, ... } });
  *   }
+ *
+ * 状态色: const { s } = useTheme(); s.success.bg / s.danger.fg / s.warning.solid
+ *   —— 自动暗色适配, 别在组件里写 #hex (见 theme.ts semanticColors).
  */
 import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
-import { colors, darkColors } from '../constants/theme';
+import {
+  colors,
+  darkColors,
+  semanticColors,
+  darkSemanticColors,
+  type SemanticPalette,
+  type SemanticTone,
+} from '../constants/theme';
 
 export type ColorPalette = typeof colors;
 export type ThemeScheme = 'light' | 'dark';
+export type { SemanticPalette, SemanticTone };
 
 // 旧别名 — 保留向后兼容, 新代码用 useTheme.
 export type ThemeColors = ColorPalette;
@@ -33,7 +44,12 @@ export function useIsDarkMode(): boolean {
   return useTheme().isDark;
 }
 
-export function useTheme(): { scheme: ThemeScheme; isDark: boolean; c: ColorPalette } {
+export function useTheme(): {
+  scheme: ThemeScheme;
+  isDark: boolean;
+  c: ColorPalette;
+  s: SemanticPalette;
+} {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   return useMemo(
@@ -41,6 +57,7 @@ export function useTheme(): { scheme: ThemeScheme; isDark: boolean; c: ColorPale
       scheme: (isDark ? 'dark' : 'light') as ThemeScheme,
       isDark,
       c: isDark ? (darkColors as unknown as ColorPalette) : colors,
+      s: isDark ? darkSemanticColors : semanticColors,
     }),
     [isDark],
   );

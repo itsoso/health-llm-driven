@@ -100,6 +100,171 @@ private struct SymptomRecordRequest: Encodable {
     }
 }
 
+private struct SneezeCheckinRequest: Encodable {
+    let checkinDate: String
+    let sneezeCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case checkinDate = "checkin_date"
+        case sneezeCount = "sneeze_count"
+    }
+}
+
+private struct NasalWashCheckinRequest: Encodable {
+    let checkinDate: String
+    let nasalWashCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case checkinDate = "checkin_date"
+        case nasalWashCount = "nasal_wash_count"
+    }
+}
+
+private struct ExerciseRecordRequest: Encodable {
+    let recordDate: String
+    let exerciseType: String
+    let reps: Int?
+    let sets: Int?
+    let duration: Int?
+    let intensity: String?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case exerciseType = "exercise_type"
+        case reps
+        case sets
+        case duration
+        case intensity
+        case notes
+    }
+}
+
+private struct MedicationLogRequest: Encodable {
+    let medicationID: Int
+    let takenTime: String
+    let status: String
+    let actualDosage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case medicationID = "medication_id"
+        case takenTime = "taken_time"
+        case status
+        case actualDosage = "actual_dosage"
+    }
+}
+
+private struct MoodRecordRequest: Encodable {
+    let recordDate: String
+    let moodScore: Int
+    let journal: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case moodScore = "mood_score"
+        case journal
+    }
+}
+
+private struct GlucoseReadingRequest: Encodable {
+    let measuredAt: String
+    let glucoseMgDl: Double
+    let source: String
+
+    enum CodingKeys: String, CodingKey {
+        case measuredAt = "measured_at"
+        case glucoseMgDl = "glucose_mg_dl"
+        case source
+    }
+}
+
+private struct ExcretionRecordRequest: Encodable {
+    let recordDate: String
+    let type: String
+    let stoolType: Int?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case type
+        case stoolType = "stool_type"
+        case notes
+    }
+}
+
+/// 用户的一种在用药物 (GET /medication/medications/me)，用于一键打卡 chip。
+public struct MedicationOption: Decodable, Equatable, Sendable, Identifiable {
+    public let id: Int
+    public let name: String
+    public let dosage: String?
+    public let frequency: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case dosage
+        case frequency
+    }
+}
+
+private struct SupplementCheckinRequest: Encodable {
+    let recordDate: String
+    let checkins: [Checkin]
+
+    struct Checkin: Encodable {
+        let supplementID: Int
+        let taken: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case supplementID = "supplement_id"
+            case taken
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case checkins
+    }
+}
+
+private struct BatchCheckinResponse: Decodable {
+    let message: String?
+}
+
+/// 最近最常打卡的补剂 (后端 GET /supplements/me/frequent, System A 定义+打卡).
+public struct FrequentSupplement: Decodable, Equatable, Sendable, Identifiable {
+    public let supplementID: Int
+    public let name: String
+    public let dosage: String?
+    public let timing: String?
+    public let count: Int
+
+    public var id: Int { supplementID }
+
+    enum CodingKeys: String, CodingKey {
+        case supplementID = "supplement_id"
+        case name
+        case dosage
+        case timing
+        case count
+    }
+}
+
+/// 最常用的「饮水量 + 饮品类型」组合 (后端 GET /water/records/me/frequent).
+public struct FrequentWater: Decodable, Equatable, Sendable, Identifiable {
+    public let amountMl: Int
+    public let drinkType: String?
+    public let count: Int
+
+    public var id: String { "\(amountMl)-\(drinkType ?? "")" }
+
+    enum CodingKeys: String, CodingKey {
+        case amountMl = "amount_ml"
+        case drinkType = "drink_type"
+        case count
+    }
+}
+
 public final class RecordClient: Sendable {
     private let apiClient: APIClient
 
@@ -131,22 +296,49 @@ public final class RecordClient: Sendable {
         )
     }
 
-    public func recordWater(amountMl: Int) async throws -> QuickRecordResult {
+    public func recordWater(amountMl: Int, drinkType: String = "水") async throws -> QuickRecordResult {
         let saved: SavedRecordResponse = try await apiClient.post(
             "water/records",
             body: WaterRecordRequest(
                 userID: 0,
                 recordDate: Self.todayString(),
                 amount: amountMl,
-                drinkType: "水"
+                drinkType: drinkType
             )
         )
+        let suffix = (drinkType.isEmpty || drinkType == "水") ? "" : " \(drinkType)"
         return QuickRecordResult(
             type: "water",
-            message: "已记录饮水 \(amountMl)ml",
+            message: "已记录饮水 \(amountMl)ml\(suffix)",
             success: true,
             recordID: saved.id,
             undoPath: undoPath(prefix: "water/records", recordID: saved.id)
+        )
+    }
+
+    /// 最近最常打卡的补剂，用于「常吃补剂」一键打卡建议。
+    public func fetchFrequentSupplements(limit: Int = 8, days: Int = 30) async throws -> [FrequentSupplement] {
+        try await apiClient.get("supplements/me/frequent?limit=\(limit)&days=\(days)")
+    }
+
+    /// 最常用的饮水量 + 饮品类型组合，用于「常喝」一键记录建议。
+    public func fetchFrequentWater(limit: Int = 6, days: Int = 30) async throws -> [FrequentWater] {
+        try await apiClient.get("water/records/me/frequent?limit=\(limit)&days=\(days)")
+    }
+
+    /// 给今天的某个补剂打卡 (System A 定义+打卡)。taken=false 即取消打卡。
+    public func checkinSupplement(supplementID: Int, name: String, taken: Bool = true) async throws -> QuickRecordResult {
+        let _: BatchCheckinResponse = try await apiClient.post(
+            "supplements/records/batch",
+            body: SupplementCheckinRequest(
+                recordDate: Self.todayString(),
+                checkins: [.init(supplementID: supplementID, taken: taken)]
+            )
+        )
+        return QuickRecordResult(
+            type: "supplement",
+            message: taken ? "已为今天补剂打卡：\(name)" : "已取消今天补剂打卡：\(name)",
+            success: true
         )
     }
 
@@ -187,6 +379,157 @@ public final class RecordClient: Sendable {
         )
     }
 
+    /// 记录今天的打喷嚏次数 (鼻炎症状)。走 POST /checkin/，按日期 upsert，
+    /// 后端把 sneeze_count 并入当天打卡，供鼻炎趋势聚合。次数为当日累计值。
+    public func recordSneeze(count: Int) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "checkin/",
+            body: SneezeCheckinRequest(checkinDate: Self.todayString(), sneezeCount: count)
+        )
+        return QuickRecordResult(
+            type: "sneeze",
+            message: "已记录今天打喷嚏 \(count) 次",
+            success: true,
+            recordID: saved.id
+        )
+    }
+
+    /// 记录今天的洗鼻次数 (鼻炎护理)。走 POST /checkin/ (nasal_wash_count)，
+    /// 与打喷嚏同一套，按日期 upsert。次数为当日累计值。
+    public func recordNasalWash(count: Int) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "checkin/",
+            body: NasalWashCheckinRequest(checkinDate: Self.todayString(), nasalWashCount: count)
+        )
+        return QuickRecordResult(
+            type: "nasal_wash",
+            message: "已记录今天洗鼻 \(count) 次",
+            success: true,
+            recordID: saved.id
+        )
+    }
+
+    /// 用户在用药物列表 (供一键打卡 chip)。best-effort：失败返回空。
+    public func fetchMyMedications() async -> [MedicationOption] {
+        let meds: [MedicationOption]? = try? await apiClient.get("medication/medications/me?active_only=true")
+        return meds ?? []
+    }
+
+    /// 给某个药物打一次「已服用」(POST /medication/logs)。剂量缺省用药物定义的剂量。
+    public func logMedication(medicationID: Int, name: String, dosage: String?) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "medication/logs",
+            body: MedicationLogRequest(
+                medicationID: medicationID,
+                takenTime: Self.nowHHmm(),
+                status: "taken",
+                actualDosage: dosage
+            )
+        )
+        let suffix = (dosage?.isEmpty == false) ? " \(dosage!)" : ""
+        return QuickRecordResult(
+            type: "medication",
+            message: "已记录服药：\(name)\(suffix)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "medication/logs", recordID: saved.id)
+        )
+    }
+
+    /// 记录一次心情打分 (1–10) + 可选随记。走 POST /mood/records。
+    public func recordMood(score: Int, note: String?) async throws -> QuickRecordResult {
+        let journal = (note?.isEmpty == false) ? note : nil
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "mood/records",
+            body: MoodRecordRequest(recordDate: Self.todayString(), moodScore: score, journal: journal)
+        )
+        return QuickRecordResult(
+            type: "mood",
+            message: "已记录心情 \(score)/10",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "mood/records", recordID: saved.id)
+        )
+    }
+
+    /// 记录一次血糖 (手动)。走 POST /cgm/readings；调用方负责换算成 mg/dL。
+    public func recordBloodGlucose(mgDl: Double, displayText: String) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "cgm/readings",
+            body: GlucoseReadingRequest(measuredAt: Self.nowISO8601(), glucoseMgDl: mgDl, source: "manual")
+        )
+        return QuickRecordResult(
+            type: "blood_glucose",
+            message: "已记录血糖 \(displayText)",
+            success: true,
+            recordID: saved.id
+        )
+    }
+
+    /// 记录一次排泄 (大便/小便)。走 POST /excretion/records。
+    public func recordExcretion(type: String, stoolType: Int?, notes: String?) async throws -> QuickRecordResult {
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "excretion/records",
+            body: ExcretionRecordRequest(
+                recordDate: Self.todayString(),
+                type: type,
+                stoolType: type == "bowel" ? stoolType : nil,
+                notes: (notes?.isEmpty == false) ? notes : nil
+            )
+        )
+        let label = type == "urine" ? "小便" : "大便"
+        return QuickRecordResult(
+            type: "excretion",
+            message: "已记录排泄：\(label)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "excretion/records", recordID: saved.id)
+        )
+    }
+
+    /// 记录一次运动 (俯卧撑/跑步等)。走 POST /daily-health/exercise，
+    /// 强度按次数自动判定 (≥30 high / ≥15 medium / else low)，与 Web PushupCard 一致。
+    public func recordExercise(
+        exerciseType: String,
+        reps: Int?,
+        sets: Int?,
+        durationMinutes: Int?,
+        notes: String? = nil
+    ) async throws -> QuickRecordResult {
+        let intensity: String?
+        if let reps {
+            intensity = reps >= 30 ? "high" : (reps >= 15 ? "medium" : "low")
+        } else {
+            intensity = nil
+        }
+        let saved: SavedRecordResponse = try await apiClient.post(
+            "daily-health/exercise",
+            body: ExerciseRecordRequest(
+                recordDate: Self.todayString(),
+                exerciseType: exerciseType,
+                reps: reps,
+                sets: sets,
+                duration: durationMinutes,
+                intensity: intensity,
+                notes: notes
+            )
+        )
+        var detail: [String] = []
+        if let reps {
+            let s = sets ?? 1
+            detail.append(s > 1 ? "\(reps)个×\(s)组" : "\(reps)个")
+        }
+        if let durationMinutes { detail.append("\(durationMinutes)分钟") }
+        let suffix = detail.isEmpty ? "" : " " + detail.joined(separator: "，")
+        return QuickRecordResult(
+            type: "exercise",
+            message: "已记录运动：\(exerciseType)\(suffix)",
+            success: true,
+            recordID: saved.id,
+            undoPath: undoPath(prefix: "daily-health/exercise", recordID: saved.id)
+        )
+    }
+
     public func recordSymptom(description: String) async throws -> QuickRecordResult {
         let saved: SavedRecordResponse = try await apiClient.post(
             "symptoms",
@@ -221,6 +564,20 @@ public final class RecordClient: Sendable {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    private static func nowHHmm() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: Date())
+    }
+
+    private static func nowISO8601() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: Date())
     }
 

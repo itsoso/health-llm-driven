@@ -38,6 +38,39 @@ def _cache_key(days: int, user_id: Optional[int], include_journalctl: bool) -> s
     return f"observability:dashboard:d={days}:u={uid}:j={int(include_journalctl)}"
 
 
+@router.get("/safety-eval", summary="安全 eval — red-team 规则覆盖(确定性)")
+async def get_safety_eval(
+    admin: User = Depends(get_admin_user),
+):
+    """对抗性危险场景集 → 安全规则必须命中预期严重度。pass_rate<1 = 覆盖回归。"""
+    from app.services.safety_eval import run_safety_eval
+
+    return run_safety_eval()
+
+
+@router.get("/funnel", summary="激活漏斗 — 注册→改善(去标识增长仪表)")
+async def get_activation_funnel(
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """注册 → 建档 → 接受 → 评分 → 改善(北极星)漏斗 + 转化率。"""
+    from app.services.activation_funnel_service import activation_funnel
+
+    return activation_funnel(db)
+
+
+@router.get("/eval", summary="Agent eval 看板 — 主动/闭环/延迟/活动(去标识)")
+async def get_agent_eval(
+    days: int = Query(30, ge=1, le=180),
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """RFC 方向九:agent_audit_log + ActionCard 去标识聚合,放量前的仪表盘。"""
+    from app.services.agent_eval_service import agent_eval_dashboard
+
+    return agent_eval_dashboard(db, days=days)
+
+
 @router.get("/dashboard", summary="观察期看板 — 7 模块聚合")
 async def get_observation_dashboard(
     days: int = Query(7, ge=1, le=90),

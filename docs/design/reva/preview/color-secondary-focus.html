@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;gap:18px;align-items:stretch;}
+  .col{display:flex;flex-direction:column;gap:8px;flex:1;}
+  .chip{height:44px;border-radius:var(--r-sm);display:flex;align-items:center;padding:0 12px;}
+  .nm{font-size:11px;font-weight:600;}
+  .hex{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);}
+  .focus{flex:1.1;border-radius:var(--r-lg);background:var(--focus-bg);padding:16px;display:flex;flex-direction:column;justify-content:space-between;}
+</style></head>
+<body><div class="card">
+  <div class="col">
+    <div class="chip" style="background:var(--blue-50)"><span class="nm" style="color:var(--blue-600)">blue‑50</span></div>
+    <div class="chip" style="background:var(--blue-500)"><span class="nm" style="color:#fff">Clinical Blue 500 · 2A6FDB</span></div>
+    <div class="chip" style="background:var(--blue-600)"><span class="nm" style="color:#fff">blue‑600 · 1F58B6</span></div>
+    <div class="hex">Secondary — links, neutral trends, informational data</div>
+  </div>
+  <div class="focus">
+    <div style="font-family:var(--font-mono);font-size:11px;color:var(--focus-ink-2);letter-spacing:.08em;">FOCUS SURFACE · 0F1C17</div>
+    <div style="font-family:var(--font-mono);font-weight:500;font-size:40px;color:var(--focus-ink-1);line-height:1;">86<span style="font-size:16px;color:var(--green-bright)"> ↑</span></div>
+    <div style="font-size:12px;color:var(--focus-ink-2)">Hero data moments only · bright green pops here</div>
+  </div>
+</div></body></html>

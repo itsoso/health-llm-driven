@@ -789,8 +789,9 @@ async def test_garmin_connection(
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService
 
+        from app.utils.redact import mask_email
         server_type = "中国版(garmin.cn)" if credentials.is_cn else "国际版(garmin.com)"
-        logger.info(f"测试Garmin连接 - 服务器: {server_type}, 邮箱: {credentials.garmin_email}")
+        logger.info(f"测试Garmin连接 - 服务器: {server_type}, 邮箱: {mask_email(credentials.garmin_email)}")
 
         # 创建服务实例
         garmin_service = GarminConnectService(

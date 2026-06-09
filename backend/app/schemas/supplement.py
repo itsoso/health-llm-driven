@@ -145,3 +145,12 @@ class SupplementBatchCheckin(BaseModel):
 class SupplementWithRecord(BaseModel):
     supplement: SupplementDefinitionResponse
     record: Optional[SupplementRecordResponse] = None
+
+
+class FrequentSupplement(BaseModel):
+    """最近最常打卡的补剂(供一键打卡)。"""
+    supplement_id: int
+    name: str
+    dosage: Optional[str] = None
+    timing: Optional[str] = None
+    count: int  # 窗口内 taken=True 的次数

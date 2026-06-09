@@ -7,6 +7,13 @@ public enum StructuredRecordDraftType: String, CaseIterable, Identifiable, Senda
     case weight
     case bloodPressure
     case symptom
+    case sneeze
+    case nasalWash
+    case exercise
+    case medication
+    case mood
+    case bloodGlucose
+    case excretion
 
     public var id: String { rawValue }
 }
@@ -23,6 +30,19 @@ public struct StructuredRecordDraft: Equatable, Sendable {
     public let systolic: String
     public let diastolic: String
     public let symptom: String
+    public let sneezeCount: String
+    public let nasalWashCount: String
+    public let exerciseType: String
+    public let reps: String
+    public let sets: String
+    public let exerciseDuration: String
+    public let moodScore: String
+    public let moodNote: String
+    public let glucoseValue: String
+    public let glucoseUnit: String
+    public let excretionType: String
+    public let stoolType: String
+    public let excretionNotes: String
 
     public init(
         type: StructuredRecordDraftType,
@@ -35,7 +55,20 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         weightKg: String = "",
         systolic: String = "",
         diastolic: String = "",
-        symptom: String = ""
+        symptom: String = "",
+        sneezeCount: String = "",
+        nasalWashCount: String = "",
+        exerciseType: String = "",
+        reps: String = "",
+        sets: String = "",
+        exerciseDuration: String = "",
+        moodScore: String = "",
+        moodNote: String = "",
+        glucoseValue: String = "",
+        glucoseUnit: String = "mmol",
+        excretionType: String = "bowel",
+        stoolType: String = "",
+        excretionNotes: String = ""
     ) {
         self.type = type
         self.foodName = foodName
@@ -48,6 +81,34 @@ public struct StructuredRecordDraft: Equatable, Sendable {
         self.systolic = systolic
         self.diastolic = diastolic
         self.symptom = symptom
+        self.sneezeCount = sneezeCount
+        self.nasalWashCount = nasalWashCount
+        self.exerciseType = exerciseType
+        self.reps = reps
+        self.sets = sets
+        self.exerciseDuration = exerciseDuration
+        self.moodScore = moodScore
+        self.moodNote = moodNote
+        self.glucoseValue = glucoseValue
+        self.glucoseUnit = glucoseUnit
+        self.excretionType = excretionType
+        self.stoolType = stoolType
+        self.excretionNotes = excretionNotes
+    }
+
+    /// 把输入血糖换算成后端要的 mg/dL，并校验在 20–600 区间。
+    /// glucoseUnit == "mgdl" 直接用，否则按 mmol/L × 18.0182 换算。
+    public var glucoseMgDl: Double? {
+        guard let v = positiveDouble(glucoseValue) else { return nil }
+        let mgdl = glucoseUnit == "mgdl" ? v : v * 18.0182
+        guard mgdl >= 20, mgdl <= 600 else { return nil }
+        return (mgdl * 10).rounded() / 10
+    }
+
+    /// 1–10 的有效心情分。
+    public var moodScoreValue: Int? {
+        guard let n = positiveInt(moodScore), (1...10).contains(n) else { return nil }
+        return n
     }
 
     public var canSubmit: Bool {
@@ -64,6 +125,20 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             positiveInt(systolic) != nil && positiveInt(diastolic) != nil
         case .symptom:
             !trim(symptom).isEmpty
+        case .sneeze:
+            positiveInt(sneezeCount) != nil
+        case .nasalWash:
+            positiveInt(nasalWashCount) != nil
+        case .exercise:
+            !trim(exerciseType).isEmpty && (positiveInt(reps) != nil || positiveInt(exerciseDuration) != nil)
+        case .medication:
+            false // 用药通过下方「我的用药」chip 一键打卡，无表单草稿
+        case .mood:
+            moodScoreValue != nil
+        case .bloodGlucose:
+            glucoseMgDl != nil
+        case .excretion:
+            excretionType == "bowel" || excretionType == "urine"
         }
     }
 
@@ -87,6 +162,38 @@ public struct StructuredRecordDraft: Equatable, Sendable {
             return trim(systolic).isEmpty || trim(diastolic).isEmpty ? "" : "记录血压 \(trim(systolic))/\(trim(diastolic)) mmHg"
         case .symptom:
             return trim(symptom).isEmpty ? "" : "记录症状：\(trim(symptom))"
+        case .sneeze:
+            return trim(sneezeCount).isEmpty ? "" : "记录打喷嚏 \(trim(sneezeCount)) 次"
+        case .nasalWash:
+            return trim(nasalWashCount).isEmpty ? "" : "记录洗鼻 \(trim(nasalWashCount)) 次"
+        case .exercise:
+            let name = trim(exerciseType)
+            guard !name.isEmpty else { return "" }
+            var parts: [String] = []
+            if let r = positiveInt(reps) {
+                let s = positiveInt(sets) ?? 1
+                parts.append(s > 1 ? "\(r)个×\(s)组" : "\(r)个")
+            }
+            if let d = positiveInt(exerciseDuration) {
+                parts.append("\(d)分钟")
+            }
+            return parts.isEmpty ? "" : "记录运动：\(name) \(parts.joined(separator: "，"))"
+        case .medication:
+            return ""
+        case .mood:
+            guard let n = moodScoreValue else { return "" }
+            let note = trim(moodNote)
+            return note.isEmpty ? "记录心情 \(n)/10" : "记录心情 \(n)/10：\(note)"
+        case .bloodGlucose:
+            guard glucoseMgDl != nil else { return "" }
+            let unit = glucoseUnit == "mgdl" ? "mg/dL" : "mmol/L"
+            return "记录血糖 \(trim(glucoseValue)) \(unit)"
+        case .excretion:
+            let label = excretionType == "urine" ? "小便" : "大便"
+            if excretionType == "bowel", let b = positiveInt(stoolType) {
+                return "记录排泄：\(label)（Bristol \(b)）"
+            }
+            return "记录排泄：\(label)"
         }
     }
 

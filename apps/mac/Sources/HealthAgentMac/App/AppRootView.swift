@@ -126,12 +126,15 @@ struct AppRootView: View {
             }
         case .trace:
             TraceLookupView(client: services.traceClient, navigation: navigation)
+        case .dataSources:
+            DataSourcesView(client: services.deviceSourcesClient, onAskAgent: askAgentWithContext)
         case .data:
             WorkspaceOverviewView(
                 viewModel: services.todayViewModel,
                 jobClient: services.desktopJobClient,
                 kind: .data,
                 nocturnalClient: services.nocturnalClient,
+                garminTrendClient: services.garminTrendClient,
                 labClient: services.labClient,
                 interventionsClient: services.interventionsClient,
                 onAskAgent: askAgentWithContext,

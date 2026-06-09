@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:22px 28px;display:flex;gap:20px;}
+  .hero{flex:1.1;background:var(--focus-bg);border-radius:var(--r-xl);padding:20px;display:flex;gap:18px;align-items:center;box-shadow:var(--shadow-focus);}
+  .ring-num{font-family:var(--font-mono);font-weight:500;font-size:40px;color:var(--focus-ink-1);line-height:1;}
+  .small{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:16px;display:flex;flex-direction:column;gap:10px;justify-content:center;}
+  .spark{height:40px;width:100%;}
+</style></head>
+<body><div class="card">
+  <div class="hero">
+    <svg width="92" height="92" viewBox="0 0 92 92">
+      <circle cx="46" cy="46" r="38" fill="none" stroke="#23463A" stroke-width="9"/>
+      <circle cx="46" cy="46" r="38" fill="none" stroke="#3AD29F" stroke-width="9" stroke-linecap="round"
+        stroke-dasharray="238.8" stroke-dashoffset="33" transform="rotate(-90 46 46)"/>
+    </svg>
+    <div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--focus-ink-2);letter-spacing:.08em">TODAY · 恢复就绪度</div>
+      <div class="ring-num">86</div>
+      <div style="font-size:13px;color:var(--green-bright);font-weight:600">已就绪 · 适合中等强度</div>
+    </div>
+  </div>
+  <div class="small">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="data-label">静息心率 7 天</span><span class="metric" style="font-size:22px;color:var(--normal)">58<span class="unit"> bpm</span></span></div>
+    <svg class="spark" viewBox="0 0 200 40" preserveAspectRatio="none">
+      <polyline fill="none" stroke="#1F8A5B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+        points="0,28 28,24 56,30 84,20 112,22 140,14 168,16 200,10"/>
+    </svg>
+    <div style="font-size:12px;color:var(--ink-3)">↓ 4 bpm，恢复在改善</div>
+  </div>
+</div></body></html>

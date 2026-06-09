@@ -18,7 +18,7 @@ import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { sharePlainText } from '../utils/share';
 import { createWorkoutDetailAgentContext, pushChatWithContext } from '../utils/agentContext';
-import { colors, spacing, radii } from '../constants/theme';
+import { spacing, radii } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 interface RoutePoint { lat: number; lng: number; time?: number }
@@ -43,21 +43,14 @@ function RouteMap({
   onTouchStart?: () => void;
   onTouchEnd?: () => void;
 }) {
+  const { c } = useTheme();
   const points = useMemo(() => parseRoutePoints(routeJson), [routeJson]);
-  if (points.length < 2) return null;
-
-  const lats = points.map(p => p.lat);
-  const lngs = points.map(p => p.lng);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const padLat = (maxLat - minLat) * 0.15 || 0.002;
-  const padLng = (maxLng - minLng) * 0.15 || 0.002;
 
   // 速度渐变分段: 把 points 切成 ~20 段, 用 pace_timeline 对每段取平均配速
   const coloredSegments = useMemo(() => {
     const coords = points.map(p => ({ latitude: p.lat, longitude: p.lng }));
-    if (!paceTimeline || paceTimeline.length < 2 || !points[0].time) {
-      return [{ coords, color: colors.brand }];
+    if (!paceTimeline || paceTimeline.length < 2 || !points[0]?.time) {
+      return [{ coords, color: c.brand }];
     }
     const paces = paceTimeline.map(p => p.pace);
     const minPace = Math.min(...paces);
@@ -85,11 +78,20 @@ function RouteMap({
         : (minPace + maxPace) / 2;
       segs.push({ coords: slice, color: barColor(avgPace) });
     }
-    return segs.length > 0 ? segs : [{ coords, color: colors.brand }];
-  }, [points, paceTimeline]);
+    return segs.length > 0 ? segs : [{ coords, color: c.brand }];
+  }, [points, paceTimeline, c]);
+
+  if (points.length < 2) return null;
+
+  const lats = points.map(p => p.lat);
+  const lngs = points.map(p => p.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const padLat = (maxLat - minLat) * 0.15 || 0.002;
+  const padLng = (maxLng - minLng) * 0.15 || 0.002;
 
   return (
-    <HealthCard title="运动轨迹" icon="map-outline" iconColor={colors.blue} iconBg={colors.tintBlue}>
+    <HealthCard title="运动轨迹" icon="map-outline" iconColor={c.blue} iconBg={c.tintBlue}>
       <View
         style={{ borderRadius: radii.md, overflow: 'hidden', height: 220 }}
         onTouchStart={onTouchStart}
@@ -127,10 +129,11 @@ function RouteMap({
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
+  const { c } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       <View style={{ width: 10, height: 3, borderRadius: 2, backgroundColor: color }} />
-      <Text style={{ fontSize: 11, color: colors.labelTertiary }}>{label}</Text>
+      <Text style={{ fontSize: 11, color: c.labelTertiary }}>{label}</Text>
     </View>
   );
 }

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:26px 28px;display:flex;gap:16px;}
+  .panel{flex:1;border-radius:var(--r-lg);padding:22px;display:flex;flex-direction:column;gap:14px;justify-content:center;}
+  .light{background:var(--surface);border:1px solid var(--line);}
+  .dark{background:var(--focus-bg);}
+  .lock{display:flex;align-items:center;gap:12px;}
+  .cn{font-family:var(--font-cjk);font-weight:700;font-size:30px;letter-spacing:.04em;}
+  .en{font-family:var(--font-sans);font-weight:800;font-size:15px;letter-spacing:.18em;text-transform:uppercase;}
+  .tag{font-size:11px;color:var(--ink-3);}
+</style></head>
+<body><div class="card">
+  <div class="panel light">
+    <div class="lock"><img src="../assets/logo-mark.svg" width="44" height="44" alt="">
+      <div><div class="cn" style="color:var(--ink-1)">复元</div><div class="en" style="color:var(--green-600)">Reva</div></div></div>
+    <div class="tag">Primary lockup · mark + 复元 / Reva</div>
+  </div>
+  <div class="panel dark">
+    <div class="lock"><img src="../assets/logo-mark-white.svg" width="44" height="44" alt="">
+      <div><div class="cn" style="color:var(--focus-ink-1)">复元</div><div class="en" style="color:var(--green-bright)">Reva</div></div></div>
+    <div class="tag" style="color:var(--focus-ink-2)">On focus surface · ⚠ proposed placeholder mark</div>
+  </div>
+</div></body></html>

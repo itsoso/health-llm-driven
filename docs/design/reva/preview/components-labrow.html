@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:22px 28px;}
+  .list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);overflow:hidden;}
+  .item{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:none;}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .nm{font-size:15px;font-weight:600;color:var(--ink-1);}
+  .sub{font-size:12px;color:var(--ink-3);}
+  .val{margin-left:auto;font-family:var(--font-mono);font-weight:500;font-size:18px;text-align:right;}
+  .u{font-size:12px;color:var(--ink-3);}
+  .chev{color:var(--ink-4);font-size:18px;}
+</style></head>
+<body><div class="card"><div class="list">
+  <div class="item"><span class="dot" style="background:var(--risk)"></span>
+    <div><div class="nm">低密度脂蛋白 LDL‑C</div><div class="sub">偏高 · 优先处理</div></div>
+    <div class="val" style="color:var(--risk)">3.8<span class="u"> mmol/L</span></div><span class="chev">›</span></div>
+  <div class="item"><span class="dot" style="background:var(--caution)"></span>
+    <div><div class="nm">空腹血糖</div><div class="sub">临界 · 注意</div></div>
+    <div class="val" style="color:var(--caution)">6.3<span class="u"> mmol/L</span></div><span class="chev">›</span></div>
+  <div class="item"><span class="dot" style="background:var(--normal)"></span>
+    <div><div class="nm">血压</div><div class="sub">达标</div></div>
+    <div class="val" style="color:var(--normal)">122/78<span class="u"> mmHg</span></div><span class="chev">›</span></div>
+</div></div></body></html>

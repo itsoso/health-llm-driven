@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;flex-direction:column;gap:14px;}
+  .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;}
+  .sw{display:flex;flex-direction:column;gap:6px;}
+  .chip{height:54px;border-radius:var(--r-md);border:1px solid var(--line);}
+  .nm{font-size:12px;font-weight:600;color:var(--ink-1);}
+  .hex{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);}
+</style></head>
+<body><div class="card">
+  <div class="grid">
+    <div class="sw"><div class="chip" style="background:var(--paper)"></div><div class="nm">paper</div><div class="hex">#F7F6F2</div></div>
+    <div class="sw"><div class="chip" style="background:var(--paper-2)"></div><div class="nm">paper‑2</div><div class="hex">#F1EFE8</div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface)"></div><div class="nm">surface</div><div class="hex">#FFFFFF</div></div>
+    <div class="sw"><div class="chip" style="background:var(--ink-3)"></div><div class="nm">ink‑3</div><div class="hex">#8A938D</div></div>
+    <div class="sw"><div class="chip" style="background:var(--ink-2)"></div><div class="nm">ink‑2</div><div class="hex">#5C6660</div></div>
+    <div class="sw"><div class="chip" style="background:var(--ink-1)"></div><div class="nm">ink‑1</div><div class="hex">#16201B</div></div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <div style="flex:1;height:1px;background:var(--line)"></div><span class="hex">line #E7E5DE</span>
+    <div style="flex:1;height:1px;background:var(--line-strong)"></div><span class="hex">line‑strong #D7D5CC</span>
+  </div>
+</div></body></html>

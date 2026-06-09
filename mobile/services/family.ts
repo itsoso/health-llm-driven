@@ -20,7 +20,7 @@ export interface FamilyDashboard {
 }
 
 export async function fetchFamilyDashboard(): Promise<FamilyDashboard> {
-  const resp = await api.get<FamilyDashboard>('/v1/family/dashboard');
+  const resp = await api.get<FamilyDashboard>('/family/dashboard');
   return resp.data;
 }
 
@@ -34,7 +34,7 @@ export interface InviteCode {
 
 /** 主人端: 拿邀请码 (30min TTL, 同一组内 30min 内复用) */
 export async function createFamilyInvitation(): Promise<InviteCode> {
-  const resp = await api.post<InviteCode>('/v1/family/invitation/create');
+  const resp = await api.post<InviteCode>('/family/invitation/create');
   return resp.data;
 }
 
@@ -51,7 +51,7 @@ export async function acceptFamilyInvitation(
   relationshipType: string,
   nickname?: string,
 ): Promise<InviteAcceptResp> {
-  const resp = await api.post<InviteAcceptResp>('/v1/family/invitation/accept', {
+  const resp = await api.post<InviteAcceptResp>('/family/invitation/accept', {
     code,
     relationship_type: relationshipType,
     nickname,
@@ -61,6 +61,6 @@ export async function acceptFamilyInvitation(
 
 /** 创建家庭组 (主人没创建过组时调一次) */
 export async function createFamilyGroup(name: string): Promise<{ id: number; name: string }> {
-  const resp = await api.post<{ id: number; name: string }>('/v1/family/groups', { name });
+  const resp = await api.post<{ id: number; name: string }>('/family/groups', { name });
   return resp.data;
 }

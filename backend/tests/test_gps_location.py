@@ -357,3 +357,43 @@ def test_gps_location_keeps_english_city_outside_china(client, auth_user_and_hea
     body = resp.json()
     assert body["location"]["city"] == "San Francisco"
     assert body["geocode_source"] == "client"
+
+
+def test_gps_location_new_fix_overwrites_stale_region(client, auth_user_and_headers, db):
+    """换城市后 region 必须整组替换, 不能残留旧位置的 region.
+
+    根因复盘 ("California · 北京市"): 用户先在旧金山, 存了
+    detected_region='California'. 之后回到北京, 新反查只出了 city='北京' 没出
+    region (qweather 偶发, 或 hint 只带 city) → 旧实现用独立 if 只改 city,
+    保留旧 region='California' → 首页显示 "California · 北京市" 省市错配。
+    修复: 拿到新 city 时连 region/country 一起整组覆盖, 没反查到就清空。
+    """
+    user, headers = auth_user_and_headers
+    from app.models.user_profile import UserProfile
+
+    # 旧状态: 在加州
+    p = UserProfile(
+        user_id=user.id, use_manual_location=False,
+        detected_city="San Francisco", detected_region="California",
+        detected_country="United States",
+        detected_lat=37.7749, detected_lon=-122.4194,
+    )
+    db.add(p)
+    db.commit()
+
+    # 新 GPS fix: 回到北京, 客户端只带 city (没 region)
+    from app.config import settings
+    with patch.object(settings, "qweather_api_key", ""), \
+         patch.object(settings, "qweather_api_host", ""):
+        resp = client.post(
+            "/api/v1/profile/me/gps-location",
+            json={"lat": 39.9042, "lon": 116.4074, "city": "北京", "country": "中国"},
+            headers=headers,
+        )
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(p)
+    assert p.detected_city == "北京"
+    # 关键: 旧的 California 不能残留
+    assert p.detected_region is None
+    assert p.detected_country == "中国"

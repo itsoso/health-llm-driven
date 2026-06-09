@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;background:var(--paper);font-family:var(--font-sans);}
+  .card{width:700px;box-sizing:border-box;padding:24px 28px;display:flex;flex-direction:column;gap:12px;}
+  .row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:var(--r-pill);font-size:13px;font-weight:600;}
+  .dot{width:8px;height:8px;border-radius:50%;}
+  .core{width:34px;height:34px;border-radius:var(--r-sm);}
+  .hex{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);}
+  .name{display:flex;align-items:center;gap:10px;}
+</style></head>
+<body><div class="card">
+  <div class="row">
+    <div class="name"><div class="core" style="background:var(--normal)"></div><div><div style="font-size:13px;font-weight:700">normal</div><div class="hex">达标 / 改善</div></div></div>
+    <div><span class="pill" style="background:var(--normal-bg);color:var(--normal);border:1px solid var(--normal-line)"><span class="dot" style="background:var(--normal)"></span>已回到理想范围</span></div>
+  </div>
+  <div class="row">
+    <div class="name"><div class="core" style="background:var(--caution)"></div><div><div style="font-size:13px;font-weight:700">caution</div><div class="hex">注意 / 临界</div></div></div>
+    <div><span class="pill" style="background:var(--caution-bg);color:var(--caution);border:1px solid var(--caution-line)"><span class="dot" style="background:var(--caution)"></span>临界偏高，需关注</span></div>
+  </div>
+  <div class="row">
+    <div class="name"><div class="core" style="background:var(--risk)"></div><div><div style="font-size:13px;font-weight:700">risk</div><div class="hex">异常 / 偏高</div></div></div>
+    <div><span class="pill" style="background:var(--risk-bg);color:var(--risk);border:1px solid var(--risk-line)"><span class="dot" style="background:var(--risk)"></span>超出范围，优先处理</span></div>
+  </div>
+  <div class="row">
+    <div class="name"><div class="core" style="background:var(--info)"></div><div><div style="font-size:13px;font-weight:700">info</div><div class="hex">中性数据</div></div></div>
+    <div><span class="pill" style="background:var(--info-bg);color:var(--info);border:1px solid var(--info-line)"><span class="dot" style="background:var(--info)"></span>已连接手环数据</span></div>
+  </div>
+</div></body></html>

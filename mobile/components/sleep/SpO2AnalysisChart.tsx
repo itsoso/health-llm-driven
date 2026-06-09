@@ -4,9 +4,10 @@
 // - 睡眠分期背景色带
 // - 可选叠加 HR / 呼吸率
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, LayoutChangeEvent, TextStyle } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Polyline, Rect, G, Text as SvgText, Circle, Path } from 'react-native-svg';
-import { colors, spacing } from '../../constants/theme';
+import { spacing } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface TsPoint {
   sample_time: string; // HH:MM or HH:MM:SS
@@ -80,6 +81,8 @@ export default function SpO2AnalysisChart({
   height = 220,
   showOverlay = 'none',
 }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [chartWidth, setChartWidth] = useState(Dimensions.get('window').width - 32);
   const onLayout = (e: LayoutChangeEvent) => setChartWidth(e.nativeEvent.layout.width);
 
@@ -203,7 +206,7 @@ export default function SpO2AnalysisChart({
               x={PAD.left - 6}
               y={toSpO2Y(v) + 3}
               fontSize="10"
-              fill={colors.labelSecondary}
+              fill={c.labelSecondary}
               textAnchor="end"
             >
               {v}
@@ -227,7 +230,7 @@ export default function SpO2AnalysisChart({
         <Polyline
           points={polylinePoints}
           fill="none"
-          stroke={colors.brand}
+          stroke={c.brand}
           strokeWidth={1.6}
         />
 
@@ -249,7 +252,7 @@ export default function SpO2AnalysisChart({
             x={i === 0 ? PAD.left : PAD.left + plotW}
             y={height - PAD.bottom + 16}
             fontSize="10"
-            fill={colors.labelSecondary}
+            fill={c.labelSecondary}
             textAnchor={i === 0 ? 'start' : 'end'}
           >
             {lbl}
@@ -268,7 +271,7 @@ export default function SpO2AnalysisChart({
         ].map((l) => (
           <View key={l.label} style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: l.color, opacity: l.op }]} />
-            <Text style={txt.legend}>{l.label}</Text>
+            <Text style={styles.legendText}>{l.label}</Text>
           </View>
         ))}
       </View>
@@ -276,19 +279,18 @@ export default function SpO2AnalysisChart({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { paddingVertical: spacing.sm },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginTop: 8,
-    gap: 10,
-  },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 12, height: 8, borderRadius: 2 },
-});
-
-const txt = {
-  legend: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-};
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: { paddingVertical: spacing.sm },
+    legend: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      marginTop: 8,
+      gap: 10,
+    },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    legendDot: { width: 12, height: 8, borderRadius: 2 },
+    legendText: { fontSize: 10, color: c.labelSecondary },
+  });
+}

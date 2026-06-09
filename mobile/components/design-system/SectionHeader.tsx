@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { colors, typography, spacing } from '../../constants/theme';
+import { View, StyleSheet } from 'react-native';
+import { spacing } from '../../constants/theme';
+import AppText from './AppText';
 
 interface Props {
   title: string;
@@ -8,13 +9,16 @@ interface Props {
   onAction?: () => void;
 }
 
+// 2026-05-31: 之前静态 import colors → 暗色不切换 (audit 第 2 类). 改走 AppText (useTheme).
 export default function SectionHeader({ title, action, onAction }: Props) {
   return (
     <View style={styles.row}>
-      <Text style={styles.title}>{title}</Text>
-      {action && (
-        <Text style={styles.action} onPress={onAction}>{action} &gt;</Text>
-      )}
+      <AppText variant="titleMedium">{title}</AppText>
+      {action ? (
+        <AppText variant="bodySmall" tone="brand" onPress={onAction}>
+          {action} &gt;
+        </AppText>
+      ) : null}
     </View>
   );
 }
@@ -26,13 +30,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.md,
     paddingHorizontal: 2,
-  },
-  title: {
-    ...typography.titleMedium,
-    color: colors.labelPrimary,
-  },
-  action: {
-    ...typography.bodySmall,
-    color: colors.brand,
   },
 });

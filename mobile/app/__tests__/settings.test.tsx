@@ -58,10 +58,13 @@ jest.mock('../../hooks/useTheme', () => ({
       labelPrimary: '#fff',
       labelSecondary: '#aaa',
       labelTertiary: '#777',
+      labelQuaternary: '#48484A',
       separator: '#333',
       brand: '#0A8F8F',
       brandLight: '#123',
     },
+    // 走真实 semanticColors, 避免 mock 漏键 (Garmin 状态点 / 登出红用 s.{tone}.solid)
+    s: jest.requireActual('../../constants/theme').semanticColors,
   }),
 }));
 

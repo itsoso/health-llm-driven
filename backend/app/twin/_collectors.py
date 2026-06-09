@@ -30,8 +30,8 @@ def _safe_rollback(db: Session) -> None:
     """静默回滚，防止一个失败的查询污染整个事务。"""
     try:
         db.rollback()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[twin] rollback failed (continuing): %s", e)
 
 
 # ─────────────────────────────── water ────────────────────────────────
@@ -261,6 +261,14 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             "creatinine": ["CREA", "肌酐"],
             "egfr": ["eGFR", "肾小球滤过率"],
             "uric_acid": ["UA", "尿酸"],
+            # PhenoAge 输入项 (单位见 LabsContext 字段注释):
+            "albumin": ["ALB", "白蛋白"],
+            "crp": ["hs-CRP", "hsCRP", "CRP", "C反应蛋白", "C-反应蛋白"],
+            "lymphocyte_pct": ["LYMPH%", "淋巴细胞百分比", "淋巴%"],
+            "mcv": ["MCV", "红细胞平均体积", "平均红细胞体积"],
+            "rdw": ["RDW", "红细胞分布宽度"],
+            "alp": ["ALP", "碱性磷酸酶"],
+            "wbc": ["WBC", "白细胞"],
         }
 
         for key, patterns in KEY_PATTERNS.items():
@@ -349,6 +357,43 @@ def fetch_medical_exam_abnormal(
 
 # fetch_latest_exam_meta 已合并到 fetch_medical_exam_abnormal 中（Phase 3.2）
 # 保留旧签名供外部调用者向后兼容
+def fetch_user_age(db: Session, user_id: int) -> Optional[int]:
+    """用户实足年龄(整数岁)。
+
+    取数优先级:User.birth_date (canonical) → UserProfile.birth_date (fallback)。
+    User 模型是仓库里大部分 service 算年龄的来源 (sleep / exercise / doctor_report),
+    UserProfile 仅在用户主动填了"我的资料"时才有。两边都缺 → 返回 None。
+    """
+    try:
+        from app.models.user import User
+
+        birth_date = (
+            db.query(User.birth_date)
+            .filter(User.id == user_id)
+            .scalar()
+        )
+        if birth_date is None:
+            from app.models.user_profile import UserProfile
+
+            profile = (
+                db.query(UserProfile)
+                .filter(UserProfile.user_id == user_id)
+                .first()
+            )
+            if profile is None or profile.birth_date is None:
+                return None
+            birth_date = profile.birth_date
+
+        today = date.today()
+        return today.year - birth_date.year - (
+            (today.month, today.day) < (birth_date.month, birth_date.day)
+        )
+    except Exception as e:
+        logger.warning(f"[twin.collectors] fetch_user_age 失败: {e}")
+        _safe_rollback(db)
+        return None
+
+
 def fetch_latest_exam_meta(db: Session, user_id: int) -> Dict[str, Any]:
     """最近一份化验单的元信息。已合并入 fetch_medical_exam_abnormal。"""
     try:

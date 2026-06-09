@@ -1,9 +1,16 @@
 import React from 'react';
-import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../../hooks/useTheme';
 import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
+import {
+  FLOATING_TAB_BAR_BAR_HEIGHT,
+  FLOATING_TAB_BAR_PADDING_TOP,
+  FLOATING_TAB_BAR_MIN_BOTTOM,
+} from '../../hooks/useFloatingTabBarHeight';
 
 /**
  * Phase 4 (2026-05-29): Tab 3 → 4. 加 "我" tab — settings.tsx 已是完整 hub
@@ -35,17 +42,8 @@ export default function TabLayout() {
   return (
     <View style={{ flex: 1 }}>
       <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: c.brand,
-          tabBarInactiveTintColor: c.labelTertiary,
-          tabBarLabelStyle: styles.tabLabel,
-          tabBarStyle: {
-            ...styles.tabBar,
-            backgroundColor: c.bgCard,
-            borderTopColor: c.separator,
-          },
-        }}
+        tabBar={(props) => <RevaTabBar {...props} />}
+        screenOptions={{ headerShown: false }}
       >
         <Tabs.Screen
           name="index"
@@ -133,22 +131,86 @@ export default function TabLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  tabBar: {
-    position: 'absolute' as const,
-    borderTopWidth: 0.5,
-    elevation: 0,
-    height: Platform.OS === 'ios' ? 83 : 60,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 8,
-    paddingTop: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 },
+// ── Reva 浮动胶囊 Tab Bar ─────────────────────────────────
+// "Liquid Glass" 风: 距边缘内缩, 圆角 = 半高 (真胶囊端), 柔光阴影; 选中态绿色软高亮 + 实心图标.
+const TAB_META: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; iconOutline: keyof typeof Ionicons.glyphMap }> = {
+  index: { label: '今日', icon: 'sparkles', iconOutline: 'sparkles-outline' },
+  chat: { label: '私教', icon: 'chatbubbles', iconOutline: 'chatbubbles-outline' },
+  record: { label: '记录', icon: 'add-circle', iconOutline: 'add-circle-outline' },
+  me: { label: '我', icon: 'person-circle', iconOutline: 'person-circle-outline' },
+};
+
+function RevaTabBar({ state, navigation }: BottomTabBarProps) {
+  const { c } = useTheme();
+  const insets = useSafeAreaInsets();
+  const routes = state.routes.filter((r) => TAB_META[r.name]);
+  const activeKey = state.routes[state.index]?.key;
+  return (
+    <View pointerEvents="box-none" style={[capsule.wrap, { paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM) }]}>
+      <View style={[capsule.bar, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+        {routes.map((route) => {
+          const meta = TAB_META[route.name];
+          const focused = route.key === activeKey;
+          const color = focused ? c.brand : c.labelTertiary;
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+          };
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={focused ? { selected: true } : {}}
+              accessibilityLabel={meta.label}
+              activeOpacity={0.7}
+              onPress={onPress}
+              style={[capsule.item, focused && { backgroundColor: c.brandLight }]}
+            >
+              <Ionicons name={focused ? meta.icon : meta.iconOutline} size={22} color={color} />
+              <Text style={[capsule.label, { color, fontWeight: focused ? '700' : '500' }]} numberOfLines={1}>
+                {meta.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const capsule = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: FLOATING_TAB_BAR_PADDING_TOP,
   },
-  tabLabel: {
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: FLOATING_TAB_BAR_BAR_HEIGHT,
+    borderRadius: 28,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    shadowColor: '#16201B',
+    shadowOpacity: 0.13,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  item: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 7,
+    marginHorizontal: 2,
+    borderRadius: 22,
+  },
+  label: {
     fontSize: 10,
-    fontWeight: '600',
   },
 });
 

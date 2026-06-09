@@ -131,3 +131,28 @@ def test_healthkit_import_apple_xml_path_unaffected(client, db):
     by_src = {r.data_source: r for r in rows}
     assert by_src["apple"].steps == 6000
     assert by_src["apple-watch"].steps == 8500
+
+
+def test_healthkit_import_fractional_int_fields_coerced_not_422(client, db):
+    """avg() 聚合常把小数 float 喂给 int 字段(resting_heart_rate=52.5)。
+    回归:整批 422 → 0 导入(用户实测 '已导入 0 天 1 条错误')。
+    现在后端 before-validator 取整,坏值不再拖垮整批。"""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"records": [_record(
+        "2026-06-09", "apple-watch",
+        resting_heart_rate=52.5, steps=8123.0, total_sleep_minutes=420,
+    )]}
+    resp = client.post("/api/v1/devices/healthkit/import", json=payload, headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["imported_count"] == 1
+
+    from app.models.daily_health import GarminData
+    row = db.query(GarminData).filter(
+        GarminData.user_id == user.id,
+        GarminData.record_date == date(2026, 6, 9),
+        GarminData.data_source == "apple-watch",
+    ).one()
+    assert row.resting_heart_rate == 52  # 52.5 → 取整
+    assert row.steps == 8123
+    assert row.total_sleep_duration == 420

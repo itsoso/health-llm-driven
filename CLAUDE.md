@@ -11,11 +11,41 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 | 项目结构 / 命令 / 架构总览 / Multi-Agent 系统 | 本文件 |
 | 安全 / 日志 / 测试 / 隐私 / 部署 / DB / 提交规范的硬约束 | `AGENTS.md` (992 行) |
 | LLM Harness 设计（source-aware fast path / verification before write / tool schema / memory 4-stage / streaming） | `docs/HARNESS.md` |
+| 编码 agent 如何在本仓库导航 / 验证 / 沉淀经验（**操作工具架**,≠ 上面那条产品 HARNESS.md） | `docs/design-agent-operating-harness.md` |
 | iOS / Expo 工作流通用经验（Metro / dev-client / EAS 异步双通道） | `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md` |
 | Expo local native module 手写规则 | `~/work/personal/PRACTICES/expo-local-module-podspec.md` |
 | 新功能起步（四问 + ASCII 数据流） | `~/work/personal/PRACTICES/feature-plan.md` |
 
 > **README.md 关于移动端的描述已过时**（仍写 Capacitor），以本文件 §"移动端构建方向" 为准。
+>
+> **三个 "harness" 别混**：① `docs/HARNESS.md` 是**产品** LLM 方法论(健康 agent 怎么造);② `docs/design-agent-operating-harness.md` 是**编码 agent 操作工具架**(本文件 + `AGENTS.md` 就是它的入口);③ 下面这条 §"代理团队 Harness" 是 **Claude Code 开发代理团队**(`.claude/agents/` + `.claude/skills/`)。
+
+## 代理团队 Harness（开发用 · 2026-06-04 引入）
+
+本仓库已应用 [revfactory/harness](https://github.com/revfactory/harness) 元 skill,为开发任务生成了一套**代理团队**(`.claude/`)。
+
+**触发**:在本仓库做跨端功能 / 修复 / 上线时(「加一个功能」「实现 X」「修 bug」「合并部署」「发 OTA / TestFlight」)→ 用 **`health-harness-orchestrator`** skill 组队;扩建/审计团队本身 → 用 **`harness`** skill(由 marketplace 插件 `harness@harness-marketplace` 提供,user scope,非仓库内 —— 若新克隆缺该 skill,`claude plugin install harness@harness-marketplace`)。
+
+**团队**(均 `model: opus`,定义在 `.claude/agents/`):
+- `backend-engineer` — `backend/` 实现(API/service/model/agents/twin/safety/迁移)
+- `mobile-engineer` — `mobile/` 实现(屏/组件/hooks/services/主题)
+- `mac-engineer` — `apps/mac/` 实现(Swift 6/SwiftUI;配 `mac-build-deploy` skill)
+- `frontend-engineer` — `frontend/` 实现(Next.js 14 Web;注意页面冻结 Phase 0-4)
+- `qa-verifier` — 跑闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze)+ 跨界 shape 比对 + 真红/假红判别
+- `safety-privacy-reviewer` — AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险必经)
+- `release-engineer` — deploy.sh / OTA / EAS TestFlight / mac 打包安装(先后端再 OTA)
+
+**专用 skill**:`mac-build-deploy`(apps/mac 的 swift build/test 闸门 + package-app.sh 安装 + CI 工具链坑)。
+
+**工作流**:计划 → 实现(后端‖移动‖mac‖前端 fan-out)→ 增量 QA → 安全评审 → PR/上线。详见 `.claude/skills/health-harness-orchestrator/SKILL.md`。单文件小修/纯文档可降级单代理。
+
+**变更历史**:
+- 2026-06-04 初次构建(5 agents + orchestrator skill)。
+- 2026-06-04 加 `mac-engineer` agent + `mac-build-deploy` skill(覆盖 apps/mac 开发与分发)。
+- 2026-06-04 加 `frontend-engineer` agent(覆盖 frontend/ Next.js Web,补齐 4 端)。
+- 2026-06-04 删仓库内 vendored 的 `harness` 工厂副本,改由 marketplace 插件 `harness@harness-marketplace` 提供(消除撞名;定制团队 agents + orchestrator + mac-build-deploy 仍随仓库)。
+
+harness 是演进系统,每次执行后把新坑沉淀回对应 agent 定义。
 
 ## Project Overview
 
@@ -120,6 +150,7 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 - **Architecture**: `services/` (API clients) → `hooks/` (React Query wrappers) → `components/` (domain-split UI) → `app/(tabs)/` (Home, AI Chat, Quick Record, Safety Alerts, Health Cards).
 - **Native deps worth knowing**: `react-native-maps`, `@react-native-voice/voice`, `expo-haptics`, `expo-notifications`, `expo-local-authentication` (Face ID), `react-native-reanimated`, `expo-image-picker`, `react-native-markdown-display`.
 - **API URL**: `services/api.ts` reads `EXPO_PUBLIC_API_URL` (defaults to `https://health.executor.life/api`). For local backend dev, export `EXPO_PUBLIC_API_URL=http://<your-lan-ip>:8000/api/v1` before `npm run start`.
+- **API 契约类型(防静默漂移)**: `mobile/types/api.generated.ts` 由后端 OpenAPI 生成(`npm run generate-types`,镜像 frontend)。**改了后端 request/response schema 后必须重跑 `npm run generate-types` 并提交**,否则 mobile 手写类型与后端漂移会静默坏(历史教训:`sleep_hours` vs `total_sleep_minutes`、float→int 422)。已接护栏的出口:`services/appleHealth.ts` 的 `toApiRecord` 把 import payload 标注为生成 schema——后端改名/删字段 → 该处 tsc 直接红。新增 mobile→backend 写接口时,同样用 `components['schemas'][...]` 标注出口 payload。
 
 #### iOS 反馈环：本地 Sim 默认，EAS / TestFlight 异步（2026-05-06 工作流）
 
@@ -229,7 +260,7 @@ psql $DATABASE_URL -f backend/migrations/create_xxx_tables.sql
     ↓
 Orchestrator (L4)  ← 意图路由 + 专家调度 + LLM 合成
     ↓
-11 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
+12 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
     ↓
 Digital Health Twin (L2) ← 14 语义分区的统一状态视图 (Redis 5min 缓存)
     ↓
@@ -237,14 +268,14 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 ```
 
 **Orchestrator** (`app/orchestrator/`):
-- `intent.py` — 关键字意图分类（safety/labs/recovery/fuel/movement/mental/chronic/knowledge/longitudinal）
+- `intent.py` — 关键字意图分类（safety/labs/recovery/fuel/movement/mental/chronic/longevity/knowledge/longitudinal）
 - `specialists.py` — specialist 注册表，按依赖顺序执行
 - `orchestrator.py` — `run_orchestrator` (非流式) / `stream_orchestrator` (SSE)
 - 共享 context：Recovery Coach 的 readiness_zone 自动传递给 Movement Coach
 - 对话记忆：注入 `conversation_memory_service` 到 LLM prompt
 - LLM 失败自动回退 OpenClaw provider
 
-**11 Specialists** (`app/agents/`):
+**12 Specialists** (`app/agents/`):
 
 | Specialist | 模块 | 职责 |
 |---|---|---|
@@ -259,6 +290,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 | KnowledgeLibrarian | `agents/knowledge_librarian/` | 得到 wiki → ChromaDB RAG 检索 |
 | LongitudinalAnalyst | `agents/longitudinal_analyst/` | 6 个月趋势 + 干预事件×指标变化因果叙事 |
 | SupplementAdvisor | `agents/supplement_advisor/` | SNP+化验驱动补剂建议 (MTHFR/APOE/HFE/COMT/VDR/FADS1) + Episode 12 周 N-of-1 闭环 + HFE 硬阻断 |
+| LongevitySpecialist | `agents/longevity_specialist/` | PhenoAge(Levine 2018)表型年龄解读 + 缺值列清单 + 委托四件套(抗衰 MVP) |
 
 **Safety Guardian 规则分类** (`agents/safety_guardian/rules/`, total 51):
 - `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
@@ -445,15 +477,15 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 
 ## Conventions
 
-硬规范的权威来源是 `AGENTS.md`（992 行，9 大章节）。下面只列本文件必要的提示，**细节别在这里重述,去读 `AGENTS.md` 对应章节**：
+硬规范的权威来源是 `AGENTS.md`（章节导航）+ `docs/governance/*.md`（安全/测试/部署三章全文已拆出，见 Operating Harness Phase 2）。下面只列本文件必要的提示，**细节别在这里重述,去读对应章节/文件**：
 
 | 触发场景 | 去读 |
 |---|---|
-| 新 API 路由 / 改认证 / 改 CORS | `AGENTS.md §1 安全` |
-| 加/改日志 | `§2 日志` |
-| 加测试 / 改 fixture | `§3 测试` |
-| 改 DB schema / 索引 / JSONB | `§9 数据库` |
-| 部署脚本 / CI 改动 | `§8 部署` |
+| 新 API 路由 / 改认证 / 改 CORS | `docs/governance/security.md`（= AGENTS.md §1） |
+| 加/改日志 | `AGENTS.md §2 日志` |
+| 加测试 / 改 fixture | `docs/governance/testing.md`（= AGENTS.md §3） |
+| 改 DB schema / 索引 / JSONB | `AGENTS.md §9 数据库` |
+| 部署脚本 / CI 改动 | `docs/governance/deploy.md`（= AGENTS.md §8） |
 | 处理敏感数据（基因、化验、CGM、消息） | `§5 数据安全与隐私` |
 | 写 commit / 发 PR | `§6 代码提交规范` |
 

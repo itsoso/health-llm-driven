@@ -1,5 +1,7 @@
 # LLM Harness — 设计与方法论
 
+> **这是「产品 LLM Harness」** —— 讲*健康 AI agent 怎么造*(source-aware path / verification before write / tool schema / memory 注入 / streaming)。它**不是**"编码 agent(Claude Code/Cursor)怎么在本仓库干活"的操作工具架 —— 那个的入口是 `CLAUDE.md`,设计见 `docs/design-agent-operating-harness.md`。**两者名字像,职责无关,别混。**
+
 本文档沉淀本项目里"如何让 LLM 为健康场景稳定输出"的工程设计。代码散落在 `backend/app/orchestrator/`, `backend/app/services/agent_executor.py`, `backend/app/services/llm/`, `backend/app/twin/`, `backend/app/services/tool_schema_registry.py`，本文档把这些放进一张图。
 
 写作原则：**先讲我们怎么做，再标注业界对应做法**。让设计有可追溯依据，但不被术语带跑。

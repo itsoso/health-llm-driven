@@ -103,3 +103,23 @@ def test_desktop_jobs_has_managed_postgres_migration():
     assert "CREATE TABLE IF NOT EXISTS desktop_jobs" in sql
     assert "idx_desktop_jobs_user_created" in sql
     assert "idx_desktop_jobs_user_status" in sql
+
+
+def test_semicolon_inside_comment_does_not_break_statement(tmp_path: Path):
+    """注释里出现 ; 不能把后面的真语句切断(踩过:garmin 约束迁移中文注释含 ;)。"""
+    migrations_dir = tmp_path / "managed"
+    migrations_dir.mkdir()
+    (migrations_dir / "20260609_000001_comment_semicolon.sqlite.sql").write_text(
+        """
+        -- 这条注释里故意放一个分号; 看是否会把下面的建表语句切断
+        -- 多行注释; 再来一个分号
+        CREATE TABLE comment_semi (id INTEGER PRIMARY KEY, name TEXT);
+        """,
+        encoding="utf-8",
+    )
+
+    engine = create_engine("sqlite:///:memory:")
+    result = apply_managed_migrations(engine, migrations_dir)
+
+    assert [m.id for m in result.applied] == ["20260609_000001_comment_semicolon"]
+    assert "comment_semi" in inspect(engine).get_table_names()

@@ -66,10 +66,22 @@ export default function SymptomRecordScreen() {
     }
   };
 
-  const onVoice = () => {
+  const goVoice = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // 跳 voice-chat journal 模式, 让 LLM 自动抽字段 + 调 health_record(symptom)
     router.replace('/voice-chat?intent=journal');
+  };
+
+  const onVoice = () => {
+    // router.replace 会丢掉本页已填内容; 填了再切语音先确认.
+    if (bodyPart !== null || description.trim().length > 0) {
+      Alert.alert('切换到语音记录?', '当前已填写的内容不会保留。', [
+        { text: '取消', style: 'cancel' },
+        { text: '切换', style: 'destructive', onPress: goVoice },
+      ]);
+      return;
+    }
+    goVoice();
   };
 
   return (
@@ -80,14 +92,12 @@ export default function SymptomRecordScreen() {
         </TouchableOpacity>
         <Text style={txt.title}>记症状</Text>
         <TouchableOpacity
-          onPress={onSave}
-          disabled={!canSave || saving}
+          onPress={onVoice}
           hitSlop={10}
           style={{ padding: 6 }}
+          accessibilityLabel="语音记录"
         >
-          {saving
-            ? <ActivityIndicator size="small" color={c.brand} />
-            : <Text style={[txt.saveBtn, !canSave && { color: c.labelTertiary }]}>保存</Text>}
+          <Ionicons name="mic-outline" size={24} color={c.brand} />
         </TouchableOpacity>
       </View>
 
@@ -162,9 +172,18 @@ export default function SymptomRecordScreen() {
             style={styles.agentLink}
           />
 
-          <TouchableOpacity style={styles.voiceCta} onPress={onVoice} activeOpacity={0.8}>
-            <Ionicons name="mic" size={22} color="#fff" />
-            <Text style={txt.voiceText}>或者语音跟我说,我帮你记</Text>
+          <TouchableOpacity
+            style={[styles.saveCta, (!canSave || saving) && styles.saveCtaDisabled]}
+            onPress={onSave}
+            disabled={!canSave || saving}
+            activeOpacity={0.8}
+          >
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <>
+                  <Ionicons name="checkmark" size={22} color="#fff" />
+                  <Text style={txt.saveCtaText}>保存</Text>
+                </>}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -202,11 +221,12 @@ function createStyles(c: ColorPalette) {
       borderWidth: 1.5, borderColor: c.separator,
       alignItems: 'center', backgroundColor: c.bgCard,
     },
-    voiceCta: {
+    saveCta: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
       marginTop: spacing.xl * 1.5, paddingVertical: 16,
       backgroundColor: c.brand, borderRadius: radii.md, ...shadows.subtle,
     },
+    saveCtaDisabled: { backgroundColor: c.labelQuaternary, shadowOpacity: 0 },
     agentLink: { marginTop: spacing.xl },
   });
 }
@@ -214,10 +234,9 @@ function createStyles(c: ColorPalette) {
 function createTxt(c: ColorPalette) {
   return {
     title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    saveBtn: { fontSize: 16, fontWeight: '600', color: c.brand } as TextStyle,
     sectionTitle: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
     partLabel: { fontSize: 12, color: c.labelSecondary, textAlign: 'center' } as TextStyle,
     sevLabel: { fontSize: 13, color: c.labelPrimary } as TextStyle,
-    voiceText: { fontSize: 15, color: '#fff', fontWeight: '600' } as TextStyle,
+    saveCtaText: { fontSize: 16, color: '#fff', fontWeight: '700' } as TextStyle,
   };
 }

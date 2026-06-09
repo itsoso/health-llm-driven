@@ -1,0 +1,12 @@
+-- garmin_data 多源遗留约束清理。
+--
+-- 旧约束 UNIQUE(user_id, record_date)(自动名 garmin_data_user_id_record_date_key)
+-- 阻止同一天第二个 data_source 插入:用户已有 Garmin 行,Apple Watch 导入同日 →
+-- IntegrityError(duplicate key)→ HealthKit 整批 0 导入(用户实测"已导入 0 天 / 7 条错误"),
+-- 双设备对比也因此永远拿不到第二源数据。
+--
+-- 多源唯一性已由 20260520 迁移建的 idx_garmin_user_date_source
+-- (user_id, record_date, data_source) 保证。那次迁移加了新索引但漏删旧约束,造成并存。
+-- 此处删除遗留约束。幂等(IF EXISTS),只清理 schema,不动数据。
+-- 注:本 runner 按裸 ; 切分语句,注释里不能出现 ; (会切断成纯注释片段 → 执行报错)。
+ALTER TABLE garmin_data DROP CONSTRAINT IF EXISTS garmin_data_user_id_record_date_key;

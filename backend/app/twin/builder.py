@@ -98,6 +98,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("hrv_nightly",           lambda s: _fill_hrv_nightly(s, user_id, twin, sources)),
         ("respiration_nightly",   lambda s: _fill_respiration_nightly(s, user_id, twin, sources)),
         ("garmin_official",       lambda s: _fill_garmin_official(s, user_id, twin, sources)),
+        ("vo2max",                lambda s: _fill_vo2max(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -287,6 +288,43 @@ def _fill_physiological_derived(db: Session, user_id: int, twin: HealthTwin) -> 
             twin.body_composition.tdee_kcal = float(tdee)
     except Exception as e:
         logger.warning(f"[twin] physiological_derived 失败: {e}")
+
+
+def _fill_vo2max(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """填充 VO2max / 体能年龄(抗衰第二信号)。
+
+    Twin 已有 vo2max_running/cycling 字段但此前无人填充(死字段);这里补齐。
+    VO2max 是全因死亡率最强单一预测因子;vo2max_fitness_age 是 Garmin 直接算的
+    "体能年龄",可与实足年龄对比,做 PhenoAge 之外的第二个生物年龄信号。
+    取最近 90 天里有 vo2max 的最新一天(VO2max 变化慢,窗口放宽)。
+    """
+    try:
+        from datetime import timedelta
+
+        from app.models.daily_health import GarminData
+
+        cutoff = (twin.meta.generated_at.date() if twin.meta.generated_at else date.today()) - timedelta(days=90)
+        row = (
+            db.query(GarminData)
+            .filter(GarminData.user_id == user_id)
+            .filter(GarminData.vo2max_running.isnot(None))
+            .filter(GarminData.record_date >= cutoff)
+            .order_by(GarminData.record_date.desc())
+            .limit(1)
+            .first()
+        )
+        if not row:
+            return
+        p = twin.physiological
+        if row.vo2max_running is not None:
+            p.vo2max_running = float(row.vo2max_running)
+        if row.vo2max_cycling is not None:
+            p.vo2max_cycling = float(row.vo2max_cycling)
+        if getattr(row, "vo2max_fitness_age", None) is not None:
+            p.vo2max_fitness_age = int(row.vo2max_fitness_age)
+        sources.add("garmin")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] vo2max 填充失败: {e}")
 
 
 def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
@@ -1015,6 +1053,35 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         twin.genetic.pending_profile_count = int(pending or 0)
     except Exception:  # noqa: BLE001
         pass
+
+    # — PhenoAge (Levine 2018): labs 9 项 + 实足年龄齐才算; 任一缺失 → 留 None,不猜算
+    _fill_phenoage(db, user_id, twin)
+
+
+def _fill_phenoage(db: Session, user_id: int, twin: HealthTwin) -> None:
+    """聚合完 labs 后调用 compute_phenoage 填 LabsContext 派生字段。
+
+    设计纪律 (docs/design-longevity-mvp.md §3):
+      - 9 项血检任一缺失 → compute_phenoage 返回 None,这里全字段留 None,不写
+      - 单位假设与 LabsContext 字段注释一致 (collector 不做单位转换)
+      - 成功时同步写入 evidence_tier="validated" + claim_boundary,展示侧 must show
+    """
+    try:
+        from app.services.phenoage import phenoage_from_labs
+
+        age = _collectors.fetch_user_age(db, user_id)
+        L = twin.labs
+        result = phenoage_from_labs(L, age)
+        if result is None:
+            # 缺值 — 不写;只在所有 9 项 + age 都到位时再算
+            return
+        L.phenotypic_age = result.phenotypic_age
+        L.phenotypic_age_delta_years = result.delta_years
+        L.phenotypic_age_inputs_complete = result.inputs_complete
+        L.phenoage_evidence_tier = result.evidence_tier
+        L.phenoage_claim_boundary = result.claim_boundary
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] phenoage 计算失败: {e}")
 
 
 # ─────────────────────────── 工具 ─────────────────────────────────────

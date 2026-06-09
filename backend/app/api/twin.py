@@ -39,6 +39,18 @@ def get_my_twin(
     return twin.model_dump(mode="json")
 
 
+@router.get("/me/next-data", summary="冷启动信息增益 — 下一步补哪项数据解锁最多")
+def get_next_best_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """按"补这项能解锁什么"的启发式排序,给 day-1 用户最高 ROI 的下一步。"""
+    from app.services.data_acquisition_guidance import next_best_data
+
+    twin = build_twin(db, current_user.id, use_cache=True)
+    return next_best_data(twin)
+
+
 @router.post("/me/invalidate")
 def invalidate_my_twin(
     current_user: User = Depends(get_current_user_required),

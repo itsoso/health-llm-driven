@@ -12,9 +12,7 @@ struct SectionPanel<Content: View>: View {
                 .font(.title3.bold())
             content
         }
-        .padding(18)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .appCard()
     }
 }
 

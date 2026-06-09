@@ -35,10 +35,12 @@ struct AppServices {
     let safetyClient: SafetyClient
     let briefingClient: BriefingClient
     let nocturnalClient: NocturnalTimeseriesClient
+    let garminTrendClient: GarminTrendClient
     let labClient: LabClient
     let interventionsClient: InterventionsClient
     let workoutClient: WorkoutClient
     let goalClient: GoalClient
+    let deviceSourcesClient: DeviceSourcesClient
     let quickCaptureManager: QuickCaptureManager
 
     @MainActor
@@ -64,10 +66,12 @@ struct AppServices {
         self.safetyClient = SafetyClient(apiClient: apiClient)
         self.briefingClient = BriefingClient(apiClient: apiClient)
         self.nocturnalClient = NocturnalTimeseriesClient(apiClient: apiClient)
+        self.garminTrendClient = GarminTrendClient(apiClient: apiClient)
         self.labClient = LabClient(apiClient: apiClient)
         self.interventionsClient = InterventionsClient(apiClient: apiClient)
         self.workoutClient = WorkoutClient(apiClient: apiClient)
         self.goalClient = GoalClient(apiClient: apiClient)
+        self.deviceSourcesClient = DeviceSourcesClient(apiClient: apiClient)
         self.quickCaptureManager = QuickCaptureManager(recordClient: recordClient)
     }
 }

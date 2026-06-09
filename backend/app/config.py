@@ -197,6 +197,16 @@ class Settings(BaseSettings):
     # P2 RecoveryCoach: 用 hrv_readings 时序做 baseline (vs 旧的 hrv_latest/hrv_7d_avg)
     recovery_hrv_use_timeseries: bool = True
 
+    # Agent Native 化(RFC 方向一 Phase A): 把 specialist 暴露为 Agent 可自主调用的工具。
+    # 默认 False=行为与现状一致(specialist 仍由 orchestrator 编排); 开启进入灰度。
+    agent_specialist_tools: bool = False
+    # 主动触达全局打扰预算:每用户每周跨所有 *_watch 主动推送上限(0=不限)
+    proactive_weekly_budget: int = 1
+    # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
+    task_tiered_routing: bool = False
+    # 多模型 panel(高风险裁决多模型投票):primitive,默认关
+    multi_model_panel: bool = False
+
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
 

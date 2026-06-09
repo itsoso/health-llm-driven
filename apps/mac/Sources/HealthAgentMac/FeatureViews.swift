@@ -4,103 +4,39 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
-private struct ConversationCategoryBadge {
-    let icon: String
-    let label: String
-    let tint: Color
-}
-
-private func conversationCategory(_ snapshot: AgentConversationSnapshot) -> ConversationCategoryBadge {
-    let firstUser = snapshot.messages.first(where: { $0.role == .user })?.content
-    let text = (firstUser?.isEmpty == false ? firstUser! : snapshot.title)
-    let lower = text.lowercased()
-
-    if text.contains("基因") || lower.contains("snp") || lower.contains("mthfr") || lower.contains("apoe") || lower.contains("genome") {
-        return .init(icon: "atom", label: "基因", tint: .purple)
-    }
-    if text.contains("知识库") || text.contains("证据") || lower.contains("wiki") {
-        return .init(icon: "books.vertical", label: "知识库", tint: .indigo)
-    }
-    if text.contains("化验") || text.contains("血脂") || text.contains("肝酶") || text.contains("HbA1c") || text.contains("LDL") || text.contains("尿酸") {
-        return .init(icon: "drop", label: "化验", tint: .pink)
-    }
-    if text.contains("睡眠") || text.contains("血氧") || lower.contains("sleep") || lower.contains("spo2") || lower.contains("hrv") {
-        return .init(icon: "moon.zzz", label: "睡眠", tint: .blue)
-    }
-    if text.contains("运动") || text.contains("训练") || lower.contains("acwr") {
-        return .init(icon: "figure.run", label: "运动", tint: .green)
-    }
-    if text.contains("饮食") || text.contains("营养") || text.contains("补剂") || lower.contains("tdee") {
-        return .init(icon: "fork.knife", label: "饮食", tint: .orange)
-    }
-    if text.contains("趋势") || text.contains("纵向") || text.contains("长期") {
-        return .init(icon: "chart.line.uptrend.xyaxis", label: "趋势", tint: .teal)
-    }
-    if text.contains("安全") || text.contains("告警") || text.contains("风险") {
-        return .init(icon: "exclamationmark.shield", label: "风险", tint: .red)
-    }
-    if text.contains("计划") || text.contains("方案") || lower.contains("plan") {
-        return .init(icon: "list.clipboard", label: "计划", tint: .indigo)
-    }
-    return .init(icon: "bubble.left.and.bubble.right", label: "对话", tint: .secondary)
-}
-
-private func conversationDifferentiator(_ snapshot: AgentConversationSnapshot) -> String {
-    let firstUser = snapshot.messages.first(where: { $0.role == .user })?.content
-    let raw = (firstUser?.isEmpty == false ? firstUser! : snapshot.title)
-    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    func capture(_ pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              match.numberOfRanges > 1,
-              let r = Range(match.range(at: 1), in: text) else { return nil }
-        let captured = String(text[r]).trimmingCharacters(in: .whitespaces)
-        return captured.isEmpty ? nil : captured
-    }
-
-    if let c = capture(#"围绕\s*([^\s，,。]+?)\s*这个"#) { return c }
-    if let c = capture(#"关于\s*([^\s，,。]+)"#) { return c }
-    if let c = capture(#"分析这个([^，,。\s]+)"#) { return c }
-
-    let prefixesToStrip = [
-        "请基于我的真实基因报告，",
-        "请基于我的真实基因上下文，",
-        "请基于这条知识库证据，",
-        "请基于我的真实健康数据和当前上下文，",
-        "请基于"
-    ]
-    var stripped = text
-    for prefix in prefixesToStrip {
-        if stripped.hasPrefix(prefix) {
-            stripped = String(stripped.dropFirst(prefix.count))
-            break
-        }
-    }
-    stripped = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
-    return String(stripped.prefix(32))
-}
-
 struct AgentChatView: View {
     @Bindable var viewModel: AgentChatViewModel
     var navigation: AppNavigationState?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
     @State private var draft = ""
-    @State private var modelStrategy = "auto"
+    // Default model = Qwen3.7 Max, persisted across launches (also remembers the
+    // user's later choice). "auto" / "default3" / "manual"; when manual, the
+    // chosen model id is persistedModelID.
+    @AppStorage("agent.model.strategy") private var modelStrategy = "manual"
+    @AppStorage("agent.model.id") private var persistedModelID = "qwen3.7-max"
     @State private var editorFocusToken = 0
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
-    @State private var historyExpanded = false
+    @State private var historyPage = 0
     @State private var copiedMessageID: UUID?
+    @State private var composerTextHeight: CGFloat = 0
+
+    private static let historyPageSize = 6
+    // ChatGPT-style: start at ~1 line, grow with content, then scroll past a cap.
+    private static let composerMinHeight: CGFloat = 38
+    private static let composerMaxHeight: CGFloat = 260
+
+    private var composerEditorHeight: CGFloat {
+        min(max(composerTextHeight, Self.composerMinHeight), Self.composerMaxHeight)
+    }
 
     private let modelOptions = AgentModelCatalog.defaultOptions
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             header
-            conversationHistoryStrip
 
             ViewThatFits(in: .horizontal) {
                 // Wide: a proper chat column (messages scroll, composer pinned to
@@ -131,7 +67,9 @@ struct AgentChatView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(24)
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             LinearGradient(
@@ -146,6 +84,7 @@ struct AgentChatView: View {
             .ignoresSafeArea()
         )
         .onAppear {
+            applyPersistedModelSelection()
             ingestPreparedDraft()
             editorFocusToken += 1
         }
@@ -164,39 +103,66 @@ struct AgentChatView: View {
         }
     }
 
+    // ChatGPT-style slim top bar: model selector + new-chat on the left, history /
+    // status on the right. No big page title and no full-width history card —
+    // those used to eat the top third of the view and clip the transcript.
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(appText("Analysis", appLanguageRaw))
-                .font(.title2.bold())
-            Spacer()
+        HStack(alignment: .center, spacing: 10) {
             modelMenuButton
-            Button {
-                draft = ""
-                viewModel.startNewConversation()
-                editorFocusToken += 1
-            } label: {
-                Label(appText("New Chat", appLanguageRaw), systemImage: "square.and.pencil")
-            }
-            .buttonStyle(.bordered)
-            statusChip
+            newChatButton
             if viewModel.isStreaming {
                 ProgressView()
                     .controlSize(.small)
             }
+            Spacer()
+            statusChip
+        }
+    }
+
+    private var newChatButton: some View {
+        Button {
+            draft = ""
+            viewModel.startNewConversation()
+            editorFocusToken += 1
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .font(.body)
+        }
+        .buttonStyle(.borderless)
+        .help(appText("New Chat", appLanguageRaw))
+    }
+
+    /// Apply the persisted model selection to the view model on appear, so a fresh
+    /// launch defaults to Qwen3.7 Max (manual) and later switches are remembered.
+    private func applyPersistedModelSelection() {
+        viewModel.multiModel = (modelStrategy == "default3")
+        if modelStrategy == "manual", !persistedModelID.isEmpty {
+            if viewModel.selectedModelID != persistedModelID {
+                viewModel.selectModel(persistedModelID)
+            }
+        } else if viewModel.selectedModelID != nil {
+            viewModel.selectModel(nil)
         }
     }
 
     private var modelMenuButton: some View {
         Menu {
+            // Surface the model the backend actually used on the last run (auto /
+            // default mode resolve server-side, so this is the honest answer).
+            if let raw = viewModel.lastModel, !raw.isEmpty {
+                Text("\(appText("Currently using", appLanguageRaw)): \(resolvedModelTitle(raw))")
+            }
             Section(appText("Mode", appLanguageRaw)) {
                 Button {
                     modelStrategy = "auto"
+                    viewModel.multiModel = false
                     viewModel.selectModel(nil)
                 } label: {
                     Label(appText("Auto Select", appLanguageRaw), systemImage: modelStrategy == "auto" ? "checkmark" : "")
                 }
                 Button {
                     modelStrategy = "default3"
+                    viewModel.multiModel = true
                     viewModel.selectModel(nil)
                 } label: {
                     Label(appText("Default 3", appLanguageRaw), systemImage: modelStrategy == "default3" ? "checkmark" : "")
@@ -206,6 +172,8 @@ struct AgentChatView: View {
                 ForEach(modelOptions, id: \.id) { option in
                     Button {
                         modelStrategy = "manual"
+                        viewModel.multiModel = false
+                        persistedModelID = option.id
                         viewModel.selectModel(option.id)
                     } label: {
                         Label(
@@ -235,38 +203,69 @@ struct AgentChatView: View {
            let option = modelOptions.first(where: { $0.id == id }) {
             return option.title
         }
-        if modelStrategy == "default3" {
-            return appText("Default 3", appLanguageRaw)
+        // Auto / default mode: show the actual model used last run when known,
+        // prefixed with the mode so it's clear it was auto-resolved.
+        let modePrefix = modelStrategy == "default3" ? appText("Default 3", appLanguageRaw) : appText("Auto", appLanguageRaw)
+        if let raw = viewModel.lastModel, !raw.isEmpty {
+            return "\(modePrefix) · \(resolvedModelTitle(raw))"
         }
-        return appText("Auto Select", appLanguageRaw)
+        return modelStrategy == "default3" ? appText("Default 3", appLanguageRaw) : appText("Auto Select", appLanguageRaw)
+    }
+
+    /// Map a raw model id from the stream (e.g. "commercial/GPT-5.5") to a
+    /// friendly catalog title, falling back to the last path component.
+    private func resolvedModelTitle(_ raw: String) -> String {
+        if let option = modelOptions.first(where: { $0.id == raw || $0.title == raw }) {
+            return option.title
+        }
+        if let slash = raw.lastIndex(of: "/") {
+            return String(raw[raw.index(after: slash)...])
+        }
+        return raw
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 14) {
-            promptToolbar
-            ZStack(alignment: .topLeading) {
-                PromptCommandTextEditor(
-                    text: $draft,
-                    focusToken: editorFocusToken
-                ) {
-                    sendDraft()
-                }
-                .frame(minHeight: 190, maxHeight: 300)
+            // ChatGPT-style input box: text on top, a control bar inside the same
+            // rounded box — attach + web on the left, round send/stop on the right.
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topLeading) {
+                    PromptCommandTextEditor(
+                        text: $draft,
+                        focusToken: editorFocusToken,
+                        measuredHeight: $composerTextHeight
+                    ) {
+                        sendDraft()
+                    }
+                    .frame(height: composerEditorHeight)
+                    .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
 
-                if draft.isEmpty {
-                    Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 12)
-                        .padding(.leading, 8)
-                        .allowsHitTesting(false)
+                    if draft.isEmpty {
+                        Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 12)
+                            .padding(.leading, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    attachButton
+                    webSearchToggle
+                    Spacer(minLength: 0)
+                    composerSendButton
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.vertical, 8)
+            // White input field (ChatGPT-style) instead of the grey fill.
+            // `.textBackgroundColor` is the system text-field white and stays
+            // correct in dark mode; a slightly stronger border keeps the white
+            // box legible against the composer card.
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
             }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
@@ -280,53 +279,7 @@ struct AgentChatView: View {
                 }
             }
 
-            promptSuggestions
-
-            HStack(alignment: .center, spacing: 10) {
-                if let error = viewModel.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
-                }
-                Spacer()
-                Text("⌘↩")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.secondary.opacity(0.10), in: Capsule())
-                if viewModel.canRetry {
-                    Button {
-                        Task { await viewModel.retryLastMessage() }
-                    } label: {
-                        Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                }
-                if viewModel.isStreaming {
-                    Button(role: .destructive) {
-                        viewModel.cancelStreaming()
-                    } label: {
-                        Label(appText("Stop", appLanguageRaw), systemImage: "stop.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .help(appText("Stop generating", appLanguageRaw))
-                } else {
-                    Button {
-                        sendDraft()
-                    } label: {
-                        Label(appText("Run", appLanguageRaw), systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!viewModel.canSubmit(draft))
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .help("Command-Return")
-                }
-            }
+            composerStatusLine
         }
         .padding(18)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -349,28 +302,110 @@ struct AgentChatView: View {
         }
     }
 
-    private var promptToolbar: some View {
-        HStack(spacing: 12) {
-            Label(appText("New Analysis", appLanguageRaw), systemImage: "sparkles")
-                .font(.headline)
-            Text(appText("Draft, attach, then run.", appLanguageRaw))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
+    // ChatGPT-style round button at the input's bottom-right: ↑ to send,
+    // ■ to stop while streaming. The ⌘↩ shortcut still triggers send.
+    @ViewBuilder
+    private var composerSendButton: some View {
+        if viewModel.isStreaming {
             Button {
-                isAttachImporterPresented = true
+                viewModel.cancelStreaming()
             } label: {
-                Label(appText("Attach", appLanguageRaw), systemImage: "paperclip")
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.secondary.opacity(0.22), in: Circle())
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
-            Toggle(isOn: $viewModel.webSearchEnabled) {
-                Label(appText("Web Search", appLanguageRaw), systemImage: "network")
+            .buttonStyle(.plain)
+            .help(appText("Stop generating", appLanguageRaw))
+        } else {
+            let canSend = viewModel.canSubmit(draft)
+            Button {
+                sendDraft()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(canSend ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .keyboardShortcut(.return, modifiers: .command)
+            .help("Command-Return")
         }
+    }
+
+    // Contextual line below the input — only appears on error / retry, so the
+    // composer has no permanent bottom action row.
+    @ViewBuilder
+    private var composerStatusLine: some View {
+        if let error = viewModel.errorMessage {
+            HStack(spacing: 10) {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                if viewModel.canRetry && !viewModel.isStreaming {
+                    Button {
+                        Task { await viewModel.retryLastMessage() }
+                    } label: {
+                        Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                Spacer()
+            }
+        } else if viewModel.canRetry && !viewModel.isStreaming {
+            HStack {
+                Spacer()
+                Button {
+                    Task { await viewModel.retryLastMessage() }
+                } label: {
+                    Label(appText("Retry", appLanguageRaw), systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    // Bottom-left input controls (ChatGPT-style). No verbose "New Analysis"
+    // headline — the icons speak for themselves.
+    private var attachButton: some View {
+        Button {
+            isAttachImporterPresented = true
+        } label: {
+            Image(systemName: "paperclip")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .background(Color.secondary.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
+    }
+
+    private var webSearchToggle: some View {
+        Button {
+            viewModel.webSearchEnabled.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "network")
+                Text(appText("Web Search", appLanguageRaw))
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(viewModel.webSearchEnabled ? Color.accentColor : .secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                (viewModel.webSearchEnabled ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .help(appText("Web Search", appLanguageRaw))
     }
 
     private var promptSuggestions: some View {
@@ -402,68 +437,53 @@ struct AgentChatView: View {
     }
 
     @ViewBuilder
-    private var conversationHistoryStrip: some View {
-        if !viewModel.conversationHistory.isEmpty {
-            VStack(alignment: .leading, spacing: historyExpanded ? 10 : 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        historyExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
-                            .font(.subheadline.weight(.semibold))
-                        Text("\(viewModel.conversationHistory.count)")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.10), in: Capsule())
-                        if !historyExpanded {
-                            Text(appText("Continue a recent conversation or start fresh.", appLanguageRaw))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Image(systemName: historyExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+    private var historyPageCount: Int {
+        let count = viewModel.conversationHistory.count
+        guard count > 0 else { return 0 }
+        return (count + Self.historyPageSize - 1) / Self.historyPageSize
+    }
 
-                if historyExpanded {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(viewModel.conversationHistory.prefix(12)) { conversation in
-                                AgentConversationHistoryPill(
-                                    conversation: conversation,
-                                    isSelected: conversation.id == viewModel.currentConversationID,
-                                    onLoad: {
-                                        viewModel.loadConversation(conversation)
-                                        editorFocusToken += 1
-                                    },
-                                    onDelete: {
-                                        viewModel.deleteConversation(conversation)
-                                    }
-                                )
-                                .frame(width: 280)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
+    /// Conversations for the current page, clamping the page index so a stale
+    /// index (e.g. after deleting the last item on the last page) can't slice
+    /// out of range.
+    private var historyPageItems: [AgentConversationSnapshot] {
+        let all = viewModel.conversationHistory
+        guard !all.isEmpty else { return [] }
+        let pageCount = historyPageCount
+        let page = min(max(historyPage, 0), pageCount - 1)
+        let start = page * Self.historyPageSize
+        let end = min(start + Self.historyPageSize, all.count)
+        return Array(all[start..<end])
+    }
+
+    private var historyPager: some View {
+        let pageCount = historyPageCount
+        let page = min(max(historyPage, 0), max(pageCount - 1, 0))
+        return HStack(spacing: 12) {
+            Button {
+                if historyPage > 0 { historyPage -= 1 }
+            } label: {
+                Image(systemName: "chevron.left")
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, historyExpanded ? 14 : 10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+            .buttonStyle(.plain)
+            .disabled(page <= 0)
+
+            Text("\(page + 1) / \(pageCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            Button {
+                if historyPage < pageCount - 1 { historyPage += 1 }
+            } label: {
+                Image(systemName: "chevron.right")
             }
+            .buttonStyle(.plain)
+            .disabled(page >= pageCount - 1)
+
+            Spacer()
         }
+        .font(.caption.weight(.semibold))
+        .padding(.top, 4)
     }
 
     private var selectedModelDescription: String {
@@ -573,15 +593,21 @@ struct AgentChatView: View {
     }
 
     private var emptyConversationState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 32))
-                .foregroundStyle(.tertiary)
-            Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
+        VStack(spacing: 18) {
+            VStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.tertiary)
+                Text(appText("Ask about health data, labs, genes, records, or a specific execution plan.", appLanguageRaw))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+            // Starter prompts live here on the blank page (ChatGPT-style), not in
+            // the composer — they seed a first question and disappear once chatting.
+            promptSuggestions
+                .frame(maxWidth: 540)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(.top, 40)
@@ -589,18 +615,18 @@ struct AgentChatView: View {
 
     private var conversationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label(appText("Result", appLanguageRaw), systemImage: "text.bubble")
-                    .font(.headline)
-                Spacer()
-                if let status = viewModel.lastCompletionStatus {
+            // No "Result" header (ChatGPT-style); just show a tiny completion
+            // status line when present so the transcript starts at the messages.
+            if let status = viewModel.lastCompletionStatus {
+                HStack {
+                    Spacer()
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: 860)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(maxWidth: 860)
-            .frame(maxWidth: .infinity, alignment: .center)
 
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(viewModel.messages) { message in
@@ -697,7 +723,13 @@ struct AgentChatView: View {
         if message.role == .assistant {
             MarkdownMessageText(markdown: viewModel.displayContent(for: message))
         } else {
+            // Match the assistant body font (same scaled base) so the question and
+            // the answer read at one consistent size instead of the system .body
+            // default towering over the assistant text.
             Text(message.content.isEmpty ? " " : message.content)
+                .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -765,10 +797,19 @@ struct AgentChatView: View {
             if !viewModel.conversationHistory.isEmpty {
                 Divider()
 
-                Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
-                    .font(.subheadline.bold())
+                HStack {
+                    Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Text("\(viewModel.conversationHistory.count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.10), in: Capsule())
+                }
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.conversationHistory.prefix(6)) { conversation in
+                    ForEach(historyPageItems) { conversation in
                         AgentConversationHistoryRow(
                             conversation: conversation,
                             isSelected: conversation.id == viewModel.currentConversationID,
@@ -780,6 +821,9 @@ struct AgentChatView: View {
                             }
                         )
                     }
+                }
+                if historyPageCount > 1 {
+                    historyPager
                 }
             }
 
@@ -1448,32 +1492,32 @@ private struct MarkdownMessageText: View {
         switch block {
         case .heading(let level, let text):
             inlineText(text)
-                .font(level <= 2 ? scaledFont(base: 20, weight: .bold) : scaledFont(base: 16, weight: .semibold))
+                .font(level <= 2 ? scaledFont(base: 13, weight: .bold) : scaledFont(base: 11.5, weight: .semibold))
                 .foregroundStyle(.primary)
                 .padding(.top, level <= 2 ? 4 : 2)
         case .paragraph(let text):
             inlineText(text)
-                .font(scaledFont(base: 15))
+                .font(scaledFont(base: 10.5))
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
-                    .font(scaledFont(base: 15, weight: .bold))
+                    .font(scaledFont(base: 10.5, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                 inlineText(text)
-                    .font(scaledFont(base: 15))
+                    .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .numbered(let index, let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(index).")
-                    .font(scaledFont(base: 15, weight: .bold))
+                    .font(scaledFont(base: 10.5, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                     .frame(minWidth: 22, alignment: .trailing)
                 inlineText(text)
-                    .font(scaledFont(base: 15))
+                    .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1481,7 +1525,7 @@ private struct MarkdownMessageText: View {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                     inlineText(column)
-                        .font(scaledFont(base: 12))
+                        .font(scaledFont(base: 10.5))
                         .lineLimit(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
@@ -1619,82 +1663,6 @@ private struct ToolActivityDetailSheet: View {
     }
 }
 
-private struct AgentConversationHistoryPill: View {
-    let conversation: AgentConversationSnapshot
-    let isSelected: Bool
-    let onLoad: () -> Void
-    let onDelete: () -> Void
-    @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
-
-    var body: some View {
-        let category = conversationCategory(conversation)
-        let differentiator = conversationDifferentiator(conversation)
-
-        return HStack(alignment: .top, spacing: 10) {
-            Button {
-                onLoad()
-            } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : category.icon)
-                        .font(.callout)
-                        .foregroundStyle(isSelected ? Color.accentColor : category.tint)
-                        .frame(width: 22)
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 6) {
-                            Text(category.label)
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(category.tint.opacity(0.15), in: Capsule())
-                                .foregroundStyle(category.tint)
-                        }
-                        Text(differentiator)
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Text(historySubtitle)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-            .buttonStyle(.plain)
-            .help(appText("Load Chat", appLanguageRaw))
-
-            Button {
-                onDelete()
-            } label: {
-                Image(systemName: "trash")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(appText("Delete", appLanguageRaw))
-        }
-        .padding(12)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.13) : Color(nsColor: .controlBackgroundColor).opacity(0.86),
-            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.08), lineWidth: 1)
-        }
-    }
-
-    private var historySubtitle: String {
-        let count = conversation.messages.count
-        let date = conversation.updatedAt.formatted(date: .numeric, time: .shortened)
-        if let conversationID = conversation.conversationID {
-            return "#\(conversationID) · \(count) \(appText("messages", appLanguageRaw)) · \(date)"
-        }
-        return "\(count) \(appText("messages", appLanguageRaw)) · \(date)"
-    }
-}
-
 private struct AgentConversationHistoryRow: View {
     let conversation: AgentConversationSnapshot
     let isSelected: Bool
@@ -1756,10 +1724,25 @@ private struct AgentConversationHistoryRow: View {
 private struct PromptCommandTextEditor: NSViewRepresentable {
     @Binding var text: String
     let focusToken: Int
+    // Reports laid-out content height for auto-growing composers; defaults to a
+    // throwaway binding for call sites that use a fixed frame instead.
+    var measuredHeight: Binding<CGFloat> = .constant(0)
     let onCommandReturn: () -> Void
 
+    init(
+        text: Binding<String>,
+        focusToken: Int,
+        measuredHeight: Binding<CGFloat> = .constant(0),
+        onCommandReturn: @escaping () -> Void
+    ) {
+        self._text = text
+        self.focusToken = focusToken
+        self.measuredHeight = measuredHeight
+        self.onCommandReturn = onCommandReturn
+    }
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, measuredHeight: measuredHeight)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -1787,6 +1770,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
 
         DispatchQueue.main.async {
             textView.window?.makeFirstResponder(textView)
+            context.coordinator.recomputeHeight()
         }
         return scrollView
     }
@@ -1796,6 +1780,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         textView.onCommandReturn = onCommandReturn
         if textView.string != text {
             textView.string = text
+            context.coordinator.recomputeHeight()
         }
         if context.coordinator.focusToken != focusToken {
             context.coordinator.focusToken = focusToken
@@ -1808,16 +1793,34 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        @Binding var measuredHeight: CGFloat
         weak var textView: CommandReturnTextView?
         var focusToken = 0
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, measuredHeight: Binding<CGFloat>) {
             self._text = text
+            self._measuredHeight = measuredHeight
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text = textView.string
+            recomputeHeight()
+        }
+
+        /// Measure the laid-out text height so the composer can grow with content.
+        /// Reports the glyph-box height + the text container's vertical insets;
+        /// the SwiftUI side clamps it between one line and a max before scrolling.
+        func recomputeHeight() {
+            guard let textView,
+                  let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer else { return }
+            layoutManager.ensureLayout(for: container)
+            let used = layoutManager.usedRect(for: container).height
+            let height = used + textView.textContainerInset.height * 2
+            if abs(height - measuredHeight) > 0.5 {
+                measuredHeight = height
+            }
         }
     }
 }
@@ -1855,10 +1858,26 @@ struct RecordHubView: View {
     @State private var selectedSupplementProduct: SupplementProductSummary?
     @State private var isSearchingSupplementProducts = false
     @State private var supplementProductMessage: String?
+    @State private var frequentSupplements: [FrequentSupplement] = []
+    @State private var frequentWater: [FrequentWater] = []
     @State private var weightKg = ""
     @State private var systolic = ""
     @State private var diastolic = ""
     @State private var symptom = ""
+    @State private var sneezeCount = ""
+    @State private var nasalWashCount = ""
+    @State private var exerciseType = ""
+    @State private var reps = ""
+    @State private var sets = "1"
+    @State private var exerciseDuration = ""
+    @State private var moodScore = ""
+    @State private var moodNote = ""
+    @State private var glucoseValue = ""
+    @State private var glucoseUnit = "mmol"
+    @State private var excretionType = "bowel"
+    @State private var stoolType = ""
+    @State private var excretionNotes = ""
+    @State private var myMedications: [MedicationOption] = []
     @State private var recentRecords: [String] = []
     @State private var resultMessage: String?
     @State private var lastSavedRecord: QuickRecordResult?
@@ -1915,6 +1934,17 @@ struct RecordHubView: View {
                 Task { await viewModel.refresh() }
             }
         }
+        .task { await loadFrequentSuggestions() }
+    }
+
+    /// 拉「常吃补剂 / 常喝饮水」建议；best-effort，失败静默成空(不打扰记录主流程)。
+    private func loadFrequentSuggestions() async {
+        async let supplements = try? client.fetchFrequentSupplements()
+        async let water = try? client.fetchFrequentWater()
+        async let meds = client.fetchMyMedications()
+        frequentSupplements = await supplements ?? []
+        frequentWater = await water ?? []
+        myMedications = await meds
     }
 
     private var recordHeader: some View {
@@ -2496,6 +2526,7 @@ struct RecordHubView: View {
                 recordTextField(appText("Protein g", appLanguageRaw), text: $protein)
             }
         case .water:
+            frequentWaterChips
             recordTextField(appText("Amount ml", appLanguageRaw), text: $waterMl)
         case .supplement:
             supplementFields
@@ -2508,6 +2539,117 @@ struct RecordHubView: View {
             }
         case .symptom:
             recordTextField(appText("Symptom, severity, and context", appLanguageRaw), text: $symptom)
+        case .sneeze:
+            recordTextField(appText("Sneeze count today", appLanguageRaw), text: $sneezeCount)
+        case .nasalWash:
+            recordTextField(appText("Nasal wash count today", appLanguageRaw), text: $nasalWashCount)
+        case .exercise:
+            exerciseFields
+        case .medication:
+            medicationChips
+        case .mood:
+            VStack(alignment: .leading, spacing: 10) {
+                recordTextField(appText("Mood score 1-10", appLanguageRaw), text: $moodScore)
+                recordTextField(appText("Note (optional)", appLanguageRaw), text: $moodNote)
+            }
+        case .bloodGlucose:
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    recordTextField(appText("Glucose value", appLanguageRaw), text: $glucoseValue)
+                    Picker("", selection: $glucoseUnit) {
+                        Text("mmol/L").tag("mmol")
+                        Text("mg/dL").tag("mgdl")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
+                    .labelsHidden()
+                }
+            }
+        case .excretion:
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("", selection: $excretionType) {
+                    Text(appText("Bowel", appLanguageRaw)).tag("bowel")
+                    Text(appText("Urine", appLanguageRaw)).tag("urine")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                if excretionType == "bowel" {
+                    recordTextField(appText("Bristol type 1-7 (optional)", appLanguageRaw), text: $stoolType)
+                }
+                recordTextField(appText("Note (optional)", appLanguageRaw), text: $excretionNotes)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var medicationChips: some View {
+        if myMedications.isEmpty {
+            Text(appText("No active medications. Add them on web first.", appLanguageRaw))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            frequentChipsRow(
+                label: appText("Tap a medication to log a dose", appLanguageRaw),
+                icon: "cross.case.fill",
+                tint: .red,
+                chips: myMedications.map { FrequentChipModel(id: "\($0.id)", title: $0.name, meta: $0.dosage) }
+            ) { index in
+                let med = myMedications[index]
+                Task { await logMedicationDose(med) }
+            }
+        }
+    }
+
+    private func logMedicationDose(_ med: MedicationOption) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result = try await client.logMedication(medicationID: med.id, name: med.name, dosage: med.dosage)
+            _ = handleRecordResult(result, fallbackText: med.name)
+            await viewModel.refresh()
+        } catch {
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
+    private var exerciseFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            recordTextField(appText("Exercise type", appLanguageRaw), text: $exerciseType)
+            exerciseRepPresets
+            HStack {
+                recordTextField(appText("Reps", appLanguageRaw), text: $reps)
+                recordTextField(appText("Sets", appLanguageRaw), text: $sets)
+                recordTextField(appText("Duration min", appLanguageRaw), text: $exerciseDuration)
+            }
+        }
+    }
+
+    // Quick rep presets, mirroring the Web PushupCard (+10/+15/+20/+30/+50).
+    // Tapping fills reps; if no exercise type yet, defaults to 俯卧撑.
+    private var exerciseRepPresets: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(appText("Common reps · one tap to fill", appLanguageRaw), systemImage: "bolt.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach([10, 15, 20, 30, 50], id: \.self) { count in
+                    Button {
+                        reps = "\(count)"
+                        if sets.trimmingCharacters(in: .whitespaces).isEmpty { sets = "1" }
+                        if exerciseType.trimmingCharacters(in: .whitespaces).isEmpty {
+                            exerciseType = "俯卧撑"
+                        }
+                    } label: {
+                        Text("+\(count)")
+                            .font(.callout.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.green.opacity(0.12), in: Capsule())
+                            .overlay { Capsule().stroke(Color.green.opacity(0.22), lineWidth: 1) }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
@@ -2525,6 +2667,7 @@ struct RecordHubView: View {
 
     private var supplementFields: some View {
         VStack(alignment: .leading, spacing: 10) {
+            frequentSupplementChips
             HStack {
                 recordTextField(appText("Supplement", appLanguageRaw), text: $supplementName)
                 Button {
@@ -2688,6 +2831,116 @@ struct RecordHubView: View {
         }
     }
 
+    private struct FrequentChipModel: Identifiable {
+        let id: String
+        let title: String
+        let meta: String?
+    }
+
+    @ViewBuilder
+    private var frequentWaterChips: some View {
+        if !frequentWater.isEmpty {
+            frequentChipsRow(
+                label: appText("Frequent · one tap to log", appLanguageRaw),
+                icon: "drop.fill",
+                tint: .cyan,
+                chips: frequentWater.map { water in
+                    let type = water.drinkType ?? ""
+                    let suffix = (type.isEmpty || type == "水") ? "" : " \(type)"
+                    return FrequentChipModel(id: water.id, title: "\(water.amountMl)ml\(suffix)", meta: nil)
+                }
+            ) { index in
+                let water = frequentWater[index]
+                Task { await recordFrequentWater(water) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var frequentSupplementChips: some View {
+        if !frequentSupplements.isEmpty {
+            frequentChipsRow(
+                label: appText("Frequent · one tap to check in", appLanguageRaw),
+                icon: "pills.fill",
+                tint: .purple,
+                chips: frequentSupplements.map { FrequentChipModel(id: "\($0.id)", title: $0.name, meta: $0.dosage) }
+            ) { index in
+                let supplement = frequentSupplements[index]
+                Task { await checkinFrequentSupplement(supplement) }
+            }
+        }
+    }
+
+    private func frequentChipsRow(
+        label: String,
+        icon: String,
+        tint: Color,
+        chips: [FrequentChipModel],
+        onPick: @escaping (Int) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(label, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(chips.enumerated()), id: \.element.id) { index, chip in
+                        Button {
+                            onPick(index)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(chip.title)
+                                    .font(.callout.weight(.semibold))
+                                    .lineLimit(1)
+                                if let meta = chip.meta, !meta.isEmpty {
+                                    Text(meta)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(tint.opacity(0.22), lineWidth: 1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSubmitting)
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+        }
+    }
+
+    private func recordFrequentWater(_ water: FrequentWater) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result = try await client.recordWater(amountMl: water.amountMl, drinkType: water.drinkType ?? "水")
+            if handleRecordResult(result, fallbackText: "\(water.amountMl)ml") {
+                await viewModel.refresh()
+            }
+        } catch {
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
+    private func checkinFrequentSupplement(_ supplement: FrequentSupplement) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let result = try await client.checkinSupplement(supplementID: supplement.supplementID, name: supplement.name)
+            _ = handleRecordResult(result, fallbackText: supplement.name)
+            await viewModel.refresh()
+        } catch {
+            resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
     private func selectSupplementProduct(_ product: SupplementProductSummary) {
         selectedSupplementProduct = product
         supplementName = product.displayName
@@ -2712,6 +2965,20 @@ struct RecordHubView: View {
             return appText("mmHg", appLanguageRaw)
         case .symptom:
             return appText("context", appLanguageRaw)
+        case .sneeze:
+            return appText("times", appLanguageRaw)
+        case .nasalWash:
+            return appText("times", appLanguageRaw)
+        case .exercise:
+            return appText("reps/min", appLanguageRaw)
+        case .medication:
+            return appText("one tap", appLanguageRaw)
+        case .mood:
+            return appText("1-10", appLanguageRaw)
+        case .bloodGlucose:
+            return appText("mmol/L", appLanguageRaw)
+        case .excretion:
+            return appText("bowel/urine", appLanguageRaw)
         }
     }
 
@@ -2729,6 +2996,20 @@ struct RecordHubView: View {
             return .pink
         case .symptom:
             return .indigo
+        case .sneeze:
+            return .mint
+        case .nasalWash:
+            return .teal
+        case .exercise:
+            return .green
+        case .medication:
+            return .red
+        case .mood:
+            return .yellow
+        case .bloodGlucose:
+            return .pink
+        case .excretion:
+            return .brown
         }
     }
 
@@ -2744,7 +3025,20 @@ struct RecordHubView: View {
             weightKg: weightKg,
             systolic: systolic,
             diastolic: diastolic,
-            symptom: symptom
+            symptom: symptom,
+            sneezeCount: sneezeCount,
+            nasalWashCount: nasalWashCount,
+            exerciseType: exerciseType,
+            reps: reps,
+            sets: sets,
+            exerciseDuration: exerciseDuration,
+            moodScore: moodScore,
+            moodNote: moodNote,
+            glucoseValue: glucoseValue,
+            glucoseUnit: glucoseUnit,
+            excretionType: excretionType,
+            stoolType: stoolType,
+            excretionNotes: excretionNotes
         )
     }
 
@@ -2788,6 +3082,41 @@ struct RecordHubView: View {
                 let text = symptom.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return }
                 result = try await client.recordSymptom(description: text)
+            case .sneeze:
+                guard let count = draft.positiveInt(sneezeCount) else { return }
+                result = try await client.recordSneeze(count: count)
+            case .nasalWash:
+                guard let count = draft.positiveInt(nasalWashCount) else { return }
+                result = try await client.recordNasalWash(count: count)
+            case .exercise:
+                let name = exerciseType.trimmingCharacters(in: .whitespacesAndNewlines)
+                let repsValue = draft.positiveInt(reps)
+                let durationValue = draft.positiveInt(exerciseDuration)
+                guard !name.isEmpty, repsValue != nil || durationValue != nil else { return }
+                result = try await client.recordExercise(
+                    exerciseType: name,
+                    reps: repsValue,
+                    sets: repsValue != nil ? (draft.positiveInt(sets) ?? 1) : nil,
+                    durationMinutes: durationValue
+                )
+            case .medication:
+                return // 用药通过「我的用药」chip 一键打卡，不走表单提交
+            case .mood:
+                guard let score = draft.moodScoreValue else { return }
+                result = try await client.recordMood(score: score, note: moodNote)
+            case .bloodGlucose:
+                guard let mgDl = draft.glucoseMgDl else { return }
+                let unit = glucoseUnit == "mgdl" ? "mg/dL" : "mmol/L"
+                result = try await client.recordBloodGlucose(
+                    mgDl: mgDl,
+                    displayText: "\(glucoseValue.trimmingCharacters(in: .whitespaces)) \(unit)"
+                )
+            case .excretion:
+                result = try await client.recordExcretion(
+                    type: excretionType,
+                    stoolType: draft.positiveInt(stoolType),
+                    notes: excretionNotes
+                )
             }
             let didSave = handleRecordResult(result, fallbackText: draft.previewText)
             if didSave {
@@ -2863,6 +3192,25 @@ struct RecordHubView: View {
             diastolic = ""
         case .symptom:
             symptom = ""
+        case .sneeze:
+            sneezeCount = ""
+        case .nasalWash:
+            nasalWashCount = ""
+        case .exercise:
+            exerciseType = ""
+            reps = ""
+            sets = "1"
+            exerciseDuration = ""
+        case .medication:
+            break // chip 即时打卡，无字段可清
+        case .mood:
+            moodScore = ""
+            moodNote = ""
+        case .bloodGlucose:
+            glucoseValue = ""
+        case .excretion:
+            stoolType = ""
+            excretionNotes = ""
         }
     }
 }
@@ -2876,6 +3224,13 @@ private extension StructuredRecordDraftType {
         case .weight: "Weight"
         case .bloodPressure: "BP"
         case .symptom: "Symptom"
+        case .sneeze: "Sneeze"
+        case .nasalWash: "Nasal Wash"
+        case .exercise: "Workout"
+        case .medication: "Medication"
+        case .mood: "Mood"
+        case .bloodGlucose: "Blood Glucose"
+        case .excretion: "Excretion"
         }
     }
 
@@ -2887,6 +3242,13 @@ private extension StructuredRecordDraftType {
         case .weight: "scalemass"
         case .bloodPressure: "heart.text.square"
         case .symptom: "cross.case"
+        case .sneeze: "wind"
+        case .nasalWash: "humidity"
+        case .exercise: "figure.run"
+        case .medication: "cross.case.fill"
+        case .mood: "face.smiling"
+        case .bloodGlucose: "drop.fill"
+        case .excretion: "toilet"
         }
     }
 }

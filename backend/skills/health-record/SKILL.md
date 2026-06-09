@@ -211,6 +211,25 @@ category: 维生素 / 矿物质 / 氨基酸 / 抗氧化 / 益生菌 / 中药 / �
 
 **成功后回复格式：** `✅ 已记录：{补剂名} {剂量} ✓`（多个用逗号分隔）
 
+### 图片记录（用户发送补剂照片 → 识别并打卡）
+
+补剂**没有**独立的图片识别端点（不要去调 `/supplements/recognize` 之类，不存在）。
+图片已经在你的多模态上下文里，直接按下面四步走：
+
+1. **从图片读出补剂名**：识别瓶身/标签上的补剂名称（如 NAC、鱼油、镁、维生素 D3）。
+   读不出就如实说"这张图我没认出具体补剂"，让用户补一句名字，**不要瞎猜**。
+2. **拉用户当前补剂列表**（拿 `supplement_id` + `name` 做匹配）：
+   ```bash
+   curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" \
+     "$HEALTH_API_URL/supplements/me/records?record_date=$(date +%Y-%m-%d)"
+   ```
+3. **逐个匹配**：识别出的名字能对上列表里的 → 收集其 `supplement_id`；
+   对不上的 → 先 `POST /supplements/definitions` 建定义（见上一节）拿回新 `id`。
+4. **批量打卡**（用上面"第二步"的 `/supplements/records/batch`，把所有 `supplement_id` 一次提交 `taken:true`）。
+
+**成功后回复格式：** `✅ 已打卡：NAC、鱼油、镁 ✓`（列出实际打卡的补剂名）。
+部分没认出时一并说明：`✅ 已打卡：NAC、鱼油 ✓；还有 2 瓶没认清，方便的话告诉我名字`。
+
 ---
 
 ## 同步 Garmin 数据

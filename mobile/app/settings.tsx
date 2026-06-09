@@ -14,7 +14,7 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 
 export default function SettingsScreen() {
-  const { c } = useTheme();
+  const { c, s } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
@@ -122,6 +122,14 @@ export default function SettingsScreen() {
             onPress={() => router.push('/genetic-report' as any)} />
         </View>
 
+        {/* 代谢健康 — Personal Health OS 闭环 */}
+        <View style={styles.card}>
+          <SettingRow icon="pulse-outline" label="代谢健康画像"
+            onPress={() => router.push('/metabolic-profile' as any)} />
+          <SettingRow icon="refresh-outline" label="代谢干预 · 90 天"
+            onPress={() => router.push('/intervention-cycle' as any)} />
+        </View>
+
         {/* Settings items */}
         <View style={styles.card}>
           <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
@@ -188,7 +196,7 @@ export default function SettingsScreen() {
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-          <Text style={txt.logoutText}>退出登录</Text>
+          <Text style={[txt.logoutText, { color: s.danger.solid }]}>退出登录</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -245,16 +253,16 @@ function GarminStatusRow({
   syncing: boolean;
   onSync: () => void;
 }) {
-  const { c } = useTheme();
+  const { c, s } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const health = status?.health as 'healthy' | 'stale' | 'error' | 'unbound' | undefined;
   const mins = status?.minutes_since_last_sync as number | null | undefined;
 
   const dot =
-    health === 'healthy' ? '#30D158' :
-    health === 'stale' ? '#FF9F0A' :
-    health === 'error' ? '#FF453A' :
+    health === 'healthy' ? s.success.solid :
+    health === 'stale' ? s.warning.solid :
+    health === 'error' ? s.danger.solid :
     c.labelTertiary;
 
   const statusText = (() => {
@@ -281,7 +289,7 @@ function GarminStatusRow({
         }} />
       </View>
       <Text style={txt.settingLabel}>Garmin</Text>
-      <Text style={[txt.settingValue, health === 'error' && { color: '#FF453A' }]}>{statusText}</Text>
+      <Text style={[txt.settingValue, health === 'error' && { color: s.danger.solid }]}>{statusText}</Text>
       <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={c.labelTertiary} />
     </TouchableOpacity>
   );
@@ -328,5 +336,5 @@ const createTxt = (c: ColorPalette) => ({
   locationHint: { fontSize: 12, color: c.labelSecondary, marginTop: 3 } as TextStyle,
   locationMode: { fontSize: 12, fontWeight: '600', color: c.brand } as TextStyle,
   locationCity: { fontSize: 13, fontWeight: '600', color: c.labelSecondary } as TextStyle,
-  logoutText: { fontSize: 16, fontWeight: '500', color: '#FF453A' } as TextStyle,
+  logoutText: { fontSize: 16, fontWeight: '500' } as TextStyle,
 });
