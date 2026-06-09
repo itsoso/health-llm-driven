@@ -264,7 +264,7 @@ class TestLiteModeMaxTokens:
         orch_mod._user_pref_ctx.set(None)
 
         await orch_mod._call_llm("sys", "user")  # 默认 lite_mode=False
-        assert captured[0]["max_tokens"] == orch_mod._FULL_MAX_TOKENS == 900
+        assert captured[0]["max_tokens"] == orch_mod._FULL_MAX_TOKENS == 2000
 
 
 # ─────────────────────── Specialists 注册 ──────

@@ -1062,7 +1062,10 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
 # perf (2026-05-28): lite_mode 的 max_tokens 上限. trivial query 通常 30-100 token 够,
 # 降到 300 给一些余量, 比默认 900 省 50%+ 生成时间 (尤其慢模型 reasoning tier).
 _LITE_MAX_TOKENS = 300
-_FULL_MAX_TOKENS = 900
+# full 模式上限。max_tokens 是天花板不是目标:正常 finish_reason=stop 会提前停,
+# 抬高不拖慢会自然结束的回答,只让长分析(体检/抗衰多 section、Opus 详尽输出)写完。
+# 900 太低,深度分析会被 finish_reason=length 从中间截断(web Opus-4.7 实测)。
+_FULL_MAX_TOKENS = 2000
 
 
 async def _call_llm(
