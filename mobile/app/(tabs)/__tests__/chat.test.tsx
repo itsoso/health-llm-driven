@@ -323,7 +323,9 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 83 });
+    // 键盘收起:spacer = 悬浮 tab bar 真实高度
+    // (paddingTop 8 + bar 56 + max(insets.bottom=0, 10) = 74),给输入框让出空间不被 tab bar 盖住。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 74 });
 
     act(() => {
       keyboardListeners.keyboardDidShow({

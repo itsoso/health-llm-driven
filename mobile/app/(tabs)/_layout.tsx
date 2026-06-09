@@ -6,6 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../../hooks/useTheme';
 import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
+import {
+  FLOATING_TAB_BAR_BAR_HEIGHT,
+  FLOATING_TAB_BAR_PADDING_TOP,
+  FLOATING_TAB_BAR_MIN_BOTTOM,
+} from '../../hooks/useFloatingTabBarHeight';
 
 /**
  * Phase 4 (2026-05-29): Tab 3 → 4. 加 "我" tab — settings.tsx 已是完整 hub
@@ -141,7 +146,7 @@ function RevaTabBar({ state, navigation }: BottomTabBarProps) {
   const routes = state.routes.filter((r) => TAB_META[r.name]);
   const activeKey = state.routes[state.index]?.key;
   return (
-    <View pointerEvents="box-none" style={[capsule.wrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+    <View pointerEvents="box-none" style={[capsule.wrap, { paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM) }]}>
       <View style={[capsule.bar, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         {routes.map((route) => {
           const meta = TAB_META[route.name];
@@ -180,12 +185,12 @@ const capsule = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: FLOATING_TAB_BAR_PADDING_TOP,
   },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 56,
+    height: FLOATING_TAB_BAR_BAR_HEIGHT,
     borderRadius: 28,
     paddingHorizontal: 6,
     borderWidth: 1,
