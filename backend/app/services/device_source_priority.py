@@ -33,6 +33,12 @@ _GARMIN_FIRST = ["garmin", "apple-watch", "ringconn", "oura", "withings-app", "u
 # 不在 METRIC_SOURCE_PRIORITY 里的指标用这个 (garmin 优先 → 旧单源用户行为不变).
 DEFAULT_PRIORITY: List[str] = ["garmin", "apple-watch", "ringconn", "oura", "withings-app", "unknown"]
 
+# 安全下限指标:跨源取"最差"(最小)值,而非按优先级取单源 —— 因为这些是"越低越危险"
+# 的单向急性风险阈值,喂给 Safety Guardian(血氧过低规则)。若按优先级取单源,某一源的
+# 正常读数会掩盖另一源的危险低值(如戒指 96% 掩盖手表 87% → 87% 本应触发严重低氧告警
+# 却被丢弃)。仅对单向下限指标启用;双向指标(如静息心率)不能用 min,仍走优先级。
+WORST_VALUE_METRICS = frozenset({"spo2_avg", "spo2_min"})
+
 
 # 指标 → 设备优先级. 字段名必须与 GarminData 列一致.
 METRIC_SOURCE_PRIORITY: Dict[str, List[str]] = {
@@ -112,7 +118,21 @@ def _row_value(row: Any, metric: str) -> Any:
 
 
 def pick_value(rows: Sequence[Any], metric: str) -> tuple[Any, Optional[str]]:
-    """单指标按优先级挑值. 返回 (value, winning_source); 全 None → (None, None)."""
+    """单指标按优先级挑值. 返回 (value, winning_source); 全 None → (None, None).
+
+    安全下限指标 (WORST_VALUE_METRICS): 跨源取最小值(最差),不让任一源的正常读数
+    掩盖另一源的危险低值。返回该最小值所在的源。
+    """
+    if metric in WORST_VALUE_METRICS:
+        worst_v: Any = None
+        worst_src: Optional[str] = None
+        for row in rows:
+            v = _row_value(row, metric)
+            if v is not None and (worst_v is None or v < worst_v):
+                worst_v = v
+                worst_src = _row_source(row)
+        return worst_v, worst_src
+
     for src in priority_for(metric):
         for row in rows:
             if _row_source(row) == src:

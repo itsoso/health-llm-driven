@@ -291,6 +291,60 @@ class TestBuilderWithPartialData:
         assert twin.freshness.blood_pressure == today.isoformat()
         assert twin.freshness.sleep == yesterday.isoformat()  # SleepRecord 更新
 
+    def test_nocturnal_spo2_fallback_from_non_garmin_source(self, db):
+        """戒指/手表用户(无逐秒 SpO2Sample)的夜间低血氧应进 spo2_min_overnight,
+        否则夜间严重低氧规则永不触发。取跨源最小(worst-value)。
+        直接测 _fill_spo2_overnight(避开 build_twin 并行 phase 的独立会话)。"""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin
+
+        user = User(
+            username=f"sp_{uuid.uuid4().hex[:6]}",
+            email=f"sp_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="ring user",
+            birth_date=date(1990, 1, 1), gender="男",
+            is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+
+        today = date.today()
+        # 同一天:戒指夜间低点 82,手表 85 → 取最差 82。无 SpO2Sample。
+        db.add(GarminData(user_id=user.id, record_date=today,
+                          data_source="ringconn", spo2_min=82.0, spo2_avg=90.0))
+        db.add(GarminData(user_id=user.id, record_date=today,
+                          data_source="apple-watch", spo2_min=85.0, spo2_avg=93.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight == 82.0
+        assert twin.physiological.spo2_avg == 90.0  # 跨源最差日均
+
+    def test_nocturnal_spo2_fallback_skipped_for_garmin_only(self, db):
+        """纯 garmin 用户(无 SpO2Sample)行为不变:不从日 spo2_min 兜底夜间值。"""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin
+
+        user = User(
+            username=f"gm_{uuid.uuid4().hex[:6]}",
+            email=f"gm_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="garmin user",
+            birth_date=date(1990, 1, 1), gender="男",
+            is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        db.add(GarminData(user_id=user.id, record_date=date.today(),
+                          data_source="garmin", spo2_min=82.0, spo2_avg=90.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight is None  # 纯 garmin 不兜底夜间值
+
     def test_build_computes_phenoage_when_all_9_inputs_present(self, db):
         """抗衰 MVP Step 2: 9 项血检 + 实足年龄齐 → twin.labs.phenotypic_age 被填."""
         from app.models.family_health import MedicalIndicator

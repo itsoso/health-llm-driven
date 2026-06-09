@@ -112,6 +112,22 @@ class TestVitalsRules:
         rule_ids = _rule_ids(alerts)
         assert "vitals.spo2_severe_hypoxia" in rule_ids
 
+    def test_spo2_multisource_worst_value_still_alerts(self):
+        """端到端:戒指(优先源) spo2 正常 + 手表低 → 合并取最差 → 严重低氧告警仍触发,
+        不被优先源的正常读数掩盖(安全回归:防 worst-value masking)。"""
+        from app.services.device_source_priority import merge_daily_by_priority
+
+        rows = [
+            {"data_source": "ringconn", "spo2_avg": 97.0},
+            {"data_source": "apple-watch", "spo2_avg": 85.0},
+        ]
+        merged = merge_daily_by_priority(rows, ["spo2_avg"])
+        assert merged["spo2_avg"] == 85.0  # 取最差
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=merged["spo2_avg"])
+        rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "vitals.spo2_severe_hypoxia" in rule_ids
+
     def test_spo2_min_nocturnal_severe_critical(self):
         """min < 80% → CRITICAL，独立于 avg。"""
         twin = _empty_twin()

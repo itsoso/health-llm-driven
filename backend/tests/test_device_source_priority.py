@@ -142,3 +142,42 @@ def test_merge_accepts_dict_rows():
     merged = merge_daily_by_priority(rows, ["hrv"])
     assert merged["hrv"] == 53.0
     assert merged["_source_by_metric"]["hrv"] == "ringconn"
+
+
+# ── 安全下限指标:worst-value(跨源最小),不让正常读数掩盖危险低值 ──
+
+def test_spo2_picks_worst_value_not_preferred_source():
+    """戒指(优先源) spo2 正常,手表低 → 必须取手表的低值,否则掩盖低氧风险。"""
+    rows = [
+        _Row(data_source="ringconn", spo2_avg=96.0, spo2_min=95.0),
+        _Row(data_source="apple-watch", spo2_avg=87.0, spo2_min=82.0),
+    ]
+    v_avg, src_avg = pick_value(rows, "spo2_avg")
+    assert v_avg == 87.0, "spo2_avg 应取跨源最小,而非戒指 96"
+    assert src_avg == "apple-watch"
+    v_min, src_min = pick_value(rows, "spo2_min")
+    assert v_min == 82.0
+    assert src_min == "apple-watch"
+
+
+def test_spo2_worst_value_via_merge():
+    rows = [
+        {"data_source": "ringconn", "spo2_avg": 96.0, "spo2_min": 94.0},
+        {"data_source": "apple-watch", "spo2_avg": 88.0, "spo2_min": 80.0},
+    ]
+    merged = merge_daily_by_priority(rows, ["spo2_avg", "spo2_min"])
+    assert merged["spo2_avg"] == 88.0
+    assert merged["spo2_min"] == 80.0
+    assert merged["_source_by_metric"]["spo2_min"] == "apple-watch"
+
+
+def test_spo2_single_source_back_compat():
+    """单源(旧 garmin-only)→ worst-value 退化为该行值,行为不变。"""
+    rows = [_Row(data_source="garmin", spo2_avg=97.0, spo2_min=93.0)]
+    assert pick_value(rows, "spo2_avg") == (97.0, "garmin")
+    assert pick_value(rows, "spo2_min") == (93.0, "garmin")
+
+
+def test_spo2_all_none_returns_none():
+    rows = [_Row(data_source="ringconn"), _Row(data_source="garmin")]
+    assert pick_value(rows, "spo2_avg") == (None, None)

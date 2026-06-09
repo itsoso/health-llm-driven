@@ -793,14 +793,41 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
             .first()
         )
         if not latest_row:
-            garmin = (
+            # 无逐秒 SpO2Sample (仅 Garmin Connect 写)。RingConn / Apple Watch 用户的夜间
+            # 血氧低点落在 GarminData.spo2_min 里,但夜间严重低氧规则 (spo2_min_overnight)
+            # 只读 SpO2Sample → 戒指/手表用户的夜间血氧下降永不告警。这里兜底:
+            # 取最新一天跨源最小 spo2_min 喂给该规则(worst-value,不掩盖危险低值)。
+            # 仅当存在非 garmin 源时启用 → 纯 garmin 用户行为完全不变(back-compat)。
+            min_rows = (
+                db.query(GarminData)
+                .filter(GarminData.user_id == user_id, GarminData.spo2_min.isnot(None))
+                .order_by(desc(GarminData.record_date))
+                .all()
+            )
+            if min_rows and any((r.data_source or "garmin") != "garmin" for r in min_rows):
+                latest_min_date = min_rows[0].record_date
+                day_mins = [
+                    r.spo2_min for r in min_rows
+                    if r.record_date == latest_min_date and r.spo2_min is not None
+                ]
+                if day_mins and twin.physiological.spo2_min_overnight is None:
+                    twin.physiological.spo2_min_overnight = min(day_mins)
+
+            # spo2_avg 兜底:跨源取最差(最小)日均,而非单源 .first()(防掩盖危险低值)。
+            avg_rows = (
                 db.query(GarminData)
                 .filter(GarminData.user_id == user_id, GarminData.spo2_avg.isnot(None))
                 .order_by(desc(GarminData.record_date))
-                .first()
+                .all()
             )
-            if garmin:
-                twin.physiological.spo2_avg = twin.physiological.spo2_avg or garmin.spo2_avg
+            if avg_rows:
+                latest_avg_date = avg_rows[0].record_date
+                day_avgs = [
+                    r.spo2_avg for r in avg_rows
+                    if r.record_date == latest_avg_date and r.spo2_avg is not None
+                ]
+                if day_avgs and not twin.physiological.spo2_avg:
+                    twin.physiological.spo2_avg = min(day_avgs)
             return
 
         rd = latest_row[0]
