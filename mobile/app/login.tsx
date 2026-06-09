@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
-import { loadCredentials, saveCredentials, clearCredentials } from '../services/auth';
+import { loadCredentials, saveCredentials } from '../services/auth';
 
 export default function LoginScreen() {
   const { c } = useTheme();
@@ -31,9 +31,9 @@ export default function LoginScreen() {
     let active = true;
     loadCredentials().then((saved) => {
       if (active && saved) {
-        setUsername(saved.username);
-        setPassword(saved.password);
-        setRemember(true);
+        setUsername(saved.username);          // 总是回填最后登录的用户名
+        setPassword(saved.password);          // 没记密码时为空串
+        setRemember(saved.password.length > 0); // 有记住密码才勾上
       }
     });
     return () => {
@@ -49,12 +49,8 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(username.trim(), password);
-      // 登录成功才落盘凭据; 取消勾选则清除旧记忆
-      if (remember) {
-        await saveCredentials(username.trim(), password);
-      } else {
-        await clearCredentials();
-      }
+      // 登录成功才落盘:用户名总记(最后登录用户),密码按勾选记/清
+      await saveCredentials(username.trim(), password, remember);
     } catch (err: any) {
       const msg =
         err?.response?.data?.detail || err?.message || '登录失败，请重试';
