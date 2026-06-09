@@ -445,8 +445,8 @@ async def _handle_pressure_webhook(
                 source="withings",
                 raw_data=record,
             )
-            logger.info(f"Withings BP event: {record.get('systolic')}/{record.get('diastolic')} "
-                         f"for user {user_id}")
+            # 不记血压具体值(L3 医疗数据,AGENTS.md §5),只记事件 + user_id
+            logger.info(f"Withings BP event received for user {user_id}")
 
 
 async def _handle_sleep_webhook(

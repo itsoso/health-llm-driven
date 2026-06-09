@@ -77,8 +77,9 @@ def get_my_safety_report(
         if _cached_safety:
             _cached_safety["_cached"] = True
             return _cached_safety
-    except Exception:
-        pass
+    except Exception as e:
+        # 缓存读失败 → 走重算(正确降级),但记一笔便于发现 Redis 长期不可用
+        logger.warning("[safety] cache read failed, recomputing: %s", e)
 
     twin = build_twin(db, current_user.id)
     report = evaluate_safety(twin)

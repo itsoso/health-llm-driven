@@ -184,8 +184,8 @@ async def get_my_recommendations(
         try:
             r = redis.from_url(settings.redis_url)
             r.delete(f"rec_gen_lock:{current_user.id}:{date_str}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("[daily_rec] 释放生成锁失败 user=%s: %s", current_user.id, e)
 
         return result
     except Exception as e:
@@ -193,8 +193,8 @@ async def get_my_recommendations(
         try:
             r = redis.from_url(settings.redis_url)
             r.delete(f"rec_gen_lock:{current_user.id}:{date_str}")
-        except Exception:
-            pass
+        except Exception as le:
+            logger.warning("[daily_rec] 释放生成锁失败 user=%s: %s", current_user.id, le)
         logger.error(f"获取建议失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取建议失败: {str(e)}")
 
