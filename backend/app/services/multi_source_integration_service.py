@@ -111,7 +111,8 @@ class MultiSourceIntegrationService:
             from app.models.genetic_data import GeneticVariant
             vs = db.query(GeneticVariant).filter(GeneticVariant.user_id == user_id, GeneticVariant.risk_level.in_(["高风险", "中风险"])).limit(5).all()
             gen = [f"{v.gene_name} {v.genotype}({v.result_label})" for v in vs]
-        except Exception: pass
+        except Exception as e:
+            logger.warning("[multi_source] genetic highlights load failed for user=%s: %s", user_id, e)
 
         sources = [s for s, cond in [("garmin", garmin), ("diet", diet_today), ("weight", weight), ("basic_health", health), ("genetic", gen)] if cond]
 
@@ -201,7 +202,8 @@ class MultiSourceIntegrationService:
             if gc:
                 cats = [c[0] for c in db.query(GeneticVariant.category).filter(GeneticVariant.user_id == user_id).distinct().all()]
                 gi = {"status": "已录入", "total_variants": gc, "categories": cats}
-        except Exception: pass
+        except Exception as e:
+            logger.warning("[multi_source] genetic status load failed for user=%s: %s", user_id, e)
         si["genetic"] = gi
 
         cov = {"garmin": g_cov, "diet": round(d_days / 30, 2), "weight": round(w30 / 30, 2),

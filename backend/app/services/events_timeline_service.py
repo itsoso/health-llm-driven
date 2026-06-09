@@ -13,11 +13,14 @@ future: 支持 ?from=<date>&to=<date> 时间范围, 支持更多源 (mood / symp
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 # 后端指标字段名 → 用户可读标签 + 单位. 用于 timeline subtitle 人话化.
@@ -112,8 +115,8 @@ def _workouts(db: Session, user_id: int, since: datetime) -> List[TimelineEvent]
                 deep_link=f"workout-detail?id={w.id}",
                 severity=None,
             ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[timeline] workouts load failed for user=%s: %s", user_id, e)
     return out
 
 
@@ -148,8 +151,8 @@ def _alerts(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                 deep_link=deep,
                 severity=a.severity,
             ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[timeline] alerts load failed for user=%s: %s", user_id, e)
     return out
 
 
@@ -176,8 +179,8 @@ def _sleep_lows(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                     deep_link=f"sleep",
                     severity=None,
                 ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[timeline] sleep_lows load failed for user=%s: %s", user_id, e)
     return out
 
 
@@ -218,8 +221,8 @@ def _medications(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                     deep_link="medications",
                     severity=None,
                 ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[timeline] medications load failed for user=%s: %s", user_id, e)
     return out
 
 
@@ -244,8 +247,8 @@ def _exams(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                 deep_link=f"medical-exam-detail?id={e.id}",
                 severity=None,
             ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[timeline] exams load failed for user=%s: %s", user_id, e)
     return out
 
 
