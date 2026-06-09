@@ -474,11 +474,12 @@ class PreWorkoutGuidanceService:
             end_date = get_china_now().date()
             start_date = end_date - timedelta(days=7)
 
-            recent_records = db.query(GarminData).filter(
-                GarminData.user_id == user_id,
-                GarminData.record_date >= start_date,
-                GarminData.record_date <= end_date
-            ).order_by(GarminData.record_date.desc()).all()
+            # 多源按日合并 → latest 是合并后最新一天(每指标取优先级源,不漏字段),
+            # data_points_count / recent_activity 按真实天数算
+            from app.services.garmin_daily_merged import merged_daily_rows
+            recent_records = merged_daily_rows(
+                db, user_id, since=start_date, until=end_date,
+            )
 
             if not recent_records:
                 return {}

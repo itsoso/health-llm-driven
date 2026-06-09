@@ -400,6 +400,85 @@ class TestBuilderWithPartialData:
         assert twin.freshness.blood_pressure is None
         assert twin.freshness.sleep is None
 
+    def test_physiological_merges_latest_date_multi_source(self, db):
+        """同一最新日期下,Apple Watch + RingConn + Garmin 三行 → twin.physiological
+        按 per-metric 优先级合并 (hrv→ring, resting_hr→garmin, steps→watch)。
+        """
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="multi source user",
+            birth_date=date(1990, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        today = date.today()
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="garmin",
+            hrv=45.0, resting_heart_rate=52, steps=9200, sleep_score=70,
+        ))
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="apple-watch",
+            hrv=48.0, resting_heart_rate=54, steps=8500, sleep_score=78,
+        ))
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="ringconn",
+            hrv=52.0, resting_heart_rate=55, sleep_score=85,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        p = twin.physiological
+        assert p.hrv_latest == 52.0          # ringconn 优先
+        assert p.resting_hr == 52            # garmin 优先
+        assert p.steps_today == 8500         # apple-watch 优先
+        assert p.sleep_score_latest == 85    # ringconn 优先
+        # field_sources 暴露每指标中标源,便于 LLM source-aware
+        assert p.field_sources.get("hrv") == "ringconn"
+        assert p.field_sources.get("resting_heart_rate") == "garmin"
+
+    def test_physiological_single_garmin_row_back_compat(self, db):
+        """旧 garmin-only 单行用户 → 合并结果 == 该行 (additive 不破坏)."""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+
+        user = User(
+            username=f"tw_{uuid.uuid4().hex[:6]}",
+            email=f"tw_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x",
+            name="legacy garmin user",
+            birth_date=date(1990, 1, 1),
+            gender="男",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        today = date.today()
+        db.add(GarminData(
+            user_id=user.id, record_date=today, data_source="garmin",
+            hrv=48.0, resting_heart_rate=58, steps=8000, sleep_score=75,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        p = twin.physiological
+        assert p.hrv_latest == 48.0
+        assert p.resting_hr == 58
+        assert p.steps_today == 8000
+        assert p.sleep_score_latest == 75
+
 
 # ─────────────────────── 端到端：API 端点 ─────────────────────
 

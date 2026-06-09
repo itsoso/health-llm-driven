@@ -30,11 +30,12 @@ class ReviewService:
         """
         summary = DailyHealthSummary(date=target_date)
 
-        # 1. 获取 Garmin 数据（睡眠、步数、身体状态等）
-        garmin = self.db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date == target_date
-        ).first()
+        # 1. 获取 Garmin 数据（多源按日合并 → 每指标取优先级源,不漏其他设备字段）
+        from app.services.garmin_daily_merged import merged_daily_rows
+        _g_rows = merged_daily_rows(
+            self.db, user_id, since=target_date, until=target_date,
+        )
+        garmin = _g_rows[0] if _g_rows else None
 
         if garmin:
             summary.sleep_score = garmin.sleep_score

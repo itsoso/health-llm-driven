@@ -40,11 +40,12 @@ class AIInsightsService:
             "blood_pressure": None,
         }
 
-        # Garmin 数据
-        garmin = self.db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date == target_date
-        ).first()
+        # Garmin 数据 (多源按日合并 → 每指标取优先级源,不漏其他设备的字段)
+        from app.services.garmin_daily_merged import merged_daily_rows
+        _g_rows = merged_daily_rows(
+            self.db, user_id, since=target_date, until=target_date,
+        )
+        garmin = _g_rows[0] if _g_rows else None
         if garmin:
             snapshot["garmin"] = {
                 "steps": garmin.steps,

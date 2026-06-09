@@ -241,22 +241,17 @@ class HealthConsultationService:
             actual = None
             note = ""
 
-            # 1. Garmin 数据源
+            # 1. Garmin 数据源 (多源按日合并后再均值,防多设备重复计入)
             if data_source.startswith("garmin_data."):
                 field = data_source.split(".", 1)[1]
                 if hasattr(GarminData, field):
-                    col = getattr(GarminData, field)
-                    avg_val = (
-                        db.query(func.avg(col))
-                        .filter(
-                            GarminData.user_id == user_id,
-                            GarminData.record_date >= check_since,
-                            col.isnot(None),
-                        )
-                        .scalar()
+                    from app.services.garmin_daily_merged import merged_metric_series
+                    _series = merged_metric_series(
+                        db, user_id, field, since=check_since,
                     )
-                    if avg_val is not None:
-                        actual = round(float(avg_val), 2)
+                    _vals = [float(v) for _, v in _series if v is not None]
+                    if _vals:
+                        actual = round(sum(_vals) / len(_vals), 2)
                         note = f"garmin_data.{field} 从 {check_since} 起均值"
 
             # 2. 医学指标数据源

@@ -95,17 +95,17 @@ def _calc_stage_pcts(records: List[GarminData]) -> Dict[str, float]:
     return {k: round(_safe_avg(v), 1) for k, v in pcts.items()}
 
 
-def _fetch_sleep_data(db: Session, user_id: int, days: int) -> List[GarminData]:
+def _fetch_sleep_data(db: Session, user_id: int, days: int) -> List[Any]:
+    # 多源按日合并: 同一晚 Apple Watch + RingConn + Garmin 各一行,
+    # 不合并会把同一晚睡眠重复计入均值/架构占比。每指标按优先级取一值。
+    from app.services.garmin_daily_merged import merged_daily_rows
+
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
-    return db.query(GarminData).filter(
-        and_(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date,
-            GarminData.total_sleep_duration.isnot(None),
-        )
-    ).order_by(GarminData.record_date.desc()).all()
+    return merged_daily_rows(
+        db, user_id, since=start_date, until=end_date,
+        require_metrics=["total_sleep_duration"],
+    )
 
 
 class SleepAnalysisService:

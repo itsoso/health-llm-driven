@@ -12,7 +12,6 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
 
 logger = logging.getLogger(__name__)
 
@@ -174,17 +173,15 @@ class DigitalTwinService:
     # ==================== 数据分析 ====================
 
     def _get_average_resting_hr(self, days: int = 7) -> Optional[int]:
-        """获取最近N天的平均静息心率"""
-        from app.models.daily_health import GarminData
+        """获取最近N天的平均静息心率 (多源按日去重后再平均, 防双计数)"""
+        from app.services.garmin_daily_merged import merged_metric_series
 
         start_date = date.today() - timedelta(days=days)
-        result = self.db.query(func.avg(GarminData.resting_heart_rate)).filter(
-            GarminData.user_id == self.user_id,
-            GarminData.record_date >= start_date,
-            GarminData.resting_heart_rate.isnot(None)
-        ).scalar()
-
-        return int(result) if result else None
+        series = merged_metric_series(
+            self.db, self.user_id, "resting_heart_rate", since=start_date,
+        )
+        vals = [v for _, v in series]
+        return int(sum(vals) / len(vals)) if vals else None
 
     def analyze_sleep_trend(self, days: int = 30) -> Dict[str, Any]:
         """
@@ -199,14 +196,14 @@ class DigitalTwinService:
                 'best_days': ['Saturday', 'Sunday']
             }
         """
-        from app.models.daily_health import GarminData
+        from app.services.garmin_daily_merged import merged_daily_rows
 
         start_date = date.today() - timedelta(days=days)
-        records = self.db.query(GarminData).filter(
-            GarminData.user_id == self.user_id,
-            GarminData.record_date >= start_date,
-            GarminData.sleep_score.isnot(None)
-        ).order_by(GarminData.record_date).all()
+        # 多源按日合并, 每天一行, 防睡眠分数被多设备重复计入
+        records = merged_daily_rows(
+            self.db, self.user_id, since=start_date,
+            require_metrics=["sleep_score"], ascending=True,
+        )
 
         if not records:
             return {'status': 'no_data'}
@@ -259,16 +256,15 @@ class DigitalTwinService:
 
     def analyze_exercise_trend(self, days: int = 30) -> Dict[str, Any]:
         """分析运动趋势"""
-        from app.models.daily_health import GarminData
         from app.models.daily_health import WorkoutRecord
+        from app.services.garmin_daily_merged import merged_daily_rows
 
         start_date = date.today() - timedelta(days=days)
 
-        # 从 Garmin 数据获取步数
-        garmin_records = self.db.query(GarminData).filter(
-            GarminData.user_id == self.user_id,
-            GarminData.record_date >= start_date
-        ).all()
+        # 从 Garmin 数据获取步数 (多源按日合并, 防步数/卡路里被多设备重复计入)
+        garmin_records = merged_daily_rows(
+            self.db, self.user_id, since=start_date,
+        )
 
         # 从运动记录获取详细运动
         workouts = self.db.query(WorkoutRecord).filter(
@@ -333,17 +329,14 @@ class DigitalTwinService:
         - 身体状态 (25%): HRV、静息心率、身体电量
         - 身体成分 (25%): BMI、体脂率
         """
-        from app.models.daily_health import GarminData
+        from app.services.garmin_daily_merged import merged_daily_rows
 
         scores = {}
         weights = {'sleep': 0.25, 'exercise': 0.25, 'vitals': 0.25, 'composition': 0.25}
 
-        # 获取最近7天数据
+        # 获取最近7天数据 (多源按日合并, 防各指标被多设备重复计入)
         start_date = date.today() - timedelta(days=7)
-        recent_data = self.db.query(GarminData).filter(
-            GarminData.user_id == self.user_id,
-            GarminData.record_date >= start_date
-        ).all()
+        recent_data = merged_daily_rows(self.db, self.user_id, since=start_date)
 
         # 1. 睡眠评分
         sleep_scores = [r.sleep_score for r in recent_data if r.sleep_score]

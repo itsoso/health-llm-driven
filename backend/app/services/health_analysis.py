@@ -9,7 +9,6 @@ from app.config import settings
 from app.models.basic_health import BasicHealthData
 from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.disease import DiseaseRecord
-from app.models.daily_health import GarminData
 from app.models.user import User
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.services.llm import get_llm_provider
@@ -64,25 +63,12 @@ class HealthAnalysisService:
             DiseaseRecord.status.in_(["active", "chronic"])
         ).all()
 
-        # 获取Garmin数据（最近N天，只加载需要的列）
-        garmin_cols = [
-            GarminData.record_date,
-            GarminData.avg_heart_rate,
-            GarminData.resting_heart_rate,
-            GarminData.hrv,
-            GarminData.sleep_score,
-            GarminData.total_sleep_duration,
-            GarminData.deep_sleep_duration,
-            GarminData.rem_sleep_duration,
-            GarminData.body_battery_charged,
-            GarminData.stress_level,
-            GarminData.steps,
-        ]
-        garmin_rows = db.query(*garmin_cols).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date
-        ).order_by(GarminData.record_date.desc()).all()
+        # 获取Garmin数据（最近N天，多源按日合并 → 每天一行,防把同一天多设备
+        # 当成多天,下游 len(garmin_data) 当天数用、sorted_data 按日期排）
+        from app.services.garmin_daily_merged import merged_daily_rows
+        garmin_rows = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+        )
 
         # 获取用户信息
         user = db.query(User).filter(User.id == user_id).first()

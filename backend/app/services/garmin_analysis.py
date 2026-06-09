@@ -2,8 +2,8 @@
 from typing import List, Dict, Any, Optional
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app.models.daily_health import GarminData, WorkoutRecord
+from app.models.daily_health import WorkoutRecord
+from app.services.garmin_daily_merged import merged_daily_rows
 from collections import defaultdict
 
 
@@ -20,12 +20,10 @@ class GarminAnalysisService:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
 
-        sleep_data = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date,
-            GarminData.sleep_score.isnot(None)
-        ).order_by(GarminData.record_date.desc()).all()
+        sleep_data = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+            require_metrics=["sleep_score"],
+        )
 
         if not sleep_data:
             return {
@@ -87,12 +85,10 @@ class GarminAnalysisService:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
 
-        hr_data = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date,
-            GarminData.avg_heart_rate.isnot(None)
-        ).order_by(GarminData.record_date.desc()).all()
+        hr_data = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+            require_metrics=["avg_heart_rate"],
+        )
 
         if not hr_data:
             return {
@@ -141,12 +137,10 @@ class GarminAnalysisService:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
 
-        battery_data = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date,
-            GarminData.body_battery_charged.isnot(None)
-        ).order_by(GarminData.record_date.desc()).all()
+        battery_data = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+            require_metrics=["body_battery_charged"],
+        )
 
         if not battery_data:
             return {
@@ -195,11 +189,9 @@ class GarminAnalysisService:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
 
-        activity_data = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date
-        ).order_by(GarminData.record_date.desc()).all()
+        activity_data = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+        )
 
         if not activity_data:
             return {
@@ -285,12 +277,10 @@ class GarminAnalysisService:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
 
-        data = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date,
-            GarminData.hrv.isnot(None)
-        ).order_by(GarminData.record_date.desc()).all()
+        data = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+            require_metrics=["hrv"],
+        )
 
         if not data:
             return {"status": "no_data", "message": "没有足够的HRV数据"}
@@ -344,12 +334,10 @@ class GarminAnalysisService:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
 
-        data = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= start_date,
-            GarminData.record_date <= end_date,
-            GarminData.spo2_avg.isnot(None)
-        ).order_by(GarminData.record_date.desc()).all()
+        data = merged_daily_rows(
+            db, user_id, since=start_date, until=end_date,
+            require_metrics=["spo2_avg"],
+        )
 
         if not data:
             return {"status": "no_data", "message": "没有足够的血氧数据"}

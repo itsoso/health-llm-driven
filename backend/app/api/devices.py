@@ -37,6 +37,21 @@ def compare_devices(
     return device_comparison(db, current_user.id, days=days)
 
 
+@router.get("/sources/summary", summary="每数据源覆盖天数 + 最新指标快照")
+def sources_summary_endpoint(
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """近 days 天,按 data_source 分组:覆盖天数 / 最新日期 / 每指标最近非空值。
+
+    客户端用此区分「记录来自哪个设备」并展示每源的数据量。
+    """
+    from app.services.device_comparison_service import sources_summary
+
+    return sources_summary(db, current_user.id, days=days)
+
+
 # ===== Pydantic 模型 =====
 
 class SupportedDevice(BaseModel):

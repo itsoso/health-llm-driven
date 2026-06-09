@@ -68,16 +68,14 @@ def build_weekly_review_voice_script(
     last_start = this_start - timedelta(days=7)
 
     try:
-        this_garmin = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= this_start,
-            GarminData.record_date < this_end,
-        ).all()
-        last_garmin = db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= last_start,
-            GarminData.record_date < this_start,
-        ).all()
+        # 多源按日合并 → 每周均值不被同一天多设备重复计入 (until 用闭区间还原 `< end`)
+        from app.services.garmin_daily_merged import merged_daily_rows
+        this_garmin = merged_daily_rows(
+            db, user_id, since=this_start, until=this_end - timedelta(days=1),
+        )
+        last_garmin = merged_daily_rows(
+            db, user_id, since=last_start, until=this_start - timedelta(days=1),
+        )
 
         if not this_garmin:
             return (
