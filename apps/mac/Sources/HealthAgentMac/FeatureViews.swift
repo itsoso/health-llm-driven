@@ -1791,6 +1791,20 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         _ = scrollView
     }
 
+    /// Return a DEFINITE size from the proposal instead of letting SwiftUI probe
+    /// the NSScrollView/NSTextView intrinsic size. Without this, nested flexible
+    /// frames (.frame(minHeight:maxHeight:)) inside an unbounded-height ScrollView
+    /// probe this representable's size combinatorially → an exponential sizeThatFits
+    /// pass that never completes (the Record-screen freeze; confirmed via CPU sample:
+    /// leaf = PlatformViewRepresentableAdaptor.sizeThatFits under _FlexFrameLayout fan-out).
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        let w: CGFloat
+        if let pw = proposal.width, pw.isFinite { w = pw } else { w = 320 }
+        let h: CGFloat
+        if let ph = proposal.height, ph.isFinite { h = ph } else { h = 120 }
+        return CGSize(width: w, height: h)
+    }
+
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
         @Binding var measuredHeight: CGFloat
