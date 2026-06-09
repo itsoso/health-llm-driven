@@ -10,12 +10,15 @@
 """
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
+
+logger = logging.getLogger(__name__)
 
 
 def proactive_notifications_sent(db: Session, user_id: int, days: int = 7) -> int:
@@ -47,5 +50,11 @@ def can_notify_proactively(db: Session, user_id: int) -> bool:
         return True  # 0/负 = 不限(关闭协调)
     try:
         return proactive_notifications_sent(db, user_id) < budget
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        # 刻意 fail-open(健康告警宁可多推不可漏),但失败必须可观测:
+        # 若该日志频繁出现,说明预算计数长期失效、协调形同虚设,需排查。
+        logger.warning(
+            "[proactive] budget check failed for user=%s, failing open (allowing notify): %s",
+            user_id, e,
+        )
         return True
