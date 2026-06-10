@@ -203,6 +203,21 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(blocks.contains(.tableRow(["饮食", "暂不调整"])))
     }
 
+    func testMarkdownRenderSupportBlocksCacheReturnsConsistentResult() {
+        // blocks() 现在带 NSCache(修聊天逐 token 重渲染卡顿)。缓存必须透明:
+        // 同输入重复调用结果完全一致;不同输入互不串。
+        let md1 = "## 标题\n\n- 第一条\n- 第二条"
+        let md2 = "普通段落,没有标记。"
+        let first = MarkdownRenderSupport.blocks(from: md1)
+        let cached = MarkdownRenderSupport.blocks(from: md1) // 命中缓存
+        XCTAssertEqual(first, cached)
+        XCTAssertEqual(first.first, .heading(level: 2, text: "标题"))
+        // 不同 key 不串
+        XCTAssertEqual(MarkdownRenderSupport.blocks(from: md2), [.paragraph("普通段落,没有标记。")])
+        // 再取一次 md1 仍一致(缓存未被 md2 污染)
+        XCTAssertEqual(MarkdownRenderSupport.blocks(from: md1), first)
+    }
+
     func testMarkdownRenderSupportBuildsCompactCardPreviewWithoutRawMarkers() {
         let markdown = """
         ## 🎯 核心目标

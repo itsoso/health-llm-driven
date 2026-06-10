@@ -10,6 +10,20 @@ public enum MarkdownRenderBlock: Equatable, Sendable {
 }
 
 public enum MarkdownRenderSupport {
+    // markdown → blocks 解析缓存。SwiftUI 的 MarkdownMessageText.body 每次求值都调
+    // blocks();聊天列表逐 token 重渲染时,会把每条消息全量重解析(O(消息数×长度)/token,
+    // 长回复尤其卡)。按内容字符串缓存后,未变消息(流式中已完成的、字体/滚动等无关状态
+    // 变化)直接命中,不再重解析。NSCache 内部线程安全 + countLimit 有界,不会无限增长。
+    private final class BlocksBox {
+        let blocks: [MarkdownRenderBlock]
+        init(_ blocks: [MarkdownRenderBlock]) { self.blocks = blocks }
+    }
+    nonisolated(unsafe) private static let blocksCache: NSCache<NSString, BlocksBox> = {
+        let cache = NSCache<NSString, BlocksBox>()
+        cache.countLimit = 512
+        return cache
+    }()
+
     public static func sanitizedForSwiftUI(_ markdown: String) -> String {
         markdown
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -19,6 +33,16 @@ public enum MarkdownRenderSupport {
     }
 
     public static func blocks(from markdown: String) -> [MarkdownRenderBlock] {
+        let key = markdown as NSString
+        if let cached = blocksCache.object(forKey: key) {
+            return cached.blocks
+        }
+        let parsed = parseBlocks(from: markdown)
+        blocksCache.setObject(BlocksBox(parsed), forKey: key)
+        return parsed
+    }
+
+    private static func parseBlocks(from markdown: String) -> [MarkdownRenderBlock] {
         var blocks: [MarkdownRenderBlock] = []
         var paragraphLines: [String] = []
 
