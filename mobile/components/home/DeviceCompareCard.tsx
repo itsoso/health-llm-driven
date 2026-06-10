@@ -1,13 +1,13 @@
 /**
- * DeviceCompareCard —— 双设备一致性对比(同时戴 Apple Watch + Garmin)。
+ * DeviceCompareCard —— 多设备一致性对比(同时戴 Apple Watch / RingConn / Garmin 等)。
  *
- * 消费后端 /devices/compare:同指标并排两台设备的窗口均值 + 一致度。
+ * 消费后端 /devices/compare:同指标并排各来源的窗口均值 + 一致度(by_source 动态 N 源)。
  * 诚实:
- *   - 不足两台来源 / 无可比指标 → 不渲染(返回 null),不占位造声势。
- *   - agreement 仅描述两台"一致性",不判谁更准(各家算法不同),文案点明。
+ *   - 不足两个来源 / 无可比指标 → 不渲染(返回 null),不占位造声势。
+ *   - agreement 仅描述各源"一致性",不判谁更准(各家算法不同),文案点明。
  *
  * onPress 跳 /settings(那里的 AppleHealthRow 启用 Apple Health 同步)——
- * 单设备用户由此接入第二台数据源,卡片才会出现。
+ * 单设备用户由此接入更多数据源,卡片才会出现。
  */
 
 import React from 'react';
@@ -77,7 +77,7 @@ export default function DeviceCompareCard({ data, onPress }: Props) {
         { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed && onPress ? 0.78 : 1 },
       ]}
       accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={`双设备对比:${srcTitle},共 ${data!.comparisons.length} 项指标。`}
+      accessibilityLabel={`设备对比:${srcTitle},共 ${data!.comparisons.length} 项指标。`}
     >
       <View style={styles.header}>
         <View style={[styles.iconWrap, { backgroundColor: c.brandLight }]}>
@@ -85,7 +85,7 @@ export default function DeviceCompareCard({ data, onPress }: Props) {
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[styles.title, { color: c.labelPrimary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            双设备对比
+            设备对比
           </Text>
           <Text style={[styles.sub, { color: c.labelTertiary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
             {srcTitle} · 近 {data!.window_days} 天均值
@@ -101,7 +101,7 @@ export default function DeviceCompareCard({ data, onPress }: Props) {
       </View>
 
       <Text style={[styles.foot, { color: c.labelTertiary }]} maxFontSizeMultiplier={1.2}>
-        右侧为一致度(100% = 两台完全一致);各家算法不同,不代表谁更准。
+        右侧为一致度(100% = 各设备完全一致);各家算法不同,不代表谁更准。
       </Text>
     </Pressable>
   );
