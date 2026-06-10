@@ -4,7 +4,7 @@
  * 重点测 mapSourceNameToDataSource — 这是最可能需要回头补字典的逻辑,
  * 真机出现新 bundle id 时只要加一行,有这个测试就能立刻验证。
  *
- * fetchDailyAggregates / backfillAll 等异步 API 交互逻辑用最小 mock 验证
+ * fetchDailyRecords / backfillAll 等异步 API 交互逻辑用最小 mock 验证
  * SpO2 转换、睡眠过滤、批量上传错误兜底。
  */
 jest.mock('../api', () => ({
@@ -54,7 +54,7 @@ import api from '../api';
 import AppleHealthKit from 'react-native-health';
 import {
   mapSourceNameToDataSource,
-  fetchDailyAggregates,
+  fetchDailyRecords,
   isHealthKitAvailable,
   syncRecentDays,
 } from '../appleHealth';
@@ -105,7 +105,7 @@ describe('isHealthKitAvailable', () => {
   });
 });
 
-describe('fetchDailyAggregates', () => {
+describe('fetchDailyRecords (按源拆分)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // 默认所有指标返回空数组
@@ -123,10 +123,12 @@ describe('fetchDailyAggregates', () => {
         { value: 0.95, sourceName: 'com.apple.health', startDate: '2026-05-20T04:00:00Z', endDate: '2026-05-20T04:00:00Z' },
       ]),
     );
-    const rec = await fetchDailyAggregates(new Date('2026-05-20T12:00:00Z'));
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const rec = recs.find((r) => r.data_source === 'apple-watch');
+    expect(rec).toBeDefined();
     // avg(0.97, 0.95) * 100 = 96
-    expect(rec.spo2_avg).toBeCloseTo(96, 1);
-    expect(rec.spo2_min).toBeCloseTo(95, 1);
+    expect(rec!.spo2_avg).toBeCloseTo(96, 1);
+    expect(rec!.spo2_min).toBeCloseTo(95, 1);
   });
 
   it('sleep 只统计 ASLEEP/CORE/DEEP/REM,跳过 INBED/AWAKE', async () => {
@@ -143,24 +145,23 @@ describe('fetchDailyAggregates', () => {
         { value: 'AWAKE', startDate: '2026-05-21T02:00:00Z', endDate: '2026-05-21T02:30:00Z', sourceName: 'com.apple.health' },
       ]),
     );
-    const rec = await fetchDailyAggregates(day);
+    const recs = await fetchDailyRecords(day);
+    const rec = recs.find((r) => r.data_source === 'apple-watch');
+    expect(rec).toBeDefined();
     // CORE 2h→浅睡 120,REM 1h→60,DEEP 0;总 180 分钟(按后端契约发分钟)
-    expect(rec.total_sleep_minutes).toBe(180);
-    expect(rec.light_sleep_minutes).toBe(120);
-    expect(rec.rem_sleep_minutes).toBe(60);
-    expect(rec.deep_sleep_minutes).toBeUndefined();
+    expect(rec!.total_sleep_minutes).toBe(180);
+    expect(rec!.light_sleep_minutes).toBe(120);
+    expect(rec!.rem_sleep_minutes).toBe(60);
+    expect(rec!.deep_sleep_minutes).toBeUndefined();
   });
 
-  it('无样本返回 unknown source 和大部分字段 undefined', async () => {
-    const rec = await fetchDailyAggregates(new Date('2026-05-20T12:00:00Z'));
-    expect(rec.data_source).toBe('unknown');
-    expect(rec.steps).toBeUndefined();
-    expect(rec.spo2_avg).toBeUndefined();
-    expect(rec.total_sleep_minutes).toBeUndefined();
+  it('整天无样本 → 返回空数组 (不产出任何源记录)', async () => {
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    expect(recs).toHaveLength(0);
   });
 
-  it('多源样本按多数派定 data_source', async () => {
-    // 5 个 ringconn HRV + 1 个 apple-watch HRV → ringconn 胜
+  it('多源样本按源各产出一条 (RingConn 与 Apple Watch 分开,不再 majority 揉合)', async () => {
+    // 5 个 ringconn HRV + 1 个 apple-watch HRV → 各成一条,值各算各的
     mockHK.getHeartRateVariabilitySamples.mockImplementation((_o: any, cb: any) =>
       cb('', [
         { value: 50, sourceName: 'com.ringconn.app', startDate: '2026-05-20T01:00:00Z', endDate: '2026-05-20T01:00:00Z' },
@@ -171,11 +172,16 @@ describe('fetchDailyAggregates', () => {
         { value: 48, sourceName: 'com.apple.health', startDate: '2026-05-20T06:00:00Z', endDate: '2026-05-20T06:00:00Z' },
       ]),
     );
-    const rec = await fetchDailyAggregates(new Date('2026-05-20T12:00:00Z'));
-    expect(rec.data_source).toBe('ringconn');
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const ring = recs.find((r) => r.data_source === 'ringconn');
+    const watch = recs.find((r) => r.data_source === 'apple-watch');
+    expect(ring).toBeDefined();
+    expect(watch).toBeDefined();
+    expect(ring!.hrv).toBeCloseTo(51, 1); // avg(50,51,52,49,53)
+    expect(watch!.hrv).toBeCloseTo(48, 1); // 只用 apple-watch 自己的样本
   });
 
-  it('聚合 HealthKit 体重和腰围样本供设备优先同步', async () => {
+  it('不同源的体重/腰围拆到各自记录 (withings 秤 vs ringconn)', async () => {
     mockHK.getWeightSamples.mockImplementation((_o: any, cb: any) =>
       cb('', [
         { value: 82.4, sourceName: 'com.withings.wiScaleNG', startDate: '2026-05-20T06:30:00Z', endDate: '2026-05-20T06:30:00Z' },
@@ -187,10 +193,13 @@ describe('fetchDailyAggregates', () => {
       ]),
     );
 
-    const rec = await fetchDailyAggregates(new Date('2026-05-20T12:00:00Z'));
-
-    expect(rec.weight_kg).toBeCloseTo(82.4, 1);
-    expect(rec.waist_cm).toBeCloseTo(91.2, 1);
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const scale = recs.find((r) => r.data_source === 'withings-app');
+    const ring = recs.find((r) => r.data_source === 'ringconn');
+    expect(scale!.weight_kg).toBeCloseTo(82.4, 1);
+    expect(scale!.waist_cm).toBeUndefined();
+    expect(ring!.waist_cm).toBeCloseTo(91.2, 1);
+    expect(ring!.weight_kg).toBeUndefined();
   });
 });
 
@@ -205,6 +214,10 @@ describe('syncRecentDays', () => {
   });
 
   it('POST 失败时不抛, errors 累加', async () => {
+    // 需有样本才会产出记录 → 才会触发 import POST(按源拆分后,空天不产记录)
+    mockHK.getHeartRateVariabilitySamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 50, sourceName: 'com.apple.health', startDate: '2026-05-20T03:00:00Z', endDate: '2026-05-20T03:00:00Z' }]),
+    );
     (api.post as jest.Mock).mockRejectedValueOnce({
       response: { data: { detail: '500 internal' } },
     });
@@ -214,6 +227,9 @@ describe('syncRecentDays', () => {
   });
 
   it('POST 成功时返回 imported_count', async () => {
+    mockHK.getHeartRateVariabilitySamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 50, sourceName: 'com.apple.health', startDate: '2026-05-20T03:00:00Z', endDate: '2026-05-20T03:00:00Z' }]),
+    );
     (api.post as jest.Mock).mockResolvedValueOnce({
       data: { imported_count: 3, source_breakdown: { 'apple-watch': 3 }, errors: [] },
     });
