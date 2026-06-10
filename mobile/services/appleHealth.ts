@@ -161,17 +161,13 @@ export function mapSourceNameToDataSource(sourceName?: string): DataSource {
   return 'unknown';
 }
 
-// ── 多源 majority-vote ────────────────────────────────────────────────────────
-// 一天内某指标的样本可能来自多源 (Apple Watch + RingConn 同时戴),按样本数定 data_source。
-function majoritySource(samples: SampleWithSource[]): DataSource {
-  if (samples.length === 0) return 'unknown';
-  const counts: Record<string, number> = {};
-  for (const s of samples) {
-    const ds = mapSourceNameToDataSource(s.sourceName);
-    counts[ds] = (counts[ds] ?? 0) + 1;
-  }
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  return (sorted[0]?.[0] as DataSource) ?? 'unknown';
+// ── 按源分组 ──────────────────────────────────────────────────────────────────
+// 一天内某指标的样本可能来自多源 (Apple Watch + RingConn 同时戴)。不再用 majority-vote
+// 把整天揉成一条 (会把 RingConn 的睡眠/血氧/HRV 混进 apple-watch 桶、且永不产出
+// data_source="ringconn" 行)。改为按 sourceName 分组,每个源各产出一条记录,
+// 值只用该源自己的样本算 —— 后端复合唯一支持一天多行 + 按指标优先级合并。
+function samplesForSource(samples: SampleWithSource[], src: DataSource): SampleWithSource[] {
+  return samples.filter((s) => mapSourceNameToDataSource(s.sourceName) === src);
 }
 
 // ── 权限清单 ─────────────────────────────────────────────────────────────────
@@ -281,9 +277,102 @@ function max(samples: SampleWithSource[]): number | undefined {
 }
 
 // ── 单日聚合 ─────────────────────────────────────────────────────────────────
-export async function fetchDailyAggregates(
-  date: Date,
-): Promise<HealthKitDailyRecord> {
+interface MetricSamples {
+  steps: SampleWithSource[];
+  rhr: SampleWithSource[];
+  hrv: SampleWithSource[];
+  spo2: SampleWithSource[];
+  sleep: SampleWithSource[];
+  activeCal: SampleWithSource[];
+  basalCal: SampleWithSource[];
+  respRate: SampleWithSource[];
+  bodyTemp: SampleWithSource[];
+  vo2: SampleWithSource[];
+  weight: SampleWithSource[];
+  waist: SampleWithSource[];
+}
+
+/** 从「同一个源」的样本束算出一条日记录。纯函数,不读 HealthKit。 */
+function buildRecordForSource(
+  record_date: string,
+  data_source: DataSource,
+  m: MetricSamples,
+): HealthKitDailyRecord {
+  // sleep 分期累计 (DEEP→深睡、REM→REM、CORE→浅睡、ASLEEP→未分期只计总睡)。
+  // INBED/AWAKE/UNKNOWN 不算睡着。
+  let deepMin = 0;
+  let remMin = 0;
+  let lightMin = 0; // CORE
+  let asleepUnspecMin = 0; // 旧 iOS 只给 ASLEEP
+  for (const s of m.sleep as any[]) {
+    const mins = (new Date(s.endDate).getTime() - new Date(s.startDate).getTime()) / 60_000;
+    if (mins <= 0) continue;
+    switch (s.value) {
+      case 'DEEP': deepMin += mins; break;
+      case 'REM': remMin += mins; break;
+      case 'CORE': lightMin += mins; break;
+      case 'ASLEEP': asleepUnspecMin += mins; break;
+      default: break; // INBED / AWAKE / UNKNOWN 不计
+    }
+  }
+  const totalSleepMin = deepMin + remMin + lightMin + asleepUnspecMin;
+  const round = (n: number) => Math.round(n);
+
+  // SpO2 HealthKit 单位是 0–1 小数,转成 0–100 百分数
+  const spo2Avg = avg(m.spo2);
+  const spo2Min = min(m.spo2);
+
+  // 后端 steps / resting_heart_rate 是 Optional[int],float 会 422 → 客户端先取整。
+  const intOr = (n: number | undefined) => (n !== undefined ? Math.round(n) : undefined);
+
+  return {
+    record_date,
+    data_source,
+    steps: intOr(sum(m.steps)),
+    resting_heart_rate: intOr(avg(m.rhr)),
+    hrv: avg(m.hrv),
+    spo2_avg: spo2Avg !== undefined ? spo2Avg * 100 : undefined,
+    spo2_min: spo2Min !== undefined && spo2Min !== Infinity ? spo2Min * 100 : undefined,
+    total_sleep_minutes: totalSleepMin > 0 ? round(totalSleepMin) : undefined,
+    deep_sleep_minutes: deepMin > 0 ? round(deepMin) : undefined,
+    rem_sleep_minutes: remMin > 0 ? round(remMin) : undefined,
+    light_sleep_minutes: lightMin > 0 ? round(lightMin) : undefined,
+    active_calories: sum(m.activeCal),
+    basal_calories: sum(m.basalCal),
+    respiration_rate_min: min(m.respRate),
+    respiration_rate_max: max(m.respRate),
+    body_temp_deviation_c: m.bodyTemp.length > 0 ? avg(m.bodyTemp) : undefined,
+    vo2_max: avg(m.vo2),
+    weight_kg: avg(m.weight),
+    waist_cm: avg(m.waist),
+  };
+}
+
+/** 一条记录是否含任何指标值;全空 (该源当天无数据) 则不产出/不上传。 */
+function recordHasData(r: HealthKitDailyRecord): boolean {
+  return (
+    r.steps !== undefined ||
+    r.resting_heart_rate !== undefined ||
+    r.hrv !== undefined ||
+    r.spo2_avg !== undefined ||
+    r.spo2_min !== undefined ||
+    r.total_sleep_minutes !== undefined ||
+    r.active_calories !== undefined ||
+    r.basal_calories !== undefined ||
+    r.respiration_rate_min !== undefined ||
+    r.body_temp_deviation_c !== undefined ||
+    r.vo2_max !== undefined ||
+    r.weight_kg !== undefined ||
+    r.waist_cm !== undefined
+  );
+}
+
+/**
+ * 读某天 HealthKit,按数据源拆成多条记录 (Apple Watch / RingConn / Withings… 各一条)。
+ * 每条只用该源自己的样本算值 —— 这样 RingConn 的睡眠/血氧/HRV 才能以 data_source=
+ * "ringconn" 独立上行,被后端 per-source 摘要 + 按指标优先级合并消费。无数据的源不产出。
+ */
+export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecord[]> {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);
   const end = new Date(date);
@@ -333,77 +422,33 @@ export async function fetchDailyAggregates(
     }),
   ]);
 
-  // sleep 样本是分期片段 (INBED/ASLEEP/CORE/DEEP/REM/AWAKE,见 react-native-health
-  // Queries.m)。按后端契约累计各期分钟:DEEP→深睡、REM→REM、CORE→浅睡(core≈light),
-  // ASLEEP(旧版未分期)只计入总睡眠。INBED/AWAKE/UNKNOWN 不算睡着。
-  let deepMin = 0;
-  let remMin = 0;
-  let lightMin = 0; // CORE
-  let asleepUnspecMin = 0; // 旧 iOS 只给 ASLEEP
-  for (const s of sleep as any[]) {
-    const min = (new Date(s.endDate).getTime() - new Date(s.startDate).getTime()) / 60_000;
-    if (min <= 0) continue;
-    switch (s.value) {
-      case 'DEEP': deepMin += min; break;
-      case 'REM': remMin += min; break;
-      case 'CORE': lightMin += min; break;
-      case 'ASLEEP': asleepUnspecMin += min; break;
-      default: break; // INBED / AWAKE / UNKNOWN 不计
-    }
-  }
-  const totalSleepMin = deepMin + remMin + lightMin + asleepUnspecMin;
-  const round = (n: number) => Math.round(n);
-
-  // 多源 majority vote — 用样本最多的一类 (HR / steps) 决定 data_source
-  const allSamples = [
-    ...steps,
-    ...rhr,
-    ...hrv,
-    ...spo2,
-    ...sleep,
-    ...activeCal,
-    ...basalCal,
-    ...respRate,
-    ...bodyTemp,
-    ...vo2,
-    ...weight,
-    ...waist,
-  ];
-  const data_source = majoritySource(allSamples);
-
   const record_date = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 
-  // SpO2 HealthKit 单位是 0–1 小数,转成 0–100 百分数
-  const spo2Avg = avg(spo2);
-  const spo2Min = min(spo2);
+  const allMetrics = [steps, rhr, hrv, spo2, sleep, activeCal, basalCal, respRate, bodyTemp, vo2, weight, waist];
+  const sources = new Set<DataSource>();
+  for (const arr of allMetrics) {
+    for (const s of arr) sources.add(mapSourceNameToDataSource(s.sourceName));
+  }
 
-  // 后端 steps / resting_heart_rate 是 Optional[int],Pydantic v2 拒绝带小数的
-  // float(avg(rhr)=52.5 → 整批 422 → 0 导入)。int 目标字段在客户端先取整。
-  const intOr = (n: number | undefined) => (n !== undefined ? Math.round(n) : undefined);
-  const stepsSum = sum(steps);
-  const rhrAvg = avg(rhr);
-
-  return {
-    record_date,
-    data_source,
-    steps: intOr(stepsSum),
-    resting_heart_rate: intOr(rhrAvg),
-    hrv: avg(hrv),
-    spo2_avg: spo2Avg !== undefined ? spo2Avg * 100 : undefined,
-    spo2_min: spo2Min !== undefined && spo2Min !== Infinity ? spo2Min * 100 : undefined,
-    total_sleep_minutes: totalSleepMin > 0 ? round(totalSleepMin) : undefined,
-    deep_sleep_minutes: deepMin > 0 ? round(deepMin) : undefined,
-    rem_sleep_minutes: remMin > 0 ? round(remMin) : undefined,
-    light_sleep_minutes: lightMin > 0 ? round(lightMin) : undefined,
-    active_calories: sum(activeCal),
-    basal_calories: sum(basalCal),
-    respiration_rate_min: min(respRate),
-    respiration_rate_max: max(respRate),
-    body_temp_deviation_c: bodyTemp.length > 0 ? avg(bodyTemp) : undefined,
-    vo2_max: avg(vo2),
-    weight_kg: avg(weight),
-    waist_cm: avg(waist),
-  };
+  const records: HealthKitDailyRecord[] = [];
+  for (const src of sources) {
+    const rec = buildRecordForSource(record_date, src, {
+      steps: samplesForSource(steps, src),
+      rhr: samplesForSource(rhr, src),
+      hrv: samplesForSource(hrv, src),
+      spo2: samplesForSource(spo2, src),
+      sleep: samplesForSource(sleep, src),
+      activeCal: samplesForSource(activeCal, src),
+      basalCal: samplesForSource(basalCal, src),
+      respRate: samplesForSource(respRate, src),
+      bodyTemp: samplesForSource(bodyTemp, src),
+      vo2: samplesForSource(vo2, src),
+      weight: samplesForSource(weight, src),
+      waist: samplesForSource(waist, src),
+    });
+    if (recordHasData(rec)) records.push(rec);
+  }
+  return records;
 }
 
 // ── 找最早样本日期 ───────────────────────────────────────────────────────────
@@ -545,17 +590,8 @@ export async function backfillAll(
     const cursor = new Date(start);
     while (cursor <= end) {
       try {
-        const rec = await fetchDailyAggregates(new Date(cursor));
-        // 跳过完全空的 record (整天没数据)
-        if (
-          rec.steps !== undefined ||
-          rec.resting_heart_rate !== undefined ||
-          rec.hrv !== undefined ||
-          rec.spo2_avg !== undefined ||
-          rec.total_sleep_minutes !== undefined
-        ) {
-          records.push(rec);
-        }
+        // 每天可能产出多条 (每源一条);全空记录已在 fetchDailyRecords 内过滤。
+        records.push(...(await fetchDailyRecords(new Date(cursor))));
       } catch (e: any) {
         allErrors.push(`${cursor.toISOString().slice(0, 10)}: ${e?.message ?? 'fetch 失败'}`);
       }
@@ -597,7 +633,8 @@ export interface SyncCoverage {
 export function summarizeCoverage(records: HealthKitDailyRecord[]): SyncCoverage {
   const count = (pred: (r: HealthKitDailyRecord) => boolean) => records.filter(pred).length;
   return {
-    days: records.length,
+    // 一天可能多条 (每源一条),days 计不同日历日,避免被来源数放大。
+    days: new Set(records.map((r) => r.record_date)).size,
     steps: count((r) => r.steps !== undefined),
     hr: count((r) => r.resting_heart_rate !== undefined),
     hrv: count((r) => r.hrv !== undefined),
@@ -618,8 +655,7 @@ export async function syncRecentDays(
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     try {
-      const rec = await fetchDailyAggregates(d);
-      records.push(rec);
+      records.push(...(await fetchDailyRecords(d)));
     } catch (e: any) {
       // ignore single day error
     }
