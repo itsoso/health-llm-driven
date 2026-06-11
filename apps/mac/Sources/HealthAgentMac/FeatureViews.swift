@@ -1541,6 +1541,11 @@ private struct MarkdownMessageText: View {
                 blockView(block)
             }
         }
+        // 整个 markdown 子树锚死在「确定宽度」。否则父级的定宽要穿过 textSelection +
+        // maxWidth:.infinity 才传到各块,SwiftUI 仍会对「高依赖宽」的块(fixedSize 文本、
+        // 表格行)反复探测宽度 → 指数级 sizeThatFits(含表格的长回复卡死,栈实锤)。
+        // 直接给确定宽,各块一次定高,探测消失。<=0 时不加(回退父级传播)。
+        .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1571,7 +1576,7 @@ private struct MarkdownMessageText: View {
                 Text("\(index).")
                     .font(scaledFont(base: 10.5, weight: .bold))
                     .foregroundStyle(Color.accentColor)
-                    .frame(minWidth: 22, alignment: .trailing)
+                    .frame(width: 22, alignment: .trailing)  // 定宽,非 minWidth 范围(_FlexFrameLayout 探测源)
                 inlineText(text)
                     .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
