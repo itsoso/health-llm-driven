@@ -90,6 +90,34 @@ def agent_eval_dashboard(db: Session, days: int = 30) -> dict[str, Any]:
         ),
     }
 
+    # ⑤ 卡片/推送质量:user_decision 聚合 → 误报率(放量前的"骚扰用户"闸门)。
+    #    user_decision ∈ {accepted, adjusted, declined, dismissed, false_positive}
+    #    负向 = declined + dismissed + false_positive(用户觉得没用/打扰);
+    #    正向 = accepted + adjusted。误报率高 = 主动 Agent 不能放量。
+    decided_rows = (
+        db.query(ActionCard.user_decision)
+        .filter(ActionCard.user_decision.isnot(None))
+        .filter(ActionCard.decided_at >= cutoff)
+        .all()
+    )
+    decisions: dict[str, int] = {}
+    for (dv,) in decided_rows:
+        key = (dv or "unknown").lower()
+        decisions[key] = decisions.get(key, 0) + 1
+    decided_total = sum(decisions.values())
+    _neg = (
+        decisions.get("false_positive", 0)
+        + decisions.get("declined", 0)
+        + decisions.get("dismissed", 0)
+    )
+    _pos = decisions.get("accepted", 0) + decisions.get("adjusted", 0)
+    card_quality = {
+        "decided_total": decided_total,
+        "distribution": decisions,
+        "false_positive_rate": round(_neg / decided_total, 3) if decided_total else None,
+        "acceptance_rate": round(_pos / decided_total, 3) if decided_total else None,
+    }
+
     return {
         "window_days": days,
         "activity": activity,                    # agent_type → 次数
@@ -100,5 +128,6 @@ def agent_eval_dashboard(db: Session, days: int = 30) -> dict[str, Any]:
         },
         "proactive_agent": proactive_view,       # longevity_watch 主动推送质量
         "closed_loop": closed_loop,              # N-of-1 评分分布
+        "card_quality": card_quality,            # 用户决策聚合 → 误报率(放量闸门)
         "note": "去标识聚合;闭环分布为全历史,其余为近 window_days 天。",
     }

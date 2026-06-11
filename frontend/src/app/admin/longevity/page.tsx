@@ -90,6 +90,23 @@ function Inner() {
             </ul>
           </section>
 
+          {/* 卡片质量 / 误报率 — 主动 Agent 放量闸门 */}
+          <section className="border rounded-lg p-4">
+            <h2 className="font-semibold mb-2">卡片质量(放量闸门)</h2>
+            <ul className="text-sm space-y-1">
+              <li>已决策:{evalData?.card_quality?.decided_total ?? '—'}</li>
+              <li>
+                误报率:
+                <span className={(evalData?.card_quality?.false_positive_rate ?? 0) >= 0.3 ? 'text-red-600 font-semibold' : ''}>
+                  {pct(evalData?.card_quality?.false_positive_rate)}
+                </span>
+                {' · '}采纳率:{pct(evalData?.card_quality?.acceptance_rate)}
+              </li>
+              <li className="text-gray-500">{JSON.stringify(evalData?.card_quality?.distribution ?? {})}</li>
+              <li className="text-gray-400 text-xs">误报 = declined+dismissed+false_positive;≥30% 标红 = 主动推送过扰,先别放量。</li>
+            </ul>
+          </section>
+
           {/* 激活漏斗 */}
           <section className="border rounded-lg p-4">
             <h2 className="font-semibold mb-2">激活漏斗(注册→改善)</h2>
