@@ -1615,6 +1615,23 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 原研药建议注入失败: {e}")
 
+        # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
+        try:
+            from app.services.liver_health import liver_prompt_blob
+            from app.models.user import User as _User
+            from datetime import date as _date
+            _u = self.db.query(_User).filter(_User.id == user_id).first()
+            _age = None
+            if _u and _u.birth_date:
+                _t = _date.today()
+                _age = float(_t.year - _u.birth_date.year -
+                             ((_t.month, _t.day) < (_u.birth_date.month, _u.birth_date.day)))
+            blob = liver_prompt_blob(self.db, user_id, age=_age)
+            if blob:
+                parts.append("\n" + blob)
+        except Exception as e:
+            logger.warning(f"Agent 肝脏趋势注入失败: {e}")
+
         # 注入记忆
         try:
             from app.services.conversation_memory_service import get_relevant_memories
