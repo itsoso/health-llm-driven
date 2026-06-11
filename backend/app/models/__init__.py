@@ -67,6 +67,7 @@ from app.models.live_run import LiveRunSession
 from app.models.health_report import HealthReport
 # 用药管理模型
 from app.models.medication import Medication, MedicationLog
+from app.models.originator_recommendation import OriginatorRecommendation
 # 女性健康模型
 from app.models.womens_health import MenstrualCycle, CycleSymptom
 # 视觉API使用记录

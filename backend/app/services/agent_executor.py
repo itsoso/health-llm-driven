@@ -1606,6 +1606,15 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 健康上下文注入失败: {e}")
 
+        # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
+        try:
+            from app.services.originator_recommendations import originator_recs_prompt_blob
+            blob = originator_recs_prompt_blob(self.db, user_id)
+            if blob:
+                parts.append("\n" + blob)
+        except Exception as e:
+            logger.warning(f"Agent 原研药建议注入失败: {e}")
+
         # 注入记忆
         try:
             from app.services.conversation_memory_service import get_relevant_memories
