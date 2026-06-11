@@ -303,7 +303,7 @@ struct AgentChatView: View {
     }
 
     // ChatGPT-style round button at the input's bottom-right: ↑ to send,
-    // ■ to stop while streaming. The ⌘↩ shortcut still triggers send.
+    // ■ to stop while streaming. ↩ (and ⌘↩) sends; ⇧↩ inserts a newline.
     @ViewBuilder
     private var composerSendButton: some View {
         if viewModel.isStreaming {
@@ -1870,9 +1870,15 @@ private final class CommandReturnTextView: NSTextView {
     var onCommandReturn: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
-           event.charactersIgnoringModifiers == "\r" {
-            onCommandReturn?()
+        // 回车提交查询;⇧回车换行。输入法组字中(拼音候选)按回车是确认候选,
+        // 不能当提交 —— hasMarkedText() 为真时交还给输入法,确认完下一次回车才提交。
+        if event.charactersIgnoringModifiers == "\r", !hasMarkedText() {
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods.contains(.shift) {
+                super.keyDown(with: event)   // ⇧回车 = 换行
+                return
+            }
+            onCommandReturn?()               // 回车 / ⌘回车 = 提交
             return
         }
         super.keyDown(with: event)
@@ -2256,7 +2262,7 @@ struct RecordHubView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("⌘↩")
+                Text("↩ 发送 · ⇧↩ 换行")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
