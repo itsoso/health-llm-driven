@@ -108,9 +108,13 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
       const hint = zeros.length > 0
         ? `\n\n${zeros.join('/')} 读到 0 天 —— 多半是「健康」App 没给本 App 这些读取权限,或手表未记录(部分地区 Apple Watch 血氧被停用)。请到 设置 > 健康 > 数据访问与设备 检查授权。`
         : '';
+      // 有未识别来源(如 RingConn 在健康里的名字没收录)→ 显示真名,反馈后补映射即可
+      const unknownHint = coverage.unknownSources.length > 0
+        ? `\n\n⚠️ 检测到未识别的数据来源:「${coverage.unknownSources.join('」「')}」—— 请把这个名字反馈给开发者,加入映射后该设备将被单独识别。`
+        : '';
       Alert.alert(
         '同步完成',
-        `已导入 ${totalImported} 天数据\n${cov}${errors.length > 0 ? `\n${errors.length} 条错误` : ''}${hint}`,
+        `已导入 ${totalImported} 天数据\n${cov}${errors.length > 0 ? `\n${errors.length} 条错误` : ''}${hint}${unknownHint}`,
       );
       onSyncComplete?.();
     } catch (e: any) {

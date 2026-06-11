@@ -91,6 +91,10 @@ export type DataSource =
 export interface HealthKitDailyRecord {
   record_date: string; // YYYY-MM-DD
   data_source: DataSource;
+  // data_source='unknown' 时带上原始 HealthKit sourceName(出现最多的那个):
+  // 上行后端可走其映射兜底 + warning 日志打出真名(服务器侧可见),
+  // 同步弹窗也展示 → 双通道定位"RingConn 在健康里到底叫什么"。
+  source_name?: string;
   steps?: number;
   resting_heart_rate?: number;
   hrv?: number;
@@ -330,7 +334,9 @@ function buildRecordForSource(
     data_source,
     steps: intOr(sum(m.steps)),
     resting_heart_rate: intOr(avg(m.rhr)),
-    hrv: avg(m.hrv),
+    // RNH getHeartRateVariabilitySamples 原生硬用 HKUnit secondUnit(秒),
+    // 而全系统(Garmin/DB/Twin)hrv 单位是 ms → 必须 ×1000(踩过:0.0576 入库)。
+    hrv: ((s) => (s !== undefined ? Math.round(s * 1000 * 10) / 10 : undefined))(avg(m.hrv)),
     spo2_avg: spo2Avg !== undefined ? spo2Avg * 100 : undefined,
     spo2_min: spo2Min !== undefined && spo2Min !== Infinity ? spo2Min * 100 : undefined,
     total_sleep_minutes: totalSleepMin > 0 ? round(totalSleepMin) : undefined,
@@ -426,9 +432,18 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
 
   const allMetrics = [steps, rhr, hrv, spo2, sleep, activeCal, basalCal, respRate, bodyTemp, vo2, weight, waist];
   const sources = new Set<DataSource>();
+  // 未识别来源的原始 sourceName 计数 —— 用于定位"这台设备在健康里叫什么"
+  const unknownRawCounts: Record<string, number> = {};
   for (const arr of allMetrics) {
-    for (const s of arr) sources.add(mapSourceNameToDataSource(s.sourceName));
+    for (const s of arr) {
+      const mapped = mapSourceNameToDataSource(s.sourceName);
+      sources.add(mapped);
+      if (mapped === 'unknown' && s.sourceName) {
+        unknownRawCounts[s.sourceName] = (unknownRawCounts[s.sourceName] ?? 0) + 1;
+      }
+    }
   }
+  const topUnknownRaw = Object.entries(unknownRawCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
 
   const records: HealthKitDailyRecord[] = [];
   for (const src of sources) {
@@ -446,7 +461,10 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
       weight: samplesForSource(weight, src),
       waist: samplesForSource(waist, src),
     });
-    if (recordHasData(rec)) records.push(rec);
+    if (recordHasData(rec)) {
+      if (src === 'unknown' && topUnknownRaw) rec.source_name = topUnknownRaw;
+      records.push(rec);
+    }
   }
   return records;
 }
@@ -503,7 +521,10 @@ function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
       : undefined;
   return {
     record_date: r.record_date,
-    data_source: r.data_source,
+    // unknown 且带原始名 → data_source 发 null,让后端 map_source_name_to_data_source
+    // 兜底(后端字典可能更全)并 logger.warning 打出真名 → 服务器日志可定位新设备。
+    data_source: r.data_source === 'unknown' && r.source_name ? null : r.data_source,
+    source_name: r.source_name,
     steps: r.steps,
     resting_heart_rate: r.resting_heart_rate,
     hrv: r.hrv,
@@ -628,6 +649,9 @@ export interface SyncCoverage {
   hrv: number;
   spo2: number;
   sleep: number;
+  // 未识别来源的原始 sourceName(去重)。非空说明有设备(如 RingConn)写了
+  // 健康但映射字典没收录 → 弹窗展示让用户反馈,补一行映射即可独立识别。
+  unknownSources: string[];
 }
 
 export function summarizeCoverage(records: HealthKitDailyRecord[]): SyncCoverage {
@@ -640,6 +664,10 @@ export function summarizeCoverage(records: HealthKitDailyRecord[]): SyncCoverage
     hrv: count((r) => r.hrv !== undefined),
     spo2: count((r) => r.spo2_avg !== undefined),
     sleep: count((r) => r.total_sleep_minutes !== undefined),
+    unknownSources: [...new Set(
+      records.filter((r) => r.data_source === 'unknown' && r.source_name)
+        .map((r) => r.source_name as string),
+    )],
   };
 }
 
