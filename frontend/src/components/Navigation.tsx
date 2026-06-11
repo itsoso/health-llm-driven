@@ -98,6 +98,7 @@ export default function Navigation() {
         { href: '/blood-pressure', label: '血压追踪', icon: <Activity className="w-4 h-4" /> },
         { href: '/environment', label: '环境健康', icon: <CloudSun className="w-4 h-4" /> },
         { href: '/disease', label: '疾病管理', icon: <Thermometer className="w-4 h-4" /> },
+        { href: '/liver', label: '肝脏趋势', icon: <Activity className="w-4 h-4" /> },
         { href: '/body-composition', label: '身体成分', icon: <Scale className="w-4 h-4" /> },
         { href: '/health-score', label: '健康评分', icon: <Gauge className="w-4 h-4" /> },
         { href: '/mood', label: '情绪追踪', icon: <Smile className="w-4 h-4" /> },
