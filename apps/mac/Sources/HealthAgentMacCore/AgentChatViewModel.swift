@@ -596,6 +596,19 @@ public final class AgentChatViewModel {
         // mid-stream, which would make a captured index stale and crash on next token.
         let assistantID = messages[messages.index(before: messages.endIndex)].id
 
+        // 流式 token 合批:真 token 流式下每个 token 都改 @Published messages 会触发
+        // SwiftUI 每 token 全量重排(聊天气泡布局昂贵)→ 每秒数十次重排 → 100% CPU 卡死。
+        // 按 ~60ms 节流 flush(重排上限 ~16/s);所有退出路径都要 flush 剩余,不丢字。
+        var pendingTokens = ""
+        var lastTokenFlush = Date.distantPast
+        let tokenFlushInterval: TimeInterval = 0.06
+        func flushPendingTokens() {
+            guard !pendingTokens.isEmpty,
+                  let idx = messages.firstIndex(where: { $0.id == assistantID }) else { return }
+            messages[idx].content += pendingTokens
+            pendingTokens = ""
+        }
+
         do {
             for try await event in streamService.stream(
                 message: message,
@@ -607,11 +620,16 @@ public final class AgentChatViewModel {
                     conversationID = id ?? conversationID
                 case .token(let content):
                     runState = .streaming
-                    guard let idx = messages.firstIndex(where: { $0.id == assistantID }) else {
+                    guard messages.contains(where: { $0.id == assistantID }) else {
                         isStreaming = false
                         return
                     }
-                    messages[idx].content += content
+                    pendingTokens += content
+                    let now = Date()
+                    if now.timeIntervalSince(lastTokenFlush) >= tokenFlushInterval {
+                        flushPendingTokens()
+                        lastTokenFlush = now
+                    }
                 case .tool(let name, let success):
                     applyToolEvent(AgentToolEvent(
                         name: name,
@@ -635,16 +653,20 @@ public final class AgentChatViewModel {
             }
         } catch is CancellationError {
             // View reload / new request cancelled this stream — not a real failure.
+            flushPendingTokens()
             isStreaming = false
             return
         } catch let urlError as URLError where urlError.code == .cancelled {
             // URLSession's -999 (NSURLErrorCancelled) — same benign case.
+            flushPendingTokens()
             isStreaming = false
             return
         } catch {
             AppLogger.agent.error("agent stream consumption failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
         }
+
+        flushPendingTokens()  // 收尾:把节流期间缓存的尾部 token 落盘,不丢字
 
         // The conversation may have been reset while awaiting the stream; if the
         // assistant message is gone, there's nothing left to finalize.
