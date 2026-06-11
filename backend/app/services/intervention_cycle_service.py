@@ -77,6 +77,11 @@ def start_metabolic_cycle(
     """开启一个代谢干预周期: 锁基线 Twin 快照 + 基线 biomarker + 目标指标。"""
     from app.twin.snapshots import snapshot_twin
     from app.services.biomarker_service import latest_observations
+    from app.services.biomarker_sync import ensure_biomarkers
+
+    # 读基线前自愈补齐 biomarker_observations(exam + medical_indicators 两源),
+    # 否则化验只进了 medical_indicators 的用户会得到空目标 + 空基线(P0③)。
+    ensure_biomarkers(db, user_id)
 
     baseline = snapshot_twin(db, user_id, twin, purpose="cycle_baseline", dedupe=False)
     latest_obs = latest_observations(db, user_id)

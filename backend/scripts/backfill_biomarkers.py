@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""回填历史体检 → BiomarkerObservation (PRD P1 接通).
+"""回填历史化验 → BiomarkerObservation (PRD P1 接通 + P0③ 双源打通).
 
-把已有 MedicalExam/MedicalExamItem 归一化落库为标准观测。幂等可重跑
-(observe_exam_item 按 source_exam_item_id 去重更新)。
+把已有数据归一化落库为标准观测,两源都补齐:
+  - MedicalExam/MedicalExamItem(结构化体检项)
+  - medical_indicators(OCR/图片/手动/CSV 的统一化验存储)
+幂等可重跑(exam 按 source_exam_item_id 去重;indicators 按同 user+code+日历日 去重,
+且让位于已有的结构化来源)。
 
 用法:
     python scripts/backfill_biomarkers.py            # 全部用户
@@ -16,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal  # noqa: E402
 from app.models.user import User  # noqa: E402
-from app.services.biomarker_service import backfill_user  # noqa: E402
+from app.services.biomarker_sync import ensure_biomarkers  # noqa: E402
 
 
 def main() -> int:
@@ -31,13 +34,21 @@ def main() -> int:
         else:
             user_ids = [u.id for u in db.query(User.id).all()]
 
-        total = 0
+        total_exam = 0
+        total_sync = 0
         for uid in user_ids:
-            n = backfill_user(db, uid)
-            total += n
-            if n:
-                print(f"  user {uid}: {n} observations")
-        print(f"backfill done: {total} observations across {len(user_ids)} users")
+            r = ensure_biomarkers(db, uid)
+            total_exam += r["exam_observations"]
+            total_sync += r["written"]
+            if r["exam_observations"] or r["written"]:
+                print(
+                    f"  user {uid}: exam={r['exam_observations']} "
+                    f"indicators_written={r['written']} skipped={r['skipped']}"
+                )
+        print(
+            f"backfill done: exam={total_exam} indicators={total_sync} "
+            f"observations across {len(user_ids)} users"
+        )
         return 0
     finally:
         db.close()
