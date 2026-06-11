@@ -57,6 +57,7 @@ import {
   fetchDailyRecords,
   isHealthKitAvailable,
   syncRecentDays,
+  summarizeCoverage,
 } from '../appleHealth';
 
 const mockHK: any = AppleHealthKit;
@@ -162,14 +163,15 @@ describe('fetchDailyRecords (按源拆分)', () => {
 
   it('多源样本按源各产出一条 (RingConn 与 Apple Watch 分开,不再 majority 揉合)', async () => {
     // 5 个 ringconn HRV + 1 个 apple-watch HRV → 各成一条,值各算各的
+    // RNH 原生返回 HRV 单位是**秒**(HKUnit secondUnit),mock 用秒级值
     mockHK.getHeartRateVariabilitySamples.mockImplementation((_o: any, cb: any) =>
       cb('', [
-        { value: 50, sourceName: 'com.ringconn.app', startDate: '2026-05-20T01:00:00Z', endDate: '2026-05-20T01:00:00Z' },
-        { value: 51, sourceName: 'com.ringconn.app', startDate: '2026-05-20T02:00:00Z', endDate: '2026-05-20T02:00:00Z' },
-        { value: 52, sourceName: 'com.ringconn.app', startDate: '2026-05-20T03:00:00Z', endDate: '2026-05-20T03:00:00Z' },
-        { value: 49, sourceName: 'com.ringconn.app', startDate: '2026-05-20T04:00:00Z', endDate: '2026-05-20T04:00:00Z' },
-        { value: 53, sourceName: 'com.ringconn.app', startDate: '2026-05-20T05:00:00Z', endDate: '2026-05-20T05:00:00Z' },
-        { value: 48, sourceName: 'com.apple.health', startDate: '2026-05-20T06:00:00Z', endDate: '2026-05-20T06:00:00Z' },
+        { value: 0.050, sourceName: 'com.ringconn.app', startDate: '2026-05-20T01:00:00Z', endDate: '2026-05-20T01:00:00Z' },
+        { value: 0.051, sourceName: 'com.ringconn.app', startDate: '2026-05-20T02:00:00Z', endDate: '2026-05-20T02:00:00Z' },
+        { value: 0.052, sourceName: 'com.ringconn.app', startDate: '2026-05-20T03:00:00Z', endDate: '2026-05-20T03:00:00Z' },
+        { value: 0.049, sourceName: 'com.ringconn.app', startDate: '2026-05-20T04:00:00Z', endDate: '2026-05-20T04:00:00Z' },
+        { value: 0.053, sourceName: 'com.ringconn.app', startDate: '2026-05-20T05:00:00Z', endDate: '2026-05-20T05:00:00Z' },
+        { value: 0.048, sourceName: 'com.apple.health', startDate: '2026-05-20T06:00:00Z', endDate: '2026-05-20T06:00:00Z' },
       ]),
     );
     const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
@@ -177,8 +179,25 @@ describe('fetchDailyRecords (按源拆分)', () => {
     const watch = recs.find((r) => r.data_source === 'apple-watch');
     expect(ring).toBeDefined();
     expect(watch).toBeDefined();
-    expect(ring!.hrv).toBeCloseTo(51, 1); // avg(50,51,52,49,53)
+    // 秒 → ms(×1000):avg(0.050..0.053)=0.051s → 51ms
+    expect(ring!.hrv).toBeCloseTo(51, 1);
     expect(watch!.hrv).toBeCloseTo(48, 1); // 只用 apple-watch 自己的样本
+  });
+
+  it('未识别来源:source_name 带原始名 + coverage.unknownSources 暴露', async () => {
+    // 模拟 RingConn Gen3 在健康里用了我们字典没有的名字
+    mockHK.getHeartRateVariabilitySamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { value: 0.050, sourceName: '神秘戒指App', startDate: '2026-05-20T01:00:00Z', endDate: '2026-05-20T01:00:00Z' },
+        { value: 0.052, sourceName: '神秘戒指App', startDate: '2026-05-20T02:00:00Z', endDate: '2026-05-20T02:00:00Z' },
+      ]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const unk = recs.find((r) => r.data_source === 'unknown');
+    expect(unk).toBeDefined();
+    expect(unk!.source_name).toBe('神秘戒指App'); // 原始名带出,可上行+展示
+    const cov = summarizeCoverage(recs);
+    expect(cov.unknownSources).toEqual(['神秘戒指App']);
   });
 
   it('不同源的体重/腰围拆到各自记录 (withings 秤 vs ringconn)', async () => {
