@@ -690,7 +690,10 @@ struct AgentChatView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(message.role == .user ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.08), lineWidth: 1)
             }
-            .frame(maxWidth: message.role == .user ? 620 : .infinity, alignment: .leading)
+            // 助手气泡用确定宽度(非 .infinity):markdown 各块带 fixedSize(vertical),
+            // 配 maxWidth:.infinity 会让 SwiftUI 在不定宽度上反复探测 → sizeThatFits 指数级
+            // 爆炸(长回复 100% CPU 卡死,sample 实锤)。给定宽度后高度一次算定,不再探测。
+            .frame(maxWidth: message.role == .user ? 620 : 760, alignment: .leading)
             if message.role == .assistant {
                 Spacer(minLength: 0)
             }
