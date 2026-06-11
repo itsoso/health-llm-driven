@@ -140,6 +140,38 @@ def record_recheck(db: Session, cycle: InterventionCycle, twin) -> InterventionC
     return cycle
 
 
+def refresh_cycle_targets(db: Session, cycle: InterventionCycle) -> InterventionCycle:
+    """(重)计算周期目标 —— 修复"周期空目标"(根因:开周期时 biomarker_observations 为空)。
+
+    用当前最新观测推导异常指标作目标,补齐 target_metrics + 缺失的 OutcomeMetric(基线快照)。
+    幂等:已有的 metric_code 不重复建。前置应先 sync_indicators_to_biomarkers 打通归一层。
+    """
+    from app.services.biomarker_service import latest_observations
+
+    latest_obs = latest_observations(db, cycle.user_id)
+    specs = default_metabolic_targets(latest_obs)
+    cycle.target_metrics = specs
+
+    existing_codes = {om.metric_code for om in cycle.outcomes}
+    for spec in specs:
+        if spec["code"] in existing_codes:
+            continue
+        obs = latest_obs.get(spec["code"])
+        db.add(OutcomeMetric(
+            cycle_id=cycle.id,
+            metric_code=spec["code"],
+            unit=(obs.normalized_unit if obs else None),
+            baseline_value=(obs.normalized_value if obs else None),
+            target_value=spec.get("target"),
+            direction=spec.get("direction", "down"),
+            status="pending",
+            baseline_observed_at=(obs.observed_at if obs else None),
+        ))
+    db.commit()
+    db.refresh(cycle)
+    return cycle
+
+
 def get_active_cycle(db: Session, user_id: int) -> Optional[InterventionCycle]:
     return (
         db.query(InterventionCycle)
