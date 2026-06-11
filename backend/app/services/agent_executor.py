@@ -1781,7 +1781,22 @@ class AgentExecutor:
             or getattr(provider, "default_model", None)
             or getattr(provider, "provider_name", None)
         )
-        return await provider.chat(**chat_kwargs)
+        try:
+            return await provider.chat(**chat_kwargs)
+        except Exception as e:  # noqa: BLE001
+            # 选定 provider 报错 → 回退到稳定的 tool-capable provider (tokenplan)。
+            # 典型场景:langbridge 商用网关(GPT-5.5 等)的浏览器适配器只支持流式,
+            # 不实现非流式 tool-calling chat() → 返回 500 "adapter has no chat() method"。
+            # 不回退的话用户一选商用模型整个 agent 就不可用。二次失败再抛给上层兜底。
+            logger.warning(
+                "[agent_executor] 选定 provider chat() 失败,回退 tokenplan: %s", e
+            )
+            from app.services.llm.factory import create_llm_provider
+            from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+            from app.services.llm.usage_tracker import wrap_provider
+            fb = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
+            self._last_provider_model_name = getattr(fb, "model", None) or "tokenplan(fallback)"
+            return await fb.chat(**chat_kwargs)
 
     async def _call_llm_fallback_provider(self, messages: List[Dict]) -> Any:
         """Use the stable global provider when a selected gateway keeps empty-answering."""
