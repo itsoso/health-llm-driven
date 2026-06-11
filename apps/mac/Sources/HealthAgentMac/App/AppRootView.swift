@@ -130,6 +130,8 @@ struct AppRootView: View {
             DataSourcesView(client: services.deviceSourcesClient, onAskAgent: askAgentWithContext)
         case .prescriptions:
             OriginatorView(client: services.originatorClient, onAskAgent: askAgentWithContext)
+        case .liver:
+            LiverTrendView(client: services.liverHealthClient, onAskAgent: askAgentWithContext)
         case .data:
             WorkspaceOverviewView(
                 viewModel: services.todayViewModel,

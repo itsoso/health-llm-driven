@@ -727,6 +727,30 @@ public enum L10n {
         "Currently: %@": "在用：%@",
         "Could not load suggestions. Try refresh.": "无法加载建议，请刷新重试。",
         "For reference only — confirm with your pharmacist or doctor.":
-            "仅供参考，请以药师或医生意见为准。"
+            "仅供参考，请以药师或医生意见为准。",
+
+        // Liver Trend
+        "Liver Trend": "肝脏趋势",
+        "Trends in liver enzymes and fibrosis markers from your labs.":
+            "来自化验的肝酶与纤维化指标趋势。",
+        "Trend hint, not a diagnosis — review with an abdominal ultrasound and your doctor.":
+            "趋势提示，非诊断，请结合腹部超声和医生意见。",
+        "No liver data yet.": "暂无肝脏数据。",
+        "Not enough lab data to assess liver trend yet.": "化验数据不足，暂无法评估肝脏趋势。",
+        "Could not load liver trend. Try refresh.": "无法加载肝脏趋势，请刷新重试。",
+        "Enzyme trends": "肝酶趋势",
+        "No trend summary available.": "暂无趋势摘要。",
+        "Markers": "指标",
+        "AST/ALT ratio": "AST/ALT 比值",
+        "FIB-4": "FIB-4",
+        "Needs platelets — add a CBC to assess.": "缺血小板，补血常规即可评估。",
+        "Fatty liver risk": "脂肪肝风险",
+        "Advice": "建议",
+        "ALT": "ALT（谷丙转氨酶）",
+        "GGT": "GGT（谷氨酰转肽酶）",
+        "Improving": "改善",
+        "Worsening": "恶化",
+        "Stable": "稳定",
+        "Trend": "趋势"
     ]
 }
