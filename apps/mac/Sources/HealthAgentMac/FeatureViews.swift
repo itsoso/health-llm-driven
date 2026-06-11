@@ -668,7 +668,7 @@ struct AgentChatView: View {
                         copyButton(for: message)
                     }
                 }
-                messageContent(message)
+                messageContent(message, contentWidth: contentWidth)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if message.role == .assistant {
@@ -736,13 +736,12 @@ struct AgentChatView: View {
     }
 
     @ViewBuilder
-    private func messageContent(_ message: AgentChatMessage) -> some View {
+    private func messageContent(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
         if message.role == .assistant {
             // 流式进行中的那条(= 最后一条且 isStreaming):渲染 plain Text。
             // 富 markdown 在 MarkdownMessageText.init 里对「累积全文」重 parse + 逐块建
             // AttributedString,而流式每 ~60ms 一批都会用更长的全文重 init →
-            // O(n²),长回复流式期 CPU 飙高卡顿(inlineCache 是 per-instance,跨 init 不复用)。
-            // 流完(isStreaming=false)再切富 markdown,只解析一次。
+            // O(n²),长回复流式期 CPU 飙高卡顿。流完(isStreaming=false)再切富 markdown。
             if viewModel.isStreaming, message.id == viewModel.messages.last?.id {
                 Text(viewModel.displayContent(for: message))
                     .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
@@ -750,7 +749,12 @@ struct AgentChatView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                MarkdownMessageText(markdown: viewModel.displayContent(for: message))
+                // 内宽 = 气泡确定宽 − 气泡 padding(14×2)。表格列/各块据此定宽,
+                // 消除含表格长回复最终渲染的指数级 sizeThatFits(#130)。
+                MarkdownMessageText(
+                    markdown: viewModel.displayContent(for: message),
+                    contentWidth: max(contentWidth - 28, 0)
+                )
             }
         } else {
             // Match the assistant body font (same scaled base) so the question and
@@ -1504,8 +1508,13 @@ private struct MarkdownMessageText: View {
     // body 不再解析。否则滚动时每帧重解析整段(含表格的多单元格)→ 助手页滑动卡顿。
     private let blocks: [MarkdownRenderBlock]
     private let inlineCache: [String: AttributedString]
+    // 内容确定宽度(气泡内宽)。表格列/各块据此给「定宽」,而非 maxWidth: .infinity 的
+    // 范围宽 —— 后者会让 N 个弹性列 × 高依赖宽的单元格触发指数级 sizeThatFits(含表格
+    // 的长回复 100% CPU 卡死,sample 实锤「Table」热路径)。<=0 时回退,绝不用范围宽。
+    private let contentWidth: CGFloat
 
-    init(markdown: String) {
+    init(markdown: String, contentWidth: CGFloat) {
+        self.contentWidth = contentWidth
         let src = markdown.isEmpty ? " " : markdown
         let parsed = MarkdownRenderSupport.blocks(from: src)
         let finalBlocks: [MarkdownRenderBlock] = parsed.isEmpty
@@ -1516,16 +1525,30 @@ private struct MarkdownMessageText: View {
         var cache: [String: AttributedString] = [:]
         for block in finalBlocks {
             for text in MarkdownMessageText.texts(in: block) where cache[text] == nil {
-                let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
-                if let attributed = try? AttributedString(
-                    markdown: cleaned,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-                ) {
-                    cache[text] = attributed
-                }
+                cache[text] = MarkdownMessageText.cachedInlineAttributed(text)
             }
         }
         self.inlineCache = cache
+    }
+
+    // 内联 AttributedString 全局缓存:重建 MarkdownMessageText(布局探测/宽度变化都会重建)
+    // 时不再重解析整段(AttributedString(markdown:) 是热点)。NSCache 线程安全;
+    // Swift 6 用 nonisolated(unsafe)(同 MarkdownRenderSupport.blocksCache)。
+    private final class AttrBox { let value: AttributedString; init(_ v: AttributedString) { self.value = v } }
+    nonisolated(unsafe) private static let inlineAttrCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>(); c.countLimit = 2048; return c
+    }()
+
+    private static func cachedInlineAttributed(_ text: String) -> AttributedString {
+        let key = text as NSString
+        if let hit = inlineAttrCache.object(forKey: key) { return hit.value }
+        let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
+        let attributed = (try? AttributedString(
+            markdown: cleaned,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(MarkdownRenderSupport.readableFallback(text))
+        inlineAttrCache.setObject(AttrBox(attributed), forKey: key)
+        return attributed
     }
 
     private static func texts(in block: MarkdownRenderBlock) -> [String] {
@@ -1545,6 +1568,11 @@ private struct MarkdownMessageText: View {
                 blockView(block)
             }
         }
+        // 整个 markdown 子树锚死在「确定宽度」。否则父级定宽要穿过 textSelection +
+        // maxWidth:.infinity 才传到各块,SwiftUI 仍会对「高依赖宽」的块(fixedSize 文本、
+        // 表格行)反复探测宽度 → 指数级 sizeThatFits(含表格的长回复卡死)。
+        // 直接给确定宽,各块一次定高,探测消失。<=0 时不加(回退父级传播)。
+        .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1575,21 +1603,25 @@ private struct MarkdownMessageText: View {
                 Text("\(index).")
                     .font(scaledFont(base: 10.5, weight: .bold))
                     .foregroundStyle(Color.accentColor)
-                    .frame(minWidth: 22, alignment: .trailing)
+                    .frame(width: 22, alignment: .trailing)  // 定宽,非 minWidth 范围(_FlexFrameLayout 探测源)
                 inlineText(text)
                     .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .tableRow(let columns):
+            // 关键:每列给「确定宽度」= 内宽/列数(下限 56),不再用 maxWidth: .infinity。
+            // 范围宽让 SwiftUI 在 N 弹性列间反复探测分配 × 高依赖宽 → 指数级布局卡死。
+            let n = max(columns.count, 1)
+            let cellWidth = contentWidth > 0 ? max(contentWidth / CGFloat(n), 56) : 110
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                     inlineText(column)
                         .font(scaledFont(base: 10.5))
                         .lineLimit(4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 7)
+                        .frame(width: cellWidth, alignment: .leading)
                         .background(Color.secondary.opacity(0.06))
                 }
             }
