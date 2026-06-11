@@ -23,6 +23,14 @@ def _card(db, outcome):
                       baseline_value="47", actual_value="44"))
 
 
+def _decision(db, user_decision, decided_at=None):
+    from datetime import UTC, datetime
+    from app.models.action_card import ActionCard
+    db.add(ActionCard(user_id=1, title="t", content="x",
+                      user_decision=user_decision,
+                      decided_at=decided_at or datetime.now(UTC)))
+
+
 def test_percentile_helper():
     assert _percentile([], 0.5) is None
     assert _percentile([100, 200, 300], 0.5) == 200.0
@@ -58,11 +66,33 @@ def test_dashboard_aggregates(db):
     assert "user_id" not in str(out)
 
 
+def test_card_quality_false_positive_rate(db):
+    from datetime import UTC, datetime, timedelta
+    _decision(db, "accepted")
+    _decision(db, "adjusted")
+    _decision(db, "declined")
+    _decision(db, "dismissed")
+    _decision(db, "false_positive")
+    # 窗口外的旧决策不应计入
+    _decision(db, "false_positive", decided_at=datetime.now(UTC) - timedelta(days=60))
+    db.commit()
+
+    cq = agent_eval_dashboard(db, days=30)["card_quality"]
+    assert cq["decided_total"] == 5
+    # 负向 = declined+dismissed+false_positive = 3;正向 = accepted+adjusted = 2
+    assert cq["false_positive_rate"] == round(3 / 5, 3)
+    assert cq["acceptance_rate"] == round(2 / 5, 3)
+    assert cq["distribution"]["false_positive"] == 1
+
+
 def test_dashboard_empty(db):
     out = agent_eval_dashboard(db, days=30)
     assert out["activity"] == {}
     assert out["orchestrator_latency_ms"]["p50"] is None
     assert out["proactive_agent"]["notable_rate"] is None
+    # 无决策 → 误报率 None,不崩
+    assert out["card_quality"]["decided_total"] == 0
+    assert out["card_quality"]["false_positive_rate"] is None
 
 
 def test_eval_endpoint_requires_admin(client, auth_user_and_headers):
