@@ -160,6 +160,27 @@ final class DeviceSourcesClientTests: XCTestCase {
         XCTAssertTrue(response.comparisons[0].bySource.isEmpty)
     }
 
+    func testComparisonDecodesNullAgreement() throws {
+        // Backend emits agreement: null when mean is 0 — must decode to nil,
+        // not blow up the whole response (regression guard for the String?→Double? fix).
+        let json = """
+        {
+          "comparisons": [
+            {
+              "metric": "steps",
+              "label": "步数",
+              "by_source": {"apple-watch": 0.0, "garmin": 0.0},
+              "diff": 0.0,
+              "agreement": null
+            }
+          ]
+        }
+        """
+        let response = try decode(DeviceComparisonResponse.self, json)
+        XCTAssertEqual(response.comparisons.count, 1)
+        XCTAssertNil(response.comparisons[0].agreement)
+    }
+
     // MARK: - Display name mapping
 
     func testDisplayNameMapping() {
