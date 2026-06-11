@@ -699,6 +699,34 @@ public enum L10n {
             "还没有穿戴数据 — 在 iPhone 上同步 Apple Health 后出现。",
         "Could not load data sources. Try refresh.": "无法加载数据来源，请刷新重试。",
         "Last %d days": "最近 %d 天",
-        "Latest %@": "最新 %@"
+        "Latest %@": "最新 %@",
+        "Originator Drugs": "原研药",
+        "Look up originator drugs from a prescription, and review switch suggestions.":
+            "从处方识别原研药，并查看可换原研的在用药建议。",
+        "Prescription → originator": "处方查原研药",
+        "Pick a prescription image (JPG / PNG / HEIC / WebP) or drag it here.":
+            "选择处方图片（JPG / PNG / HEIC / WebP）或拖到此处。",
+        "Choose image": "选择图片",
+        "Recognizing…": "识别中…",
+        "Could not recognize this prescription. Try another image.":
+            "无法识别这张处方，请换一张图片重试。",
+        "No medications recognized in this image.": "未从图片中识别出药品。",
+        "Prescription name": "处方名",
+        "Generic name": "通用名",
+        "Originator": "原研药",
+        "No originator data": "暂无原研数据",
+        "Dosage": "剂量",
+        "Frequency": "频次",
+        "Matched %d originator(s).": "匹配到 %d 种原研药。",
+        "Originator suggestions": "原研药建议",
+        "Medications you're taking that have an originator option.":
+            "你在用的、有原研药可选的药品。",
+        "No switch suggestions right now.": "暂无可换原研的建议。",
+        "Adopt": "采纳",
+        "Not needed": "不需要",
+        "Currently: %@": "在用：%@",
+        "Could not load suggestions. Try refresh.": "无法加载建议，请刷新重试。",
+        "For reference only — confirm with your pharmacist or doctor.":
+            "仅供参考，请以药师或医生意见为准。"
     ]
 }
