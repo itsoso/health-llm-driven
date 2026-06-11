@@ -15,6 +15,35 @@
 
 ---
 
+## 决策记录 — 2026-06-11 (Owner 拍板)
+
+经一次完整 code review(agent 核心 solid,风险全在"广度":4 端 + 137 router 增长快过收敛)+ 战略文档综合后,Owner 就本路线图悬而未决的三个方向性选择题拍板:
+
+### D1. 产品形态 → ✅ 已决:抗衰 OS + 家庭/医生视图(= §3.1 选项 2)
+- **北极星**:生物年龄闭环("证明你在变年轻")。代谢是入口钩子、抗衰是头条叙事;**验证闭环**(episodes + personal_outcome + longitudinal 因果)是真护城河 —— 检测谁都能做,"用你自己的数据证明某干预对你有效"做不到。
+- **端定位**:mobile = 个人日常驱动;**Web 重定位为家庭/医生管理视图**(多人 + 权限 + 医生签字),不再追 mobile parity。与 Phase 2 家庭邀请 / 医生反馈一致。
+- **级联**:User model 加家庭关系 + 权限层(往 (2) 走的代码量,前端架构剧变小)。
+
+### D2. 客户端策略 → ✅ 已决:保留 4 端(mobile / web / mac / wechat)继续维护
+- Owner 选择维持四端覆盖,**不砍 Mac**。
+- **接受的代价 + 必须的遏制**(本决定的前提,进 TaskCreate 跟踪):
+  - 每次后端 schema 改动要对齐 4 套类型 → **强制走生成类型护栏**(`mobile/types/api.generated.ts` + frontend 镜像 + Mac Codable 跨端核对;近因:`DeviceComparison.agreement` String→Double 解码 bug 就是这税)。
+  - Mac 两个巨石文件(`HealthAgentMacApp.swift` ~5391 行 / `FeatureViews.swift` ~4282 行)**冻结增长 + 逐步拆**,新功能不许继续堆(近因:本周 RecordHubView ViewThatFits + NSViewRepresentable sizeThatFits 指数级布局卡死、markdown 每帧重解析卡顿,均已修)。
+  - wechat 若长期无活跃用户,单独复审是否降级(不在本决定内)。
+
+### D3. 多租户 / 商业化 → ✅ 已决:暂缓,先跑出抗衰闭环数据(= §3.3 推迟)
+- 先用 MVP / Phase 2 攒真实 N-of-1 outcome 数据(融资 / 退出弹药)。
+- 数据层**已 multi-user-ready**(merge 全程 `(user_id, record_date)` 为键,无 `user_id=1` 生产硬编码)—— 支付 / 配额 / 租户隔离审计等需求明确后再异步起架构。
+
+### 由 D1–D3 顺带对齐(非新决定)
+- **盲点 2(Web/Mobile 双轨)**:按 D1 解 → Web = 家庭/医生视图,mobile = 日常驱动;双轨保留但定位分清。
+- **盲点 1(Garmin 采而不用)**:方向 = **补消费不砍采集** —— Phase 2 W2 把 VO2max 作第 2 个生物年龄信号、`training_readiness` 接进 RecoveryCoach(零成本高证据;多源平台已就绪,三源 Watch/RingConn/Garmin 已可并存对比)。
+- **盲点 3(specialist 无单测)**:Phase 2 **前置必做** path A 最小单测(12 specialist 各:空 twin 不崩 / 典型出 JSON / 极端降级)—— 主动化放量 + LongevitySpecialist 转 tool-calling 前的回归护栏。
+
+> 后续 code-health 清债(分层泄漏 4 处 / 增量巨石文件 / router 数纳入 doc-drift 闸门 / 裸 except)见 code review,按性价比另行排期,不阻塞 D1–D3。
+
+---
+
 ## 一、核心盲点 × 3 (最大 RoI)
 
 ### 盲点 1: Garmin 数据 "采而不用" 30% 利用率
@@ -109,6 +138,8 @@
 
 **你现在走的是** (1) 偏 (2):Siri / voice-chat / timeline 都是单用户,但 family / doctor-loop 在往 (2) 靠。决定走哪个会让许多技术决策一致起来。
 
+> ✅ **已决 (2026-06-11)**:选 (2) 家庭/医生视图 + 抗衰 OS 北极星。详见顶部 §决策记录 D1。
+
 ### 3.2 Agent 深度
 
 当前 specialist 是"规则 + LLM 合成",下一步可以:
@@ -127,6 +158,8 @@ TokenPlan provider 刚进来 — 这是未来 SaaS 化或者给朋友/家人开�
 
 决定:要不要为真实多用户做 → 影响 next 6 个月基础架构投入。
 
+> ✅ **已决 (2026-06-11)**:暂缓 SaaS,先跑出抗衰闭环数据;数据层已 multi-user-ready,需求明确再异步起。详见顶部 §决策记录 D3。
+
 ---
 
 ## 四、本 roadmap 怎么用
@@ -136,3 +169,21 @@ TokenPlan provider 刚进来 — 这是未来 SaaS 化或者给朋友/家人开�
 - **每次 commit 前反问**:"这次改动是推 roadmap 哪一项,还是新开坑?" — 新开坑要明确进 roadmap
 
 本文件**不**是 todo list,是决策参考。具体任务去 TaskCreate 管理。
+
+---
+
+## 五、相关战略 / 设计文档(2026-06-11 归档入库)
+
+这批文档此前散在工作树未提交(source-of-truth 漂移风险),现随本次决策一并入库。北极星 / 分期 / 工程设计的细节看它们,本文件只记**决策**。
+
+| 文档 | 层级 | 内容 |
+|---|---|---|
+| [strategy-longevity-os.md](strategy-longevity-os.md) | 定位 | 抗衰 OS 北极星 + 生物年龄 Delta 指标 + 竞品/资本叙事(= D1 的依据) |
+| [strategy-midage-men-health.md](strategy-midage-men-health.md) | 定位 | 中年男性入口(代谢钩子);被 longevity-os 收编为入口非头条 |
+| [rfc-agent-native-health-os.md](rfc-agent-native-health-os.md) | 技术路线 | Agent-Native 10 方向(eval=dir9 是 dir1/3 主动化前置) |
+| [product-evolution-plan.md](product-evolution-plan.md) | 综述 | 产品演进总览 |
+| [design-longevity-mvp.md](design-longevity-mvp.md) | 工程设计 | PhenoAge 闭环 MVP(7 项血检字段 + golden test + LongevitySpecialist) |
+| [plan-longevity-phase2.md](plan-longevity-phase2.md) | 规划 | Phase 2 工作流(VO2max / 主动 Watcher / DNAm / 协议编排 / Eval 看板) |
+| [plan-longevity-phase3.md](plan-longevity-phase3.md) | 规划 | Phase 3(队列证据 + 规模化 + 礼宾/变现;仅 P3-3/4 纯代码) |
+| [design-longevity-phase2-hardware.md](design-longevity-phase2-hardware.md) | 设计 | 硬件门控(BD 驱动,纯代码优先时暂缓) |
+| [plan-next-horizon.md](plan-next-horizon.md) / [plan-toward-goal-v2.md](plan-toward-goal-v2.md) / [plan-product-improvements.md](plan-product-improvements.md) | 规划 | 近期改进 / 阶段目标(含"无 UI 不加 specialist"等纪律) |
