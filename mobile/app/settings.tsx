@@ -136,6 +136,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/location' as any)} />
           <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
+          <SettingRow icon="git-compare-outline" label="数据来源"
+            onPress={() => router.push('/device-sources' as any)} />
         </View>
 
         {/* Health tools */}
@@ -146,6 +148,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/journal' as any)} />
           <SettingRow icon="medical-outline" label="健康咨询"
             onPress={() => router.push('/consultations' as any)} />
+          <SettingRow icon="ribbon-outline" label="处方查原研药"
+            onPress={() => router.push('/prescription-scan' as any)} />
           <SettingRow icon="barbell-outline" label="运动记录"
             onPress={() => router.push('/workout-list' as any)} />
           <SettingRow icon="flag-outline" label="健康目标"
