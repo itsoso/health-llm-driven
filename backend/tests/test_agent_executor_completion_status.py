@@ -7,6 +7,7 @@ from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
 from app.models.openclaw import OpenClawMessage
 from app.services.agent_executor import (
+    FAST_RECORD_MODEL_ID,
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
     _completion_status_from_finish_reason,
@@ -129,7 +130,7 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
     captured_messages = []
 
     class FakeProvider:
-        model = "glm-5"
+        model = FAST_RECORD_MODEL_ID
 
         async def chat(self, **kwargs):
             captured_messages.append(kwargs["messages"])
@@ -148,8 +149,8 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
 
     await executor._call_llm([{"role": "user", "content": "记录晚餐牛肉饭"}], [])
 
-    assert created_model_ids == ["glm-5"]
-    assert executor._last_provider_model_name == "glm-5"
+    assert created_model_ids == [FAST_RECORD_MODEL_ID]
+    assert executor._last_provider_model_name == FAST_RECORD_MODEL_ID
     assert len(captured_messages[0]) == 2
     assert "健康记录工具路由器" in captured_messages[0][0]["content"]
     assert captured_messages[0][1]["content"] == "记录晚餐牛肉饭"
