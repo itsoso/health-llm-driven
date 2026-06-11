@@ -148,6 +148,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/journal' as any)} />
           <SettingRow icon="medical-outline" label="健康咨询"
             onPress={() => router.push('/consultations' as any)} />
+          <SettingRow icon="pulse-outline" label="肝脏趋势"
+            onPress={() => router.push('/liver-trend' as any)} />
           <SettingRow icon="ribbon-outline" label="处方查原研药"
             onPress={() => router.push('/prescription-scan' as any)} />
           <SettingRow icon="barbell-outline" label="运动记录"
