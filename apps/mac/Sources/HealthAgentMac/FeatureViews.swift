@@ -22,6 +22,10 @@ struct AgentChatView: View {
     @State private var historyPage = 0
     @State private var copiedMessageID: UUID?
     @State private var composerTextHeight: CGFloat = 0
+    // 助手气泡的「确定」宽度(非 maxWidth 范围)。markdown 各块用 fixedSize(vertical),
+    // 配范围宽度会让 SwiftUI 在不定宽度上反复探测 → sizeThatFits 指数级爆炸(长回复卡死)。
+    // GeometryReader 读一次列宽 → 给气泡定宽 → 高度一次算定,彻底消除探测。
+    @State private var conversationWidth: CGFloat = 700
 
     private static let historyPageSize = 6
     // ChatGPT-style: start at ~1 line, grow with content, then scroll past a cap.
@@ -630,15 +634,23 @@ struct AgentChatView: View {
 
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(viewModel.messages) { message in
-                    messageBubble(message)
+                    messageBubble(message, contentWidth: conversationWidth)
                 }
             }
             .frame(maxWidth: 860)
             .frame(maxWidth: .infinity, alignment: .center)
+            // 读一次列的确定宽度(上限 860),喂给助手气泡定宽。背景层读宽不影响布局。
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { conversationWidth = min(geo.size.width, 860) }
+                        .onChange(of: geo.size.width) { _, w in conversationWidth = min(w, 860) }
+                }
+            )
         }
     }
 
-    private func messageBubble(_ message: AgentChatMessage) -> some View {
+    private func messageBubble(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
                 Spacer(minLength: 0)
@@ -690,10 +702,12 @@ struct AgentChatView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(message.role == .user ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.08), lineWidth: 1)
             }
-            // 助手气泡用确定宽度(非 .infinity):markdown 各块带 fixedSize(vertical),
-            // 配 maxWidth:.infinity 会让 SwiftUI 在不定宽度上反复探测 → sizeThatFits 指数级
-            // 爆炸(长回复 100% CPU 卡死,sample 实锤)。给定宽度后高度一次算定,不再探测。
-            .frame(maxWidth: message.role == .user ? 620 : 760, alignment: .leading)
+            // 用户气泡:maxWidth 范围即可(短文本,plain Text,不爆炸)。
+            // 助手气泡:必须给「确定宽度」—— markdown 各块的 fixedSize(vertical) 配范围宽度
+            // (maxWidth)会让 SwiftUI 反复探测 → sizeThatFits 指数级爆炸(长回复 100% CPU
+            // 卡死,sample 实锤 3 次)。定宽后每块高度一次算定,探测消失。
+            .frame(maxWidth: message.role == .user ? 620 : nil, alignment: .leading)
+            .frame(width: message.role == .assistant ? contentWidth : nil, alignment: .leading)
             if message.role == .assistant {
                 Spacer(minLength: 0)
             }
