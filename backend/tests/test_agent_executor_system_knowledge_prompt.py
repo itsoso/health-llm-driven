@@ -7,6 +7,27 @@ from app.services.agent_executor import AgentExecutor
 from tests.test_system_knowledge_phase0 import _seed_phase0_knowledge
 
 
+def _stream_from(fake_call_llm):
+    """适配旧式 fake_call_llm 到 run_stream 现用的 _call_llm_stream 事件流 seam。"""
+    async def fake_call_llm_stream(messages, tools):
+        result = await fake_call_llm(messages, tools)
+        if isinstance(result, dict):
+            content = result.get("content") or ""
+            if content:
+                yield {"type": "content", "text": content}
+            tool_calls = result.get("tool_calls")
+            if tool_calls:
+                yield {"type": "tool_calls", "tool_calls": tool_calls}
+            yield {"type": "finish", "finish_reason": result.get("finish_reason")}
+        else:
+            text = str(result or "")
+            if text:
+                yield {"type": "content", "text": text}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    return fake_call_llm_stream
+
+
 def _seed_9p21_knowledge(db):
     entity = KBDocument(
         doc_id="entity:gene:9p21",
@@ -66,6 +87,7 @@ async def test_agent_stream_injects_system_knowledge_into_model_prompt(db, auth_
         return "已结合系统知识库回答。"
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -121,6 +143,7 @@ async def test_agent_stream_injects_system_knowledge_from_user_twin(db, auth_use
         return "已结合用户 Twin 和系统知识库回答。"
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -177,6 +200,7 @@ async def test_agent_stream_does_not_attach_twin_kb_card_for_pure_record_intent(
         return "已记录晚餐。"
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -231,6 +255,7 @@ async def test_agent_stream_does_not_attach_unrelated_twin_kb_card_for_diet_reco
         return "已记录晚餐，并分析了热量和蛋白。"
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -259,6 +284,7 @@ async def test_agent_stream_9p21_supplement_question_injects_boundary_claim(db, 
         return "已基于 claim:c_9p21_cardiovascular_labs_lifestyle_boundary 保留边界。"
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event

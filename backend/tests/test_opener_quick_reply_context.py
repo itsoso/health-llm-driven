@@ -173,6 +173,11 @@ async def test_agent_stream_applies_opener_quick_reply_before_llm(db):
         captured_system["text"] = messages[0]["content"]
         return "已接上这张行动卡片并完成验证。"
 
+    async def _fake_call_llm_stream(self, messages, tools):
+        captured_system["text"] = messages[0]["content"]
+        yield {"type": "content", "text": "已接上这张行动卡片并完成验证。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
     extra_context = json.dumps({
         "entry": "conversation_opener_quick_reply",
         "user_reply": "做到了 ✅",
@@ -183,7 +188,8 @@ async def test_agent_stream_applies_opener_quick_reply_before_llm(db):
 
     executor = AgentExecutor(db)
     events = []
-    with patch.object(AgentExecutor, "_call_llm", new=_fake_call_llm):
+    with patch.object(AgentExecutor, "_call_llm", new=_fake_call_llm), \
+            patch.object(AgentExecutor, "_call_llm_stream", new=_fake_call_llm_stream):
         async for event in executor.run_stream(
             user_id=user.id,
             message="针对「今天就是 AI 预测的检验日」：做到了 ✅",

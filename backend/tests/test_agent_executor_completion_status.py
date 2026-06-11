@@ -14,6 +14,32 @@ from app.services.agent_executor import (
 )
 
 
+def _stream_from(fake_call_llm):
+    """把旧式 fake_call_llm(messages, tools) -> dict 适配成 run_stream 现在用的
+    _call_llm_stream(messages, tools) -> AsyncIterator[event]。
+
+    run_stream 第一轮走 _call_llm_stream (真流式 seam); 空回复重试/兜底仍走
+    _call_llm。共用同一个 fake_call_llm 保证调用计数序列不变。
+    """
+    async def fake_call_llm_stream(messages, tools):
+        result = await fake_call_llm(messages, tools)
+        if isinstance(result, dict):
+            content = result.get("content") or ""
+            if content:
+                yield {"type": "content", "text": content}
+            tool_calls = result.get("tool_calls")
+            if tool_calls:
+                yield {"type": "tool_calls", "tool_calls": tool_calls}
+            yield {"type": "finish", "finish_reason": result.get("finish_reason")}
+        else:
+            text = str(result or "")
+            if text:
+                yield {"type": "content", "text": text}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    return fake_call_llm_stream
+
+
 def test_completion_status_marks_length_finish_reason_as_interrupted():
     assert _completion_status_from_finish_reason("length") == "interrupted"
 
@@ -191,6 +217,7 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
         return json.dumps({"message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -251,6 +278,7 @@ async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_a
         return json.dumps({"message": "已记录饮水 1000ml"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -287,6 +315,7 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
         }
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -326,6 +355,7 @@ async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, a
         return {"content": "补发回答：基于 9p21 和运动数据，先保持二区有氧。", "finish_reason": "stop"}
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -361,6 +391,7 @@ async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_us
         return {"content": "## 关键结论\n\n- 已按桌面端 Markdown 输出。", "finish_reason": "stop"}
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -406,6 +437,7 @@ async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(
         return {"content": "压缩上下文后回答：先关注睡眠、血压和今天的第一项任务。", "finish_reason": "stop"}
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event
@@ -457,6 +489,7 @@ async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_
         return {"content": "稳定模型兜底回答：先处理血压、睡眠和低风险运动。", "finish_reason": "stop"}
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._call_llm_fallback_provider = fake_fallback
 
     events = [
@@ -504,6 +537,7 @@ async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db
         return '{"message":"已删除最后一条饮食记录","record_id":625}'
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -558,6 +592,7 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         )
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -628,6 +663,7 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
         )
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -674,6 +710,7 @@ async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_
         return "{}"
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -721,6 +758,7 @@ async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and
         return json.dumps({"message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -775,6 +813,7 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
         }, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [
@@ -822,6 +861,7 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
     executor._try_import_medical_report_images = fake_medical_import
     executor._analyze_image_with_vision = fake_vision_preprocess
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
 
     events = [
         event

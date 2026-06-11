@@ -133,6 +133,89 @@ class OpenAIProvider(LLMProvider):
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """结构化流式调用 — 实时 yield content delta，同时正确累积 tool_calls。
+
+        与 chat(stream=True) 不同:后者只 yield 纯文本 delta、丢失 tool_calls,
+        无法支撑 agent 的 function-calling 循环。本方法 yield 结构化事件:
+
+        - {"type": "content", "text": <delta>}   每个内容增量 (实时)
+        - {"type": "tool_calls", "tool_calls": [...openai-format...]}  流结束时若有
+        - {"type": "finish", "finish_reason": <reason>}  最后
+
+        OpenAI SDK 的 streaming 是同步迭代器,在线程里跑 (同 _stream_chat)。
+        """
+        use_model = model or self.model
+        # return_metadata 是 chat() 的参数,流式不接受,丢弃避免传给 OpenAI SDK
+        kwargs.pop("return_metadata", None)
+        client = self._get_client()
+
+        create_kwargs: Dict[str, Any] = {
+            "model": use_model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if tools:
+            create_kwargs["tools"] = tools
+        create_kwargs.update(kwargs)
+
+        response = await asyncio.to_thread(
+            client.chat.completions.create, **create_kwargs
+        )
+
+        # tool_calls 分片按 index 累积: 同一个 tool_call 的 id / name / arguments
+        # 会跨多个 chunk 到达,arguments 是字符串拼接。
+        tool_acc: Dict[int, Dict[str, Any]] = {}
+        finish_reason: Optional[str] = None
+
+        for chunk in response:
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            delta = choice.delta
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+
+            content = getattr(delta, "content", None)
+            if content:
+                yield {"type": "content", "text": content}
+
+            delta_tool_calls = getattr(delta, "tool_calls", None)
+            if delta_tool_calls:
+                for tc in delta_tool_calls:
+                    idx = tc.index if tc.index is not None else 0
+                    slot = tool_acc.setdefault(
+                        idx,
+                        {"id": None, "type": "function",
+                         "function": {"name": None, "arguments": ""}},
+                    )
+                    if tc.id:
+                        slot["id"] = tc.id
+                    if getattr(tc, "type", None):
+                        slot["type"] = tc.type
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        if getattr(fn, "name", None):
+                            slot["function"]["name"] = fn.name
+                        if getattr(fn, "arguments", None):
+                            slot["function"]["arguments"] += fn.arguments
+
+        if tool_acc:
+            ordered = [tool_acc[i] for i in sorted(tool_acc.keys())]
+            yield {"type": "tool_calls", "tool_calls": ordered}
+
+        yield {"type": "finish", "finish_reason": finish_reason}
+
     async def chat_with_vision(
         self,
         messages: List[Dict[str, Any]],

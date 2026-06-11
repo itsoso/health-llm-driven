@@ -114,6 +114,7 @@ def wrap_provider_pii_scrub(provider):
 
     original_chat = getattr(provider, "chat", None)
     original_vision = getattr(provider, "chat_with_vision", None)
+    original_chat_stream = getattr(provider, "chat_stream", None)
 
     if original_chat is not None:
         async def chat_scrubbed(messages, **kwargs):
@@ -136,6 +137,19 @@ def wrap_provider_pii_scrub(provider):
                 )
             return await original_vision(scrubbed, image_url, **kwargs)
         provider.chat_with_vision = vision_scrubbed
+
+    if original_chat_stream is not None:
+        # chat_stream 是 async generator — 不能 await 整体, 必须 scrub 后逐事件透传。
+        # 这是硬安全边界: 流式路径也必须脱敏, 不能绕过。
+        def chat_stream_scrubbed(messages, **kwargs):
+            scrubbed, hits = scrub_messages(messages)
+            if hits:
+                _pii_logger.warning(
+                    "[pii_scrub] redacted before streaming LLM call: %s",
+                    " ".join(f"{k}={v}" for k, v in hits.items()),
+                )
+            return original_chat_stream(scrubbed, **kwargs)
+        provider.chat_stream = chat_stream_scrubbed
 
     provider._pii_wrapped = True
     return provider
