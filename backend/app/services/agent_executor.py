@@ -1632,6 +1632,15 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 肝脏趋势注入失败: {e}")
 
+        # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
+        try:
+            from app.services.medication_course_service import course_prompt_blob
+            blob = course_prompt_blob(self.db, user_id)
+            if blob:
+                parts.append("\n" + blob)
+        except Exception as e:
+            logger.warning(f"Agent 疗程提醒注入失败: {e}")
+
         # 注入记忆
         try:
             from app.services.conversation_memory_service import get_relevant_memories
