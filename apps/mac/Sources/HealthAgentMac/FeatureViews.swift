@@ -738,7 +738,20 @@ struct AgentChatView: View {
     @ViewBuilder
     private func messageContent(_ message: AgentChatMessage) -> some View {
         if message.role == .assistant {
-            MarkdownMessageText(markdown: viewModel.displayContent(for: message))
+            // 流式进行中的那条(= 最后一条且 isStreaming):渲染 plain Text。
+            // 富 markdown 在 MarkdownMessageText.init 里对「累积全文」重 parse + 逐块建
+            // AttributedString,而流式每 ~60ms 一批都会用更长的全文重 init →
+            // O(n²),长回复流式期 CPU 飙高卡顿(inlineCache 是 per-instance,跨 init 不复用)。
+            // 流完(isStreaming=false)再切富 markdown,只解析一次。
+            if viewModel.isStreaming, message.id == viewModel.messages.last?.id {
+                Text(viewModel.displayContent(for: message))
+                    .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                MarkdownMessageText(markdown: viewModel.displayContent(for: message))
+            }
         } else {
             // Match the assistant body font (same scaled base) so the question and
             // the answer read at one consistent size instead of the system .body
