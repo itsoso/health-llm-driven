@@ -668,7 +668,7 @@ struct AgentChatView: View {
                         copyButton(for: message)
                     }
                 }
-                messageContent(message)
+                messageContent(message, contentWidth: contentWidth)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if message.role == .assistant {
@@ -736,9 +736,13 @@ struct AgentChatView: View {
     }
 
     @ViewBuilder
-    private func messageContent(_ message: AgentChatMessage) -> some View {
+    private func messageContent(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
         if message.role == .assistant {
-            MarkdownMessageText(markdown: viewModel.displayContent(for: message))
+            // 内宽 = 气泡确定宽 − 气泡 padding(14×2)。表格列据此定宽,消除指数级布局。
+            MarkdownMessageText(
+                markdown: viewModel.displayContent(for: message),
+                contentWidth: max(contentWidth - 28, 0)
+            )
         } else {
             // Match the assistant body font (same scaled base) so the question and
             // the answer read at one consistent size instead of the system .body
@@ -1491,8 +1495,13 @@ private struct MarkdownMessageText: View {
     // body 不再解析。否则滚动时每帧重解析整段(含表格的多单元格)→ 助手页滑动卡顿。
     private let blocks: [MarkdownRenderBlock]
     private let inlineCache: [String: AttributedString]
+    // 内容确定宽度(气泡内宽)。表格列据此给「定宽」,而非 maxWidth: .infinity 的范围宽度
+    // —— 后者会让 N 个弹性列 × 高依赖宽的单元格触发指数级 sizeThatFits(含表格的长回复
+    // 100% CPU 卡死,sample 实锤「Table」热路径)。<=0 时回退保守定值,绝不用范围宽。
+    private let contentWidth: CGFloat
 
-    init(markdown: String) {
+    init(markdown: String, contentWidth: CGFloat) {
+        self.contentWidth = contentWidth
         let src = markdown.isEmpty ? " " : markdown
         let parsed = MarkdownRenderSupport.blocks(from: src)
         let finalBlocks: [MarkdownRenderBlock] = parsed.isEmpty
@@ -1569,14 +1578,18 @@ private struct MarkdownMessageText: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .tableRow(let columns):
+            // 关键修复:每列给「确定宽度」= 内宽/列数(下限 56),不再用 maxWidth: .infinity。
+            // 范围宽度让 SwiftUI 在 N 弹性列间反复探测分配 × 高依赖宽 → 指数级布局卡死。
+            let n = max(columns.count, 1)
+            let cellWidth = contentWidth > 0 ? max(contentWidth / CGFloat(n), 56) : 110
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                     inlineText(column)
                         .font(scaledFont(base: 10.5))
                         .lineLimit(4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 7)
+                        .frame(width: cellWidth, alignment: .leading)
                         .background(Color.secondary.opacity(0.06))
                 }
             }
