@@ -17,6 +17,7 @@ from app.api import (
     basic_health,
     epigenetic_reports,
     medical_exams,
+    prescriptions,
     diseases,
     daily_health,
     health_checkin,
@@ -174,6 +175,7 @@ api_router.include_router(weekly_briefing.router, tags=["weekly-briefing"])
 # ── Health Data (Vitals & Records) ─────────────────────────────────
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])
 api_router.include_router(medical_exams.router, prefix="/medical-exams", tags=["medical-exams"])
+api_router.include_router(prescriptions.router, prefix="/prescriptions", tags=["prescriptions"])
 api_router.include_router(epigenetic_reports.router, prefix="/epigenetic-reports", tags=["epigenetic-reports"])
 api_router.include_router(diseases.router, prefix="/diseases", tags=["diseases"])
 api_router.include_router(disease_tracking.router, tags=["disease-tracking"])
