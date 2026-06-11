@@ -314,12 +314,14 @@ async def agent_stream(
 @router.get("/conversations", summary="统一健康助理对话列表")
 async def list_conversations(
     limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0, description="分页偏移(翻页用)"),
     title_like: Optional[str] = Query(None, description="按标题模糊过滤"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """List current user's Agent conversations.
+    """List current user's Agent conversations (paginated).
 
+    返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
     AgentExecutor persists conversations through OpenClawService so mobile/web
     can resume interrupted streams from the same durable message store.
     """
@@ -328,7 +330,8 @@ async def list_conversations(
     from app.services.openclaw_service import OpenClawService
 
     service = OpenClawService(db)
-    convs = service.get_conversations(current_user.id, limit, title_like=title_like)
+    total = service.count_conversations(current_user.id, title_like=title_like)
+    convs = service.get_conversations(current_user.id, limit, title_like=title_like, offset=offset)
     conv_ids = [c.id for c in convs]
     last_msgs = {}
     if conv_ids:
@@ -351,17 +354,22 @@ async def list_conversations(
         )
         last_msgs = {r[0]: (r[1] or "")[:80] for r in rows}
 
-    return [
-        {
-            "id": c.id,
-            "title": c.title,
-            "last_message": last_msgs.get(c.id),
-            "created_at": str(c.created_at),
-            "updated_at": str(c.updated_at),
-            "mode": "agent",
-        }
-        for c in convs
-    ]
+    return {
+        "items": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "last_message": last_msgs.get(c.id),
+                "created_at": str(c.created_at),
+                "updated_at": str(c.updated_at),
+                "mode": "agent",
+            }
+            for c in convs
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/conversations/{conversation_id}", summary="统一健康助理对话详情")

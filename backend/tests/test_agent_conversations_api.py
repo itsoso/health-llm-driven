@@ -52,10 +52,37 @@ def test_agent_conversations_list_returns_user_history_with_last_user_message(
 
     assert res.status_code == 200
     data = res.json()
-    assert len(data) == 1
-    assert data[0]["id"] == conv.id
-    assert data[0]["title"] == "代谢健康问题"
-    assert data[0]["last_message"] == "最近血糖怎么样？"
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    items = data["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == conv.id
+    assert items[0]["title"] == "代谢健康问题"
+    assert items[0]["last_message"] == "最近血糖怎么样？"
+
+
+def test_agent_conversations_pagination_offset_and_total(client, db, auth_user_and_headers):
+    """翻页:total 反映全部,limit/offset 切出当前页,不与其它页重叠。"""
+    user, headers = auth_user_and_headers
+    for i in range(5):
+        conv = OpenClawConversation(user_id=user.id, title=f"对话{i}", session_key=f"pg-{user.id}-{i}")
+        db.add(conv)
+    db.commit()
+
+    page1 = client.get("/api/v1/agent/conversations?limit=2&offset=0", headers=headers).json()
+    assert page1["total"] == 5
+    assert page1["limit"] == 2 and page1["offset"] == 0
+    assert len(page1["items"]) == 2
+
+    page2 = client.get("/api/v1/agent/conversations?limit=2&offset=2", headers=headers).json()
+    assert page2["total"] == 5
+    assert len(page2["items"]) == 2
+
+    page3 = client.get("/api/v1/agent/conversations?limit=2&offset=4", headers=headers).json()
+    assert len(page3["items"]) == 1  # 余 1 条
+
+    ids = [c["id"] for c in page1["items"] + page2["items"] + page3["items"]]
+    assert len(set(ids)) == 5  # 三页无重叠、无遗漏
 
 
 def test_agent_conversation_detail_returns_messages(client, db, auth_user_and_headers):

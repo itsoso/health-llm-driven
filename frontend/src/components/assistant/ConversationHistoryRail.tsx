@@ -3,6 +3,8 @@
 import { KeyboardEvent, useState } from 'react';
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   MessageSquarePlus,
   Pencil,
@@ -20,6 +22,10 @@ interface ConversationHistoryRailProps {
   onDelete: (id: number) => void;
   onNew: () => void;
   onRename: (id: number, title: string) => Promise<void> | void;
+  page?: number;          // 当前页(1-based)
+  totalPages?: number;    // 总页数
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
 }
 
 export default function ConversationHistoryRail({
@@ -30,6 +36,10 @@ export default function ConversationHistoryRail({
   onDelete,
   onNew,
   onRename,
+  page = 1,
+  totalPages = 1,
+  onPrevPage,
+  onNextPage,
 }: ConversationHistoryRailProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -172,6 +182,31 @@ export default function ConversationHistoryRail({
           </div>
         )}
       </div>
+      {totalPages > 1 && (
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.06] px-1 pt-2">
+          <button
+            onClick={onPrevPage}
+            disabled={page <= 1 || loading}
+            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
+            aria-label="上一页"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            上一页
+          </button>
+          <span className="text-[11px] tabular-nums text-zinc-500">
+            第 {page} / {totalPages} 页
+          </span>
+          <button
+            onClick={onNextPage}
+            disabled={page >= totalPages || loading}
+            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
+            aria-label="下一页"
+          >
+            下一页
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
