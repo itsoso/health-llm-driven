@@ -1503,39 +1503,34 @@ private struct AgentProposedActionCard: View {
 private struct MarkdownMessageText: View {
     @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
 
-    // 一次性解析:markdown→blocks 和内联 AttributedString 都在 init 里算好缓存,
-    // body 不再解析。否则滚动时每帧重解析整段(含表格的多单元格)→ 助手页滑动卡顿。
-    private let blocks: [MarkdownRenderBlock]
-    private let inlineCache: [String: AttributedString]
-    // 内容确定宽度(气泡内宽)。表格列据此给「定宽」,而非 maxWidth: .infinity 的范围宽度
-    // —— 后者会让 N 个弹性列 × 高依赖宽的单元格触发指数级 sizeThatFits(含表格的长回复
-    // 100% CPU 卡死,sample 实锤「Table」热路径)。<=0 时回退保守定值,绝不用范围宽。
+    // ⚠️ 结构性防卡死(2026-06-11,第 6 轮根因战):整条消息渲染为**单个 Text(AttributedString)**。
+    // 之前的「VStack 多块 + 嵌套 HStack(bullet/numbered/表格行)」结构在 macOS 26.4 SwiftUI 下
+    // 反复指数级 sizeThatFits 卡死(100% CPU,sample 实锤 5 次;修掉 GeometryReader 反馈环/
+    // fixedSize/表格弹性列后爆点仍转移)。单个 Text 无嵌套 stack、无 frame 协商,布局线性,
+    // 数学上不可能组合爆炸。代价:表格从网格降级为「 · 」分隔的文本行 —— 不卡死 > 好看。
+    private let markdown: String
     private let contentWidth: CGFloat
 
     init(markdown: String, contentWidth: CGFloat) {
+        self.markdown = markdown
         self.contentWidth = contentWidth
-        let src = markdown.isEmpty ? " " : markdown
-        let parsed = MarkdownRenderSupport.blocks(from: src)
-        let finalBlocks: [MarkdownRenderBlock] = parsed.isEmpty
-            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
-            : parsed
-        self.blocks = finalBlocks
-
-        var cache: [String: AttributedString] = [:]
-        for block in finalBlocks {
-            for text in MarkdownMessageText.texts(in: block) where cache[text] == nil {
-                cache[text] = MarkdownMessageText.cachedInlineAttributed(text)
-            }
-        }
-        self.inlineCache = cache
     }
 
-    // 内联 AttributedString 全局缓存:重建 MarkdownMessageText(布局探测/宽度变化都会重建)
-    // 时不再重解析整段(AttributedString(markdown:) 是热点,sample 实锤 285 次)。
-    // NSCache 线程安全;Swift 6 用 nonisolated(unsafe)(同 MarkdownRenderSupport.blocksCache)。
+    var body: some View {
+        // merged 经全局 NSCache:首次 O(n) 解析合并,之后(布局重建/滚动)O(1) 命中。
+        Text(Self.mergedAttributed(markdown: markdown, scaleLevel: appFontScaleLevel))
+            .lineSpacing(3)
+            .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
+    }
+
+    // ── 解析 + 合并(全部静态缓存,线程安全 NSCache;Swift 6 nonisolated(unsafe) 同
+    //    MarkdownRenderSupport.blocksCache 先例)──
     private final class AttrBox { let value: AttributedString; init(_ v: AttributedString) { self.value = v } }
     nonisolated(unsafe) private static let inlineAttrCache: NSCache<NSString, AttrBox> = {
         let c = NSCache<NSString, AttrBox>(); c.countLimit = 2048; return c
+    }()
+    nonisolated(unsafe) private static let mergedCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>(); c.countLimit = 128; return c
     }()
 
     private static func cachedInlineAttributed(_ text: String) -> AttributedString {
@@ -1550,98 +1545,73 @@ private struct MarkdownMessageText: View {
         return attributed
     }
 
-    private static func texts(in block: MarkdownRenderBlock) -> [String] {
-        switch block {
-        case .heading(_, let t): return [t]
-        case .paragraph(let t): return [t]
-        case .bullet(let t): return [t]
-        case .numbered(_, let t): return [t]
-        case .tableRow(let cols): return cols
-        case .divider: return []
-        }
-    }
+    private static func mergedAttributed(markdown: String, scaleLevel: Int) -> AttributedString {
+        let key = "\(scaleLevel)|\(markdown)" as NSString
+        if let hit = mergedCache.object(forKey: key) { return hit.value }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                blockView(block)
-            }
-        }
-        // 整个 markdown 子树锚死在「确定宽度」。否则父级的定宽要穿过 textSelection +
-        // maxWidth:.infinity 才传到各块,SwiftUI 仍会对「高依赖宽」的块(fixedSize 文本、
-        // 表格行)反复探测宽度 → 指数级 sizeThatFits(含表格的长回复卡死,栈实锤)。
-        // 直接给确定宽,各块一次定高,探测消失。<=0 时不加(回退父级传播)。
-        .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
-    }
+        let scale = AppFontScale(level: scaleLevel)
+        let bodyFont = Font.system(size: scale.pointSize(base: 10.5))
+        let src = markdown.isEmpty ? " " : markdown
+        let parsed = MarkdownRenderSupport.blocks(from: src)
+        let blocks: [MarkdownRenderBlock] = parsed.isEmpty
+            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
+            : parsed
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownRenderBlock) -> some View {
-        switch block {
-        case .heading(let level, let text):
-            inlineText(text)
-                .font(level <= 2 ? scaledFont(base: 13, weight: .bold) : scaledFont(base: 11.5, weight: .semibold))
-                .foregroundStyle(.primary)
-                .padding(.top, level <= 2 ? 4 : 2)
-        case .paragraph(let text):
-            inlineText(text)
-                .font(scaledFont(base: 10.5))
-                .lineSpacing(4)
-        case .bullet(let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•")
-                    .font(scaledFont(base: 10.5, weight: .bold))
-                    .foregroundStyle(Color.accentColor)
-                inlineText(text)
-                    .font(scaledFont(base: 10.5))
-                    .lineSpacing(3)
-            }
-        case .numbered(let index, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(index).")
-                    .font(scaledFont(base: 10.5, weight: .bold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 22, alignment: .trailing)  // 定宽,非 minWidth 范围(_FlexFrameLayout 探测源)
-                inlineText(text)
-                    .font(scaledFont(base: 10.5))
-                    .lineSpacing(3)
-            }
-        case .tableRow(let columns):
-            // 关键修复:每列给「确定宽度」= 内宽/列数(下限 56),不再用 maxWidth: .infinity。
-            // 范围宽度让 SwiftUI 在 N 弹性列间反复探测分配 × 高依赖宽 → 指数级布局卡死。
-            let n = max(columns.count, 1)
-            let cellWidth = contentWidth > 0 ? max(contentWidth / CGFloat(n), 56) : 110
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                    inlineText(column)
-                        .font(scaledFont(base: 10.5))
-                        .lineLimit(4)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 7)
-                        .frame(width: cellWidth, alignment: .leading)
-                        .background(Color.secondary.opacity(0.06))
+        var out = AttributedString()
+        var isFirst = true
+        for block in blocks {
+            if !isFirst { out += AttributedString("\n") }
+            isFirst = false
+            switch block {
+            case .heading(let level, let text):
+                var a = cachedInlineAttributed(text)
+                a.font = .system(
+                    size: scale.pointSize(base: level <= 2 ? 13 : 11.5),
+                    weight: level <= 2 ? .bold : .semibold
+                )
+                // 标题前空行(非首块时)抬一点呼吸感
+                if out.characters.count > 1 { out += AttributedString("\n") }
+                out += a
+            case .paragraph(let text):
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += a
+            case .bullet(let text):
+                var dot = AttributedString("•  ")
+                dot.font = .system(size: scale.pointSize(base: 10.5), weight: .bold)
+                dot.foregroundColor = .accentColor
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += dot + a
+            case .numbered(let index, let text):
+                var num = AttributedString("\(index). ")
+                num.font = .system(size: scale.pointSize(base: 10.5), weight: .bold)
+                num.foregroundColor = .accentColor
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += num + a
+            case .tableRow(let columns):
+                // 表格降级为分隔文本行(单 Text 内不可能做网格;不卡死优先)。
+                var row = AttributedString()
+                for (i, col) in columns.enumerated() {
+                    if i > 0 {
+                        var sep = AttributedString("  ·  ")
+                        sep.foregroundColor = .secondary
+                        row += sep
+                    }
+                    var c = cachedInlineAttributed(col)
+                    c.font = i == 0 ? .system(size: scale.pointSize(base: 10.5), weight: .semibold) : bodyFont
+                    row += c
                 }
+                out += row
+            case .divider:
+                var d = AttributedString("────────────")
+                d.foregroundColor = .secondary
+                out += d
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        case .divider:
-            Divider()
-                .padding(.vertical, 2)
         }
-    }
-
-    private func inlineText(_ text: String) -> Text {
-        // 命中 init 缓存,不在渲染期重解析 markdown。
-        if let attributed = inlineCache[text] {
-            return Text(attributed)
-        }
-        return Text(MarkdownRenderSupport.readableFallback(text))
-    }
-
-    private var appFontScale: AppFontScale {
-        AppFontScale(level: appFontScaleLevel)
-    }
-
-    private func scaledFont(base: Double, weight: Font.Weight? = nil) -> Font {
-        .system(size: appFontScale.pointSize(base: base), weight: weight)
+        mergedCache.setObject(AttrBox(out), forKey: key)
+        return out
     }
 }
 
