@@ -566,6 +566,15 @@ struct AgentChatView: View {
                         .id(Self.scrollBottomAnchor)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 在稳定外层(ScrollView 宽 = 窗口宽,与气泡宽无关)测一次列宽,喂气泡定宽。
+                // 不放在 LazyVStack 内部,避免探测期 @State 写入的反馈环(爆炸放大器)。
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { updateConversationWidth(geo.size.width) }
+                            .onChange(of: geo.size.width) { _, w in updateConversationWidth(w) }
+                    }
+                )
                 .onChange(of: scrollTrigger) { _, _ in
                     withAnimation(.easeOut(duration: 0.18)) {
                         proxy.scrollTo(Self.scrollBottomAnchor, anchor: .bottom)
@@ -583,6 +592,13 @@ struct AgentChatView: View {
     /// transcript auto-scrolls to the bottom on both events.
     private var scrollTrigger: Int {
         viewModel.messages.count &+ (viewModel.messages.last?.content.count ?? 0)
+    }
+
+    /// 写 conversationWidth 时阻尼:仅在有意义变化(>0.5pt)时更新,避免任何残留抖动
+    /// 反复写 @State 触发布局(配合"在稳定外层测宽"双保险)。
+    private func updateConversationWidth(_ rawWidth: CGFloat) {
+        let w = min(max(rawWidth, 1), 860)
+        if abs(w - conversationWidth) > 0.5 { conversationWidth = w }
     }
 
     /// The scrollable transcript: result header + message bubbles, or an empty
@@ -639,14 +655,10 @@ struct AgentChatView: View {
             }
             .frame(maxWidth: 860)
             .frame(maxWidth: .infinity, alignment: .center)
-            // 读一次列的确定宽度(上限 860),喂给助手气泡定宽。背景层读宽不影响布局。
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { conversationWidth = min(geo.size.width, 860) }
-                        .onChange(of: geo.size.width) { _, w in conversationWidth = min(w, 860) }
-                }
-            )
+            // conversationWidth 不在这里读(此处是被指数级探测的子树,探测时 geo.width
+            // 波动 → onChange 写 @State → 触发更多布局 → 反馈环放大爆炸,sample 实锤
+            // FeatureViews:647 在热路径)。改到 chatColumn 的稳定外层(ScrollView 宽=窗口宽,
+            // 不含 width 依赖内容)测一次。
         }
     }
 
