@@ -70,6 +70,53 @@ class LLMProvider(ABC):
         """
         ...
 
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """结构化流式调用 — 默认实现 (非实时, 降级为单次 chat)。
+
+        OpenAI provider 覆盖此方法做真实时流式; 其它 provider (OpenClaw / Ollama)
+        不实现真流式 tool-calling — 这里用一次非流式 chat() 把结果转成等价的
+        结构化事件序列, 保证 agent 流式循环对所有 provider 都能工作 (只是看不到
+        逐 token 效果)。
+
+        yield:
+        - {"type": "content", "text": <完整文本>}  若有内容
+        - {"type": "tool_calls", "tool_calls": [...]}  若 dict 带 tool_calls
+        - {"type": "finish", "finish_reason": <reason>}
+        """
+        call_kwargs: Dict[str, Any] = {
+            "messages": messages,
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if tools:
+            call_kwargs["tools"] = tools
+        call_kwargs.update(kwargs)
+        result = await self.chat(**call_kwargs)
+
+        if isinstance(result, dict):
+            content = result.get("content") or ""
+            if content:
+                yield {"type": "content", "text": content}
+            tool_calls = result.get("tool_calls")
+            if tool_calls:
+                yield {"type": "tool_calls", "tool_calls": tool_calls}
+            yield {"type": "finish", "finish_reason": result.get("finish_reason")}
+        else:
+            text = str(result or "")
+            if text:
+                yield {"type": "content", "text": text}
+            yield {"type": "finish", "finish_reason": "stop"}
+
     async def multi_model_analyze(
         self,
         prompt: str,

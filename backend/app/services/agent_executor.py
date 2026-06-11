@@ -1056,11 +1056,51 @@ class AgentExecutor:
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
-                # 调用 LLM（非流式，需要完整解析 tool_call）
+                # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
+                # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
                 _round_start = time.time()
-                response = await self._call_llm(messages, tools)
-                if isinstance(response, dict):
-                    final_finish_reason = response.get("finish_reason") or final_finish_reason
+                streamed_text = ""
+                streamed_tool_calls: List[Dict[str, Any]] = []
+                stream_finish_reason: Optional[str] = None
+                streamed_to_client = False
+                # 弱模型会把 tool-call JSON 当正文吐出(无结构化 tool_calls)。一旦累积
+                # 文本可被 _extract_inline_tool_call 识别成工具调用,立刻停止 live 下发
+                # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
+                # 绝不能泄漏给用户。结构化 tool_calls 的正常模型不受影响。
+                inline_suppressed = False
+                async for evt in self._call_llm_stream(messages, tools):
+                    etype = evt.get("type")
+                    if etype == "content":
+                        delta = evt.get("text") or ""
+                        if not delta:
+                            continue
+                        streamed_text += delta
+                        if (
+                            not inline_suppressed
+                            and not streamed_tool_calls
+                            and tools
+                            and _extract_inline_tool_call(streamed_text, tools)
+                        ):
+                            # 检测到内联工具 JSON → 进入抑制模式,本轮不再 live 下发。
+                            inline_suppressed = True
+                            streamed_to_client = False
+                        if not inline_suppressed:
+                            streamed_to_client = True
+                            # 真流式:逐 delta 即时下发,不再切 20-char 假块。
+                            yield {"event": "token", "data": {"content": delta}}
+                    elif etype == "tool_calls":
+                        streamed_tool_calls = evt.get("tool_calls") or []
+                    elif etype == "finish":
+                        stream_finish_reason = evt.get("finish_reason")
+                # 把流式结果整理成与 _call_llm 等价的 response dict, 复用后续既有逻辑
+                # (inline tool 恢复 / tool 执行 / 空回复重试)。
+                response: Any = {
+                    "content": streamed_text,
+                    "finish_reason": stream_finish_reason,
+                }
+                if streamed_tool_calls:
+                    response["tool_calls"] = streamed_tool_calls
+                final_finish_reason = stream_finish_reason or final_finish_reason
                 llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
                 if model_name is None:
                     if self._last_provider_model_name:
@@ -1104,9 +1144,12 @@ class AgentExecutor:
                     tool_calls = response["tool_calls"]
                     text_content = response.get("content") or ""
 
-                    # 流式输出思考过程
+                    # 思考过程: 真流式下已逐 delta 下发过, 这里只补 full_reply,
+                    # 不重复 yield token (避免客户端看到双份)。inline-recovery 路径
+                    # 会把 content 置空 → text_content 为空也不发。
                     if text_content:
-                        yield {"event": "token", "data": {"content": text_content}}
+                        if not streamed_to_client:
+                            yield {"event": "token", "data": {"content": text_content}}
                         full_reply += text_content
 
                     # 追加 assistant message（含 tool_calls）
@@ -1208,14 +1251,19 @@ class AgentExecutor:
                     continue
 
                 else:
-                    # 纯文本回复 — 最终答案，真流式输出
+                    # 纯文本回复 — 最终答案。本轮 content 已在上面逐 delta 真流式
+                    # 下发给客户端 (streamed_to_client)。这里只补 interrupted notice
+                    # 后缀 + full_reply,不再切 20-char 假块重发。
                     if isinstance(response, str):
-                        # 已经是完整文本（fallback provider）
+                        # 已经是完整文本（理论上流式路径不会进这里,保险留着）
                         final_text = response
+                        streamed_to_client = False
                     else:
                         final_text = response.get("content") or ""
                         final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
                     if not final_text.strip():
+                        # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
+                        streamed_to_client = False
                         messages.append({
                             "role": "user",
                             "content": (
@@ -1274,9 +1322,15 @@ class AgentExecutor:
                                 )
                         if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
-                    for i in range(0, len(final_text), 20):
-                        chunk = final_text[i:i + 20]
-                        yield {"event": "token", "data": {"content": chunk}}
+                    if streamed_to_client and final_text.startswith(streamed_text):
+                        # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
+                        tail = final_text[len(streamed_text):]
+                        if tail:
+                            yield {"event": "token", "data": {"content": tail}}
+                    else:
+                        # 重试/兜底产生的新文本 (非流式来源) → 一次性下发。
+                        if final_text:
+                            yield {"event": "token", "data": {"content": final_text}}
                     full_reply += final_text
                     break
 
@@ -1699,22 +1753,13 @@ class AgentExecutor:
             return rendered
         return rendered[:1497].rstrip() + "..."
 
-    async def _call_llm(
-        self, messages: List[Dict], tools: List[Dict],
-    ) -> Any:
-        """调用 LLM（优先走配置的 agent 端点，回退到默认 provider）"""
-        agent_base = settings.agent_base_url
-        agent_key = settings.agent_api_key
+    def _resolve_chat_provider(self, tools: Optional[List[Dict]]):
+        """解析本次回合应使用的 provider + 是否传 tools。
 
-        # agent_model 仅当 AGENT_BASE_URL 显式配置时才用 (走 _call_llm_direct).
-        # 否则走默认 provider 路径, model=None 让 provider 用自己 init 时的默认 model
-        # (如 TokenPlan 用 settings.tokenplan_model = MiniMax-M2.5).
-        # 旧逻辑用 settings.llm_model (gpt-4o-mini) 当 fallback model 名,
-        # 直接发给 TokenPlan → Model not exist.
-        if agent_base and agent_key:
-            model = settings.agent_model or settings.llm_model
-            return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
-
+        被 _call_llm (非流式) 和 _call_llm_stream (流式) 共用,确保两条路径的
+        provider 路由完全一致 (fast-record / request-model / user-pref / OpenClaw
+        tool-stripping)。返回 (provider, pass_tools)。
+        """
         # Pure record/CRUD turns are latency-sensitive and do not need a
         # reasoning model just to extract tool arguments. Keep explicit
         # per-request model overrides intact; otherwise route to the fast
@@ -1764,6 +1809,25 @@ class AgentExecutor:
         # a tool-mode request and can return content="" with finish_reason="stop".
         from app.services.llm.providers.openclaw_provider import OpenClawProvider
         pass_tools = None if isinstance(provider, OpenClawProvider) else tools
+        return provider, pass_tools
+
+    async def _call_llm(
+        self, messages: List[Dict], tools: List[Dict],
+    ) -> Any:
+        """调用 LLM（优先走配置的 agent 端点，回退到默认 provider）"""
+        agent_base = settings.agent_base_url
+        agent_key = settings.agent_api_key
+
+        # agent_model 仅当 AGENT_BASE_URL 显式配置时才用 (走 _call_llm_direct).
+        # 否则走默认 provider 路径, model=None 让 provider 用自己 init 时的默认 model
+        # (如 TokenPlan 用 settings.tokenplan_model = MiniMax-M2.5).
+        # 旧逻辑用 settings.llm_model (gpt-4o-mini) 当 fallback model 名,
+        # 直接发给 TokenPlan → Model not exist.
+        if agent_base and agent_key:
+            model = settings.agent_model or settings.llm_model
+            return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+
+        provider, pass_tools = self._resolve_chat_provider(tools)
         chat_kwargs = {
             "messages": messages,
             "model": None,
@@ -1797,6 +1861,92 @@ class AgentExecutor:
             fb = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
             self._last_provider_model_name = getattr(fb, "model", None) or "tokenplan(fallback)"
             return await fb.chat(**chat_kwargs)
+
+    async def _call_llm_stream(
+        self, messages: List[Dict], tools: List[Dict],
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """流式调用 LLM，实时 yield 结构化事件 (content / tool_calls / finish)。
+
+        事件 schema 与 provider.chat_stream 一致:
+        - {"type": "content", "text": <delta>}
+        - {"type": "tool_calls", "tool_calls": [...openai-format...]}
+        - {"type": "finish", "finish_reason": <reason>}
+
+        provider 路由复用 _resolve_chat_provider (与非流式 _call_llm 一致)。
+        AGENT_BASE_URL 直连分支不支持结构化流式 tool-calling → 降级到非流式
+        _call_llm 并把结果转成等价事件 (生产现状 agent_base 未配,不走此分支)。
+        Streaming failover: provider 流式报错时回退 tokenplan,镜像 _call_llm
+        (df3ae2d8)。已 yield 过 content 后再报错则优雅收尾,不重复回退 (避免双发)。
+        """
+        agent_base = settings.agent_base_url
+        agent_key = settings.agent_api_key
+        if agent_base and agent_key:
+            # 直连网关只实现非流式 tool-calling → 退化为单次调用 + 一次性 content。
+            model = settings.agent_model or settings.llm_model
+            result = await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+            async for evt in self._result_to_stream_events(result):
+                yield evt
+            return
+
+        provider, pass_tools = self._resolve_chat_provider(tools)
+        stream_kwargs: Dict[str, Any] = {
+            "messages": _build_fast_record_messages(messages)
+            if self._prefer_fast_record_model else messages,
+            "model": None,
+            "temperature": 0.3,
+            "max_tokens": ANSWER_MAX_TOKENS,
+        }
+        if pass_tools:
+            stream_kwargs["tools"] = pass_tools
+        self._last_provider_model_name = (
+            getattr(provider, "model", None)
+            or getattr(provider, "default_model", None)
+            or getattr(provider, "provider_name", None)
+        )
+
+        emitted_content = False
+        try:
+            async for evt in provider.chat_stream(**stream_kwargs):
+                if isinstance(evt, dict) and evt.get("type") == "content" and evt.get("text"):
+                    emitted_content = True
+                yield evt
+        except Exception as e:  # noqa: BLE001
+            if emitted_content:
+                # 已经向用户发出部分内容 → 不能再切 provider 重发 (会重复)。
+                # 优雅收尾: 记日志 + 发一个带 error finish_reason 的事件让上层感知。
+                logger.warning(
+                    "[agent_executor] 流式中途报错 (已发部分内容),优雅收尾: %s", e
+                )
+                yield {"type": "finish", "finish_reason": "error"}
+                return
+            # 流开始前/未发任何内容就报错 → 回退稳定的 tokenplan provider (镜像 _call_llm)。
+            logger.warning(
+                "[agent_executor] 选定 provider chat_stream() 失败,回退 tokenplan: %s", e
+            )
+            from app.services.llm.factory import create_llm_provider
+            from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+            from app.services.llm.usage_tracker import wrap_provider
+            fb = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
+            self._last_provider_model_name = getattr(fb, "model", None) or "tokenplan(fallback)"
+            async for evt in fb.chat_stream(**stream_kwargs):
+                yield evt
+
+    @staticmethod
+    async def _result_to_stream_events(result: Any) -> AsyncGenerator[Dict[str, Any], None]:
+        """把非流式 chat() 结果 (str 或 dict) 转成等价的结构化流式事件。"""
+        if isinstance(result, dict):
+            content = result.get("content") or ""
+            if content:
+                yield {"type": "content", "text": content}
+            tool_calls = result.get("tool_calls")
+            if tool_calls:
+                yield {"type": "tool_calls", "tool_calls": tool_calls}
+            yield {"type": "finish", "finish_reason": result.get("finish_reason")}
+        else:
+            text = str(result or "")
+            if text:
+                yield {"type": "content", "text": text}
+            yield {"type": "finish", "finish_reason": "stop"}
 
     async def _call_llm_fallback_provider(self, messages: List[Dict]) -> Any:
         """Use the stable global provider when a selected gateway keeps empty-answering."""

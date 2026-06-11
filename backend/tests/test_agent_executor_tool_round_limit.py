@@ -3,6 +3,27 @@ import pytest
 from app.services.agent_executor import AgentExecutor, MAX_TOOL_ROUNDS
 
 
+def _stream_from(fake_call_llm):
+    """适配旧式 fake_call_llm 到 run_stream 现用的 _call_llm_stream 事件流 seam。"""
+    async def fake_call_llm_stream(messages, tools):
+        result = await fake_call_llm(messages, tools)
+        if isinstance(result, dict):
+            content = result.get("content") or ""
+            if content:
+                yield {"type": "content", "text": content}
+            tool_calls = result.get("tool_calls")
+            if tool_calls:
+                yield {"type": "tool_calls", "tool_calls": tool_calls}
+            yield {"type": "finish", "finish_reason": result.get("finish_reason")}
+        else:
+            text = str(result or "")
+            if text:
+                yield {"type": "content", "text": text}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    return fake_call_llm_stream
+
+
 @pytest.mark.asyncio
 async def test_agent_stream_synthesizes_final_answer_when_tool_round_limit_is_hit(
     db, auth_user_and_headers
@@ -33,6 +54,7 @@ async def test_agent_stream_synthesizes_final_answer_when_tool_round_limit_is_hi
         return '{"records":[{"date":"2026-05-18","weight":71.2}]}'
 
     executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
 
     events = [

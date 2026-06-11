@@ -174,5 +174,42 @@ def wrap_provider(provider):
             )
 
     provider.chat = chat_with_tracking
+
+    original_chat_stream = getattr(provider, "chat_stream", None)
+    if original_chat_stream is not None:
+        async def chat_stream_with_tracking(messages, model=None, temperature=0.3,
+                                            max_tokens=2000, tools=None, **kwargs):
+            start = time.monotonic()
+            success = True
+            collected: List[str] = []
+            try:
+                async for evt in original_chat_stream(
+                    messages, model=model, temperature=temperature,
+                    max_tokens=max_tokens, tools=tools, **kwargs
+                ):
+                    if isinstance(evt, dict) and evt.get("type") == "content":
+                        collected.append(evt.get("text") or "")
+                    yield evt
+            except Exception:
+                success = False
+                raise
+            finally:
+                latency_ms = int((time.monotonic() - start) * 1000)
+                actual_model = (
+                    model
+                    or getattr(provider, "model", None)
+                    or getattr(provider, "default_model", None)
+                    or "unknown"
+                )
+                record_usage(
+                    provider=provider.provider_name,
+                    model=actual_model,
+                    prompt_text=_messages_to_text(messages),
+                    completion_text="".join(collected),
+                    latency_ms=latency_ms,
+                    success=success,
+                )
+        provider.chat_stream = chat_stream_with_tracking
+
     provider._usage_wrapped = True
     return provider
