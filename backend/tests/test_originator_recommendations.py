@@ -21,13 +21,13 @@ def test_pending_only_active_meds_with_originator(client, db):
     from tests.conftest import create_authenticated_user
     user, _ = create_authenticated_user(db)
     _add_med(db, user.id, "泮托拉唑钠肠溶胶囊（泮立苏）")  # 有原研(潘妥洛克)
-    _add_med(db, user.id, "阿奇霉素")                       # 未收录 → 不推
+    _add_med(db, user.id, "AKK益生菌")                      # 未收录 → 不推
     _add_med(db, user.id, "立普妥", active=False)           # 停用 → 不推
 
     recs = pending_originator_recs(db, user.id)
     names = {r["generic_name"] for r in recs}
     assert "泮托拉唑" in names
-    assert all("阿奇霉素" not in n for n in names)
+    assert all("益生菌" not in n for n in names)
     assert len(recs) == 1
 
 

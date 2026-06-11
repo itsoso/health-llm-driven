@@ -30,7 +30,21 @@ def test_unknown_drug_returns_none_not_guess():
     # 表外的药必须返回 None,不能编
     assert find_originator("某不存在的中药复方颗粒") is None
     assert find_originator("") is None
-    assert find_originator("阿奇霉素") is None  # 未收录 → None,而非乱答
+    assert find_originator("匹伐他汀") is None  # 故意未收录(原研中文名存疑)→ None,而非乱答
+
+
+def test_expanded_table_entries():
+    # 扩表后的高频条目(含用户在用药)
+    assert find_originator("阿奇霉素")["brand"] == "希舒美"
+    assert find_originator("盐酸西替利嗪片 10mg")["brand"] == "仙特明"
+    assert find_originator("糠酸莫米松鼻喷雾剂")["brand"] == "内舒拿"
+    assert find_originator("伊托必利")["brand"] == "加斯清"
+    assert find_originator("谐畅动力")["generic"] == "盐酸伊托必利"  # 国产品牌 → 原研
+    assert find_originator("替尔泊肽")["brand"] == "穆峰达"
+    o = find_originator("硫酸氢氯吡格雷片 75mg")
+    assert o is not None and o["brand"] == "波立维"
+    assert find_originator("优甲乐")["generic"] == "左甲状腺素钠"
+    assert find_originator("montelukast")["brand"] == "顺尔宁"
 
 
 def test_endpoint_requires_auth(client):
