@@ -231,6 +231,28 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelCoalescesManyTokensWithoutLoss() async {
+        // 真 token 流式:大量碎 token 快速到达。节流合批(~60ms)不能丢字 ——
+        // 最终内容必须等于全部 token 拼接(收尾 flushPendingTokens 落盘)。
+        let parts = (1...50).map { "片\($0)·" }
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 1))
+            for p in parts { continuation.yield(.token(p)) }
+            continuation.yield(.done(
+                conversationID: 1, messageID: 2,
+                completionStatus: "complete", model: "m", sourcesUsed: []
+            ))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+
+        await model.send("hi")
+
+        XCTAssertEqual(model.messages.last?.content, parts.joined())
+        XCTAssertFalse(model.isStreaming)
+    }
+
+    @MainActor
     func testAgentStructuredCommandParserBuildsConfirmableActionAndHidesRawJSON() {
         let messageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let content = """
