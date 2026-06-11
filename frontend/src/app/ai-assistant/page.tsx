@@ -50,10 +50,14 @@ const OPENER_SOURCE_LABEL: Record<string, string> = {
   memory_fact: '记忆回顾',
 };
 
+const CONV_PAGE_SIZE = 20; // 历史记录每页条数
+
 export default function AIAssistantPage() {
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [convPage, setConvPage] = useState(1);   // 历史记录当前页(1-based)
+  const [convTotal, setConvTotal] = useState(0); // 全部对话条数(翻页用)
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
@@ -109,11 +113,14 @@ export default function AIAssistantPage() {
     }
   };
 
-  const refreshConversations = async () => {
+  const refreshConversations = async (targetPage: number = convPage) => {
     setHistoryLoading(true);
     try {
-      const res = await agentApi.getConversations(50);
-      setConversations(res.data || []);
+      const offset = (targetPage - 1) * CONV_PAGE_SIZE;
+      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset);
+      setConversations(res.data.items || []);
+      setConvTotal(res.data.total || 0);
+      setConvPage(targetPage);
     } catch {
       setConversations([]);
     } finally {
@@ -276,10 +283,12 @@ export default function AIAssistantPage() {
   const deleteConversation = async (conversationId: number) => {
     if (!window.confirm('删除这条对话？')) return;
     await agentApi.deleteConversation(conversationId);
-    setConversations(prev => prev.filter(c => c.id !== conversationId));
     if (activeConvId === conversationId) {
       startNewConversation();
     }
+    // 删后重拉以保持 total/翻页准确;若当前页删空且非首页,回退一页
+    const targetPage = conversations.length <= 1 && convPage > 1 ? convPage - 1 : convPage;
+    refreshConversations(targetPage);
   };
 
   const renameConversation = async (conversationId: number, title: string) => {
@@ -389,6 +398,12 @@ export default function AIAssistantPage() {
             onDelete={deleteConversation}
             onNew={startNewConversation}
             onRename={renameConversation}
+            page={convPage}
+            totalPages={Math.max(1, Math.ceil(convTotal / CONV_PAGE_SIZE))}
+            onPrevPage={() => { if (convPage > 1) refreshConversations(convPage - 1); }}
+            onNextPage={() => {
+              if (convPage < Math.ceil(convTotal / CONV_PAGE_SIZE)) refreshConversations(convPage + 1);
+            }}
           />
         )}
 

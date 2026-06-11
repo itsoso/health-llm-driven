@@ -57,14 +57,25 @@ class OpenClawService:
         self.db.refresh(conv)
         return conv
 
-    def get_conversations(self, user_id: int, limit: int = 20, title_like: Optional[str] = None) -> List[OpenClawConversation]:
+    def get_conversations(
+        self, user_id: int, limit: int = 20, title_like: Optional[str] = None, offset: int = 0
+    ) -> List[OpenClawConversation]:
         q = (
             self.db.query(OpenClawConversation)
             .filter(OpenClawConversation.user_id == user_id)
         )
         if title_like:
             q = q.filter(OpenClawConversation.title.ilike(f"%{title_like}%"))
-        return q.order_by(OpenClawConversation.updated_at.desc()).limit(limit).all()
+        return q.order_by(OpenClawConversation.updated_at.desc()).offset(offset).limit(limit).all()
+
+    def count_conversations(self, user_id: int, title_like: Optional[str] = None) -> int:
+        q = (
+            self.db.query(OpenClawConversation)
+            .filter(OpenClawConversation.user_id == user_id)
+        )
+        if title_like:
+            q = q.filter(OpenClawConversation.title.ilike(f"%{title_like}%"))
+        return q.count()
 
     def get_conversation_detail(
         self, user_id: int, conversation_id: int

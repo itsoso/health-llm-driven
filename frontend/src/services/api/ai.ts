@@ -80,6 +80,13 @@ export interface Conversation {
   mode?: string;
 }
 
+export interface ConversationPage {
+  items: Conversation[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface ConversationDetail {
   id: number;
   title: string;
@@ -213,8 +220,9 @@ export const assistantOpenclawApi = {
 
 // ===== 统一健康 Agent API =====
 export const agentApi = {
-  getConversations: (limit: number = 30) =>
-    api.get<Conversation[]>(`/agent/conversations?limit=${limit}`),
+  // 分页返回 {items,total,limit,offset};历史记录用 offset 做上一页/下一页翻页。
+  getConversations: (limit: number = 30, offset: number = 0) =>
+    api.get<ConversationPage>(`/agent/conversations?limit=${limit}&offset=${offset}`),
 
   getConversation: (conversationId: number) =>
     api.get<ConversationDetail & { total_messages?: number }>(`/agent/conversations/${conversationId}`),
