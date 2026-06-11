@@ -2,7 +2,8 @@
 import logging
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -218,3 +219,38 @@ def _calc_hydration(water_today_ml, garmin):
         "remaining_ml": max(0, target - water_today_ml),
         "pct": round(water_today_ml / target * 100) if target > 0 else 0,
     }
+
+
+@router.get("/me/summary", summary="紧凑健康摘要 — 给外部模板/LLM (替代逐日导出 JSON)")
+def get_health_summary(
+    detail: str = Query("standard", pattern="^(brief|standard|full)$"),
+    format: str = Query("compact", pattern="^(compact|json)$"),
+    max_chars: int = Query(3000, ge=300, le=8000),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """把 Digital Twin 压成一段紧凑摘要(现状 + 7/14/30 日均 + 封顶异常项/基因),
+    给"健康建议"这类外部模板/LLM 用 —— 替代把整份 twin / 导出 JSON(2 万+ 字符)
+    塞进 prompt 的做法(逐日流水账,LLM 看不过来、又贵又慢)。
+
+    - detail: brief(~500 字符) / standard(~1.5k) / full(~3k) —— 控制异常项 + 基因条数
+    - format: compact(纯文本 blob,直插模板) / json(结构化 {summary, chars, truncated})
+    - max_chars: 硬上限,超出截断并标注,永不再炸上下文
+    """
+    from app.twin.builder import build_twin
+    from app.twin.formatter import twin_to_prompt_blob
+
+    twin = build_twin(db, current_user.id, use_cache=True)
+    # detail → (max_abnormal, max_genes);封顶,异常项/基因不会无限堆长
+    caps = {"brief": (3, 4), "standard": (5, 8), "full": (12, 15)}
+    max_abn, max_genes = caps[detail]
+    blob = twin_to_prompt_blob(twin, max_abnormal=max_abn, max_genes=max_genes) or "(暂无足够健康数据)"
+
+    truncated = False
+    if len(blob) > max_chars:
+        blob = blob[:max_chars].rstrip() + "\n…(已截断;需要更多请提高 detail)"
+        truncated = True
+
+    if format == "json":
+        return {"summary": blob, "detail": detail, "chars": len(blob), "truncated": truncated}
+    return PlainTextResponse(blob)

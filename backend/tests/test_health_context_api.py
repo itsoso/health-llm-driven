@@ -122,3 +122,43 @@ class TestHealthContextAPI:
     def test_no_auth(self, client):
         response = client.get("/api/v1/health-context/me/cross-analysis")
         assert response.status_code in (401, 403)
+
+
+class TestHealthSummaryEndpoint:
+    """/health-context/me/summary — 紧凑摘要替代逐日导出 (修 2 万字符 prompt)。"""
+
+    def test_compact_is_short_and_authed(self, client, auth_headers):
+        r = client.get("/api/v1/health-context/me/summary", headers=auth_headers)
+        assert r.status_code == 200
+        # 紧凑:远小于原始 2 万+,默认硬上限 3000
+        assert len(r.text) <= 3000
+
+    def test_json_format_shape(self, client, auth_headers):
+        r = client.get(
+            "/api/v1/health-context/me/summary?format=json&detail=brief",
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert set(["summary", "detail", "chars", "truncated"]).issubset(body.keys())
+        assert body["chars"] <= 3000
+        assert body["detail"] == "brief"
+
+    def test_max_chars_cap_truncates(self, client, auth_headers):
+        r = client.get(
+            "/api/v1/health-context/me/summary?format=json&max_chars=300",
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["chars"] <= 360  # 300 + 截断标注
+
+    def test_invalid_detail_rejected(self, client, auth_headers):
+        r = client.get(
+            "/api/v1/health-context/me/summary?detail=everything",
+            headers=auth_headers,
+        )
+        assert r.status_code == 422
+
+    def test_requires_auth(self, client):
+        r = client.get("/api/v1/health-context/me/summary")
+        assert r.status_code in (401, 403)
