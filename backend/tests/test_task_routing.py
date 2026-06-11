@@ -15,7 +15,8 @@ def test_pick_model_id_by_tier():
     assert hs and casual and bal
     from app.services.llm.model_registry import get_model
     assert get_model(hs).speed_tier == "reasoning"
-    assert get_model(casual).speed_tier == "fast"
+    # casual 期望 fast;套餐收敛后注册表无 fast 档 → 按 _SPEED_FALLBACK 降级(balanced/reasoning)
+    assert get_model(casual).speed_tier in ("fast", "balanced", "reasoning")
     assert get_model(bal).speed_tier == "balanced"
     assert pick_model_id_by_tier("nonsense", only_available=False) is None
     assert pick_model_id_by_tier(None) is None

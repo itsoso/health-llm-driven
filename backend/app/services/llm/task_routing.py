@@ -20,13 +20,24 @@ _TASK_TIER_TO_SPEED = {
     "casual": "fast",             # 闲聊 / 轻量
 }
 
+# 目标 speed_tier 无可用模型时的回退顺序 —— 对注册表裁剪鲁棒(如套餐收敛后不再有 fast 档,
+# casual 自动落到 balanced,而不是返回 None 让任务路由整个失效)。
+_SPEED_FALLBACK = {
+    "fast": ("fast", "balanced", "reasoning"),
+    "balanced": ("balanced", "reasoning", "fast"),
+    "reasoning": ("reasoning", "balanced", "fast"),
+}
+
 
 def pick_model_id_by_tier(task_tier: Optional[str], only_available: bool = True) -> Optional[str]:
-    """按任务档选一个对应 speed_tier 的可用模型 id;无匹配 → None(调用方回退默认)。"""
+    """按任务档选一个对应 speed_tier 的可用模型 id;目标档无模型时按 _SPEED_FALLBACK 降级;
+    全无 → None(调用方回退默认)。"""
     speed = _TASK_TIER_TO_SPEED.get((task_tier or "").lower())
     if speed is None:
         return None
-    for m in list_models(only_available=only_available):
-        if getattr(m, "speed_tier", None) == speed:
-            return m.id
+    models = list_models(only_available=only_available)
+    for target in _SPEED_FALLBACK.get(speed, (speed,)):
+        for m in models:
+            if getattr(m, "speed_tier", None) == target:
+                return m.id
     return None

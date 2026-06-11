@@ -33,7 +33,7 @@ INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
-FAST_RECORD_MODEL_ID = "glm-5"
+FAST_RECORD_MODEL_ID = "glm-5.1"
 
 
 # ──── 多模型综合分析 (参考 browser-llm-driven / LangBridge 平台) ────
