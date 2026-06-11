@@ -128,6 +128,8 @@ struct AppRootView: View {
             TraceLookupView(client: services.traceClient, navigation: navigation)
         case .dataSources:
             DataSourcesView(client: services.deviceSourcesClient, onAskAgent: askAgentWithContext)
+        case .prescriptions:
+            OriginatorView(client: services.originatorClient, onAskAgent: askAgentWithContext)
         case .data:
             WorkspaceOverviewView(
                 viewModel: services.todayViewModel,

@@ -4,6 +4,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     case record
     case data
     case dataSources
+    case prescriptions
     case genetics
     case knowledge
     case workouts
@@ -18,7 +19,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     /// switching is discoverable without knowing the cmd+, shortcut.
     /// Jobs/Trace remain reachable via right-rail panels or the command palette.
     public static let sidebarVisible: [SidebarDestination] = [
-        .today, .agent, .record, .data, .dataSources, .genetics, .knowledge, .workouts, .goals, .settings
+        .today, .agent, .record, .data, .dataSources, .prescriptions, .genetics, .knowledge, .workouts, .goals, .settings
     ]
 
     public var title: String {
@@ -32,6 +33,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .record: L10n.text("Record", language: language)
         case .data: L10n.text("Data", language: language)
         case .dataSources: L10n.text("Data Sources", language: language)
+        case .prescriptions: L10n.text("Originator Drugs", language: language)
         case .genetics: L10n.text("Genetics", language: language)
         case .knowledge: L10n.text("Knowledge", language: language)
         case .workouts: L10n.text("Workouts", language: language)
@@ -49,6 +51,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .record: "plus.circle"
         case .data: "chart.line.uptrend.xyaxis"
         case .dataSources: "applewatch"
+        case .prescriptions: "pills"
         case .genetics: "atom"
         case .knowledge: "books.vertical"
         case .workouts: "figure.run"

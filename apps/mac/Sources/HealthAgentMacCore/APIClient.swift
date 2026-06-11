@@ -83,6 +83,52 @@ public final class APIClient: @unchecked Sendable {
         return try await decode(data: data, response: response)
     }
 
+    /// Uploads a single file as `multipart/form-data` and decodes the JSON
+    /// response. Used by endpoints like `/prescriptions/recognize` that take an
+    /// image file under one form field. The boundary is generated per-call so
+    /// concurrent uploads never collide.
+    public func uploadFile<T: Decodable>(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        fieldName: String = "file",
+        mimeType: String = "application/octet-stream"
+    ) async throws -> T {
+        var request = try await makeRequest(path: path, method: "POST")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.multipartBody(
+            boundary: boundary,
+            fieldName: fieldName,
+            fileName: fileName,
+            mimeType: mimeType,
+            fileData: fileData
+        )
+        let (data, response) = try await session.data(for: request)
+        return try await decode(data: data, response: response)
+    }
+
+    /// Builds a single-file multipart body. Pure and static so it can be unit
+    /// tested without a live session.
+    static func multipartBody(
+        boundary: String,
+        fieldName: String,
+        fileName: String,
+        mimeType: String,
+        fileData: Data
+    ) -> Data {
+        var body = Data()
+        let dashes = "--"
+        body.append(Data("\(dashes)\(boundary)\r\n".utf8))
+        let disposition = "Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n"
+        body.append(Data(disposition.utf8))
+        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(fileData)
+        body.append(Data("\r\n".utf8))
+        body.append(Data("\(dashes)\(boundary)\(dashes)\r\n".utf8))
+        return body
+    }
+
     public func delete(_ path: String) async throws {
         let request = try await makeRequest(path: path, method: "DELETE")
         let (data, response) = try await session.data(for: request)

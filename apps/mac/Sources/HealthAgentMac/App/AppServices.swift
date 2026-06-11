@@ -41,6 +41,7 @@ struct AppServices {
     let workoutClient: WorkoutClient
     let goalClient: GoalClient
     let deviceSourcesClient: DeviceSourcesClient
+    let originatorClient: OriginatorClient
     let quickCaptureManager: QuickCaptureManager
 
     @MainActor
@@ -72,6 +73,7 @@ struct AppServices {
         self.workoutClient = WorkoutClient(apiClient: apiClient)
         self.goalClient = GoalClient(apiClient: apiClient)
         self.deviceSourcesClient = DeviceSourcesClient(apiClient: apiClient)
+        self.originatorClient = OriginatorClient(apiClient: apiClient)
         self.quickCaptureManager = QuickCaptureManager(recordClient: recordClient)
     }
 }
