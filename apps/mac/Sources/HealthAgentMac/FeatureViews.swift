@@ -1586,7 +1586,6 @@ private struct MarkdownMessageText: View {
             inlineText(text)
                 .font(scaledFont(base: 10.5))
                 .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
@@ -1595,7 +1594,6 @@ private struct MarkdownMessageText: View {
                 inlineText(text)
                     .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         case .numbered(let index, let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1606,7 +1604,6 @@ private struct MarkdownMessageText: View {
                 inlineText(text)
                     .font(scaledFont(base: 10.5))
                     .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         case .tableRow(let columns):
             // 关键修复:每列给「确定宽度」= 内宽/列数(下限 56),不再用 maxWidth: .infinity。
