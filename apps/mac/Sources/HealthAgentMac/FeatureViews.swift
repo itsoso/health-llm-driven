@@ -1512,16 +1512,30 @@ private struct MarkdownMessageText: View {
         var cache: [String: AttributedString] = [:]
         for block in finalBlocks {
             for text in MarkdownMessageText.texts(in: block) where cache[text] == nil {
-                let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
-                if let attributed = try? AttributedString(
-                    markdown: cleaned,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-                ) {
-                    cache[text] = attributed
-                }
+                cache[text] = MarkdownMessageText.cachedInlineAttributed(text)
             }
         }
         self.inlineCache = cache
+    }
+
+    // 内联 AttributedString 全局缓存:重建 MarkdownMessageText(布局探测/宽度变化都会重建)
+    // 时不再重解析整段(AttributedString(markdown:) 是热点,sample 实锤 285 次)。
+    // NSCache 线程安全;Swift 6 用 nonisolated(unsafe)(同 MarkdownRenderSupport.blocksCache)。
+    private final class AttrBox { let value: AttributedString; init(_ v: AttributedString) { self.value = v } }
+    nonisolated(unsafe) private static let inlineAttrCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>(); c.countLimit = 2048; return c
+    }()
+
+    private static func cachedInlineAttributed(_ text: String) -> AttributedString {
+        let key = text as NSString
+        if let hit = inlineAttrCache.object(forKey: key) { return hit.value }
+        let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
+        let attributed = (try? AttributedString(
+            markdown: cleaned,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(MarkdownRenderSupport.readableFallback(text))
+        inlineAttrCache.setObject(AttrBox(attributed), forKey: key)
+        return attributed
     }
 
     private static func texts(in block: MarkdownRenderBlock) -> [String] {
