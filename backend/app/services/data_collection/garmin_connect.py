@@ -1173,7 +1173,8 @@ class GarminConnectService(GarminGettersMixin):
         # HRV数据 - 最后兜底：从 HRV 专用 API 获取
         if hrv is None:
             try:
-                hrv_resp = self.client.connectapi(f"/hrv-service/hrv/{target_date}")
+                hrv_date = record_date.isoformat() if hasattr(record_date, 'isoformat') else str(record_date)
+                hrv_resp = self.client.connectapi(f"/hrv-service/hrv/{hrv_date}")
                 if hrv_resp and isinstance(hrv_resp, dict):
                     hrv_summary = hrv_resp.get("hrvSummary", {})
                     hrv = hrv_summary.get("lastNightAvg") or hrv_summary.get("weeklyAvg")

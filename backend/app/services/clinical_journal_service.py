@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from app.models.clinical_journal import CaseThread
 
 logger = logging.getLogger(__name__)
 
