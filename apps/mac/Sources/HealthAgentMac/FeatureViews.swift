@@ -20,12 +20,7 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyPage = 0
-    @State private var copiedMessageID: UUID?
     @State private var composerTextHeight: CGFloat = 0
-    // 助手气泡的「确定」宽度(非 maxWidth 范围)。markdown 各块用 fixedSize(vertical),
-    // 配范围宽度会让 SwiftUI 在不定宽度上反复探测 → sizeThatFits 指数级爆炸(长回复卡死)。
-    // GeometryReader 读一次列宽 → 给气泡定宽 → 高度一次算定,彻底消除探测。
-    @State private var conversationWidth: CGFloat = 700
 
     private static let historyPageSize = 6
     // ChatGPT-style: start at ~1 line, grow with content, then scroll past a cap.
@@ -42,32 +37,50 @@ struct AgentChatView: View {
         VStack(spacing: 12) {
             header
 
-            ViewThatFits(in: .horizontal) {
-                // Wide: a proper chat column (messages scroll, composer pinned to
-                // the bottom — ChatBot convention) on the left, scrollable context
-                // panel on the right.
-                HStack(alignment: .top, spacing: 16) {
-                    chatColumn
-                        .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
-                    ScrollView {
-                        contextPanel
-                    }
-                    .frame(width: 340)
-                }
-
-                // Narrow: messages + context panel scroll together, composer stays
-                // pinned at the bottom.
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            messagesArea
-                            contextPanel
+            // ⚠️ 结构性防卡死(第 7 轮根因 · sample 实锤):这里曾用 ViewThatFits(in:.horizontal)。
+            // ViewThatFits 会把**两个候选(宽屏双列 / 窄屏单列)各自的完整消息列表**在多个
+            // 建议尺寸下反复测量;滚动/重布局时整张列表被重测 → 指数级 sizeThatFits(100% CPU,
+            // 热点栈纯 SwiftUICore 无 app 符号、beginTransaction 极少 = 单次不收敛布局 pass)。
+            // #132(内容定宽)、#133(单 Text + 断 GeometryReader 环)都没碰它,所以滚动仍卡。
+            // 改为 GeometryReader + 阈值的确定性 if/else:每次只构建一个分支,容器宽=窗口宽稳定,
+            // 探测消失。阈值 920 ≈ chatColumn 560 + context 340 + spacing/padding。
+            GeometryReader { geo in
+                // ⚠️ 第 8 轮根治:**整棵聊天子树根部钉死宽度**。此前 chatColumn 是
+                // maxWidth:.infinity(弹性),HStack 在它与 340 侧栏之间反复分配探测,
+                // 35 层弹性 frame 嵌套放大成单次 ~1s 不收敛布局 pass(sample:6224 次
+                // sizeThatFits / beginTransaction 仅 7,叶子=composer NSTextView)。
+                // 每修一个叶子触发器换下一个继续爆 —— 唯有根部定宽,全树确定,探测消失。
+                Group {
+                    if geo.size.width >= 920 {
+                        // Wide: 左聊天列(消息滚动、composer 钉底),右上下文面板。
+                        HStack(alignment: .top, spacing: 16) {
+                            chatColumn
+                                .frame(width: max(geo.size.width - 340 - 16, 400), alignment: .topLeading)
+                            ScrollView {
+                                contextPanel
+                            }
+                            .frame(width: 340)
                         }
+                    } else {
+                        // Narrow: WebView transcript 占主区(自带滚动),上下文面板收进顶部的
+                        // 定高原生 ScrollView(WebView 不能嵌进另一个 SwiftUI ScrollView,
+                        // 否则双层滚动冲突)。composer 钉底。
+                        VStack(spacing: 0) {
+                            if !viewModel.messages.isEmpty {
+                                ScrollView {
+                                    contextPanel
+                                        .frame(width: max(geo.size.width, 320), alignment: .topLeading)
+                                }
+                                .frame(maxHeight: 220)
+                                Divider()
+                            }
+                            chatColumn
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        .frame(width: max(geo.size.width, 320))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    composer
-                        .padding(.top, 12)
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -555,44 +568,103 @@ struct AgentChatView: View {
     /// arrangement (newest content above a fixed input).
     private var chatColumn: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
+            // ⚠️ 第 9 轮结构性根治:对话区从 SwiftUI 改为 WKWebView 渲染(ChatGPT 桌面版同款)。
+            // 8 轮地鼠证明 SwiftUI 在弹性 frame 嵌套里对流式增长的富文本做宽度协商 → 指数级
+            // sizeThatFits。WebView 用浏览器引擎做线性增量布局,整类卡死消失;文本选择浏览器原生免费。
+            // proposed action 卡片 + follow-up chips 仍是原生 SwiftUI(放 transcript 下方)。
+            if viewModel.messages.isEmpty {
                 ScrollView {
-                    messagesArea
-                        .padding(.bottom, 8)
-                    // Bottom anchor the auto-scroll targets so new messages and
-                    // streaming tokens stay in view (ChatBot convention).
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.scrollBottomAnchor)
+                    emptyConversationState
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onChange(of: scrollTrigger) { _, _ in
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        proxy.scrollTo(Self.scrollBottomAnchor, anchor: .bottom)
-                    }
-                }
+            } else {
+                transcriptWebView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                nativeTranscriptFooter
             }
             composer
                 .padding(.top, 12)
         }
     }
 
-    private static let scrollBottomAnchor = "agent-chat-bottom-anchor"
-
-    /// Changes whenever a message is added or the streaming reply grows, so the
-    /// transcript auto-scrolls to the bottom on both events.
-    private var scrollTrigger: Int {
-        viewModel.messages.count &+ (viewModel.messages.last?.content.count ?? 0)
+    /// WKWebView 渲染的滚动对话区(自带滚动 + 自动滚底 + 文本选择)。
+    private var transcriptWebView: some View {
+        ChatTranscriptWebView(
+            messages: renderedMessages,
+            fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
+            onCopy: { id in handleWebCopy(messageID: id) }
+        )
     }
 
-    /// The scrollable transcript: result header + message bubbles, or an empty
-    /// prompt when there's no conversation yet.
+    /// 把 viewModel 的消息转成 WebView 喂入的安全 HTML 信封。
+    /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
+    private var renderedMessages: [ChatTranscriptHTML.RenderedMessage] {
+        let lastID = viewModel.messages.last?.id
+        return viewModel.messages.map { message in
+            let isStreamingThis = viewModel.isStreaming && message.id == lastID && message.role == .assistant
+            let content = viewModel.displayContent(for: message)
+            let bodyHTML: String
+            if message.role == .user {
+                // 用户消息纯文本:转义 + 换行保留(<br/>),不解析 markdown。
+                bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
+            } else if isStreamingThis {
+                // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
+                bodyHTML = "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+            } else {
+                bodyHTML = ChatTranscriptHTML.renderMessageBody(markdown: content)
+            }
+            let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
+            return ChatTranscriptHTML.RenderedMessage(
+                id: message.id.uuidString,
+                role: message.role == .user ? "user" : "assistant",
+                bodyHTML: bodyHTML,
+                isStreaming: isStreamingThis,
+                showCopy: showCopy
+            )
+        }
+    }
+
+    /// JS 复制按钮回调:按 messageID 找回原文写 NSPasteboard(原生剪贴板,非 WebView 内复制)。
+    private func handleWebCopy(messageID: String) {
+        guard let message = viewModel.messages.first(where: { $0.id.uuidString == messageID }) else { return }
+        let text = viewModel.displayContent(for: message)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// transcript 下方的原生 SwiftUI:仅对最后一条助手消息渲染 proposed action 卡片 +
+    /// follow-up chips(保持原生交互;流式 spinner 也在这里)。
     @ViewBuilder
-    private var messagesArea: some View {
-        if viewModel.messages.isEmpty {
-            emptyConversationState
-        } else {
-            conversationSection
+    private var nativeTranscriptFooter: some View {
+        if let last = viewModel.messages.last, last.role == .assistant {
+            let actions = viewModel.proposedActions(for: last)
+            let showChips = shouldShowFollowUpChips(for: last)
+            let showSpinner = viewModel.isStreaming && last.content.isEmpty
+            if !actions.isEmpty || showChips || showSpinner {
+                VStack(alignment: .leading, spacing: 8) {
+                    if showSpinner {
+                        ProgressView().controlSize(.small)
+                    }
+                    ForEach(actions) { action in
+                        AgentProposedActionCard(
+                            action: action,
+                            isStreaming: viewModel.isStreaming,
+                            onConfirm: {
+                                Task { await viewModel.confirmProposedAction(action) }
+                            },
+                            onDismiss: {
+                                viewModel.dismissProposedAction(action)
+                            }
+                        )
+                    }
+                    if showChips {
+                        followUpChips(for: last)
+                    }
+                }
+                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 8)
+            }
         }
     }
 
@@ -615,156 +687,6 @@ struct AgentChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(.top, 40)
-    }
-
-    private var conversationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // No "Result" header (ChatGPT-style); just show a tiny completion
-            // status line when present so the transcript starts at the messages.
-            if let status = viewModel.lastCompletionStatus {
-                HStack {
-                    Spacer()
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: 860)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-
-            LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(viewModel.messages) { message in
-                    messageBubble(message, contentWidth: conversationWidth)
-                }
-            }
-            .frame(maxWidth: 860)
-            .frame(maxWidth: .infinity, alignment: .center)
-            // 读一次列的确定宽度(上限 860),喂给助手气泡定宽。背景层读宽不影响布局。
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { conversationWidth = min(geo.size.width, 860) }
-                        .onChange(of: geo.size.width) { _, w in conversationWidth = min(w, 860) }
-                }
-            )
-        }
-    }
-
-    private func messageBubble(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            if message.role == .user {
-                Spacer(minLength: 0)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Label(
-                        appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
-                        systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
-                    )
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    if message.role == .assistant && !message.content.isEmpty {
-                        copyButton(for: message)
-                    }
-                }
-                messageContent(message, contentWidth: contentWidth)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if message.role == .assistant {
-                    ForEach(viewModel.proposedActions(for: message)) { action in
-                        AgentProposedActionCard(
-                            action: action,
-                            isStreaming: viewModel.isStreaming,
-                            onConfirm: {
-                                Task { await viewModel.confirmProposedAction(action) }
-                            },
-                            onDismiss: {
-                                viewModel.dismissProposedAction(action)
-                            }
-                        )
-                    }
-                }
-                if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                if shouldShowFollowUpChips(for: message) {
-                    followUpChips(for: message)
-                }
-            }
-            .padding(14)
-            .background(
-                message.role == .user ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor).opacity(0.92),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(message.role == .user ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.08), lineWidth: 1)
-            }
-            // 用户气泡:maxWidth 范围即可(短文本,plain Text,不爆炸)。
-            // 助手气泡:必须给「确定宽度」—— markdown 各块的 fixedSize(vertical) 配范围宽度
-            // (maxWidth)会让 SwiftUI 反复探测 → sizeThatFits 指数级爆炸(长回复 100% CPU
-            // 卡死,sample 实锤 3 次)。定宽后每块高度一次算定,探测消失。
-            .frame(maxWidth: message.role == .user ? 620 : nil, alignment: .leading)
-            .frame(width: message.role == .assistant ? contentWidth : nil, alignment: .leading)
-            if message.role == .assistant {
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private func copyButton(for message: AgentChatMessage) -> some View {
-        let copied = copiedMessageID == message.id
-        return Button {
-            let text = viewModel.displayContent(for: message)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            copiedMessageID = message.id
-            // Clear the transient "copied" state shortly after.
-            Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if copiedMessageID == message.id { copiedMessageID = nil }
-            }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.caption2)
-                .foregroundStyle(copied ? Color.green : Color.secondary)
-        }
-        .buttonStyle(.plain)
-        .help(appText(copied ? "Copied" : "Copy", appLanguageRaw))
-    }
-
-    @ViewBuilder
-    private func messageContent(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
-        if message.role == .assistant {
-            // 流式进行中的那条(= 最后一条且 isStreaming):渲染 plain Text。
-            // 富 markdown 在 MarkdownMessageText.init 里对「累积全文」重 parse + 逐块建
-            // AttributedString,而流式每 ~60ms 一批都会用更长的全文重 init →
-            // O(n²),长回复流式期 CPU 飙高卡顿。流完(isStreaming=false)再切富 markdown。
-            if viewModel.isStreaming, message.id == viewModel.messages.last?.id {
-                Text(viewModel.displayContent(for: message))
-                    .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                // 内宽 = 气泡确定宽 − 气泡 padding(14×2)。表格列/各块据此定宽,
-                // 消除含表格长回复最终渲染的指数级 sizeThatFits(#130)。
-                MarkdownMessageText(
-                    markdown: viewModel.displayContent(for: message),
-                    contentWidth: max(contentWidth - 28, 0)
-                )
-            }
-        } else {
-            // Match the assistant body font (same scaled base) so the question and
-            // the answer read at one consistent size instead of the system .body
-            // default towering over the assistant text.
-            Text(message.content.isEmpty ? " " : message.content)
-                .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     private func shouldShowFollowUpChips(for message: AgentChatMessage) -> Bool {
@@ -1504,39 +1426,34 @@ private struct AgentProposedActionCard: View {
 private struct MarkdownMessageText: View {
     @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
 
-    // 一次性解析:markdown→blocks 和内联 AttributedString 都在 init 里算好缓存,
-    // body 不再解析。否则滚动时每帧重解析整段(含表格的多单元格)→ 助手页滑动卡顿。
-    private let blocks: [MarkdownRenderBlock]
-    private let inlineCache: [String: AttributedString]
-    // 内容确定宽度(气泡内宽)。表格列/各块据此给「定宽」,而非 maxWidth: .infinity 的
-    // 范围宽 —— 后者会让 N 个弹性列 × 高依赖宽的单元格触发指数级 sizeThatFits(含表格
-    // 的长回复 100% CPU 卡死,sample 实锤「Table」热路径)。<=0 时回退,绝不用范围宽。
+    // ⚠️ 结构性防卡死(2026-06-11,第 6 轮根因战):整条消息渲染为**单个 Text(AttributedString)**。
+    // 之前的「VStack 多块 + 嵌套 HStack(bullet/numbered/表格行)」结构在 macOS 26.4 SwiftUI 下
+    // 反复指数级 sizeThatFits 卡死(100% CPU,sample 实锤 5 次;修掉 GeometryReader 反馈环/
+    // fixedSize/表格弹性列后爆点仍转移)。单个 Text 无嵌套 stack、无 frame 协商,布局线性,
+    // 数学上不可能组合爆炸。代价:表格从网格降级为「 · 」分隔的文本行 —— 不卡死 > 好看。
+    private let markdown: String
     private let contentWidth: CGFloat
 
     init(markdown: String, contentWidth: CGFloat) {
+        self.markdown = markdown
         self.contentWidth = contentWidth
-        let src = markdown.isEmpty ? " " : markdown
-        let parsed = MarkdownRenderSupport.blocks(from: src)
-        let finalBlocks: [MarkdownRenderBlock] = parsed.isEmpty
-            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
-            : parsed
-        self.blocks = finalBlocks
-
-        var cache: [String: AttributedString] = [:]
-        for block in finalBlocks {
-            for text in MarkdownMessageText.texts(in: block) where cache[text] == nil {
-                cache[text] = MarkdownMessageText.cachedInlineAttributed(text)
-            }
-        }
-        self.inlineCache = cache
     }
 
-    // 内联 AttributedString 全局缓存:重建 MarkdownMessageText(布局探测/宽度变化都会重建)
-    // 时不再重解析整段(AttributedString(markdown:) 是热点)。NSCache 线程安全;
-    // Swift 6 用 nonisolated(unsafe)(同 MarkdownRenderSupport.blocksCache)。
+    var body: some View {
+        // merged 经全局 NSCache:首次 O(n) 解析合并,之后(布局重建/滚动)O(1) 命中。
+        Text(Self.mergedAttributed(markdown: markdown, scaleLevel: appFontScaleLevel))
+            .lineSpacing(3)
+            .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
+    }
+
+    // ── 解析 + 合并(全部静态缓存,线程安全 NSCache;Swift 6 nonisolated(unsafe) 同
+    //    MarkdownRenderSupport.blocksCache 先例)──
     private final class AttrBox { let value: AttributedString; init(_ v: AttributedString) { self.value = v } }
     nonisolated(unsafe) private static let inlineAttrCache: NSCache<NSString, AttrBox> = {
         let c = NSCache<NSString, AttrBox>(); c.countLimit = 2048; return c
+    }()
+    nonisolated(unsafe) private static let mergedCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>(); c.countLimit = 128; return c
     }()
 
     private static func cachedInlineAttributed(_ text: String) -> AttributedString {
@@ -1551,101 +1468,73 @@ private struct MarkdownMessageText: View {
         return attributed
     }
 
-    private static func texts(in block: MarkdownRenderBlock) -> [String] {
-        switch block {
-        case .heading(_, let t): return [t]
-        case .paragraph(let t): return [t]
-        case .bullet(let t): return [t]
-        case .numbered(_, let t): return [t]
-        case .tableRow(let cols): return cols
-        case .divider: return []
-        }
-    }
+    private static func mergedAttributed(markdown: String, scaleLevel: Int) -> AttributedString {
+        let key = "\(scaleLevel)|\(markdown)" as NSString
+        if let hit = mergedCache.object(forKey: key) { return hit.value }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                blockView(block)
-            }
-        }
-        // 整个 markdown 子树锚死在「确定宽度」。否则父级定宽要穿过 textSelection +
-        // maxWidth:.infinity 才传到各块,SwiftUI 仍会对「高依赖宽」的块(fixedSize 文本、
-        // 表格行)反复探测宽度 → 指数级 sizeThatFits(含表格的长回复卡死)。
-        // 直接给确定宽,各块一次定高,探测消失。<=0 时不加(回退父级传播)。
-        .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
-    }
+        let scale = AppFontScale(level: scaleLevel)
+        let bodyFont = Font.system(size: scale.pointSize(base: 10.5))
+        let src = markdown.isEmpty ? " " : markdown
+        let parsed = MarkdownRenderSupport.blocks(from: src)
+        let blocks: [MarkdownRenderBlock] = parsed.isEmpty
+            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
+            : parsed
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownRenderBlock) -> some View {
-        switch block {
-        case .heading(let level, let text):
-            inlineText(text)
-                .font(level <= 2 ? scaledFont(base: 13, weight: .bold) : scaledFont(base: 11.5, weight: .semibold))
-                .foregroundStyle(.primary)
-                .padding(.top, level <= 2 ? 4 : 2)
-        case .paragraph(let text):
-            inlineText(text)
-                .font(scaledFont(base: 10.5))
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-        case .bullet(let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•")
-                    .font(scaledFont(base: 10.5, weight: .bold))
-                    .foregroundStyle(Color.accentColor)
-                inlineText(text)
-                    .font(scaledFont(base: 10.5))
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        case .numbered(let index, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(index).")
-                    .font(scaledFont(base: 10.5, weight: .bold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 22, alignment: .trailing)  // 定宽,非 minWidth 范围(_FlexFrameLayout 探测源)
-                inlineText(text)
-                    .font(scaledFont(base: 10.5))
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        case .tableRow(let columns):
-            // 关键:每列给「确定宽度」= 内宽/列数(下限 56),不再用 maxWidth: .infinity。
-            // 范围宽让 SwiftUI 在 N 弹性列间反复探测分配 × 高依赖宽 → 指数级布局卡死。
-            let n = max(columns.count, 1)
-            let cellWidth = contentWidth > 0 ? max(contentWidth / CGFloat(n), 56) : 110
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                    inlineText(column)
-                        .font(scaledFont(base: 10.5))
-                        .lineLimit(4)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 7)
-                        .frame(width: cellWidth, alignment: .leading)
-                        .background(Color.secondary.opacity(0.06))
+        var out = AttributedString()
+        var isFirst = true
+        for block in blocks {
+            if !isFirst { out += AttributedString("\n") }
+            isFirst = false
+            switch block {
+            case .heading(let level, let text):
+                var a = cachedInlineAttributed(text)
+                a.font = .system(
+                    size: scale.pointSize(base: level <= 2 ? 13 : 11.5),
+                    weight: level <= 2 ? .bold : .semibold
+                )
+                // 标题前空行(非首块时)抬一点呼吸感
+                if out.characters.count > 1 { out += AttributedString("\n") }
+                out += a
+            case .paragraph(let text):
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += a
+            case .bullet(let text):
+                var dot = AttributedString("•  ")
+                dot.font = .system(size: scale.pointSize(base: 10.5), weight: .bold)
+                dot.foregroundColor = .accentColor
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += dot + a
+            case .numbered(let index, let text):
+                var num = AttributedString("\(index). ")
+                num.font = .system(size: scale.pointSize(base: 10.5), weight: .bold)
+                num.foregroundColor = .accentColor
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += num + a
+            case .tableRow(let columns):
+                // 表格降级为分隔文本行(单 Text 内不可能做网格;不卡死优先)。
+                var row = AttributedString()
+                for (i, col) in columns.enumerated() {
+                    if i > 0 {
+                        var sep = AttributedString("  ·  ")
+                        sep.foregroundColor = .secondary
+                        row += sep
+                    }
+                    var c = cachedInlineAttributed(col)
+                    c.font = i == 0 ? .system(size: scale.pointSize(base: 10.5), weight: .semibold) : bodyFont
+                    row += c
                 }
+                out += row
+            case .divider:
+                var d = AttributedString("────────────")
+                d.foregroundColor = .secondary
+                out += d
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        case .divider:
-            Divider()
-                .padding(.vertical, 2)
         }
-    }
-
-    private func inlineText(_ text: String) -> Text {
-        // 命中 init 缓存,不在渲染期重解析 markdown。
-        if let attributed = inlineCache[text] {
-            return Text(attributed)
-        }
-        return Text(MarkdownRenderSupport.readableFallback(text))
-    }
-
-    private var appFontScale: AppFontScale {
-        AppFontScale(level: appFontScaleLevel)
-    }
-
-    private func scaledFont(base: Double, weight: Font.Weight? = nil) -> Font {
-        .system(size: appFontScale.pointSize(base: base), weight: weight)
+        mergedCache.setObject(AttrBox(out), forKey: key)
+        return out
     }
 }
 
