@@ -54,6 +54,18 @@ def get_data_health_status(
     }
 
 
+@router.get("/integrity", summary="数据正确性自检(量纲/范围/层断连;系统自我监控)")
+def get_data_integrity(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """区别于 /status(完整度):这里查**正确性**——HRV 量纲错、SpO2 小数存、
+    归一层断连、周期空目标等静默损坏。空 issues = 健康。"""
+    from app.services.data_integrity import check_user_integrity
+    issues = check_user_integrity(db, current_user.id)
+    return {"healthy": len(issues) == 0, "issue_count": len(issues), "issues": issues}
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

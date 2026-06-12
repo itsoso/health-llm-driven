@@ -44,6 +44,7 @@ celery_app = Celery(
         "app.tasks.longevity_watch",
         "app.tasks.trajectory_watch",
         "app.tasks.adherence_watch",
+        "app.tasks.data_integrity_scan",
     ]
 )
 
@@ -146,6 +147,12 @@ celery_app.conf.beat_schedule = {
     "cleanup-expired-data": {
         "task": "app.tasks.maintenance.cleanup_expired_data",
         "schedule": crontab(hour=3, minute=0),  # 凌晨3点
+    },
+
+    # 每日数据完整性巡检(系统自我监控:量纲错/层断连/空目标静默损坏自曝)
+    "data-integrity-scan": {
+        "task": "app.tasks.data_integrity_scan.data_integrity_scan",
+        "schedule": crontab(hour=4, minute=0),  # 凌晨4点
     },
 
     # 每日 08:00 推送今日计划提醒
