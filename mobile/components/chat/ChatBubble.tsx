@@ -62,9 +62,15 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     () => (structuredSummary ? stripStructuredHealthSummary(displayText) : displayText),
     [displayText, structuredSummary],
   );
+  // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
+  // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
+  // markdown 预处理 + react-native-markdown-display 整树重渲, 长回复打满 JS 线程,
+  // 帧率掉/触摸输入迟滞 (mac 端同类病见 #129/#132). 流式中降级为 plain <Text>
+  // (保留换行), 流完 (item.streaming 转 false) 才走富 markdown —— 终态结果不变.
+  const isStreaming = !isUser && !!item.streaming;
   const renderedMarkdown = useMemo(
-    () => preprocessMarkdownTables(visibleMarkdown),
-    [visibleMarkdown],
+    () => (isStreaming ? '' : preprocessMarkdownTables(visibleMarkdown)),
+    [isStreaming, visibleMarkdown],
   );
   const images = item.imageUris;
 
@@ -309,7 +315,10 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {structuredSummary ? (
               <StructuredSummaryCard summary={structuredSummary} c={c} s={s} />
             ) : null}
-            {visibleMarkdown ? (
+            {visibleMarkdown && isStreaming ? (
+              // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
+              <Text selectable style={txt.streaming}>{visibleMarkdown}</Text>
+            ) : visibleMarkdown ? (
               <Markdown style={mdStyles}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
@@ -888,6 +897,8 @@ function createStyles(c: ColorPalette, isDark: boolean) {
 function createTxt(c: ColorPalette) {
   return {
     bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
+    // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
+    streaming: { fontSize: 15, lineHeight: 23, color: c.labelPrimary } as TextStyle,
     actionBtn: { fontSize: 12, fontWeight: '700', color: c.brand } as TextStyle,
     fallback: { fontSize: 14, lineHeight: 20, color: c.labelSecondary, fontStyle: 'italic' } as TextStyle,
     meta: { fontSize: 10, color: c.labelTertiary, fontFamily: 'Courier' } as TextStyle,
