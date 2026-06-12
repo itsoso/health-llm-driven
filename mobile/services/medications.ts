@@ -45,3 +45,59 @@ export async function updateMedication(id: number, data: Partial<Medication>): P
   const resp = await api.put<Medication>(`/medication/medications/${id}`, data);
   return resp.data;
 }
+
+// ──────────────────────────────────────────────────────────────
+// 今日服药状态 + 打卡日志
+// 后端未暴露 OpenAPI schema(types/api.generated.ts 暂无 Medication),
+// 故此处手写 interface, 对齐 GET /medication/today/me 与 POST /medication/logs。
+// ──────────────────────────────────────────────────────────────
+
+export interface MedicationLogEntry {
+  id: number;
+  time: string | null; // "HH:MM"
+  status: 'taken' | 'skipped' | 'delayed';
+}
+
+/** GET /medication/today/me 的单项 (见 medication_service.get_today_status) */
+export interface MedicationTodayItem {
+  medication_id: number;
+  name: string;
+  dosage: string | null;
+  category: string | null;
+  total_count: number | null; // = times_per_day, 可能为 null
+  taken_count: number;
+  skipped_count: number;
+  last_taken_time: string | null; // 今日最后一次 taken 的 HH:MM
+  last_taken_time_overall?: string | null;
+  last_taken_date_overall?: string | null;
+  reminder_times: string[]; // ["HH:MM", ...]
+  logs: MedicationLogEntry[];
+}
+
+export interface MedicationLogResult {
+  id: number;
+  medication_id: number;
+  taken_date: string;
+  taken_time: string | null;
+  status: string;
+}
+
+export interface LogMedicationInput {
+  medication_id: number;
+  taken_time: string; // "HH:MM"
+  status: 'taken' | 'skipped';
+  skip_reason?: string;
+  actual_dosage?: string;
+  notes?: string;
+}
+
+/** POST /medication/logs — 记录一次服药/跳过 */
+export async function logMedication(input: LogMedicationInput): Promise<MedicationLogResult> {
+  const resp = await api.post<MedicationLogResult>('/medication/logs', input);
+  return resp.data;
+}
+
+/** DELETE /medication/logs/{id} — 撤销误点的打卡 */
+export async function deleteMedicationLog(id: number): Promise<void> {
+  await api.delete(`/medication/logs/${id}`);
+}
