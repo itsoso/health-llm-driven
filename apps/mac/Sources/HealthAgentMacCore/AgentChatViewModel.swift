@@ -84,17 +84,30 @@ public enum AgentStructuredCommandParser {
         }
     }
 
+    // displayText 是 content 的纯函数,但内部对整条消息做 O(n) 字符扫描(找内嵌 JSON
+    // 命令)。它在每个气泡的 body 里被调(messageContent → displayContent),滚动时
+    // LazyVStack 每挂一行就重扫一遍整条长消息 → 掉帧。按 content 全局缓存,滚动 O(1) 命中。
+    // NSCache 线程安全;Swift 6 用 nonisolated(unsafe)(同 MarkdownMessageText 的缓存)。
+    private final class StringBox { let value: String; init(_ v: String) { self.value = v } }
+    nonisolated(unsafe) private static let displayTextCache: NSCache<NSString, StringBox> = {
+        let c = NSCache<NSString, StringBox>(); c.countLimit = 256; return c
+    }()
+
     public static func displayText(for content: String) -> String {
+        let key = content as NSString
+        if let hit = displayTextCache.object(forKey: key) { return hit.value }
         var result = content
         for range in structuredCommands(in: content).map(\.range).reversed() {
             result.removeSubrange(range)
         }
-        return result
+        let out = result
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0 != "```" && $0 != "```json" }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        displayTextCache.setObject(StringBox(out), forKey: key)
+        return out
     }
 
     private struct StructuredCommand {

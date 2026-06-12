@@ -50,12 +50,17 @@ struct AgentChatView: View {
             // 改为 GeometryReader + 阈值的确定性 if/else:每次只构建一个分支,容器宽=窗口宽稳定,
             // 探测消失。阈值 920 ≈ chatColumn 560 + context 340 + spacing/padding。
             GeometryReader { geo in
+                // ⚠️ 第 8 轮根治:**整棵聊天子树根部钉死宽度**。此前 chatColumn 是
+                // maxWidth:.infinity(弹性),HStack 在它与 340 侧栏之间反复分配探测,
+                // 35 层弹性 frame 嵌套放大成单次 ~1s 不收敛布局 pass(sample:6224 次
+                // sizeThatFits / beginTransaction 仅 7,叶子=composer NSTextView)。
+                // 每修一个叶子触发器换下一个继续爆 —— 唯有根部定宽,全树确定,探测消失。
                 Group {
                     if geo.size.width >= 920 {
                         // Wide: 左聊天列(消息滚动、composer 钉底),右上下文面板。
                         HStack(alignment: .top, spacing: 16) {
                             chatColumn
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .frame(width: max(geo.size.width - 340 - 16, 400), alignment: .topLeading)
                             ScrollView {
                                 contextPanel
                             }
@@ -69,11 +74,13 @@ struct AgentChatView: View {
                                     messagesArea
                                     contextPanel
                                 }
+                                .frame(width: max(geo.size.width, 320), alignment: .topLeading)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(maxHeight: .infinity)
                             composer
                                 .padding(.top, 12)
                         }
+                        .frame(width: max(geo.size.width, 320))
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
@@ -764,11 +771,15 @@ struct AgentChatView: View {
             // AttributedString,而流式每 ~60ms 一批都会用更长的全文重 init →
             // O(n²),长回复流式期 CPU 飙高卡顿。流完(isStreaming=false)再切富 markdown。
             if viewModel.isStreaming, message.id == viewModel.messages.last?.id {
+                // ⚠️ 必须给「确定宽度」。曾用 .fixedSize(vertical).frame(maxWidth:.infinity)
+                // = 范围宽 + 高依赖宽 → 流式态 token 追加触发单次不收敛指数级 sizeThatFits
+                // (100% CPU,sample 实锤:beginTransaction=8 + _FlexFrameLayout 35 层递归)。
+                // 定宽后高度一次算定,探测消失(同富 markdown 分支的 contentWidth-28)。
                 Text(viewModel.displayContent(for: message))
                     .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(width: max(contentWidth - 28, 0), alignment: .leading)
             } else {
                 // 内宽 = 气泡确定宽 − 气泡 padding(14×2)。单 Text 渲染(结构性防爆)。
                 MarkdownMessageText(
