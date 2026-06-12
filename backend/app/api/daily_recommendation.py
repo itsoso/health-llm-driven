@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import date
 from typing import Optional
+from app.config import settings
 from app.database import get_db
 from app.services.daily_recommendation import DailyRecommendationService
 from app.services.llm_health_analyzer import llm_analyzer

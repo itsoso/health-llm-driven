@@ -1,4 +1,5 @@
 """微信小程序认证API"""
+import json
 import logging
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Request
