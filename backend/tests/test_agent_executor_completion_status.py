@@ -241,6 +241,92 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_and_headers):
+    """done 事件 + 持久化 meta 都暴露本轮调用过的工具名 (tools_used), 供 mac/mobile 展示。"""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        # 第一轮发起一个 tool_call; 第二轮综合工具结果给出可见回复。
+        if len(calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "call_query_hr",
+                        "type": "function",
+                        "function": {
+                            "name": "health_query",
+                            "arguments": json.dumps({"metric": "heart_rate"}, ensure_ascii=False),
+                        },
+                    },
+                ],
+            }
+        return {"content": "你最近静息心率正常。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_query"
+        return json.dumps({"resting_heart_rate": 60}, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="我的心率怎么样",
+            user_auth_token="test-token",
+        )
+    ]
+
+    done = events[-1]
+    assert done["event"] == "done"
+    assert done["data"]["tools_used"] == ["health_query"]
+    # sources_used 与 tools_used 独立, 保留既有字段。
+    assert "sources_used" in done["data"]
+
+    # 持久化 meta 也要带 tools_used, 否则历史消息 reload 看不到。
+    ai_msg = db.query(OpenClawMessage).filter_by(id=done["data"]["message_id"]).first()
+    assert ai_msg is not None
+    assert ai_msg.meta["tools_used"] == ["health_query"]
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_tools_used_empty_when_no_tool_call(db, auth_user_and_headers):
+    """无 tool call 的纯问答轮, tools_used 为 []。"""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {"content": "保持规律作息即可。", "finish_reason": "stop"}
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="给点睡眠建议",
+            user_auth_token=None,
+        )
+    ]
+
+    done = events[-1]
+    assert done["event"] == "done"
+    assert done["data"]["tools_used"] == []
+
+    ai_msg = db.query(OpenClawMessage).filter_by(id=done["data"]["message_id"]).first()
+    assert ai_msg is not None
+    assert ai_msg.meta["tools_used"] == []
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_and_headers):
     """Fast record turns should complete simple logging without a second confirmation round."""
     user, _headers = auth_user_and_headers

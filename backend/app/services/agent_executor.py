@@ -1052,6 +1052,9 @@ class AgentExecutor:
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
+        # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
+        # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
+        tools_used: List[str] = []
 
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
@@ -1163,6 +1166,9 @@ class AgentExecutor:
                     for tc in tool_calls:
                         func_name = tc["function"]["name"]
                         func_args = tc["function"]["arguments"]
+                        # 收集工具名 (去重、按首次调用顺序) 供 done/meta 的 tools_used。
+                        if func_name and func_name not in tools_used:
+                            tools_used.append(func_name)
                         if self._prefer_fast_record_model:
                             func_args = _auto_confirm_fast_record_args(func_name, func_args)
                         tool_id = tc["id"]
@@ -1424,6 +1430,7 @@ class AgentExecutor:
                 "llm_rounds_ms": llm_rounds_ms,
                 "model": model_name,
                 "sources_used": sources_used,
+                "tools_used": tools_used,
                 "cards": evidence_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
@@ -1444,6 +1451,7 @@ class AgentExecutor:
                 "llm_rounds_ms": llm_rounds_ms,
                 "model": model_name,
                 "sources_used": sources_used,
+                "tools_used": tools_used,
                 "mode": "agent",
                 "cards": evidence_cards,
                 "finish_reason": final_finish_reason,
