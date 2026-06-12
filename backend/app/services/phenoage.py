@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 # ── Levine 2018 线性组合系数(xb)──────────────────────────────────────────
 _INTERCEPT = -19.907

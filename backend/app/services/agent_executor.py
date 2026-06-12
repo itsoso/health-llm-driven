@@ -177,6 +177,152 @@ def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+# 括号 + Python 调用签名格式的内联工具调用:`[工具调用: name(args)]`。
+# 弱模型(尤其经代理的)会把工具调用吐成这种自然语言标记而非结构化 tool_calls,
+# 中英文冒号都见过、方括号有时缺。捕获 name + 括号内全部参数串,留给
+# `_parse_bracket_tool_args` 解析。`re.S` 让参数串可跨行。
+_BRACKET_TOOL_CALL_RE = re.compile(
+    r"\[?\s*工具调用\s*[:：]\s*(\w+)\s*\((.*?)\)\s*\]?",
+    re.S,
+)
+# 即便最终没解析出参数,也绝不能把裸标记泄漏给用户(类比 mac 端剥离 [claim:xxx])。
+# 用于最终输出兜底剥离。比上面宽松:name 可缺、括号内随意。
+_BRACKET_TOOL_CALL_STRIP_RE = re.compile(
+    r"\[?\s*工具调用\s*[:：].*?\)\s*\]?",
+    re.S,
+)
+
+
+def _split_top_level_commas(s: str) -> List[str]:
+    """Split on commas that are not nested inside (), [], {} or quotes.
+
+    Bracket-format args look like ``type=lab_results, keywords=["a","b"], days=7``:
+    naive ``split(",")`` would shatter the JSON array. This honours one level of
+    bracket/brace/paren nesting and single/double quoted strings.
+    """
+    parts: List[str] = []
+    depth = 0
+    quote: Optional[str] = None
+    buf: list[str] = []
+    for ch in s:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+        if ch == "," and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    if buf:
+        parts.append("".join(buf))
+    return parts
+
+
+def _coerce_bracket_value(raw: str) -> Any:
+    """Best-effort coerce one bracket-format arg value into a Python value.
+
+    Handles JSON arrays/objects (``["a","b"]``), quoted strings (``"LDL"``),
+    numbers (``7`` / ``7.5``), booleans, and bare identifiers (``lab_results``).
+    Unparseable values fall back to the stripped raw string (never raise) — the
+    caller skips truly empty values.
+    """
+    val = raw.strip()
+    if not val:
+        return None
+    # JSON-shaped(数组/对象)优先精确解析,失败再退化。
+    if val[0] in "[{":
+        try:
+            return json.loads(val)
+        except json.JSONDecodeError:
+            pass
+    # 带引号的字符串。
+    if len(val) >= 2 and val[0] in "'\"" and val[-1] == val[0]:
+        return val[1:-1]
+    low = val.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    if low in ("null", "none"):
+        return None
+    # 数字。
+    try:
+        if re.fullmatch(r"-?\d+", val):
+            return int(val)
+        if re.fullmatch(r"-?\d*\.\d+", val):
+            return float(val)
+    except ValueError:
+        pass
+    # 裸标识符(type=lab_results)→ 原样字符串。
+    return val
+
+
+def _parse_bracket_tool_args(arg_str: str) -> Dict[str, Any]:
+    """Parse ``key=value, key=value`` from the bracket tool-call signature.
+
+    Tolerant: unparseable / valueless fragments are skipped; at minimum returns
+    the keys it could read. Positional (no ``=``) fragments are ignored — our
+    tool schemas are all keyword args.
+    """
+    args: Dict[str, Any] = {}
+    for frag in _split_top_level_commas(arg_str):
+        frag = frag.strip()
+        if not frag or "=" not in frag:
+            continue
+        key, _, value = frag.partition("=")
+        key = key.strip()
+        if not key:
+            continue
+        coerced = _coerce_bracket_value(value)
+        if coerced is None and value.strip().lower() not in ("null", "none"):
+            # 真的解析不出(空值)→ 跳过这个参数,但不影响其它参数与 name 恢复。
+            continue
+        args[key] = coerced
+    return args
+
+
+def _extract_bracket_tool_call(raw: str, allowed: set) -> Optional[Dict[str, Any]]:
+    """Recover ``[工具调用: name(args)]`` bracket-format calls.
+
+    Returns a standard tool_call dict when ``name`` is registered, recovering
+    whatever args parse cleanly (健壮容错: parse failures drop the arg, not the
+    call). Returns None when no bracket marker matches or the name isn't allowed.
+    """
+    for m in _BRACKET_TOOL_CALL_RE.finditer(raw):
+        name = m.group(1)
+        if name not in allowed:
+            continue
+        args = _parse_bracket_tool_args(m.group(2) or "")
+        return {
+            "id": "inline_tool_call_0",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(args, ensure_ascii=False),
+            },
+        }
+    return None
+
+
+def _strip_bracket_tool_markers(text: str) -> str:
+    """Strip naked ``[工具调用: ...]`` markers from final user-visible output.
+
+    Mirrors the mac-side ``[claim:xxx]`` scrub: even when args don't parse, the
+    raw marker must never reach the user.
+    """
+    if not text or "工具调用" not in text:
+        return text
+    return _BRACKET_TOOL_CALL_STRIP_RE.sub("", text).strip()
+
+
 def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
     """Recover tool calls emitted as visible JSON text by weaker gateways/models.
 
@@ -188,12 +334,22 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
     leak to the user, and the tool must actually run). Ordinary JSON snippets
     such as menu_share stay user-visible: their name is not a registered tool,
     so the `name not in allowed` guard below skips them.
+
+    Also recovers the bracket signature format some models emit instead of JSON:
+    ``[工具调用: health_query(type=lab_results, keywords=["Hcy"], days=7)]``
+    (中英文冒号 + 可选方括号 + Python 调用风格参数).
     """
     raw = (text or "").strip()
     if not raw:
         return None
 
     allowed = {t.get("function", {}).get("name") for t in tools or []}
+
+    # 括号格式先于 JSON 尝试:它含 `(` 不含起始 `{`,与 JSON 路径互不干扰。
+    bracket = _extract_bracket_tool_call(raw, allowed)
+    if bracket is not None:
+        return bracket
+
     decoder = json.JSONDecoder()
     for idx, ch in enumerate(raw):
         if ch != "{":
@@ -1082,9 +1238,15 @@ class AgentExecutor:
                             not inline_suppressed
                             and not streamed_tool_calls
                             and tools
-                            and _extract_inline_tool_call(streamed_text, tools)
+                            and (
+                                _extract_inline_tool_call(streamed_text, tools)
+                                # 括号标记 `[工具调用: ...` 可能正在逐 token 形成,`)` 还没到
+                                # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
+                                # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
+                                or "工具调用" in streamed_text
+                            )
                         ):
-                            # 检测到内联工具 JSON → 进入抑制模式,本轮不再 live 下发。
+                            # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
                             inline_suppressed = True
                             streamed_to_client = False
                         if not inline_suppressed:
@@ -1267,6 +1429,12 @@ class AgentExecutor:
                     else:
                         final_text = response.get("content") or ""
                         final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
+                    # 兜底:括号工具标记没能恢复成 tool_call(name 不在白名单/参数解析失败)时,
+                    # 也绝不能把裸 `[工具调用: ...]` 留在用户可见正文里。剥离后若空,走下方空回复重试链。
+                    stripped = _strip_bracket_tool_markers(final_text)
+                    if stripped != final_text:
+                        final_text = stripped
+                        streamed_to_client = False
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False

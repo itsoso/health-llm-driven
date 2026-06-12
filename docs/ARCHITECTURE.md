@@ -21,10 +21,10 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 140 API 路由 · 213 services              │
+│                  health-api.executor.life · 140 API 路由 · 217 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
-│  │           │  │ dispatch │  │ (12 specialist) │  │ (tool-calling LLM) │            │
+│  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
 │  └───────────┘  └──────────┘  └────────┬────────┘  └──────────┬─────────┘            │
 │                                        │                      │                      │
 │                                        ▼                      ▼                      │
@@ -43,7 +43,7 @@
          ▼           ▼                ▼                    ▼                  ▼
   ┌──────────┐ ┌──────────┐  ┌─────────────┐    ┌──────────────────┐  ┌─────────────┐
   │ Postgres │ │  Redis   │  │  Celery     │    │  LLM Providers   │  │  3rd-party  │
-  │ (多表)   │ │ (cache + │  │ (54 任务)   │    │ openai-proxy /   │  │ Garmin API  │
+  │ (多表)   │ │ (cache + │  │ (55 任务)   │    │ openai-proxy /   │  │ Garmin API  │
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 12 个 Specialist + Safety Guardian (8 类 56 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (8 类 56 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 140 API 路由, 213 services, 83 models, 54 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 140 API 路由, 217 services, 84 models, 55 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -116,7 +116,7 @@
 |------|------|
 | `backend/app/api/*.py` | 140 条 API 路由 |
 | `backend/app/services/*.py` | 205 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
-| `backend/app/tasks/*.py` | 54 Celery 异步任务 |
+| `backend/app/tasks/*.py` | 55 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
 | `mobile/app/` | 84 RN 路由 + Tab 导航 |
@@ -161,7 +161,7 @@
                 │
                 ▼
 ┌────────────────────────────────────────────────────────────────┐
-│  12 Specialists                                                │
+│  13 Specialists                                               │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ SafetyGuardian  — 56 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
@@ -171,7 +171,8 @@
 │  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
 │  │ LongitudinalAnalyst · LongevitySpecialist (PhenoAge)    │   │
 │  │ HypertensionSpecialist · MetabolicSpecialist            │   │
-│  │ RhinitisSpecialist                                      │   │
+│  │ RhinitisSpecialist · SupplementAdvisor                  │   │
+│  │ CrossSourceValidator (跨设备同指标一致性裁决)           │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │  共享 context: recovery.readiness_zone → movement_coach         │
 └───────────────┬────────────────────────────────────────────────┘
@@ -426,7 +427,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(54 个任务)
+## 九、Celery 调度(55 个任务)
 
 `backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
 
