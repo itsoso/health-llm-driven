@@ -86,7 +86,16 @@ cp "${EXECUTABLE}" "${MACOS_DIR}/${APP_NAME}"
 chmod 755 "${MACOS_DIR}/${APP_NAME}"
 
 if [[ -d "${SOURCE_RESOURCES_DIR}" ]]; then
+  # 平铺拷贝源资源 → Contents/Resources/(供 Bundle.main 查找,如 chat-transcript.html、icns)。
   cp -R "${SOURCE_RESOURCES_DIR}/." "${RESOURCES_DIR}/"
+fi
+
+# 同时拷贝 SwiftPM 生成的 *.bundle(供代码里的 Bundle.module 查找路径,如 AppBrandIcon /
+# ChatTranscriptWebView 的资源回退)。SwiftPM 把 .process("Resources") 的产物打进
+# HealthAgentMac_HealthAgentMac.bundle;不带它,Bundle.module 在打包 App 里会落空。
+RESOURCE_BUNDLE="${BIN_DIR}/${APP_NAME}_${APP_NAME}.bundle"
+if [[ -d "${RESOURCE_BUNDLE}" ]]; then
+  cp -R "${RESOURCE_BUNDLE}" "${RESOURCES_DIR}/"
 fi
 
 cat > "${CONTENTS_DIR}/Info.plist" <<PLIST

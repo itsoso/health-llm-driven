@@ -20,12 +20,7 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyPage = 0
-    @State private var copiedMessageID: UUID?
     @State private var composerTextHeight: CGFloat = 0
-    // 助手气泡的「确定」宽度(非 maxWidth 范围)。markdown 各块用 fixedSize(vertical),
-    // 配范围宽度会让 SwiftUI 在不定宽度上反复探测 → sizeThatFits 指数级爆炸(长回复卡死)。
-    // GeometryReader 读一次列宽 → 给气泡定宽 → 高度一次算定,彻底消除探测。
-    @State private var conversationWidth: CGFloat = 700
 
     private static let historyPageSize = 6
     // ChatGPT-style: start at ~1 line, grow with content, then scroll past a cap.
@@ -67,18 +62,20 @@ struct AgentChatView: View {
                             .frame(width: 340)
                         }
                     } else {
-                        // Narrow: 消息 + 上下文一起滚,composer 钉底。
+                        // Narrow: WebView transcript 占主区(自带滚动),上下文面板收进顶部的
+                        // 定高原生 ScrollView(WebView 不能嵌进另一个 SwiftUI ScrollView,
+                        // 否则双层滚动冲突)。composer 钉底。
                         VStack(spacing: 0) {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    messagesArea
+                            if !viewModel.messages.isEmpty {
+                                ScrollView {
                                     contextPanel
+                                        .frame(width: max(geo.size.width, 320), alignment: .topLeading)
                                 }
-                                .frame(width: max(geo.size.width, 320), alignment: .topLeading)
+                                .frame(maxHeight: 220)
+                                Divider()
                             }
-                            .frame(maxHeight: .infinity)
-                            composer
-                                .padding(.top, 12)
+                            chatColumn
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                         .frame(width: max(geo.size.width, 320))
                     }
@@ -571,60 +568,103 @@ struct AgentChatView: View {
     /// arrangement (newest content above a fixed input).
     private var chatColumn: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
+            // ⚠️ 第 9 轮结构性根治:对话区从 SwiftUI 改为 WKWebView 渲染(ChatGPT 桌面版同款)。
+            // 8 轮地鼠证明 SwiftUI 在弹性 frame 嵌套里对流式增长的富文本做宽度协商 → 指数级
+            // sizeThatFits。WebView 用浏览器引擎做线性增量布局,整类卡死消失;文本选择浏览器原生免费。
+            // proposed action 卡片 + follow-up chips 仍是原生 SwiftUI(放 transcript 下方)。
+            if viewModel.messages.isEmpty {
                 ScrollView {
-                    messagesArea
-                        .padding(.bottom, 8)
-                    // Bottom anchor the auto-scroll targets so new messages and
-                    // streaming tokens stay in view (ChatBot convention).
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.scrollBottomAnchor)
+                    emptyConversationState
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // 在稳定外层(ScrollView 宽 = 窗口宽,与气泡宽无关)测一次列宽,喂气泡定宽。
-                // 不放在 LazyVStack 内部,避免探测期 @State 写入的反馈环(爆炸放大器)。
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .onAppear { updateConversationWidth(geo.size.width) }
-                            .onChange(of: geo.size.width) { _, w in updateConversationWidth(w) }
-                    }
-                )
-                .onChange(of: scrollTrigger) { _, _ in
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        proxy.scrollTo(Self.scrollBottomAnchor, anchor: .bottom)
-                    }
-                }
+            } else {
+                transcriptWebView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                nativeTranscriptFooter
             }
             composer
                 .padding(.top, 12)
         }
     }
 
-    private static let scrollBottomAnchor = "agent-chat-bottom-anchor"
-
-    /// Changes whenever a message is added or the streaming reply grows, so the
-    /// transcript auto-scrolls to the bottom on both events.
-    private var scrollTrigger: Int {
-        viewModel.messages.count &+ (viewModel.messages.last?.content.count ?? 0)
+    /// WKWebView 渲染的滚动对话区(自带滚动 + 自动滚底 + 文本选择)。
+    private var transcriptWebView: some View {
+        ChatTranscriptWebView(
+            messages: renderedMessages,
+            fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
+            onCopy: { id in handleWebCopy(messageID: id) }
+        )
     }
 
-    /// 写 conversationWidth 时阻尼:仅在有意义变化(>0.5pt)时更新,避免任何残留抖动
-    /// 反复写 @State 触发布局(配合"在稳定外层测宽"双保险)。
-    private func updateConversationWidth(_ rawWidth: CGFloat) {
-        let w = min(max(rawWidth, 1), 860)
-        if abs(w - conversationWidth) > 0.5 { conversationWidth = w }
+    /// 把 viewModel 的消息转成 WebView 喂入的安全 HTML 信封。
+    /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
+    private var renderedMessages: [ChatTranscriptHTML.RenderedMessage] {
+        let lastID = viewModel.messages.last?.id
+        return viewModel.messages.map { message in
+            let isStreamingThis = viewModel.isStreaming && message.id == lastID && message.role == .assistant
+            let content = viewModel.displayContent(for: message)
+            let bodyHTML: String
+            if message.role == .user {
+                // 用户消息纯文本:转义 + 换行保留(<br/>),不解析 markdown。
+                bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
+            } else if isStreamingThis {
+                // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
+                bodyHTML = "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+            } else {
+                bodyHTML = ChatTranscriptHTML.renderMessageBody(markdown: content)
+            }
+            let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
+            return ChatTranscriptHTML.RenderedMessage(
+                id: message.id.uuidString,
+                role: message.role == .user ? "user" : "assistant",
+                bodyHTML: bodyHTML,
+                isStreaming: isStreamingThis,
+                showCopy: showCopy
+            )
+        }
     }
 
-    /// The scrollable transcript: result header + message bubbles, or an empty
-    /// prompt when there's no conversation yet.
+    /// JS 复制按钮回调:按 messageID 找回原文写 NSPasteboard(原生剪贴板,非 WebView 内复制)。
+    private func handleWebCopy(messageID: String) {
+        guard let message = viewModel.messages.first(where: { $0.id.uuidString == messageID }) else { return }
+        let text = viewModel.displayContent(for: message)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// transcript 下方的原生 SwiftUI:仅对最后一条助手消息渲染 proposed action 卡片 +
+    /// follow-up chips(保持原生交互;流式 spinner 也在这里)。
     @ViewBuilder
-    private var messagesArea: some View {
-        if viewModel.messages.isEmpty {
-            emptyConversationState
-        } else {
-            conversationSection
+    private var nativeTranscriptFooter: some View {
+        if let last = viewModel.messages.last, last.role == .assistant {
+            let actions = viewModel.proposedActions(for: last)
+            let showChips = shouldShowFollowUpChips(for: last)
+            let showSpinner = viewModel.isStreaming && last.content.isEmpty
+            if !actions.isEmpty || showChips || showSpinner {
+                VStack(alignment: .leading, spacing: 8) {
+                    if showSpinner {
+                        ProgressView().controlSize(.small)
+                    }
+                    ForEach(actions) { action in
+                        AgentProposedActionCard(
+                            action: action,
+                            isStreaming: viewModel.isStreaming,
+                            onConfirm: {
+                                Task { await viewModel.confirmProposedAction(action) }
+                            },
+                            onDismiss: {
+                                viewModel.dismissProposedAction(action)
+                            }
+                        )
+                    }
+                    if showChips {
+                        followUpChips(for: last)
+                    }
+                }
+                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 8)
+            }
         }
     }
 
@@ -647,155 +687,6 @@ struct AgentChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(.top, 40)
-    }
-
-    private var conversationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // No "Result" header (ChatGPT-style); just show a tiny completion
-            // status line when present so the transcript starts at the messages.
-            if let status = viewModel.lastCompletionStatus {
-                HStack {
-                    Spacer()
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: 860)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-
-            LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(viewModel.messages) { message in
-                    messageBubble(message, contentWidth: conversationWidth)
-                }
-            }
-            .frame(maxWidth: 860)
-            .frame(maxWidth: .infinity, alignment: .center)
-            // conversationWidth 不在这里读(此处是被指数级探测的子树,探测时 geo.width
-            // 波动 → onChange 写 @State → 触发更多布局 → 反馈环放大爆炸,sample 实锤
-            // FeatureViews:647 在热路径)。改到 chatColumn 的稳定外层(ScrollView 宽=窗口宽,
-            // 不含 width 依赖内容)测一次。
-        }
-    }
-
-    private func messageBubble(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            if message.role == .user {
-                Spacer(minLength: 0)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Label(
-                        appText(message.role == .user ? "You" : "Assistant", appLanguageRaw),
-                        systemImage: message.role == .user ? "person.crop.circle" : "sparkles"
-                    )
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    if message.role == .assistant && !message.content.isEmpty {
-                        copyButton(for: message)
-                    }
-                }
-                messageContent(message, contentWidth: contentWidth)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if message.role == .assistant {
-                    ForEach(viewModel.proposedActions(for: message)) { action in
-                        AgentProposedActionCard(
-                            action: action,
-                            isStreaming: viewModel.isStreaming,
-                            onConfirm: {
-                                Task { await viewModel.confirmProposedAction(action) }
-                            },
-                            onDismiss: {
-                                viewModel.dismissProposedAction(action)
-                            }
-                        )
-                    }
-                }
-                if message.role == .assistant && viewModel.isStreaming && message.content.isEmpty {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                if shouldShowFollowUpChips(for: message) {
-                    followUpChips(for: message)
-                }
-            }
-            .padding(14)
-            .background(
-                message.role == .user ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor).opacity(0.92),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(message.role == .user ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.08), lineWidth: 1)
-            }
-            // 用户气泡:maxWidth 范围即可(短文本,plain Text,不爆炸)。
-            // 助手气泡:必须给「确定宽度」—— markdown 各块的 fixedSize(vertical) 配范围宽度
-            // (maxWidth)会让 SwiftUI 反复探测 → sizeThatFits 指数级爆炸(长回复 100% CPU
-            // 卡死,sample 实锤 3 次)。定宽后每块高度一次算定,探测消失。
-            .frame(maxWidth: message.role == .user ? 620 : nil, alignment: .leading)
-            .frame(width: message.role == .assistant ? contentWidth : nil, alignment: .leading)
-            if message.role == .assistant {
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private func copyButton(for message: AgentChatMessage) -> some View {
-        let copied = copiedMessageID == message.id
-        return Button {
-            let text = viewModel.displayContent(for: message)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            copiedMessageID = message.id
-            // Clear the transient "copied" state shortly after.
-            Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if copiedMessageID == message.id { copiedMessageID = nil }
-            }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.caption2)
-                .foregroundStyle(copied ? Color.green : Color.secondary)
-        }
-        .buttonStyle(.plain)
-        .help(appText(copied ? "Copied" : "Copy", appLanguageRaw))
-    }
-
-    @ViewBuilder
-    private func messageContent(_ message: AgentChatMessage, contentWidth: CGFloat) -> some View {
-        if message.role == .assistant {
-            // 流式进行中的那条(= 最后一条且 isStreaming):渲染 plain Text。
-            // 富 markdown 在 MarkdownMessageText.init 里对「累积全文」重 parse + 逐块建
-            // AttributedString,而流式每 ~60ms 一批都会用更长的全文重 init →
-            // O(n²),长回复流式期 CPU 飙高卡顿。流完(isStreaming=false)再切富 markdown。
-            if viewModel.isStreaming, message.id == viewModel.messages.last?.id {
-                // ⚠️ 必须给「确定宽度」。曾用 .fixedSize(vertical).frame(maxWidth:.infinity)
-                // = 范围宽 + 高依赖宽 → 流式态 token 追加触发单次不收敛指数级 sizeThatFits
-                // (100% CPU,sample 实锤:beginTransaction=8 + _FlexFrameLayout 35 层递归)。
-                // 定宽后高度一次算定,探测消失(同富 markdown 分支的 contentWidth-28)。
-                Text(viewModel.displayContent(for: message))
-                    .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(width: max(contentWidth - 28, 0), alignment: .leading)
-            } else {
-                // 内宽 = 气泡确定宽 − 气泡 padding(14×2)。单 Text 渲染(结构性防爆)。
-                MarkdownMessageText(
-                    markdown: viewModel.displayContent(for: message),
-                    contentWidth: max(contentWidth - 28, 0)
-                )
-            }
-        } else {
-            // Match the assistant body font (same scaled base) so the question and
-            // the answer read at one consistent size instead of the system .body
-            // default towering over the assistant text.
-            Text(message.content.isEmpty ? " " : message.content)
-                .font(.system(size: AppFontScale(level: appFontScaleLevel).pointSize(base: 10.5)))
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     private func shouldShowFollowUpChips(for message: AgentChatMessage) -> Bool {

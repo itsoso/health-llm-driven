@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<!--
+  Chat transcript shell for the WKWebView-backed assistant conversation.
+  纯本地、零网络:无 <script src>、无 <link href>、无字体 CDN。所有 CSS/JS 内联。
+  消息 HTML 由 Swift 侧 ChatTranscriptHTML 预转义后注入,JS 仅做 DOM append/scroll/copy 桥接。
+-->
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --font-scale: 1;
+    --base-size: 14px;
+    --bubble-radius: 14px;
+    --gap: 14px;
+
+    --bg: transparent;
+    --user-bubble: rgba(10, 132, 255, 0.16);
+    --user-border: rgba(10, 132, 255, 0.30);
+    --assistant-bubble: rgba(120, 120, 128, 0.10);
+    --assistant-border: rgba(120, 120, 128, 0.16);
+    --text: #1d1d1f;
+    --secondary: rgba(60, 60, 67, 0.6);
+    --accent: #0a84ff;
+    --code-bg: rgba(120, 120, 128, 0.14);
+    --table-border: rgba(120, 120, 128, 0.28);
+    --hr: rgba(120, 120, 128, 0.3);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --user-bubble: rgba(10, 132, 255, 0.28);
+      --user-border: rgba(10, 132, 255, 0.42);
+      --assistant-bubble: rgba(120, 120, 128, 0.18);
+      --assistant-border: rgba(255, 255, 255, 0.08);
+      --text: #f5f5f7;
+      --secondary: rgba(235, 235, 245, 0.6);
+      --accent: #4aa3ff;
+      --code-bg: rgba(255, 255, 255, 0.10);
+      --table-border: rgba(255, 255, 255, 0.18);
+      --hr: rgba(255, 255, 255, 0.16);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: calc(var(--base-size) * var(--font-scale));
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  #transcript {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    padding: 8px 4px 16px 4px;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  .row { display: flex; }
+  .row.user { justify-content: flex-end; }
+  .row.assistant { justify-content: flex-start; }
+
+  .bubble {
+    border-radius: var(--bubble-radius);
+    padding: 12px 14px;
+    border: 1px solid transparent;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .row.user .bubble {
+    background: var(--user-bubble);
+    border-color: var(--user-border);
+    max-width: 620px;
+  }
+  .row.assistant .bubble {
+    background: var(--assistant-bubble);
+    border-color: var(--assistant-border);
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--secondary);
+    margin-bottom: 6px;
+  }
+  .copy-btn {
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--secondary);
+    font-size: 0.95em;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+  .copy-btn:hover { background: var(--code-bg); color: var(--accent); }
+  .copy-btn.copied { color: #34c759; }
+
+  .body > *:first-child { margin-top: 0; }
+  .body > *:last-child { margin-bottom: 0; }
+  .body p { margin: 0.5em 0; }
+  .body h1, .body h2 { font-size: 1.18em; font-weight: 700; margin: 0.7em 0 0.4em; }
+  .body h3, .body h4 { font-size: 1.05em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  .body ul, .body ol { margin: 0.4em 0; padding-left: 1.4em; }
+  .body li { margin: 0.2em 0; }
+  .body code {
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 5px;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.9em;
+  }
+  .body hr { border: none; border-top: 1px solid var(--hr); margin: 0.8em 0; }
+  .body table {
+    border-collapse: collapse;
+    margin: 0.6em 0;
+    width: 100%;
+    font-size: 0.95em;
+  }
+  .body th, .body td {
+    border: 1px solid var(--table-border);
+    padding: 5px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .body th { font-weight: 600; background: var(--code-bg); }
+  .body .streaming-text { white-space: pre-wrap; }
+
+  /* 流式光标 */
+  .body.streaming::after {
+    content: "▌";
+    color: var(--accent);
+    animation: blink 1s step-start infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+  <div id="transcript"></div>
+<script>
+(function () {
+  "use strict";
+  var root = document.getElementById("transcript");
+
+  function postCopy(id) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.copy) {
+        window.webkit.messageHandlers.copy.postMessage(String(id));
+      }
+    } catch (e) {}
+  }
+
+  function isNearBottom() {
+    var threshold = 80;
+    return (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - threshold);
+  }
+
+  function scrollToBottomIfNeeded(force) {
+    if (force || isNearBottom()) {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "auto" });
+    }
+  }
+
+  function makeRow(msg) {
+    var row = document.createElement("div");
+    row.className = "row " + (msg.role === "user" ? "user" : "assistant");
+    row.setAttribute("data-id", msg.id);
+
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    if (msg.role === "assistant") {
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      var label = document.createElement("span");
+      label.textContent = "Assistant";
+      meta.appendChild(label);
+      if (msg.copy) {
+        var btn = document.createElement("button");
+        btn.className = "copy-btn";
+        btn.textContent = "Copy";
+        btn.addEventListener("click", function () {
+          postCopy(msg.id);
+          btn.classList.add("copied");
+          btn.textContent = "Copied";
+          setTimeout(function () {
+            btn.classList.remove("copied");
+            btn.textContent = "Copy";
+          }, 1500);
+        });
+        meta.appendChild(btn);
+      }
+      bubble.appendChild(meta);
+    }
+
+    var body = document.createElement("div");
+    body.className = "body" + (msg.streaming ? " streaming" : "");
+    body.innerHTML = msg.html;
+    bubble.appendChild(body);
+
+    row.appendChild(bubble);
+    return row;
+  }
+
+  function findRow(id) {
+    return root.querySelector('.row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+  }
+
+  window.chat = {
+    // 全量替换(切换会话 / 历史加载)。messages: 数组,字段见 RenderedMessage。
+    setMessages: function (messages) {
+      root.innerHTML = "";
+      for (var i = 0; i < messages.length; i++) {
+        root.appendChild(makeRow(messages[i]));
+      }
+      scrollToBottomIfNeeded(true);
+    },
+    // 追加新消息或更新最后一条(流式 token 合批喂入)。
+    appendOrUpdateLast: function (msg) {
+      var existing = findRow(msg.id);
+      if (existing) {
+        var newRow = makeRow(msg);
+        existing.replaceWith(newRow);
+      } else {
+        root.appendChild(makeRow(msg));
+      }
+      scrollToBottomIfNeeded(false);
+    },
+    setFontScale: function (scale) {
+      document.documentElement.style.setProperty("--font-scale", String(scale));
+    }
+  };
+
+  // 通知 Swift 端 JS 就绪(此时可安全 evaluateJavaScript 喂消息)。
+  try {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ready) {
+      window.webkit.messageHandlers.ready.postMessage("ready");
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
