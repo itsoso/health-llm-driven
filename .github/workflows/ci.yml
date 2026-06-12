@@ -28,6 +28,15 @@ jobs:
           # 现有 776 个 lint 警告, 暂不阻塞 CI; 只暴露给 PR review
           ruff check app/ --output-format=github
 
+      - name: Lint (ruff, blocking — undefined names / syntax)
+        working-directory: backend
+        # F821=未定义名 (潜在 NameError), F822=__all__ 列了未定义符号,
+        # E9=语法错。这三类是必然 bug, 不该进库 —— 硬阻塞。
+        # 已在 fix/f821-undefined-names 把命中归零, 设阻塞才不会立红。
+        run: |
+          pip install ruff
+          ruff check app/ --select F821,F822,E9 --output-format=github
+
       - name: Run tests
         working-directory: backend
         env:
