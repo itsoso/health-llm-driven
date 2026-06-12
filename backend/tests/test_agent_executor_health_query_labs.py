@@ -157,3 +157,23 @@ def test_days_window_widened_for_low_freq_labs(db):
     db.commit()
     out = _exec(db, uid, days=7)  # days 太小, 但化验维度应放宽
     assert "低密度脂蛋白" in out
+
+
+def test_stale_indicator_marked_old(db):
+    """>180 天的化验应标注 (较旧·约N天前),避免 LLM 当现值给建议(safety NIT)。"""
+    from datetime import timedelta
+    uid = 1
+    old = date.today() - timedelta(days=200)
+    recent = date.today() - timedelta(days=10)
+    db.add_all([
+        _make_indicator(uid, "陈年指标", 1.0, "x", old),
+        _make_indicator(uid, "近期指标", 2.0, "y", recent),
+    ])
+    db.commit()
+    out = _exec(db, uid)
+    # 陈旧项带标记,近期项不带
+    assert "较旧" in out
+    chen_line = next(l for l in out.splitlines() if "陈年指标" in l)
+    jin_line = next(l for l in out.splitlines() if "近期指标" in l)
+    assert "较旧" in chen_line
+    assert "较旧" not in jin_line

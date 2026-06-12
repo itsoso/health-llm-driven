@@ -2472,7 +2472,15 @@ class AgentExecutor:
     @staticmethod
     def _format_indicator_line(r) -> str:
         """单条 MedicalIndicator → 紧凑一行: 名称 值 单位 (日期) [偏高/偏低/正常]."""
+        from datetime import date as _date
         date_s = r.record_date.isoformat() if r.record_date else "?"
+        # 时效标记:日期窗放宽到 365 天后,>180 天的化验不应被 LLM 当"现值"给建议
+        # (医疗误导边界,safety NIT)。标注距今天数,让模型知道哪些不是近期值。
+        stale = ""
+        if r.record_date:
+            age_days = (_date.today() - r.record_date).days
+            if age_days > 180:
+                stale = f" (较旧·约{age_days}天前)"
         val = r.value if r.value is not None else (r.value_text or "—")
         unit = f" {r.unit}" if r.unit else ""
         # flag: 优先 is_abnormal + 参考范围方向
@@ -2492,7 +2500,7 @@ class AgentExecutor:
             lo = r.reference_low if r.reference_low is not None else ""
             hi = r.reference_high if r.reference_high is not None else ""
             ref = f" 参考 {lo}-{hi}"
-        return f"- {r.name}: {val}{unit} ({date_s}) [{flag}]{ref}"
+        return f"- {r.name}: {val}{unit} ({date_s}){stale} [{flag}]{ref}"
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
