@@ -73,6 +73,60 @@ def adherence_rate(taken_days: int, expected_days: int) -> Optional[float]:
     return round(min(taken_days / expected_days, 1.0), 3)
 
 
+@dataclass
+class LagAssociation:
+    """事件 → 指标的时滞关联(描述性,**非因果**)。"""
+    n_events: int          # 落在该 lag 上、有指标值的事件数
+    mean_after: float      # 事件后第 lag 天的指标均值
+    mean_baseline: float   # 非事件日的指标均值(对照)
+    delta: float           # mean_after - mean_baseline
+    pct: Optional[float]   # delta / |baseline| ×100
+    lag_days: int
+
+    @property
+    def meaningful(self) -> bool:
+        """样本足够(≥3 事件)且变化幅度 ≥10% 才算值得提的关联。"""
+        return self.n_events >= 3 and self.pct is not None and abs(self.pct) >= 10.0
+
+
+def lag_association(
+    event_dates: list[date],
+    series: list[tuple[date, float]],
+    lag_days: int,
+) -> Optional[LagAssociation]:
+    """计算"事件后第 lag 天"的指标均值 vs 对照(非事件相关日)均值。
+
+    描述性关联,**不声称因果**(N=1 个体数据,只看趋势倾向)。
+    event_dates: 事件发生的日期(如饮酒日 / 高 AQI 日)。
+    series: 指标 (日期, 值)。lag_days: 事件后第几天看指标(0=当天,1=次日)。
+    不足以计算(无事件后数据 / 无对照)→ None。
+    """
+    by_date: dict[date, float] = {}
+    for d, v in series:
+        if d is not None and v is not None:
+            by_date[d] = v  # 同日多值时后者覆盖
+    if not by_date or not event_dates:
+        return None
+
+    from datetime import timedelta
+    after_dates = {e + timedelta(days=lag_days) for e in event_dates}
+    after_vals = [by_date[d] for d in after_dates if d in by_date]
+    baseline_vals = [v for d, v in by_date.items() if d not in after_dates]
+    if not after_vals or not baseline_vals:
+        return None
+
+    mean_after = sum(after_vals) / len(after_vals)
+    mean_base = sum(baseline_vals) / len(baseline_vals)
+    delta = mean_after - mean_base
+    pct = (delta / abs(mean_base) * 100.0) if mean_base != 0 else None
+    return LagAssociation(
+        n_events=len(after_vals),
+        mean_after=round(mean_after, 1), mean_baseline=round(mean_base, 1),
+        delta=round(delta, 1), pct=round(pct, 1) if pct is not None else None,
+        lag_days=lag_days,
+    )
+
+
 def describe_trend(label: str, t: Trend, unit: str = "", higher_is_worse: bool = True) -> str:
     """一行人话趋势描述(给 LLM / UI 用)。"""
     v = t.verdict(higher_is_worse)
