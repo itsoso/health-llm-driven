@@ -629,9 +629,9 @@ class TestLongevityRegistry:
         names = {s.name for s in all_specialists()}
         assert "longevity" in names
 
-    def test_specialists_count_is_12(self):
-        """抗衰 MVP Step 2: specialists 注册表从 11 → 12(+ LongevitySpecialist)。"""
-        assert len(all_specialists()) == 12
+    def test_specialists_count_is_13(self):
+        """注册表 13: 12 (含 LongevitySpecialist) + CrossSourceValidatorSpecialist。"""
+        assert len(all_specialists()) == 13
 
 
 # ───────────────────── Orchestrator + memory ─────────

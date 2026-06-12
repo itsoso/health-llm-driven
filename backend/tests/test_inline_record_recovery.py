@@ -10,6 +10,7 @@ import json
 from app.services.agent_executor import (
     _extract_inline_tool_call,
     _infer_record_type_from_payload,
+    _strip_bracket_tool_markers,
 )
 
 _TOOLS = [
@@ -60,3 +61,84 @@ def test_named_tool_call_still_recovered():
 
 def test_plain_text_not_treated_as_tool_call():
     assert _extract_inline_tool_call("你今天血压偏高,建议休息。", _TOOLS) is None
+
+
+# ── 括号 + Python 调用签名格式: `[工具调用: name(args)]` ──────────────────
+# 回归: 某些经代理的模型把工具调用吐成这种自然语言标记而非结构化 tool_calls,
+# executor 不认 → 不执行 + 裸标记泄漏给用户 (用户截图: 助手正文显示
+# `[工具调用: health_query(type=lab_results, keywords=["同型半胱氨酸"], days=7)]`)。
+
+
+def test_bracket_format_recovered_with_args():
+    text = ('[工具调用: health_query(type=lab_results, '
+            'keywords=["Hcy","B12"], days=7)]')
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    assert recovered["function"]["name"] == "health_query"
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["type"] == "lab_results"          # 裸标识符 → 字符串
+    assert args["keywords"] == ["Hcy", "B12"]      # JSON 数组
+    assert args["days"] == 7                        # 数字
+
+
+def test_bracket_format_chinese_colon():
+    text = '[工具调用：health_query(type=lab_results, days=30)]'
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    assert recovered["function"]["name"] == "health_query"
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["type"] == "lab_results"
+    assert args["days"] == 30
+
+
+def test_bracket_format_no_brackets():
+    # 方括号可选 — 裸 `工具调用: name(args)` 也认
+    text = '工具调用: health_query(indicator="LDL")'
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["indicator"] == "LDL"              # 带引号字符串去引号
+
+
+def test_bracket_format_surrounded_by_prose():
+    text = '我来帮你查一下化验结果。[工具调用: health_query(type=lab_results, days=7)] 稍等。'
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    assert recovered["function"]["name"] == "health_query"
+
+
+def test_bracket_format_unknown_name_not_recovered():
+    # name 不在 allowed → 不认 (返回 None),不误执行
+    text = '[工具调用: not_a_real_tool(foo=bar)]'
+    assert _extract_inline_tool_call(text, _TOOLS) is None
+
+
+def test_bracket_format_no_args():
+    text = '[工具调用: health_query()]'
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    assert json.loads(recovered["function"]["arguments"]) == {}
+
+
+def test_bracket_format_unparseable_arg_skipped_name_kept():
+    # 健壮容错: 解析不出的参数跳过,至少恢复 name + 能解析的参数
+    text = '[工具调用: health_query(type=lab_results, broken=, days=7)]'
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["type"] == "lab_results"
+    assert args["days"] == 7
+    assert "broken" not in args
+
+
+def test_strip_bracket_markers_unknown_name():
+    # 即便没解析出 tool call (name 不在白名单),最终输出也要剥离裸标记
+    text = '这是分析结果。[工具调用: mystery_tool(x=1)] 完成。'
+    stripped = _strip_bracket_tool_markers(text)
+    assert "工具调用" not in stripped
+    assert "这是分析结果" in stripped
+
+
+def test_strip_bracket_markers_noop_without_marker():
+    text = '你今天血压偏高,建议休息。'
+    assert _strip_bracket_tool_markers(text) == text
