@@ -2301,6 +2301,12 @@ class AgentExecutor:
         indicator = args.get("indicator", "")
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
+        # 化验/体检维度: 读归一化的 MedicalIndicator 表 (与 Twin 的 fetch_latest_labs 同源),
+        # 不走原始 /medical-exams/me HTTP 端点 — 后者经 _api_get 会被截断成前 10 条 list,
+        # 导致化验项查空/不全 (P0). 化验是低频数据, 日期窗默认放宽到 365 天.
+        if dim == "medical_exam":
+            return self._query_medical_indicators_compact(indicator, days)
+
         endpoint_map = {
             "comprehensive": f"/garmin-analysis/me/comprehensive?days={days}",
             "sleep": f"/garmin-analysis/me/sleep?days={days}",
@@ -2326,7 +2332,7 @@ class AgentExecutor:
             "exercise": f"/workout/me?days={days}",
             "workout": f"/workout/me?days={days}",
             "manual_exercise": f"/exercise/me?days={days}",
-            "medical_exam": "/medical-exams/me",
+            # medical_exam 维度在上面已短路到 MedicalIndicator 表, 不经过此 map.
             "genetic": "/genetic/variants/me",
             "genetic_cognitive": "/genetic/profile/me/cognitive",
             "genetic_personality": "/genetic/profile/me/personality",
@@ -2336,31 +2342,165 @@ class AgentExecutor:
 
         path = endpoint_map.get(dim, endpoint_map["comprehensive"])
 
-        # 如果查的是体检或基因指标，从结果中过滤特定指标
-        # 走 _api_get_json 拿完整数据 (体检/基因常 >3000 字符, 文本版会被截断导致过滤失效)
-        if indicator and dim in ("medical_exam", "genetic"):
+        # 如果查的是基因指标，从结果中过滤特定指标
+        # 走 _api_get_json 拿完整数据 (基因常 >3000 字符, 文本版会被截断导致过滤失效)
+        if indicator and dim == "genetic":
             parsed, err = await self._api_get_json(f"{base}{path}", headers)
             if not err:
                 try:
                     items = parsed if isinstance(parsed, list) else (parsed.get("data", []) if isinstance(parsed, dict) else [])
                     matched = []
-                    if dim == "medical_exam":
-                        for exam in items:
-                            for item in (exam.get("items") or []):
-                                name = str(item.get("item_name", "") or item.get("name", "")).upper()
-                                if indicator.upper() in name:
-                                    matched.append({"exam_date": exam.get("exam_date"), **item})
-                    elif dim == "genetic":
-                        for v in items:
-                            gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
-                            if indicator.upper() in gene:
-                                matched.append(v)
+                    for v in items:
+                        gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
+                        if indicator.upper() in gene:
+                            matched.append(v)
                     if matched:
                         return json.dumps(matched, ensure_ascii=False, default=str)
                 except Exception:
                     pass
 
         return await self._api_get(f"{base}{path}", headers)
+
+    def _query_medical_indicators_compact(self, indicator: str, days) -> str:
+        """化验/体检维度: 直接读 MedicalIndicator (与 Twin fetch_latest_labs 同源).
+
+        - 带 indicator (如 LDL/HCY): 返回该指标最近 N 条时间序列 (日期+值+单位+参考范围+异常 flag).
+        - 不带 indicator (用户问"我有哪些化验指标"): 返回指标清单 + 每项最新值, 紧凑文本,
+          不把全表 JSON 丢给会截断的 _api_get.
+
+        user_id 隔离: 只查 self._current_user_id 的记录.
+        """
+        from sqlalchemy import or_, desc as sa_desc, func
+
+        if self._current_user_id is None:
+            return "Error: 当前会话无 user_id, 无法查询化验指标"
+
+        # 化验是低频数据, 默认日期窗放宽到 365 天 (health_query 默认 days=7 对化验太短).
+        try:
+            window_days = int(days)
+        except (TypeError, ValueError):
+            window_days = 7
+        if window_days < 365:
+            window_days = 365
+        from datetime import date as _date
+        since = _date.today() - timedelta(days=window_days)
+
+        from app.models.family_health import MedicalIndicator
+        name = (indicator or "").strip()
+
+        try:
+            if name:
+                # 单指标时间序列 — 最近 20 条
+                up = name.upper()
+                rows = (
+                    self.db.query(MedicalIndicator)
+                    .filter(
+                        MedicalIndicator.user_id == self._current_user_id,
+                        MedicalIndicator.record_date >= since,
+                        or_(
+                            MedicalIndicator.name == name,
+                            MedicalIndicator.name_en == up,
+                            MedicalIndicator.name.ilike(f"%{name}%"),
+                            MedicalIndicator.name_en.ilike(f"%{name}%"),
+                            MedicalIndicator.item_code.ilike(f"%{up}%"),
+                        ),
+                    )
+                    .order_by(sa_desc(MedicalIndicator.record_date), sa_desc(MedicalIndicator.id))
+                    .limit(20)
+                    .all()
+                )
+                if not rows:
+                    return f"未找到化验指标「{name}」(最近 {window_days} 天内)。可能未录入, 或换个指标名再试。"
+                lines = [f"化验指标「{rows[0].name}」时间序列 (最近 {len(rows)} 条):"]
+                for r in rows:
+                    lines.append(self._format_indicator_line(r))
+                return "\n".join(lines)
+
+            # 无 indicator: 指标清单 + 每项最新值. 按 (name) 取最新一条.
+            # 子查询: 每个 name 的最新 record_date.
+            latest_date = (
+                self.db.query(
+                    MedicalIndicator.name.label("name"),
+                    func.max(MedicalIndicator.record_date).label("md"),
+                )
+                .filter(
+                    MedicalIndicator.user_id == self._current_user_id,
+                    MedicalIndicator.record_date >= since,
+                )
+                .group_by(MedicalIndicator.name)
+                .subquery()
+            )
+            rows = (
+                self.db.query(MedicalIndicator)
+                .join(
+                    latest_date,
+                    (MedicalIndicator.name == latest_date.c.name)
+                    & (MedicalIndicator.record_date == latest_date.c.md),
+                )
+                .filter(MedicalIndicator.user_id == self._current_user_id)
+                .order_by(MedicalIndicator.is_abnormal.desc(), MedicalIndicator.name)
+                .all()
+            )
+            # 去重 (同名同日可能多条, 取一条)
+            seen: set = set()
+            uniq = []
+            for r in rows:
+                if r.name in seen:
+                    continue
+                seen.add(r.name)
+                uniq.append(r)
+            if not uniq:
+                return (
+                    f"未找到任何化验/体检指标 (最近 {window_days} 天内)。"
+                    "用户可能还没录入体检报告; 可让用户拍照上传体检单或口述化验结果。"
+                )
+            abnormal = [r for r in uniq if r.is_abnormal]
+            header = f"共有 {len(uniq)} 项化验指标 (取每项最新值"
+            header += f", 其中 {len(abnormal)} 项异常):" if abnormal else "):"
+            lines = [header]
+            for r in uniq:
+                lines.append(self._format_indicator_line(r))
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"[agent] 查询 MedicalIndicator 失败: {e}")
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            return f"Error: 查询化验指标失败: {e}"
+
+    @staticmethod
+    def _format_indicator_line(r) -> str:
+        """单条 MedicalIndicator → 紧凑一行: 名称 值 单位 (日期) [偏高/偏低/正常]."""
+        from datetime import date as _date
+        date_s = r.record_date.isoformat() if r.record_date else "?"
+        # 时效标记:日期窗放宽到 365 天后,>180 天的化验不应被 LLM 当"现值"给建议
+        # (医疗误导边界,safety NIT)。标注距今天数,让模型知道哪些不是近期值。
+        stale = ""
+        if r.record_date:
+            age_days = (_date.today() - r.record_date).days
+            if age_days > 180:
+                stale = f" (较旧·约{age_days}天前)"
+        val = r.value if r.value is not None else (r.value_text or "—")
+        unit = f" {r.unit}" if r.unit else ""
+        # flag: 优先 is_abnormal + 参考范围方向
+        flag = "正常"
+        if r.is_abnormal:
+            flag = "异常"
+            try:
+                if r.value is not None:
+                    if r.reference_high is not None and r.value > r.reference_high:
+                        flag = "偏高"
+                    elif r.reference_low is not None and r.value < r.reference_low:
+                        flag = "偏低"
+            except (TypeError, ValueError):
+                pass
+        ref = ""
+        if r.reference_low is not None or r.reference_high is not None:
+            lo = r.reference_low if r.reference_low is not None else ""
+            hi = r.reference_high if r.reference_high is not None else ""
+            ref = f" 参考 {lo}-{hi}"
+        return f"- {r.name}: {val}{unit} ({date_s}){stale} [{flag}]{ref}"
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
