@@ -49,7 +49,10 @@ dimension 选择指南 (按场景):
   supplements      — 补剂服用依从率
 
 【体检 / 基因 / 用药】
-  medical_exam     — 体检报告 (必须配 indicator 参数, 如 'HCY', 'LDL', 'HbA1c')
+  medical_exam     — 化验/体检指标 (读归一化指标表, 与 Twin 同源).
+                     不传 indicator → 返回用户全部化验指标清单 + 每项最新值 (问"我有哪些化验指标"走这里).
+                     传 indicator (如 'HCY'/'LDL'/'HbA1c') → 返回该指标时间序列.
+                     化验是低频数据, days 自动放宽到至少 365 天, 不会因 days 太小漏数据.
   genetic          — 基因位点 (必须配 indicator 参数, 如 'MTHFR', 'APOE')
   genetic_cognitive / genetic_personality / genetic_comprehensive — 整合性基因解读
   medication       — 用药清单 (非单次服药, 是长期用药列表)
