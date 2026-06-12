@@ -54,6 +54,65 @@ def test_sync_updates_existing_on_value_change(client, db):
     assert len(obs) == 1 and obs[0].normalized_value == 70
 
 
+def test_sync_skips_when_exam_source_exists_same_day(client, db):
+    """跨源去重:同日同指标先有 exam 来源的 observation → sync 跳过,不产生重复行。"""
+    from tests.conftest import create_authenticated_user
+    from app.services.biomarker_service import observe_exam_item
+    user, _ = create_authenticated_user(db)
+
+    # 先走 exam 路径落一行(source != indicator_sync),observed_at 带时分
+    class _Item:
+        id = 1
+        item_name = "谷氨酰转肽酶"
+        value = 78
+        unit = "U/L"
+        source = "exam"
+
+    observe_exam_item(
+        db, user.id, _Item(),
+        observed_at=datetime(2026, 5, 1, 9, 30),  # 带时分,与午夜 datetime 不等
+    )
+
+    # 再走 sync 路径:同日同指标(record_date 仅日期)
+    _seed_ind(db, user.id, "谷氨酰转肽酶", 78, date(2026, 5, 1))
+    r = sync_indicators_to_biomarkers(db, user.id)
+
+    obs = db.query(BiomarkerObservation).filter(
+        BiomarkerObservation.user_id == user.id,
+        BiomarkerObservation.code == "GGT",
+    ).all()
+    assert len(obs) == 1  # 只有 1 行,无重复
+    assert obs[0].source == "exam"  # exam 优先,未被 sync 覆盖
+    assert r["skipped"] == 1
+    assert r["written"] == 0
+
+
+def test_sync_skip_is_idempotent_across_reruns(client, db):
+    """跨源跳过场景重跑仍只 1 行(幂等)。"""
+    from tests.conftest import create_authenticated_user
+    from app.services.biomarker_service import observe_exam_item
+    user, _ = create_authenticated_user(db)
+
+    class _Item:
+        id = 1
+        item_name = "谷氨酰转肽酶"
+        value = 78
+        unit = "U/L"
+        source = "exam"
+
+    observe_exam_item(db, user.id, _Item(), observed_at=datetime(2026, 5, 1, 9, 30))
+    _seed_ind(db, user.id, "谷氨酰转肽酶", 78, date(2026, 5, 1))
+
+    sync_indicators_to_biomarkers(db, user.id)
+    sync_indicators_to_biomarkers(db, user.id)  # 重跑不应翻倍
+
+    n = db.query(BiomarkerObservation).filter(
+        BiomarkerObservation.user_id == user.id,
+        BiomarkerObservation.code == "GGT",
+    ).count()
+    assert n == 1
+
+
 def test_biomarker_sync_endpoint(client, db):
     from tests.conftest import create_authenticated_user
     user, token = create_authenticated_user(db)
