@@ -8,6 +8,7 @@
 - Fitbit: OAuth Token
 """
 
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -131,7 +132,6 @@ class DeviceCredential(Base):
 
     def update_sync_time(self):
         """更新同步时间"""
-        from datetime import datetime
         self.last_sync_at = datetime.now()
 
     def set_oauth_tokens(

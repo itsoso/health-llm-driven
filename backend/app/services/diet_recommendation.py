@@ -785,30 +785,30 @@ class DietRecommendationService:
             #         "available": False,
             #         "reason": "知识检索失败"
             #     }
-
-            # 提取关键信息
-            insights = {
-                "available": True,
-                "bmr_tdee_explanation": self._extract_section(rag_result, "BMR", "TDEE"),
-                "macronutrient_rationale": self._extract_section(rag_result, "营养素分配", weight_goal),
-                "diet_mode_guidance": self._extract_section(rag_result, diet_preference) if diet_preference else None,
-                "chronic_disease_guidance": [],
-                "sleep_nutrition": self._extract_section(rag_result, "睡眠", "助眠") if sleep_score and sleep_score < 70 else None,
-                "stress_nutrition": self._extract_section(rag_result, "压力", "抗压") if stress_level and stress_level > 50 else None,
-                "references": rag_result.get('sources', [])
-            }
-
-            # 慢性病指导
-            for condition in chronic_conditions:
-                guidance = self._extract_section(rag_result, condition)
-                if guidance:
-                    insights["chronic_disease_guidance"].append({
-                        "condition": condition,
-                        "guidance": guidance
-                    })
-
-            logger.info(f"[饮食推荐] 成功获取科学见解")
-            return insights
+            #
+            # # 提取关键信息(RAG 启用后,用 rag_result 填充)
+            # insights = {
+            #     "available": True,
+            #     "bmr_tdee_explanation": self._extract_section(rag_result, "BMR", "TDEE"),
+            #     "macronutrient_rationale": self._extract_section(rag_result, "营养素分配", weight_goal),
+            #     "diet_mode_guidance": self._extract_section(rag_result, diet_preference) if diet_preference else None,
+            #     "chronic_disease_guidance": [],
+            #     "sleep_nutrition": self._extract_section(rag_result, "睡眠", "助眠") if sleep_score and sleep_score < 70 else None,
+            #     "stress_nutrition": self._extract_section(rag_result, "压力", "抗压") if stress_level and stress_level > 50 else None,
+            #     "references": rag_result.get('sources', [])
+            # }
+            #
+            # # 慢性病指导
+            # for condition in chronic_conditions:
+            #     guidance = self._extract_section(rag_result, condition)
+            #     if guidance:
+            #         insights["chronic_disease_guidance"].append({
+            #             "condition": condition,
+            #             "guidance": guidance
+            #         })
+            #
+            # logger.info(f"[饮食推荐] 成功获取科学见解")
+            # return insights
 
         except Exception as e:
             logger.error(f"[饮食推荐] 获取科学见解失败: {str(e)}", exc_info=True)

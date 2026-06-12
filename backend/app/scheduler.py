@@ -738,5 +738,3 @@ async def _family_daily_check_loop():
         except Exception as e:
             logger.error(f"家庭巡检调度异常: {e}", exc_info=True)
             await asyncio.sleep(60)
-
-    return thread
