@@ -27,6 +27,8 @@ export interface UIMessage extends ChatMessage {
   model?: string;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
+  // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
+  toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
 }
 
@@ -44,6 +46,7 @@ function applyMeta(msg: any): Partial<UIMessage> {
     llmRounds: typeof meta.llm_rounds === 'number' ? meta.llm_rounds : undefined,
     model: typeof meta.model === 'string' ? meta.model : undefined,
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
+    toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
   };
 }
@@ -439,6 +442,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             llmRounds: evt.llmRounds,
             model: evt.model,
             sourcesUsed: evt.sourcesUsed,
+            toolsUsed: evt.toolsUsed,
             completionStatus: evt.completionStatus,
           } : m));
           const serverCards = renderServerCards((evt as any).cards);

@@ -423,6 +423,10 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {!item.streaming && item.sourcesUsed && item.sourcesUsed.length > 0 ? (
               <SourcesChip sources={item.sourcesUsed} c={c} />
             ) : null}
+            {/* 2026-06-12: 调用 Skill chips — 本轮用了哪些 Skill/工具 (对齐 mac/web) */}
+            {!item.streaming && item.toolsUsed && item.toolsUsed.length > 0 ? (
+              <ToolsChips tools={item.toolsUsed} c={c} />
+            ) : null}
           </TouchableOpacity>
         )}
       </View>
@@ -940,6 +944,36 @@ function SourcesChip({ sources, c }: { sources: string[]; c: ColorPalette }) {
           ))}
         </View>
       )}
+    </View>
+  );
+}
+
+/** 2026-06-12: "调用 Skill" — 本轮调用的 Skill/工具名, 横排 chip (对齐 mac/web).
+ * 始终展开 (通常 1-3 个), 灰、小、低调, 不抢内容。 */
+function ToolsChips({ tools, c }: { tools: string[]; c: ColorPalette }) {
+  const list = tools.filter(t => t && t.trim());
+  if (list.length === 0) return null;
+  return (
+    <View
+      style={{
+        flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4,
+        marginTop: 6,
+      }}
+    >
+      <Ionicons name="construct-outline" size={11} color={c.labelTertiary} />
+      <Text style={{ fontSize: 11, color: c.labelTertiary }}>调用 Skill</Text>
+      {list.map((t, i) => (
+        <View
+          key={i}
+          style={{
+            paddingHorizontal: 7, paddingVertical: 2,
+            borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
+            backgroundColor: c.fill,
+          }}
+        >
+          <Text style={{ fontSize: 11, color: c.labelSecondary }}>{t}</Text>
+        </View>
+      ))}
     </View>
   );
 }
