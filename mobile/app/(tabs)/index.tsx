@@ -27,6 +27,7 @@ import api from '../../services/api';
 import { spacing, radii } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
+import { useMedicationReminders } from '../../hooks/useMedicationReminders';
 import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
@@ -41,6 +42,7 @@ import {
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
 import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
+import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import HomeCommandCard from '../../components/home/HomeCommandCard';
 import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopicsRow';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
@@ -189,6 +191,9 @@ export default function TodayScreen() {
     dailyPlan: dailyPlanQuery,
     dashboard: dashboardQuery,
   });
+
+  // 按今日在服药品的 reminder_times 调度每日本地吃药提醒 (无权限静默跳过)
+  useMedicationReminders(dashboardQuery.data?.medicationToday, dashboardQuery.isSuccess);
 
   const garmin = useLatestGarmin(dashboardQuery.data);
   const garminDays: GarminDailyRow[] = Array.isArray(dashboardQuery.data?.garminDaily)
@@ -515,6 +520,10 @@ export default function TodayScreen() {
           onPressComplete={
             canComplete && nextAction ? () => completeNextAction(nextAction) : undefined
           }
+        />
+        <MedicationCheckin
+          items={dashboardQuery.data?.medicationToday}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
         />
         <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
         <VitalsGrid
