@@ -250,7 +250,8 @@ struct AgentChatView: View {
                     PromptCommandTextEditor(
                         text: $draft,
                         focusToken: editorFocusToken,
-                        measuredHeight: $composerTextHeight
+                        measuredHeight: $composerTextHeight,
+                        onPasteImage: { handlePastedImage($0) }
                     ) {
                         sendDraft()
                     }
@@ -1142,6 +1143,25 @@ struct AgentChatView: View {
         }
     }
 
+    /// ⌘V 粘贴的图片:转 PNG 落临时文件,复用 attach(url) 走 FileIntakeService → 图片附件
+    /// (与 📎/拖拽同一条发送路径,端到端已支持 png/jpg vision)。
+    private func handlePastedImage(_ image: NSImage) {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            viewModel.errorMessage = appText("Couldn't read the pasted image.", appLanguageRaw)
+            return
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pasted-\(UUID().uuidString).png")
+        do {
+            try png.write(to: url)
+            attach(url)
+        } catch {
+            viewModel.errorMessage = "Attach failed: \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
     private func handleFileDrop(_ providers: [NSItemProvider]) -> Bool {
         var accepted = false
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
@@ -1720,16 +1740,20 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
     // throwaway binding for call sites that use a fixed frame instead.
     var measuredHeight: Binding<CGFloat> = .constant(0)
     let onCommandReturn: () -> Void
+    // ⌘V 粘贴图片回调(默认 nil:快速记录等调用点不接图片附件)。
+    var onPasteImage: ((NSImage) -> Void)? = nil
 
     init(
         text: Binding<String>,
         focusToken: Int,
         measuredHeight: Binding<CGFloat> = .constant(0),
+        onPasteImage: ((NSImage) -> Void)? = nil,
         onCommandReturn: @escaping () -> Void
     ) {
         self._text = text
         self.focusToken = focusToken
         self.measuredHeight = measuredHeight
+        self.onPasteImage = onPasteImage
         self.onCommandReturn = onCommandReturn
     }
 
@@ -1741,6 +1765,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         let textView = CommandReturnTextView()
         textView.delegate = context.coordinator
         textView.onCommandReturn = onCommandReturn
+        textView.onPasteImage = onPasteImage
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -1770,6 +1795,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = context.coordinator.textView else { return }
         textView.onCommandReturn = onCommandReturn
+        textView.onPasteImage = onPasteImage
         if textView.string != text {
             textView.string = text
             context.coordinator.recomputeHeight()
@@ -1833,6 +1859,21 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
 
 private final class CommandReturnTextView: NSTextView {
     var onCommandReturn: (() -> Void)?
+    var onPasteImage: ((NSImage) -> Void)?
+
+    // ⌘V 粘贴:剪贴板里有图片(截图/拷贝的图)且无文本时 → 作为图片附件,而非往输入框塞。
+    // 有文本则走正常纯文本粘贴(isRichText=false / importsGraphics=false)。
+    override func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        let hasText = (pb.string(forType: .string)?.isEmpty == false)
+        if !hasText,
+           let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+           let image = images.first {
+            onPasteImage?(image)
+            return
+        }
+        super.paste(sender)
+    }
 
     override func keyDown(with event: NSEvent) {
         // 回车提交查询;⇧回车换行。输入法组字中(拼音候选)按回车是确认候选,
