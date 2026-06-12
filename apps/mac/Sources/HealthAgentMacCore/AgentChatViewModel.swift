@@ -11,10 +11,64 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     public let role: AgentChatRole
     public var content: String
 
-    public init(id: UUID = UUID(), role: AgentChatRole, content: String) {
+    // MARK: 每条消息级 meta(助手回复 footer 用;流式 done 回填)
+    /// 实际生成本条回复的模型名(后端 done.model)。
+    public var model: String?
+    /// 端到端耗时(毫秒,后端 done.elapsed_ms)。
+    public var elapsedMs: Int?
+    /// LLM 调用轮数(后端 done.llm_rounds);>1 才有展示意义。
+    public var llmRounds: Int?
+    /// 本次引用的数据源标签(后端 done.sources_used)。
+    public var sourcesUsed: [String]
+    /// 本次调用的 Skill / 工具名(后端 done.tools_used;未上线前为空)。
+    public var toolsUsed: [String]
+    /// 完成状态(后端 done.completion_status,如 "complete" / "partial")。
+    public var completionStatus: String?
+
+    /// 是否有任何可展示的 meta(footer 是否需要渲染)。
+    public var hasMeta: Bool {
+        model != nil || elapsedMs != nil || (llmRounds ?? 0) > 1
+            || !sourcesUsed.isEmpty || !toolsUsed.isEmpty
+    }
+
+    public init(
+        id: UUID = UUID(),
+        role: AgentChatRole,
+        content: String,
+        model: String? = nil,
+        elapsedMs: Int? = nil,
+        llmRounds: Int? = nil,
+        sourcesUsed: [String] = [],
+        toolsUsed: [String] = [],
+        completionStatus: String? = nil
+    ) {
         self.id = id
         self.role = role
         self.content = content
+        self.model = model
+        self.elapsedMs = elapsedMs
+        self.llmRounds = llmRounds
+        self.sourcesUsed = sourcesUsed
+        self.toolsUsed = toolsUsed
+        self.completionStatus = completionStatus
+    }
+
+    // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
+    private enum CodingKeys: String, CodingKey {
+        case id, role, content, model, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.role = try c.decode(AgentChatRole.self, forKey: .role)
+        self.content = try c.decode(String.self, forKey: .content)
+        self.model = try c.decodeIfPresent(String.self, forKey: .model)
+        self.elapsedMs = try c.decodeIfPresent(Int.self, forKey: .elapsedMs)
+        self.llmRounds = try c.decodeIfPresent(Int.self, forKey: .llmRounds)
+        self.sourcesUsed = try c.decodeIfPresent([String].self, forKey: .sourcesUsed) ?? []
+        self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
+        self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
     }
 }
 
@@ -654,11 +708,22 @@ public final class AgentChatViewModel {
                     ))
                 case .toolDetails(let toolEvent):
                     applyToolEvent(toolEvent)
-                case .done(let id, _, let completionStatus, let model, let sourcesUsed):
+                case .done(let id, _, let completionStatus, let model, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = model
                     lastSourcesUsed = sourcesUsed
+                    // 把 meta 回填到「正在流式的那条消息对象」(按 assistantID 定位),
+                    // 不只更全局 —— footer 是每条消息级渲染。先 flush 残留 token 再写 meta。
+                    flushPendingTokens()
+                    if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
+                        messages[idx].model = model
+                        messages[idx].elapsedMs = elapsedMs
+                        messages[idx].llmRounds = llmRounds
+                        messages[idx].sourcesUsed = sourcesUsed
+                        messages[idx].toolsUsed = toolsUsed
+                        messages[idx].completionStatus = completionStatus
+                    }
                     runState = .completed
                 case .error(let message):
                     errorMessage = message

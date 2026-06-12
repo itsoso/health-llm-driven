@@ -137,6 +137,53 @@
   .body th { font-weight: 600; background: var(--code-bg); }
   .body .streaming-text { white-space: pre-wrap; }
 
+  /* meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill) — 低调灰、小字号,不喧宾夺主 */
+  .meta-footer {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--hr);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.78em;
+    color: var(--secondary);
+  }
+  .meta-footer .meta-line { color: var(--secondary); }
+  .meta-footer details.meta-sources { color: var(--secondary); }
+  .meta-footer details.meta-sources > summary {
+    cursor: pointer;
+    list-style: none;
+    color: var(--secondary);
+    user-select: none;
+  }
+  .meta-footer details.meta-sources > summary::-webkit-details-marker { display: none; }
+  .meta-footer details.meta-sources > summary::before {
+    content: "▸ ";
+    color: var(--secondary);
+  }
+  .meta-footer details.meta-sources[open] > summary::before { content: "▾ "; }
+  .meta-footer details.meta-sources ul {
+    margin: 4px 0 0;
+    padding-left: 1.2em;
+  }
+  .meta-footer details.meta-sources li { margin: 1px 0; }
+  .meta-footer .meta-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+  }
+  .meta-footer .meta-tools-label { color: var(--secondary); }
+  .meta-footer .meta-chip {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px solid var(--assistant-border);
+    background: var(--code-bg);
+    color: var(--secondary);
+    font-size: 0.95em;
+  }
+
   /* 流式光标 */
   .body.streaming::after {
     content: "▌";
@@ -208,6 +255,15 @@
     body.className = "body" + (msg.streaming ? " streaming" : "");
     body.innerHTML = msg.html;
     bubble.appendChild(body);
+
+    // meta footer(模型/数据源/Skill)— 仅助手、非流式、且有内容时由 Swift 侧给出。
+    // footer 已是 Swift 端 escape 后的受控 HTML 片段;空字符串则不渲染。
+    if (msg.role === "assistant" && msg.footer) {
+      var footer = document.createElement("div");
+      footer.className = "footer-wrap";
+      footer.innerHTML = msg.footer;
+      bubble.appendChild(footer);
+    }
 
     row.appendChild(bubble);
     return row;

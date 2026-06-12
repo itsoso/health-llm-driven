@@ -5,7 +5,16 @@ public enum AgentStreamEvent: Equatable, Sendable {
     case token(String)
     case tool(name: String?, success: Bool?)
     case toolDetails(AgentToolEvent)
-    case done(conversationID: Int?, messageID: Int?, completionStatus: String?, model: String?, sourcesUsed: [String])
+    case done(
+        conversationID: Int?,
+        messageID: Int?,
+        completionStatus: String?,
+        model: String?,
+        sourcesUsed: [String],
+        toolsUsed: [String],
+        elapsedMs: Int?,
+        llmRounds: Int?
+    )
     case error(String)
 }
 
@@ -88,7 +97,12 @@ public enum AgentStreamParser {
                         messageID: eventData?["message_id"] as? Int,
                         completionStatus: eventData?["completion_status"] as? String,
                         model: eventData?["model"] as? String,
-                        sourcesUsed: eventData?["sources_used"] as? [String] ?? []
+                        sourcesUsed: stringArray(eventData?["sources_used"]),
+                        // tools_used 由并发任务在后端补;未上线前缺失 → 解析为空数组,
+                        // ViewModel/footer 容错(空则不显示该块)。
+                        toolsUsed: stringArray(eventData?["tools_used"]),
+                        elapsedMs: eventData?["elapsed_ms"] as? Int,
+                        llmRounds: eventData?["llm_rounds"] as? Int
                     )
                 case "error":
                     return .error(eventData?["message"] as? String ?? "Unknown stream error")
@@ -96,6 +110,22 @@ public enum AgentStreamParser {
                     return nil
                 }
             }
+    }
+
+    /// 把任意 JSON 值容错地归一为 [String]:已是 [String] 直接用;[Any] 逐项转字符串
+    /// (过滤空白);其它(nil / 非数组)→ 空数组。后端字段缺失或类型漂移都不崩。
+    private static func stringArray(_ value: Any?) -> [String] {
+        if let strings = value as? [String] {
+            return strings.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        }
+        if let items = value as? [Any] {
+            return items.compactMap { item in
+                let text = (item as? String) ?? String(describing: item)
+                let trimmed = text.trimmingCharacters(in: .whitespaces)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+        }
+        return []
     }
 
     private static func normalizedJSONString(_ value: Any?) -> String? {

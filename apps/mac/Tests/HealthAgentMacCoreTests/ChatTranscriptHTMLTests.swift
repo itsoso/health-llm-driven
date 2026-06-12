@@ -110,6 +110,113 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(json.contains("\\n"))
     }
 
+    // MARK: - meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)
+
+    func testMetaFooterRendersModelRoundsElapsed() {
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: "commercial/Claude-Opus-4.7",
+            elapsedMs: 3500,
+            llmRounds: 3,
+            sourcesUsed: [],
+            toolsUsed: []
+        )
+        XCTAssertTrue(html.contains("meta-footer"))
+        XCTAssertTrue(html.contains("3.5s"))
+        XCTAssertTrue(html.contains("3 轮"))
+        XCTAssertTrue(html.contains("commercial/Claude-Opus-4.7"))
+    }
+
+    func testMetaFooterOmitsSingleRound() {
+        // llm_rounds == 1 没有展示意义 → 不输出「N 轮」
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: "m", elapsedMs: 1200, llmRounds: 1, sourcesUsed: [], toolsUsed: []
+        )
+        XCTAssertTrue(html.contains("1.2s"))
+        XCTAssertFalse(html.contains("轮"))
+    }
+
+    func testMetaFooterRendersSourcesAsCollapsibleDetails() {
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: nil, elapsedMs: nil, llmRounds: nil,
+            sourcesUsed: ["系统知识库", "Garmin 数据"], toolsUsed: []
+        )
+        XCTAssertTrue(html.contains("<details"))
+        XCTAssertTrue(html.contains("引用 2 项数据"))
+        XCTAssertTrue(html.contains("<li>系统知识库</li>"))
+        XCTAssertTrue(html.contains("<li>Garmin 数据</li>"))
+    }
+
+    func testMetaFooterRendersToolChips() {
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: nil, elapsedMs: nil, llmRounds: nil,
+            sourcesUsed: [], toolsUsed: ["health_query", "health_record"]
+        )
+        XCTAssertTrue(html.contains("调用 Skill"))
+        XCTAssertTrue(html.contains("meta-chip"))
+        XCTAssertTrue(html.contains(">health_query<"))
+        XCTAssertTrue(html.contains(">health_record<"))
+    }
+
+    func testMetaFooterEmptyWhenNoMeta() {
+        // 所有字段为空 → 不输出任何 footer(空字符串,JS 端不渲染)
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: nil, elapsedMs: nil, llmRounds: nil, sourcesUsed: [], toolsUsed: []
+        )
+        XCTAssertEqual(html, "")
+    }
+
+    func testMetaFooterOmitsEmptySourcesAndToolsBlocks() {
+        // 有模型行,但 sources/tools 空 → 只出 meta-line,不出 details / meta-tools
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: "m", elapsedMs: 1000, llmRounds: nil, sourcesUsed: [], toolsUsed: []
+        )
+        XCTAssertTrue(html.contains("meta-line"))
+        XCTAssertFalse(html.contains("<details"))
+        XCTAssertFalse(html.contains("meta-tools"))
+    }
+
+    func testMetaFooterEscapesXSSInModelSourcesTools() {
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: "<img src=x onerror=alert(1)>",
+            elapsedMs: 100,
+            llmRounds: nil,
+            sourcesUsed: ["<script>evil</script>"],
+            toolsUsed: ["</span><b>x"]
+        )
+        // 任何注入内容都被转义,无真标签生成
+        XCTAssertFalse(html.contains("<img"))
+        XCTAssertFalse(html.contains("<script>evil"))
+        XCTAssertTrue(html.contains("&lt;img"))
+        XCTAssertTrue(html.contains("&lt;script&gt;evil"))
+        XCTAssertTrue(html.contains("&lt;/span&gt;&lt;b&gt;x"))
+    }
+
+    func testRenderedMessageJSONIncludesFooterField() {
+        let footer = ChatTranscriptHTML.metaFooterHTML(
+            model: "m", elapsedMs: 2000, llmRounds: nil, sourcesUsed: ["kb"], toolsUsed: []
+        )
+        let msg = ChatTranscriptHTML.RenderedMessage(
+            id: "x", role: "assistant", bodyHTML: "<p>hi</p>",
+            isStreaming: false, showCopy: true, footerHTML: footer
+        )
+        let json = msg.jsonObject
+        XCTAssertTrue(json.contains("\"footer\":"))
+        // footer HTML 经 jsString 编码注入(< 被编码为 <)
+        XCTAssertTrue(json.contains("\\u003cdetails") || json.contains("\\u003cdiv"))
+        // 整条信封仍是合法 JSON
+        let parsed = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        XCTAssertNotNil(parsed ?? nil)
+        XCTAssertNotNil((parsed ?? [:])["footer"])
+    }
+
+    func testRenderedMessageFooterDefaultsEmpty() {
+        let msg = ChatTranscriptHTML.RenderedMessage(
+            id: "x", role: "user", bodyHTML: "<p>hi</p>", isStreaming: false, showCopy: false
+        )
+        XCTAssertEqual(msg.footerHTML, "")
+        XCTAssertTrue(msg.jsonObject.contains("\"footer\":\"\""))
+    }
+
     func testMessagesJSONArrayWellFormed() {
         let a = ChatTranscriptHTML.RenderedMessage(id: "a", role: "user", bodyHTML: "<p>hi</p>", isStreaming: false, showCopy: false)
         let b = ChatTranscriptHTML.RenderedMessage(id: "b", role: "assistant", bodyHTML: "<p>yo</p>", isStreaming: false, showCopy: true)
