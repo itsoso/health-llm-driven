@@ -289,6 +289,9 @@ class AcuteHealthState(BaseModel):
     illness_names: List[str] = Field(default_factory=list)
     illness_severity_max: Optional[int] = None
     recent_symptoms: List[str] = Field(default_factory=list)
+    # 近 72h **全部**症状描述(未按呼吸道过滤),供 symptoms.py 症状级红线做关键词匹配。
+    # recent_symptoms 只含呼吸道/感冒(给训练兜底);这条是完整集合(给急症识别)。
+    symptom_texts_all: List[str] = Field(default_factory=list)
     suspected_cold: bool = False
     fever_reported: bool = False
     should_rest_from_training: bool = False

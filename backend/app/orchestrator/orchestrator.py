@@ -651,6 +651,13 @@ def _build_synthesis_prompt(
             "不得压过有证据的相反建议。若回答采用模型推断，必须用'目前证据不足，先作为尝试'等字样降级表达。"
         )
 
+        # 健康世界观注入(四定律 + 四层 + 症状级红线)—— 统一所有 specialist 的哲学底座
+        try:
+            from app.services.health_worldview import worldview_prompt_blob
+            system_prompt = system_prompt + "\n\n" + worldview_prompt_blob(include_triage=True)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[orchestrator] worldview 注入跳过: {e}")
+
         # P3-1 Coach Persona: 末尾追加风格指令 (不改前面规则, 只加语气)
         # lite_mode 跳过 User 表查询 — trivial query 用默认温和风格即可
         if not lite_mode and db is not None and user_id is not None:

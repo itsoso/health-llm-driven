@@ -423,6 +423,8 @@ def _fill_acute_health(db: Session, user_id: int, twin: HealthTwin, sources: Set
         )
 
         illness_names = [i.name for i in active_illnesses if i.name]
+        # 全部症状描述(未过滤)—— 供症状级急症红线匹配胸痛/卒中/腹痛等
+        symptom_texts_all = [s.description for s in recent_symptoms if s.description]
         symptom_texts = [
             s.description for s in recent_symptoms
             if s.description and (
@@ -434,7 +436,9 @@ def _fill_acute_health(db: Session, user_id: int, twin: HealthTwin, sources: Set
         fever_reported = any(k in combined for k in _FEVER_KEYWORDS)
         has_active = bool(active_illnesses)
 
-        if not (has_active or symptom_texts):
+        # 注意:含 symptom_texts_all —— 即使只有非呼吸道症状(胸痛/腹痛等),
+        # 也要继续填充,否则症状级急症红线拿不到数据。
+        if not (has_active or symptom_texts or symptom_texts_all):
             return
 
         severities = [
@@ -449,6 +453,7 @@ def _fill_acute_health(db: Session, user_id: int, twin: HealthTwin, sources: Set
         twin.acute.illness_names = illness_names[:5]
         twin.acute.illness_severity_max = max(severities) if severities else None
         twin.acute.recent_symptoms = symptom_texts[:8]
+        twin.acute.symptom_texts_all = symptom_texts_all[:12]
         twin.acute.suspected_cold = suspected_cold
         twin.acute.fever_reported = fever_reported
         twin.acute.should_rest_from_training = bool(has_active or suspected_cold or fever_reported)
