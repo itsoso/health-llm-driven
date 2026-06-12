@@ -614,12 +614,26 @@ struct AgentChatView: View {
                 bodyHTML = ChatTranscriptHTML.renderMessageBody(markdown: content)
             }
             let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
+            // meta footer 仅给「非流式的助手消息」生成(流式完成后才有 done 的 meta)。
+            let footerHTML: String
+            if message.role == .assistant && !isStreamingThis && message.hasMeta {
+                footerHTML = ChatTranscriptHTML.metaFooterHTML(
+                    model: message.model,
+                    elapsedMs: message.elapsedMs,
+                    llmRounds: message.llmRounds,
+                    sourcesUsed: message.sourcesUsed,
+                    toolsUsed: message.toolsUsed
+                )
+            } else {
+                footerHTML = ""
+            }
             return ChatTranscriptHTML.RenderedMessage(
                 id: message.id.uuidString,
                 role: message.role == .user ? "user" : "assistant",
                 bodyHTML: bodyHTML,
                 isStreaming: isStreamingThis,
-                showCopy: showCopy
+                showCopy: showCopy,
+                footerHTML: footerHTML
             )
         }
     }

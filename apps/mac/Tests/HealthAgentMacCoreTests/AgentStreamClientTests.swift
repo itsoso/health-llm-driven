@@ -28,9 +28,114 @@ final class AgentStreamClientTests: XCTestCase {
                 messageID: 9,
                 completionStatus: "complete",
                 model: "commercial/Claude-Opus-4.7",
-                sourcesUsed: ["系统知识库"]
+                sourcesUsed: ["系统知识库"],
+                toolsUsed: [],
+                elapsedMs: nil,
+                llmRounds: nil
             )
         ])
+    }
+
+    func testParserParsesToolsUsedElapsedAndRoundsInDone() throws {
+        let payload = """
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","model":"m","sources_used":["kb"],"tools_used":["health_query","health_record"],"elapsed_ms":4200,"llm_rounds":2}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [
+            .done(
+                conversationID: 5,
+                messageID: 3,
+                completionStatus: "complete",
+                model: "m",
+                sourcesUsed: ["kb"],
+                toolsUsed: ["health_query", "health_record"],
+                elapsedMs: 4200,
+                llmRounds: 2
+            )
+        ])
+    }
+
+    func testParserToleratesMissingToolsUsed() throws {
+        // 后端 tools_used 未上线前缺失 → 解析为空数组(容错,不崩)
+        let payload = """
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete"}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [
+            .done(
+                conversationID: 5,
+                messageID: 3,
+                completionStatus: "complete",
+                model: nil,
+                sourcesUsed: [],
+                toolsUsed: [],
+                elapsedMs: nil,
+                llmRounds: nil
+            )
+        ])
+    }
+
+    @MainActor
+    func testViewModelWritesDoneMetaIntoStreamingMessage() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 9))
+            continuation.yield(.token("回答正文"))
+            continuation.yield(.done(
+                conversationID: 9,
+                messageID: 1,
+                completionStatus: "complete",
+                model: "commercial/Claude-Opus-4.7",
+                sourcesUsed: ["系统知识库"],
+                toolsUsed: ["health_query"],
+                elapsedMs: 3300,
+                llmRounds: 2
+            ))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+        await model.send("分析")
+
+        let assistant = model.messages.last
+        XCTAssertEqual(assistant?.role, .assistant)
+        // meta 写进了「那条消息对象」,不只是全局
+        XCTAssertEqual(assistant?.model, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(assistant?.elapsedMs, 3300)
+        XCTAssertEqual(assistant?.llmRounds, 2)
+        XCTAssertEqual(assistant?.sourcesUsed, ["系统知识库"])
+        XCTAssertEqual(assistant?.toolsUsed, ["health_query"])
+        XCTAssertEqual(assistant?.completionStatus, "complete")
+        XCTAssertTrue(assistant?.hasMeta ?? false)
+    }
+
+    func testAgentChatMessageDecodesLegacySnapshotWithoutMetaFields() throws {
+        // 老版本快照(无 meta 字段)必须能解码,新字段降级为默认值
+        let legacy = """
+        {"id":"\(UUID().uuidString)","role":"assistant","content":"旧回答"}
+        """
+        let msg = try JSONDecoder().decode(AgentChatMessage.self, from: Data(legacy.utf8))
+        XCTAssertEqual(msg.content, "旧回答")
+        XCTAssertNil(msg.model)
+        XCTAssertEqual(msg.sourcesUsed, [])
+        XCTAssertEqual(msg.toolsUsed, [])
+        XCTAssertFalse(msg.hasMeta)
+    }
+
+    func testAgentChatMessageRoundTripsMetaThroughCodable() throws {
+        let original = AgentChatMessage(
+            role: .assistant,
+            content: "答",
+            model: "m",
+            elapsedMs: 2000,
+            llmRounds: 2,
+            sourcesUsed: ["kb"],
+            toolsUsed: ["health_query"],
+            completionStatus: "complete"
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: data)
+        XCTAssertEqual(decoded, original)
     }
 
     func testParserCapturesToolArgumentsAndResultsForInspection() throws {
@@ -98,7 +203,7 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(events, [
             .start(conversationID: 7),
             .token("已收到"),
-            .done(conversationID: 7, messageID: 10, completionStatus: "complete", model: nil, sourcesUsed: [])
+            .done(conversationID: 7, messageID: 10, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil)
         ])
     }
 
@@ -213,7 +318,10 @@ final class AgentStreamClientTests: XCTestCase {
                 messageID: 88,
                 completionStatus: "complete",
                 model: "commercial/Claude-Opus-4.7",
-                sourcesUsed: ["系统知识库"]
+                sourcesUsed: ["系统知识库"],
+                toolsUsed: [],
+                elapsedMs: nil,
+                llmRounds: nil
             ))
             continuation.finish()
         }
@@ -240,7 +348,8 @@ final class AgentStreamClientTests: XCTestCase {
             for p in parts { continuation.yield(.token(p)) }
             continuation.yield(.done(
                 conversationID: 1, messageID: 2,
-                completionStatus: "complete", model: "m", sourcesUsed: []
+                completionStatus: "complete", model: "m", sourcesUsed: [],
+                toolsUsed: [], elapsedMs: nil, llmRounds: nil
             ))
             continuation.finish()
         }
@@ -285,11 +394,11 @@ final class AgentStreamClientTests: XCTestCase {
                 已识别到可执行记录操作。
                 {"name":"health_manage","parameters":{"action":"update","record_type":"diet","record_id":625,"calories":650}}
                 """))
-                continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: []))
+                continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
                 continuation.finish()
             },
             AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
-                continuation.yield(.done(conversationID: 77, messageID: 89, completionStatus: "complete", model: nil, sourcesUsed: []))
+                continuation.yield(.done(conversationID: 77, messageID: 89, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
                 continuation.finish()
             }
         ]
@@ -327,7 +436,7 @@ final class AgentStreamClientTests: XCTestCase {
             continuation.yield(.tool(name: "knowledge_search", success: nil))
             continuation.yield(.tool(name: "knowledge_search", success: true))
             continuation.yield(.tool(name: "health_manage", success: false))
-            continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: []))
+            continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
             continuation.finish()
         }
         let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
@@ -359,7 +468,7 @@ final class AgentStreamClientTests: XCTestCase {
                 result: "完整指标结果",
                 round: nil
             )))
-            continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: []))
+            continuation.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
             continuation.finish()
         }
         let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
@@ -417,7 +526,7 @@ final class AgentStreamClientTests: XCTestCase {
             AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
                 continuation.yield(.start(conversationID: 91))
                 continuation.yield(.token("重试成功"))
-                continuation.yield(.done(conversationID: 91, messageID: 2, completionStatus: "complete", model: nil, sourcesUsed: []))
+                continuation.yield(.done(conversationID: 91, messageID: 2, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
                 continuation.finish()
             }
         ])
@@ -552,7 +661,7 @@ final class AgentStreamClientTests: XCTestCase {
         let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
             continuation.yield(.start(conversationID: 42))
             continuation.yield(.token("历史回答"))
-            continuation.yield(.done(conversationID: 42, messageID: 8, completionStatus: "complete", model: "claude", sourcesUsed: ["kb"]))
+            continuation.yield(.done(conversationID: 42, messageID: 8, completionStatus: "complete", model: "claude", sourcesUsed: ["kb"], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
             continuation.finish()
         }
         let model = AgentChatViewModel(
@@ -612,7 +721,10 @@ private final class CapturingAgentStreamService: AgentStreamServicing, @unchecke
                 messageID: 1,
                 completionStatus: "complete",
                 model: nil,
-                sourcesUsed: []
+                sourcesUsed: [],
+                toolsUsed: [],
+                elapsedMs: nil,
+                llmRounds: nil
             ))
             continuation.finish()
         }

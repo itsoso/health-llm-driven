@@ -143,6 +143,58 @@ public enum ChatTranscriptHTML {
         return html
     }
 
+    // MARK: - Meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)
+
+    /// 给一条助手消息生成 footer HTML 片段(模型/轮数/耗时一行 + 可折叠数据源 + Skill chips)。
+    /// 所有动态文本走 `escape(_:)` 防 XSS。任一块缺数据则该块整体省略;全空返回 ""。
+    /// 视觉调性对齐 mobile ChatBubble:低调灰、小字号、数据源用 `<details>` 折叠。
+    public static func metaFooterHTML(
+        model: String?,
+        elapsedMs: Int?,
+        llmRounds: Int?,
+        sourcesUsed: [String],
+        toolsUsed: [String]
+    ) -> String {
+        var sections: [String] = []
+
+        // 第一行:耗时 · N 轮 · 模型(各自缺则跳过;整行全缺则不输出)。
+        var lineParts: [String] = []
+        if let elapsedMs, elapsedMs > 0 {
+            let seconds = Double(elapsedMs) / 1000.0
+            lineParts.append(escape(String(format: "%.1fs", seconds)))
+        }
+        if let llmRounds, llmRounds > 1 {
+            lineParts.append(escape("\(llmRounds) 轮"))
+        }
+        if let model, !model.trimmingCharacters(in: .whitespaces).isEmpty {
+            lineParts.append(escape(model))
+        }
+        if !lineParts.isEmpty {
+            sections.append("<div class=\"meta-line\">" + lineParts.joined(separator: " · ") + "</div>")
+        }
+
+        // 数据源:可折叠 <details>(默认收起),summary 显示「引用 N 项数据」。
+        let sources = sourcesUsed.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if !sources.isEmpty {
+            let items = sources.map { "<li>\(escape($0))</li>" }.joined()
+            sections.append(
+                "<details class=\"meta-sources\"><summary>引用 \(sources.count) 项数据</summary><ul>\(items)</ul></details>"
+            )
+        }
+
+        // Skills:chip 样式,横排。
+        let tools = toolsUsed.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if !tools.isEmpty {
+            let chips = tools.map { "<span class=\"meta-chip\">\(escape($0))</span>" }.joined()
+            sections.append(
+                "<div class=\"meta-tools\"><span class=\"meta-tools-label\">调用 Skill</span>\(chips)</div>"
+            )
+        }
+
+        guard !sections.isEmpty else { return "" }
+        return "<div class=\"meta-footer\">" + sections.joined() + "</div>"
+    }
+
     // MARK: - Message envelope JSON (Swift → JS bridge)
 
     /// 一条消息喂给 JS 端的数据。`bodyHTML` 已是安全转义后的 HTML 片段。
@@ -152,18 +204,28 @@ public enum ChatTranscriptHTML {
         public let bodyHTML: String
         public let isStreaming: Bool       // 流式中(plain 文本、无复制按钮)
         public let showCopy: Bool
+        /// meta footer 片段(模型/数据源/Skill);流式中或无 meta 时为空 → JS 不渲染 footer。
+        public let footerHTML: String
 
-        public init(id: String, role: String, bodyHTML: String, isStreaming: Bool, showCopy: Bool) {
+        public init(
+            id: String,
+            role: String,
+            bodyHTML: String,
+            isStreaming: Bool,
+            showCopy: Bool,
+            footerHTML: String = ""
+        ) {
             self.id = id
             self.role = role
             self.bodyHTML = bodyHTML
             self.isStreaming = isStreaming
             self.showCopy = showCopy
+            self.footerHTML = footerHTML
         }
 
         /// 序列化为 JS 对象字面量字符串(不依赖 Foundation JSONEncoder 的键序,字段固定)。
         public var jsonObject: String {
-            "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false")}"
+            "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML))}"
         }
 
         /// JSON 字符串字面量编码(含引号)。用于安全注入 evaluateJavaScript 的字符串实参。
