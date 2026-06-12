@@ -136,6 +136,9 @@ def _build_registry() -> List[Specialist]:
         MetabolicSpecialist,
         RhinitisSpecialist,
     )
+    from app.agents.cross_source_validator.specialist import (
+        CrossSourceValidatorSpecialist,
+    )
     from app.agents.fuel_strategist import FuelStrategistSpecialist
     from app.agents.knowledge_librarian.librarian import KnowledgeLibrarianSpecialist
     from app.agents.longevity_specialist.specialist import LongevitySpecialist
@@ -160,6 +163,8 @@ def _build_registry() -> List[Specialist]:
         KnowledgeLibrarianSpecialist(),
         LongitudinalAnalystSpecialist(),
         LongevitySpecialist(),                 # PhenoAge 解读 + 委托四件套
+        # 数据质量
+        CrossSourceValidatorSpecialist(),      # 跨设备同指标一致性裁决
     ]
 
 
