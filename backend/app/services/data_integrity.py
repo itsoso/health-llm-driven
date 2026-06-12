@@ -33,6 +33,20 @@ class IntegrityIssue(dict):
     """一条数据完整性问题(dict 子类,直接可 JSON)。"""
 
 
+def _is_empty_targets(tm: Any) -> bool:
+    """target_metrics 是否为空。list 判元素数==0;str(JSON 列)判 '[]'/'null'/空。
+
+    注意:list 不能用 len(tm)<=2 判空 —— 那会把 1–2 个真实目标误判为空(实测误报)。
+    """
+    if not tm:  # None / 空 list / 空 str
+        return True
+    if isinstance(tm, list):
+        return len(tm) == 0
+    if isinstance(tm, str):
+        return tm.strip().lower() in ("[]", "null", "")
+    return False
+
+
 def range_issue(metric: str, value: Optional[float]) -> Optional[str]:
     """纯函数:某指标值是否越界。返回问题描述或 None。可单测。"""
     if value is None or metric not in _RANGES:
@@ -88,7 +102,7 @@ def check_user_integrity(db: Session, user_id: int) -> list[IntegrityIssue]:
         rows = db.execute(text(
             "SELECT target_metrics FROM intervention_cycles WHERE user_id=:u AND status='active'"
         ), {"u": user_id}).fetchall()
-        empty = sum(1 for (tm,) in rows if not tm or (isinstance(tm, (list, str)) and len(tm) <= 2))
+        empty = sum(1 for (tm,) in rows if _is_empty_targets(tm))
         if empty:
             _add("cycle_empty_targets", "warning",
                  f"{empty} 个 active 干预周期无目标指标(无法判定有效)", empty,

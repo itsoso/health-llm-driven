@@ -56,6 +56,19 @@ def test_cycle_empty_targets(client, db):
     assert "cycle_empty_targets" in _codes(db, user.id)
 
 
+def test_cycle_with_targets_not_flagged(client, db):
+    """回归:有 1 个目标的周期不应被误判为空(list 长度 1,曾被 <=2 误报)。"""
+    from tests.conftest import create_authenticated_user
+    from app.models.intervention_cycle import InterventionCycle
+    user, _ = create_authenticated_user(db)
+    c = InterventionCycle(user_id=user.id, cycle_type="metabolic_90d", status="active",
+                          start_date=date(2026, 6, 1), planned_end_date=date(2026, 9, 1),
+                          target_metrics=[{"code": "glucose_hba1c", "target": 5.7, "direction": "down"}])
+    db.add(c)
+    db.commit()
+    assert "cycle_empty_targets" not in _codes(db, user.id)
+
+
 def test_healthy_user_no_issues(client, db):
     from tests.conftest import create_authenticated_user
     user, _ = create_authenticated_user(db)
