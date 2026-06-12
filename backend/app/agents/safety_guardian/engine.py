@@ -84,6 +84,7 @@ def _load_rule_modules() -> None:
         pgx,
         training_load,
         cgm,
+        symptoms,
     )
 
 

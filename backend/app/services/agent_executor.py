@@ -1623,6 +1623,13 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 原研药建议注入失败: {e}")
 
+        # 注入健康世界观(四定律 + 四层 + 症状级转诊红线)—— 统一建议哲学
+        try:
+            from app.services.health_worldview import worldview_prompt_blob
+            parts.append("\n" + worldview_prompt_blob(include_triage=True))
+        except Exception as e:
+            logger.warning(f"Agent 世界观注入失败: {e}")
+
         # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
         try:
             from app.services.liver_health import liver_prompt_blob

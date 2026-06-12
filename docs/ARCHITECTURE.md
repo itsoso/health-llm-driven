@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 140 API 路由 · 212 services              │
+│                  health-api.executor.life · 140 API 路由 · 213 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (12 specialist) │  │ (tool-calling LLM) │            │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 12 个 Specialist + Safety Guardian (8 类 51 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 12 个 Specialist + Safety Guardian (8 类 56 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 140 API 路由, 212 services, 83 models, 54 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 140 API 路由, 213 services, 83 models, 54 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -98,7 +98,7 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建、缓存、格式化 |
-| `backend/app/agents/safety_guardian/` | 51 条安全规则引擎(不依赖 LLM) |
+| `backend/app/agents/safety_guardian/` | 56 条安全规则引擎(不依赖 LLM) |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 (Garmin training_readiness 优先, 否则自算 5 维) |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 (Garmin training_status 映射优先) |
 | `backend/app/agents/fuel_strategist/` | TDEE-缺口 + 基因驱动饮食 |
@@ -163,7 +163,7 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  12 Specialists                                                │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 51 条确定性规则, 不调 LLM             │   │
+│  │ SafetyGuardian  — 56 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
 │  │   pgx.py (9) training_load.py (3) cgm.py (6)           │   │
 │  ├─────────────────────────────────────────────────────────┤   │
