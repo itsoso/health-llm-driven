@@ -154,6 +154,13 @@ public enum AgentStructuredCommandParser {
         for range in structuredCommands(in: content).map(\.range).reversed() {
             result.removeSubrange(range)
         }
+        // 剥离 [claim:xxx] 证据引用标记(内部 claim_id,非用户可见;证据通过
+        // sources_used / cards 单独展示)。连同前导空格一起去掉,避免留下空隙。
+        result = result.replacingOccurrences(
+            of: "\\s*\\[claim:[^\\]]*\\]",
+            with: "",
+            options: .regularExpression
+        )
         let out = result
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
