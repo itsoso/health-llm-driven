@@ -42,32 +42,41 @@ struct AgentChatView: View {
         VStack(spacing: 12) {
             header
 
-            ViewThatFits(in: .horizontal) {
-                // Wide: a proper chat column (messages scroll, composer pinned to
-                // the bottom — ChatBot convention) on the left, scrollable context
-                // panel on the right.
-                HStack(alignment: .top, spacing: 16) {
-                    chatColumn
-                        .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
-                    ScrollView {
-                        contextPanel
-                    }
-                    .frame(width: 340)
-                }
-
-                // Narrow: messages + context panel scroll together, composer stays
-                // pinned at the bottom.
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            messagesArea
-                            contextPanel
+            // ⚠️ 结构性防卡死(第 7 轮根因 · sample 实锤):这里曾用 ViewThatFits(in:.horizontal)。
+            // ViewThatFits 会把**两个候选(宽屏双列 / 窄屏单列)各自的完整消息列表**在多个
+            // 建议尺寸下反复测量;滚动/重布局时整张列表被重测 → 指数级 sizeThatFits(100% CPU,
+            // 热点栈纯 SwiftUICore 无 app 符号、beginTransaction 极少 = 单次不收敛布局 pass)。
+            // #132(内容定宽)、#133(单 Text + 断 GeometryReader 环)都没碰它,所以滚动仍卡。
+            // 改为 GeometryReader + 阈值的确定性 if/else:每次只构建一个分支,容器宽=窗口宽稳定,
+            // 探测消失。阈值 920 ≈ chatColumn 560 + context 340 + spacing/padding。
+            GeometryReader { geo in
+                Group {
+                    if geo.size.width >= 920 {
+                        // Wide: 左聊天列(消息滚动、composer 钉底),右上下文面板。
+                        HStack(alignment: .top, spacing: 16) {
+                            chatColumn
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                            ScrollView {
+                                contextPanel
+                            }
+                            .frame(width: 340)
+                        }
+                    } else {
+                        // Narrow: 消息 + 上下文一起滚,composer 钉底。
+                        VStack(spacing: 0) {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    messagesArea
+                                    contextPanel
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            composer
+                                .padding(.top, 12)
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    composer
-                        .padding(.top, 12)
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
