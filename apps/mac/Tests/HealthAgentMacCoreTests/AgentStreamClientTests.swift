@@ -385,6 +385,17 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testDisplayTextStripsClaimEvidenceMarkers() {
+        let content = "TT 基因型酶活约 30% [claim:c_mthfr_c677t_hcy_folate_boundary]，但这不是诊断。"
+        let out = AgentStructuredCommandParser.displayText(for: content)
+        XCTAssertFalse(out.contains("[claim:"), "裸 claim 标记应被剥离")
+        XCTAssertFalse(out.contains("c_mthfr_c677t_hcy_folate_boundary"))
+        XCTAssertTrue(out.contains("TT 基因型酶活约 30%"))
+        XCTAssertTrue(out.contains("但这不是诊断。"))
+        XCTAssertFalse(out.contains("  "), "剥离后不应留下双空格")
+    }
+
+    @MainActor
     func testAgentChatViewModelTurnsAssistantJSONCommandIntoConfirmableActionContext() async throws {
         let service = CapturingAgentStreamService()
         service.streams = [
