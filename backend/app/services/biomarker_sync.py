@@ -51,11 +51,21 @@ def _user_sex_age(db: Session, user_id: int) -> tuple[Optional[str], Optional[in
     return sex, age
 
 
+SYNC_SOURCE = "indicator_sync"
+
+
 def sync_indicators_to_biomarkers(db: Session, user_id: int) -> dict[str, int]:
     """把 user 的 medical_indicators 归一并 upsert 到 biomarker_observations。
 
-    幂等:按 (user_id, code, observed_at) 去重 —— 同指标同日期已有则更新,否则插入。
-    返回 {scanned, recognized, written}。
+    跨源去重:同 (user_id, code) 的所有已有行按**日历日**比对(observed_at 可能是
+    date/datetime/字符串,SQL 范围查询会因格式差异漏匹配 —— 必须 Python 侧归一比对)。
+    命中已有行:
+      - 其 source != "indicator_sync"(来自 exam 等更结构化来源)→ **跳过不写**
+        (exam 优先,绝不覆盖/不重复;避免同日同指标双源重复行)。
+      - 其 source == "indicator_sync"(本源)→ 更新。
+    未命中 → 插入。
+
+    幂等。返回 {scanned, recognized, written, skipped}。
     """
     sex, age = _user_sex_age(db, user_id)
     rows = db.execute(text(
@@ -66,6 +76,7 @@ def sync_indicators_to_biomarkers(db: Session, user_id: int) -> dict[str, int]:
     scanned = len(rows)
     recognized = 0
     written = 0
+    skipped = 0
     for name, value, unit, rec_date in rows:
         d = _as_date(rec_date)
         if d is None:
@@ -75,15 +86,26 @@ def sync_indicators_to_biomarkers(db: Session, user_id: int) -> dict[str, int]:
             continue
         recognized += 1
         observed_at = datetime(d.year, d.month, d.day)
-        existing = (
+
+        # 取同 user+code 的所有行(单 user+code 行数极小),Python 侧按日历日匹配
+        candidates = (
             db.query(BiomarkerObservation)
             .filter(
                 BiomarkerObservation.user_id == user_id,
                 BiomarkerObservation.code == norm.code,
-                BiomarkerObservation.observed_at == observed_at,
             )
-            .first()
+            .all()
         )
+        existing = next(
+            (c for c in candidates if _as_date(c.observed_at) == d),
+            None,
+        )
+
+        # 已有行来自更结构化来源(exam 等)→ 跳过,exam 优先,绝不覆盖/不重复
+        if existing is not None and existing.source != SYNC_SOURCE:
+            skipped += 1
+            continue
+
         target = existing or BiomarkerObservation(user_id=user_id)
         target.code = norm.code
         target.domain = norm.domain
@@ -98,11 +120,14 @@ def sync_indicators_to_biomarkers(db: Session, user_id: int) -> dict[str, int]:
         target.is_risk = norm.is_risk
         target.confidence = norm.confidence
         target.observed_at = observed_at
-        target.source = "indicator_sync"
+        target.source = SYNC_SOURCE
         if existing is None:
             db.add(target)
         written += 1
 
     db.commit()
-    logger.info(f"[biomarker_sync] user={user_id} scanned={scanned} recognized={recognized} written={written}")
-    return {"scanned": scanned, "recognized": recognized, "written": written}
+    logger.info(
+        f"[biomarker_sync] user={user_id} scanned={scanned} recognized={recognized} "
+        f"written={written} skipped={skipped}"
+    )
+    return {"scanned": scanned, "recognized": recognized, "written": written, "skipped": skipped}
