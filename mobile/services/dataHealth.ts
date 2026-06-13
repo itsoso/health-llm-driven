@@ -44,6 +44,43 @@ export async function fetchDataHealthStatus(): Promise<DataHealthStatus> {
   return data;
 }
 
+// ──────────────────────────────────────────────────────────────
+// 数据正确性自检(量纲/范围/层断连;系统自我监控)
+// 后端 GET /data-health/integrity(PR #152)。区别于 /status(完整度),这里查**正确性**。
+// 见 backend/app/services/data_integrity.py::check_user_integrity。
+// ──────────────────────────────────────────────────────────────
+
+export type IntegritySeverity = 'critical' | 'warning' | 'info' | string;
+
+export interface IntegrityIssue {
+  code: string;
+  severity: IntegritySeverity;
+  detail: string;
+  count: number;
+  fix_hint: string;
+}
+
+export interface DataIntegrityReport {
+  healthy: boolean;
+  issue_count: number;
+  issues: IntegrityIssue[];
+}
+
+export async function fetchDataIntegrity(): Promise<DataIntegrityReport> {
+  const { data } = await api.get<DataIntegrityReport>('/data-health/integrity');
+  return data;
+}
+
+const INTEGRITY_SEVERITY_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+
+/** issues 按严重度排序(critical 在前),未知 severity 排末尾。 */
+export function sortIntegrityIssues(issues: IntegrityIssue[]): IntegrityIssue[] {
+  return [...issues].sort(
+    (a, b) =>
+      (INTEGRITY_SEVERITY_ORDER[a.severity] ?? 99) - (INTEGRITY_SEVERITY_ORDER[b.severity] ?? 99),
+  );
+}
+
 export function buildDataPrompts(status: DataHealthStatus | null | undefined): DataPrompt[] {
   if (!status) return [];
 

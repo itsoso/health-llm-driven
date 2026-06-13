@@ -109,7 +109,14 @@ export default function MedicationsScreen() {
           <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>用药管理</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          onPress={() => router.push('/deprescribing' as any)}
+          hitSlop={12}
+          style={styles.backBtn}
+          accessibilityLabel="多药梳理"
+        >
+          <Ionicons name="list-outline" size={22} color={c.labelPrimary} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabBar}>

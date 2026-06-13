@@ -22,6 +22,8 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   getLiverAssessment,
+  getCausalLinks,
+  effectArrow,
   verdictLabel,
   verdictColor,
   type LiverTrend,
@@ -89,6 +91,14 @@ export default function LiverTrendScreen() {
     queryFn: getLiverAssessment,
     staleTime: 5 * 60 * 1000,
   });
+
+  // 时滞因果:用药干预 → 指标前后变化(描述性,非因果)。无数据则不显示。
+  const { data: causal } = useQuery({
+    queryKey: ['causal-links'],
+    queryFn: getCausalLinks,
+    staleTime: 5 * 60 * 1000,
+  });
+  const effects = causal?.intervention_effects ?? [];
 
   const header = (
     <View style={styles.header}>
@@ -171,6 +181,43 @@ export default function LiverTrendScreen() {
               </View>
             )}
 
+            {/* 时滞因果:用药 → 指标前后变化(描述性,非因果)。无数据不渲染。 */}
+            {effects.length > 0 && (
+              <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+                <Text style={[styles.cardTitle, { color: c.labelPrimary, marginBottom: 4 }]}>
+                  用药后指标变化
+                </Text>
+                {effects.map((e, i) => {
+                  const down = e.delta < 0;
+                  const tone = down ? s.success : s.warning;
+                  return (
+                    <View key={i} style={styles.causalRow}>
+                      <Text style={[styles.causalMed, { color: c.labelPrimary }]} numberOfLines={1}>
+                        {e.medication}
+                      </Text>
+                      <View style={styles.causalChange}>
+                        <Text style={[styles.causalMetric, { color: c.labelSecondary }]}>
+                          {e.metric_label} {e.before_mean} {effectArrow(e)} {e.after_mean}
+                        </Text>
+                        {e.pct != null && (
+                          <Text style={[styles.causalPct, { color: tone.solid }]}>
+                            {e.pct > 0 ? '+' : ''}
+                            {e.pct}%
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={[styles.causalN, { color: c.labelTertiary }]}>
+                        前{e.n_before}次 / 后{e.n_after}次测量
+                      </Text>
+                    </View>
+                  );
+                })}
+                {causal?.note ? (
+                  <Text style={[styles.causalNote, { color: c.labelTertiary }]}>{causal.note}</Text>
+                ) : null}
+              </View>
+            )}
+
             <Text style={[styles.disclaimer, { color: c.labelTertiary }]}>
               趋势提示,非诊断,请结合腹部超声 + 医生
             </Text>
@@ -225,5 +272,17 @@ const createStyles = (c: ColorPalette) =>
     riskText: { fontSize: 13, fontWeight: '600' },
     adviceRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
     adviceText: { fontSize: 13, lineHeight: 19, flex: 1 },
+    causalRow: {
+      paddingVertical: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.separator,
+      gap: 3,
+    },
+    causalMed: { fontSize: 14, fontWeight: '700' },
+    causalChange: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    causalMetric: { fontSize: 13, flex: 1 },
+    causalPct: { fontSize: 14, fontWeight: '800' },
+    causalN: { fontSize: 11 },
+    causalNote: { fontSize: 11, lineHeight: 16, marginTop: 6, fontStyle: 'italic' },
     disclaimer: { fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: spacing.sm },
   });
