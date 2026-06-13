@@ -41,6 +41,7 @@ public enum DesktopCommandPalette {
             navigateCommand(.agent, language: language, keywords: ["agent", "chat", "analysis", "assistant", "问", "助手", "分析"]),
             navigateCommand(.record, language: language, keywords: ["record", "food", "water", "supplement", "diet", "饮食", "饮水", "补剂", "记录"]),
             navigateCommand(.data, language: language, keywords: ["data", "labs", "records", "trend", "化验", "趋势", "健康数据"]),
+            navigateCommand(.healthExtras, language: language, keywords: ["deprescribing", "polypharmacy", "connection", "loneliness", "causal", "integrity", "多药", "减药", "社会连接", "孤独", "因果", "数据自检"]),
             navigateCommand(.genetics, language: language, keywords: ["gene", "genome", "genetic", "wegene", "23andme", "基因", "位点"]),
             navigateCommand(.knowledge, language: language, keywords: ["knowledge", "kb", "dedao", "source", "知识", "得到", "证据"]),
             navigateCommand(.jobs, language: language, keywords: ["jobs", "task", "import", "任务", "导入"]),
@@ -171,6 +172,8 @@ public enum DesktopCommandPalette {
             L10n.text("Look up originator drugs from a prescription, and review switch suggestions.", language: language)
         case .liver:
             L10n.text("Trends in liver enzymes and fibrosis markers from your labs.", language: language)
+        case .healthExtras:
+            L10n.text("Deprescribing review, social connection, causal links, and data self-check.", language: language)
         case .genetics:
             L10n.text("Review genome findings, risk boundaries, and imports.", language: language)
         case .knowledge:

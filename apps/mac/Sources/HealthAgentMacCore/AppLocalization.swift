@@ -751,6 +751,46 @@ public enum L10n {
         "Improving": "改善",
         "Worsening": "恶化",
         "Stable": "稳定",
-        "Trend": "趋势"
+        "Trend": "趋势",
+
+        // Health Extras (H1) — 多药梳理 / 社会连接 / 时滞因果 / 数据自检
+        "Health Extras": "健康进阶",
+        "Deprescribing review, social connection, causal links, and data self-check.":
+            "多药梳理、社会连接、时滞因果与数据自检。",
+        // ① Deprescribing
+        "Deprescribing Review": "多药梳理",
+        "Active meds": "在用药",
+        "Polypharmacy (≥5)": "多药（≥5 种）",
+        "No deprescribing candidates flagged.": "暂无减药候选提示。",
+        "Could not load deprescribing review. Try again.": "无法加载多药梳理，请重试。",
+        // ② Social connection
+        "Social Connection": "社会连接",
+        "UCLA-3 (3–9)": "UCLA-3（3–9）",
+        "Due for a new check-in": "建议做一次新的自评",
+        "Last check-in %d day(s) ago.": "上次自评在 %d 天前。",
+        "Quick self-assessment": "快速自评",
+        "How often do you feel you lack companionship?": "你多久会觉得缺少陪伴？",
+        "How often do you feel left out?": "你多久会觉得被冷落？",
+        "How often do you feel isolated from others?": "你多久会觉得与他人疏离？",
+        "I have someone I can confide in.": "我有可以倾诉的人。",
+        "I belong to a stable group or community.": "我有稳定的群体或社区归属。",
+        "Score: %d / 9": "得分：%d / 9",
+        "Submit Check-in": "提交自评",
+        "Self-assessment interpretation, not a diagnosis.": "自评解读，非诊断。",
+        "Hardly ever": "几乎不",
+        "Some of the time": "有时",
+        "Often": "经常",
+        "Could not load social connection. Try again.": "无法加载社会连接，请重试。",
+        "Could not submit check-in. Try again.": "无法提交自评，请重试。",
+        // ③ Causal links
+        "Causal Links": "时滞因果",
+        "No medication-metric associations yet.": "暂无用药-指标关联。",
+        "n=%d → %d": "样本 %d → %d",
+        "Could not load causal links. Try again.": "无法加载时滞因果，请重试。",
+        // ④ Data self-check
+        "Data Self-Check": "数据自检",
+        "All data checks passed.": "所有数据检查均通过。",
+        "%d data issue(s) found.": "发现 %d 条数据问题。",
+        "Could not load data self-check. Try again.": "无法加载数据自检，请重试。"
     ]
 }
