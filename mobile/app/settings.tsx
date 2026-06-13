@@ -172,6 +172,10 @@ export default function SettingsScreen() {
             onPress={() => router.push('/timeline' as any)} />
           <SettingRow icon="medkit-outline" label="用药管理"
             onPress={() => router.push('/medications' as any)} />
+          <SettingRow icon="list-outline" label="多药梳理"
+            onPress={() => router.push('/deprescribing' as any)} />
+          <SettingRow icon="people-circle-outline" label="社会连接自评"
+            onPress={() => router.push('/connection-checkin' as any)} />
           <SettingRow icon="people-outline" label="家庭健康"
             onPress={() => router.push('/family' as any)} />
         </View>
@@ -196,6 +200,8 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.card}>
+          <SettingRow icon="pulse-outline" label="数据自检"
+            onPress={() => router.push('/data-integrity' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
           <SettingRow icon="shield-checkmark-outline" label="隐私政策" onPress={() => {}} />
         </View>

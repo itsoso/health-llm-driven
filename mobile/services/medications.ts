@@ -101,3 +101,35 @@ export async function logMedication(input: LogMedicationInput): Promise<Medicati
 export async function deleteMedicationLog(id: number): Promise<void> {
   await api.delete(`/medication/logs/${id}`);
 }
+
+// ──────────────────────────────────────────────────────────────
+// 多药梳理 / 减药候选评审(deprescribing review)
+// 后端 GET /medication/deprescribing-review/me(PR #154)。无 OpenAPI schema,手写对齐:
+// 见 backend/app/services/deprescribing_review.py::review_medications。
+// ⚠️ 全部 candidate 级提示,后端话术绝不出现"停药/减量"命令——UI 文案照搬,不改写。
+// ──────────────────────────────────────────────────────────────
+
+export type DeprescribingFlagCode =
+  | 'polypharmacy'
+  | 'duplicate_class'
+  | 'long_term_candidate'
+  | 'expired_still_active'
+  | string;
+
+export interface DeprescribingFlag {
+  code: DeprescribingFlagCode;
+  detail: string;
+  suggestion: string;
+}
+
+export interface DeprescribingReview {
+  active_count: number;
+  is_polypharmacy: boolean;
+  flags: DeprescribingFlag[];
+  disclaimer: string;
+}
+
+export async function getDeprescribingReview(): Promise<DeprescribingReview> {
+  const resp = await api.get<DeprescribingReview>('/medication/deprescribing-review/me');
+  return resp.data;
+}
