@@ -26,11 +26,14 @@ dimension 选择指南 (按场景):
   spo2          — 夜间血氧逐分钟时间序列 + 平均/最低/ODI 氧减指数 (OSAHS 筛查)
   spo2_sleep_correlation — 睡眠阶段 (deep/rem/light/awake) × 血氧关联分析
 
-【心率 / 压力 / HRV】
-  heart_rate    — 心率(静息/平均/最高)历史曲线
-  hrv           — HRV 7/14/30 天趋势, 状态判断 (偏低/良好)
-  body_battery  — Garmin 身体电量 (充电/消耗时段)
-  stress        — 压力水平时段分布
+【心率 / 压力 / HRV / 日常活动 — 同源可穿戴 daily】
+  这一组 (heart_rate / hrv / body_battery / stress / activity) 读同一份归一化
+  可穿戴 daily 数据 (GarminData, 多设备按优先级合并, 与 Twin 同源), 返回最近
+  N 天逐日紧凑摘要 (含数据源标注), 不截断.
+  heart_rate    — 心率(静息/平均)历史
+  hrv           — HRV 趋势
+  body_battery  — 身体电量
+  stress        — 压力水平
 
 【运动 — 这里容易选错, 仔细看】
   workout / exercise — 同义, Garmin 同步的**结构化运动** (跑步/骑行/游泳/HIIT),
@@ -39,7 +42,7 @@ dimension 选择指南 (按场景):
   manual_exercise    — 用户**手动录入**的简单锻炼 (俯卧撑 20 个 / 瑜伽 30 分钟 / 拉伸).
                        只有计次/时长, 没有 GPS 数据.
                        用户问"这周做了多少俯卧撑"选这个.
-  activity           — 步数 / 活动分钟数 / 久坐提醒 (非训练类的日常活动)
+  activity           — 步数 / 活动分钟数 / 日常活动 (读可穿戴 daily, 与上面同源)
 
 【体重 / 血压 / 饮食 / 饮水】
   weight           — 体重历史
