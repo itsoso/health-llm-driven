@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -280,6 +280,145 @@ def _score_health_advice(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, 
             "details": "; ".join(details) if details else "ok",
         }
     }
+
+
+# ============= retrieval suite (端到端: agent 工具真去查 DB) =============
+
+def _ensure_jsonb_sqlite_compiler() -> None:
+    """JSONB→JSON 降级 (SQLite 不认 JSONB). 必须在 create_all 之前注册一次,
+    否则首个 case 的 create_all 会因某张表的 JSONB 列编译失败而整体回滚,
+    导致 medical_indicators 等表没建出来 (no such table)."""
+    if getattr(_ensure_jsonb_sqlite_compiler, "_done", False):
+        return
+    from sqlalchemy.dialects.postgresql import JSONB
+    from sqlalchemy.ext.compiler import compiles
+
+    @compiles(JSONB, "sqlite")
+    def _compile_jsonb_sqlite(type_, compiler, **kw):  # noqa: ANN001
+        return "JSON"
+
+    _ensure_jsonb_sqlite_compiler._done = True
+
+
+def _build_eval_db_session():
+    """内存 SQLite session, 复用 conftest 的 JSONB→JSON 降级.
+
+    每次新建独立 engine + StaticPool, case 间完全隔离. 返回 (session, engine).
+    调用方负责 close + dispose.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    _ensure_jsonb_sqlite_compiler()
+
+    import app.models  # noqa: F401 — 注册主要表
+    # family_health 不在 app.models.__init__ 里, 不显式 import 则 MedicalIndicator
+    # 不会登记到 Base.metadata, 首个 case 的 create_all 会缺 medical_indicators 表.
+    import app.models.family_health  # noqa: F401
+    from app.database import Base
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    return Session(), engine
+
+
+def _seed_medical_indicators(db, user_id: int, rows: List[Dict[str, Any]]) -> None:
+    """按 case_inputs.seed.medical_indicators 播种 MedicalIndicator.
+
+    每行支持: name / name_en / item_code / value / value_text / unit /
+    record_date(YYYY-MM-DD 或 'today-Nd' 相对今天) / is_abnormal /
+    reference_low / reference_high.
+    """
+    from datetime import date as _date
+
+    from app.models.family_health import MedicalIndicator
+
+    today = _date.today()
+    for r in rows:
+        rd = r.get("record_date")
+        if isinstance(rd, str) and rd.startswith("today-") and rd.endswith("d"):
+            rec_date = today - timedelta(days=int(rd[len("today-"):-1]))
+        elif isinstance(rd, str):
+            rec_date = _date.fromisoformat(rd)
+        elif rd is None:
+            rec_date = today
+        else:
+            rec_date = rd
+        db.add(MedicalIndicator(
+            user_id=user_id,
+            name=r["name"],
+            name_en=r.get("name_en"),
+            item_code=r.get("item_code"),
+            category=r.get("category"),
+            value=r.get("value"),
+            value_text=r.get("value_text"),
+            unit=r.get("unit"),
+            reference_low=r.get("reference_low"),
+            reference_high=r.get("reference_high"),
+            is_abnormal=bool(r.get("is_abnormal", False)),
+            record_date=rec_date,
+            source=r.get("source", "manual"),
+        ))
+    db.commit()
+
+
+# seed.<key> → (model_table, seeder_fn). 扩新维度时在此加一行.
+_SEEDERS: Dict[str, Callable[[Any, int, List[Dict[str, Any]]], None]] = {
+    "medical_indicators": _seed_medical_indicators,
+}
+
+
+@_register_runner("retrieval")
+def _run_retrieval_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """端到端: 播种 DB → AgentExecutor._exec_health_query → 返回工具文本.
+
+    钉死「化验查不到 / 工具不执行 / 返回空 / 截断丢数据」这类回归.
+    用真实内存 SQLite + 真实 AgentExecutor, 不调 LLM, CI 零成本.
+    """
+    import asyncio
+
+    from app.services.agent_executor import AgentExecutor
+
+    seed = case_inputs.get("seed", {}) or {}
+    user_id = int(seed.get("user_id", 1))
+    query = case_inputs.get("query", {}) or {}
+
+    db, engine = _build_eval_db_session()
+    try:
+        for key, rows in seed.items():
+            if key == "user_id":
+                continue
+            seeder = _SEEDERS.get(key)
+            if seeder is None:
+                raise ValueError(f"retrieval: 未知 seed key '{key}' (支持: {list(_SEEDERS)})")
+            seeder(db, user_id, rows or [])
+
+        executor = AgentExecutor(db)
+        executor._current_user_id = user_id
+
+        args = {
+            "dimension": query.get("dimension", "medical_exam"),
+            "indicator": query.get("indicator", ""),
+            "days": query.get("days", 7),
+        }
+        # base/headers 仅供非 medical_exam 维度的 HTTP 路径; medical_exam 短路到 DB.
+        output_text = asyncio.run(executor._exec_health_query("http://eval.invalid", {}, args))
+        return {"output_text": output_text}
+    finally:
+        db.close()
+        engine.dispose()
+
+
+@_register_scorer("retrieval")
+def _score_retrieval(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """断言工具文本 must_contain / must_not_contain — 确定性, 无 LLM."""
+    return {"keywords": score_keywords(output.get("output_text", ""), case.expected)}
 
 
 # ============= 通用流程 =============
