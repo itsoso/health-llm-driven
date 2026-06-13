@@ -132,6 +132,8 @@ struct AppRootView: View {
             OriginatorView(client: services.originatorClient, onAskAgent: askAgentWithContext)
         case .liver:
             LiverTrendView(client: services.liverHealthClient, onAskAgent: askAgentWithContext)
+        case .healthExtras:
+            HealthExtrasView(client: services.healthExtrasClient, onAskAgent: askAgentWithContext)
         case .data:
             WorkspaceOverviewView(
                 viewModel: services.todayViewModel,
