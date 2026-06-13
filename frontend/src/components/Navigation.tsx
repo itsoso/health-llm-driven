@@ -104,6 +104,7 @@ export default function Navigation() {
         { href: '/mood', label: '情绪追踪', icon: <Smile className="w-4 h-4" /> },
         { href: '/medication', label: '用药管理', icon: <Pill className="w-4 h-4" /> },
         { href: '/prescriptions', label: '处方查原研药', icon: <FileText className="w-4 h-4" /> },
+        { href: '/health-extras', label: '健康洞察补充', icon: <Activity className="w-4 h-4" /> },
         { href: '/womens-health', label: '女性健康', icon: <Baby className="w-4 h-4" /> },
         { href: '/health-report', label: '健康报告', icon: <FileBarChart className="w-4 h-4" /> },
       ],
