@@ -99,6 +99,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("respiration_nightly",   lambda s: _fill_respiration_nightly(s, user_id, twin, sources)),
         ("garmin_official",       lambda s: _fill_garmin_official(s, user_id, twin, sources)),
         ("vo2max",                lambda s: _fill_vo2max(s, user_id, twin, sources)),
+        ("personal_baseline",     lambda s: _fill_personal_baseline(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -325,6 +326,28 @@ def _fill_vo2max(db: Session, user_id: int, twin: HealthTwin, sources: Set[str])
         sources.add("garmin")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[twin] vo2max 填充失败: {e}")
+
+
+def _fill_personal_baseline(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """Phase 0: 个人滚动基线 + 当前值偏离 (z-score) 写入 physiological.personal_baselines.
+
+    "你现在 vs 你自己的 90 天历史" —— 纯统计, 喂 agent 解读 (≠ #149 跨源差异)。
+    冷启动不足的指标 personal_baseline service 自动跳过, 这里只搬运。
+    """
+    try:
+        from app.services.personal_baseline import compute_personal_baselines
+        from app.twin.schema import PersonalBaselineMetric
+
+        ref_date = twin.meta.generated_at.date() if twin.meta.generated_at else date.today()
+        baselines = compute_personal_baselines(db, user_id, today=ref_date)
+        if not baselines:
+            return
+        twin.physiological.personal_baselines = [
+            PersonalBaselineMetric(**mb.to_dict()) for mb in baselines
+        ]
+        sources.add("garmin")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] personal_baseline 填充失败: {e}")
 
 
 def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
