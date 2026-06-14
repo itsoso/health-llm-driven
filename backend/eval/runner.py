@@ -45,6 +45,39 @@ def _register_scorer(suite: str):
     return deco
 
 
+def _run_coro_isolated(coro):
+    """在独立 event loop 跑 coro, 跑完彻底关闭并还原调用方的 current loop.
+
+    为什么不直接 asyncio.run: asyncio.run 跑完会把进程级 current event loop 置成
+    None (set_event_loop(None))。当 runner 在 pytest 进程内被调用 (test_eval_*),
+    这会污染随后跑的 pytest-asyncio 测试 —— 它们依赖 policy 维护的 current loop,
+    被置 None / 残留已关闭 loop 后会卡死 (#159 CI backend-tests 6h 超时真因)。
+    这里 save→新建→run→close→restore, 对调用方完全无副作用。
+    """
+    import asyncio
+    import warnings
+
+    # 取当前 loop 用于跑完还原。3.12 下 "无 current loop" 会发 DeprecationWarning,
+    # 这里只是探测, 静默掉; 探测不到就当 None。
+    prev_loop = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        try:
+            prev_loop = asyncio.get_event_loop_policy().get_event_loop()
+        except Exception:
+            prev_loop = None
+
+    new_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(new_loop)
+    try:
+        return new_loop.run_until_complete(coro)
+    finally:
+        try:
+            new_loop.close()
+        finally:
+            asyncio.set_event_loop(prev_loop)
+
+
 # ============= safety suite =============
 
 @_register_runner("safety")
@@ -145,7 +178,6 @@ def _score_recovery(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[
 @_register_runner("orchestrator")
 def _run_orchestrator_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
     """跑真实 _build_synthesis_prompt + _call_llm. 不依赖 DB."""
-    import asyncio
     from datetime import datetime as _dt
     from app.orchestrator.orchestrator import _build_synthesis_prompt, _call_llm
     from app.orchestrator.schema import SpecialistFinding
@@ -159,7 +191,7 @@ def _run_orchestrator_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
     query = case_inputs.get("query", "")
 
     system_prompt, user_prompt = _build_synthesis_prompt(query, twin, findings)
-    synthesis = asyncio.run(_call_llm(system_prompt, user_prompt))
+    synthesis = _run_coro_isolated(_call_llm(system_prompt, user_prompt))
     return {"synthesis": synthesis, "query": query}
 
 
@@ -381,8 +413,6 @@ def _run_retrieval_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
     钉死「化验查不到 / 工具不执行 / 返回空 / 截断丢数据」这类回归.
     用真实内存 SQLite + 真实 AgentExecutor, 不调 LLM, CI 零成本.
     """
-    import asyncio
-
     from app.services.agent_executor import AgentExecutor
 
     seed = case_inputs.get("seed", {}) or {}
@@ -408,7 +438,7 @@ def _run_retrieval_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
             "days": query.get("days", 7),
         }
         # base/headers 仅供非 medical_exam 维度的 HTTP 路径; medical_exam 短路到 DB.
-        output_text = asyncio.run(executor._exec_health_query("http://eval.invalid", {}, args))
+        output_text = _run_coro_isolated(executor._exec_health_query("http://eval.invalid", {}, args))
         return {"output_text": output_text}
     finally:
         db.close()
