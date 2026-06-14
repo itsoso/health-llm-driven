@@ -138,10 +138,10 @@ def test_gate_keeps_unreliable_when_no_reliable_fallback(monkeypatch):
     assert pass_tools
 
 
-def test_gate_fast_record_unreliable_redirected(monkeypatch):
-    """fast-record 路由到 glm-5.1 (FAST_RECORD_MODEL_ID) + 工具 → 门控到可靠模型。
+def test_fast_record_not_gated_keeps_cheap_model(monkeypatch):
+    """fast-record 高频路径**不门控**:保留 glm-5.1(快+便宜),不回退商用模型。
 
-    这正是 #147/#161 的源头: 记录回合用 glm-5.1 抽参数。
+    其工具参数提取由 #147/#161 兜底解析覆盖;记录每次回退商用会显著涨成本/延迟。
     """
     sentinel_unreliable = MagicMock(name="glm_provider")
     sentinel_reliable = MagicMock(name="claude_provider")
@@ -157,5 +157,5 @@ def test_gate_fast_record_unreliable_redirected(monkeypatch):
     ex._prefer_fast_record_model = True
 
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
-    assert provider is sentinel_reliable
+    assert provider is sentinel_unreliable, "fast-record 应保留 glm-5.1,不被门控"
     assert pass_tools

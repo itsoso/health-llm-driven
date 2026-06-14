@@ -2058,7 +2058,9 @@ class AgentExecutor:
         # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
         # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
         # 拿不准 (effective_model_id=None / 未注册) → 保守不动, 依赖兜底解析。
-        if pass_tools:
+        # **fast-record 高频路径不门控**:它图 glm-5.1 的快+便宜,记录每次回退到商用模型
+        # 会显著涨成本/延迟;其工具参数提取由 #147/#161 兜底解析覆盖,已够稳。
+        if pass_tools and not self._prefer_fast_record_model:
             gated = self._gate_tool_provider(effective_model_id)
             if gated is not None:
                 provider = gated
