@@ -26,6 +26,7 @@ class Medication(Base):
     # PPI 要空腹/饭前、抗生素要饭后、铋剂要饭前；没有这个字段提醒只能报「该吃X」却说不出怎么吃
     timing_relation = Column(String(20))  # 相对吃饭的时点；NULL = 无特殊要求
     meal_anchor = Column(String(10))  # breakfast / lunch / dinner；哪一餐(可空)
+    regimen_id = Column(Integer, ForeignKey("medication_regimens.id"))  # 属于哪个疗程方案(可空)
 
     start_date = Column(Date)  # 开始服用日期
     end_date = Column(Date)  # 计划结束日期
@@ -67,6 +68,43 @@ class MedicationLog(Base):
     __table_args__ = (
         Index("ix_medication_logs_user_date", "user_id", "taken_date"),
         Index("ix_medication_logs_med_date", "medication_id", "taken_date"),
+    )
+
+
+class MedicationRegimen(Base):
+    """用药方案 / 疗程(多阶段)。
+
+    胃溃疡 Hp 根除是多阶段:根除期(14d,4 药)→ 愈合期(4–8w,1 药)。一条疗程串起多阶段,
+    每阶段一组带时点的药。`phases` JSON 是「整套方案」的不可变快照;实际生效的药品是按
+    current_phase 在 medications 表里实例化的(regimen_id 指回来)。阶段切换 = 停旧阶段药、
+    建新阶段药(P1b 的 Celery 任务做)。
+
+    定位:这是「执行/录入」工具,不是「开方」。phases 来自医生处方(选模板脚手架 / OCR / 手填),
+    系统永不自动开方或调量。
+    """
+    __tablename__ = "medication_regimens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    name = Column(String(200), nullable=False)  # "幽门螺杆菌根除·铋剂四联 + PPI 愈合"
+    source = Column(String(40))  # template:<id> / ocr_prescription / manual
+    template_id = Column(String(60))  # 若来自模板
+    status = Column(String(20), default="active")  # active / completed / paused
+    current_phase = Column(Integer, default=0)  # 0-based 当前阶段序号
+    phases = Column(JSON)  # [{name, duration_days, meds:[{name,dosage,times_per_day,reminder_times,timing_relation,meal_anchor}]}]
+    review_on_complete = Column(Text)  # 疗程结束复查说明(接 medication_course_service)
+
+    started_on = Column(Date)
+    expected_end_on = Column(Date)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", backref="medication_regimens")
+
+    __table_args__ = (
+        Index("ix_medication_regimens_user_status", "user_id", "status"),
     )
 
 
