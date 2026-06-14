@@ -138,6 +138,57 @@ def test_completed_daily_plan_action_is_removed_from_refreshed_plan(client, db, 
     assert action_key not in [a["action_key"] for a in refreshed.json()["actions"]]
 
 
+def test_daily_plan_progress_separates_completed_from_other_terminal_events(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    plan_resp = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert plan_resp.status_code == 200
+    actions = plan_resp.json()["actions"]
+    assert len(actions) >= 2
+    completed_key = actions[0]["action_key"]
+    skipped_key = actions[1]["action_key"]
+
+    from app.models.intervention_event import InterventionEvent
+
+    db.add_all([
+        InterventionEvent(
+            user_id=user.id,
+            plan_date=date.today(),
+            action_key=completed_key,
+            action_domain=actions[0]["domain"],
+            action_title=actions[0]["title"],
+            feedback_status="completed",
+            source="daily_plan",
+            action_snapshot=actions[0],
+        ),
+        InterventionEvent(
+            user_id=user.id,
+            plan_date=date.today(),
+            action_key=skipped_key,
+            action_domain=actions[1]["domain"],
+            action_title=actions[1]["title"],
+            feedback_status="skipped",
+            source="daily_plan",
+            action_snapshot=actions[1],
+        ),
+    ])
+    db.commit()
+
+    refreshed = client.get("/api/v1/daily-plan/me", headers=headers)
+    assert refreshed.status_code == 200
+    body = refreshed.json()
+    refreshed_keys = [a["action_key"] for a in body["actions"]]
+    assert completed_key not in refreshed_keys
+    assert skipped_key not in refreshed_keys
+
+    progress = body["state_summary"]["action_progress"]
+    assert progress["completed_count"] == 1
+    assert progress["handled_count"] == 2
+    assert progress["remaining_count"] == len(body["actions"])
+    assert progress["completed_action_keys"] == [completed_key]
+    assert set(progress["terminal_action_keys"]) == {completed_key, skipped_key}
+
+
 def test_completed_intervention_action_syncs_source_card_and_disappears(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
 

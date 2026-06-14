@@ -60,6 +60,73 @@ function cycleMetricLine(action: DailyPlanAction): string | null {
   return metric ? `90 天周期 · ${metric}` : null;
 }
 
+type PlanActionProgress = {
+  completed_count?: number;
+  handled_count?: number;
+  remaining_count?: number;
+  completed_action_keys?: string[];
+  terminal_action_keys?: string[];
+};
+
+const COMPLETED_EVENT_STATES = new Set<DailyPlanActionEventType>(['completed', 'verified']);
+const TERMINAL_EVENT_STATES = new Set<DailyPlanActionEventType>(['completed', 'skipped', 'verified']);
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readActionProgress(state: Record<string, unknown>): PlanActionProgress | null {
+  const raw = state.action_progress;
+  if (!raw || typeof raw !== 'object') return null;
+  const progress = raw as Record<string, unknown>;
+  return {
+    completed_count: numberValue(progress.completed_count) ?? undefined,
+    handled_count: numberValue(progress.handled_count) ?? undefined,
+    remaining_count: numberValue(progress.remaining_count) ?? undefined,
+    completed_action_keys: stringArray(progress.completed_action_keys),
+    terminal_action_keys: stringArray(progress.terminal_action_keys),
+  };
+}
+
+function buildProgressLabel({
+  progress,
+  actions,
+  eventByAction,
+}: {
+  progress: PlanActionProgress | null;
+  actions: DailyPlanAction[];
+  eventByAction: Record<string, DailyPlanActionEventType | 'sending' | 'error'>;
+}): string | null {
+  if (!progress && actions.length === 0) return null;
+  const remoteCompleted = new Set(progress?.completed_action_keys ?? []);
+  const remoteTerminal = new Set(progress?.terminal_action_keys ?? []);
+  const completed = new Set(remoteCompleted);
+  const terminal = new Set(remoteTerminal);
+
+  for (const [actionKey, state] of Object.entries(eventByAction)) {
+    if (state === 'sending' || state === 'error') continue;
+    if (COMPLETED_EVENT_STATES.has(state)) completed.add(actionKey);
+    if (TERMINAL_EVENT_STATES.has(state)) terminal.add(actionKey);
+  }
+
+  const visibleLocalTerminal = actions.filter((action) => {
+    const key = action.action_key ? String(action.action_key) : '';
+    return key && terminal.has(key) && !remoteTerminal.has(key);
+  }).length;
+  const baseRemaining = progress?.remaining_count ?? actions.length;
+  const remaining = Math.max(0, baseRemaining - visibleLocalTerminal);
+  const completedCount = Math.max(progress?.completed_count ?? 0, completed.size);
+  const handledCount = Math.max(progress?.handled_count ?? 0, terminal.size);
+  const otherHandled = Math.max(0, handledCount - completedCount);
+  return otherHandled > 0
+    ? `今日闭环 ${completedCount} 完成 · ${otherHandled} 已处理 · ${remaining} 待做`
+    : `今日闭环 ${completedCount} 完成 · ${remaining} 待做`;
+}
+
 export default function TodayPlanPanel({
   plan,
   loading,
@@ -85,6 +152,11 @@ export default function TodayPlanPanel({
   const actions = pickTopPlanActions(visiblePlanActions, compact ? 2 : 3);
   const visibleActionCount = visiblePlanActions.length;
   const state = plan?.state_summary ?? {};
+  const progressLabel = buildProgressLabel({
+    progress: readActionProgress(state),
+    actions: visiblePlanActions,
+    eventByAction,
+  });
   const waist = state.waist_cm as number | undefined;
   const bp = state.blood_pressure as string | undefined;
   const acute = (state.acute && typeof state.acute === 'object')
@@ -184,6 +256,11 @@ export default function TodayPlanPanel({
           <Text style={[styles.subtitle, { color: c.labelTertiary }]}>
             {loading ? '正在生成' : `代谢健康 · ${plan?.plan_date ?? '今天'}`}
           </Text>
+          {progressLabel ? (
+            <Text style={[styles.progressText, { color: c.labelSecondary }]} numberOfLines={1}>
+              {progressLabel}
+            </Text>
+          ) : null}
         </View>
         {(waist || bp) ? (
           <Text style={[styles.metricHint, { color: c.labelSecondary }]} numberOfLines={1}>
@@ -348,6 +425,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '700' },
   compactTitle: { fontSize: 15, fontWeight: '800' },
   subtitle: { fontSize: 12, fontWeight: '500' },
+  progressText: { fontSize: 12, fontWeight: '800' },
   metricHint: { maxWidth: 118, fontSize: 12, fontWeight: '600' },
   compactPill: {
     borderRadius: radii.full,
