@@ -1,5 +1,6 @@
 """用药管理模型"""
 from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Text, Boolean, JSON, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -92,7 +93,7 @@ class MedicationRegimen(Base):
     template_id = Column(String(60))  # 若来自模板
     status = Column(String(20), default="active")  # active / completed / paused
     current_phase = Column(Integer, default=0)  # 0-based 当前阶段序号
-    phases = Column(JSON)  # [{name, duration_days, meds:[{name,dosage,times_per_day,reminder_times,timing_relation,meal_anchor}]}]
+    phases = Column(JSONB)  # [{name, duration_days, meds:[{name,dosage,times_per_day,reminder_times,timing_relation,meal_anchor}]}]
     review_on_complete = Column(Text)  # 疗程结束复查说明(接 medication_course_service)
 
     started_on = Column(Date)

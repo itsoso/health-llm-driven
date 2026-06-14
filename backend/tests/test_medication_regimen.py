@@ -69,14 +69,31 @@ def _add_med(db, user_id, name):
     db.commit()
 
 
-def test_ddi_gate_surfaces_statin_clarithromycin(client, auth_user_and_headers, db):
+def test_ddi_gate_blocks_statin_clarithromycin(client, auth_user_and_headers, db):
+    # 评审钉的核心:克拉霉素×阿托伐他汀只评 MEDIUM,但 requires_medical_attention=True
+    # (横纹肌溶解风险)→ 一键自动录入必须**阻断**,不能只"提示"。
     user, h = auth_user_and_headers
     _add_med(db, user.id, "阿托伐他汀")  # 已在吃他汀
     r = client.post("/api/v1/medication/regimens", headers=h,
                     json={"template_id": "hp_bismuth_quad_14d"})  # 含克拉霉素(CYP3A4 抑制)
-    assert r.status_code == 200, r.text  # HIGH 不阻断
-    cats = {a["category"] for a in r.json()["safety_alerts"]}
-    assert "ddi" in cats  # 他汀×克拉霉素 相互作用被检出并带回
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["reason"] == "high_risk_drug_interaction"
+    assert detail["can_override"] is True
+    assert any(a["category"] == "ddi" for a in detail["safety_alerts"])
+    # 阻断 → 没写库
+    assert db.query(MedicationRegimen).filter(MedicationRegimen.user_id == user.id).count() == 0
+
+
+def test_blocked_attempt_is_audited(client, auth_user_and_headers, db):
+    # 被阻断的高危录入尝试必须留痕(知情同意/复盘)
+    from app.models.agent_audit_log import AgentAuditLog
+    user, h = auth_user_and_headers
+    _add_med(db, user.id, "阿托伐他汀")
+    client.post("/api/v1/medication/regimens", headers=h,
+                json={"template_id": "hp_bismuth_quad_14d"})
+    rows = db.query(AgentAuditLog).filter(AgentAuditLog.user_id == user.id).all()
+    assert any("regimen_introduce:blocked" in (r.result_summary or "") for r in rows)
 
 
 def test_ddi_gate_blocks_critical(client, auth_user_and_headers, db):
@@ -90,12 +107,12 @@ def test_ddi_gate_blocks_critical(client, auth_user_and_headers, db):
                     json={"phases": phases, "name": "撞药测试"})
     assert r.status_code == 422, r.text
     detail = r.json()["detail"]
-    assert detail["reason"] == "critical_drug_interaction"
+    assert detail["reason"] == "high_risk_drug_interaction"
     # 阻断 → 没写库
     assert db.query(MedicationRegimen).filter(MedicationRegimen.user_id == user.id).count() == 0
 
 
-def test_override_safety_allows_critical(client, auth_user_and_headers, db):
+def test_override_safety_allows_blocked(client, auth_user_and_headers, db):
     user, h = auth_user_and_headers
     _add_med(db, user.id, "舍曲林")
     phases = [{"name": "测试", "duration_days": 7, "meds": [

@@ -71,6 +71,40 @@ def precheck_interactions(
     return delta
 
 
+def _audit_introduction(
+    db: Session,
+    user_id: int,
+    regimen_name: str,
+    candidate_names: List[str],
+    alerts: List[Alert],
+    decision: str,  # blocked / override / clean
+) -> None:
+    """把一次「引入即 DDI 校验」的结果写进 Agent 审计(旁路,失败不影响主流程)。
+
+    被阻断 / 被 override 的高危录入尝试**最该留痕**(知情同意 / 纠纷 / 复盘)。
+    """
+    try:
+        from app.agents.audit import log_safety_evaluation
+
+        log_safety_evaluation(
+            db,
+            user_id=user_id,
+            alerts_count=len(alerts),
+            result_summary=f"regimen_introduce:{decision} 「{regimen_name}」",
+            twin_build_ms=0,
+            evaluate_ms=0,
+            twin_sources=["medication"],
+            result_detail={
+                "kind": "medication_regimen_introduce",
+                "decision": decision,
+                "candidates": candidate_names,
+                "triggered_rules": [a.rule_id for a in alerts],
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[Regimen] 审计写入失败(旁路): {e}")
+
+
 def _resolve_phases(
     template_id: Optional[str],
     phases: Optional[List[Dict[str, Any]]],
@@ -99,8 +133,9 @@ def instantiate_regimen(
     """实例化一个用药方案。
 
     流程:解析 phases → 对**当前阶段(phase 0)**的药跑 DDI 预检 →
-    若有 CRITICAL 且 override_safety=False → 阻断(不写库,返回 blocked=True)→
-    否则建 MedicationRegimen + phase 0 的 Medication 行(带 timing)。
+    若有「需阻断」相互作用(severity≥HIGH 或 requires_medical_attention)且 override_safety=False
+    → 阻断(不写库,返回 blocked=True)→ 否则建 MedicationRegimen + phase 0 的 Medication 行(带 timing)。
+    阻断 / override / clean 三种结局都写 Agent 审计(旁路)。
 
     返回 {blocked, safety_alerts, disclaimer, regimen}。blocked=True 时 regimen=None。
     """
@@ -113,19 +148,32 @@ def instantiate_regimen(
     candidate_names = regimen_templates.phase_med_names(resolved_phases, 0)
     alerts = precheck_interactions(db, user_id, candidate_names)
     alerts_json = [a.model_dump_for_api() for a in alerts]
-    has_critical = any(a.severity >= Severity.CRITICAL for a in alerts)
 
-    if has_critical and not override_safety:
+    # 阻断阈值:severity≥HIGH **或** 规则标了「需就医」。
+    # 一键自动录入是主动动作,不是被动观察现状,应更保守 —— 本场景的克拉霉素×阿托伐他汀
+    # 只评 MEDIUM 却 requires_medical_attention=True(横纹肌溶解风险),必须拦,不能只"提示"。
+    blocking = [a for a in alerts if a.severity >= Severity.HIGH or a.requires_medical_attention]
+
+    if blocking and not override_safety:
         logger.warning(
             f"[Regimen] user={user_id} 方案 {regimen_name} 被 DDI 闸门阻断: "
-            f"{[a.rule_id for a in alerts if a.severity >= Severity.CRITICAL]}"
+            f"{[a.rule_id for a in blocking]}"
         )
+        _audit_introduction(db, user_id, regimen_name, candidate_names, alerts, "blocked")
         return {
             "blocked": True,
             "safety_alerts": alerts_json,
             "disclaimer": regimen_templates.TEMPLATE_DISCLAIMER,
             "regimen": None,
         }
+    if blocking:  # override_safety=True 才走到这:知情强录,留痕
+        logger.warning(
+            f"[Regimen] user={user_id} 方案 {regimen_name} 知情强行录入(override): "
+            f"{[a.rule_id for a in blocking]}"
+        )
+        _audit_introduction(db, user_id, regimen_name, candidate_names, alerts, "override")
+    else:
+        _audit_introduction(db, user_id, regimen_name, candidate_names, alerts, "clean")
 
     # ── 写库:疗程 + 当前阶段药品 ───────────────────────────
     start = start_on or date.today()

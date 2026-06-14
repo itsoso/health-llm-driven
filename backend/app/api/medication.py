@@ -319,12 +319,14 @@ async def create_regimen(
         raise HTTPException(status_code=400, detail=str(e))
 
     if result["blocked"]:
-        # 用 422 + 结构化 body 让前端弹「检测到严重相互作用」确认页
+        # 用 422 + 结构化 body 让前端弹「检测到高危相互作用」确认页;
+        # 用户知情后可带 override_safety=true 重试(强录,会留审计)
         raise HTTPException(status_code=422, detail={
-            "reason": "critical_drug_interaction",
-            "message": "检测到严重药物相互作用,已阻断录入。请咨询医生后再决定。",
+            "reason": "high_risk_drug_interaction",
+            "message": "检测到高危药物相互作用(需医生评估),已阻断录入。请咨询医生;确需录入可在确认后重试。",
             "safety_alerts": result["safety_alerts"],
             "disclaimer": result["disclaimer"],
+            "can_override": True,
         })
     return result
 
