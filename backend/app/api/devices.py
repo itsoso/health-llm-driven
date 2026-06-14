@@ -885,12 +885,14 @@ class HealthKitImportRequest(BaseModel):
 
 class HealthKitImportError(BaseModel):
     index: int
+    kind: str = "daily"  # "daily" (日聚合写入) | "ecg" (ECG 点事件落库)
     record_date: Optional[str]
     error: str
 
 
 class HealthKitImportResponse(BaseModel):
     imported_count: int
+    ecg_imported_count: int = 0  # 独立落库的 ECG 点事件数 (与日聚合并行, 不依赖其成功)
     source_breakdown: dict  # {"apple-watch": 12, "ringconn": 5, ...}
     errors: List[HealthKitImportError]
 
@@ -927,12 +929,13 @@ async def healthkit_import(
 
     logger.info(
         f"[healthkit_import] user={current_user.id} batch={len(records)} "
-        f"imported={result['imported_count']} sources={result['source_breakdown']} "
-        f"errors={len(result['errors'])}"
+        f"imported={result['imported_count']} ecg_imported={result['ecg_imported_count']} "
+        f"sources={result['source_breakdown']} errors={len(result['errors'])}"
     )
 
     return HealthKitImportResponse(
         imported_count=result["imported_count"],
+        ecg_imported_count=result["ecg_imported_count"],
         source_breakdown=result["source_breakdown"],
         errors=[HealthKitImportError(**e) for e in result["errors"]],
     )

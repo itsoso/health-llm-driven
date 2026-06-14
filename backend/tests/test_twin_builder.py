@@ -927,6 +927,39 @@ class TestHealthKitEcgImport:
         rows = db.query(EcgObservation).filter(EcgObservation.user_id == user.id).all()
         assert len(rows) == 0
 
+    def test_ecg_persists_even_when_daily_aggregation_fails(self, db):
+        """ECG 是点事件, 不依赖日聚合成功。record_date 缺失 → 日聚合解析抛错,
+        但带 ecg_classification 的 ECG 仍须独立落库; 日聚合失败不静默,
+        以可区分的 kind='daily' 错误项反映在 import 返回里 (不假装成功)。"""
+        from app.services.device_adapters.healthkit import HealthKitAdapter
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+
+        records = [{
+            # record_date 缺失 → _record_to_normalized 抛 ValueError (日聚合失败)
+            "data_source": "apple-watch",
+            "ecg_classification": "AtrialFibrillation",
+            "ecg_recorded_at": "2026-06-14T09:30:00",
+            "afib_event_count": 2,
+        }]
+        result = HealthKitAdapter.batch_save(db, user.id, records)
+
+        # 日聚合: 0 导入, 但失败必须被反映 (不静默)
+        assert result["imported_count"] == 0
+        daily_errors = [e for e in result["errors"] if e["kind"] == "daily"]
+        assert len(daily_errors) == 1
+        assert daily_errors[0]["index"] == 0
+        assert "record_date" in daily_errors[0]["error"]
+
+        # ECG: 仍然落库成功 (与日聚合并行, 不被其失败拖垮)
+        assert result["ecg_imported_count"] == 1
+        assert not [e for e in result["errors"] if e["kind"] == "ecg"]
+        rows = db.query(EcgObservation).filter(EcgObservation.user_id == user.id).all()
+        assert len(rows) == 1
+        assert rows[0].classification == "AtrialFibrillation"
+        assert rows[0].afib_event_count == 2
+        assert rows[0].data_source == "apple-watch"
+
     def test_import_ecg_idempotent_on_same_recorded_at(self, db):
         from app.services.device_adapters.healthkit import HealthKitAdapter
         from app.models.ecg_observation import EcgObservation

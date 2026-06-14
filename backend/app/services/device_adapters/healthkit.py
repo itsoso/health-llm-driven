@@ -137,14 +137,12 @@ class HealthKitAdapter(DeviceAdapter):
                     return None
         return None
 
-    @classmethod
-    def _record_to_normalized(cls, record: Dict[str, Any]) -> Tuple[NormalizedHealthData, str]:
-        """单条 record dict → NormalizedHealthData. 返回 (data, validated_data_source)."""
-        record_date = cls._parse_date(record.get("record_date"))
-        if record_date is None:
-            raise ValueError(f"record_date 缺失或格式错误: {record.get('record_date')!r}")
+    @staticmethod
+    def _resolve_data_source(record: Dict[str, Any]) -> str:
+        """从 record 解析 validated data_source — 不依赖 record_date.
 
-        # data_source 优先取 record 字段,其次按 source_name 映射,兜底 unknown
+        优先取 record.data_source,其次按 source_name 映射,兜底 unknown.
+        独立于 _record_to_normalized,使 ECG 点事件在日聚合解析失败时仍能确定来源."""
         ds_raw = record.get("data_source")
         if ds_raw is None and record.get("source_name"):
             ds_raw = map_source_name_to_data_source(record["source_name"])
@@ -152,6 +150,16 @@ class HealthKitAdapter(DeviceAdapter):
             if ds_raw is not None:
                 logger.warning(f"[healthkit] data_source='{ds_raw}' 不在白名单, fallback=unknown")
             ds_raw = "unknown"
+        return ds_raw
+
+    @classmethod
+    def _record_to_normalized(cls, record: Dict[str, Any]) -> Tuple[NormalizedHealthData, str]:
+        """单条 record dict → NormalizedHealthData. 返回 (data, validated_data_source)."""
+        record_date = cls._parse_date(record.get("record_date"))
+        if record_date is None:
+            raise ValueError(f"record_date 缺失或格式错误: {record.get('record_date')!r}")
+
+        ds_raw = cls._resolve_data_source(record)
 
         return NormalizedHealthData(
             record_date=record_date,
@@ -261,38 +269,36 @@ class HealthKitAdapter(DeviceAdapter):
     ) -> Dict[str, Any]:
         """逐条独立 try/except 写入 garmin_data,一条坏数据不让整批 fail.
 
+        ECG 是点事件,语义上**不依赖**日聚合写入成功,因此与日聚合并行各自独立
+        try/except:即使 _record_to_normalized(日聚合)因 record_date 缺失抛错,
+        本条若带 ecg_classification 仍尝试落 ECG。ECG 丢弃/落库失败走**可区分**的
+        "ECG dropped" 错误项(`kind: "ecg"`),不混进通用 record error,让调用方感知。
+
         返回:
           {
             "imported_count": int,
+            "ecg_imported_count": int,
             "source_breakdown": {"apple-watch": 12, "ringconn": 5, ...},
-            "errors": [{"index": int, "record_date": str|None, "error": str}, ...]
+            "errors": [
+              {"index": int, "kind": "daily"|"ecg", "record_date": str|None, "error": str},
+              ...
+            ]
           }
         """
         from .manager import DeviceManager
 
         imported = 0
+        ecg_imported = 0
         breakdown: Dict[str, int] = {}
         errors: List[Dict[str, Any]] = []
 
         for idx, record in enumerate(records):
+            # ── 日聚合写入 (独立 try) ────────────────────────────────────────
             try:
                 normalized, ds = cls._record_to_normalized(record)
                 DeviceManager._save_health_data(db, user_id, normalized)
                 imported += 1
                 breakdown[ds] = breakdown.get(ds, 0) + 1
-                # ECG 是点事件, 独立落库 (即便日聚合无其它字段也要存). 失败只 warning,
-                # 不让一条 ECG 拖垮已成功的日聚合写入.
-                try:
-                    cls._save_ecg(db, user_id, record, ds)
-                except Exception as ecg_err:  # noqa: BLE001
-                    logger.warning(
-                        f"[healthkit] ECG 落库 idx={idx} failed: "
-                        f"{type(ecg_err).__name__}: {ecg_err}"
-                    )
-                    try:
-                        db.rollback()
-                    except Exception:
-                        pass
             except Exception as e:
                 logger.warning(
                     f"[healthkit] batch_save idx={idx} record_date={record.get('record_date')!r} "
@@ -300,18 +306,47 @@ class HealthKitAdapter(DeviceAdapter):
                 )
                 errors.append({
                     "index": idx,
+                    "kind": "daily",
                     "record_date": str(record.get("record_date")) if record.get("record_date") else None,
                     "error": f"{type(e).__name__}: {e}",
                 })
                 # _save_health_data 内部 db.commit() 失败时由调用方负责 rollback;
-                # 这里独立 try 仅捕获,后续 record 继续.
+                # 这里独立 try 仅捕获,后续逻辑继续。
                 try:
                     db.rollback()
                 except Exception:
                     pass
 
+            # ── ECG 点事件写入 (独立 try, 与日聚合并行) ──────────────────────
+            # 即使日聚合失败也尝试落 ECG: ECG 是点事件, 不依赖日聚合成功。
+            # data_source 独立解析 (不经 _record_to_normalized, 后者可能已抛错)。
+            if record.get("ecg_classification"):
+                try:
+                    ds_ecg = cls._resolve_data_source(record)
+                    if cls._save_ecg(db, user_id, record, ds_ecg):
+                        ecg_imported += 1
+                except Exception as ecg_err:  # noqa: BLE001
+                    # 可区分日志: 明确 "ECG dropped", 不混进通用 record error。
+                    logger.error(
+                        f"[healthkit] ECG dropped idx={idx} "
+                        f"ecg_recorded_at={record.get('ecg_recorded_at')!r} "
+                        f"classification={record.get('ecg_classification')!r}: "
+                        f"{type(ecg_err).__name__}: {ecg_err}"
+                    )
+                    errors.append({
+                        "index": idx,
+                        "kind": "ecg",
+                        "record_date": str(record.get("ecg_recorded_at")) if record.get("ecg_recorded_at") else None,
+                        "error": f"ECG dropped: {type(ecg_err).__name__}: {ecg_err}",
+                    })
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+
         return {
             "imported_count": imported,
+            "ecg_imported_count": ecg_imported,
             "source_breakdown": breakdown,
             "errors": errors,
         }

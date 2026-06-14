@@ -133,6 +133,40 @@ def test_healthkit_import_apple_xml_path_unaffected(client, db):
     assert by_src["apple-watch"].steps == 8500
 
 
+def test_healthkit_import_ecg_persists_when_daily_fails(client, db):
+    """端点级: 一条带 ECG (AtrialFibrillation) 但 record_date 不可解析 →
+    日聚合解析失败但反映在 errors (kind='daily'), ECG 仍落库 (ecg_imported_count=1)。
+    防回归: ECG 点事件不因日聚合失败被静默丢弃。
+
+    注: record_date 在请求 schema 是必填 str, 完全缺失会被请求级 422 拦下 (见
+    test_twin_builder 的 batch_save 直测覆盖该 contract 层); 端点级真实失败路径是
+    '存在但格式错误的 record_date' (过 str 校验, _parse_date 返回 None → ValueError)。"""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = {"records": [{
+        "record_date": "not-a-date",  # 过 str 校验但 _parse_date 解析失败 → 日聚合 ValueError
+        "data_source": "apple-watch",
+        "ecg_classification": "AtrialFibrillation",
+        "ecg_recorded_at": "2026-06-10T08:15:00",
+        "afib_event_count": 1,
+    }]}
+    resp = client.post("/api/v1/devices/healthkit/import", json=payload, headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    assert body["imported_count"] == 0
+    assert body["ecg_imported_count"] == 1
+    daily_errors = [e for e in body["errors"] if e["kind"] == "daily"]
+    assert len(daily_errors) == 1
+    assert not [e for e in body["errors"] if e["kind"] == "ecg"]
+
+    from app.models.ecg_observation import EcgObservation
+    rows = db.query(EcgObservation).filter(EcgObservation.user_id == user.id).all()
+    assert len(rows) == 1
+    assert rows[0].classification == "AtrialFibrillation"
+
+
 def test_healthkit_import_fractional_int_fields_coerced_not_422(client, db):
     """avg() 聚合常把小数 float 喂给 int 字段(resting_heart_rate=52.5)。
     回归:整批 422 → 0 导入(用户实测 '已导入 0 天 1 条错误')。
