@@ -67,10 +67,64 @@ public struct ModelPreference: Decodable, Equatable, Sendable {
 public struct DailyOperatingPlan: Decodable, Equatable, Sendable {
     public let planDate: String
     public let actions: [DailyPlanAction]
+    public let stateSummary: DailyPlanStateSummary?
+
+    public init(
+        planDate: String,
+        actions: [DailyPlanAction],
+        stateSummary: DailyPlanStateSummary? = nil
+    ) {
+        self.planDate = planDate
+        self.actions = actions
+        self.stateSummary = stateSummary
+    }
 
     enum CodingKeys: String, CodingKey {
         case planDate = "plan_date"
         case actions
+        case stateSummary = "state_summary"
+    }
+}
+
+public struct DailyPlanStateSummary: Decodable, Equatable, Sendable {
+    public let actionProgress: DailyPlanActionProgress?
+
+    public init(actionProgress: DailyPlanActionProgress? = nil) {
+        self.actionProgress = actionProgress
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case actionProgress = "action_progress"
+    }
+}
+
+public struct DailyPlanActionProgress: Decodable, Equatable, Sendable {
+    public let completedCount: Int?
+    public let handledCount: Int?
+    public let remainingCount: Int?
+    public let completedActionKeys: [String]
+    public let terminalActionKeys: [String]
+
+    public init(
+        completedCount: Int? = nil,
+        handledCount: Int? = nil,
+        remainingCount: Int? = nil,
+        completedActionKeys: [String] = [],
+        terminalActionKeys: [String] = []
+    ) {
+        self.completedCount = completedCount
+        self.handledCount = handledCount
+        self.remainingCount = remainingCount
+        self.completedActionKeys = completedActionKeys
+        self.terminalActionKeys = terminalActionKeys
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case completedCount = "completed_count"
+        case handledCount = "handled_count"
+        case remainingCount = "remaining_count"
+        case completedActionKeys = "completed_action_keys"
+        case terminalActionKeys = "terminal_action_keys"
     }
 }
 

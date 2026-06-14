@@ -11,6 +11,7 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
     public let thirtyDayTrends: [DesktopDashboardTrend]
     public let wearableMetrics: [DesktopDashboardMetric]
     public let focusChips: [String]
+    public let dailyPlanProgressLabel: String?
     public let actionRows: [DesktopDashboardRow]
     public let recentRecordRows: [DesktopDashboardRow]
     public let memoryRows: [DesktopDashboardRow]
@@ -30,6 +31,9 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         self.primaryMetrics = self.sevenDayMetrics
         self.wearableMetrics = DesktopDashboardPresentation.wearableMetrics(from: summary.latestGarmin)
         self.focusChips = Array((bootstrap.trajectory.focusDomains ?? []).prefix(5))
+        self.dailyPlanProgressLabel = DesktopDashboardPresentation.dailyPlanProgressLabel(
+            from: bootstrap.dailyPlan.stateSummary?.actionProgress
+        )
         self.actionRows = DesktopDashboardPresentation.actionRows(from: bootstrap)
         self.recentRecordRows = (summary.recentRecords ?? []).prefix(8).map {
             DesktopDashboardRow(
@@ -75,6 +79,18 @@ public struct DesktopDashboardPresentation: Equatable, Sendable {
         let date = bootstrap.recentRecordsSummary.date ?? bootstrap.dailyPlan.planDate
         let recordCount = bootstrap.recentRecordsSummary.recentRecords?.count ?? 0
         return "\(date) · \(bootstrap.actionCards.count) cards · \(bootstrap.recentMemory.count) memories · \(recordCount) recent records"
+    }
+
+    private static func dailyPlanProgressLabel(from progress: DailyPlanActionProgress?) -> String? {
+        guard let progress else { return nil }
+        let completedCount = max(0, progress.completedCount ?? progress.completedActionKeys.count)
+        let handledCount = max(completedCount, progress.handledCount ?? progress.terminalActionKeys.count)
+        let remainingCount = max(0, progress.remainingCount ?? 0)
+        let otherHandled = max(0, handledCount - completedCount)
+        if otherHandled > 0 {
+            return "今日闭环 \(completedCount) 完成 · \(otherHandled) 已处理 · \(remainingCount) 待做"
+        }
+        return "今日闭环 \(completedCount) 完成 · \(remainingCount) 待做"
     }
 
     private static func actionRows(from bootstrap: DesktopBootstrap) -> [DesktopDashboardRow] {

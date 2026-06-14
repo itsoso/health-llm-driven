@@ -183,6 +183,39 @@ final class DesktopDashboardPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.actionRows.map(\.subtitle), ["active", "active", "active", "active"])
     }
 
+    func testDashboardPresentationShowsDailyPlanProgressLabel() {
+        let bootstrap = DesktopBootstrap(
+            user: DesktopUser(id: 3, name: "baokun", email: nil),
+            modelPreference: ModelPreference(llmModelID: "claude-opus-4.7"),
+            dailyPlan: DailyOperatingPlan(
+                planDate: "2026-05-24",
+                actions: [
+                    DailyPlanAction(actionKey: "measurement.weight_waist_morning", title: "晨起记录体重和腰围", domain: "measurement"),
+                    DailyPlanAction(actionKey: "nutrition.protein_target", title: "今天蛋白质目标", domain: "nutrition"),
+                    DailyPlanAction(actionKey: "movement.walk_20", title: "步行 20 分钟", domain: "movement")
+                ],
+                stateSummary: DailyPlanStateSummary(
+                    actionProgress: DailyPlanActionProgress(
+                        completedCount: 1,
+                        handledCount: 2,
+                        remainingCount: 1,
+                        completedActionKeys: ["measurement.weight_waist_morning"],
+                        terminalActionKeys: ["measurement.weight_waist_morning", "sleep.dinner_cutoff"]
+                    )
+                )
+            ),
+            trajectory: TrajectorySummary(focusDomains: ["metabolic_health"]),
+            actionCards: [],
+            recentMemory: [],
+            recentRecordsSummary: RecentRecordsSummary(),
+            activeJobs: []
+        )
+
+        let presentation = DesktopDashboardPresentation(bootstrap: bootstrap)
+
+        XCTAssertEqual(presentation.dailyPlanProgressLabel, "今日闭环 1 完成 · 1 已处理 · 1 待做")
+    }
+
     func testDashboardContextFactoryBuildsMetricTrendAndActionContextForAgentHandoff() {
         let metric = DesktopDashboardMetric(
             id: "hero_spo2",

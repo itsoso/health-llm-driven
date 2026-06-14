@@ -1,5 +1,10 @@
 import api from '../api';
-import { getDailyOperatingPlan, pickTopPlanActions, recordDailyPlanActionEvent } from '../dailyPlan';
+import {
+  buildDailyPlanActionProgressLabel,
+  getDailyOperatingPlan,
+  pickTopPlanActions,
+  recordDailyPlanActionEvent,
+} from '../dailyPlan';
 
 jest.mock('../api', () => ({
   get: jest.fn(),
@@ -59,6 +64,26 @@ describe('dailyPlan service', () => {
     ], 3);
 
     expect(actions.map(a => a.title)).toEqual(['测腰围', '午餐蛋白', 'Zone 2']);
+  });
+
+  it('formats daily behavior loop progress with locally recorded completion', () => {
+    const label = buildDailyPlanActionProgressLabel({
+      progress: {
+        completed_count: 1,
+        handled_count: 2,
+        remaining_count: 2,
+        completed_action_keys: ['measurement.weight_waist_morning'],
+        terminal_action_keys: ['measurement.weight_waist_morning', 'sleep.dinner_cutoff'],
+      },
+      actions: [
+        { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
+        { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '今天蛋白质目标' },
+        { action_key: 'movement.walk_20', domain: 'movement', title: '步行 20 分钟' },
+      ],
+      eventByAction: { 'movement.walk_20': 'completed' },
+    });
+
+    expect(label).toBe('今日闭环 2 完成 · 1 已处理 · 1 待做');
   });
 
   it('records daily plan action events and returns normalized action state', async () => {

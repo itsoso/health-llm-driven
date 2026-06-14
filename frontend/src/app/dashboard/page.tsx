@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, healthScoreApi } from '@/services/api/health';
 import { dataCollectionApi } from '@/services/api/devices';
+import { dailyPlanApi, formatDailyPlanActionProgress } from '@/services/api/dailyPlan';
 import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
@@ -118,7 +119,16 @@ function DashboardContent() {
     enabled: !!userId,
     staleTime: 10 * 60 * 1000,
   });
+  const { data: dailyPlan, refetch: refetchDailyPlan } = useQuery({
+    queryKey: ['daily-plan', userId, today],
+    queryFn: () => dailyPlanApi.getMine(),
+    enabled: !!userId,
+    staleTime: 5 * 60 * 1000,
+  });
   const scoreData = healthScore?.data;
+  const dailyPlanProgress = formatDailyPlanActionProgress(dailyPlan?.state_summary?.action_progress ?? null);
+  const dailyPlanActions = dailyPlan?.actions ?? [];
+  const topDailyPlanActions = dailyPlanActions.filter(action => action?.title).slice(0, 3);
   const scoreGradeColor = (s: number) =>
     s >= 90 ? 'text-emerald-400' : s >= 75 ? 'text-green-400' : s >= 60 ? 'text-yellow-400' : 'text-red-400';
   const scoreBg = (s: number) =>
@@ -142,7 +152,7 @@ function DashboardContent() {
   });
 
   // 手动刷新所有数据（包含 Garmin 同步）
-  const handleManualRefresh = async () => {
+  const handleManualRefresh = useCallback(async () => {
     if (isRefreshing) return; // 防止重复点击
 
     setIsRefreshing(true);
@@ -152,9 +162,7 @@ function DashboardContent() {
       if (userId) {
         try {
           await dataCollectionApi.syncGarmin(userId, today);
-          console.log('Garmin 同步已触发');
-        } catch (syncError) {
-          console.warn('Garmin 同步失败:', syncError);
+        } catch {
           // 同步失败不影响数据刷新
         }
       }
@@ -168,16 +176,25 @@ function DashboardContent() {
         refetchGarminData(),
         refetchBasicHealth(),
         refetchComprehensive(),
+        refetchDailyPlan(),
       ]);
       setLastUpdate(new Date());
-    } catch (error) {
-      console.error('刷新数据失败:', error);
+    } catch {
       setRefreshError('刷新数据失败，请稍后重试');
       setTimeout(() => setRefreshError(''), 5000);
     } finally {
       setIsRefreshing(false);
     }
-  };
+  }, [
+    isRefreshing,
+    userId,
+    today,
+    refetchToday,
+    refetchGarminData,
+    refetchBasicHealth,
+    refetchComprehensive,
+    refetchDailyPlan,
+  ]);
 
   // 监听数据更新
   useEffect(() => {
@@ -337,6 +354,44 @@ function DashboardContent() {
               )}
             </div>
           </div>
+        )}
+
+        {dailyPlan && (
+          <section className="mb-6 rounded-xl border border-teal-100 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-widest text-teal-700">今日操作计划</p>
+                <h2 className="mt-1 text-xl font-black text-gray-900">
+                  {dailyPlanProgress ?? '今日闭环尚未开始'}
+                </h2>
+                <p className="mt-1 text-sm font-medium text-gray-500">
+                  {dailyPlan.plan_date} · {dailyPlanActions.length} 个行动 · 每天只看可执行步骤
+                </p>
+              </div>
+
+              <div className="w-full lg:max-w-xl">
+                {topDailyPlanActions.length > 0 ? (
+                  <div className="divide-y divide-gray-100">
+                    {topDailyPlanActions.map((action, index) => (
+                      <div key={action.action_key || `${action.title}-${index}`} className="flex items-center gap-3 py-2.5">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-xs font-black text-teal-700">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-gray-900">{action.title}</p>
+                          <p className="truncate text-xs font-medium text-gray-500">
+                            {action.when || action.domain || 'today'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium text-gray-500">今日暂无行动，刷新后会基于最新记录重新生成。</p>
+                )}
+              </div>
+            </div>
+          </section>
         )}
 
         {/* 今日实时数据 */}

@@ -151,7 +151,10 @@ struct TodayView: View {
                                         events: presentation.inputInboxEvents,
                                         summary: presentation.inputInboxSummary
                                     )
-                                    actionPanel(presentation.actionRows)
+                                    actionPanel(
+                                        presentation.actionRows,
+                                        progressLabel: presentation.dailyPlanProgressLabel
+                                    )
                                     recentRecordsPanel(presentation.recentRecordRows)
                                 }
                                 .frame(minWidth: 620, maxWidth: .infinity, alignment: .topLeading)
@@ -363,9 +366,17 @@ struct TodayView: View {
         }
     }
 
-    private func actionPanel(_ actions: [DesktopDashboardRow]) -> some View {
+    private func actionPanel(_ actions: [DesktopDashboardRow], progressLabel: String?) -> some View {
         card {
             sectionHeader(title: appText("Priority Actions", appLanguageRaw), systemImage: "checklist")
+            if let progressLabel {
+                Text(appText(progressLabel, appLanguageRaw))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.teal)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
             if actions.isEmpty {
                 EmptyStateText(text: appText("No actions loaded yet.", appLanguageRaw))
             } else {
@@ -5256,6 +5267,12 @@ struct MenuBarRootView: View {
                 }
             }
             Divider()
+            if let progressLabel = viewModel.bootstrap.map(DesktopDashboardPresentation.init)?.dailyPlanProgressLabel {
+                Text(appText(progressLabel, appLanguageRaw))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.teal)
+                    .lineLimit(1)
+            }
             if viewModel.topActions.isEmpty {
                 Text(appText("No actions loaded", appLanguageRaw))
                     .foregroundStyle(.secondary)
