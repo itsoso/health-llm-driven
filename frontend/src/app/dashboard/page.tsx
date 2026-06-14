@@ -8,6 +8,7 @@ import { dataCollectionApi } from '@/services/api/devices';
 import { dailyPlanApi, formatDailyPlanActionProgress } from '@/services/api/dailyPlan';
 import HealthGuardrailSummaryCard from '@/components/health-extras/HealthGuardrailSummaryCard';
 import OutcomeProofSummaryCard from '@/components/health-extras/OutcomeProofSummaryCard';
+import OperatingReviewSummaryCard from '@/components/health-extras/OperatingReviewSummaryCard';
 import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
@@ -397,6 +398,8 @@ function DashboardContent() {
         )}
 
         <OutcomeProofSummaryCard />
+
+        <OperatingReviewSummaryCard />
 
         <HealthGuardrailSummaryCard />
 

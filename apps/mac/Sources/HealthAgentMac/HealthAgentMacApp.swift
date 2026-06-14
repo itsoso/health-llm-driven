@@ -89,8 +89,10 @@ struct TodayView: View {
     var nocturnalClient: NocturnalTimeseriesClient?
     var healthExtrasClient: HealthExtrasClient?
     var outcomeProofClient: OutcomeProofClient?
+    var operatingReviewClient: OperatingReviewClient?
     var onOpenHealthExtras: (() -> Void)?
     var onOpenOutcomeProof: (() -> Void)?
+    var onOpenOperatingReview: (() -> Void)?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -104,6 +106,8 @@ struct TodayView: View {
     @State private var healthGuardrailLoaded = false
     @State private var outcomeProofSummary: OutcomeProofSummary?
     @State private var outcomeProofLoaded = false
+    @State private var operatingReviewSummary: OperatingReviewSummary?
+    @State private var operatingReviewLoaded = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -176,6 +180,7 @@ struct TodayView: View {
                                                 await viewModel.refresh()
                                                 await reloadHealthGuardrail()
                                                 await reloadOutcomeProof()
+                                                await reloadOperatingReview()
                                             }
                                         }
                                     )
@@ -183,6 +188,11 @@ struct TodayView: View {
                                         summary: outcomeProofSummary,
                                         isLoading: !outcomeProofLoaded && outcomeProofClient != nil,
                                         onOpen: { onOpenOutcomeProof?() }
+                                    )
+                                    OperatingReviewSummaryView(
+                                        summary: operatingReviewSummary,
+                                        isLoading: !operatingReviewLoaded && operatingReviewClient != nil,
+                                        onOpen: { onOpenOperatingReview?() }
                                     )
                                     HealthGuardrailSummaryView(
                                         summary: healthGuardrailSummary,
@@ -220,6 +230,7 @@ struct TodayView: View {
             await loadSpO2WeekIfNeeded()
             await loadHealthGuardrailIfNeeded()
             await loadOutcomeProofIfNeeded()
+            await loadOperatingReviewIfNeeded()
         }
     }
 
@@ -290,6 +301,29 @@ struct TodayView: View {
             outcomeProofSummary = OutcomeProofSummaryBuilder.build(nil)
         }
         outcomeProofLoaded = true
+    }
+
+    private func loadOperatingReviewIfNeeded() async {
+        guard !operatingReviewLoaded else { return }
+        await reloadOperatingReview()
+    }
+
+    private func reloadOperatingReview() async {
+        guard let client = operatingReviewClient else {
+            operatingReviewLoaded = true
+            operatingReviewSummary = nil
+            return
+        }
+
+        operatingReviewLoaded = false
+        do {
+            let review = try await client.fetchReview(days: 7)
+            operatingReviewSummary = OperatingReviewSummaryBuilder.build(review)
+        } catch {
+            AppLogger.network.warning("operating review summary fetch failed: \(error.localizedDescription, privacy: .public)")
+            operatingReviewSummary = OperatingReviewSummaryBuilder.build(nil)
+        }
+        operatingReviewLoaded = true
     }
 
     private func optionalHealthGuardrailFetch<T: Sendable>(

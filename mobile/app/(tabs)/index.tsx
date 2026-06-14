@@ -50,6 +50,7 @@ import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
 import OutcomeProofCard from '../../components/home/OutcomeProofCard';
+import OperatingReviewCard from '../../components/home/OperatingReviewCard';
 import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
 import LongevityNextCard from '../../components/home/LongevityNextCard';
@@ -64,6 +65,7 @@ import { fetchMyProgress, pickBioAgeWin } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 import { fetchHealthGuardrailSummary } from '../../services/healthGuardrailSummary';
 import { buildOutcomeProofSummary } from '../../services/outcomeProofSummary';
+import { fetchOperatingReviewSummary } from '../../services/operatingReviewSummary';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -185,6 +187,12 @@ export default function TodayScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const operatingReviewSummaryQuery = useQuery({
+    queryKey: ['daily-plan-review-summary', 7],
+    queryFn: () => fetchOperatingReviewSummary(7),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const healthGuardrailQuery = useQuery({
     queryKey: ['health-guardrail-summary'],
     queryFn: fetchHealthGuardrailSummary,
@@ -257,6 +265,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['trajectory', 'me'] }),
         qc.invalidateQueries({ queryKey: ['health-guardrail-summary'] }),
+        qc.invalidateQueries({ queryKey: ['daily-plan-review-summary', 7] }),
         qc.invalidateQueries({ queryKey: ['checkin-streak'] }),
         qc.invalidateQueries({ queryKey: ['progress-dashboard', 30] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -282,6 +291,7 @@ export default function TodayScreen() {
     twinQuery.isRefetching ||
     dailyPlanQuery.isRefetching ||
     trajectoryQuery.isRefetching ||
+    operatingReviewSummaryQuery.isRefetching ||
     healthGuardrailQuery.isRefetching;
 
   const alerts: SafetyAlert[] = safetyQuery.data?.alerts ?? [];
@@ -509,6 +519,13 @@ export default function TodayScreen() {
           isError={progressDashboardQuery.isError}
           onPress={() => router.push(outcomeProofSummary.route as any)}
         />
+        {(operatingReviewSummaryQuery.data || operatingReviewSummaryQuery.isError) && (
+          <OperatingReviewCard
+            summary={operatingReviewSummaryQuery.data}
+            isError={operatingReviewSummaryQuery.isError}
+            onPress={() => router.push((operatingReviewSummaryQuery.data?.route ?? '/my-progress') as any)}
+          />
+        )}
         <BiologicalAgeCard
           view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
           win={pickBioAgeWin(progressDashboardQuery.data)}

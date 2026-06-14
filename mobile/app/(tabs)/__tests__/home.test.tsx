@@ -23,6 +23,7 @@ let mockProgressDashboard: {
 } | null = null;
 let mockProgressDashboardError = false;
 let mockHealthGuardrailSummary: Record<string, unknown> | null = null;
+let mockOperatingReviewSummary: Record<string, unknown> | null = null;
 let mockRefetchingKeys = new Set<string>();
 
 jest.mock('expo-router', () => ({
@@ -42,9 +43,6 @@ jest.mock('@tanstack/react-query', () => ({
     if (key.includes('twin')) {
       return { data: mockTwinData, isLoading: false, isRefetching };
     }
-    if (key.includes('daily-plan')) {
-      return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching };
-    }
     if (key.includes('intervention-cycle')) {
       return { data: mockActiveCycle, isLoading: false, isRefetching };
     }
@@ -62,6 +60,12 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('progress-dashboard')) {
       return { data: mockProgressDashboard, isLoading: false, isError: mockProgressDashboardError, isRefetching };
+    }
+    if (key.includes('daily-plan-review-summary')) {
+      return { data: mockOperatingReviewSummary, isLoading: false, isError: false, isRefetching };
+    }
+    if (key.includes('daily-plan')) {
+      return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching };
     }
     if (key.includes('health-guardrail-summary')) {
       return { data: mockHealthGuardrailSummary, isLoading: false, isError: false, isRefetching };
@@ -165,6 +169,7 @@ describe('TodayScreen', () => {
     mockProgressDashboard = null;
     mockProgressDashboardError = false;
     mockHealthGuardrailSummary = null;
+    mockOperatingReviewSummary = null;
     mockRefetchingKeys = new Set<string>();
   });
 
@@ -256,6 +261,35 @@ describe('TodayScreen', () => {
     expect(getByText('weight_kg 72.4 → 70.9')).toBeTruthy();
 
     fireEvent.press(getByTestId('home-outcome-proof-card'));
+    expect(mockPush).toHaveBeenCalledWith('/my-progress');
+  });
+
+  it('surfaces the daily execution review on the home feed', () => {
+    mockOperatingReviewSummary = {
+      title: '执行复盘：80% 完成',
+      subtitle: '过去 7 天完成 4/5 个行动。',
+      route: '/my-progress',
+      items: [
+        { key: 'completion_rate', label: '完成率', value: '80%', accent: true },
+        { key: 'completed', label: '已完成', value: '4', accent: true },
+        { key: 'total', label: '总行动', value: '5', accent: false },
+        { key: 'learnable', label: '可学习', value: '4', accent: false },
+      ],
+      highlight: {
+        label: '最明显变化',
+        value: '体重 -1.2 kg',
+        detail: '时间关联，不等于因果。',
+        positive: true,
+      },
+    };
+
+    const { getByText, getByTestId } = render(<TodayScreen />);
+
+    expect(getByText('执行复盘：80% 完成')).toBeTruthy();
+    expect(getByText('过去 7 天完成 4/5 个行动。')).toBeTruthy();
+    expect(getByText('体重 -1.2 kg')).toBeTruthy();
+
+    fireEvent.press(getByTestId('home-operating-review-card'));
     expect(mockPush).toHaveBeenCalledWith('/my-progress');
   });
 
