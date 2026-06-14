@@ -7,6 +7,12 @@ Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
   value: vi.fn(),
 });
 
+// jsdom 不实现 Element.scrollTo; 聊天页 mount 时会调它自动滚到底.
+Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+  configurable: true,
+  value: vi.fn(),
+});
+
 // jsdom 在某些 vitest+next 组合下不会自动提供 localStorage 的 .clear()
 // 补一个完整 in-memory 实现, 避免测试因环境差异而崩.
 if (typeof window !== 'undefined') {

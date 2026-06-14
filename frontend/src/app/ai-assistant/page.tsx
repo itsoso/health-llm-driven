@@ -10,7 +10,8 @@
  * 用户访问就 404. 此页用 Agent stream + ChatView 渲染.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUp,
   CheckSquare,
@@ -53,6 +54,18 @@ const OPENER_SOURCE_LABEL: Record<string, string> = {
 const CONV_PAGE_SIZE = 20; // 历史记录每页条数
 
 export default function AIAssistantPage() {
+  // useSearchParams 需要 Suspense 边界, 否则 Next.js 14 build 报
+  // "useSearchParams() should be wrapped in a suspense boundary".
+  return (
+    <Suspense fallback={<div className="fixed inset-0 z-40 bg-[#212121]" />}>
+      <AIAssistantInner />
+    </Suspense>
+  );
+}
+
+function AIAssistantInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -130,6 +143,34 @@ export default function AIAssistantPage() {
 
   useEffect(() => {
     refreshConversations();
+  }, []);
+
+  // 把当前 conversation id 写进 URL (?c=<id>), 用 replace 不污染历史栈.
+  // id 为空 → 回到无 ?c 的干净 URL (新对话未发消息).
+  const syncConvUrl = (id?: number) => {
+    const target = id ? `/ai-assistant?c=${id}` : '/ai-assistant';
+    if (typeof window !== 'undefined' && window.location.pathname + window.location.search === target) {
+      return; // 已是目标 URL, 不重复 replace
+    }
+    router.replace(target, { scroll: false });
+  };
+
+  // 页面 mount: 若 URL 带 ?c=<id> 则自动加载该对话 (支持刷新/直达/分享).
+  // 只跑一次 — 后续 URL 变更由用户操作 (load/new/stream done) 主动触发.
+  const bootstrappedRef = useRef(false);
+  useEffect(() => {
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+    const raw = searchParams.get('c');
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isInteger(id) && id > 0) {
+      loadConversation(id).catch(() => {
+        // 对话不存在/无权限 → 退回新对话并清掉脏 URL.
+        startNewConversation();
+        syncConvUrl(undefined);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshConversationStarters = async () => {
@@ -243,6 +284,7 @@ export default function AIAssistantPage() {
       setStreaming(false);
       if (!activeConvId && realConvId) {
         setActiveConvId(realConvId);
+        syncConvUrl(realConvId); // 首条消息拿到 realConvId 后写 ?c=<id>
       }
       refreshConversations();
     }
@@ -254,6 +296,7 @@ export default function AIAssistantPage() {
     setShareSelectionMode(false);
     setSelectedMessageIds(new Set());
     setOpener(null);
+    syncConvUrl(undefined); // 新对话回到无 ?c 的干净 URL
     refreshConversationStarters();
   };
 
@@ -278,6 +321,7 @@ export default function AIAssistantPage() {
     setDoneIds(new Set(loaded.filter(m => m.role === 'assistant').map(m => m.id)));
     setShareSelectionMode(false);
     setSelectedMessageIds(new Set());
+    syncConvUrl(conversationId); // 选中/加载对话写 ?c=<id>
   };
 
   const deleteConversation = async (conversationId: number) => {

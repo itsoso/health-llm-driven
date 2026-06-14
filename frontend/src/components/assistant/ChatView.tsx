@@ -4,7 +4,9 @@ import { Fragment, useState } from 'react';
 import { Bookmark, Check, Copy, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
+import MealPlanCard from '@/components/assistant/MealPlanCard';
 import ToolCallChip from '@/components/assistant/ToolCallChip';
+import { preprocessAssistantContent } from '@/components/assistant/assistantContent';
 import { ChatSegment, hasToolCall, parseToolCalls } from '@/components/assistant/toolCallParse';
 import { prettyModelName } from '@/components/assistant/modelName';
 import { renderCard } from '@/components/assistant/inlineCards';
@@ -180,13 +182,29 @@ export default function ChatView({
 }
 
 /**
- * AssistantBody — 渲染 assistant 正文, 把模型当文本吐出来的 [tool_call: ...]
- * 切出来渲染成内联 chip, 其余文本走 MarkdownRenderer. 连续的 tool_call 段
- * (中间只有空白) 合并成一行 chips.
+ * AssistantBody — 渲染 assistant 正文. 先预处理 (剥离内部标记 + 抽计划 JSON),
+ * 再把模型当文本吐出来的 [tool_call: ...] 切出来渲染成内联 chip, 其余文本走
+ * MarkdownRenderer. 连续的 tool_call 段 (中间只有空白) 合并成一行 chips.
  */
 function AssistantBody({ content, streaming }: { content: string; streaming?: boolean }) {
+  // 预处理: 剥离 [claim:]/[工具调用:] 内部标记 + 抽出计划 JSON (menu_share schema).
+  // marker 剥离始终安全; 计划 JSON 在流式中途多半解析失败 → 自动回退裸文本, 完成后成形.
+  const { text, mealPlan } = preprocessAssistantContent(content);
+  const body = renderTextBody(text, streaming);
+  if (!mealPlan) return body;
+  return (
+    <>
+      {body}
+      <MealPlanCard plan={mealPlan} />
+    </>
+  );
+}
+
+/** 渲染纯文本正文 (已剥离标记/计划 JSON): 处理内联 tool_call chip + markdown. */
+function renderTextBody(content: string, streaming?: boolean) {
   // 没有工具调用文本就走老路径 — 绝大多数消息命中这里.
   if (!hasToolCall(content)) {
+    if (!content.trim()) return null;
     return <MarkdownRenderer content={content} variant="dark" />;
   }
   const segments = parseToolCalls(content);
