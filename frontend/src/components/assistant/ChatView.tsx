@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Bookmark, Check, Copy, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
+import ToolCallChip from '@/components/assistant/ToolCallChip';
+import { ChatSegment, hasToolCall, parseToolCalls } from '@/components/assistant/toolCallParse';
+import { prettyModelName } from '@/components/assistant/modelName';
 import { renderCard } from '@/components/assistant/inlineCards';
 import { getShareableMessageIds } from '@/components/assistant/shareSelection';
 
@@ -43,7 +46,7 @@ export default function ChatView({
   const shareableMessageIds = getShareableMessageIds(visibleMessages);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
+    <div className="mx-auto max-w-3xl space-y-6">
       {visibleMessages.map(msg => {
         const canSelectForShare = shareableMessageIds.has(msg.id);
         const selectedForShare = selectedMessageIds.has(msg.id);
@@ -93,35 +96,25 @@ export default function ChatView({
           <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.35rem] px-4 py-2.5 shadow-sm' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
             {msg.role === 'assistant' ? (
               <div>
-                <div className="text-[15px] leading-7"><MarkdownRenderer content={msg.content} variant="dark" /></div>
-                {/* 2026-05-13 性能 footer: 耗时 + 模型 + 每轮 ms */}
-                {doneMessageIds.has(msg.id) && (msg.elapsed_ms != null || msg.model || (msg.sources_used && msg.sources_used.length > 0)) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-white/[0.08] pt-2 text-[11px] tabular-nums text-zinc-600">
-                    {msg.elapsed_ms != null && (
-                      <span className="inline-flex items-center gap-1" title="总耗时">
-                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        {(msg.elapsed_ms / 1000).toFixed(1)}s
+                <div className="text-[15px] leading-7">
+                  <AssistantBody content={msg.content} streaming={!doneMessageIds.has(msg.id)} />
+                </div>
+                {/* 元信息行: 模型友好名 + 数据来源. 耗时/轮数收进 hover tooltip. */}
+                {doneMessageIds.has(msg.id) && (msg.model || (msg.sources_used && msg.sources_used.length > 0)) && (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    {prettyModelName(msg.model) && (
+                      <span
+                        className="text-[11px] text-zinc-600"
+                        title={buildPerfTooltip(msg)}
+                      >
+                        {prettyModelName(msg.model)}
                       </span>
                     )}
-                    {msg.llm_ms != null && msg.elapsed_ms != null && msg.llm_ms !== msg.elapsed_ms && (
-                      <span title="LLM 推理耗时">LLM {(msg.llm_ms / 1000).toFixed(1)}s</span>
-                    )}
-                    {msg.llm_rounds != null && msg.llm_rounds > 1 && (
-                      <span title="LLM 工具调用轮数">{msg.llm_rounds} 轮</span>
-                    )}
-                    {msg.llm_rounds_ms && msg.llm_rounds_ms.length > 1 && (
-                      <span title="每轮耗时" className="text-zinc-700">
-                        ({msg.llm_rounds_ms.map(ms => `${ms}ms`).join(' / ')})
-                      </span>
-                    )}
-                    {msg.model && (
-                      <span className="ml-auto text-teal-400/70" title="本次回答的模型">· {msg.model}</span>
+                    {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 */}
+                    {msg.sources_used && msg.sources_used.length > 0 && (
+                      <SourcesChip sources={msg.sources_used} />
                     )}
                   </div>
-                )}
-                {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 */}
-                {doneMessageIds.has(msg.id) && msg.sources_used && msg.sources_used.length > 0 && (
-                  <SourcesChip sources={msg.sources_used} />
                 )}
               </div>
             ) : (
@@ -186,11 +179,70 @@ export default function ChatView({
   );
 }
 
+/**
+ * AssistantBody — 渲染 assistant 正文, 把模型当文本吐出来的 [tool_call: ...]
+ * 切出来渲染成内联 chip, 其余文本走 MarkdownRenderer. 连续的 tool_call 段
+ * (中间只有空白) 合并成一行 chips.
+ */
+function AssistantBody({ content, streaming }: { content: string; streaming?: boolean }) {
+  // 没有工具调用文本就走老路径 — 绝大多数消息命中这里.
+  if (!hasToolCall(content)) {
+    return <MarkdownRenderer content={content} variant="dark" />;
+  }
+  const segments = parseToolCalls(content);
+  const groups = groupSegments(segments);
+  return (
+    <>
+      {groups.map((group, gi) => {
+        if (group[0].kind === 'tool_call') {
+          const chips = group as Extract<ChatSegment, { kind: 'tool_call' }>[];
+          return (
+            <div key={gi} className="my-1.5 flex flex-wrap items-center gap-1.5">
+              {chips.map((c, ci) => (
+                <ToolCallChip key={ci} name={c.name} pulse={streaming} />
+              ))}
+            </div>
+          );
+        }
+        const text = (group[0] as Extract<ChatSegment, { kind: 'text' }>).text;
+        if (!text.trim()) return null;
+        return (
+          <Fragment key={gi}>
+            <MarkdownRenderer content={text} variant="dark" />
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/** 把相邻的 tool_call 段聚成一组 (一行 chips); 文本段各自成组. */
+function groupSegments(segments: ChatSegment[]): ChatSegment[][] {
+  const groups: ChatSegment[][] = [];
+  for (const seg of segments) {
+    const last = groups[groups.length - 1];
+    if (seg.kind === 'tool_call' && last && last[0].kind === 'tool_call') {
+      last.push(seg);
+    } else {
+      groups.push([seg]);
+    }
+  }
+  return groups;
+}
+
+/** 把耗时/轮数收进 model 名的 hover tooltip, 默认不在 UI 上占位. */
+function buildPerfTooltip(msg: ChatMessage): string {
+  const parts: string[] = [];
+  if (msg.elapsed_ms != null) parts.push(`耗时 ${(msg.elapsed_ms / 1000).toFixed(1)}s`);
+  if (msg.llm_rounds != null && msg.llm_rounds > 1) parts.push(`${msg.llm_rounds} 轮`);
+  return parts.length ? `本次回答的模型 · ${parts.join(' · ')}` : '本次回答的模型';
+}
+
 /** 2026-05-14 #4 可解释性 chip — 默认折叠 "🔍 AI 用了什么数据 (N)", 点开列出来. */
 function SourcesChip({ sources }: { sources: string[] }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-2">
+    <div>
       <button
         onClick={() => setOpen(o => !o)}
         className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-zinc-500 transition-colors hover:border-teal-300/30 hover:text-teal-300"
