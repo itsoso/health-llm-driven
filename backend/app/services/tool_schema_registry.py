@@ -434,6 +434,50 @@ reminder: {"title":"明早复查血压","priority":"high"}
     {
         "type": "function",
         "function": {
+            "name": "intervention_cycle",
+            "description": """N-of-1 干预结局闭环 — 用用户自己的数据验证某个干预是否真的有效。
+
+这是产品北极星: 不是泛泛给建议, 而是"开一个周期 → 锁基线 → 过段时间复查 → 用你自己的化验数据告诉你有没有效"。
+
+action 选择:
+- status: 报告当前进行中的干预周期进展。对每个结局指标给 baseline → latest → delta/delta_pct + 状态
+          (met 达标 / improving 改善中 / worsening 变差 / flat 持平 / pending 待复查)。
+          **没有进行中的周期时如实说"目前没有进行中的干预周期", 不要编造。**
+          用户问"我的干预周期怎么样 / 这阵子调理有没有效 / 降 LDL 进展" 走这个。
+- start: 为用户开启一个新的代谢干预周期 (锁基线 Twin 快照 + 基线化验 + 目标指标)。
+          **写操作 → 必须先确认**: 第一次调用 (不带 confirmed) 会返回需要向用户复述确认的提示,
+          用户明确同意后**重新调用并带 confirmed=true** 才真正建周期。
+          目标指标由当前异常的代谢/血脂/血糖/肝指标自动推导 (如 LDL/尿酸/HbA1c 偏高)。
+          用户说"开个周期验证下 / 我想系统调理代谢三个月 / 帮我跟踪降 LDL 的效果" 走这个。
+
+注意:
+- 这是健康自我管理工具, 不是医疗诊断或处方。提议/解读时措辞要"非诊断、建议结合医生"。
+- 一个用户同一时间只有一个进行中的周期; 已有进行中的周期时 start 会直接返回它, 不重复开。""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["status", "start"],
+                        "description": "status 报当前周期进展; start 开启新周期 (写操作, 需确认)",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "default": 90,
+                        "description": "仅 start: 周期天数, 默认 90 天",
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "仅 start: 用户已明确同意开周期后置 true。首次提议不要带, 让确认流程走一遍。",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_plan",
             "description": "管理健康计划：生成周计划、完成计划项、保存内容到首页卡片。",
             "parameters": {
