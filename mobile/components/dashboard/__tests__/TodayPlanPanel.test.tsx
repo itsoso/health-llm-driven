@@ -83,6 +83,34 @@ describe('TodayPlanPanel', () => {
     expect(getByText('验证 sleep_score · 7天')).toBeTruthy();
   });
 
+  it('shows the 90-day cycle metric tied to an action', () => {
+    const plan: DailyOperatingPlan = {
+      plan_date: '2026-05-18',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [
+        {
+          action_key: 'nutrition.protein_target',
+          domain: 'nutrition',
+          title: '今天蛋白质目标',
+          why: '这条行动用于支撑当前 90 天代谢改善周期。',
+          verification: {
+            metric: 'calories_intake',
+            window_days: 7,
+            cycle_id: 7,
+            cycle_target_metric: 'lipid_ldl',
+            cycle_target_metric_label: '低密度脂蛋白胆固醇',
+          },
+        } as any,
+      ],
+    };
+
+    const { getByText } = render(<TodayPlanPanel plan={plan} />);
+
+    expect(getByText('90 天周期 · 低密度脂蛋白胆固醇')).toBeTruthy();
+  });
+
   it('can exclude the already promoted primary action', () => {
     const plan: DailyOperatingPlan = {
       plan_date: '2026-05-18',

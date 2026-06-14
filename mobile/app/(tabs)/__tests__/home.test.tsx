@@ -11,6 +11,7 @@ let mockTwinData: Record<string, unknown> = {};
 let mockTrajectoryData: any = null;
 let mockWeeklyAdvice: any[] = [];
 let mockSafetyAlerts: any[] = [];
+let mockActiveCycle: any = null;
 let mockGeneticStats: { hits: number | null; total: number | null } = { hits: null, total: null };
 let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
 let mockStreakData: { current_streak: number; best_streak: number } | null = null;
@@ -38,6 +39,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('daily-plan')) {
       return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching };
+    }
+    if (key.includes('intervention-cycle')) {
+      return { data: mockActiveCycle, isLoading: false, isRefetching };
     }
     if (key.includes('trajectory')) {
       return { data: mockTrajectoryData, isLoading: false, isRefetching };
@@ -145,6 +149,7 @@ describe('TodayScreen', () => {
     mockTrajectoryData = null;
     mockWeeklyAdvice = [];
     mockSafetyAlerts = [];
+    mockActiveCycle = null;
     mockGeneticStats = { hits: null, total: null };
     mockProgressStats = { improved: null, total: null };
     mockStreakData = null;
@@ -218,6 +223,40 @@ describe('TodayScreen', () => {
     const { getByText } = render(<TodayScreen />);
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText(/后台监测中/)).toBeTruthy();
+  });
+
+  it('promotes an active 90-day health cycle as the home cockpit', () => {
+    const today = Date.now();
+    const start = new Date(today - 14 * 86400000).toISOString();
+    const end = new Date(today + 76 * 86400000).toISOString();
+    mockActiveCycle = {
+      id: 7,
+      status: 'active',
+      start_date: start,
+      planned_end_date: end,
+      outcomes: [
+        {
+          metric_code: 'LDL',
+          display: 'LDL-C',
+          unit: 'mmol/L',
+          baseline_value: 3.8,
+          target_value: 2.6,
+          latest_value: null,
+          status: 'pending',
+        },
+      ],
+    };
+
+    const { getByTestId, getByText, getByLabelText } = render(<TodayScreen />);
+
+    expect(getByTestId('home-health-cycle-cockpit')).toBeTruthy();
+    expect(getByText('90 天健康周期')).toBeTruthy();
+    expect(getByText('第 15 / 90 天')).toBeTruthy();
+    expect(getByText('复查倒计时 76 天')).toBeTruthy();
+    expect(getByText('LDL-C 3.8 → 2.6 mmol/L')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('查看 90 天健康周期'));
+    expect(mockPush).toHaveBeenCalledWith('/intervention-cycle');
   });
 
   it('switches the status to syncing while a tracked query is refetching', () => {

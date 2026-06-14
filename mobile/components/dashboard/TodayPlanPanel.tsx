@@ -47,10 +47,17 @@ const WHEN_LABEL: Record<string, string> = {
 };
 
 function compactActionMeta(action: DailyPlanAction): string {
+  const cycleMetric = action.verification?.cycle_target_metric_label || action.verification?.cycle_target_metric;
+  if (cycleMetric) return `周期指标 ${cycleMetric}`;
   const metric = action.verification?.metric;
   if (metric) return `影响 ${METRIC_LABEL[metric] ?? metric}`;
   const when = action.when ?? 'today';
   return WHEN_LABEL[when] ?? when;
+}
+
+function cycleMetricLine(action: DailyPlanAction): string | null {
+  const metric = action.verification?.cycle_target_metric_label || action.verification?.cycle_target_metric;
+  return metric ? `90 天周期 · ${metric}` : null;
 }
 
 export default function TodayPlanPanel({
@@ -216,18 +223,20 @@ export default function TodayPlanPanel({
         </View>
       ) : (
         <View style={styles.actionList}>
-          {actions.map((action, index) => (
-            <View
-              key={`${action.domain}-${action.title}-${index}`}
-              style={[styles.actionItem, { borderColor: c.separator }]}
-            >
-              <TouchableOpacity
-                style={styles.actionRow}
-                onPress={() => onPressAction?.(action)}
-                activeOpacity={0.75}
-                accessibilityRole="button"
-                accessibilityLabel={action.title}
+          {actions.map((action, index) => {
+            const cycleLine = cycleMetricLine(action);
+            return (
+              <View
+                key={`${action.domain}-${action.title}-${index}`}
+                style={[styles.actionItem, { borderColor: c.separator }]}
               >
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => onPressAction?.(action)}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.title}
+                >
                 <View style={[styles.actionIcon, { backgroundColor: c.fill }]}>
                   <Ionicons
                     name={DOMAIN_ICON[action.domain] ?? 'checkmark-circle-outline'}
@@ -251,6 +260,11 @@ export default function TodayPlanPanel({
                     <Text style={[styles.verificationText, { color: c.labelTertiary }]}>
                       验证 {action.verification.metric}
                       {action.verification.window_days ? ` · ${action.verification.window_days}天` : ''}
+                    </Text>
+                  ) : null}
+                  {cycleLine ? (
+                    <Text style={[styles.cycleText, { color: c.green }]} numberOfLines={1}>
+                      {cycleLine}
                     </Text>
                   ) : null}
                   <EvidenceRefsRow refs={action.evidence_refs} />
@@ -291,9 +305,10 @@ export default function TodayPlanPanel({
                 {action.action_key && eventByAction[action.action_key] === 'error' ? (
                   <Text style={[styles.feedbackError, { color: c.red }]}>记录失败</Text>
                 ) : null}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>
@@ -415,6 +430,7 @@ const styles = StyleSheet.create({
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionWhy: { fontSize: 12, lineHeight: 16 },
   verificationText: { fontSize: 11, fontWeight: '700' },
+  cycleText: { fontSize: 11, fontWeight: '800' },
   when: { fontSize: 11, fontWeight: '600' },
   feedbackRow: {
     flexDirection: 'row',

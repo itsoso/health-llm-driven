@@ -79,6 +79,60 @@ def test_daily_plan_downgrades_training_intensity_when_recovery_matrix_is_poor(d
     assert recovery_action["personal_evidence"]["trigger"] == "poor_recovery_matrix"
 
 
+def test_daily_plan_binds_actions_to_active_intervention_cycle(db, monkeypatch):
+    from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
+    from app.services import daily_operating_plan as planner
+
+    user = _make_user(db)
+    today = date.today()
+    twin = HealthTwin(
+        meta=TwinMeta(user_id=user.id, generated_at=datetime(2026, 5, 21, 8, 0, 0)),
+        labs=LabsContext(last_exam_date=today),
+        freshness=DataFreshness(labs="today"),
+    )
+    monkeypatch.setattr(planner, "build_twin", lambda _db, _user_id, use_cache=False: twin)
+
+    cycle = InterventionCycle(
+        user_id=user.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=today - timedelta(days=14),
+        planned_end_date=today + timedelta(days=76),
+        target_metrics=[{"code": "lipid_ldl", "target": 3.0, "direction": "down"}],
+        stop_conditions=[],
+    )
+    db.add(cycle)
+    db.commit()
+    db.refresh(cycle)
+    db.add(OutcomeMetric(
+        cycle_id=cycle.id,
+        metric_code="lipid_ldl",
+        unit="mmol/L",
+        baseline_value=3.8,
+        target_value=3.0,
+        direction="down",
+        status="pending",
+    ))
+    db.commit()
+
+    payload = planner.build_daily_operating_plan(db, user.id, plan_date=today)
+
+    active_cycle = payload["state_summary"]["active_cycle"]
+    assert active_cycle["id"] == cycle.id
+    assert active_cycle["day"] == 15
+    assert active_cycle["recheck_days_left"] == 76
+    assert active_cycle["primary_metric"]["metric_code"] == "lipid_ldl"
+    assert active_cycle["primary_metric"]["display"] == "低密度脂蛋白胆固醇"
+
+    assert payload["actions"]
+    assert all(action["cycle_id"] == cycle.id for action in payload["actions"])
+    first_action = payload["actions"][0]
+    assert first_action["cycle_type"] == "metabolic_90d"
+    assert first_action["verification"]["cycle_id"] == cycle.id
+    assert first_action["verification"]["cycle_target_metric"] == "lipid_ldl"
+    assert first_action["verification"]["cycle_target_metric_label"] == "低密度脂蛋白胆固醇"
+
+
 def test_orchestrator_prompt_keeps_genetic_only_associations_low_confidence():
     twin = HealthTwin(
         meta=TwinMeta(user_id=3, generated_at=datetime(2026, 5, 21, 8, 0, 0)),

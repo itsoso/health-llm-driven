@@ -24,7 +24,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSafetyReport, type SafetyAlert } from '../../services/safety';
 import { getActiveCards, pickWeeklySuggestionCards, type ActionCard } from '../../services/actionCards';
 import api from '../../services/api';
-import { spacing, radii } from '../../constants/theme';
+import { spacing } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
@@ -476,6 +476,7 @@ export default function TodayScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
+        <MetabolicEntryCard />
         <EnvironmentCard />
         <StreakBadge
           current={streakQuery.data?.current_streak}
@@ -505,7 +506,6 @@ export default function TodayScreen() {
           data={deviceCompareQuery.data}
           onPress={() => router.push('/device-sources' as any)}
         />
-        <MetabolicEntryCard />
         <HomeCommandCard
           agentJudgmentText={agentJudgmentText}
           nextStepActionText={nextStepActionText}
