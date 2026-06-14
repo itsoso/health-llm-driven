@@ -1,0 +1,5 @@
+-- 用药自动驾驶 P0：给药品加「相对吃饭的服用时点」
+-- PPI 空腹/饭前、抗生素饭后、铋剂饭前 —— 没有这两列，提醒说不出怎么吃，复杂方案无法无脑化
+-- 向后兼容：旧记录两列为 NULL，渲染时当「无特殊要求」省略时点提示
+ALTER TABLE medications ADD COLUMN IF NOT EXISTS timing_relation VARCHAR(20);
+ALTER TABLE medications ADD COLUMN IF NOT EXISTS meal_anchor VARCHAR(10);

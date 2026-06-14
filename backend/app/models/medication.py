@@ -22,6 +22,11 @@ class Medication(Base):
     side_effects = Column(Text)  # 已知副作用
     interactions = Column(Text)  # 药物相互作用提醒
 
+    # 相对吃饭的服用时点 —— 复杂方案(如胃溃疡三联)无脑化的硬前提
+    # PPI 要空腹/饭前、抗生素要饭后、铋剂要饭前；没有这个字段提醒只能报「该吃X」却说不出怎么吃
+    timing_relation = Column(String(20))  # 相对吃饭的时点；NULL = 无特殊要求
+    meal_anchor = Column(String(10))  # breakfast / lunch / dinner；哪一餐(可空)
+
     start_date = Column(Date)  # 开始服用日期
     end_date = Column(Date)  # 计划结束日期
     is_active = Column(Boolean, default=True)  # 是否在服用中
@@ -63,3 +68,38 @@ class MedicationLog(Base):
         Index("ix_medication_logs_user_date", "user_id", "taken_date"),
         Index("ix_medication_logs_med_date", "medication_id", "taken_date"),
     )
+
+
+# ── 相对吃饭时点 → 中文执行指令 ───────────────────────────────────
+# 纯函数，无副作用；service(today_status) 与 Celery 提醒任务共用，保证文案一致
+_TIMING_LABELS = {
+    "empty_stomach": "空腹",
+    "before_meal_30": "饭前30分钟",
+    "before_meal": "饭前",
+    "with_meal": "随餐",
+    "after_meal": "饭后",
+    "bedtime": "睡前",
+    "anytime": "",
+}
+_MEAL_LABELS = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐"}
+
+
+def medication_timing_label(timing_relation, meal_anchor=None) -> str:
+    """把 (相对吃饭时点, 餐次) 渲染成中文执行指令。
+
+    例：('before_meal_30','breakfast') → '早餐前30分钟'；('empty_stomach',None) → '空腹'；
+    ('after_meal',None) → '饭后'。无要求 / 未知值 → 空串(调用方据此省略时点提示)。
+    """
+    if not timing_relation:
+        return ""
+    base = _TIMING_LABELS.get(timing_relation, "")
+    if not base:
+        return ""
+    # 空腹 / 睡前 不挂餐次
+    if timing_relation in ("empty_stomach", "bedtime"):
+        return base
+    meal = _MEAL_LABELS.get(meal_anchor or "")
+    # 饭前/饭后/饭前30分钟 → 替换「饭」为具体餐次(早餐前30分钟)
+    if meal and base.startswith("饭"):
+        return base.replace("饭", meal, 1)
+    return base

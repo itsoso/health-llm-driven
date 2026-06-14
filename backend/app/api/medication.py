@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.medication import Medication, MedicationLog
+from app.models.medication import Medication, MedicationLog, medication_timing_label
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services.medication_service import medication_service
@@ -22,6 +22,8 @@ class MedicationCreate(BaseModel):
     frequency: Optional[str] = None
     times_per_day: int = 1
     reminder_times: Optional[List[str]] = None
+    timing_relation: Optional[str] = None  # empty_stomach/before_meal_30/before_meal/with_meal/after_meal/bedtime/anytime
+    meal_anchor: Optional[str] = None  # breakfast/lunch/dinner
     category: Optional[str] = None
     purpose: Optional[str] = None
     side_effects: Optional[str] = None
@@ -37,6 +39,8 @@ class MedicationUpdate(BaseModel):
     frequency: Optional[str] = None
     times_per_day: Optional[int] = None
     reminder_times: Optional[List[str]] = None
+    timing_relation: Optional[str] = None
+    meal_anchor: Optional[str] = None
     category: Optional[str] = None
     purpose: Optional[str] = None
     notes: Optional[str] = None
@@ -271,6 +275,9 @@ def _serialize_medication(med) -> Dict[str, Any]:
         "frequency": med.frequency,
         "times_per_day": med.times_per_day,
         "reminder_times": med.reminder_times,
+        "timing_relation": med.timing_relation,
+        "meal_anchor": med.meal_anchor,
+        "timing_label": medication_timing_label(med.timing_relation, med.meal_anchor),
         "category": med.category,
         "purpose": med.purpose,
         "side_effects": med.side_effects,

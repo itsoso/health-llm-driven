@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
-from app.models.medication import Medication, MedicationLog
+from app.models.medication import Medication, MedicationLog, medication_timing_label
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ class MedicationService:
             frequency=data.get("frequency"),
             times_per_day=data.get("times_per_day", 1),
             reminder_times=data.get("reminder_times"),
+            timing_relation=data.get("timing_relation"),
+            meal_anchor=data.get("meal_anchor"),
             category=data.get("category"),
             purpose=data.get("purpose"),
             side_effects=data.get("side_effects"),
@@ -84,6 +86,7 @@ class MedicationService:
             return None
 
         updatable = ["name", "dosage", "frequency", "times_per_day", "reminder_times",
+                      "timing_relation", "meal_anchor",
                       "category", "purpose", "side_effects", "interactions",
                       "start_date", "end_date", "notes"]
         for key in updatable:
@@ -213,6 +216,9 @@ class MedicationService:
                 "medication_id": med.id,
                 "name": med.name,
                 "dosage": med.dosage,
+                "timing_relation": med.timing_relation,
+                "meal_anchor": med.meal_anchor,
+                "timing_label": medication_timing_label(med.timing_relation, med.meal_anchor),
                 "category": med.category,
                 "total_count": med.times_per_day,
                 "taken_count": taken_count,

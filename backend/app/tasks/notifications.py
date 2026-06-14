@@ -1971,7 +1971,7 @@ def scan_medication_reminders():
     - 不去重：只要时间对上就推，一分钟内跑完。下一分钟不会再匹配
     - 失败不影响其他用户 / 药
     """
-    from app.models.medication import Medication
+    from app.models.medication import Medication, medication_timing_label
 
     now_cn = get_china_now()
     cur_hhmm = now_cn.strftime("%H:%M")
@@ -1996,6 +1996,10 @@ def scan_medication_reminders():
 
                 title = f"💊 用药提醒：{med.name}"
                 body_parts = [med.dosage] if med.dosage else []
+                # 相对吃饭的时点(空腹/饭前/饭后) —— 复杂方案无脑化的关键:用户不用再自己查怎么吃
+                timing = medication_timing_label(med.timing_relation, med.meal_anchor)
+                if timing:
+                    body_parts.append(timing)
                 body_parts.append(f"现在 {cur_hhmm}，点「已服用」自动打卡。")
                 body = "，".join(body_parts)
 
