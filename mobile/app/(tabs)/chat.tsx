@@ -397,6 +397,12 @@ export default function ChatScreen() {
     });
   }, []);
 
+  // 微信式: 长按某条消息 → 进入多选模式并默认选中该条.
+  const enterSelectionWith = useCallback((id: string) => {
+    setSelectionMode(true);
+    setSelectedMessageIds(new Set([id]));
+  }, []);
+
   const shareSelectedMessages = useCallback(async () => {
     const message = buildSelectedChatShareMessage(messages, selectedMessageIds);
     if (!message || sharing) return;
@@ -411,15 +417,19 @@ export default function ChatScreen() {
     }
   }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
 
-  const renderMessage = useCallback(({ item }: { item: UIMessage }) => (
-    <ChatBubble
-      item={item}
-      onViewImage={setViewingImage}
-      selectionMode={selectionMode && isShareableChatMessage(item)}
-      selected={selectedMessageIds.has(item.id)}
-      onToggleSelected={toggleMessageSelection}
-    />
-  ), [selectedMessageIds, selectionMode, toggleMessageSelection]);
+  const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
+    const shareable = isShareableChatMessage(item);
+    return (
+      <ChatBubble
+        item={item}
+        onViewImage={setViewingImage}
+        selectionMode={selectionMode && shareable}
+        selected={selectedMessageIds.has(item.id)}
+        onToggleSelected={toggleMessageSelection}
+        onEnterSelection={!selectionMode && shareable ? enterSelectionWith : undefined}
+      />
+    );
+  }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   // 悬浮胶囊 tab bar 是 absolute 定位,useBottomTabBarHeight() 测不准(真机返回 0),
