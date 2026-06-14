@@ -222,19 +222,24 @@ def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-# 括号 + Python 调用签名格式的内联工具调用:`[工具调用: name(args)]`。
+# 括号 + Python 调用签名格式的内联工具调用:`[工具调用: name(args)]` / `[tool_call: name(args)]`。
 # 弱模型(尤其经代理的)会把工具调用吐成这种自然语言标记而非结构化 tool_calls,
-# 中英文冒号都见过、方括号有时缺。捕获 name + 括号内全部参数串,留给
-# `_parse_bracket_tool_args` 解析。`re.S` 让参数串可跨行。
+# 中英文冒号都见过、方括号有时缺。标记词中英文都见过(工具调用/调用工具/tool_call/
+# function_call)—— 实测 Claude-Opus-4.7 经代理时吐 `[tool_call: health_record(...)]`(英文),
+# 旧正则只认中文 → 既没恢复执行(记录没真写库=假装成功)又没剥离(裸 JSON 泄漏给用户)。
+# 捕获 name + 括号内全部参数串,留给 `_parse_bracket_tool_args` 解析。`re.S` 让参数串可跨行。
+_BRACKET_MARKER = r"(?:工具调用|调用工具|tool_call|function_call|tool call)"
+# 参数串用贪婪 `.*` 抓到最后一个 `)`:食物名等带内嵌括号(如 "面条(约100g生重)")时,
+# 非贪婪会在第一个 `)` 截断 → data 丢字段。贪婪 + `_split_top_level_commas` 深度跟踪能正确切。
 _BRACKET_TOOL_CALL_RE = re.compile(
-    r"\[?\s*工具调用\s*[:：]\s*(\w+)\s*\((.*?)\)\s*\]?",
-    re.S,
+    rf"\[?\s*{_BRACKET_MARKER}\s*[:：]\s*(\w+)\s*\((.*)\)\s*\]?",
+    re.S | re.I,
 )
 # 即便最终没解析出参数,也绝不能把裸标记泄漏给用户(类比 mac 端剥离 [claim:xxx])。
-# 用于最终输出兜底剥离。比上面宽松:name 可缺、括号内随意。
+# 用于最终输出兜底剥离。比上面宽松:name 可缺、括号内随意(贪婪到最后一个 `)`)。
 _BRACKET_TOOL_CALL_STRIP_RE = re.compile(
-    r"\[?\s*工具调用\s*[:：].*?\)\s*\]?",
-    re.S,
+    rf"\[?\s*{_BRACKET_MARKER}\s*[:：].*\)\s*\]?",
+    re.S | re.I,
 )
 
 
@@ -289,6 +294,15 @@ def _coerce_bracket_value(raw: str) -> Any:
         try:
             return json.loads(val)
         except json.JSONDecodeError:
+            pass
+        # 容错:模型常吐无引号 key 的 dict(`{meal_type: "snack", calories: 530}`)+ 弯引号。
+        # 先归一引号,再给裸 key 补引号,重试 —— 救 health_record 的 data={...} payload
+        # (否则 data 退化成原始字符串 → 记录存不对 / 丢字段)。
+        try:
+            fixed = _normalize_json_quotes(val)
+            fixed = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)', r'\1"\2"\3', fixed)
+            return json.loads(fixed)
+        except (json.JSONDecodeError, ValueError):
             pass
     # 带引号的字符串。
     if len(val) >= 2 and val[0] in "'\"" and val[-1] == val[0]:
@@ -363,7 +377,11 @@ def _strip_bracket_tool_markers(text: str) -> str:
     Mirrors the mac-side ``[claim:xxx]`` scrub: even when args don't parse, the
     raw marker must never reach the user.
     """
-    if not text or "工具调用" not in text:
+    if not text:
+        return text
+    # 中英文标记任一存在才尝试(便宜预检);英文标记小写比对。
+    low = text.lower()
+    if not any(k in low for k in ("工具调用", "调用工具", "tool_call", "function_call", "tool call")):
         return text
     return _BRACKET_TOOL_CALL_STRIP_RE.sub("", text).strip()
 
@@ -2698,8 +2716,15 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """执行健康数据记录"""
-        rtype = args.get("record_type", "")
+        # 别名容错:模型常把 record_type 写成 type(实测 health_record(type=diet, data={...}))。
+        rtype = args.get("record_type") or args.get("type") or ""
         data = args.get("data", {})
+        # data 偶尔被吐成 JSON 字符串(coerce 退化)→ 尽力解析回 dict。
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except (json.JSONDecodeError, ValueError):
+                data = {}
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
         # water: 必须显式提供 amount, 不再悄悄默认 250ml.
