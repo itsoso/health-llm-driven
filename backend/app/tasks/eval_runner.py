@@ -21,6 +21,7 @@ _SUITES = [
     ("recovery", "main"),
     ("insight", "main"),
     ("health_advice", "main"),
+    ("retrieval", "main"),
     ("orchestrator", "main"),
 ]
 

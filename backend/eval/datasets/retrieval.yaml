@@ -1,0 +1,149 @@
+# Retrieval suite — 端到端验证 "agent 工具真去查 DB + 返回对的数据".
+#
+# 钉死本会话踩过的真 bug: 化验查不到 / 工具不执行 / 返回空 / 3000 字符截断丢数据.
+# runner (_run_retrieval_case): 播种内存 SQLite → AgentExecutor._exec_health_query → 工具文本.
+# scorer (keywords): output_text 必含 must_contain, 必不含 must_not_contain. 全确定性, 无 LLM.
+#
+# seed.medical_indicators 每行: name / name_en / item_code / value / unit /
+#   record_date (YYYY-MM-DD 或 'today-Nd') / is_abnormal / reference_low / reference_high.
+# query: dimension (默认 medical_exam) / indicator / days.
+
+cases:
+  - id: lab_query_returns_seeded
+    description: 化验维度无 indicator → 返回指标清单, 含已播种的 LDL/HCY 名称与值 (钉死"化验查不到")
+    suite: retrieval
+    seed:
+      user_id: 1
+      medical_indicators:
+        - name: 低密度脂蛋白
+          name_en: LDL
+          value: 3.8
+          unit: mmol/L
+          record_date: today-10d
+          is_abnormal: true
+          reference_low: 0
+          reference_high: 3.4
+        - name: 同型半胱氨酸
+          name_en: HCY
+          value: 15
+          unit: μmol/L
+          record_date: today-10d
+          is_abnormal: true
+          reference_low: 0
+          reference_high: 10
+    query:
+      dimension: medical_exam
+    expected:
+      must_contain:
+        - 低密度脂蛋白
+        - "3.8"
+        - 同型半胱氨酸
+        - "15"
+      must_not_contain:
+        - 没调到
+        - 请拍报告
+        - 未找到任何化验
+
+  - id: lab_query_by_indicator
+    description: 化验维度带 indicator=LDL → 返回该指标时间序列, 含值 (钉死按指标精确查不到)
+    suite: retrieval
+    seed:
+      user_id: 1
+      medical_indicators:
+        - name: 低密度脂蛋白
+          name_en: LDL
+          value: 3.8
+          unit: mmol/L
+          record_date: today-10d
+          is_abnormal: true
+          reference_low: 0
+          reference_high: 3.4
+    query:
+      dimension: medical_exam
+      indicator: LDL
+    expected:
+      must_contain:
+        - 低密度脂蛋白
+        - "3.8"
+      must_not_contain:
+        - 未找到化验指标
+        - Error
+
+  - id: lab_empty_when_no_data
+    description: 无任何化验数据 → 友好引导补录, 不报错堆栈 (空态不能伪装成失败)
+    suite: retrieval
+    seed:
+      user_id: 1
+      medical_indicators: []
+    query:
+      dimension: medical_exam
+    expected:
+      must_contain:
+        - 未找到任何化验
+      must_not_contain:
+        - Traceback
+        - "Error:"
+        - Exception
+
+  - id: lab_many_not_truncated
+    description: 播种 25 项指标 → 第 1 项和第 25 项都出现 (钉死 3000 字符截断丢数据)
+    suite: retrieval
+    seed:
+      user_id: 1
+      medical_indicators:
+        - {name: 指标01首项, value: 1, unit: x, record_date: today-5d}
+        - {name: 指标02, value: 2, unit: x, record_date: today-5d}
+        - {name: 指标03, value: 3, unit: x, record_date: today-5d}
+        - {name: 指标04, value: 4, unit: x, record_date: today-5d}
+        - {name: 指标05, value: 5, unit: x, record_date: today-5d}
+        - {name: 指标06, value: 6, unit: x, record_date: today-5d}
+        - {name: 指标07, value: 7, unit: x, record_date: today-5d}
+        - {name: 指标08, value: 8, unit: x, record_date: today-5d}
+        - {name: 指标09, value: 9, unit: x, record_date: today-5d}
+        - {name: 指标10, value: 10, unit: x, record_date: today-5d}
+        - {name: 指标11, value: 11, unit: x, record_date: today-5d}
+        - {name: 指标12, value: 12, unit: x, record_date: today-5d}
+        - {name: 指标13, value: 13, unit: x, record_date: today-5d}
+        - {name: 指标14, value: 14, unit: x, record_date: today-5d}
+        - {name: 指标15, value: 15, unit: x, record_date: today-5d}
+        - {name: 指标16, value: 16, unit: x, record_date: today-5d}
+        - {name: 指标17, value: 17, unit: x, record_date: today-5d}
+        - {name: 指标18, value: 18, unit: x, record_date: today-5d}
+        - {name: 指标19, value: 19, unit: x, record_date: today-5d}
+        - {name: 指标20, value: 20, unit: x, record_date: today-5d}
+        - {name: 指标21, value: 21, unit: x, record_date: today-5d}
+        - {name: 指标22, value: 22, unit: x, record_date: today-5d}
+        - {name: 指标23, value: 23, unit: x, record_date: today-5d}
+        - {name: 指标24, value: 24, unit: x, record_date: today-5d}
+        - {name: 指标25末项, value: 25, unit: x, record_date: today-5d}
+    query:
+      dimension: medical_exam
+    expected:
+      must_contain:
+        - 指标01首项
+        - 指标25末项
+      must_not_contain:
+        - 未找到任何化验
+
+  - id: stale_marked
+    description: 200 天前的化验 → 标注"较旧", 让 LLM 不当现值 (医疗误导边界)
+    suite: retrieval
+    seed:
+      user_id: 1
+      medical_indicators:
+        - name: 空腹血糖
+          name_en: FBG
+          value: 5.2
+          unit: mmol/L
+          record_date: today-200d
+          reference_low: 3.9
+          reference_high: 6.1
+    query:
+      dimension: medical_exam
+      indicator: 空腹血糖
+    expected:
+      must_contain:
+        - 空腹血糖
+        - 较旧
+      must_not_contain:
+        - 未找到化验指标

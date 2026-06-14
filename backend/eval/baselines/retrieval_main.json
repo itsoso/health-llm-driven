@@ -1,0 +1,139 @@
+{
+  "suite": "retrieval",
+  "total_cases": 5,
+  "passed": 5,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 1.0,
+  "avg_latency_ms": 230,
+  "cases": [
+    {
+      "case_id": "lab_query_returns_seeded",
+      "suite": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "output_text": "共有 2 项化验指标 (取每项最新值, 其中 2 项异常):\n- 低密度脂蛋白: 3.8 mmol/L (2026-06-03) [偏高] 参考 0.0-3.4\n- 同型半胱氨酸: 15.0 μmol/L (2026-06-03) [偏高] 参考 0.0-10.0"
+        },
+        "scorers": {
+          "keywords": {
+            "passed": true,
+            "score": 1.0,
+            "present": [
+              "低密度脂蛋白",
+              "3.8",
+              "同型半胱氨酸",
+              "15"
+            ],
+            "missing": [],
+            "leaked": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 955
+    },
+    {
+      "case_id": "lab_query_by_indicator",
+      "suite": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "output_text": "化验指标「低密度脂蛋白」时间序列 (最近 1 条):\n- 低密度脂蛋白: 3.8 mmol/L (2026-06-03) [偏高] 参考 0.0-3.4"
+        },
+        "scorers": {
+          "keywords": {
+            "passed": true,
+            "score": 1.0,
+            "present": [
+              "低密度脂蛋白",
+              "3.8"
+            ],
+            "missing": [],
+            "leaked": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 50
+    },
+    {
+      "case_id": "lab_empty_when_no_data",
+      "suite": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "output_text": "未找到任何化验/体检指标 (最近 365 天内)。用户可能还没录入体检报告; 可让用户拍照上传体检单或口述化验结果。"
+        },
+        "scorers": {
+          "keywords": {
+            "passed": true,
+            "score": 1.0,
+            "present": [
+              "未找到任何化验"
+            ],
+            "missing": [],
+            "leaked": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 47
+    },
+    {
+      "case_id": "lab_many_not_truncated",
+      "suite": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "output_text": "共有 25 项化验指标 (取每项最新值):\n- 指标01首项: 1.0 x (2026-06-08) [正常]\n- 指标02: 2.0 x (2026-06-08) [正常]\n- 指标03: 3.0 x (2026-06-08) [正常]\n- 指标04: 4.0 x (2026-06-08) [正常]\n- 指标05: 5.0 x (2026-06-08) [正常]\n- 指标06: 6.0 x (2026-06-08) [正常]\n- 指标07: 7.0 x (2026-06-08) [正常]\n- 指标08: 8.0 x (2026-06-08) [正常]\n- 指标09: 9.0 x (2026-06-08) [正常]\n- 指标10: 10.0 x (2026-06-08) [正常]\n- 指标11: 11.0 x (2026-06-08) [正常]\n- 指标12: 12.0 x (2026-06-08) [正常]\n- 指标13: 13.0 x (2026-06-08) [正常]\n- 指标14: 14.0 x (2026-06-08) [正常]\n- 指标15: 15.0 x (2026-06-08) [正常]\n- 指标16: 16.0 x (2026-06-08) [正常]\n- 指标17: 17.0 x (2026-06-08) [正常]\n- 指标18: 18.0 x (2026-06-08) [正常]\n- 指标19: 19.0 x (2026-06-08) [正常]\n- 指标20: 20.0 x (2026-06-08) [正常]\n- 指标21: 21.0 x (2026-06-08) [正常]\n- 指标22: 22.0 x (2026-06-08) [正常]\n- 指标23: 23.0 x (2026-06-08) [正常]\n- 指标24: 24.0 x (2026-06-08) [正常]\n- 指标25末项: 25.0 x (2026-06-08) [正常]"
+        },
+        "scorers": {
+          "keywords": {
+            "passed": true,
+            "score": 1.0,
+            "present": [
+              "指标01首项",
+              "指标25末项"
+            ],
+            "missing": [],
+            "leaked": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 51
+    },
+    {
+      "case_id": "stale_marked",
+      "suite": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "output_text": "化验指标「空腹血糖」时间序列 (最近 1 条):\n- 空腹血糖: 5.2 mmol/L (2025-11-25) (较旧·约200天前) [正常] 参考 3.9-6.1"
+        },
+        "scorers": {
+          "keywords": {
+            "passed": true,
+            "score": 1.0,
+            "present": [
+              "空腹血糖",
+              "较旧"
+            ],
+            "missing": [],
+            "leaked": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 49
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}

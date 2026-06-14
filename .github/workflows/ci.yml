@@ -54,7 +54,7 @@ jobs:
           DATABASE_URL: "sqlite:///:memory:"
         run: python scripts/check_doc_drift.py
 
-      - name: Eval Golden Set (safety + insight, no LLM cost)
+      - name: Eval Golden Set (safety + insight + retrieval, no LLM cost)
         working-directory: backend
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
@@ -62,10 +62,12 @@ jobs:
           DATABASE_URL: "sqlite:///:memory:"
         # 软 gate: 失败不阻塞合并, 仅暴露 regression 列表给 PR review
         # orchestrator suite 不在此跑 (会调真实 LLM, 应手动 / 夜间触发)
+        # retrieval: 端到端验证 agent 工具真去查 DB + 返回对的数据 (内存 SQLite, 无 LLM)
         continue-on-error: true
         run: |
           python -m eval run --suite safety --baseline main --fail-on-regression
           python -m eval run --suite insight --baseline main --fail-on-regression
+          python -m eval run --suite retrieval --baseline main --fail-on-regression
 
   frontend-build:
     runs-on: ubuntu-latest
