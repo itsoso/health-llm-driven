@@ -105,6 +105,17 @@ async function registerNotificationCategories() {
     { identifier: 'SNOOZE_7D', buttonTitle: '暂停 7 天', options: { opensAppToForeground: false } },
     { identifier: 'NOT_INTERESTED', buttonTitle: '不感兴趣', options: { opensAppToForeground: false, isDestructive: true } },
   ]);
+  // 行为闭环「今天最重要一件事」: 完成 / 稍后 / 跳过, 后台处理无需开 app.
+  // 这条通知会自动镜像到 Apple Watch, 表上直接点按钮。
+  await Notifications.setNotificationCategoryAsync('BEHAVIOR_LOOP', [
+    { identifier: 'LOOP_DONE', buttonTitle: '完成', options: { opensAppToForeground: false } },
+    { identifier: 'LOOP_LATER', buttonTitle: '稍后', options: { opensAppToForeground: false } },
+    { identifier: 'LOOP_SKIP', buttonTitle: '跳过', options: { opensAppToForeground: false } },
+  ]);
+  // 干预周期提醒: 唯一动作「查看进展」(deep link 到周期屏, 需打开 app)。
+  await Notifications.setNotificationCategoryAsync('INTERVENTION_CYCLE', [
+    { identifier: 'VIEW_PROGRESS', buttonTitle: '查看进展', options: { opensAppToForeground: true } },
+  ]);
 }
 
 function handleNotificationResponse(response: Notifications.NotificationResponse) {
@@ -119,6 +130,15 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
   }
   if (actionId === 'DONE' || actionId === 'SNOOZE_7D' || actionId === 'NOT_INTERESTED') {
     handleOpenLoopAction(actionId, data);
+    return;
+  }
+  if (actionId === 'LOOP_DONE' || actionId === 'LOOP_LATER' || actionId === 'LOOP_SKIP') {
+    handleBehaviorLoopAction(actionId, data);
+    return;
+  }
+  if (actionId === 'VIEW_PROGRESS') {
+    const link = (data?.deep_link as string | undefined) ?? '/intervention-cycle';
+    try { router.push(link as any); } catch { router.push('/(tabs)' as any); }
     return;
   }
 
@@ -205,5 +225,30 @@ async function handleOpenLoopAction(
     await api.post(`/open-loop/${historyId}/feedback`, { action });
   } catch {
     // Background feedback failed silently — server-side dedup still applies
+  }
+}
+
+// 行为闭环「今天最重要一件事」的 3 个 action.
+// 完成 → completed event; 跳过 → skipped event; 稍后 → 不记录(行动保持待办, 下次再提醒)。
+// 走现成 POST /daily-plan/actions/{action_key}/events (同 HomeCommandCard 的完成路径)。
+async function handleBehaviorLoopAction(
+  actionId: 'LOOP_DONE' | 'LOOP_LATER' | 'LOOP_SKIP',
+  data?: Record<string, any>,
+) {
+  const actionKey = data?.action_key as string | undefined;
+  if (!actionKey) return;
+
+  const { behaviorLoopActionToEventType } = await import('../services/behaviorLoopReminders');
+  const eventType = behaviorLoopActionToEventType(actionId);
+  if (!eventType) return; // 稍后: 不打卡, 不改状态
+
+  try {
+    const { recordDailyPlanActionEvent } = await import('../services/dailyPlan');
+    await recordDailyPlanActionEvent(actionKey, {
+      event_type: eventType,
+      payload: { source: 'wrist_notification' },
+    });
+  } catch {
+    // Background action failed silently — user can complete in the app later
   }
 }
