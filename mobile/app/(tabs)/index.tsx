@@ -28,6 +28,8 @@ import { spacing } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
+import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
+import { useActiveCycle } from '../../hooks/useHealthOs';
 import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
 import { pushChatWithContext } from '../../utils/agentContext';
 import {
@@ -192,8 +194,18 @@ export default function TodayScreen() {
     dashboard: dashboardQuery,
   });
 
+  const activeCycleQuery = useActiveCycle();
+
   // 按今日在服药品的 reminder_times 调度每日本地吃药提醒 (无权限静默跳过)
   useMedicationReminders(dashboardQuery.data?.medicationToday, dashboardQuery.isSuccess);
+
+  // 行为闭环 → 可操作本地通知 (自动镜像到 Apple Watch): 今天最重要一件事 + 干预周期/复查.
+  // 无权限静默跳过; 空态 (无 plan top action / 无周期) 不发.
+  useBehaviorLoopReminders(
+    dailyPlanQuery.data,
+    activeCycleQuery.data,
+    dailyPlanQuery.isSuccess || activeCycleQuery.isSuccess,
+  );
 
   const garmin = useLatestGarmin(dashboardQuery.data);
   const garminDays: GarminDailyRow[] = Array.isArray(dashboardQuery.data?.garminDaily)
