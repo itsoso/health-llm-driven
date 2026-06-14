@@ -355,6 +355,112 @@ public struct IntegrityReport: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Health guardrail summary
+
+public struct HealthGuardrailSummaryItem: Equatable, Sendable, Identifiable {
+    public let key: String
+    public let label: String
+    public let value: String
+    public let attention: Bool
+
+    public var id: String { key }
+
+    public init(key: String, label: String, value: String, attention: Bool) {
+        self.key = key
+        self.label = label
+        self.value = value
+        self.attention = attention
+    }
+}
+
+public struct HealthGuardrailSummary: Equatable, Sendable {
+    public let attentionCount: Int
+    public let title: String
+    public let subtitle: String
+    public let items: [HealthGuardrailSummaryItem]
+
+    public init(
+        attentionCount: Int,
+        title: String,
+        subtitle: String,
+        items: [HealthGuardrailSummaryItem]
+    ) {
+        self.attentionCount = attentionCount
+        self.title = title
+        self.subtitle = subtitle
+        self.items = items
+    }
+}
+
+public enum HealthGuardrailSummaryBuilder {
+    public static func build(
+        integrity: IntegrityReport? = nil,
+        deprescribing: DeprescribingReview? = nil,
+        connection: ConnectionStatus? = nil,
+        causalLinks: CausalLinksReport? = nil
+    ) -> HealthGuardrailSummary {
+        let integrityIssues = max(0, integrity?.issueCount ?? integrity?.issues.count ?? 0)
+        let medicationFlags = max(0, deprescribing?.flags.count ?? 0)
+        let connectionDue = connection?.due == true
+        let causalInsightCount = max(0, causalLinks?.interventionEffects.count ?? 0)
+        let attentionCount = integrityIssues + medicationFlags + (connectionDue ? 1 : 0)
+
+        let title: String
+        if attentionCount > 0 {
+            title = "健康守门 \(attentionCount) 项待处理"
+        } else if causalInsightCount > 0 {
+            title = "健康守门正常 · \(causalInsightCount) 条用药关联"
+        } else {
+            title = "健康守门正常"
+        }
+
+        let subtitle: String
+        if attentionCount > 0 {
+            subtitle = "先处理会影响建议可信度的健康维护项。"
+        } else if causalInsightCount > 0 {
+            subtitle = "数据可信，已有用药-指标关联可复盘。"
+        } else {
+            subtitle = "数据与维护项暂无异常，继续执行今日闭环。"
+        }
+
+        return HealthGuardrailSummary(
+            attentionCount: attentionCount,
+            title: title,
+            subtitle: subtitle,
+            items: [
+                HealthGuardrailSummaryItem(
+                    key: "data_integrity",
+                    label: "数据自检",
+                    value: integrity.map { _ in integrityIssues > 0 ? "\(integrityIssues) 个问题" : "通过" } ?? "未加载",
+                    attention: integrityIssues > 0
+                ),
+                HealthGuardrailSummaryItem(
+                    key: "deprescribing",
+                    label: "用药梳理",
+                    value: deprescribing.map { medicationFlags > 0 ? "\(medicationFlags) 条候选" : "\($0.activeCount) 种在用" } ?? "未加载",
+                    attention: medicationFlags > 0
+                ),
+                HealthGuardrailSummaryItem(
+                    key: "connection",
+                    label: "社会连接",
+                    value: connection.map { status in
+                        if status.due { return "本周应自评" }
+                        if let days = status.daysSince { return "\(days) 天前" }
+                        return "已维护"
+                    } ?? "未加载",
+                    attention: connectionDue
+                ),
+                HealthGuardrailSummaryItem(
+                    key: "causal_links",
+                    label: "指标关联",
+                    value: causalLinks.map { _ in causalInsightCount > 0 ? "\(causalInsightCount) 条可复盘" : "等待数据" } ?? "未加载",
+                    attention: false
+                )
+            ]
+        )
+    }
+}
+
 // MARK: - Client
 
 /// 「健康进阶」四个已上线能力的客户端。对标 `OriginatorClient` / `LiverHealthClient`:

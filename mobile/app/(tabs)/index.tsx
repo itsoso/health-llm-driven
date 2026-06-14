@@ -44,6 +44,7 @@ import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import HomeCommandCard from '../../components/home/HomeCommandCard';
+import HealthGuardrailCard from '../../components/home/HealthGuardrailCard';
 import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopicsRow';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
@@ -60,6 +61,7 @@ import {
 import { getCheckinStreak } from '../../services/streak';
 import { fetchMyProgress, pickBioAgeWin } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
+import { fetchHealthGuardrailSummary } from '../../services/healthGuardrailSummary';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -181,6 +183,12 @@ export default function TodayScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const healthGuardrailQuery = useQuery({
+    queryKey: ['health-guardrail-summary'],
+    queryFn: fetchHealthGuardrailSummary,
+    staleTime: 10 * 60 * 1000,
+  });
+
   const dashboardQuery = useDashboardData();
 
   // perf (2026-05-29): 进程启动后第一次首页 mount 时, 测 4 个 critical query
@@ -246,6 +254,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['trajectory', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['health-guardrail-summary'] }),
         qc.invalidateQueries({ queryKey: ['checkin-streak'] }),
         qc.invalidateQueries({ queryKey: ['progress-dashboard', 30] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -270,7 +279,8 @@ export default function TodayScreen() {
     cardsQuery.isRefetching ||
     twinQuery.isRefetching ||
     dailyPlanQuery.isRefetching ||
-    trajectoryQuery.isRefetching;
+    trajectoryQuery.isRefetching ||
+    healthGuardrailQuery.isRefetching;
 
   const alerts: SafetyAlert[] = safetyQuery.data?.alerts ?? [];
   const criticalAlerts = alerts.filter((a) =>
@@ -505,6 +515,11 @@ export default function TodayScreen() {
         <DeviceCompareCard
           data={deviceCompareQuery.data}
           onPress={() => router.push('/device-sources' as any)}
+        />
+        <HealthGuardrailCard
+          summary={healthGuardrailQuery.data}
+          isError={healthGuardrailQuery.isError}
+          onPress={(route) => router.push(route as any)}
         />
         <HomeCommandCard
           agentJudgmentText={agentJudgmentText}

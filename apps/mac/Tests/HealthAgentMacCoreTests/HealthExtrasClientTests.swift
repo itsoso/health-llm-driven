@@ -203,4 +203,57 @@ final class HealthExtrasClientTests: XCTestCase {
         // 缺 count 默认 1。
         XCTAssertEqual(try decode(IntegrityIssue.self, "{}").count, 1)
     }
+
+    // MARK: - Health guardrail summary
+
+    func testBuildsHealthGuardrailSummaryFromMaintenanceSignals() {
+        let summary = HealthGuardrailSummaryBuilder.build(
+            integrity: IntegrityReport(
+                healthy: false,
+                issueCount: 2,
+                issues: [
+                    IntegrityIssue(code: "hrv_unit", severity: "error", detail: "HRV 量纲错", count: 3, fixHint: "按 ms 存"),
+                    IntegrityIssue(code: "spo2_decimal", severity: "warning", detail: "SpO2 小数错", count: 1, fixHint: "按百分数存")
+                ]
+            ),
+            deprescribing: DeprescribingReview(
+                activeCount: 6,
+                isPolypharmacy: true,
+                flags: [DeprescribingFlag(code: "polypharmacy", detail: "当前在用 6 种药", suggestion: "请医生梳理")],
+                disclaimer: "非建议停药"
+            ),
+            connection: ConnectionStatus(hasCheckin: true, due: true, daysSince: 45, interpretation: "需要复盘"),
+            causalLinks: CausalLinksReport(
+                interventionEffects: [
+                    InterventionEffect(medication: "阿托伐他汀", metricLabel: "LDL-C", beforeMean: 3.4, afterMean: 2.6, delta: -0.8, pct: -23.5, nBefore: 4, nAfter: 5)
+                ],
+                note: "描述性关联"
+            )
+        )
+
+        XCTAssertEqual(summary.attentionCount, 4)
+        XCTAssertEqual(summary.title, "健康守门 4 项待处理")
+        XCTAssertEqual(summary.items.map(\.label), ["数据自检", "用药梳理", "社会连接", "指标关联"])
+        XCTAssertEqual(summary.items.map(\.value), ["2 个问题", "1 条候选", "本周应自评", "1 条可复盘"])
+        XCTAssertEqual(summary.items.filter(\.attention).count, 3)
+    }
+
+    func testBuildsCalmHealthGuardrailSummaryWhenOnlyInsightExists() {
+        let summary = HealthGuardrailSummaryBuilder.build(
+            integrity: IntegrityReport(healthy: true, issueCount: 0, issues: []),
+            deprescribing: DeprescribingReview(activeCount: 2, isPolypharmacy: false, flags: [], disclaimer: ""),
+            connection: ConnectionStatus(hasCheckin: true, due: false, daysSince: 12, interpretation: "连接稳定"),
+            causalLinks: CausalLinksReport(
+                interventionEffects: [
+                    InterventionEffect(medication: "二甲双胍", metricLabel: "空腹血糖"),
+                    InterventionEffect(medication: "鱼油", metricLabel: "TG")
+                ],
+                note: "描述性关联"
+            )
+        )
+
+        XCTAssertEqual(summary.attentionCount, 0)
+        XCTAssertEqual(summary.title, "健康守门正常 · 2 条用药关联")
+        XCTAssertEqual(summary.subtitle, "数据可信，已有用药-指标关联可复盘。")
+    }
 }

@@ -18,6 +18,7 @@ let mockStreakData: { current_streak: number; best_streak: number } | null = nul
 let mockStreakError = false;
 let mockProgressDashboard: { stats: Record<string, number> } | null = null;
 let mockProgressDashboardError = false;
+let mockHealthGuardrailSummary: Record<string, unknown> | null = null;
 let mockRefetchingKeys = new Set<string>();
 
 jest.mock('expo-router', () => ({
@@ -57,6 +58,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('progress-dashboard')) {
       return { data: mockProgressDashboard, isLoading: false, isError: mockProgressDashboardError, isRefetching };
+    }
+    if (key.includes('health-guardrail-summary')) {
+      return { data: mockHealthGuardrailSummary, isLoading: false, isError: false, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -156,6 +160,7 @@ describe('TodayScreen', () => {
     mockStreakError = false;
     mockProgressDashboard = null;
     mockProgressDashboardError = false;
+    mockHealthGuardrailSummary = null;
     mockRefetchingKeys = new Set<string>();
   });
 
@@ -223,6 +228,30 @@ describe('TodayScreen', () => {
     const { getByText } = render(<TodayScreen />);
     expect(getByText('健康 Agent')).toBeTruthy();
     expect(getByText(/后台监测中/)).toBeTruthy();
+  });
+
+  it('promotes health guardrail maintenance on the home feed', () => {
+    mockHealthGuardrailSummary = {
+      attentionCount: 3,
+      title: '健康守门 3 项待处理',
+      subtitle: '先处理会影响建议可信度的健康维护项。',
+      primaryRoute: '/data-integrity',
+      items: [
+        { key: 'data_integrity', label: '数据自检', value: '1 个问题', attention: true },
+        { key: 'deprescribing', label: '用药梳理', value: '1 条候选', attention: true },
+        { key: 'connection', label: '社会连接', value: '本周应自评', attention: true },
+        { key: 'causal_links', label: '指标关联', value: '1 条可复盘', attention: false },
+      ],
+    };
+
+    const { getByText, getByTestId } = render(<TodayScreen />);
+
+    expect(getByText('健康守门 3 项待处理')).toBeTruthy();
+    expect(getByText('数据自检')).toBeTruthy();
+    expect(getByText('1 个问题')).toBeTruthy();
+
+    fireEvent.press(getByTestId('home-health-guardrail-card'));
+    expect(mockPush).toHaveBeenCalledWith('/data-integrity');
   });
 
   it('promotes an active 90-day health cycle as the home cockpit', () => {

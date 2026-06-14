@@ -87,6 +87,8 @@ struct TodayView: View {
     @Bindable var viewModel: TodayViewModel
     var briefingClient: BriefingClient?
     var nocturnalClient: NocturnalTimeseriesClient?
+    var healthExtrasClient: HealthExtrasClient?
+    var onOpenHealthExtras: (() -> Void)?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -96,6 +98,8 @@ struct TodayView: View {
     @State private var briefingLoaded = false
     @State private var spo2Week: [NocturnalWeekNight] = []
     @State private var spo2WeekLoaded = false
+    @State private var healthGuardrailSummary: HealthGuardrailSummary?
+    @State private var healthGuardrailLoaded = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -163,7 +167,17 @@ struct TodayView: View {
                                     RefreshPanelView(
                                         isLoading: viewModel.isLoading,
                                         appLanguageRaw: appLanguageRaw,
-                                        onRefresh: { Task { await viewModel.refresh() } }
+                                        onRefresh: {
+                                            Task {
+                                                await viewModel.refresh()
+                                                await reloadHealthGuardrail()
+                                            }
+                                        }
+                                    )
+                                    HealthGuardrailSummaryView(
+                                        summary: healthGuardrailSummary,
+                                        isLoading: !healthGuardrailLoaded && healthExtrasClient != nil,
+                                        onOpen: { onOpenHealthExtras?() }
                                     )
                                     WearablePanelView(
                                         metrics: presentation.wearableMetrics,
@@ -194,6 +208,7 @@ struct TodayView: View {
             }
             await loadBriefingIfNeeded()
             await loadSpO2WeekIfNeeded()
+            await loadHealthGuardrailIfNeeded()
         }
     }
 
@@ -212,6 +227,46 @@ struct TodayView: View {
         guard !spo2WeekLoaded, let client = nocturnalClient else { return }
         spo2WeekLoaded = true
         spo2Week = await client.fetchSpO2WeekSummary()
+    }
+
+    private func loadHealthGuardrailIfNeeded() async {
+        guard !healthGuardrailLoaded else { return }
+        await reloadHealthGuardrail()
+    }
+
+    private func reloadHealthGuardrail() async {
+        guard let client = healthExtrasClient else {
+            healthGuardrailLoaded = true
+            healthGuardrailSummary = nil
+            return
+        }
+
+        healthGuardrailLoaded = false
+
+        async let integrity = optionalHealthGuardrailFetch { try await client.fetchIntegrityReport() }
+        async let deprescribing = optionalHealthGuardrailFetch { try await client.fetchDeprescribingReview() }
+        async let connection = optionalHealthGuardrailFetch { try await client.fetchConnectionStatus() }
+        async let causalLinks = optionalHealthGuardrailFetch { try await client.fetchCausalLinks() }
+
+        let sources = await (integrity, deprescribing, connection, causalLinks)
+        healthGuardrailSummary = HealthGuardrailSummaryBuilder.build(
+            integrity: sources.0,
+            deprescribing: sources.1,
+            connection: sources.2,
+            causalLinks: sources.3
+        )
+        healthGuardrailLoaded = true
+    }
+
+    private func optionalHealthGuardrailFetch<T: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async -> T? {
+        do {
+            return try await operation()
+        } catch {
+            AppLogger.network.warning("health guardrail summary fetch failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     private var presentation: DesktopDashboardPresentation? {

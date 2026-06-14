@@ -108,6 +108,8 @@ struct AppRootView: View {
                 viewModel: services.todayViewModel,
                 briefingClient: services.briefingClient,
                 nocturnalClient: services.nocturnalClient,
+                healthExtrasClient: services.healthExtrasClient,
+                onOpenHealthExtras: { navigation.selection = .healthExtras },
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )

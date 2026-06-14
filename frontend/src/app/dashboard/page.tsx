@@ -6,6 +6,7 @@ import { api } from '@/services/api/client';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, healthScoreApi } from '@/services/api/health';
 import { dataCollectionApi } from '@/services/api/devices';
 import { dailyPlanApi, formatDailyPlanActionProgress } from '@/services/api/dailyPlan';
+import HealthGuardrailSummaryCard from '@/components/health-extras/HealthGuardrailSummaryCard';
 import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
@@ -393,6 +394,8 @@ function DashboardContent() {
             </div>
           </section>
         )}
+
+        <HealthGuardrailSummaryCard />
 
         {/* 今日实时数据 */}
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
