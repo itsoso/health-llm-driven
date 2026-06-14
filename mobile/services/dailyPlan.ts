@@ -31,12 +31,18 @@ export interface DailyPlanAction {
   claim_boundary?: string | null;
   source_card_id?: number | null;
   check_back_date?: string | null;
-  evidence_refs?: Array<string | { claim_id?: string; doc_id?: string; id?: string }> | null;
+  cycle_id?: number | null;
+  cycle_type?: string | null;
+  evidence_refs?: (string | { claim_id?: string; doc_id?: string; id?: string })[] | null;
   verification?: {
     metric?: string | null;
     window_days?: number | null;
     expected_direction?: string | null;
     check_back_date?: string | null;
+    cycle_id?: number | null;
+    cycle_type?: string | null;
+    cycle_target_metric?: string | null;
+    cycle_target_metric_label?: string | null;
   } | null;
 }
 

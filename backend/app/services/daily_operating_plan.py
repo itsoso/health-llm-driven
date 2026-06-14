@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from app.models.action_card import ActionCard
 from app.models.daily_operating_plan import DailyOperatingPlan
 from app.models.intervention_event import InterventionEvent
+from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
 from app.services.advice_guard import AdviceCandidate, AdviceGuardError, guard_and_record_advice
+from app.services.intervention_cycle_service import get_active_cycle
 from app.services.personal_evidence_matrix import (
     build_personal_evidence_matrix,
     compact_personal_evidence_matrix,
@@ -42,7 +44,8 @@ _ACUTE_REST_SUPPRESS_TITLES = (
     "jog",
     "strength",
 )
-_TERMINAL_ACTION_EVENT_STATUSES = {"completed", "done", "skipped", "failed", "verified"}
+_COMPLETED_ACTION_EVENT_STATUSES = {"completed", "done", "verified"}
+_TERMINAL_ACTION_EVENT_STATUSES = _COMPLETED_ACTION_EVENT_STATUSES | {"skipped", "failed"}
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -67,6 +70,88 @@ def _normalize_confidence(evidence_level: str | None) -> str:
     if evidence_level == "medical_grade":
         return "high"
     return "medium"
+
+
+def _date_delta_days(start: date | None, end: date | None) -> int | None:
+    if start is None or end is None:
+        return None
+    return (end - start).days
+
+
+def _primary_cycle_outcome(cycle: InterventionCycle | None) -> OutcomeMetric | None:
+    if cycle is None:
+        return None
+    outcomes = list(cycle.outcomes or [])
+    return next((om for om in outcomes if om.status != "met"), None) or (outcomes[0] if outcomes else None)
+
+
+def _metric_display(metric_code: str | None) -> str | None:
+    if not metric_code:
+        return None
+    from app.biomarkers import get_definition
+
+    definition = get_definition(metric_code)
+    return definition.display if definition else metric_code
+
+
+def _active_cycle_summary(cycle: InterventionCycle | None, *, plan_date: date) -> dict | None:
+    if cycle is None:
+        return None
+    total_days = _date_delta_days(cycle.start_date, cycle.planned_end_date)
+    if total_days is None or total_days <= 0:
+        total_days = 90
+    elapsed_days = _date_delta_days(cycle.start_date, plan_date) or 0
+    recheck_days_left = _date_delta_days(plan_date, cycle.planned_end_date)
+    primary = _primary_cycle_outcome(cycle)
+    primary_metric = None
+    if primary is not None:
+        primary_metric = {
+            "metric_code": primary.metric_code,
+            "display": _metric_display(primary.metric_code),
+            "unit": primary.unit,
+            "baseline_value": primary.baseline_value,
+            "target_value": primary.target_value,
+            "latest_value": primary.latest_value,
+            "direction": primary.direction,
+            "status": primary.status,
+        }
+    return {
+        "id": cycle.id,
+        "cycle_type": cycle.cycle_type,
+        "status": cycle.status,
+        "start_date": cycle.start_date.isoformat() if cycle.start_date else None,
+        "planned_end_date": cycle.planned_end_date.isoformat() if cycle.planned_end_date else None,
+        "day": max(1, min(total_days, elapsed_days + 1)),
+        "total_days": total_days,
+        "recheck_days_left": max(0, recheck_days_left) if recheck_days_left is not None else None,
+        "primary_metric": primary_metric,
+    }
+
+
+def _bind_actions_to_active_cycle(
+    actions: List[Dict[str, Any]],
+    cycle_summary: dict | None,
+) -> List[Dict[str, Any]]:
+    if not cycle_summary:
+        return actions
+    metric = cycle_summary.get("primary_metric") or {}
+    metric_code = metric.get("metric_code")
+    metric_label = metric.get("display") or metric_code
+    bound: List[Dict[str, Any]] = []
+    for action in actions:
+        item = dict(action)
+        item["cycle_id"] = cycle_summary["id"]
+        item["cycle_type"] = cycle_summary["cycle_type"]
+        verification = dict(item.get("verification") or {})
+        verification.update({
+            "cycle_id": cycle_summary["id"],
+            "cycle_type": cycle_summary["cycle_type"],
+            "cycle_target_metric": metric_code,
+            "cycle_target_metric_label": metric_label,
+        })
+        item["verification"] = verification
+        bound.append(item)
+    return bound
 
 
 def _action(
@@ -140,9 +225,9 @@ def _active_interventions(db: Session, user_id: int, *, now: datetime | None = N
     ]
 
 
-def _terminal_action_keys_for_plan(db: Session, *, user_id: int, plan_date: date) -> set[str]:
+def _terminal_action_statuses_for_plan(db: Session, *, user_id: int, plan_date: date) -> dict[str, set[str]]:
     rows = (
-        db.query(InterventionEvent.action_key)
+        db.query(InterventionEvent.action_key, InterventionEvent.feedback_status)
         .filter(
             InterventionEvent.user_id == user_id,
             InterventionEvent.plan_date == plan_date,
@@ -150,7 +235,12 @@ def _terminal_action_keys_for_plan(db: Session, *, user_id: int, plan_date: date
         )
         .all()
     )
-    return {str(row[0]) for row in rows if row[0]}
+    statuses: dict[str, set[str]] = {}
+    for action_key, feedback_status in rows:
+        if not action_key or not feedback_status:
+            continue
+        statuses.setdefault(str(action_key), set()).add(str(feedback_status))
+    return statuses
 
 
 def _drop_terminal_actions(
@@ -159,10 +249,11 @@ def _drop_terminal_actions(
     user_id: int,
     plan_date: date,
     actions: List[Dict[str, Any]],
-) -> tuple[List[Dict[str, Any]], List[str]]:
-    terminal_keys = _terminal_action_keys_for_plan(db, user_id=user_id, plan_date=plan_date)
+) -> tuple[List[Dict[str, Any]], List[str], List[str]]:
+    terminal_statuses = _terminal_action_statuses_for_plan(db, user_id=user_id, plan_date=plan_date)
+    terminal_keys = set(terminal_statuses)
     if not terminal_keys:
-        return actions, []
+        return actions, [], []
 
     kept: List[Dict[str, Any]] = []
     dropped: List[str] = []
@@ -172,7 +263,27 @@ def _drop_terminal_actions(
             dropped.append(action_key)
             continue
         kept.append(action)
-    return kept, dropped
+    completed = [
+        action_key
+        for action_key in dropped
+        if terminal_statuses.get(action_key, set()) & _COMPLETED_ACTION_EVENT_STATUSES
+    ]
+    return kept, dropped, completed
+
+
+def _action_progress_summary(
+    *,
+    remaining_count: int,
+    terminal_action_keys: List[str],
+    completed_action_keys: List[str],
+) -> Dict[str, Any]:
+    return {
+        "completed_count": len(completed_action_keys),
+        "handled_count": len(terminal_action_keys),
+        "remaining_count": remaining_count,
+        "completed_action_keys": completed_action_keys,
+        "terminal_action_keys": terminal_action_keys,
+    }
 
 
 def _guard_plan_actions(
@@ -301,6 +412,8 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     """
     plan_date = plan_date or date.today()
     twin = build_twin(db, user_id, use_cache=False)
+    active_cycle = get_active_cycle(db, user_id)
+    active_cycle_summary = _active_cycle_summary(active_cycle, plan_date=plan_date)
     personal_matrix = build_personal_evidence_matrix(twin)
     compact_matrix = compact_personal_evidence_matrix(personal_matrix)
     planner_flags = set(compact_matrix["planner_flags"])
@@ -394,7 +507,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         claim_boundary="睡眠行为建议用于恢复管理, 不替代睡眠障碍诊断或治疗。",
     ))
     actions, arbitration_notes = _apply_acute_rest_arbiter(acute_rest=acute_rest, actions=actions)
-    actions, completed_action_keys = _drop_terminal_actions(
+    actions, terminal_action_keys, completed_action_keys = _drop_terminal_actions(
         db,
         user_id=user_id,
         plan_date=plan_date,
@@ -407,6 +520,12 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         actions=actions,
         personal_matrix=personal_matrix,
     )[:5]
+    actions = _bind_actions_to_active_cycle(actions, active_cycle_summary)
+    action_progress = _action_progress_summary(
+        remaining_count=len(actions),
+        terminal_action_keys=terminal_action_keys,
+        completed_action_keys=completed_action_keys,
+    )
 
     state_summary = {
         "weight_kg": body.weight_kg,
@@ -424,8 +543,11 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             "should_rest_from_training": acute_rest,
             "training_guardrail": acute_guardrail if acute_rest else None,
         },
+        "action_progress": action_progress,
         **({"arbitration_notes": arbitration_notes} if arbitration_notes else {}),
         **({"completed_action_keys": completed_action_keys} if completed_action_keys else {}),
+        **({"terminal_action_keys": terminal_action_keys} if terminal_action_keys else {}),
+        **({"active_cycle": active_cycle_summary} if active_cycle_summary else {}),
         "data_sources": twin.meta.data_sources,
         "personal_evidence_matrix": compact_matrix,
     }

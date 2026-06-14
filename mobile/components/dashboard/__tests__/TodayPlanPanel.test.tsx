@@ -83,6 +83,92 @@ describe('TodayPlanPanel', () => {
     expect(getByText('验证 sleep_score · 7天')).toBeTruthy();
   });
 
+  it('shows the 90-day cycle metric tied to an action', () => {
+    const plan: DailyOperatingPlan = {
+      plan_date: '2026-05-18',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [
+        {
+          action_key: 'nutrition.protein_target',
+          domain: 'nutrition',
+          title: '今天蛋白质目标',
+          why: '这条行动用于支撑当前 90 天代谢改善周期。',
+          verification: {
+            metric: 'calories_intake',
+            window_days: 7,
+            cycle_id: 7,
+            cycle_target_metric: 'lipid_ldl',
+            cycle_target_metric_label: '低密度脂蛋白胆固醇',
+          },
+        } as any,
+      ],
+    };
+
+    const { getByText } = render(<TodayPlanPanel plan={plan} />);
+
+    expect(getByText('90 天周期 · 低密度脂蛋白胆固醇')).toBeTruthy();
+  });
+
+  it('shows daily behavior loop progress from the plan summary', () => {
+    const plan: DailyOperatingPlan = {
+      plan_date: '2026-05-18',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {
+        action_progress: {
+          completed_count: 1,
+          handled_count: 2,
+          remaining_count: 3,
+          completed_action_keys: ['movement.walk_20'],
+          terminal_action_keys: ['movement.walk_20', 'sleep.dinner_cutoff'],
+        },
+      },
+      actions: [
+        { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '今天蛋白质目标' } as any,
+        { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' } as any,
+        { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' } as any,
+      ],
+    };
+
+    const { getByText } = render(<TodayPlanPanel plan={plan} />);
+
+    expect(getByText('今日闭环 1 完成 · 1 已处理 · 3 待做')).toBeTruthy();
+  });
+
+  it('updates daily behavior loop progress immediately after completing an action', async () => {
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 1,
+        plan_date: '2026-05-18',
+        action_id: 'movement.walk_20',
+        action_title: '步行 20 分钟',
+        event_type: 'completed',
+        action_state: 'completed',
+        payload: {},
+      },
+    });
+    const plan: DailyOperatingPlan = {
+      plan_date: '2026-05-18',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [
+        { action_key: 'movement.walk_20', domain: 'movement', title: '步行 20 分钟' } as any,
+      ],
+    };
+
+    const { getByText } = render(<TodayPlanPanel plan={plan} />);
+
+    expect(getByText('今日闭环 0 完成 · 1 待做')).toBeTruthy();
+    fireEvent.press(getByText('完成'));
+
+    await waitFor(() => {
+      expect(getByText('今日闭环 1 完成 · 0 待做')).toBeTruthy();
+    });
+  });
+
   it('can exclude the already promoted primary action', () => {
     const plan: DailyOperatingPlan = {
       plan_date: '2026-05-18',
