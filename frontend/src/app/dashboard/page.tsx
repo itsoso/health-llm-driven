@@ -7,6 +7,7 @@ import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, heal
 import { dataCollectionApi } from '@/services/api/devices';
 import { dailyPlanApi, formatDailyPlanActionProgress } from '@/services/api/dailyPlan';
 import HealthGuardrailSummaryCard from '@/components/health-extras/HealthGuardrailSummaryCard';
+import OutcomeProofSummaryCard from '@/components/health-extras/OutcomeProofSummaryCard';
 import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
@@ -394,6 +395,8 @@ function DashboardContent() {
             </div>
           </section>
         )}
+
+        <OutcomeProofSummaryCard />
 
         <HealthGuardrailSummaryCard />
 

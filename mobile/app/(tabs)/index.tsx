@@ -49,6 +49,7 @@ import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopic
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
+import OutcomeProofCard from '../../components/home/OutcomeProofCard';
 import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
 import LongevityNextCard from '../../components/home/LongevityNextCard';
@@ -62,6 +63,7 @@ import { getCheckinStreak } from '../../services/streak';
 import { fetchMyProgress, pickBioAgeWin } from '../../services/myProgress';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 import { fetchHealthGuardrailSummary } from '../../services/healthGuardrailSummary';
+import { buildOutcomeProofSummary } from '../../services/outcomeProofSummary';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -479,6 +481,7 @@ export default function TodayScreen() {
   };
   // 抗衰下一步:跳到该建议对应的目标(血检→/medical-exams、可穿戴→/import、体重→体重趋势);后端没给 route 时兜底体重趋势
   const nextData = topNextData(nextDataQuery.data);
+  const outcomeProofSummary = buildOutcomeProofSummary(progressDashboardQuery.data);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
@@ -500,6 +503,11 @@ export default function TodayScreen() {
           totalSurfaced={progressDashboardQuery.data?.stats?.total_surfaced}
           isError={progressDashboardQuery.isError}
           onPress={() => router.push('/my-progress' as any)}
+        />
+        <OutcomeProofCard
+          summary={outcomeProofSummary}
+          isError={progressDashboardQuery.isError}
+          onPress={() => router.push(outcomeProofSummary.route as any)}
         />
         <BiologicalAgeCard
           view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}

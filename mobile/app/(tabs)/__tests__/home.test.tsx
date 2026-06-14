@@ -16,7 +16,11 @@ let mockGeneticStats: { hits: number | null; total: number | null } = { hits: nu
 let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
 let mockStreakData: { current_streak: number; best_streak: number } | null = null;
 let mockStreakError = false;
-let mockProgressDashboard: { stats: Record<string, number> } | null = null;
+let mockProgressDashboard: {
+  stats: Record<string, number>;
+  closed_cards?: unknown[];
+  verifying_cards?: unknown[];
+} | null = null;
 let mockProgressDashboardError = false;
 let mockHealthGuardrailSummary: Record<string, unknown> | null = null;
 let mockRefetchingKeys = new Set<string>();
@@ -221,6 +225,37 @@ describe('TodayScreen', () => {
     mockProgressDashboard = { stats: { improved: 2, graded: 4, total_surfaced: 6 } };
     const { getByTestId } = render(<TodayScreen />);
     fireEvent.press(getByTestId('home-outcome-win-card'));
+    expect(mockPush).toHaveBeenCalledWith('/my-progress');
+  });
+
+  it('surfaces the personal outcome proof loop on the home feed', () => {
+    mockProgressDashboard = {
+      stats: {
+        improved: 2,
+        graded: 4,
+        total_surfaced: 8,
+        improvement_rate: 0.5,
+      },
+      closed_cards: [
+        {
+          id: 42,
+          title: '提高早餐蛋白',
+          outcome: 'improved',
+          metric_key: 'weight_kg',
+          baseline_value: '72.4',
+          actual_value: '70.9',
+        },
+      ],
+      verifying_cards: [{ id: 43, title: '步行 20 分钟' }],
+    };
+
+    const { getByText, getByTestId } = render(<TodayScreen />);
+
+    expect(getByText('个人证据：2 项已改善')).toBeTruthy();
+    expect(getByText('已验证 4 项，2/4 对你有效。')).toBeTruthy();
+    expect(getByText('weight_kg 72.4 → 70.9')).toBeTruthy();
+
+    fireEvent.press(getByTestId('home-outcome-proof-card'));
     expect(mockPush).toHaveBeenCalledWith('/my-progress');
   });
 

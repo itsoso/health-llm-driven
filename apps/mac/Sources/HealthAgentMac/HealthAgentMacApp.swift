@@ -88,7 +88,9 @@ struct TodayView: View {
     var briefingClient: BriefingClient?
     var nocturnalClient: NocturnalTimeseriesClient?
     var healthExtrasClient: HealthExtrasClient?
+    var outcomeProofClient: OutcomeProofClient?
     var onOpenHealthExtras: (() -> Void)?
+    var onOpenOutcomeProof: (() -> Void)?
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     var onAddContext: ((AgentContextItem) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -100,6 +102,8 @@ struct TodayView: View {
     @State private var spo2WeekLoaded = false
     @State private var healthGuardrailSummary: HealthGuardrailSummary?
     @State private var healthGuardrailLoaded = false
+    @State private var outcomeProofSummary: OutcomeProofSummary?
+    @State private var outcomeProofLoaded = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -171,8 +175,14 @@ struct TodayView: View {
                                             Task {
                                                 await viewModel.refresh()
                                                 await reloadHealthGuardrail()
+                                                await reloadOutcomeProof()
                                             }
                                         }
+                                    )
+                                    OutcomeProofSummaryView(
+                                        summary: outcomeProofSummary,
+                                        isLoading: !outcomeProofLoaded && outcomeProofClient != nil,
+                                        onOpen: { onOpenOutcomeProof?() }
                                     )
                                     HealthGuardrailSummaryView(
                                         summary: healthGuardrailSummary,
@@ -209,6 +219,7 @@ struct TodayView: View {
             await loadBriefingIfNeeded()
             await loadSpO2WeekIfNeeded()
             await loadHealthGuardrailIfNeeded()
+            await loadOutcomeProofIfNeeded()
         }
     }
 
@@ -256,6 +267,29 @@ struct TodayView: View {
             causalLinks: sources.3
         )
         healthGuardrailLoaded = true
+    }
+
+    private func loadOutcomeProofIfNeeded() async {
+        guard !outcomeProofLoaded else { return }
+        await reloadOutcomeProof()
+    }
+
+    private func reloadOutcomeProof() async {
+        guard let client = outcomeProofClient else {
+            outcomeProofLoaded = true
+            outcomeProofSummary = nil
+            return
+        }
+
+        outcomeProofLoaded = false
+        do {
+            let dashboard = try await client.fetchDashboard(days: 30)
+            outcomeProofSummary = OutcomeProofSummaryBuilder.build(dashboard)
+        } catch {
+            AppLogger.network.warning("outcome proof summary fetch failed: \(error.localizedDescription, privacy: .public)")
+            outcomeProofSummary = OutcomeProofSummaryBuilder.build(nil)
+        }
+        outcomeProofLoaded = true
     }
 
     private func optionalHealthGuardrailFetch<T: Sendable>(

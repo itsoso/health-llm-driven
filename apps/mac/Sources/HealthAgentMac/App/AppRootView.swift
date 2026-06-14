@@ -109,7 +109,11 @@ struct AppRootView: View {
                 briefingClient: services.briefingClient,
                 nocturnalClient: services.nocturnalClient,
                 healthExtrasClient: services.healthExtrasClient,
+                outcomeProofClient: services.outcomeProofClient,
                 onOpenHealthExtras: { navigation.selection = .healthExtras },
+                onOpenOutcomeProof: {
+                    askAgentWithContext("请结合我的个人证据闭环，解释最近哪些 AI 建议对我真的有效，哪些还在验证，以及下一步最该坚持什么。", nil)
+                },
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )

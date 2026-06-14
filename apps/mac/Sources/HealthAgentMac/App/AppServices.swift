@@ -44,6 +44,7 @@ struct AppServices {
     let originatorClient: OriginatorClient
     let liverHealthClient: LiverHealthClient
     let healthExtrasClient: HealthExtrasClient
+    let outcomeProofClient: OutcomeProofClient
     let quickCaptureManager: QuickCaptureManager
 
     @MainActor
@@ -78,6 +79,7 @@ struct AppServices {
         self.originatorClient = OriginatorClient(apiClient: apiClient)
         self.liverHealthClient = LiverHealthClient(apiClient: apiClient)
         self.healthExtrasClient = HealthExtrasClient(apiClient: apiClient)
+        self.outcomeProofClient = OutcomeProofClient(apiClient: apiClient)
         self.quickCaptureManager = QuickCaptureManager(recordClient: recordClient)
     }
 }
