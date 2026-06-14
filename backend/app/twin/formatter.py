@@ -121,6 +121,27 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
                 if items:
                     lines.append("数据源: " + ", ".join(items))
 
+    # ─── 个人基线对比 (Phase 0: 你现在 vs 你自己的历史)
+    # 优先展 deviation (|z|>=2), 再补几条非偏离指标的 z 供 LLM 判断"在不在自己常态内"。
+    pbs = p.personal_baselines
+    if pbs:
+        dev_lines: List[str] = []
+        for mb in pbs:
+            if mb.is_deviation and mb.message:
+                dev_lines.append("  ⚠ " + mb.message)
+        if dev_lines:
+            lines.append("个人基线偏离:")
+            lines.extend(dev_lines[:5])
+        # 非偏离但有 z 的指标: 紧凑一行, 让 LLM 知道"这些在常态内"
+        normal = [
+            f"{mb.label} {mb.latest:.0f}{mb.unit}(基线{mb.baseline_mean:.0f}±"
+            f"{mb.baseline_std:.0f},{mb.z:+.1f}σ)"
+            for mb in pbs
+            if not mb.is_deviation and mb.z is not None and mb.latest is not None
+        ]
+        if normal:
+            lines.append("个人基线(常态内): " + ", ".join(normal[:6]))
+
     # ─── 身体
     b = twin.body_composition
     body_parts: List[str] = []

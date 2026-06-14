@@ -83,6 +83,34 @@ class PhysiologicalState(BaseModel):
     # (e.g. "HRV 来自 oura,可信度高于 Watch 数据"). 仅当多源数据存在时填充.
     field_sources: Dict[str, str] = Field(default_factory=dict)
 
+    # Phase 0 个人基线: per-metric 滚动基线 + 当前值偏离 (z-score) + 趋势。
+    # "你现在 vs 你自己的历史" (≠ #149 跨源差异)。由 personal_baseline service 算,
+    # builder 填充。冷启动不足的指标不产出 (别拿 3 天当基线误导)。
+    # 单项 schema 见 PersonalBaselineMetric。
+    personal_baselines: List["PersonalBaselineMetric"] = Field(default_factory=list)
+
+
+class PersonalBaselineMetric(BaseModel):
+    """单指标个人滚动基线 + 偏离 (Phase 0, 纯统计)。
+
+    见 app/services/personal_baseline.py。``low_side_only`` 指标 (如 SpO2)
+    只在低侧标 deviation。
+    """
+
+    key: str                                 # hrv / resting_heart_rate / spo2_avg / ...
+    label: str                               # 中文标签
+    unit: str = ""
+    baseline_mean: float
+    baseline_std: float
+    n_days: int                              # 基线有效天数
+    latest: Optional[float] = None
+    latest_date: Optional[str] = None        # ISO date
+    z: Optional[float] = None                # (latest - mean) / std
+    trend: Optional[str] = None              # rising / falling / stable
+    is_deviation: bool = False               # |z| >= 阈值 (low_side 仅低侧)
+    low_confidence: bool = False             # 有效天数偏少, agent 应保守措辞
+    message: Optional[str] = None            # 人话描述 (仅 deviation 时)
+
 
 # ───────────────────────── Body Composition ────────────────────────────
 
