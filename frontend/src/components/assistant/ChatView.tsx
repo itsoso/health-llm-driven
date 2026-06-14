@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useCallback, useRef, useState } from 'react';
 import { Bookmark, Check, Copy, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
@@ -20,8 +20,13 @@ interface ChatViewProps {
   shareSelectionMode?: boolean;
   selectedMessageIds?: Set<number>;
   onToggleMessageSelection?: (msgId: number) => void;
+  /** 微信式入口: 右键 / 长按某条消息直接进入多选分享并预选中该条. */
+  onEnterSelectionWith?: (msgId: number) => void;
   onShareMessages?: (msgIds: number[]) => void;
 }
+
+/** 长按计时: pointer 持续按住约 500ms 触发, 移动/松开/离开均取消. */
+const LONG_PRESS_MS = 500;
 
 const STYLE = {
   badgeClass: 'bg-teal-500/15 text-teal-300 ring-1 ring-teal-300/15',
@@ -39,11 +44,43 @@ export default function ChatView({
   shareSelectionMode = false,
   selectedMessageIds = new Set(),
   onToggleMessageSelection,
+  onEnterSelectionWith,
   onShareMessages,
 }: ChatViewProps) {
   // 允许空内容但是有卡片的消息显示
   const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content && !m.card_type));
   const shareableMessageIds = getShareableMessageIds(visibleMessages);
+
+  // 长按计时器 (触屏补充入口). 右键是桌面主入口, 见下方 onContextMenu.
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  // 进入选择模式入口: 仅在「非选择模式 + 可分享 + 有 handler」时生效. 已在选择
+  // 模式则交给 checkbox 的正常 toggle, 不重复触发.
+  const enterFor = useCallback(
+    (msgId: number) => {
+      if (shareSelectionMode || !onEnterSelectionWith) return;
+      if (!shareableMessageIds.has(msgId)) return;
+      onEnterSelectionWith(msgId);
+    },
+    [shareSelectionMode, onEnterSelectionWith, shareableMessageIds],
+  );
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent, msgId: number) => {
+      // 仅触屏走长按; 鼠标/触控笔走右键入口, 不和文本选择抢.
+      if (e.pointerType !== 'touch') return;
+      if (shareSelectionMode || !shareableMessageIds.has(msgId)) return;
+      cancelLongPress();
+      longPressTimer.current = setTimeout(() => enterFor(msgId), LONG_PRESS_MS);
+    },
+    [shareSelectionMode, shareableMessageIds, cancelLongPress, enterFor],
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -65,7 +102,23 @@ export default function ChatView({
           }
         }
         return (
-        <div key={msg.id} className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-teal-400/[0.06] ring-1 ring-teal-300/20' : ''}`}>
+        <div
+          key={msg.id}
+          className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-teal-400/[0.06] ring-1 ring-teal-300/20' : ''}`}
+          onContextMenu={
+            canSelectForShare && !shareSelectionMode && onEnterSelectionWith
+              ? e => {
+                  e.preventDefault();
+                  enterFor(msg.id);
+                }
+              : undefined
+          }
+          onPointerDown={canSelectForShare ? e => handlePointerDown(e, msg.id) : undefined}
+          onPointerUp={cancelLongPress}
+          onPointerMove={cancelLongPress}
+          onPointerLeave={cancelLongPress}
+          onPointerCancel={cancelLongPress}
+        >
           {shareSelectionMode && (
             <button
               type="button"
