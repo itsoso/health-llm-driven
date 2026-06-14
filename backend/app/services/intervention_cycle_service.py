@@ -181,6 +181,40 @@ def get_active_cycle(db: Session, user_id: int) -> Optional[InterventionCycle]:
     )
 
 
+def intervention_proposal_prompt_blob(db: Session, user_id: int) -> str:
+    """轻量主动提议: 用户有明确异常代谢杠杆 + 无 active 周期时, 提示 agent 可提议开 N-of-1 周期。
+
+    返回空串表示不提议 (已有周期 / 无异常杠杆 / 任何异常)。措辞要求 agent "只提议 + 要确认",
+    避免刷屏。**只读**, 失败静默返回空 (system prompt 注入是旁路, 不应影响主链路)。
+    """
+    try:
+        if get_active_cycle(db, user_id) is not None:
+            return ""  # 已有周期, 不提议
+
+        from app.services.biomarker_service import latest_observations
+        latest_obs = latest_observations(db, user_id)
+        specs = default_metabolic_targets(latest_obs)
+        if not specs:
+            return ""  # 无明确异常代谢杠杆
+
+        from app.biomarkers import get_definition
+        names = []
+        for spec in specs[:4]:
+            defn = get_definition(spec["code"])
+            names.append(defn.display if defn else spec["code"])
+        levers = ", ".join(names)
+        return (
+            "## 干预闭环主动提议 (克制使用, 只提议 + 要确认)\n"
+            f"- 用户当前有偏高的代谢指标: {levers}, 且没有进行中的干预周期。\n"
+            "- 在合适时机 (用户聊到这些指标 / 想改善代谢 / 问'我该怎么调理') 可**提议**开一个 "
+            "N-of-1 干预周期, 用 ta 自己的复查数据验证某个干预是否真的有效 (产品核心: 验证闭环)。\n"
+            "- 调用 intervention_cycle(action='start') 走确认流程, 不要一句话就建周期, 也不要每轮都提。\n"
+            "- 措辞: 非医疗诊断, 是自我管理实验; 重大调整建议结合医生。不要诱导, 用户没兴趣就放下。"
+        )
+    except Exception:  # noqa: BLE001 — prompt 注入旁路, 失败不应影响对话
+        return ""
+
+
 def complete_cycle(db: Session, cycle: InterventionCycle, *, status: str = "completed") -> InterventionCycle:
     cycle.status = status if status in {"completed", "abandoned"} else "completed"
     db.commit()

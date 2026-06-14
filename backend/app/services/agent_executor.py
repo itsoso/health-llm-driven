@@ -1889,6 +1889,15 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 疗程提醒注入失败: {e}")
 
+        # 注入干预闭环主动提议(有异常代谢杠杆 + 无 active 周期 → 可提议开 N-of-1 周期)
+        try:
+            from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
+            blob = intervention_proposal_prompt_blob(self.db, user_id)
+            if blob:
+                parts.append("\n" + blob)
+        except Exception as e:
+            logger.warning(f"Agent 干预闭环提议注入失败: {e}")
+
         # 注入记忆
         try:
             from app.services.conversation_memory_service import get_relevant_memories
@@ -2593,6 +2602,8 @@ class AgentExecutor:
                 return await self._exec_supplement_guide(base_url, headers, args)
             elif tool_name == "manage_plan":
                 return await self._exec_manage_plan(base_url, headers, args)
+            elif tool_name == "intervention_cycle":
+                return await self._exec_intervention_cycle(args)
             elif tool_name == "upload_genetic_txt":
                 return await self._exec_upload_genetic_txt(base_url, headers, args)
             elif tool_name == "query_genetic_profile":
@@ -3136,6 +3147,132 @@ class AgentExecutor:
         elif action == "save_to_card":
             return await self._api_post(f"{base}/action-cards/from-message", headers, data)
         return f"Error: 不支持的计划操作 {action}"
+
+    async def _exec_intervention_cycle(self, args: dict) -> str:
+        """N-of-1 干预结局闭环工具 — status 报进展 / start 开周期 (写操作需确认).
+
+        直接复用 intervention_cycle_service (不重写 SQL/不重算 delta), 用户隔离靠
+        self._current_user_id。service 是同步, 丢线程池避免阻塞事件循环。
+        """
+        import asyncio as _aio
+
+        action = args.get("action", "")
+        user_id = self._current_user_id
+        if user_id is None:
+            return "Error: 缺少用户身份, 无法操作干预周期"
+
+        if action == "status":
+            return await _aio.to_thread(self._intervention_status, user_id)
+
+        if action == "start":
+            # 写操作: 沿用 _confirm_or_describe 两段式确认门 (与 health_record 一致)。
+            confirmed = args.get("confirmed") is True or args.get("confirm") is True
+            if not confirmed:
+                return (
+                    "[NEEDS_CONFIRMATION] 我准备为你开启一个 N-of-1 代谢干预周期: "
+                    "锁定当前化验/身体快照作为基线, 以你当前偏高的代谢指标 (如 LDL/尿酸/血糖/肝酶) "
+                    "作为结局目标, 一段时间后用你自己的复查数据验证干预是否有效。"
+                    "这是健康自我管理工具, 非医疗诊断, 重大调整请结合医生意见。"
+                    "请向用户复述并问一次'要开启这个周期吗？', "
+                    "用户确认后**重新调用** intervention_cycle(action='start', confirmed=true)。"
+                )
+            days = args.get("days", 90)
+            try:
+                days = int(days)
+            except (ValueError, TypeError):
+                days = 90
+            if days < 7 or days > 365:
+                days = 90
+            return await _aio.to_thread(self._intervention_start, user_id, days)
+
+        return f"Error: 不支持的干预周期操作 {action}"
+
+    def _intervention_status(self, user_id: int) -> str:
+        """组织当前 active 周期的人话进展摘要 (无周期则友好提示)。"""
+        from app.services import intervention_cycle_service as ics
+        from app.biomarkers import get_definition
+
+        cycle = ics.get_active_cycle(self.db, user_id)
+        if cycle is None:
+            return (
+                "目前没有进行中的干预周期。如果你有偏高的代谢指标 (如 LDL/尿酸/血糖), "
+                "可以开一个 N-of-1 周期, 用你自己的复查数据验证某个干预是否有效。"
+            )
+
+        _status_zh = {
+            "met": "达标", "improving": "改善中", "worsening": "变差",
+            "flat": "持平", "pending": "待复查",
+        }
+        lines = []
+        for om in cycle.outcomes:
+            defn = get_definition(om.metric_code)
+            name = defn.display if defn else om.metric_code
+            unit = om.unit or ""
+            zh = _status_zh.get(om.status, om.status or "待复查")
+            if om.baseline_value is None:
+                lines.append(f"- {name}: 基线缺失, 待补化验")
+                continue
+            if om.latest_value is None:
+                tgt = f"(目标 {om.target_value}{unit})" if om.target_value is not None else ""
+                lines.append(f"- {name}: 基线 {om.baseline_value}{unit} {tgt}, 待复查")
+                continue
+            delta_txt = ""
+            if om.delta is not None:
+                sign = "+" if om.delta > 0 else ""
+                pct = f" ({sign}{om.delta_pct}%)" if om.delta_pct is not None else ""
+                delta_txt = f", Δ {sign}{om.delta}{unit}{pct}"
+            tgt = f", 目标 {om.target_value}{unit}" if om.target_value is not None else ""
+            lines.append(
+                f"- {name}: {om.baseline_value}{unit} → {om.latest_value}{unit}{delta_txt}{tgt} [{zh}]"
+            )
+
+        body = "\n".join(lines) if lines else "- (尚无结局指标)"
+        header = (
+            f"当前干预周期 ({cycle.cycle_type}, 状态 {cycle.status}, "
+            f"起始 {cycle.start_date.isoformat() if cycle.start_date else '?'})。\n"
+            "各结局指标 (基线 → 最新):\n"
+        )
+        return header + body
+
+    def _intervention_start(self, user_id: int, days: int) -> str:
+        """复用 service 开周期; 已有进行中则返回它。DB 异常 rollback 并上抛感知。"""
+        from app.services import intervention_cycle_service as ics
+        from app.twin.builder import build_twin
+
+        existing = ics.get_active_cycle(self.db, user_id)
+        if existing is not None:
+            return (
+                "你已经有一个进行中的干预周期了 (同一时间只跟踪一个), 没有重复开。"
+                "想看进展用 status; 想换目标可以等当前周期结束。"
+            )
+
+        try:
+            twin = build_twin(self.db, user_id, use_cache=False)
+            cycle = ics.start_metabolic_cycle(self.db, user_id, twin, days=days)
+            # 开周期时若 biomarker 尚未归一, 目标可能为空 → 用 service 补齐 (幂等)。
+            if not cycle.outcomes:
+                ics.refresh_cycle_targets(self.db, cycle)
+        except Exception:
+            self.db.rollback()
+            raise
+
+        n = len(cycle.outcomes)
+        if n == 0:
+            return (
+                f"已开启干预周期 (周期 {days} 天), 但暂时没有可锁定的异常代谢指标作为目标。"
+                "建议先补一次化验 (血脂/血糖/肝功/尿酸), 之后复查时就能验证效果了。"
+            )
+        from app.biomarkers import get_definition
+        names = [
+            (get_definition(om.metric_code).display if get_definition(om.metric_code) else om.metric_code)
+            for om in cycle.outcomes
+        ]
+        return (
+            f"已开启 N-of-1 干预周期 (周期 {days} 天), 锁定基线快照。"
+            f"将跟踪 {n} 项结局指标: {', '.join(names)}。"
+            "过段时间复查化验后, 我会用你自己的数据告诉你有没有改善。"
+            "(非医疗诊断, 重大健康调整请结合医生意见。)"
+        )
 
     async def _exec_upload_genetic_txt(
         self, base: str, headers: dict, args: dict
