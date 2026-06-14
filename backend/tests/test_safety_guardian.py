@@ -194,6 +194,77 @@ class TestVitalsRules:
         assert "vitals.rhr_tachycardia" in _rule_ids(alerts)
 
 
+# ─────────────────────── Cardiac (ECG / AFib) rules ────────────────────────
+
+
+class TestCardiacRules:
+    """Apple Watch ECG 房颤分类 → 筛查信号非诊断告警。"""
+
+    def test_afib_single_high(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            ecg_classification="AtrialFibrillation",
+            afib_event_count=1,
+            afib_recent=True,
+        )
+        alerts = evaluate_safety(twin).alerts
+        afib = next(a for a in alerts if a.rule_id == "cardiac.ecg_atrial_fibrillation")
+        assert afib.severity == Severity.HIGH
+        assert afib.requires_medical_attention is True
+        # 非诊断 + 就医动作
+        assert "不是诊断" in afib.message
+        assert "心内科" in (afib.action or "") or "就医" in (afib.action or "")
+
+    def test_afib_classification_without_count_still_alerts(self):
+        """分类命中但 afib_event_count 缺失(默认 0) → 仍按 1 次告警 (HIGH)。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            ecg_classification="AtrialFibrillation",
+            afib_event_count=0,
+        )
+        alerts = evaluate_safety(twin).alerts
+        afib = next(a for a in alerts if a.rule_id == "cardiac.ecg_atrial_fibrillation")
+        assert afib.severity == Severity.HIGH
+
+    def test_afib_recurring_escalates_to_critical(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            ecg_classification="AtrialFibrillation",
+            afib_event_count=3,
+            afib_recent=True,
+        )
+        alerts = evaluate_safety(twin).alerts
+        afib = next(a for a in alerts if a.rule_id == "cardiac.ecg_atrial_fibrillation")
+        assert afib.severity == Severity.CRITICAL
+        assert "不是诊断" in afib.message  # 升级措辞仍非诊断
+
+    def test_afib_count_only_alerts(self):
+        """分类字段缺失但 afib_event_count>=1 → 仍告警 (容错路径)。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(afib_event_count=2)
+        alerts = evaluate_safety(twin).alerts
+        rule_ids = _rule_ids(alerts)
+        assert "cardiac.ecg_atrial_fibrillation" in rule_ids
+
+    def test_sinus_rhythm_no_alert(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(ecg_classification="SinusRhythm")
+        rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "cardiac.ecg_atrial_fibrillation" not in rule_ids
+
+    def test_inconclusive_no_alert(self):
+        for cls in ("InconclusiveLowHeartRate", "InconclusiveHighHeartRate", "Unrecognized"):
+            twin = _empty_twin()
+            twin.physiological = PhysiologicalState(ecg_classification=cls)
+            rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+            assert "cardiac.ecg_atrial_fibrillation" not in rule_ids, cls
+
+    def test_missing_ecg_no_alert(self):
+        twin = _empty_twin()
+        rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "cardiac.ecg_atrial_fibrillation" not in rule_ids
+
+
 # ─────────────────────── Lab rules ────────────────────────
 
 

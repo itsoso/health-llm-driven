@@ -791,3 +791,157 @@ class TestAgeLabel:
         twin.freshness.labs = (datetime.now(timezone.utc) - timedelta(days=730)).isoformat()
         text = twin_to_prompt_blob(twin)
         assert "⚠⚠" in text
+
+
+# ─────────────────────── ECG / AFib (Apple Watch) ────────────────────────
+
+
+def _make_user(db):
+    from app.models.user import User
+    user = User(
+        username=f"ecg_{uuid.uuid4().hex[:6]}",
+        email=f"ecg_{uuid.uuid4().hex[:6]}@x.com",
+        hashed_password="x",
+        name="ecg user",
+        birth_date=date(1990, 1, 1),
+        gender="男",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+class TestEcgTwin:
+    """ECG 观测落库 + Twin physiological 暴露 + 用户隔离。"""
+
+    def test_build_picks_up_afib_ecg(self, db):
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+        db.add(EcgObservation(
+            user_id=user.id,
+            classification="AtrialFibrillation",
+            recorded_at=datetime(2026, 6, 14, 9, 30),
+            afib_event_count=2,
+            data_source="apple-watch",
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        assert twin.physiological.ecg_classification == "AtrialFibrillation"
+        assert twin.physiological.afib_recent is True
+        assert twin.physiological.afib_event_count == 2
+        assert "ecg" in twin.meta.data_sources
+
+    def test_sinus_rhythm_not_flagged_afib(self, db):
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+        db.add(EcgObservation(
+            user_id=user.id,
+            classification="SinusRhythm",
+            recorded_at=datetime(2026, 6, 14, 9, 30),
+            afib_event_count=0,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        assert twin.physiological.ecg_classification == "SinusRhythm"
+        assert twin.physiological.afib_recent is False
+
+    def test_latest_ecg_wins(self, db):
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+        db.add(EcgObservation(
+            user_id=user.id, classification="AtrialFibrillation",
+            recorded_at=datetime(2026, 6, 10, 8, 0), afib_event_count=1,
+        ))
+        db.add(EcgObservation(
+            user_id=user.id, classification="SinusRhythm",
+            recorded_at=datetime(2026, 6, 14, 8, 0), afib_event_count=0,
+        ))
+        db.commit()
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        # 最近一次是 SinusRhythm → 不标房颤
+        assert twin.physiological.ecg_classification == "SinusRhythm"
+        assert twin.physiological.afib_recent is False
+
+    def test_user_isolation(self, db):
+        from app.models.ecg_observation import EcgObservation
+        u1 = _make_user(db)
+        u2 = _make_user(db)
+        db.add(EcgObservation(
+            user_id=u1.id, classification="AtrialFibrillation",
+            recorded_at=datetime(2026, 6, 14, 9, 0), afib_event_count=1,
+        ))
+        db.commit()
+
+        twin2 = build_twin(db, user_id=u2.id, use_cache=False)
+        assert twin2.physiological.ecg_classification is None
+        assert twin2.physiological.afib_recent is False
+
+    def test_no_ecg_no_exposure(self, db):
+        user = _make_user(db)
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+        assert twin.physiological.ecg_classification is None
+        assert twin.physiological.afib_recent is False
+        assert twin.physiological.afib_event_count == 0
+
+
+class TestHealthKitEcgImport:
+    """HealthKit import payload 的 ECG 字段 → 落库 ecg_observations。"""
+
+    def test_import_persists_ecg(self, db):
+        from app.services.device_adapters.healthkit import HealthKitAdapter
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+
+        records = [{
+            "record_date": "2026-06-14",
+            "data_source": "apple-watch",
+            "ecg_classification": "AtrialFibrillation",
+            "ecg_recorded_at": "2026-06-14T09:30:00",
+            "afib_event_count": 1,
+            "resting_heart_rate": 60,
+        }]
+        result = HealthKitAdapter.batch_save(db, user.id, records)
+        assert result["imported_count"] == 1
+
+        rows = db.query(EcgObservation).filter(EcgObservation.user_id == user.id).all()
+        assert len(rows) == 1
+        assert rows[0].classification == "AtrialFibrillation"
+        assert rows[0].afib_event_count == 1
+
+    def test_import_without_ecg_no_row(self, db):
+        from app.services.device_adapters.healthkit import HealthKitAdapter
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+        records = [{
+            "record_date": "2026-06-14",
+            "data_source": "apple-watch",
+            "resting_heart_rate": 60,
+        }]
+        HealthKitAdapter.batch_save(db, user.id, records)
+        rows = db.query(EcgObservation).filter(EcgObservation.user_id == user.id).all()
+        assert len(rows) == 0
+
+    def test_import_ecg_idempotent_on_same_recorded_at(self, db):
+        from app.services.device_adapters.healthkit import HealthKitAdapter
+        from app.models.ecg_observation import EcgObservation
+        user = _make_user(db)
+        rec = {
+            "record_date": "2026-06-14",
+            "data_source": "apple-watch",
+            "ecg_classification": "AtrialFibrillation",
+            "ecg_recorded_at": "2026-06-14T09:30:00",
+            "afib_event_count": 1,
+        }
+        HealthKitAdapter.batch_save(db, user.id, [dict(rec)])
+        # 同一 recorded_at 再上送 (计数更新) → 应 upsert 不重复
+        rec["afib_event_count"] = 3
+        HealthKitAdapter.batch_save(db, user.id, [dict(rec)])
+        rows = db.query(EcgObservation).filter(EcgObservation.user_id == user.id).all()
+        assert len(rows) == 1
+        assert rows[0].afib_event_count == 3

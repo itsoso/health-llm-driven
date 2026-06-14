@@ -115,6 +115,8 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 from app.models.twin_snapshot import TwinSnapshot
 from app.models.biomarker_observation import BiomarkerObservation
 from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
+# Apple Watch ECG 房颤筛查信号 (点事件, 独立表)
+from app.models.ecg_observation import EcgObservation
 
 __all__ = [
     "User",
@@ -125,6 +127,7 @@ __all__ = [
     "BiomarkerObservation",
     "InterventionCycle",
     "OutcomeMetric",
+    "EcgObservation",
     "DiseaseRecord",
     "GarminData",
     "ExerciseRecord",

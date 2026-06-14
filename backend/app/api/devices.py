@@ -849,6 +849,14 @@ class HealthKitDailyRecord(BaseModel):
 
     body_temp_deviation_c: Optional[float] = None
 
+    # ===== ECG (Apple Watch 独有, 房颤筛查信号非诊断) =====
+    # 最近一次 ECG 分类, 原样 HealthKit 字符串 (SinusRhythm / AtrialFibrillation /
+    # InconclusiveLowHeartRate / InconclusiveHighHeartRate / Unrecognized / ...).
+    # 未知/缺失值原样接收, 后端不枚举校验, 下游只对明确 "AtrialFibrillation" 告警.
+    ecg_classification: Optional[str] = None
+    ecg_recorded_at: Optional[datetime] = None  # 该次 ECG 记录时间 (sample startDate)
+    afib_event_count: Optional[int] = None  # 本窗口内 AtrialFibrillation 分类次数, 默认按 0 处理
+
     raw_data: Optional[dict] = None
 
     # 客户端用 avg()/sum() 聚合,常把小数 float 喂给 int 字段(如 resting_heart_rate
@@ -861,6 +869,7 @@ class HealthKitDailyRecord(BaseModel):
         "resting_heart_rate", "avg_heart_rate", "max_heart_rate", "min_heart_rate",
         "steps", "floors_climbed", "active_minutes", "calories_total", "calories_active",
         "stress_level", "body_battery_high", "body_battery_low",
+        "afib_event_count",
         mode="before",
     )
     @classmethod

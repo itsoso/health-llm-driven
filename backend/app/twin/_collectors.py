@@ -228,6 +228,36 @@ def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str,
         return None
 
 
+def fetch_ecg_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
+    """最近一次 Apple Watch ECG 观测 (筛查信号非诊断)。
+
+    afib_recent 判定: 最近一次分类为 AtrialFibrillation, 或其 afib_event_count>=1。
+    缺失/未知分类不当作房颤。recorded_at 为 NULL 的记录排在最后取。"""
+    try:
+        from app.models.ecg_observation import EcgObservation
+
+        record = (
+            db.query(EcgObservation)
+            .filter(EcgObservation.user_id == user_id)
+            .order_by(desc(EcgObservation.recorded_at), desc(EcgObservation.id))
+            .first()
+        )
+        if not record:
+            return None
+        afib_count = record.afib_event_count or 0
+        is_afib = record.classification == "AtrialFibrillation" or afib_count >= 1
+        return {
+            "ecg_classification": record.classification,
+            "ecg_recorded_at": record.recorded_at,
+            "afib_event_count": afib_count,
+            "afib_recent": is_afib,
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] ecg 失败: {e}")
+        _safe_rollback(db)
+        return None
+
+
 # ─────────────────────────── medical exam abnormal ────────────────────
 
 
