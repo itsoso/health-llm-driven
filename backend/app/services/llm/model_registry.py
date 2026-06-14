@@ -29,6 +29,11 @@ class ModelEntry:
     speed_tier: str       # fast / balanced / reasoning
     note: str = ""        # 可选: 一句话特点
     requires_env: tuple[str, ...] = ()   # 这个 model 需要哪些 env 才能用
+    reliable_tool_calling: bool = True
+    # ↑ 该模型做 function-calling 是否可靠 (吐合规的 tool_calls, 而非把工具调用
+    #   写成文本 / 弯引号 JSON / [claim:] 泄漏)。False = 经验上不稳, 需要工具的
+    #   agent 回合会门控回退到可靠模型 (见 agent_executor._resolve_chat_provider)。
+    #   纯文本分析/问答不受影响。拿不准时保守标 True。
 
 
 # 注册表 — 加新模型只改这里
@@ -73,8 +78,9 @@ MODELS: List[ModelEntry] = [
         provider="tokenplan",
         model="glm-5.1",
         speed_tier="balanced",
-        note="智谱新版, 文本生成 (套餐内)",
+        note="智谱新版, 文本生成 (套餐内); 工具调用不稳 (历史 bug #147/#161)",
         requires_env=("TOKENPLAN_API_KEY",),
+        reliable_tool_calling=False,
     ),
     ModelEntry(
         id="minimax-m2.5",
@@ -82,8 +88,9 @@ MODELS: List[ModelEntry] = [
         provider="tokenplan",
         model="MiniMax-M2.5",
         speed_tier="reasoning",
-        note="推理模型, 通过 TokenPlan 套餐",
+        note="推理模型, 通过 TokenPlan 套餐; 工具调用经验不稳",
         requires_env=("TOKENPLAN_API_KEY",),
+        reliable_tool_calling=False,
     ),
 
     # OpenClaw 已从可选 LLM 通道下线 (2026-06: 无用户使用, 主链路走 tokenplan/langbridge)。
@@ -172,3 +179,46 @@ def set_active_model_id(model_id: Optional[str]) -> None:
     """admin 切换模型. None 表示恢复默认."""
     global _active_model_id
     _active_model_id = model_id
+
+
+# ──── 工具调用能力门控 ────
+# 当一个 agent 回合需要工具, 但当前选中模型 reliable_tool_calling=False 时,
+# 由调用方 (agent_executor) 用下面的 helper 选一个可靠模型回退, 从源头减少
+# 弱模型吐坏工具调用 (#147/#161 的兜底解析仍保留作为安全网)。
+
+# 回退优先级: 先同 speed_tier 找可靠模型, 再按 speed_tier 邻近降级, 最后任意可靠模型。
+_RELIABLE_FALLBACK_SPEED_ORDER = {
+    "fast": ("fast", "balanced", "reasoning"),
+    "balanced": ("balanced", "reasoning", "fast"),
+    "reasoning": ("reasoning", "balanced", "fast"),
+}
+
+
+def is_reliable_tool_caller(model_id: Optional[str]) -> bool:
+    """model_id 对应模型是否可靠做 function-calling。未知 id 保守返回 True (不门控)。"""
+    if not model_id:
+        return True
+    entry = get_model(model_id)
+    if entry is None:
+        return True
+    return entry.reliable_tool_calling
+
+
+def pick_reliable_tool_model_id(
+    near_speed_tier: Optional[str] = None,
+    only_available: bool = True,
+) -> Optional[str]:
+    """选一个 reliable_tool_calling=True 的可用模型 id, 优先贴近 near_speed_tier。
+
+    无任何可靠+可用模型时返回 None (调用方维持现状, 依赖兜底解析)。
+    """
+    models = [m for m in list_models(only_available=only_available) if m.reliable_tool_calling]
+    if not models:
+        return None
+    if near_speed_tier:
+        order = _RELIABLE_FALLBACK_SPEED_ORDER.get(near_speed_tier, (near_speed_tier,))
+        for target in order:
+            for m in models:
+                if m.speed_tier == target:
+                    return m.id
+    return models[0].id

@@ -2002,10 +2002,14 @@ class AgentExecutor:
         # reasoning model just to extract tool arguments. Keep explicit
         # per-request model overrides intact; otherwise route to the fast
         # TokenPlan model even if the user's default is Qwen3.6.
+        provider = None
+        # 本回合最终会用到的 model_id (仅在能确定时填), 供工具能力门控判定。
+        effective_model_id: Optional[str] = None
         if self._prefer_fast_record_model and not self._request_model_id:
             try:
                 from app.services.llm.factory import create_provider_for_model_id
                 provider = create_provider_for_model_id(FAST_RECORD_MODEL_ID)
+                effective_model_id = FAST_RECORD_MODEL_ID
                 logger.info(
                     "[agent_executor] fast record model routing user=%s model=%s",
                     self._current_user_id,
@@ -2017,8 +2021,6 @@ class AgentExecutor:
                     e,
                 )
                 provider = None
-        else:
-            provider = None
 
         # Mac/桌面端手动路由: extra_context.model_id 是 model_registry 里的 id,
         # 只影响本次请求, 不改 user_profile 持久偏好.
@@ -2026,6 +2028,7 @@ class AgentExecutor:
             try:
                 from app.services.llm.factory import create_provider_for_model_id
                 provider = create_provider_for_model_id(self._request_model_id)
+                effective_model_id = self._request_model_id
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "[agent_executor] request model override %s unavailable, fallback: %s",
@@ -2039,15 +2042,85 @@ class AgentExecutor:
         if provider is None and self._current_user_id:
             from app.services.llm.factory import create_provider_for_user
             provider = create_provider_for_user(self._current_user_id, self.db)
+            effective_model_id = self._user_effective_model_id()
         elif provider is None:
             from app.services.llm.factory import get_llm_provider
             provider = get_llm_provider()
+            from app.services.llm.model_registry import get_active_model_id
+            effective_model_id = get_active_model_id()
+
         # OpenClaw 不吃 tools 字段; wrap_provider 是 in-place patch, isinstance 仍可识别.
         # Some OpenAI-compatible gateways treat an explicit empty tools array as
         # a tool-mode request and can return content="" with finish_reason="stop".
         from app.services.llm.providers.openclaw_provider import OpenClawProvider
         pass_tools = None if isinstance(provider, OpenClawProvider) else tools
+
+        # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
+        # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
+        # 拿不准 (effective_model_id=None / 未注册) → 保守不动, 依赖兜底解析。
+        if pass_tools:
+            gated = self._gate_tool_provider(effective_model_id)
+            if gated is not None:
+                provider = gated
+
         return provider, pass_tools
+
+    def _user_effective_model_id(self) -> Optional[str]:
+        """复算 create_provider_for_user 选中的 model_id (admin global / user pref),
+        仅用于工具门控判定; 读不到则 None (不门控)。不重复建 provider。"""
+        if not self._current_user_id:
+            return None
+        try:
+            from app.models.user_profile import UserProfile
+            profile = (
+                self.db.query(UserProfile)
+                .filter(UserProfile.user_id == self._current_user_id)
+                .first()
+            )
+            pref = getattr(profile, "llm_model_id", None) if profile else None
+            if pref:
+                return pref
+        except Exception:  # noqa: BLE001 — 门控判定不应让主链路崩, 读失败=不门控
+            return None
+        from app.services.llm.model_registry import get_active_model_id
+        return get_active_model_id()
+
+    def _gate_tool_provider(self, effective_model_id: Optional[str]):
+        """若 effective_model 做工具调用不可靠, 返回一个可靠模型的 provider; 否则 None。
+
+        无可回退的可靠+可用模型 (配置缺失) → 返回 None, 维持现状 (依赖兜底解析)。
+        """
+        from app.services.llm.model_registry import (
+            is_reliable_tool_caller,
+            pick_reliable_tool_model_id,
+            get_model,
+        )
+        if is_reliable_tool_caller(effective_model_id):
+            return None
+        entry = get_model(effective_model_id) if effective_model_id else None
+        near = entry.speed_tier if entry else None
+        fallback_id = pick_reliable_tool_model_id(near_speed_tier=near)
+        if not fallback_id or fallback_id == effective_model_id:
+            logger.warning(
+                "[agent_executor] tool task on unreliable model %s but no reliable "
+                "fallback available; relying on defensive tool-call parsing",
+                effective_model_id,
+            )
+            return None
+        try:
+            from app.services.llm.factory import create_provider_for_model_id
+            provider = create_provider_for_model_id(fallback_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[agent_executor] reliable fallback %s unavailable, keep %s: %s",
+                fallback_id, effective_model_id, e,
+            )
+            return None
+        logger.info(
+            "[agent_executor] tool task on unreliable model %s -> fallback to %s (user=%s)",
+            effective_model_id, fallback_id, self._current_user_id,
+        )
+        return provider
 
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
