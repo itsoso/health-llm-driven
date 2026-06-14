@@ -148,6 +148,51 @@ def _append_interrupted_notice(text: str, finish_reason: Optional[str]) -> str:
     return f"{text.rstrip()}{INTERRUPTED_COMPLETION_NOTICE}"
 
 
+# health_query 维度别名:模型(含 Opus)常把 dimension 猜成 type/query_type=lab_results。
+# 实测 bug:Claude-Opus-4.7 连查两次 `type=lab_results`/`query_type=lab_results`(参数名+值都错)
+# → dimension 默认成 comprehensive → 查了 Garmin 综合数据而非化验 → "拉不到化验"。
+# 这里做执行层容错(弱模型 tool-calling 防御套路),把别名归一到真实 dimension。
+_HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
+    "lab_results": "medical_exam", "lab_result": "medical_exam", "lab": "medical_exam",
+    "labs": "medical_exam", "化验": "medical_exam", "化验结果": "medical_exam",
+    "化验报告": "medical_exam", "exam": "medical_exam", "medical": "medical_exam",
+    "blood_test": "medical_exam", "bloodtest": "medical_exam", "checkup": "medical_exam",
+    "体检": "medical_exam",
+    "gene": "genetic", "genes": "genetic", "genetics": "genetic", "基因": "genetic",
+    "bp": "blood_pressure", "血压": "blood_pressure",
+    "meds": "medication", "medications": "medication", "用药": "medication",
+}
+# 接受作为 dimension 的别名参数名(模型用 type/query_type/category 代替 dimension)。
+_HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")
+
+
+def _normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:
+    """容错归一 health_query 参数:别名参数名→dimension、别名值→规范 dimension、time_range→days。
+
+    纯函数(可单测)。不认识的值原样保留(交给下游 endpoint 映射/兜底)。
+    """
+    import re as _re
+    a = dict(args or {})
+    # 1) dimension 缺失/为空 → 从别名参数名补
+    if not a.get("dimension"):
+        for k in _HEALTH_QUERY_DIM_KEYS:
+            if k != "dimension" and a.get(k):
+                a["dimension"] = a[k]
+                break
+    # 2) dimension 值别名归一
+    dim = a.get("dimension")
+    if isinstance(dim, str):
+        a["dimension"] = _HEALTH_QUERY_DIM_ALIASES.get(dim.strip().lower(), dim.strip())
+    # 3) days 缺失 → 从 time_range/range 解析("14d"/"30天"/"近7天")
+    if not a.get("days"):
+        tr = a.get("time_range") or a.get("range") or a.get("time")
+        if tr is not None:
+            m = _re.search(r"\d+", str(tr))
+            if m:
+                a["days"] = int(m.group())
+    return a
+
+
 def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     """Infer health_record ``record_type`` from a *naked* record data dict.
 
@@ -2574,6 +2619,7 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """执行健康数据查询"""
+        args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
         days = args.get("days", 7)
         indicator = args.get("indicator", "")
