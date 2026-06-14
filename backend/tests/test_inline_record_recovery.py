@@ -142,3 +142,29 @@ def test_strip_bracket_markers_unknown_name():
 def test_strip_bracket_markers_noop_without_marker():
     text = '你今天血压偏高,建议休息。'
     assert _strip_bracket_tool_markers(text) == text
+
+
+# ── 弯引号/全角引号 JSON 兜底(glm-5.1 等弱模型)───────────────────────
+def test_normalize_json_quotes_recovers_smart_quote_args():
+    """弯引号/全角引号的工具参数 JSON,标准 json.loads 失败 → 归一后可解析。"""
+    import json
+    from app.services.agent_executor import _normalize_json_quotes
+
+    # 模拟 glm-5.1 吐的(截图实拍):弯引号当分隔符
+    bad = '{ “record_type”: “diet”, “data”: { “meal_type”: “lunch”, “food_items”: “虾仁 20个”, “calories”: 100 } }'
+    import pytest
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(bad)  # 标准解析必失败
+    parsed = json.loads(_normalize_json_quotes(bad))  # 归一后成功
+    assert parsed["record_type"] == "diet"
+    assert parsed["data"]["meal_type"] == "lunch"
+    assert parsed["data"]["food_items"] == "虾仁 20个"
+    assert parsed["data"]["calories"] == 100
+
+
+def test_normalize_json_quotes_noop_on_valid_json():
+    """合法 JSON 不受影响(直引号原样)。"""
+    import json
+    from app.services.agent_executor import _normalize_json_quotes
+    good = '{"record_type": "diet", "note": "正常文本"}'
+    assert json.loads(_normalize_json_quotes(good)) == json.loads(good)

@@ -323,6 +323,23 @@ def _strip_bracket_tool_markers(text: str) -> str:
     return _BRACKET_TOOL_CALL_STRIP_RE.sub("", text).strip()
 
 
+_SMART_DOUBLE_QUOTES = "“”„‟″＂"  # “ ” „ ‟ ″ ＂
+_SMART_SINGLE_QUOTES = "‘’‚‛′＇"  # ‘ ’ ‚ ‛ ′ ＇
+_QUOTE_NORMALIZE_TABLE = str.maketrans(
+    {ord(c): '"' for c in _SMART_DOUBLE_QUOTES} | {ord(c): "'" for c in _SMART_SINGLE_QUOTES}
+)
+
+
+def _normalize_json_quotes(s: str) -> str:
+    """把弯引号/全角引号归一为直引号,救弱模型(如 glm-5.1)吐的非法 JSON。
+
+    只作为标准 json.loads 失败后的兜底:已经解析失败说明这些引号是被当作分隔符
+    (bug),归一后重试严格更优,不会误伤合法 JSON 字符串里的引号(那种情况标准
+    解析本就成功,不会走到这)。
+    """
+    return s.translate(_QUOTE_NORMALIZE_TABLE)
+
+
 def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
     """Recover tool calls emitted as visible JSON text by weaker gateways/models.
 
@@ -391,7 +408,10 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
             try:
                 args = json.loads(args)
             except json.JSONDecodeError:
-                return None
+                try:
+                    args = json.loads(_normalize_json_quotes(args))  # 弯/全角引号兜底
+                except json.JSONDecodeError:
+                    return None
         if not isinstance(args, dict):
             return None
 
@@ -2416,7 +2436,15 @@ class AgentExecutor:
             else:
                 args = args_raw
         except json.JSONDecodeError:
-            return f"Error: 参数解析失败: {args_raw}"
+            # 弱模型(如 glm-5.1)常吐弯引号/全角引号的 JSON → 标准解析失败。
+            # 归一引号后重试;仍失败才把错误返回给 LLM(它会重试),不裸露给用户。
+            if isinstance(args_raw, str):
+                try:
+                    args = json.loads(_normalize_json_quotes(args_raw))
+                except json.JSONDecodeError:
+                    return f"Error: 参数解析失败: {args_raw}"
+            else:
+                return f"Error: 参数解析失败: {args_raw}"
 
         # === 统一 tool_call 守门 (所有 6 个工具必过) ===
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
