@@ -36,9 +36,11 @@ interface Props {
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
+  /** 微信式: 长按这条消息进入多选模式 (仅可分享的消息才传). 进入后默认选中该条. */
+  onEnterSelection?: (id: string) => void;
 }
 
-function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected }: Props) {
+function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected, onEnterSelection }: Props) {
   const qc = useQueryClient();
   const { c, isDark, s } = useTheme();
   const toast = useToast();
@@ -130,8 +132,24 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       onToggleSelected?.(item.id);
       return;
     }
+    // 微信式: 长按可分享的消息直接进入多选模式并选中该条.
+    if (onEnterSelection) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      onEnterSelection(item.id);
+      return;
+    }
     Haptics.selectionAsync();
     setShowActions(prev => !prev);
+  };
+
+  // 用户气泡长按: 可进多选则进多选 (微信式), 否则保留复制.
+  const handleUserLongPress = () => {
+    if (onEnterSelection) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      onEnterSelection(item.id);
+      return;
+    }
+    handleCopy();
   };
 
   const openDraft = () => {
@@ -277,7 +295,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             style={[styles.bubble, styles.bubbleUser, selected && styles.bubbleSelected]}
             activeOpacity={0.8}
             onPress={handleBubblePress}
-            onLongPress={selectionMode ? undefined : handleCopy}
+            onLongPress={selectionMode ? undefined : handleUserLongPress}
             accessibilityRole="text"
             accessibilityLabel={`你: ${item.content}${item.fromSiri ? ' (来自 Siri)' : ''}`}
             accessibilityState={selectionMode ? { selected } : undefined}
