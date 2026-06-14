@@ -322,6 +322,17 @@ export default function AIAssistantPage() {
     setSelectedMessageIds(new Set());
   };
 
+  // 微信式入口: 长按 / 右键某条消息直接进入多选分享, 并把该条预选中.
+  const enterSelectionWith = (messageId: number) => {
+    setShareSelectionMode(true);
+    setSelectedMessageIds(prev => {
+      if (prev.has(messageId)) return prev;
+      const next = new Set(prev);
+      next.add(messageId);
+      return next;
+    });
+  };
+
   const shareMessages = async (messageIds?: number[]) => {
     const ids = messageIds ? new Set(messageIds) : selectedMessageIds;
     const text = buildSelectedChatShareText(messages, ids);
@@ -470,6 +481,7 @@ export default function AIAssistantPage() {
                 shareSelectionMode={shareSelectionMode}
                 selectedMessageIds={selectedMessageIds}
                 onToggleMessageSelection={toggleMessageSelection}
+                onEnterSelectionWith={enterSelectionWith}
                 onShareMessages={ids => shareMessages(ids)}
               />
             )}
