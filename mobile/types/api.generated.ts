@@ -5608,7 +5608,10 @@ export interface paths {
         put?: never;
         /**
          * Quick Add Water
-         * @description 快速添加饮水（默认250ml，需要登录）
+         * @description 快速添加饮水（amount 必填,ml）。
+         *
+         *     不再静默默认 250：缺 amount 直接 400，避免弱模型 tool-calling 漏传 ?amount
+         *     时把用户的「2000ml」静默记成 250(守 Rule #1:失败要可见,不写错值)。
          */
         post: operations["quick_add_water_api_v1_water_records_quick_post"];
         delete?: never;
@@ -6651,6 +6654,8 @@ export interface paths {
         /**
          * List Regimen Templates
          * @description 列出可选用药方案模板(录入脚手架,非用药建议)。
+         *
+         *     传 hp_status 按幽门螺杆菌状态分流:Hp 阳性才给根除方案,Hp 阴性给 PPI 愈合(不含抗生素)。
          */
         get: operations["list_regimen_templates_api_v1_medication_regimen_templates_get"];
         put?: never;
@@ -6757,6 +6762,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/protocols/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corrections
+         * @description 协议自纠偏建议(R14):协议连续跳过 + 结果趋势恶化(体重↑/鼻炎↑)→ 调整建议。
+         */
+        get: operations["corrections_api_v1_protocols_corrections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/protocols/seed/water-cup": {
         parameters: {
             query?: never;
@@ -6771,6 +6796,46 @@ export interface paths {
          * @description 快速建一个 2000ml 温水杯协议(参考实现)。
          */
         post: operations["seed_water_cup_api_v1_protocols_seed_water_cup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/meal-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Meal Template
+         * @description 饮食域:建预承诺餐模板协议(完成→写 DietRecord,双轨同源)。
+         */
+        post: operations["create_meal_template_api_v1_protocols_meal_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/from-medication/{medication_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * From Medication
+         * @description 从一味已存在的药生成用药域协议(完成→写 MedicationLog,双轨同源)。
+         */
+        post: operations["from_medication_api_v1_protocols_from_medication__medication_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6822,6 +6887,259 @@ export interface paths {
         put?: never;
         /** Archive */
         post: operations["archive_api_v1_protocols__protocol_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Problem */
+        post: operations["create_problem_api_v1_problems_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Problems */
+        get: operations["list_my_problems_api_v1_problems_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/due": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Due Followups
+         * @description 到期/即将到期的复查随访(driver of 复查日历)。
+         */
+        get: operations["due_followups_api_v1_problems_due_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/seed/gastric-ulcer-hp-neg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Gastric Ulcer
+         * @description 从病理报告登记胃溃疡(Hp 阴性)——锚点用户真实数据。
+         */
+        post: operations["seed_gastric_ulcer_api_v1_problems_seed_gastric_ulcer_hp_neg_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/{problem_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Status */
+        post: operations["set_status_api_v1_problems__problem_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agenda Today
+         * @description 今日统一议程:三域协议待办 + 近 N 天到期复查,按优先级排序。
+         */
+        get: operations["agenda_today_api_v1_agenda_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agenda Range
+         * @description 区间视图:常驻每日协议 + 窗口内按到期日排布的复查。
+         */
+        get: operations["agenda_range_api_v1_agenda_range_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agenda Complete
+         * @description 统一完成路由:按来源类型路由到对应 source 的完成(写真实业务记录)。
+         */
+        post: operations["agenda_complete_api_v1_agenda_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Program */
+        post: operations["create_program_api_v1_programs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Programs */
+        get: operations["list_my_programs_api_v1_programs_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/{program_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Program Progress */
+        get: operations["program_progress_api_v1_programs__program_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/{program_id}/attach-protocol/{protocol_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Protocol */
+        post: operations["attach_protocol_api_v1_programs__program_id__attach_protocol__protocol_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/from-problem/{problem_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** From Problem */
+        post: operations["from_problem_api_v1_programs_from_problem__problem_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/{program_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Status */
+        post: operations["set_status_api_v1_programs__program_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7489,6 +7807,89 @@ export interface paths {
         get: operations["get_training_decision_api_v1_exercise_recovery_decision_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environment/bedroom/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Snapshot
+         * @description 摄入一条卧室环境快照 (HA / 任意客户端推).
+         */
+        post: operations["ingest_snapshot_api_v1_environment_bedroom_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environment/bedroom/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Current Snapshot
+         * @description 当前 (最近一条) 卧室环境快照, 含 stale 判定. 无数据返回 null.
+         */
+        get: operations["get_current_snapshot_api_v1_environment_bedroom_current_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environment/bedroom/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Snapshot History
+         * @description 近 N 天卧室环境快照, 时间倒序.
+         */
+        get: operations["get_snapshot_history_api_v1_environment_bedroom_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/home-assistant/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Automation Event
+         * @description 摄入一条 HA 自动化事件 → 落 BedroomAutomationEvent + 旁路写 AuditLog.
+         *
+         *     摄入失败 (DB 写入) 上抛 500, 让客户端感知, 不假装成功 (对齐地基 PR).
+         *     event_type 缺失 → 400 (不静默写垃圾行).
+         */
+        post: operations["ingest_automation_event_api_v1_integrations_home_assistant_webhook_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16663,6 +17064,20 @@ export interface components {
             /** Medical Exams Count */
             medical_exams_count: number;
         };
+        /** AgendaComplete */
+        AgendaComplete: {
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id: number;
+            /**
+             * Track
+             * @default protocol
+             */
+            track: string;
+            /** Value */
+            value?: Record<string, never> | null;
+        };
         /** AgentRequest */
         AgentRequest: {
             /** Message */
@@ -16957,6 +17372,94 @@ export interface components {
              * @default 10
              */
             remaining: number;
+        };
+        /**
+         * BedroomEventIn
+         * @description 摄入一条卧室自动化事件 (HA automation webhook 上行, 设计文档 §7/§10).
+         *
+         *     字段全 Optional —— 向后兼容: HA 不同自动化携带的上下文不同. event_type 在
+         *     service 层校验非空 (缺则 422/400, 不静默写垃圾行).
+         */
+        BedroomEventIn: {
+            /**
+             * Room Id
+             * @description 房间标识, 默认 bedroom
+             */
+            room_id?: string | null;
+            /**
+             * Event Type
+             * @description 事件类型, 例 ventilation_boost / manual_override
+             */
+            event_type?: string | null;
+            /**
+             * Reason
+             * @description 触发原因 (人话)
+             */
+            reason?: string | null;
+            /**
+             * Command Entity Id
+             * @description 命令落点实体, 例 fan.bedroom_fresh_air
+             */
+            command_entity_id?: string | null;
+            /**
+             * Command Mode
+             * @description 命令档位/模式, 例 high / boost
+             */
+            command_mode?: string | null;
+            /**
+             * Source
+             * @description ha|reva|manual, 缺省 ha
+             */
+            source?: string | null;
+            /**
+             * Manual Override
+             * @description 是否人工 override
+             */
+            manual_override?: boolean | null;
+        };
+        /**
+         * BedroomSnapshotIn
+         * @description 摄入一条卧室环境快照 (HA / 客户端推).
+         */
+        BedroomSnapshotIn: {
+            /**
+             * Room Id
+             * @description 房间标识, 默认 bedroom
+             */
+            room_id?: string | null;
+            /**
+             * Captured At
+             * @description 采集时刻, 缺省取服务器当前时间
+             */
+            captured_at?: string | null;
+            /** Co2 Ppm */
+            co2_ppm?: number | null;
+            /** Pm25 */
+            pm25?: number | null;
+            /** Temperature C */
+            temperature_c?: number | null;
+            /** Humidity Percent */
+            humidity_percent?: number | null;
+            /** Tvoc */
+            tvoc?: number | null;
+            /** Illuminance Lux */
+            illuminance_lux?: number | null;
+            /** Occupancy */
+            occupancy?: boolean | null;
+            /** Bed Presence */
+            bed_presence?: boolean | null;
+            /**
+             * Sources
+             * @description 指标到设备/实体的来源映射
+             */
+            sources?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Confidence
+             * @description high|medium|low, 缺省 medium
+             */
+            confidence?: string | null;
         };
         /**
          * BehaviorABOut
@@ -17307,13 +17810,12 @@ export interface components {
         };
         /** CgmReadingIn */
         CgmReadingIn: {
-            /**
-             * Measured At
-             * Format: date-time
-             */
-            measured_at: string;
+            /** Measured At */
+            measured_at?: string | null;
             /** Glucose Mg Dl */
-            glucose_mg_dl: number;
+            glucose_mg_dl?: number | null;
+            /** Glucose Mmol L */
+            glucose_mmol_l?: number | null;
             /** Trend Arrow */
             trend_arrow?: string | null;
             /** Trend Rate */
@@ -21832,7 +22334,7 @@ export interface components {
              * Start Date
              * Format: date
              */
-            start_date: string;
+            start_date?: string;
             /**
              * Severity
              * @default 5
@@ -22399,6 +22901,25 @@ export interface components {
              */
             country?: string | null;
         };
+        /** MealTemplate */
+        MealTemplate: {
+            /** Name */
+            name: string;
+            /** Meal Type */
+            meal_type?: string | null;
+            /** Food Items */
+            food_items?: string | null;
+            /** Calories */
+            calories?: number | null;
+            /** Protein */
+            protein?: number | null;
+            /** Carbs */
+            carbs?: number | null;
+            /** Fat */
+            fat?: number | null;
+            /** Fiber */
+            fiber?: number | null;
+        };
         /**
          * MealType
          * @enum {string}
@@ -22874,9 +23395,9 @@ export interface components {
             /**
              * Record Date
              * Format: date
-             * @description 记录日期
+             * @description 记录日期(默认今天)
              */
-            record_date: string;
+            record_date?: string;
             /**
              * Mood Score
              * @description 情绪评分 1-5
@@ -22931,9 +23452,9 @@ export interface components {
             /**
              * Record Date
              * Format: date
-             * @description 记录日期
+             * @description 记录日期(默认今天)
              */
-            record_date: string;
+            record_date?: string;
             /**
              * Mood Score
              * @description 情绪评分 1-5
@@ -23903,6 +24424,37 @@ export interface components {
              */
             location: boolean;
         };
+        /** ProblemCreate */
+        ProblemCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Risk Level
+             * @default P1
+             */
+            risk_level: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Diagnosis */
+            diagnosis?: Record<string, never> | null;
+            /** Risk Stratification */
+            risk_stratification?: string | null;
+            /** Red Lines */
+            red_lines?: Record<string, never>[] | null;
+            /** Responsible */
+            responsible?: string | null;
+            /** Follow Up */
+            follow_up?: Record<string, never> | null;
+            /** Escalation Path */
+            escalation_path?: string | null;
+            /** Evidence Tier */
+            evidence_tier?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
         /** ProfileCreateRequest */
         ProfileCreateRequest: {
             /**
@@ -23963,6 +24515,32 @@ export interface components {
             /** Primary Goal */
             primary_goal?: string | null;
         };
+        /** ProgramCreate */
+        ProgramCreate: {
+            /** Name */
+            name: string;
+            /** Program Type */
+            program_type: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Problem Id */
+            problem_id?: number | null;
+            /** Primary Metrics */
+            primary_metrics?: string[] | null;
+            /** Secondary Metrics */
+            secondary_metrics?: string[] | null;
+            /** Baseline */
+            baseline?: Record<string, never> | null;
+            /** Target */
+            target?: Record<string, never> | null;
+            /** Target End On */
+            target_end_on?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
         /** ProtocolComplete */
         ProtocolComplete: {
             /**
@@ -24012,6 +24590,8 @@ export interface components {
             program_id?: number | null;
             /** Source Model */
             source_model?: string | null;
+            /** Source Id */
+            source_id?: number | null;
             /** Notes */
             notes?: string | null;
         };
@@ -36602,8 +37182,8 @@ export interface operations {
     quick_add_water_api_v1_water_records_quick_post: {
         parameters: {
             query?: {
-                /** @description 饮水量(ml) */
-                amount?: number;
+                /** @description 饮水量(ml),必填 */
+                amount?: number | null;
             };
             header?: never;
             path?: never;
@@ -38437,7 +39017,9 @@ export interface operations {
     };
     list_regimen_templates_api_v1_medication_regimen_templates_get: {
         parameters: {
-            query?: never;
+            query?: {
+                hp_status?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -38451,6 +39033,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -38603,6 +39194,26 @@ export interface operations {
             };
         };
     };
+    corrections_api_v1_protocols_corrections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     seed_water_cup_api_v1_protocols_seed_water_cup_post: {
         parameters: {
             query?: never;
@@ -38619,6 +39230,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_meal_template_api_v1_protocols_meal_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MealTemplate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    from_medication_api_v1_protocols_from_medication__medication_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                medication_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -38699,6 +39374,443 @@ export interface operations {
             header?: never;
             path: {
                 protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_problem_api_v1_problems_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProblemCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_problems_api_v1_problems_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    due_followups_api_v1_problems_due_get: {
+        parameters: {
+            query?: {
+                within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seed_gastric_ulcer_api_v1_problems_seed_gastric_ulcer_hp_neg_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_status_api_v1_problems__problem_id__status_post: {
+        parameters: {
+            query: {
+                status: string;
+            };
+            header?: never;
+            path: {
+                problem_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_today_api_v1_agenda_today_get: {
+        parameters: {
+            query?: {
+                followup_within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_range_api_v1_agenda_range_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_complete_api_v1_agenda_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgendaComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_program_api_v1_programs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgramCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_programs_api_v1_programs_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    program_progress_api_v1_programs__program_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_protocol_api_v1_programs__program_id__attach_protocol__protocol_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: number;
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    from_problem_api_v1_programs_from_problem__problem_id__post: {
+        parameters: {
+            query: {
+                program_type: string;
+                name?: string | null;
+            };
+            header?: never;
+            path: {
+                problem_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_status_api_v1_programs__program_id__status_post: {
+        parameters: {
+            query: {
+                status: string;
+            };
+            header?: never;
+            path: {
+                program_id: number;
             };
             cookie?: never;
         };
@@ -39803,6 +40915,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    ingest_snapshot_api_v1_environment_bedroom_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BedroomSnapshotIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_current_snapshot_api_v1_environment_bedroom_current_get: {
+        parameters: {
+            query?: {
+                room_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never> | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_snapshot_history_api_v1_environment_bedroom_history_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                room_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_automation_event_api_v1_integrations_home_assistant_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BedroomEventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
