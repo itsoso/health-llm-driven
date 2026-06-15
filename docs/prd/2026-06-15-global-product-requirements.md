@@ -1,5 +1,7 @@
 # Reva Personal Health OS 全局产品需求说明书
 
+> ⚠️ **已被取代(2026-06-15)**:本文为历史素材。唯一权威 PRD 见 [`reva-personal-health-os-prd.md`](reva-personal-health-os-prd.md),已自洽合并本文(TO-BE)+ AS-IS 基线 + 协议双轨 + 多轮外部分析。请勿据本文做新设计。
+
 > 日期: 2026-06-15  
 > 状态: v0.1 代码事实驱动 PRD, 用于下一轮产品重设计  
 > 范围: 后端、Mobile、Mac App、Web、Apple Watch / HealthKit、OpenClaw / MCP 外部 Agent 入口  
