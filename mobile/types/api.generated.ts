@@ -2034,6 +2034,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/data-health/integrity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 数据正确性自检(量纲/范围/层断连;系统自我监控)
+         * @description 区别于 /status(完整度):这里查**正确性**——HRV 量纲错、SpO2 小数存、
+         *     归一层断连、周期空目标等静默损坏。空 issues = 健康。
+         */
+        get: operations["get_data_integrity_api_v1_data_health_integrity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/export/health-data": {
         parameters: {
             query?: never;
@@ -2994,6 +3015,199 @@ export interface paths {
          *     需要登录 — 该路径会消耗 LLM vision 配额,不能裸奔.
          */
         post: operations["parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 处方图片识别 + 原研药查询
+         * @description 上传处方照片,返回识别到的药品 + 各自的原研药(供用户确认,不入库)。
+         */
+        post: operations["recognize_prescription_image_api_v1_prescriptions_recognize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/originator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 按药名查原研药(单条)
+         * @description 给一个药名(通用名/品牌/含规格),查其原研药;表外返回 has_originator=false。
+         */
+        get: operations["lookup_originator_api_v1_prescriptions_originator_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 基于在用药的原研药可换建议(已采纳/忽略的不返回)
+         * @description 对话/客户端共用:用户在用仿制药里有原研药可换、且尚未采纳/忽略的列表。
+         */
+        get: operations["get_recommendations_api_v1_prescriptions_recommendations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/recommendations/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 采纳/忽略/重置某药的原研药推荐
+         * @description 采纳后标识为系统推荐 → 后续对话不再二次推荐;dismissed 同样抑制;suggested 可重新推荐。
+         */
+        post: operations["set_recommendation_status_api_v1_prescriptions_recommendations_status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/liver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 肝脏趋势评估(肝酶趋势 + FIB-4 + 脂肪肝风险,非诊断)
+         * @description 基于历史肝酶给趋势 + 风险提示。缺血小板时 FIB-4 返回 null 并提示补血常规。
+         */
+        get: operations["liver_assessment_api_v1_chronic_liver_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/biomarker-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把化验指标同步到归一生物标志层(并刷新干预周期目标)
+         * @description 打通 medical_indicators → biomarker_observations(根因修复:归一层此前为空)。
+         *     顺带刷新 active 代谢周期的目标(此前因归一层空而无目标)。
+         */
+        post: operations["biomarker_sync_api_v1_chronic_biomarker_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/causal-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 用药干预 → 目标指标前后变化(描述性关联,非因果) */
+        get: operations["causal_links_api_v1_chronic_causal_links_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 社会连接自评状态(到期判断 + 解读,非诊断) */
+        get: operations["connection_status_api_v1_chronic_connection_get"];
+        put?: never;
+        /** 提交一次社会连接自评(UCLA-3 + 连接结构) */
+        post: operations["submit_connection_checkin_api_v1_chronic_connection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication-course/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 即将结束的用药疗程 + 建议复查 */
+        get: operations["upcoming_api_v1_medication_course_upcoming_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication-course/materialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把即将结束疗程的复查写入复查日历(ReviewSchedule)
+         * @description 幂等:已存在的复查项不重复建。返回 {created, skipped}。
+         */
+        post: operations["materialize_api_v1_medication_course_materialize_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6407,6 +6621,213 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medication/deprescribing-review/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deprescribing Review
+         * @description 多药梳理 / 减药候选(非建议停药;请与医生讨论是否可精简)。
+         */
+        get: operations["get_deprescribing_review_api_v1_medication_deprescribing_review_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/regimen-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Regimen Templates
+         * @description 列出可选用药方案模板(录入脚手架,非用药建议)。
+         */
+        get: operations["list_regimen_templates_api_v1_medication_regimen_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/regimens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Regimen
+         * @description 实例化用药方案:解析阶段 → 引入即 DDI 预检 → 建疗程+当前阶段药品。
+         *
+         *     有 CRITICAL 药物相互作用且未 override_safety → 422 阻断(不写库),返回触发的告警。
+         */
+        post: operations["create_regimen_api_v1_medication_regimens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/regimens/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Regimens
+         * @description 列出我的用药方案/疗程。
+         */
+        get: operations["list_my_regimens_api_v1_medication_regimens_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Protocol */
+        post: operations["create_protocol_api_v1_protocols_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Protocols */
+        get: operations["list_my_protocols_api_v1_protocols_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today
+         * @description 今日协议待办 + 完成态(双轨任一轨完成都算)。
+         */
+        get: operations["today_api_v1_protocols_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/seed/water-cup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Water Cup
+         * @description 快速建一个 2000ml 温水杯协议(参考实现)。
+         */
+        post: operations["seed_water_cup_api_v1_protocols_seed_water_cup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/{protocol_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete */
+        post: operations["complete_api_v1_protocols__protocol_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/{protocol_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip */
+        post: operations["skip_api_v1_protocols__protocol_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/{protocol_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive */
+        post: operations["archive_api_v1_protocols__protocol_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workout/me": {
         parameters: {
             query?: never;
@@ -7051,6 +7472,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exercise-recovery/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 今日训练决策灯 GREEN/YELLOW/RED + 置信度 + 一个动作
+         * @description 多源恢复/训练决策引擎(P0)。
+         *
+         *     一句话回答"今天能不能练": 合成已有的恢复就绪度(zone)、ACWR、急性病兜底、
+         *     多设备一致性置信度 → light + confidence + reasons + next_action。
+         */
+        get: operations["get_training_decision_api_v1_exercise_recovery_decision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/withings/oauth/authorize": {
         parameters: {
             query?: never;
@@ -7214,6 +7658,28 @@ export interface paths {
          * @description 同时戴多台穿戴时,同指标(HRV/静息心率/睡眠/VO2max/SpO2/步数)并排对比 + 一致度。
          */
         get: operations["compare_devices_api_v1_devices_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/sources/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 每数据源覆盖天数 + 最新指标快照
+         * @description 近 days 天,按 data_source 分组:覆盖天数 / 最新日期 / 每指标最近非空值。
+         *
+         *     客户端用此区分「记录来自哪个设备」并展示每源的数据量。
+         */
+        get: operations["sources_summary_endpoint_api_v1_devices_sources_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8622,8 +9088,9 @@ export interface paths {
         };
         /**
          * 统一健康助理对话列表
-         * @description List current user's Agent conversations.
+         * @description List current user's Agent conversations (paginated).
          *
+         *     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
          *     AgentExecutor persists conversations through OpenClawService so mobile/web
          *     can resume interrupted streams from the same durable message store.
          */
@@ -10893,6 +11360,32 @@ export interface paths {
          *     - 饮水充足度
          */
         get: operations["get_cross_analysis_api_v1_health_context_me_cross_analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-context/me/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 紧凑健康摘要 — 给外部模板/LLM (替代逐日导出 JSON)
+         * @description 把 Digital Twin 压成一段紧凑摘要(现状 + 7/14/30 日均 + 封顶异常项/基因),
+         *     给"健康建议"这类外部模板/LLM 用 —— 替代把整份 twin / 导出 JSON(2 万+ 字符)
+         *     塞进 prompt 的做法(逐日流水账,LLM 看不过来、又贵又慢)。
+         *
+         *     - detail: brief(~500 字符) / standard(~1.5k) / full(~3k) —— 控制异常项 + 基因条数
+         *     - format: compact(纯文本 blob,直插模板) / json(结构化 {summary, chars, truncated})
+         *     - max_chars: 硬上限,超出截断并标注,永不再炸上下文
+         */
+        get: operations["get_health_summary_api_v1_health_context_me_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -16729,6 +17222,15 @@ export interface components {
              */
             file: string;
         };
+        /** Body_recognize_prescription_image_api_v1_prescriptions_recognize_post */
+        Body_recognize_prescription_image_api_v1_prescriptions_recognize_post: {
+            /**
+             * File
+             * Format: binary
+             * @description 处方图片 (jpg/png/heic/webp)
+             */
+            file: string;
+        };
         /** Body_upload_avatar_api_v1_users_me_avatar_post */
         Body_upload_avatar_api_v1_users_me_avatar_post: {
             /**
@@ -17610,6 +18112,17 @@ export interface components {
             source_type: string;
             /** Video Url */
             video_url?: string | null;
+        };
+        /** ConnectionCheckinBody */
+        ConnectionCheckinBody: {
+            /** Ucla Score */
+            ucla_score?: number | null;
+            /** Has Confidant */
+            has_confidant?: boolean | null;
+            /** In Stable Group */
+            in_stable_group?: boolean | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** ConsultationItemCreate */
         ConsultationItemCreate: {
@@ -20132,6 +20645,8 @@ export interface components {
             hydration_ml?: number | null;
             /** Vo2Max Fitness Age */
             vo2max_fitness_age?: number | null;
+            /** Data Source */
+            data_source?: string | null;
         };
         /** GarminDeviceResponse */
         GarminDeviceResponse: {
@@ -21071,6 +21586,12 @@ export interface components {
             respiration_rate_max?: number | null;
             /** Body Temp Deviation C */
             body_temp_deviation_c?: number | null;
+            /** Ecg Classification */
+            ecg_classification?: string | null;
+            /** Ecg Recorded At */
+            ecg_recorded_at?: string | null;
+            /** Afib Event Count */
+            afib_event_count?: number | null;
             /** Raw Data */
             raw_data?: Record<string, never> | null;
         };
@@ -21078,6 +21599,11 @@ export interface components {
         HealthKitImportError: {
             /** Index */
             index: number;
+            /**
+             * Kind
+             * @default daily
+             */
+            kind: string;
             /** Record Date */
             record_date: string | null;
             /** Error */
@@ -21092,6 +21618,11 @@ export interface components {
         HealthKitImportResponse: {
             /** Imported Count */
             imported_count: number;
+            /**
+             * Ecg Imported Count
+             * @default 0
+             */
+            ecg_imported_count: number;
             /** Source Breakdown */
             source_breakdown: Record<string, never>;
             /** Errors */
@@ -22074,6 +22605,10 @@ export interface components {
             times_per_day: number;
             /** Reminder Times */
             reminder_times?: string[] | null;
+            /** Timing Relation */
+            timing_relation?: string | null;
+            /** Meal Anchor */
+            meal_anchor?: string | null;
             /** Category */
             category?: string | null;
             /** Purpose */
@@ -22169,6 +22704,10 @@ export interface components {
             times_per_day?: number | null;
             /** Reminder Times */
             reminder_times?: string[] | null;
+            /** Timing Relation */
+            timing_relation?: string | null;
+            /** Meal Anchor */
+            meal_anchor?: string | null;
             /** Category */
             category?: string | null;
             /** Purpose */
@@ -23424,6 +23963,63 @@ export interface components {
             /** Primary Goal */
             primary_goal?: string | null;
         };
+        /** ProtocolComplete */
+        ProtocolComplete: {
+            /**
+             * Track
+             * @default protocol
+             */
+            track: string;
+            /** Value */
+            value?: Record<string, never> | null;
+        };
+        /** ProtocolCreate */
+        ProtocolCreate: {
+            /** Domain */
+            domain: string;
+            /** Name */
+            name: string;
+            /** Mechanism */
+            mechanism?: string | null;
+            /** Implied Quantity */
+            implied_quantity?: Record<string, never> | null;
+            /**
+             * Cadence
+             * @default daily
+             */
+            cadence: string;
+            /**
+             * Time Window
+             * @default anytime
+             */
+            time_window: string;
+            /**
+             * Completion Mode
+             * @default one_tap
+             */
+            completion_mode: string;
+            /**
+             * Can Default Complete
+             * @default false
+             */
+            can_default_complete: boolean;
+            /**
+             * Manual Track Allowed
+             * @default true
+             */
+            manual_track_allowed: boolean;
+            /** Program Id */
+            program_id?: number | null;
+            /** Source Model */
+            source_model?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** ProtocolSkip */
+        ProtocolSkip: {
+            /** Reason */
+            reason?: string | null;
+        };
         /** QuickRecordRequest */
         QuickRecordRequest: {
             /** Text */
@@ -23505,6 +24101,17 @@ export interface components {
             /** Is Active */
             is_active: number;
         };
+        /** RecStatusBody */
+        RecStatusBody: {
+            /** Generic Name */
+            generic_name: string;
+            /** Status */
+            status: string;
+            /** Brand */
+            brand?: string | null;
+            /** Manufacturer */
+            manufacturer?: string | null;
+        };
         /** RecognitionResponse */
         RecognitionResponse: {
             /** Success */
@@ -23529,6 +24136,22 @@ export interface components {
              * @default 10
              */
             remaining: number;
+        };
+        /** RegimenInstantiate */
+        RegimenInstantiate: {
+            /** Template Id */
+            template_id?: string | null;
+            /** Phases */
+            phases?: Record<string, never>[] | null;
+            /** Name */
+            name?: string | null;
+            /** Start On */
+            start_on?: string | null;
+            /**
+             * Override Safety
+             * @default false
+             */
+            override_safety: boolean;
         };
         /** RelationCreate */
         RelationCreate: {
@@ -29849,6 +30472,26 @@ export interface operations {
             };
         };
     };
+    get_data_integrity_api_v1_data_health_integrity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     export_health_data_api_v1_export_health_data_get: {
         parameters: {
             query?: {
@@ -31343,6 +31986,298 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recognize_prescription_image_api_v1_prescriptions_recognize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_recognize_prescription_image_api_v1_prescriptions_recognize_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_originator_api_v1_prescriptions_originator_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recommendations_api_v1_prescriptions_recommendations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_recommendation_status_api_v1_prescriptions_recommendations_status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecStatusBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    liver_assessment_api_v1_chronic_liver_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    biomarker_sync_api_v1_chronic_biomarker_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    causal_links_api_v1_chronic_causal_links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    connection_status_api_v1_chronic_connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    submit_connection_checkin_api_v1_chronic_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionCheckinBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upcoming_api_v1_medication_course_upcoming_get: {
+        parameters: {
+            query?: {
+                within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    materialize_api_v1_medication_course_materialize_post: {
+        parameters: {
+            query?: {
+                within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -37480,6 +38415,315 @@ export interface operations {
             };
         };
     };
+    get_deprescribing_review_api_v1_medication_deprescribing_review_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_regimen_templates_api_v1_medication_regimen_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_regimen_api_v1_medication_regimens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegimenInstantiate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_regimens_api_v1_medication_regimens_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_protocol_api_v1_protocols_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_protocols_api_v1_protocols_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    today_api_v1_protocols_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    seed_water_cup_api_v1_protocols_seed_water_cup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    complete_api_v1_protocols__protocol_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skip_api_v1_protocols__protocol_id__skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolSkip"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_api_v1_protocols__protocol_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_my_workouts_api_v1_workout_me_get: {
         parameters: {
             query?: {
@@ -38543,6 +39787,26 @@ export interface operations {
             };
         };
     };
+    get_training_decision_api_v1_exercise_recovery_decision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_withings_oauth_url_api_v1_devices_withings_oauth_authorize_get: {
         parameters: {
             query?: {
@@ -38739,6 +40003,37 @@ export interface operations {
         };
     };
     compare_devices_api_v1_devices_compare_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_summary_endpoint_api_v1_devices_sources_summary_get: {
         parameters: {
             query?: {
                 days?: number;
@@ -40781,6 +42076,8 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                /** @description 分页偏移(翻页用) */
+                offset?: number;
                 /** @description 按标题模糊过滤 */
                 title_like?: string | null;
             };
@@ -44399,6 +45696,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_health_summary_api_v1_health_context_me_summary_get: {
+        parameters: {
+            query?: {
+                detail?: string;
+                format?: string;
+                max_chars?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
