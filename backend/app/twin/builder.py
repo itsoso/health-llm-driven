@@ -855,6 +855,7 @@ def _fill_cgm(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) ->
             has_cgm=True,
             latest_mg_dl=summary.latest_mg_dl,
             latest_trend_arrow=summary.latest_trend_arrow,
+            latest_measured_at=summary.latest_measured_at,
             mean_24h_mg_dl=summary.mean_mg_dl,
             std_24h_mg_dl=summary.std_mg_dl,
             cv_24h_pct=summary.cv_pct,

@@ -10,11 +10,30 @@ CGM 相关的 Safety Guardian 规则。
 - 趋势急剧下降（double_down 且 < 80）
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
+
+# 急性血糖告警("立即就医/补糖")只在最近一次读数足够新鲜时触发。CGM 每 5–15min 一读,
+# 读数 >60min 说明传感器离线或是补录的旧值,不代表"当前"状态。
+_ACUTE_FRESH_MAX_MIN = 60
+
+
+def _stale_for_acute(c) -> bool:
+    """能证明读数陈旧(latest_measured_at 已知且 >60min)→ True,抑制急性告警。
+
+    年龄未知(None)→ False(不抑制,保真阳性:宁可对未知年龄的极值告警,
+    也不漏掉可能真实的急症)。修复:补录历史极值/传感器停同步的旧 spike 误触"立即就医"。
+    """
+    m = getattr(c, "latest_measured_at", None)
+    if m is None:
+        return False
+    if m.tzinfo is None:
+        m = m.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - m) > timedelta(minutes=_ACUTE_FRESH_MAX_MIN)
 
 
 @register
@@ -24,6 +43,8 @@ def cgm_severe_hypoglycemia(twin: HealthTwin) -> Optional[Alert]:
     if not c.has_cgm or c.latest_mg_dl is None:
         return None
     if c.latest_mg_dl >= 54:
+        return None
+    if _stale_for_acute(c):
         return None
 
     return Alert(
@@ -48,6 +69,8 @@ def cgm_severe_hyperglycemia(twin: HealthTwin) -> Optional[Alert]:
     if not c.has_cgm or c.latest_mg_dl is None:
         return None
     if c.latest_mg_dl <= 250:
+        return None
+    if _stale_for_acute(c):
         return None
 
     severity = Severity.CRITICAL if c.latest_mg_dl > 300 else Severity.HIGH
@@ -75,6 +98,8 @@ def cgm_rapid_fall(twin: HealthTwin) -> Optional[Alert]:
     """CGM 趋势急速下降 + 当前值偏低 —— 即将低血糖。"""
     c = twin.cgm
     if not c.has_cgm or c.latest_mg_dl is None or not c.latest_trend_arrow:
+        return None
+    if _stale_for_acute(c):
         return None
 
     is_rapid_fall = c.latest_trend_arrow in ("double_down", "falling_rapidly", "↓↓")

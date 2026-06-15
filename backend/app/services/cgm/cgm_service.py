@@ -49,6 +49,7 @@ class GlucoseSummary:
     severe_high_count: int          # > 250 次数
     latest_mg_dl: Optional[float]
     latest_trend_arrow: Optional[str]
+    latest_measured_at: Optional[datetime] = None  # 最新读数时间(供急性规则判新鲜度)
 
 
 class CgmService:
@@ -147,6 +148,7 @@ class CgmService:
             severe_high_count=severe_high,
             latest_mg_dl=latest.glucose_mg_dl if latest else None,
             latest_trend_arrow=latest.trend_arrow if latest else None,
+            latest_measured_at=latest.measured_at if latest else None,
         )
 
     def ingest_reading(
