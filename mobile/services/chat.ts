@@ -224,11 +224,14 @@ export async function getConversations(titleLike?: string): Promise<Conversation
   const token = await getToken();
   const params = new URLSearchParams({ limit: '20' });
   if (titleLike) params.set('title_like', titleLike);
-  const res = await fetch(`${BASE_URL}/openclaw/conversations?${params}`, {
+  // /agent/conversations 返回分页包装 { items, total, limit, offset } (web 同款),
+  // 不是裸数组 — 必须取 .items, 否则历史列表渲染为空/错位。
+  const res = await fetch(`${BASE_URL}/agent/conversations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return [];
-  return res.json();
+  const data = await res.json();
+  return data.items ?? [];
 }
 
 export async function getConversationMessages(
@@ -237,7 +240,7 @@ export async function getConversationMessages(
 ): Promise<{ messages: ChatMessage[]; total_messages: number }> {
   const token = await getToken();
   const qs = opts?.days ? `?days=${opts.days}` : '';
-  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}${qs}`, {
+  const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return { messages: [], total_messages: 0 };
@@ -250,7 +253,7 @@ export async function getConversationMessages(
 
 export async function deleteConversation(conversationId: number): Promise<boolean> {
   const token = await getToken();
-  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}`, {
+  const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -262,7 +265,7 @@ export async function updateConversationTitle(
   title: string,
 ): Promise<Conversation | null> {
   const token = await getToken();
-  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}`, {
+  const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}`, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${token}`,
