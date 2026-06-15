@@ -49,17 +49,29 @@ def default_metabolic_targets(latest_obs: dict) -> list:
 
 
 def _metric_status(om: OutcomeMetric) -> str:
+    """R16 去噪:目标达成 → met;变化未超 RCV(噪声带内)→ flat;超噪声 → improving/worsening。
+
+    副作用:写 om.significant / om.confidence(去噪 + 诚实置信度)。
+    """
+    from app.services.intervention_significance import classify_change
+
     if om.baseline_value is None or om.latest_value is None:
+        om.significant, om.confidence = None, None
         return "pending"
     desirable = om.direction or "down"
     if om.target_value is not None:
-        if desirable == "down" and om.latest_value <= om.target_value:
+        if (desirable == "down" and om.latest_value <= om.target_value) or \
+           (desirable == "up" and om.latest_value >= om.target_value):
+            # 达标即达标,但仍标注本次变化的统计置信度
+            _, om.confidence = classify_change(om.delta_pct, om.metric_code)
+            om.significant = True
             return "met"
-        if desirable == "up" and om.latest_value >= om.target_value:
-            return "met"
-    if om.delta is None or abs(om.delta) < 1e-9:
-        return "flat"
-    moved_down = om.delta < 0
+
+    significant, confidence = classify_change(om.delta_pct, om.metric_code)
+    om.significant, om.confidence = significant, confidence
+    if not significant:
+        return "flat"   # 落在噪声带内(未超 RCV)—— 不臆断见效
+    moved_down = (om.delta or 0) < 0
     improving = (desirable == "down" and moved_down) or (desirable == "up" and not moved_down)
     return "improving" if improving else "worsening"
 

@@ -9,7 +9,7 @@
 对应交互稿 ② 90 天干预周期 + ④ 复查对比。
 """
 from sqlalchemy import (
-    Column, Integer, String, Float, Date, DateTime, ForeignKey, Index,
+    Column, Integer, String, Float, Boolean, Date, DateTime, ForeignKey, Index,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -77,6 +77,10 @@ class OutcomeMetric(Base):
 
     direction = Column(String(8), default="down")       # 期望方向: down(降为好) / up(升为好)
     status = Column(String(12), default="pending")       # pending/improving/worsening/flat/met
+
+    # R16 去噪:变化是否超参考变化值(RCV,超噪声)+ 置信度(low/moderate/high)
+    significant = Column(Boolean)
+    confidence = Column(String(12))
 
     baseline_observed_at = Column(DateTime(timezone=True))
     latest_observed_at = Column(DateTime(timezone=True))

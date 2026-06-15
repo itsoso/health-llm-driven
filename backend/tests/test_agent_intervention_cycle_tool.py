@@ -45,11 +45,11 @@ def _exec(db, user_id, args):
 
 
 def _seed_abnormal_labs(db, user_id):
-    """LDL 3.8(高) + 尿酸 460(男, 高) + ALT 26(正常) → 异常杠杆 LDL/UA。"""
+    """LDL 3.8(高) + 尿酸 600(男, 高) + ALT 26(正常) → 异常杠杆 LDL/UA。"""
     from app.services.biomarker_service import ingest_exam
     e = _mk_exam(db, user_id, [
         ("低密度脂蛋白", 3.8, "mmol/L"),
-        ("尿酸", 460, "µmol/L"),
+        ("尿酸", 600, "µmol/L"),
         ("谷丙转氨酶", 26, "U/L"),
     ], datetime.date(2026, 3, 1))
     ingest_exam(db, e)
@@ -71,10 +71,10 @@ def test_status_reports_baseline_latest_delta(db):
     cycle = start_metabolic_cycle(db, u.id, twin, days=90, start_date=datetime.date(2026, 3, 1))
     assert cycle.outcomes  # 异常项纳入
 
-    # 复查: LDL 降到 3.0(达标), 尿酸降到 430(改善中)
+    # 复查: LDL 降到 3.0(达标), 尿酸 600→450 = -25% 超 RCV 且仍 >目标380 → 改善中
     _mk_exam(db, u.id, [
         ("低密度脂蛋白", 3.0, "mmol/L"),
-        ("尿酸", 430, "µmol/L"),
+        ("尿酸", 450, "µmol/L"),
     ], datetime.date(2026, 6, 1))
     from app.services.biomarker_service import ingest_exam
     from app.models.medical_exam import MedicalExam
@@ -88,7 +88,7 @@ def test_status_reports_baseline_latest_delta(db):
     assert "基线 → 最新" in out
     # baseline → latest 出现
     assert "3.8" in out and "3.0" in out
-    assert "460" in out and "430" in out
+    assert "600" in out and "450" in out
     # delta + 状态中文标注
     assert "Δ" in out
     assert "达标" in out      # LDL 命中目标
