@@ -77,9 +77,15 @@ async def corrections(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """协议自纠偏建议(R14):近 7 天连续跳过的协议 → 非羞辱式调整建议。"""
-    from app.services.protocol_self_correction import detect_self_corrections
-    return detect_self_corrections(db, current_user.id)
+    """协议自纠偏建议(R14):协议连续跳过 + 结果趋势恶化(体重↑/鼻炎↑)→ 调整建议。"""
+    from app.services.protocol_self_correction import (
+        detect_outcome_corrections,
+        detect_self_corrections,
+    )
+    return {
+        "skip_based": detect_self_corrections(db, current_user.id),
+        "outcome_based": detect_outcome_corrections(db, current_user.id),
+    }
 
 
 @router.post("/seed/water-cup")

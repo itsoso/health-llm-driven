@@ -130,14 +130,14 @@ def test_self_correction_triggers_on_repeated_skips(client, auth_user_and_header
     from app.services import health_protocol_service as svc
 
     # 还没跳过 → 无建议
-    assert client.get("/api/v1/protocols/corrections", headers=h).json() == []
+    assert client.get("/api/v1/protocols/corrections", headers=h).json()["skip_based"] == []
 
     # 跳过昨天 + 今天(同因 no_supply)。skip_protocol 支持 day 参数,直接落两天事件。
     svc.skip_protocol(db, pid, user.id, reason="no_supply", day=date.today() - timedelta(days=1))
     svc.skip_protocol(db, pid, user.id, reason="no_supply", day=date.today())
     db.commit()
 
-    corr = client.get("/api/v1/protocols/corrections", headers=h).json()
+    corr = client.get("/api/v1/protocols/corrections", headers=h).json()["skip_based"]
     assert len(corr) == 1
     assert corr[0]["skip_count"] == 2
     assert corr[0]["dominant_reason"] == "no_supply"
@@ -147,6 +147,62 @@ def test_self_correction_triggers_on_repeated_skips(client, auth_user_and_header
     # 也进今日议程(advisory correction 项)
     items = client.get("/api/v1/agenda/today", headers=h).json()["items"]
     assert any(i["type"] == "correction" for i in items)
+
+
+def _add_weights(db, user_id, weights, *, height=None, base_days=12):
+    from datetime import date, timedelta
+    from app.models.basic_health import BasicHealthData
+    n = len(weights)
+    for i, w in enumerate(weights):
+        # 均匀铺在 base_days 天窗口内
+        day = date.today() - timedelta(days=int(base_days * (n - 1 - i) / (n - 1)))
+        db.add(BasicHealthData(user_id=user_id, weight=w, height=height, record_date=day))
+    db.commit()
+
+
+def test_outcome_correction_weight_uptrend(client, auth_user_and_headers, db):
+    """体重均线上升(首/尾 3 日均值差 ≥1kg)→ outcome 纠偏,措辞不开方(defer 专业)。"""
+    user, h = auth_user_and_headers
+    # 6 点,首3均值≈70.2 → 尾3均值≈71.7,change≈1.5kg,跨 12 天;height 170→BMI~24(正常)
+    _add_weights(db, user.id, [70.0, 70.2, 70.4, 71.5, 71.7, 72.0], height=170.0)
+    out = client.get("/api/v1/protocols/corrections", headers=h).json()["outcome_based"]
+    weight = next(c for c in out if c["kind"] == "weight_uptrend")
+    assert weight["abs_change"] >= 1.0
+    # 不主动给「降热量」方向,只 defer 专业
+    assert "热量" not in weight["message"]
+    assert "医生" in weight["suggestion"] or "营养" in weight["suggestion"]
+
+
+def test_outcome_correction_weight_noise_no_trigger(client, auth_user_and_headers, db):
+    """带噪声的平坦体重序列(首尾均值近似)→ 不触发(防假阳性)。"""
+    user, h = auth_user_and_headers
+    # height 170(BMI 正常,排除门控干扰)→ 纯验噪声过滤:首3≈70.0 尾3≈70.07
+    _add_weights(db, user.id, [70.0, 71.0, 69.0, 70.5, 69.5, 70.2], height=170.0)
+    out = client.get("/api/v1/protocols/corrections", headers=h).json()["outcome_based"]
+    assert not any(c["kind"] == "weight_uptrend" for c in out)
+
+
+def test_outcome_correction_degrades_on_query_error(client, auth_user_and_headers, monkeypatch):
+    """体重查询抛错 → outcome 降级(不 500),且 except 处理器自身不再 NameError。"""
+    _, h = auth_user_and_headers
+    import app.services.protocol_self_correction as psc
+
+    def _boom(*a, **k):
+        raise RuntimeError("db blip")
+    # 让体重分支炸,验证整条 /corrections 仍 200(降级)
+    monkeypatch.setattr(psc, "_has_ed_or_lowweight_problem", _boom)
+    r = client.get("/api/v1/protocols/corrections", headers=h)
+    assert r.status_code == 200
+    assert "outcome_based" in r.json()
+
+
+def test_outcome_correction_weight_gated_for_low_bmi(client, auth_user_and_headers, db):
+    """低 BMI 用户即使体重上升也不给减重相关建议(安全门控)。"""
+    user, h = auth_user_and_headers
+    # height 180cm, 体重 ~58→60kg → BMI ~18,上升但应被门控
+    _add_weights(db, user.id, [58.0, 58.3, 58.6, 59.4, 59.7, 60.0], height=180.0)
+    out = client.get("/api/v1/protocols/corrections", headers=h).json()["outcome_based"]
+    assert not any(c["kind"] == "weight_uptrend" for c in out)
 
 
 def test_period_start_boundaries():

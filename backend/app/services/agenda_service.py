@@ -102,12 +102,17 @@ def _data_quality_item(db: Session, user_id: int) -> Dict[str, Any] | None:
 def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
     """协议自纠偏(R14)→ 只读建议项(不可完成)。失败降级。"""
     try:
-        from app.services.protocol_self_correction import detect_self_corrections
-        corrections = detect_self_corrections(db, user_id)
+        from app.services.protocol_self_correction import (
+            detect_outcome_corrections,
+            detect_self_corrections,
+        )
+        skip_corr = detect_self_corrections(db, user_id)
+        outcome_corr = detect_outcome_corrections(db, user_id)
     except Exception as e:  # noqa: BLE001
         logger.warning("agenda: 自纠偏计算失败,跳过: %s", e)
         return []
-    return [
+
+    items = [
         _agenda_item(
             type="correction",
             title=f"协议待调整:{c['name']}",
@@ -119,8 +124,22 @@ def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             skip_count=c["skip_count"],
             source={"object_type": "health_protocol", "object_id": c["protocol_id"]},
         )
-        for c in corrections
+        for c in skip_corr
     ]
+    items += [
+        _agenda_item(
+            type="correction",
+            title=c["name"],
+            status="info",
+            time_window="anytime",
+            priority=74,                      # 结果趋势纠偏略高于协议跳过纠偏
+            detail=c["message"],
+            suggestion=c["suggestion"],
+            source={"object_type": "outcome_correction", "object_id": user_id},
+        )
+        for c in outcome_corr
+    ]
+    return items
 
 
 def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str, Any]:
