@@ -6,7 +6,7 @@
 
 规则覆盖的基因：
   CYP2D6, CYP2C19, CYP2C9, VKORC1, SLCO1B1, G6PD, HLA-B*57:01,
-  DPYD, TPMT, UGT1A1, ALDH2, MTHFR
+  DPYD, TPMT, ALDH2, MTHFR
 
 每条规则只在（a）用户基因有该位点 AND（b）用户在服相关药物时触发。
 """
@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.rules.ddi import _has_drug_class, _med_names
+from app.agents.safety_guardian.rules.pgx_cpic_table import CPIC_LEVEL_A_PAIRS
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
 
@@ -415,3 +416,71 @@ def pgx_mthfr_folate(twin: HealthTwin) -> Optional[Alert]:
         ),
         data_citation={"variant": variant},
     )
+
+
+# ─────────── CPIC Level-A 表驱动覆盖（手写规则之外的对）────────
+
+# 已被上面手写规则精确覆盖的 (基因前缀, 药名关键词) —— 表里同对跳过防双报。
+_HANDWRITTEN_SKIP = (
+    ("CYP2D6", ("可待因", "codeine", "曲马多", "tramadol")),
+    ("CYP2C19", ("氯吡格雷", "clopidogrel")),
+    ("CYP2C9", ("华法林", "warfarin")),
+    ("VKORC1", ("华法林", "warfarin")),
+    ("SLCO1B1", ("辛伐他汀", "simvastatin")),
+    ("G6PD", ("伯氨喹", "primaquine", "硝基呋喃妥因", "nitrofurantoin",
+              "磺胺", "sulfa", "达普松", "dapsone", "甲基蓝", "methylene blue")),
+    ("HLA-B", ("阿巴卡韦", "abacavir")),
+    ("DPYD", ("氟尿嘧啶", "5-fu", "卡培他滨", "capecitabine")),
+    ("ALDH2", ("乙醇", "酒精", "alcohol")),
+    ("MTHFR", ("叶酸", "folate", "folic")),
+)
+
+
+def _is_handwritten_pair(gene: str, drug: str) -> bool:
+    g, d = gene.upper(), drug.lower()
+    for sg, dkeys in _HANDWRITTEN_SKIP:
+        if g == sg.upper() and any(k in d for k in dkeys):
+            return True
+    return False
+
+
+@register
+def pgx_cpic_table_check(twin: HealthTwin) -> List[Alert]:
+    """迭代 CPIC Level-A 表：基因命中 + phenotype 关键词命中 + 在服药命中 → 出 Alert。"""
+    meds = _med_names(twin)
+    if not meds:
+        return []
+    alerts: List[Alert] = []
+    for entry in CPIC_LEVEL_A_PAIRS:
+        variant = _find_variant_by_gene(twin, entry["gene"])
+        if not variant:
+            continue
+        blob = (variant.get("result_label") or "").lower() + " " + (variant.get("genotype") or "").lower()
+        # 保守触发：先查 exclude —— 命中任一否定/反向词即跳过该项，绝不误报。
+        exclude = entry.get("phenotype_exclude_keywords") or []
+        if any(k.lower() in blob for k in exclude):
+            continue
+        if not any(k.lower() in blob for k in entry["phenotype_keywords"]):
+            continue  # 保守：phenotype 标签不明确就不报
+        hit = [m for m in meds if any(dk.lower() in m for dk in entry["drug_keywords"])
+               and not _is_handwritten_pair(entry["gene"], m)]
+        if not hit:
+            continue
+        sev = Severity[entry["severity"]]
+        alerts.append(Alert(
+            rule_id=f"pgx.cpic.{entry['gene'].lower().replace('*', '').replace(':', '')}_{hit[0]}",
+            category="pgx",
+            severity=sev,
+            title=f"{entry['gene']} × {hit[0]} —— CPIC 药物基因组提示",
+            message=entry["message_template"].format(
+                gene=entry["gene"],
+                genotype=variant.get("genotype") or "N/A",
+                phenotype=entry["phenotype_label"],
+                drugs=", ".join(hit),
+            ),
+            action=entry["action"],
+            data_citation={"variant": variant, "meds": hit, "cpic_level": "A"},
+            references=[entry["cpic_url"]],
+            requires_medical_attention=sev >= Severity.HIGH,
+        ))
+    return alerts

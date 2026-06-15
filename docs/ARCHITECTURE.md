@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (10 类 58 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (10 类 59 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -98,7 +98,7 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建、缓存、格式化 |
-| `backend/app/agents/safety_guardian/` | 58 条安全规则引擎(不依赖 LLM) |
+| `backend/app/agents/safety_guardian/` | 59 条安全规则引擎(不依赖 LLM) |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 (Garmin training_readiness 优先, 否则自算 5 维) |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 (Garmin training_status 映射优先) |
 | `backend/app/agents/fuel_strategist/` | TDEE-缺口 + 基因驱动饮食 |
@@ -163,9 +163,9 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  13 Specialists                                               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 58 条确定性规则, 不调 LLM             │   │
+│  │ SafetyGuardian  — 59 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
-│  │   pgx.py (9) training_load.py (3) cgm.py (6)           │   │
+│  │   pgx.py (10) training_load.py (3) cgm.py (6)           │   │
 │  ├─────────────────────────────────────────────────────────┤   │
 │  │ RecoveryCoach  · MovementCoach  · FuelStrategist        │   │
 │  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
@@ -216,17 +216,18 @@
 
 ### Safety Guardian 规则分类(51 条)
 
-`backend/app/agents/safety_guardian/rules/` (8 文件):
+`backend/app/agents/safety_guardian/rules/`:
 
 - `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
 - `labs.py` (7): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别
 - `ddi.py` (7): 药-药相互作用(GLP-1×磺脲, SSRI×MAOI 等)
 - `dsi.py` (7): 药-补剂相互作用(鱼油×抗凝, 钙×铁)
-- `pgx.py` (9): CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR
+- `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动规则, 表数据在 `pgx_cpic_table.py`(纯数据, 无 @register): TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S
 - `training_load.py` (3): ACWR 过载/欠训练/零运动
 - `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
+- `symptoms.py`/`cardiac.py`/`problem_red_lines.py`: 症状急症 + ECG 房颤 + 数据驱动红线
 
-加一 `__init__.py` 自动注册 = 8 文件。数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
+数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
 
 ### 抗衰 / Longevity 子系统(横切 L1-L4 + 闭环 + 群体)
 
