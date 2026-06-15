@@ -81,6 +81,31 @@ async def seed_water_cup(
     return svc.serialize_protocol(svc.create_water_cup_protocol(db, current_user.id))
 
 
+class MealTemplate(BaseModel):
+    name: str
+    meal_type: Optional[str] = None
+    food_items: Optional[str] = None
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fat: Optional[float] = None
+    fiber: Optional[float] = None
+
+
+@router.post("/meal-template")
+async def create_meal_template(
+    tpl: MealTemplate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """饮食域:建预承诺餐模板协议(完成→写 DietRecord,双轨同源)。"""
+    try:
+        p = svc.create_protocol_for_meal_template(db, current_user.id, tpl.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return svc.serialize_protocol(p)
+
+
 @router.post("/from-medication/{medication_id}")
 async def from_medication(
     medication_id: int,

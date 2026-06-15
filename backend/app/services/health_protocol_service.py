@@ -155,9 +155,11 @@ def _write_domain_record(
     按 source_model 分派;失败**向上抛**(不静默,守 Rule #1:不能写库失败还报完成)。
     未配 source_model/source_id → 协议自身事件即记录,返回 None。
     """
-    if not p.source_model or not p.source_id:
+    if not p.source_model:
         return None
     if p.source_model == "medication_logs":
+        if not p.source_id:   # 用药需链接到具体药
+            return None
         from app.services.medication_service import medication_service
         taken_time = datetime.now().strftime("%H:%M")
         actual = (value or {}).get("actual_dosage")
@@ -167,7 +169,23 @@ def _write_domain_record(
             actual_dosage=actual, notes="via protocol",
         )
         return log.id
-    # water_records / diet_records 等适配器:后续 slice 接通(当前协议事件即记录)
+    if p.source_model == "diet_records":
+        # 餐模板:协议先验 implied_quantity 为底,手工轨 value 覆盖(改份量)
+        from app.models.daily_health import DietRecord
+        m = {**(p.implied_quantity or {}), **(value or {})}
+        items = m.get("food_items") or m.get("food_name") or p.name
+        rec = DietRecord(
+            user_id=user_id, record_date=day,
+            meal_type=m.get("meal_type") or "加餐",
+            food_name=(str(items)[:100] if items else p.name),  # NOT NULL
+            food_items=items,
+            calories=m.get("calories"), protein=m.get("protein"),
+            carbs=m.get("carbs"), fat=m.get("fat"), fiber=m.get("fiber"),
+            notes="via protocol",
+        )
+        db.add(rec); db.flush()
+        return rec.id
+    # water_records 适配器后续接通(当前协议事件即记录)
     return None
 
 
@@ -194,6 +212,30 @@ def create_protocol_for_medication(
         "can_default_complete": False,           # R12:用药禁止默认完成
         "source_model": "medication_logs",
         "source_id": med.id,
+    })
+
+
+def create_protocol_for_meal_template(
+    db: Session, user_id: int, template: Dict[str, Any],
+) -> HealthProtocol:
+    """饮食域:预承诺餐模板(PRD §5)。完成(选模板=记一餐)→ 写 DietRecord。
+
+    template:{name, meal_type, food_items, calories, protein, carbs, fat, fiber}
+    """
+    if not template.get("name"):
+        raise ValueError("餐模板需 name")
+    implied = {k: template[k] for k in
+               ("meal_type", "food_items", "calories", "protein", "carbs", "fat", "fiber")
+               if k in template}
+    return create_protocol(db, user_id, {
+        "domain": "diet",
+        "name": template["name"],
+        "mechanism": "pre_commit",               # 预承诺:热量先验已知,不逐餐算
+        "implied_quantity": implied,
+        "cadence": "daily",
+        "completion_mode": "one_tap",
+        "can_default_complete": False,           # 进食需显式确认(只有饮水默认完成)
+        "source_model": "diet_records",
     })
 
 
