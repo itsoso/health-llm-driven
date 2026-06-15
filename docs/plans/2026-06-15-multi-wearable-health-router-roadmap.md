@@ -475,6 +475,27 @@ status
 | `InterventionEvent` / action feedback | 记录提醒和行动执行 |
 | `DietRecord` | 接收 Apple Watch 食物语音结构化记录 |
 
+### 8.3 代码勘察:已建成 vs 真正要新建(别重造,2026-06-15)
+
+> 对照仓库实际代码 —— 本 roadmap 的"建议新建"里有几样**已经存在**,P0 应据此大幅收缩。
+
+| 本文提议的组件 | 仓库现状(文件) | 判定 |
+|---|---|---|
+| **PersonalExperiment 表 + 实验平台(§7,称"壁垒")** | `models/episode.py` + `models/intervention_cycle.py` + `services/intervention_cycle_service.py` + `services/episode/` + SupplementAdvisor 12 周 N-of-1 | ✅ **已建,别重造** —— §7 改为"复用 episode/intervention_cycle,补实验模板即可" |
+| 用 7/30/90 日基线不看绝对值(§3.1) | `services/personal_baseline.py`(#170,z-score 进 Twin) | ✅ 已建 |
+| Device Agreement Score / Dashboard(§4、§9.2) | `services/device_comparison_service.py` 的 `compare_sources()` **已算 per-metric agreement**(1−极差/均值)+ `GET /devices/sources/summary` | ✅ 已建,**扩聚合成 index 即可** |
+| Source Arbitration(§2/§3) | `device_source_priority.py` + `multi_source_merger.py` | ✅ 已建 |
+| NudgeEvent + Silent Nudge Router L2 Apple actionable(§6) | `mobile/services/behaviorLoopReminders.ts`(#175 已上线,镜像到 Watch)+ notification model + `proactive_coordinator`(限流) | 🟡 部分,扩路由 |
+| 统一事件流 / 行动反馈 / 食物 draft 落地 | `models/health_event.py`(`HealthEvent` confidence + 确认/修正状态机 + `EventSource`)—— 本文未提到,但它就是 NudgeEvent/事件捕获的现成家 | ✅ 已建 |
+| Symptom-to-Sensor 因果(§9.4) | `agents/longitudinal_analyst`(干预事件×指标因果) | ✅ 已建(缺事件输入) |
+| Ground-truth(CGM/血压/化验,§11) | `services/cgm/`+6 规则、`medical_exams`、BP/体重 collectors | ✅ 已接入(校准用=新) |
+| DeviceMeasurement 表 | `GarminData.data_source` 漏斗(§8.2 已承认) | 🟡 兼容层在,物化可选 |
+| **`recovery_state_v2` / `training_gate`(决策引擎,§5)** | grep 全仓库**无** | 🔴 **真正要新建**(但 `compute_readiness()` 已返回 0-100 分 + zone rest/light/moderate/hard;`twin.behavioral.acwr_zone` 已有 → 决策灯是薄映射) |
+
+**结论:§12 的 P0「建设 Router」约 70% 已在仓库里。** 真正要写的只有:① 决策引擎 `recovery_state_v2`/`training_gate`(映射已有 readiness zone + acwr_zone + 急性病兜底)② 统一置信度合成(聚合已有 `compare_sources` 的 agreement + cross_source_validator + 新鲜度)③ 腕上输入 → 已有 `HealthEvent` 那条线 ④ Garmin Connect IQ(后置)。其余复用。
+
+> **两处需就地修正**:§6.1 的"L1 RingConn 轻震"——RingConn **无开放 API、震动不可编程**,该层不可由我们主动触发,降级为"靠 RingConn 自带健康震动";§7 的 PersonalExperiment 不是"新建壁垒",是复用已建的 episode/intervention_cycle。
+
 ---
 
 ## 9. 产品模块
