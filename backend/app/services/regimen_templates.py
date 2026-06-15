@@ -32,6 +32,7 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
     "hp_bismuth_quad_14d": {
         "name": "幽门螺杆菌根除·铋剂四联 + PPI 愈合",
         "indication": "胃溃疡 / 幽门螺杆菌阳性",
+        "hp_status": "positive",   # 仅 Hp 阳性适用;Hp 阴性不要用根除抗生素
         "phases": [
             {
                 "name": "根除期",
@@ -63,6 +64,7 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
     "hp_triple_14d": {
         "name": "幽门螺杆菌根除·三联 + PPI 愈合",
         "indication": "胃溃疡 / 幽门螺杆菌阳性(三联)",
+        "hp_status": "positive",
         "phases": [
             {
                 "name": "根除期",
@@ -87,6 +89,24 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
         ],
         "review_on_complete": "根除结束后约消化内科复查:停药≥4 周做 C13/C14 呼气试验确认根除;胃溃疡需复查胃镜确认愈合。",
     },
+
+    # Hp 阴性胃溃疡:PPI 愈合疗程(无抗生素)。锚点用户潘宝坤即此型(活检 HP-)。
+    "gu_ppi_healing_8w": {
+        "name": "胃溃疡 PPI 愈合疗程(Hp 阴性)",
+        "indication": "胃溃疡 / 幽门螺杆菌阴性 —— 不需根除抗生素,PPI 愈合 + 去除诱因(NSAID/应激)",
+        "hp_status": "negative",
+        "phases": [
+            {
+                "name": "愈合期",
+                "duration_days": 56,  # 8 周
+                "meds": [
+                    {"name": "PPI(雷贝拉唑)", "dosage": "10–20mg", "times_per_day": 1,
+                     "reminder_times": _QD_MORNING, "timing_relation": "before_meal_30", "meal_anchor": "breakfast"},
+                ],
+            },
+        ],
+        "review_on_complete": "短期治疗后复查胃镜/活检确认愈合(医生医嘱);排查并去除诱因:NSAID/阿司匹林、酒精、应激;长期 PPI 者评估 B12/镁/骨密度。",
+    },
 }
 
 
@@ -104,11 +124,24 @@ def list_templates() -> List[Dict[str, Any]]:
             "template_id": tid,
             "name": t["name"],
             "indication": t.get("indication"),
+            "hp_status": t.get("hp_status"),   # positive/negative —— 前端/agent 据 HP 状态分流
             "phase_count": len(t["phases"]),
             "phase_names": [p["name"] for p in t["phases"]],
         }
         for tid, t in TEMPLATES.items()
     ]
+
+
+def templates_for_hp_status(hp_status: Optional[str]) -> List[Dict[str, Any]]:
+    """按 Hp 状态过滤模板:
+    - "positive" → 只返回根除方案;
+    - "negative" → 只返回 PPI 愈合(不含抗生素根除);
+    - None/未知 → 返回全部,让用户/医生自行选(不替医生分流)。
+    """
+    items = list_templates()
+    if hp_status in ("positive", "negative"):
+        return [t for t in items if t.get("hp_status") == hp_status]
+    return items
 
 
 def get_template(template_id: str) -> Optional[Dict[str, Any]]:
