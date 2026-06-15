@@ -69,6 +69,7 @@ from app.models.health_report import HealthReport
 from app.models.medication import Medication, MedicationLog, MedicationRegimen
 from app.models.health_protocol import HealthProtocol, HealthProtocolEvent
 from app.models.health_problem import HealthProblem
+from app.models.health_program import HealthProgram
 from app.models.originator_recommendation import OriginatorRecommendation
 from app.models.connection_checkin import ConnectionCheckin
 # 女性健康模型
@@ -200,6 +201,7 @@ __all__ = [
     "HealthProtocol",
     "HealthProtocolEvent",
     "HealthProblem",
+    "HealthProgram",
     # 女性健康模型
     "MenstrualCycle",
     "CycleSymptom",
