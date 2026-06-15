@@ -74,6 +74,7 @@ from app.api import (
     body_composition,
     health_score,
     medication,
+    health_protocol,
     womens_health,
     vision,
     siri,
@@ -211,6 +212,7 @@ api_router.include_router(supplement_products.router, tags=["supplement-products
 api_router.include_router(supplement_audits.router)
 api_router.include_router(health_consultations.router)
 api_router.include_router(medication.router)
+api_router.include_router(health_protocol.router)
 
 # ── Exercise & Activity ────────────────────────────────────────────
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
