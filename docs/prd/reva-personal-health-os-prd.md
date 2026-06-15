@@ -1,317 +1,956 @@
-# Reva Personal Health OS — 全局产品需求说明书(PRD · 合并统一蓝图)
+# Reva Personal Health OS PRD
 
-> **状态**: **v1 合并基线(2026-06-15)。这是唯一权威 PRD**,已把以下全部输入合并、内联成一份自洽文档(下列输入自此降级为历史素材,一切以本文为准;冲突时本文优先):
-> 1. **TO-BE 目标形态** ← Codex 全局 PRD(HealthAgenda / HealthProgram / Router / R1–R10 / WSCLA / 5 入口)
-> 2. **AS-IS 现状基线 + 不变量 + 技术债** ← docs/PRD.md(逐子系统逆向 review,~85% 已建成的复用清单)
-> 3. **容器化/协议化最佳实践 + 手工/协议双轨** ← 产品决策
-> 4. **多轮外部分析**:ChatGPT Pro 8 层框架 + HealthProblem;多模型(数据/状态/计划/执行/复盘五层 + 慢病抗衰循证)→ L1–L4 健康定义、打卡三铁律、状态机护城河、三级通知、n=1 严谨化、临床默认配置附录、诚实声明。
->
-> **本 PRD 的两个原创内核**:① 在 `HealthAgendaItem` 之上引入一等对象 **`HealthProblem`(医学问题登记)** 与 **`HealthProtocol`(协议层)**,形成 `Problem → Program → Protocol → AgendaItem` 完整层级;② **双轨录入模型**(协议轨 + 手工轨,写同一份数据、同一议程,手工永不被取代)。
->
-> **读法**:§1–§3 定方向(定位/原则/架构);§4 一等对象;§5 双轨录入;§6 需求 R1–R16(全自洽);§7 不变量(验收 gate);§8 复用与债;§9 路线图;§10 待拍板;附录 A/B 临床默认配置与同行参考;§11 诚实声明。
+> 状态：v2 可执行基线，2026-06-15
+> 目标：把 Reva 从“健康数据和 AI 功能集合”收敛成一个能每天推动中年人变健康的 Personal Health OS。
+> 本文替代上一版合并蓝图。上一版中的个人健康细节、泛化口号、外部文档依赖和未验证临床默认值不再作为需求依据。
 
----
+## 0. 读者和使用方式
 
-## 1. 北极星与定位(沿用 Codex,确认)
+本文服务三类人：
 
-- **定位**:Reva Personal Health OS —— 面向 35–60 岁中年代谢/恢复人群的个人健康操作系统。承诺不是「回答健康问题」,而是「帮你把每天/每周/每季该做的健康行动安排好、在对的设备上提醒执行、用指标验证是否真变好」。
-- **第一目标用户画像(产品锚点)**:糖前(HbA1c 6.3)× 脂肪肝 × 长期 PPI × 12 药 × 同戴 Apple Watch Ultra 3 + RingConn Gen3 + Garmin Enduro 2(跑步两块同戴)。多模型进一步收窄为「**35–55 高知中年男性,精力恢复 + 慢病自动化管理**」;**对外回避「抗衰」措辞**(已被 NMN/医美污染)。
+- 产品设计：基于本文重新做 IA、三端页面和关键工作流。
+- 工程实现：基于本文拆后端、mobile、Mac app、Web 的迭代任务。
+- Review/验收：基于本文判断 Claude Code 或其他 agent 的实现是否真的落到了产品目标。
 
-### 1.1 健康的四层定义(多模型整合,L1–L4)
-| 层 | 含义 | 关键指标 |
+本文的规则：
+
+- 只写会影响行为、数据、提醒、复盘或安全边界的需求。
+- 临床建议必须有证据来源、适用范围、风险边界和人工确认路径；没有这些，不进入默认产品逻辑。
+- LLM 只做解释、摘要、结构化输入和候选计划生成，不做最终医疗安全裁决。
+- 不在公开仓库写入可识别的个人病史、化验值、用药细节或设备组合指纹。
+
+## 1. 产品一句话
+
+Reva 是面向 35-60 岁中年人的个人健康操作系统。它把可穿戴设备、体检、日程、饮食、运动、用药补剂和主观状态组织成一张“今天该做什么、为什么做、做完如何验证”的 Health Agenda，并用三端协同降低执行摩擦。
+
+它不是：
+
+- 不是健康问答机器人。
+- 不是 Apple Health、Garmin Connect、RingConn 的替代看板。
+- 不是医疗诊断、开方或调药系统。
+- 不是为了连续打卡、徽章、积分而设计的习惯 app。
+
+它要解决的问题：
+
+1. 中年人知道要健康，但每天不知道“今天最该做哪三件事”。
+2. 有很多设备和数据，但数据没有变成行动。
+3. 有行动，但没有复盘机制证明是否真的改善了精力、代谢、恢复和风险。
+4. 有慢病、体检异常或长期用药时，提醒和计划缺少医学边界。
+5. 想长期坚持，但输入太麻烦，提醒太吵，反馈太空。
+
+## 2. 目标用户
+
+### 2.1 第一目标用户
+
+35-60 岁，工作负荷高，有明确健康改善意愿，通常具备以下一个或多个特征：
+
+- 有代谢风险：体重、腰围、血脂、血糖、脂肪肝、血压或尿酸等指标需要长期管理。
+- 恢复变差：睡眠质量、HRV、静息心率、晨起状态、午后困倦或运动恢复明显波动。
+- 已经使用设备：Apple Watch、Garmin、RingConn、智能秤、血压计、CGM、体检报告等。
+- 有长期事项：用药、补剂、专项复查、年度体检、运动训练、饮食控制。
+- 愿意每周投入 15 分钟复盘，但不愿每天花很多时间录入。
+
+### 2.2 不优先服务的人群
+
+- 急性病处理、急救场景和重症监护场景。
+- 需要医生直接远程诊疗的人群。
+- 儿童、孕产妇、专业运动员等需要特殊医学或训练框架的人群。
+- 只想看漂亮数据图、不希望改变行为的人群。
+
+## 3. 北极星指标
+
+### 3.1 结果北极星
+
+产品最终只看两类结果：
+
+- 精力和恢复：主观精力 0-10、睡眠恢复、晨起状态、午后困倦、深度工作时长。
+- 长期风险代理指标：体重、腰围、血压、血糖、血脂、肝肾相关指标、炎症指标、运动能力和复查结果。
+
+产品必须承认：多数行为和指标改善只能证明时间相关，不直接证明因果。复盘文案必须区分“观察到相关”和“已证明有效”。
+
+### 3.2 行为北极星
+
+每周完成的“可验证健康行动闭环”数量。
+
+一个闭环必须同时满足：
+
+- 被安排：出现在 Health Agenda。
+- 被执行：有完成、跳过、自动观测或调整事件。
+- 可解释：知道为什么做，以及没做的原因。
+- 可验证：绑定至少一个后续指标或复查结果。
+- 可追溯：能追到来源对象、证据等级和变更历史。
+
+### 3.3 反指标
+
+以下指标上升不是好事：
+
+- 无效提醒数。
+- 用户手动录入次数。
+- 没有改变计划的数据项数量。
+- 未确认就进入计划的临床建议数量。
+- 设备冲突但被系统静默平均的次数。
+- 计划过载导致的跳过率。
+
+## 4. 产品原则
+
+1. 行动优先：数据只有能改变行动、解释失败或验证结果时才进入核心流。
+2. 被动优先：设备可自动采集的，不要求用户手填。
+3. 低摩擦输入：默认支持语音、照片、一键完成和自动观测；逐量手填作为兜底。
+4. 失败可用：跳过不是坏数据，跳过原因是系统改计划的关键输入。
+5. 医学边界前置：慢病、异常指标、用药和专项复查优先于补剂、外观和泛抗衰。
+6. 三端分工：mobile 负责日常执行，Mac app 负责桌面工作流，Web 负责报告、后台和长周期管理。
+7. 设备不做唯一真相：Apple Watch、Garmin、RingConn 等只是采集源；个人健康数据主权在自有 Health Vault。
+8. LLM 不兜底安全：安全判断由规则、证据、阈值和人工确认兜底，LLM 只生成候选和解释。
+
+## 5. MVP 范围
+
+下一阶段 MVP 只做一件事：Health Agenda。
+
+Health Agenda 是用户今天、这周、这个季度该做的健康行动列表。它从已有数据和计划投影而来，所有端看到同一组 item，所有执行事件回写同一条事件流。
+
+### 5.1 MVP 必须包含
+
+- 后端：Agenda projection API、Agenda event log、状态排序、失败原因枚举、基础审计。
+- Mobile：Today、Agenda、Capture、Review 的最小闭环。
+- Mac app：桌面快速记录、今日计划、导入和复盘入口。
+- Web：长期计划、体检/复查、设备数据质量和隐私/审计入口。
+- 可穿戴：本阶段不强制做独立 Watch app，但必须为 Apple Watch 通知、快捷操作和后续 watchOS companion 留出事件模型。
+
+### 5.2 MVP 不包含
+
+- 不做完整临床知识库。
+- 不做从零训练模型。
+- 不做腕上长对话。
+- 不做全自动诊断、开方、调药。
+- 不做所有设备的深度原生集成。
+- 不做复杂游戏化。
+
+## 6. 核心对象
+
+### 6.1 HealthAgendaItem
+
+统一执行层对象。所有今天该做的事情都投影为 HealthAgendaItem。
+
+必填字段：
+
+| 字段 | 类型 | 说明 |
 |---|---|---|
-| **L1 体征** | 当下参数 | 体重/腰围/血压/RHR/HRV/SpO2/深睡比 |
-| **L2 慢病** | 病灶进展 | 鼻炎发作频率、脂肪肝、肾结石、甲状腺/肺结节、ALT/GGT/尿酸 |
-| **L3 精力** | 每日可用能量 | **主观精力 0–10(北极星)**、深度工作时长、午后困倦 |
-| **L4 Healthspan** | 10 年复利 | **ApoB、Lp(a)、hs-CRP、HbA1c、同型半胱氨酸** |
+| id | string | Agenda item ID，稳定可审计 |
+| user_id | string | 当前用户，所有查询强制过滤 |
+| title | string | 用户可读标题，例如“晨起血压测量” |
+| domain | enum | hydration、diet、sleep、training、medication、supplement、measurement、checkup、review、data_quality、safety |
+| priority | enum | P0、P1、P2、P3 |
+| status | enum | pending、completed、skipped、snoozed、adjusted、auto_observed、expired |
+| scheduled_for | datetime | 推荐执行时间 |
+| time_window_start | datetime | 可执行时间窗开始 |
+| time_window_end | datetime | 可执行时间窗结束 |
+| source_type | string | 来源类型，例如 DailyPlan、MedicationSchedule、HealthProblem、HealthProtocol |
+| source_id | string | 来源对象 ID |
+| reason | string | 为什么今天要做 |
+| evidence_level | enum | A、B、C、D、personal |
+| safety_level | enum | normal、needs_confirmation、medical_review、urgent |
+| automation_path | enum | healthkit、garmin、ringconn、manual、voice、photo、external_device、lab_upload、calendar |
+| expected_signal | json | 完成需要的信号，例如一次血压记录、一次 workout、一次用药确认 |
+| outcome_links | json | 绑定的指标、Program 或 Problem |
+| created_at | datetime | 创建时间 |
+| updated_at | datetime | 更新时间 |
 
-### 1.2 双层北极星
-- **结果北极星(最终裁决)**:**L3 主观精力 0–10 的 30 日移动均线** + **L4 抗衰生化(ApoB/hs-CRP/HbA1c)**;评价标准只有一个——**3–6 个月后 L3 与 L4 能否同时改善**。
-- **行为北极星(过程量,= 原 WSCLA)**:每周完成的、**安全 + 证据可追溯 + 被安排 + 已执行 + 可验证**的健康行动闭环数量。
-- **护城河判断**:只在 L1 转的产品 = Apple Health 看板,卷不过原生;**真壁垒在 L3+L4 的个人纵向归因**(状态机 + 「打卡→改变下一次决策」闭环)。
+排序规则：
 
----
+1. safety_level 为 urgent 或 medical_review 的排最前。
+2. priority P0 > P1 > P2 > P3。
+3. 时间窗即将关闭的排前。
+4. 有明确医生要求、复查到期或用药安排的排前。
+5. 低证据补剂、体验型实验和外观目标不能压过医学问题、睡眠恢复和训练安全。
 
-## 2. 核心设计原则(合并三源)
+### 6.2 AgendaEvent
 
-**来自 AS-IS 不变量(必须保留)**:① 确定性优先,LLM 只合成;② 不假装成功(写前确认、撞药不静默);③ 医疗边界(不诊断/开方/调量、分级措辞、claim_boundary);④ 行为闭环 + N-of-1 验证;⑤ 删码优先、复杂度预算。
+所有端对 item 的操作都写 AgendaEvent，不直接改业务事实。
 
-**来自 Codex(收敛纪律)**:⑥ 任何新增需求必须能落到 **HealthAgenda / HealthProgram / HealthRouter** 三者之一,否则不做;⑦ 三端分工(Mobile 主体验 / Mac 工作台 / Web 后台 / Watch 执行)。
+必填字段：
 
-**第一性原理(ChatGPT Pro 反馈,定问题)**:健康产品要解决的不是「不知道怎么做」,而是四个断点 —— **① 知道但不执行**(缺执行环境)**② 执行但不可见**(缺自动采集)**③ 有数据但不决策**(数据垃圾)**④ 优化但缺医学边界**(慢病/结节需诊断/随访/阈值)。一句话定位:**让正确的健康行为在正确时间以最低认知成本自动发生,并把慢病风险纳入长期闭环。** 成功标准不是「用户打开多少次」,而是「用户不用打开,健康行为仍稳定发生」。
-
-**本文新增(整合关键)**:
-> ⑧ **双轨录入,手工与协议同为一等公民。** 每个环节同时支持「**协议轨**」(固定容器 / 预承诺 / 被动设备 → 完成式/自动观测)与「**手工轨**」(逐量录入,随时可用)。两轨**写同一份底层记录、同一条 agenda 事件**;outcome 不关心来自哪轨。**协议永不取代手工,只是默认更省力的那条路。**
-> ⑨ **医学边界优先 + 优先级排序。** 慢病/结节不是「每日习惯」而是「标准化随访 + 红线阈值 + 升级路径」。注意力排序硬性为 **医学风险控制 > 代谢改善 > 睡眠恢复 > 运动能力 > 皮肤/外观/抗衰**;抗衰/补剂/基因不得抢占 P0/P1 医学问题的注意力。
-> ⑩ **打卡第一性原理(决定要不要记)。** 一个观测只有同时能 ①验证关键行为发生 ②(未发生时)解释失败原因 ③改变下一步计划,才值得存在。**不改变下一步行动的打卡一律删除。** 终极目标是打卡被环境/设备替代到「消灭自己」。
-> ⑪ **失败是系统参数,不是人格。** 完成事件必须能捕获**失败原因**(没时间/忘了/物品不在/太累/地点不对/计划太难/身体不适/社交打断),系统据此**自动纠偏协议**(改时间/补耗材/降目标),措辞是「系统哪里设计得不够好」而非「你失败了」。
-> ⑫ **证据等级 A/B/C/D。** 每条协议/建议标证据级(A 指南强推/医生要求 · B 较好证据低风险 · C 个人实验有逻辑 · D 体验型不影响核心),低证据项不得污染核心健康决策。
-> ⑬ **打卡三铁律(多模型决断版)**:**被动 > 主动**(传感器能抓的绝不让用户点)· **物理 > 数字**(2000ml 杯/7 格药盒/Box 餐让「目标完成」物理性完成)· **可归因 > 连续天数**(每条数据必须**至少触发状态机一个分支**,否则就是噪声;不为 streak 服务,只为「3 个月后能告诉你做了 X 所以 Y 改善」服务)。这是原则 ⑧⑩⑪ 的统一收口,也是协议轨的理论根基。
-> ⑭ **数据自持(数字资产主权)**:原始数据进**自己的 DB**(极简时序 schema `ts,category,metric,value,unit,source,confidence`),设备/SaaS 只作显示终端与采集源(**单向推 Garmin,不让 Garmin Connect 成为唯一存储/黑洞**);被动传感器矩阵优先(腕表+戒指+床垫+CO2+季度 CGM);基因 raw data 端到端加密、**不上传通用 LLM**。设备生命周期 < 数据生命周期。
-
----
-
-## 3. 主循环与信息架构(沿用 Codex,插入协议层)
-
-```text
-✦ Health Problems(医学问题登记:慢病/结节/异常 → 风险分层 + 红线 + 随访 + 升级)  ← 本文新增,目标/边界层
-  ↓ (问题驱动目标)
-Data In(穿戴/HealthKit/Garmin/RingConn/BP/秤/CGM/化验/食物/语音/症状/日历)
-  ↓
-Health Vault + Source Arbitration(归一 + winning_source + freshness + confidence)
-  ↓
-Health Twin + Snapshot(当前态 + 基线 + 风险 + 不确定度)
-  ↓
-Health Programs(代谢/恢复训练/睡眠/用药补剂/检查 —— 8–12 周目标容器)
-  ↓
-✦ Health Protocols(每域用户选定的最佳实践:容器/预承诺/被动/环境默认)  ← 本文新增层
-  ↓
-Health Agenda(today/week/month/quarter 的 HealthAgendaItem,由 Problem×Program×Protocol 投影)
-  ↓
-Surface Router(Watch 执行 / Mobile 主体验 / Mac 复盘 / Web 后台 / external agent)
-  ↓
-Execution Events(completed/skipped[+失败原因]/adjusted/auto_observed/confirmed)  ← 双轨合流
-  ↓
-Operating Review(7/30/90 outcome + 个人响应 + 协议纠偏 + 下一议程)
-  ↓
-✦ Safety & Escalation(红线阈值命中 / 复查到期 / 趋势恶化 → 医生/科室/急诊路径)  ← 贯穿层
-```
-
-> **对齐 ChatGPT 8 层框架**:目标层 = Problems 的目标函数;医学边界层 = Problems 的风险分层+红线;数据感知层 = Data In + Router;协议层 = Protocols;规划层 = Programs+Agenda;执行层 = Surface Router(可穿戴轻中断);反馈控制层 = Operating Review(每周一次,非每天深度);安全升级层 = Safety & Escalation。
->
-> **对齐多模型 5 层工程视图**:数据层(自持 Data Lake + 被动传感器矩阵,原则 ⑭)· **状态层(= 真护城河:DAG + 规则引擎 + LLM「信息索取」三明治,LLM 不出诊断只索取信息;PRS/PGx 作先验权重调阈值;干预设 7–14 天 washout)** · 计划层(Program×Protocol 供应链工程)· 执行层(三级通知预算)· 复盘层(15 分钟 3 问 + n=1 A/B/A/B + L1↔L4 对账)。我们现有 orchestrator/specialists 确定性裁决 + personal_baseline 即状态层雏形;缺的是 washout/对账/状态机回测的严谨化。
-
-**Mobile 5 一等入口(沿用 Codex)**:Today / Agenda / **Capture(双轨录入入口)** / Programs / Review(其中 Programs 视图含「健康问题」子页)。
-**三端分工(沿用 Codex)**:Mobile 主体验;Mac 桌面工作台/导入复盘;Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行器;小程序降级历史兼容。
-
----
-
-## 4. 一等产品对象(Codex 三个 + 本文两个)
-
-沿用 Codex:**`HealthAgendaItem`**(从现有模型投影的统一执行层,字段见 Codex §5.1,含 `device_context.automation_path: healthkit|garmin|manual|...` —— **manual 本就是一条合法路径**)、**`HealthProgram`**(5 类:代谢/恢复训练/睡眠/用药补剂/检查)、**`Personal Health Router`**(指标级 winning_source/freshness/reliability/agreement/safety_policy)。
-
-完整对象层级:**`HealthProblem`(医学问题/目标)→ `HealthProgram`(8–12 周容器)→ `HealthProtocol`(每域怎么做)→ `HealthAgendaItem`(今天何时做)→ Execution Event(双轨合流)**。
-
-### ✦ 4.1 新增一等对象:`HealthProblem`(医学问题登记 —— Health OS 与 habit tracker 的分水岭)
-
-ChatGPT 反馈的最强论点:慢病/结节/异常不是「每日打卡」,而是**标准化随访 + 风险分层 + 红线阈值 + 升级路径**。普通 habit tracker 没有这层,Health OS 必须有。它是目标层 + 医学边界层的载体,**驱动** Program / Protocol / Checkup Planner。
-
-```yaml
-HealthProblem:
-  id; user_id
-  name: 鼻炎 | 肥胖 | 脂肪肝 | 高血压 | 肾结石 | 甲状腺结节 | 肺结节 | 糖尿病前期 | ...
-  risk_level: P0 | P1 | P2          # 医学风险优先级(P0/P1 压过抗衰/外观)
-  status: active | monitoring | resolved
-  diagnosis: {分型/分期, 证据来源(影像/化验/症状), evidence_grade: A|B|C|D}
-  risk_stratification: 标准化框架引用   # 甲状腺→ACR TI-RADS;肺结节→Fleischner;脂肪肝→纤维化分期
-  red_lines: [{metric, threshold, action}]   # 红线阈值 → 命中即升级(对接 Safety Guardian)
-  responsible: {doctor/科室}          # 耳鼻喉/内分泌/消化/泌尿/呼吸/心内…
-  managing_programs: [program_id]      # 由哪些 Program/Protocol 管理(如脂肪肝←代谢 Program)
-  follow_up: {last_checkup, cadence, next_due, what_to_check}  # 随访日历(投影成 Agenda)
-  escalation_path: string             # 异常/到期/恶化 → 谁、做什么
-  evidence_tier: A | B | C | D
-```
-
-要点:
-- **复查产品化**:`follow_up.next_due` 自动投影成 Agenda item;到期/红线命中 → Safety & Escalation 层升级。把「上次查/风险分层/下次查/医生结论/到期提醒/异常升级」闭环 —— 这正是 Codex R7(Checkup Planner)的上游驱动。
-- **优先级守门**:`risk_level` 让 Agenda 排序时 P0/P1 医学问题压过抗衰/补剂(原则 ⑨)。
-- **不诊断红线**:风险分层引用权威框架(TI-RADS/Fleischner/NAFLD 分期),系统**呈现 + 随访 + 升级**,不替代医生分级/诊断(原则 ③)。
-
-### ✦ 4.2 新增一等对象:`HealthProtocol`
-
-`HealthProtocol` 是用户为某个域**一次设定的最佳实践**,它把「量」外包给容器/预承诺、把「采集」外包给被动设备,然后**投影出 HealthAgendaItem**。它位于 Program 与 Agenda 之间:`HealthProgram(长期目标) → HealthProtocol(怎么做,每域) → HealthAgendaItem(今天何时做)`。
-
-```yaml
-HealthProtocol:
-  id; user_id
-  domain: hydration | diet | sleep | training | medication | supplement |
-          measurement | mood | activity | checkup
-  name: "2000ml 温水杯" | "Wagas 标准餐" | "周二四六晨 Zone2" | "周药盒" | "生日周年度体检"
-  status: active | paused | archived
-  mechanism: fixed_container | pre_commit | passive_device | environment_default  # 量为何隐式
-  implied_quantity: {...}        # 协议先验(2000ml/50°C;模板 kcal+protein;课表 zone+时长)
-  completion:
-    protocol_track:              # 协议轨:完成如何隐式判定
-      mode: auto_observed | device_synced | one_tap
-      signal: "杯子喝完一键✓" | "Garmin workout 同步" | "智能秤上传" | "药盒格子取空"
-    manual_track_allowed: true   # 手工轨:始终为 true(双轨原则 ⑧)
-  cadence: daily | per_meal_slot | weekly | event_triggered | quarterly | annual
-  time_window: morning | noon | afternoon | evening | bedtime | anytime
-  adjustable_by: [decision_light, cadence_engine, safety_guardian]   # 参数当天可被动态调
-  verification: {metric_codes: [...], window_days: int}
-  links: {program_id, source_models: [DietRecord|WaterRecord|WorkoutRecord|MedicationLog|...]}
-```
-
-要点:
-- **协议轨 + 手工轨写同一 `source_models`**(同一份 DietRecord/WaterRecord/…),并发同一条 agenda `Execution Event`。Review/outcome 统计天然无视来源。
-- 协议**只固定「量与默认」,不固定「强度/时机」**——那些交给 `decision_light`(训练强度)与 `cadence_engine`(检查/复查到期)动态调(`adjustable_by`)。
-- 缺协议时,该域仍可纯手工录入(手工轨独立成立)。
-
----
-
-## 5. 双轨录入模型 —— 每个环节的最佳实践(本文核心)
-
-每域同时给出:**协议轨**(默认省力路径,落实「容器化/协议化」)与**手工轨**(随时可用的逐量录入)。两轨等价写库。⚙️=已建可复用 / 🔜=待建。
-
-| 域 | 协议轨(默认,低摩擦) | 完成判定 | 手工轨(始终可用) | 复用/待建 |
-|---|---|---|---|---|
-| 💧 饮水 | 2000ml 温水杯(矿泉+沸水兑 50°C),全天喝完 | 一键「今日水杯 ✓」/默认完成,只标未完成 | `+250ml` 计量录入 | water quick API ⚙️;杯协议 🔜 |
-| 🍱 饮食/减肥 | 3–5 个标准餐模板(低 GI/高蛋白,先验 kcal+protein);选模板=记一餐 | 选模板一下;缺口=模板和−Garmin 被动消耗 | 拍照识别 / 文本 / 语音逐餐估算 | recognize-and-save / 语音解析 ⚙️;餐模板 🔜 |
-| 😴 睡眠 | 固定起床锚点 + 固定睡前触发(关屏/手机出卧室/恒温) | RingConn 24h 被动测(零录入);只确认睡前流程是否按时启动 | 手填上床/起床/质量 | RingConn 多源摄入 + 睡眠分析 ⚙️;睡前协议信号 🔜 |
-| 🏃 运动 | 固定训练档期 + 默认课表;强度交给决策灯当天调 | Garmin 被动记录;去做即可 | 手填运动类型/时长/RPE | recovery_decision(GREEN/YELLOW/RED P0)⚙️;workout_sync ⚙️;课表协议 🔜 |
-| 💊 用药 | 方案模板录入排时点 + 周药盒;到点提醒 | 手腕一键「已吃」/药盒取空 | 手动加药 + 逐次服药日志 | 用药自动驾驶(#174/#176)⚙️;阶段切换 P1b 🔜 |
-| 💊 补剂 | 一周一次分装入周药盒(装什么由 N-of-1 定) | 取空即达成 | 逐次补剂打卡 | supplement N-of-1 ⚙️;分装协议+图 🔜 |
-| 📋 体检/专项 | 固定年度档期 + 标准 panel;病情驱动加项(HbA1c q3–6 月、长期 PPI→B12/镁/骨密度、脂肪肝→肝功+超声)自动排 | 节律引擎排期 + 到期提醒;结果 OCR 入趋势 | 手动上传体检报告 | 5 通道化验录入 + 复查映射 ⚙️;Checkup Planner(R7)🔜 |
-| ⚖️ 测量(体重/血压/血糖) | 连接式设备 + 固定触发点(晨起踩秤/晨咖啡后测压/季度 CGM 战役) | 设备自动同步,零手记 | 手填体重/血压/血糖 | 多源摄入 + measurement_automation ⚙️;连接设备协议(R6)🔜 |
-| 🧠 情绪/压力 | HRV 被动兜底(RingConn);只异常打标 | 异常一键事件(心悸/焦虑,带时间戳) | 手填情绪/精力/压力 | HealthEvent 事件流 ⚙️;一键打标 surface 🔜 |
-| 🚶 日常活动 | 环境默认(站立办公)+ 饭后固定散步 | 步数任意穿戴被动;饭后步行 nudge 确认 | 手填步数/活动 | behaviorLoopReminders ⚙️;环境协议 🔜 |
-
-> 设计含义:**Capture 入口(Mobile 第 3 入口)= 一个域选择器 + 双轨切换**。默认呈现协议轨的「✓ 完成」式交互;手工轨永远一个点击之遥。Today/Agenda 上的 item 既可被协议轨自动/一键满足,也可被手工录入满足。
-
-**每条完成事件捕获最少字段(原则 ⑩⑪)**:`是否完成` + `量/剂量`(协议轨为先验,可省)+ `未完成时的失败原因`(没时间/忘了/物品不在/太累/地点不对/计划太难/身体不适/社交打断);症状类加一个 0–10 评分(鼻塞/精力/疼痛/睡醒恢复感)。**失败原因驱动协议自纠偏**(见 R14),不制造羞耻。
-
-**协议轨的医学边界精修(每域不只降摩擦,还要守证据,对接 §4.1 HealthProblem 的 red_lines)**:
-- 🤧 **鼻炎**:洗鼻**必须用蒸馏/无菌/煮沸冷却水**(CDC,未处理水有罕见致命感染风险)—— 协议把「安全水源」设成默认耗材;剂量/频率/品牌**保持可调**(症状+医生校准),不固化成唯一真理;过敏性鼻炎药物/免疫治疗按指南走 HealthProblem。
-- 🍱 **脂肪肝**:用**结果指标**不只「我少吃了」—— 减重 3–5% 改善脂肪变性,改善炎症/纤维化常需 **>10%**(AASLD);进 HealthProblem 的 verification。
-- 💧 **饮水(有结石史)**:目标从「喝了多少」升级为「**尿量 ~2.5L / 尿色稀释**」(NKF)+ 结石成分个性化;2000ml 杯是默认最低协议,最终按 24h 尿液/医生调。碱性水不进核心。
-- ⚖️ **血压**:医学级协议,看**周均值**不看单次,固定姿势/时段;连续异常 → 升级,不自行停药(AHA)。
-- 🏃 **运动**:补**力量(每周≥2 次主要肌群)+ 柔韧**,WHO 每周 150min 中强度(或 75min 高强度);只跑步是盲区。
-- 🧬 **基因**:ACCE 框架(分析效度/临床效度/临床效用/ELSI);v1 只做「少量高置信、可行动」解读 + 需医生/遗传咨询确认,不做全量 AI 解读(防解释幻觉)。
-
----
-
-## 6. 需求清单 R1–R16(自洽,本节即完整需求)
-
-**R1–R10(目标形态需求,源自 Codex,已内联)**:
-- **R1 Health Agenda 服务端统一层**:把 Daily Plan/ActionCard/InterventionCycle/Reminder/Medication/Supplement/Training/Measurement/ReviewSchedule 统一成可查询/执行/审计的议程;`GET /agenda/today`、`/agenda/range`、`POST /agenda/items/{id}/events`、`/agenda/rebuild`;item 引用 source object 不复制业务事实;三端看到同一批 item,任一端完成全端同步。
-- **R2 时间/日程驱动**:支持时间窗(起床后/饭后/运动前/睡前/周末/季度复查)+ cadence(日/周/月/季/8-12 周/异常触发)+ event-triggered(饭后 20-40min/训练后/睡眠同步后/体检上传后)+ quiet hours + calendar-aware 占位。
-- **R3 Multi-Wearable Router v2**:指标级输出 winning_source/agreement/freshness/confidence;训练决策用 recovery_decision 的 green/yellow/red 作 Agenda input;冲突降置信不平均;设备缺失生成 data_quality item;安全指标保留多源证据。
-- **R4 Apple Watch Wrist Companion**:Today Status(灯+置信+最重要行动)/Action Feedback(完成/跳过/稍后/调整)/Food Voice Capture/Quick Record/Smart Stack-Complication/分级通知;**不做**腕上长对话/影像/本地诊断/常驻监听;不开 iPhone 也能完成今日最重要反馈。
-- **R5 Food Voice Capture 协议**:语音记食物成稳定事实流(raw_text/source/meal_type/foods[]/confidence/risk_tags/confirmation_state);v1 不新表,写 DietRecord + raw 入 notes;腕上最多追问 1 个问题;不追克级精确,优先长期行为分析。
-- **R6 Measurement Automation Protocol**:每个测量 item 带 automation_path(vendor/HealthKit 自动 > 外部设备 > 手动 > 提醒上传);袖带血压/智能秤/化验为 ground truth,穿戴趋势只触发提示;过期指标自动进 Agenda。
-- **R7 Checkup & Specialty Screening Planner**:按年龄/性别/家族史/既往异常/症状/可穿戴异常/医生指令生成检查建议(区分 wellness/复查/就诊/急性红旗),输出 项目+时间窗+理由+来源+风险边界+是否需医生确认,全进 Agenda;不越界为诊断。
-- **R8 Training Prescription & Readiness Gate**:recovery_decision green/yellow/red 作训练 gate;输入 RingConn 睡眠/HRV/SpO2/皮温 + Garmin readiness/load/recovery + Apple 活动/主观疲劳 + 症状;训练前 30-60min 在 Watch/Mobile 出现;训练后捕获 RPE/疼痛 + Garmin workout 事实;**急性病/低氧/症状优先于 Garmin readiness**。
-- **R9 Outcome Proof**:每个 Program 绑 primary/secondary metrics;每个 action 标是否影响 outcome;7/30/90 复盘 = 执行率+指标变化+复查结果+个人响应强弱+下周期调整;temporal association 明确「非因果」;代谢周期输出 baseline→latest→target。
-- **R10 三端职责**:Mobile 主体验(Today/Agenda/Capture/Programs/Review + HealthKit/Watch 配对/语音/照片饮食);Mac 深度工作台(快速记录/导入/Agent 长对话/Trace,不复制健康判断);Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行;OpenClaw/MCP 受控外部入口(最小权限+审计)。
-
-**R11–R16(本 PRD 新增)**:
-- **R11 HealthProtocol 协议层 + 双轨录入**
-  - 新增 `HealthProtocol`(§4.2),Program 与 Agenda 间的投影层;每域可选/可空。
-  - **每个 Capture 域必须同时实现协议轨 + 手工轨**,两轨写同一 `source_models` + 同一 agenda event;验收:同一 item 用任一轨完成,Today/Agenda/Review 表现一致,outcome 不区分来源。
-  - 协议参数可被 `decision_light`/`cadence_engine`/`safety_guardian` 动态调;协议保持可校准(症状+医生反馈,原则 ⑪)。
-  - R5/R6/R7 是 R11 在「食物/测量/检查」域的具体实例,统一在 `HealthProtocol.mechanism` 下表达,避免各做一套。
-- **R12 协议健康度护栏**:协议轨「完成式确认」不得退化为「假装完成」——若协议依赖被动设备而设备无数据(如戒指昨晚没戴),不得静默判完成,须产 `data_quality` agenda item(对齐 Codex R3 + Rule #1)。各域**「可否默认完成」需逐一定义**:饮水可默认完成只标未达;用药/测量**禁止默认完成**(必须显式信号/设备数据)。
-- **R13 HealthProblem 登记 + 复查/升级产品化(分水岭需求)**
-  - 新增 `HealthProblem`(§4.1):用户医学问题清单(慢病/结节/异常)带风险分层(TI-RADS/Fleischner/NAFLD 分期)、红线阈值、负责科室、随访 cadence、升级路径。
-  - `follow_up.next_due` **自动投影成 Agenda item**;红线命中 / 到期 / 趋势恶化 → **Safety & Escalation 层**升级到医生/科室/急诊路径。
-  - `risk_level` 参与 Agenda 排序,P0/P1 医学问题压过抗衰/补剂(原则 ⑨)。
-  - R7 Checkup Planner 是本需求的下游执行;复用现有复查映射(medication_course_service)+ 5 通道化验录入。
-  - 验收:用户能看到一张「健康问题 × 风险 × 下次复查 × 负责科室」的表,且无逾期失访;系统呈现风险分层但**不替代医生诊断**。
-- **R14 失败原因捕获 + 协议自纠偏**:完成事件捕获 `skip_reason`(枚举);连续偏离触发系统动作(连 2 天没洗鼻→改时间/查耗材;连 3 天饮水不足→晨起强制装杯;连 7 天体重均线升→下周热量下调;连 2 周鼻炎评分高→建议复查)。措辞「系统哪里设计不够好」,不羞辱用户。复用 InterventionEvent(已有 skipped 状态,补结构化原因)。
-- **R15 三级通知预算(多模型)**:提醒是稀缺中断预算。**P0 必响应**(腕表强震+手机:处方药/复查当天/异常血压,**≤3 条/周**)· **P1 可忽略**(腕表轻震:运动开始/睡前降光/补水不足,不要求确认)· **P2 纯日志**(不推送:步数/体重同步,周复盘看)。睡前 90min 后仅 P0;周主动提醒 ≤15 条。升级现有 `proactive_coordinator`(从单一全局周预算 → 分级预算)。
-- **R16 n=1 严谨化(多模型)**:升级现有 episode/intervention_cycle 为 **A/B/A/B crossover + 3–14 天 washout + 7 日移动均线/30 日基线 Z-score 去噪 + L1↔L4 季度对账**(L1 代理指标失真则换);新干预 14 天评测通过才固化进状态机,失败回滚。涉处方药/激素的实验必须医生在场。诚实标注置信度(见 §11)。
-
----
-
-## 7. 不可变约束(从 AS-IS PRD §6 承继,重设计验收 gate)
-
-> 任何重设计不得破坏。详见 [`docs/PRD.md` §6](../PRD.md) + `AGENTS.md` + `docs/governance/*`。
-
-- **医疗安全**:不诊断/开方/调量;确定性规则裁决安全(LLM 不参与「能否吃/是否告警」);高危 CRITICAL + requires_medical_attention + 引导就医;**引入新药写入前必过 DDI 闸门**;无数据 short-circuit 不让 LLM 编;补剂/抗衰带 claim_boundary;HFE 等硬阻断保留。
-- **隐私**:L3 健康/L4 密钥分域加密 + 访问审计;日志脱敏;**所有查询强制 user_id 隔离**;基因 genotype 列加密;Mental Health Tier 5(原始文本不出 specialist/不上外部 LLM);家庭代管须 proxy JWT;用户可导出/删除/撤权。
-- **韧性**:审计/记忆/KG 全旁路失败不影响主流程;Twin 缺数据降级而非报错;provider 故障回退。
-- **工程**:移动端只走 RN;部署健康度 <35 自动回滚;CI 四道闸 + doc-drift;单文件 ≤500 行(约定)。
-- **Codex §8.2 上线前技术 review gate**:旧 `/user/{id}` 越权面、Web XSS、localStorage token、SSH host key、依赖审计。
-
----
-
-## 8. 复用与技术债(从 AS-IS PRD §7,重设计「收口而非重造」)
-
-**核心判断(两份 PRD 一致)**:四层内核已验证,且 Codex/AS-IS 都确认**多数「看似要造的」已建成 ~80%** —— `TwinSnapshot`/`BiomarkerObservation`/`InterventionCycle`/Daily Plan 反馈/7-30-90 Review/多源 Router 底层(source priority/merge/comparison/recovery_decision)/HealthEvent 事件流/复查映射/N-of-1 实验平台**都已存在**。重设计 = **收敛到 Agenda + 产品化 Router + 协议层统起来**,不是从零补表。
-
-**中年健康盲区(ChatGPT 反馈,产品域缺口,优先级见原则 ⑨)**:
-- **力量/肌肉量**(只跑步不够,肌肉是代谢/血糖/抗衰/防伤核心)· **腰围/内脏脂肪**(比体重更反映代谢风险)· **口腔健康**(牙周炎×慢性炎症×睡眠,需洁牙/牙线协议)· **室内空气/环境**(PM2.5/湿度/温度/CO2,影响鼻炎/睡眠/精力,应自动采集)· **精神压力/认知负荷**(精力管理当一等公民)· **补剂-药物相互作用**(记「为什么吃/预期改善哪个指标/是否冲突/何时停评」而非只「吃没吃」)。
-
-**必须在重设计中处理的债(AS-IS §7)**:
-- 能力:个人预测模型未落地;多源置信度未回灌 Twin(R3/R11 解决);统一节律日历缺失(R2/R7/R13);长期 PPI 安全规则空白;用药阶段切换 P1b 未做;**慢病/结节复查未产品化(R13 解决,Health OS 分水岭)**;watchOS 无代码(R4);Android 一等缺口。
-- 多模型新增能力缺口:**数据自持/原始数据进自有 DB + 单向推 Garmin**(原则 ⑭,当前依赖 Garmin Connect/HealthKit 透传)· **被动传感器矩阵扩容**(戒指/床垫/CO2 室内环境/季度 CGM)· **三级通知预算 P0/P1/P2 + 硬上限**(R15,当前 proactive_coordinator 只有全局周预算无分级)· **n=1 严谨化**(A/B/A/B crossover + washout + L1↔L4 对账,当前 episode/intervention_cycle 无 washout/对账)· **力量训练域缺失**(只跑步,抗肌少盲区)· **基因解读外包 PRS/PGx**(SLCO1B1→他汀,不自研 LLM 解读)。
-- 正确性:**决策强度三套口径(rest…peak / zone / intensity / 新 GREEN-YELLOW-RED)未收口** → 重设计统一到 `recovery_decision` 一处,作 Agenda/Protocol 的训练 input(R8);无 LLM-as-judge eval;意图/needs_skill 纯正则脆弱;症状匹配无否定检测。
-- 代码债(可独立清):`fuel_strategist` 死代码;Twin `_collectors.py` 过渡债 + cache TTL 注释漂移(5min vs 60s);`family_health.py` 1110 行超预算;`cross_source_validator` σ 死代码;**CLAUDE.md feature-parity 表严重过时(mobile ~15 vs 实况 ~60)**。
-
----
-
-## 9. 路线图(Codex P0–P5 + 协议层/双轨嵌入)
-
-| 阶段 | 内容(Codex)+ 本文增补 |
-|---|---|
-| **P0 PRD/IA 收敛** | 确认本蓝图为单一来源;收敛文档(本文 + Codex PRD + AS-IS PRD + plans 的关系钉死);清 §8 代码债中的「parity 表过时 / cache 注释 / fuel 死代码」 |
-| **P1 Health Agenda MVP** | R1 Agenda projection API + event table(先 projection 后物化)+ **R11 `HealthProtocol` 模型 + 双轨录入(先做饮水/饮食/用药三域)**;决策灯接 Agenda(收口三套强度口径) |
-| **P2 Wearable Router + Training Gate 产品化** | R3 + R8;置信度回灌 Twin;决策灯双 surface(Apple 通知/Complication + Garmin Connect IQ,因跑步两块同戴) |
-| **P3 Food Voice Capture + Watch Companion v1** | R4 + R5(= R11 在食物域的实例);腕上协议轨「✓ 完成」+ 一键打标 |
-| **P4 Measurement / Checkup Planner** | R6 + R7(= R11 在测量/检查域);病情驱动检查日历(补长期 PPI 监测);连接设备协议 |
-| **P5 Outcome Proof + 商业化试点** | R9;Program 级 baseline→latest→target;协议依从×指标改善关联 |
-
-> 建议先做 P1 的 **`HealthProtocol` + 双轨(饮水/饮食/用药)**:最小、即时见价值、且把「最佳实践哲学」落成可演进的抽象,后续各域照搬。
-
----
-
-## 10. 待拍板(Codex §13 + 本文新增)
-
-沿用 Codex 7 问(Agenda 为核心对象?MVP 聚焦代谢+恢复+测量复查?Watch v1 还是先镜像?Agenda 先 projection 后物化?小程序降级?Web 停新主体验?高风险人审谁担?)。
-
-**本文新增**:
-1. **协议层 P1 首批做哪三域?** 建议 饮水 / 饮食 / 用药(覆盖容器、预承诺、被动三种 mechanism,且用药已建大半)。
-2. **手工轨在 UI 上的呈现**:默认折叠在协议轨「✓」之后(一点展开),还是 Capture 内并列双 tab?(建议前者:协议默认、手工一点即达)
-3. **餐模板从哪来**:用户自建 / 预置(针对糖前+脂肪肝的低 GI 高蛋白模板库)/ 接外部食物库?(建议 v1 预置 + 自建,外部库 v2)
-4. **协议轨「默认完成」的边界**:饮水可默认完成只标未达;但用药/测量这类**不能默认完成**(必须显式信号或设备数据),否则违反 R12/Rule#1 —— 各域的「可否默认完成」需逐一拍板。
-5. **HealthProblem 首批登记哪些**:建议先录你已知的 P0/P1(脂肪肝/糖前/长期 PPI/血压;若有结节则甲状腺/肺结节)—— 这批直接驱动复查日历与升级。其余慢病(鼻炎等)按需补。
-6. **复查/升级的人审由谁担**(同 Codex 第 7 问):自己 / 医生顾问 / 还是 v1 只做「建议就医+生成可带给医生的摘要」?(建议 v1 后者,最安全)
-
----
-
-## 附录 A:临床默认配置(多模型 + 循证,填充 HealthProblem.red_lines / follow_up 与 HealthProtocol 默认参数)
-
-> 证据级 **[A]** 多 RCT/Meta+强指南 · **[B]** 单 RCT/大样本观察 · **[C]** 机制合理人体证据不足。这是 OS 的**默认配置不是医嘱**;个体化(基因/合并症/用药)永远 > 通用协议。**有红线交医生,Agent 不解读影像、不开方。**
-
-### A.1 L2 慢病协议(进 HealthProblem)
-- **鼻炎**:盐水冲洗 1–3 次/日(**蒸馏/无菌/煮沸冷却水**,CDC)+ **鼻用激素**(糠酸莫米松/氟替卡松,ARIA/EPOS 一线,全身吸收<1%)+ sIgE 一次定型 + STOP-BANG≥3 必做居家 PSG + 卧室 HEPA;单一过敏原控制不佳→SLIT 3 年[A]。🚨 单侧鼻塞+鼻出血/嗅觉丧失>3 月/息肉激素 12 周无效→ENT。
-- **脂肪肝 MASLD**:F0-F1 可逆,**F2+ 才是死亡率拐点**;减重 7%→MASH 缓解、10%→纤维化改善[A];Z2+力量、黑咖啡 2-3 杯、**酒精目标 0**、砍液体糖;FibroScan 每 1-2 年;司美格鲁肽 2.4mg 入 MASH F2-F3[A] AASLD 2025-11 (PMID 41201884)。🚨 LSM≥10kPa/FIB-4≥2.67/ALT 持续>2×ULN→肝病科。
-- **血脂一级预防**:ASCVD 由 **ApoB 颗粒数**驱动(LDL-C 在高 TG/糖前低估);ApoB<80(高危<65)、**Lp(a) 一生一次**、**CAC 40+ 一次**;阶梯 他汀→依折麦布→PCSK9i/Inclisiran;TG150-499+他汀者 Vascepa 4g[A]。🚨 LDL>190 疑 FH;胸痛→急诊不经 OS。
-- **结节随访(避免过度活检)**:甲状腺 TIRADS TR4≥1.5cm/TR5≥1cm 才 FNA,<1cm 不查不焦虑;肺结节 Fleischner/Lung-RADS 实性<6mm 不随访、GGN≥6mm 6-12 月 CT 稳定 5 年才停;**保留原始影像不只存结论,不让 Agent 解读影像**。
-- **肾结石二级预防**:第二次/高危→24h 尿液[A];**尿量≥2.5L/日(不是喝水量)**、柠檬酸钾、钠<2.3g、**不要低钙**(饮食钙 1000-1200mg 同餐)。🚨 发热+腰痛+结石=急诊。
-
-### A.2 L4 抗衰真伪表(进证据级门控)
-| 干预 | 证据 | 裁决 |
+| 字段 | 类型 | 说明 |
 |---|---|---|
-| 运动 + 减重 | [A] | **一级方阵,无可替代** |
-| GLP-1(司美格鲁肽) | [A] SELECT/FLOW/MASH | **指征内一级方阵**(BMI≥27+代谢病/MASH/ASCVD),必配抗阻+蛋白 1.6g/kg 防肌少 |
-| ApoB/Lp(a)/CAC 三件套 · PGx(SLCO1B1→他汀) | [A] | **必做 / 最成熟 PGx 落地** |
-| TRT | [A] 适应症内 | 两次晨 T<300+症状由专科评估,不自购 |
-| Rapamycin [B-] / Metformin 抗衰 [B 矛盾] / NMN·NR [C] / Senolytics [C] | 降级 | **旁路:不自购、非糖尿病不吃 Metformin、NMN 营销>证据** |
+| id | string | event ID |
+| user_id | string | 当前用户 |
+| agenda_item_id | string | 对应 item |
+| event_type | enum | completed、skipped、snoozed、adjusted、auto_observed、confirmed、rejected |
+| occurred_at | datetime | 发生时间 |
+| source_surface | enum | mobile、mac、web、watch、system、external_agent |
+| input_mode | enum | tap、voice、photo、manual_form、device_sync、import、automation |
+| value | json | 数值、剂量、餐食、训练结果等 |
+| skip_reason | enum | no_time、forgot、not_available、too_tired、wrong_place、too_hard、symptom、social_interruption、device_missing、other |
+| confidence | number | 0-1 |
+| raw_payload_ref | string | 原始输入引用，敏感内容按权限存储 |
+| audit_ref | string | 审计引用 |
 
-### A.3 监测频率日历(进 cadence_engine 默认)
-日:体重/HRV/RHR/SpO2/精力 0-10 · 周:腰围/Z2 时长/力量次数/鼻炎发作日 · 月:血压 7 日均值/体成分 · 季:HbA1c/肝酶/eGFR(+季度 2 周 CGM n=1)· 年:全套血脂(含 ApoB)/hs-CRP/维 D/睾酮/TSH/PSA(50+)/FibroScan/甲状腺腹部超声/皮肤镜 · 一次性:**Lp(a)/PGx/PRS/居家 PSG/CAC(40+)** · 5-10 年:结肠镜(45+)/LDCT(高危)。**不必做**:全身 PET/MRI 商业包、肿瘤标志物大套餐、头发微量元素。
+事件规则：
 
-### A.4 协议默认参数(进 HealthProtocol.implied_quantity)
-- **饮食**:蛋白 1.6g/kg(每餐 35-50g)· 纤维 25-35g · 酒精周预算 ≤2 次×2 杯睡前 4h 停 · 咖啡 14:00 后无咖啡因 · Box 餐筛选 蛋白≥35g/蔬菜≥300g/钠<800mg/可复购 4 周。
-- **运动**:Z2×3(≥150min/周)+ 力量×2 + HIIT×1 + 极化 80/20;降级规则(睡<6h/RHR+8/HRV 低/关节痛>3/连 2 天疲劳→降级)。
-- **睡眠**:卧室 18-19℃ · CO2<800ppm · 起床 30min 内户外光 10-20min · 睡前 90min 降光 · 周末起床偏差<30min · 午睡≤20min。
+- completed 和 auto_observed 必须能追到明确输入或设备信号。
+- medication、measurement、checkup 不能默认完成。
+- skipped 必须尽量捕获 skip_reason；没有原因时可为 other，但周复盘要提示补充。
+- 同一 item 多端重复完成必须幂等，不能造成重复用药、重复饮食或重复训练记录。
 
----
+### 6.3 HealthProgram
 
-## 附录 B:同行参考(抄什么 / 防什么)
-Blueprint(抄:测量密度+自动化 SOP/盒餐;防:数十补剂叠加+逆龄叙事)· Attia/Outlive(抄:ApoB 死守线+VO2max+Z2/力量+四骑士)· Levels(抄:CGM 做 n=1;防:追求血糖全平)· WHOOP/Oura(抄:极简单分输出+戒指消灭摘表;防:算法黑盒只看趋势)· Promethease/SelfDecode(抄:PRS+PGx 外包;防:通用 LLM 解 SNP=占星)。
+8-12 周目标容器。Program 不直接提醒用户，Program 投影 Agenda item。
 
----
+字段：
 
-## §11 诚实声明与风险(魔鬼代言人,守原则②不假装)
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | string | program ID |
+| user_id | string | 当前用户 |
+| name | string | 例如“12 周代谢改善” |
+| domain | enum | metabolic、recovery、training、sleep、medication_safety、checkup |
+| status | enum | draft、active、paused、completed、archived |
+| start_date | date | 开始日期 |
+| end_date | date | 结束日期 |
+| primary_metrics | json | 主要验证指标 |
+| secondary_metrics | json | 次要指标 |
+| protocol_ids | json | 绑定协议 |
+| review_cadence | enum | weekly、biweekly、monthly |
+| owner | enum | user、doctor、coach、system |
 
-多模型自我攻击,**保留以校准野心**:
-1. **「状态机有护城河」可能是工程师自我感动** —— L2/L4 协议全来自公开指南,任何团队接 LLM+指南 2 周可复刻;真正不可复制的是**你的纵向数据 + 习惯惯性**,前提是真能跑 3 年。
-2. **n=1 归因可能是事后叙事偏差** —— 多变量混杂+短时序+均值回归,A/B/A/B 在医学界都是边缘设计;**只追求「决策有用」(Bayesian 先验更新),不假装统计显著,且必须诚实标注置信度**(对接 ⑫ 证据级)。
-3. **工程化救不了生活动荡** —— Box 餐遇出差停摆、药盒遇孩子生病停摆;**社会决定因素(配偶/收入/工作强度/练习伙伴)> 个人 OS**;OS 只承诺把「非动荡日」执行率从 40%→80%。
-4. **季度自检(写进复盘层)**:「若删掉这套 OS,只保留『每周睡 7h×5 + 练 5h + ApoB<80 + 酒≤2』,我的 L3/L4 会差多少?」差不多 → OS 的边际价值是工程兴趣本身,**这没问题,但要诚实标注**,并警惕「量化焦虑」反噬精力(必要时主动『关掉 OS』也是一种协议)。
+### 6.4 HealthProtocol
 
----
+协议是“默认怎么做”的容器，解决重复决策和重复录入。
 
-*本文是**唯一权威 PRD**,已自洽合并 Codex 全局 PRD(TO-BE)、docs/PRD.md(AS-IS 基线/不变量/技术债)、协议双轨与多轮外部分析——这些输入降级为历史素材,一切以本文为准。子领域深规可继续参考:用药 docs/MEDICATION_AUTOPILOT.md、可穿戴 Router docs/plans/2026-06-15-multi-wearable-health-router-roadmap.md。临床附录 A 是默认配置非医嘱。架构数字以 docs/ARCHITECTURE.md + check_doc_drift.py 为准。*
+例子：
+
+- 饮水：固定水杯协议。
+- 饮食：标准餐模板协议。
+- 睡眠：睡前流程协议。
+- 训练：固定训练课表协议。
+- 用药：药盒和时点协议。
+- 测量：晨起体重、固定姿势血压协议。
+- 复查：年度体检和专项复查协议。
+
+字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | string | protocol ID |
+| user_id | string | 当前用户 |
+| domain | enum | 同 Agenda domain |
+| name | string | 协议名称 |
+| status | enum | active、paused、archived |
+| mechanism | enum | fixed_container、pre_commit、passive_device、environment_default、manual_template |
+| cadence | string | daily、weekly、quarterly、event_triggered 等 |
+| default_time_window | json | 默认时间窗 |
+| implied_quantity | json | 协议隐含数量，例如水量、餐食模板、训练时长 |
+| completion_rule | json | 完成规则 |
+| manual_override_allowed | boolean | 必须默认为 true |
+| safety_policy | json | 禁止默认完成、需要确认、红线等 |
+| evidence_level | enum | A、B、C、D、personal |
+| linked_program_id | string | 可空 |
+
+协议规则：
+
+- 协议轨和手工轨写同一底层记录。
+- 手工轨永远存在，协议轨只是低摩擦默认路径。
+- 用药、血压、血糖、体检复查不能靠“默认完成”。
+- 设备缺失时不假装完成，要生成 data_quality item 或降级为手动确认。
+
+### 6.5 HealthProblem
+
+医学问题登记。它不是诊断引擎，而是把已知问题、医生结论、复查节奏和红线阈值产品化。
+
+字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | string | problem ID |
+| user_id | string | 当前用户 |
+| name | string | 例如血压管理、脂肪肝随访、结节复查、长期用药安全 |
+| status | enum | active、monitoring、resolved、archived |
+| risk_level | enum | P0、P1、P2、P3 |
+| diagnosis_summary | text | 用户/医生录入摘要，非系统自动诊断 |
+| evidence_refs | json | 医生报告、化验、影像或指南引用 |
+| red_lines | json | 需要升级的阈值或症状 |
+| follow_up_plan | json | 上次检查、下次检查、检查项目、负责科室 |
+| linked_program_ids | json | 相关 Program |
+| owner | enum | user、doctor、system |
+
+规则：
+
+- HealthProblem 可以生成 checkup、measurement、review、safety 类 Agenda item。
+- 风险分层必须可追溯，不能由 LLM 单独生成。
+- 到期复查、趋势恶化或红线命中必须升级为 P0/P1 item。
+- 产品文案必须说“建议复查/咨询医生/关注趋势”，不能说“你被诊断为”。
+
+### 6.6 SourceQuality
+
+设备和数据源质量对象。
+
+字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| metric | string | 指标，例如 sleep、hrv、steps、workout、bp、weight |
+| winning_source | string | 当前采用来源 |
+| candidate_sources | json | 候选来源 |
+| freshness | enum | fresh、stale、missing |
+| agreement | enum | high、medium、low、conflict |
+| confidence | number | 0-1 |
+| last_seen_at | datetime | 最近数据时间 |
+| action_if_stale | string | 过期时生成的 item 或降级路径 |
+
+规则：
+
+- 冲突时不能简单平均。
+- 安全相关指标宁可降置信，也不能静默用单源覆盖。
+- 数据过期要影响 Agenda，而不是只在设置页显示。
+
+## 7. API 需求
+
+### 7.1 Agenda API
+
+`GET /api/agenda/today`
+
+返回今天的 item。
+
+查询参数：
+
+- `date`: 可选，默认为用户本地今天。
+- `domains`: 可选，多选。
+- `include_completed`: 默认 false。
+- `surface`: mobile、mac、web、watch，用于裁剪展示字段，不改变排序事实。
+
+验收：
+
+- 50 个 item 内 p95 < 300ms。
+- 返回结果必须只包含当前用户数据。
+- 同一用户同一日期在三端排序一致。
+
+`GET /api/agenda/range`
+
+返回一段日期内 item，用于周视图、复查日历和 Web。
+
+`POST /api/agenda/items/{item_id}/events`
+
+写入执行事件。
+
+验收：
+
+- 支持幂等 key。
+- 重复完成不重复写入底层事实。
+- medication 和 supplement 必须带剂量或 schedule 引用。
+- skipped 支持结构化 skip_reason。
+
+`POST /api/agenda/rebuild`
+
+重新投影 Agenda。仅系统、管理员或授权 agent 可调用。
+
+验收：
+
+- 不删除已有 event。
+- projection 可重放。
+- rebuild 结果可审计。
+
+### 7.2 Capture API
+
+`POST /api/capture/food/voice-drafts`
+
+输入语音转写文本，输出待确认餐食草稿。
+
+要求：
+
+- 保存 raw_text 引用。
+- 输出 meal_type、foods、estimated_quantity、confidence、needs_confirmation。
+- 低置信度最多追问一个问题。
+- 不追求克级精确，优先形成长期可比较记录。
+
+`POST /api/capture/manual`
+
+统一手工记录入口，支持饮水、饮食、症状、精力、测量、补剂、运动 RPE。
+
+要求：
+
+- 可绑定 agenda_item_id。
+- 不绑定时也能创建事实记录，并在需要时反向满足 Agenda item。
+
+### 7.3 Program 和 Protocol API
+
+`GET /api/health-programs`
+
+`POST /api/health-programs`
+
+`GET /api/health-protocols`
+
+`POST /api/health-protocols`
+
+`PATCH /api/health-protocols/{id}`
+
+要求：
+
+- Protocol 修改要保留版本历史。
+- Active protocol 改动后要触发 Agenda rebuild。
+- 高风险协议需要 confirmation_state，不允许直接生效。
+
+### 7.4 HealthProblem API
+
+`GET /api/health-problems`
+
+`POST /api/health-problems`
+
+`PATCH /api/health-problems/{id}`
+
+要求：
+
+- 不允许 LLM 单独创建 active problem；LLM 只能创建 draft。
+- active problem 必须有用户确认，医学高风险项需要医生/报告引用。
+- follow_up_plan 到期自动生成 Agenda item。
+
+### 7.5 Device Router API
+
+`GET /api/device-router/status`
+
+返回每个关键指标的数据源质量。
+
+要求：
+
+- 显示 Apple Watch、Garmin、RingConn、手工、外部设备、化验上传等来源状态。
+- stale/missing/conflict 要能生成 data_quality Agenda item。
+
+## 8. 三端产品需求
+
+### 8.1 Mobile
+
+Mobile 是日常主体验，必须优先做。
+
+底部入口：
+
+1. Today
+2. Agenda
+3. Capture
+4. Programs
+5. Review
+
+#### Today
+
+显示今天最重要的 3-5 件事。
+
+必须有：
+
+- 今日状态灯：Green、Yellow、Red、Gray。Gray 表示数据不足，不允许伪装成安全。
+- Top Actions：按 Agenda 排序显示。
+- 每个 action 支持完成、跳过、稍后、调整。
+- 跳过时展示短原因选择，不超过 8 个。
+- 有 P0/P1 安全项时置顶。
+
+不能有：
+
+- 大段 AI 解释。
+- 复杂图表。
+- 鼓励连续打卡的视觉压力。
+
+#### Agenda
+
+显示 today/week/month。
+
+必须有：
+
+- 按时间窗分组。
+- 按 domain 筛选。
+- 显示来源：来自 Program、Protocol、Problem、DeviceQuality 或系统复盘。
+- 支持查看“为什么现在提醒我”。
+
+#### Capture
+
+统一输入入口。
+
+必须有：
+
+- 语音记食物。
+- 拍照/文本记食物作为已有能力入口。
+- 快速饮水、症状、精力、RPE、测量手填。
+- 协议轨和手工轨切换。
+
+语音记食物 v1：
+
+- 用户说“午饭牛肉饭半份，加无糖咖啡”。
+- App 生成待确认草稿。
+- 用户一键确认或改 meal_type/份量。
+- 成功后若存在相关 Agenda item，同步完成。
+
+#### Programs
+
+显示 8-12 周目标，不做复杂配置。
+
+必须有：
+
+- 当前 active program。
+- 绑定指标。
+- 本周行动完成率。
+- 下次复盘时间。
+
+#### Review
+
+每周 15 分钟复盘。
+
+必须回答三件事：
+
+- 这周做了什么？
+- 哪些指标变了？
+- 下周计划怎么改？
+
+### 8.2 Mac App
+
+Mac app 是桌面工作台，不复制 mobile。
+
+必须有：
+
+- 今日 Agenda 侧栏或小窗。
+- 快速记录：键盘输入、语音转文字、剪贴板体检/报告导入。
+- 长对话：用户问“为什么今天训练降级”，展示可追溯解释。
+- Trace：展示某个建议来自哪些数据、规则和计划。
+- Review 工作台：适合周复盘和 90 天复盘。
+
+Mac app 不做：
+
+- 替代 mobile 的日常提醒。
+- 复杂后台管理。
+- 无审计的 agent 自动改计划。
+
+### 8.3 Web
+
+Web 是后台、报告和长周期管理，不做主日常体验。
+
+必须有：
+
+- Health Vault 数据源状态。
+- HealthProblem 列表和复查日历。
+- Program/Protocol 管理。
+- 体检报告上传和结构化结果确认。
+- 隐私、授权、导出、删除、审计日志。
+- Apple Health XML fallback。
+
+Web 不做：
+
+- 作为主要打卡入口。
+- 复杂实时提醒。
+
+### 8.4 Apple Watch 方向
+
+MVP 不强制独立 Watch app，但事件模型必须支持 Watch。
+
+Apple Watch 适合做：
+
+- 当前状态灯 complication。
+- Smart Stack 今日最重要行动。
+- 到点轻提醒。
+- 完成、跳过、稍后、调整。
+- 语音记食物。
+- 症状/精力一键打标。
+- 训练前 readiness gate。
+
+Apple Watch 不适合做：
+
+- 长表单。
+- 长 AI 对话。
+- 复杂营养编辑。
+- 医疗解释和报告阅读。
+- 常驻录音。
+
+Watch v1 是否做独立 app 的决策标准：
+
+- 如果 mobile 通知 + shortcut 已能完成 80% 腕上操作，先不做独立 app。
+- 如果需要 complication、离线记录、训练前实时 gate 或语音入口，再做 watchOS companion。
+
+## 9. 可穿戴和硬件策略
+
+### 9.1 当前设备分工
+
+Apple Watch：
+
+- 最适合提醒、即时反馈、语音、状态灯、快捷操作、Apple Health 桥接。
+
+Garmin：
+
+- 最适合训练、跑步、负荷、恢复、运动记录和 endurance 指标。
+
+RingConn：
+
+- 最适合睡眠、夜间 HRV、恢复、皮温、低打扰长期佩戴。
+
+系统要做的是 source arbitration，不是把三份数据都画出来。
+
+### 9.2 可扩展硬件
+
+按价值优先级：
+
+1. 医用级上臂血压计：中年健康高价值，适合固定测量协议。
+2. 智能体重秤或体脂秤：体重趋势、体脂、肌肉量作为代谢和训练反馈。
+3. CGM 阶段性使用：2-4 周战役，用于饮食和睡眠行为反馈，不长期制造焦虑。
+4. 室内 CO2、PM2.5、温湿度传感器：鼻炎、睡眠、精力相关。
+5. 睡眠环境设备：遮光、温控、白噪声或空气净化，只有能影响行动才接入。
+6. 药盒：用药确认和补剂分装协议。
+
+不优先：
+
+- 低可信“抗衰”硬件。
+- 没有输出 API 或只能看厂商 app 的封闭设备。
+- 不能改变计划的娱乐型健康硬件。
+
+### 9.3 数据主权
+
+要求：
+
+- 原始或准原始数据进入自己的 Health Vault。
+- 第三方平台只做采集源和显示终端。
+- 可导出、可删除、可撤权。
+- 敏感字段加密存储。
+- 所有外部 agent 访问必须最小权限、审计和可撤销。
+
+## 10. 通知策略
+
+提醒是稀缺资源。
+
+### 10.1 分级
+
+P0：必须响应。
+
+- 处方药关键时点。
+- 医生要求复查当天。
+- 明确危险阈值或危险症状。
+- 训练安全红灯。
+
+要求：
+
+- 可用腕表强提醒和手机提醒。
+- 每周 P0 不应超过 3 条，除非确有医疗原因。
+
+P1：推荐执行。
+
+- 训练开始。
+- 睡前流程。
+- 饮水明显不足。
+- 测量到期。
+
+要求：
+
+- 轻提醒。
+- 可忽略。
+- 不连续轰炸。
+
+P2：只记录不推送。
+
+- 步数同步。
+- 体重同步。
+- 普通数据导入。
+- 周报素材收集。
+
+### 10.2 安静时间
+
+- 睡前 90 分钟后只允许 P0。
+- 工作深度专注时段只允许 P0 和用户指定 P1。
+- 周主动提醒总量默认不超过 15 条。
+
+## 11. 典型工作流
+
+### 11.1 早晨 2 分钟
+
+1. RingConn 同步睡眠和 HRV。
+2. Garmin/Apple 数据进入 Router。
+3. 系统生成今日状态灯。
+4. Today 显示 3 件事：例如测量、训练建议、用药或睡前安排。
+5. 用户只处理异常项。
+
+验收：
+
+- 数据缺失时显示 Gray 和 data_quality item。
+- 训练建议能解释是由睡眠、HRV、主观疲劳还是症状影响。
+
+### 11.2 训练前
+
+1. 训练 item 到时间窗。
+2. 系统读取恢复状态、近期训练负荷、症状和日程。
+3. 输出 Green/Yellow/Red。
+4. Watch 或 mobile 给出执行、降级或休息建议。
+5. 训练后 Garmin workout 自动满足 item，用户补 RPE/疼痛。
+
+验收：
+
+- 急性症状或危险信号优先于 Garmin readiness。
+- Red 不能被文案包装成“挑战一下”。
+
+### 11.3 语音记食物
+
+1. 用户在 mobile 或 Watch 说一句自然语言。
+2. 系统转成餐食草稿。
+3. 置信度高则一键确认，低则追问一个问题。
+4. 记录写入 DietRecord，并关联 Agenda event。
+5. 周复盘只看模式和趋势，不追求单餐精确。
+
+验收：
+
+- 原始语音转写可追溯。
+- 模型低置信不得静默写入确定事实。
+
+### 11.4 复查到期
+
+1. HealthProblem 中某项 follow_up_plan 到期。
+2. 系统生成 checkup Agenda item。
+3. Web 显示复查日历，mobile Today 在临近时提醒。
+4. 用户上传报告。
+5. 系统结构化提取，用户确认后进入趋势。
+6. 如红线命中，生成 medical_review 或 urgent item。
+
+验收：
+
+- 没有医生/报告证据时，系统不能自动改变诊断摘要。
+- 红线必须可追溯到用户确认的 Problem 配置或证据库。
+
+### 11.5 周复盘
+
+1. 系统聚合执行率、skip_reason、设备质量、指标变化。
+2. 生成三段：本周做了什么、指标有什么变化、下周怎么改。
+3. 用户确认计划调整。
+4. 调整 Program/Protocol，触发 Agenda rebuild。
+
+验收：
+
+- 至少展示一个“系统计划哪里设计得不好”的结论，而不是指责用户。
+- 下周计划减少或调整无效提醒。
+
+## 12. 安全和隐私要求
+
+### 12.1 用户隔离
+
+- 所有查询必须从 current_user 派生 user_id。
+- 不允许前端传 user_id 决定数据归属。
+- legacy `/user/{user_id}` 风格接口必须迁移或加所有权检查。
+
+### 12.2 敏感信息
+
+- 健康数据、用药、基因、报告、token、设备凭据按敏感等级处理。
+- 日志必须脱敏。
+- 审计日志记录数据导出、授权、删除、外部 agent 调用、计划自动变更。
+
+### 12.3 医疗边界
+
+- 不诊断。
+- 不开方。
+- 不自行调药。
+- 不把补剂或低证据实验包装成医疗建议。
+- 红线触发时给出就医/咨询医生路径。
+
+### 12.4 LLM 边界
+
+LLM 可以：
+
+- 结构化语音和文本输入。
+- 总结复盘。
+- 解释已有规则为什么触发。
+- 生成候选计划草稿。
+
+LLM 不可以：
+
+- 单独创建 active HealthProblem。
+- 单独改变处方、剂量或复查结论。
+- 覆盖确定性安全规则。
+- 在缺数据时编造状态。
+
+### 12.5 Web 安全
+
+- 不使用不受控的 `dangerouslySetInnerHTML` 或裸 HTML 渲染健康建议。
+- token 不应长期放 localStorage。
+- 远程管理和外部 agent 接入需要 host key、最小权限和审计。
+
+## 13. 验收标准
+
+### 13.1 后端
+
+- `GET /api/agenda/today` 能从至少三类来源投影 item：用药/补剂、训练/恢复、测量/复查。
+- `POST /api/agenda/items/{id}/events` 支持 completed、skipped、snoozed、adjusted、auto_observed。
+- 事件写入幂等。
+- 所有 Agenda 查询强制用户隔离。
+- 数据源 stale/missing/conflict 能生成 data_quality item。
+- Agenda rebuild 可重放，不删除历史 event。
+
+### 13.2 Mobile
+
+- Today 能展示状态灯和 Top Actions。
+- Agenda 能按时间窗显示今天和本周。
+- Capture 能完成语音食物草稿和至少 3 个手工快速记录。
+- Review 能生成周复盘草稿。
+- 完成/跳过任一 item 后，刷新 Today 和 Agenda 状态一致。
+
+### 13.3 Mac App
+
+- 能显示今日 Agenda。
+- 能通过桌面输入快速创建或满足一条记录。
+- 能查看某条建议的 trace。
+- 能进入周复盘。
+
+### 13.4 Web
+
+- 能管理 HealthProblem、Program、Protocol。
+- 能显示复查日历。
+- 能上传体检报告并进入确认流程。
+- 能查看设备数据源状态。
+- 能导出和删除用户健康数据。
+
+### 13.5 Watch/可穿戴准备
+
+- Agenda event 模型支持 source_surface=watch。
+- item 字段能裁剪成 Watch 可展示内容。
+- 通知分级支持 P0/P1/P2。
+- 语音食物和一键完成不依赖 Web。
+
+## 14. 迭代路线图
+
+### R0：PRD 和设计基线
+
+产物：
+
+- 本 PRD。
+- 三端 IA 草图。
+- AgendaItem/Event/Protocol/Problem 数据契约。
+- 安全 review checklist。
+
+完成标准：
+
+- 设计、后端、mobile、Mac、Web 都能从本文拆任务。
+- 没有个人敏感病史写入公开文档。
+
+### R1：Agenda 后端骨架
+
+产物：
+
+- Agenda projection service。
+- Agenda event table。
+- today/range/events API。
+- 基础排序和状态机。
+- user_id 隔离和审计。
+
+完成标准：
+
+- 从现有 Daily Plan、用药/补剂、训练/恢复、测量/复查至少三类来源生成 item。
+- API 有单元测试和权限测试。
+
+### R2：Mobile 日常闭环
+
+产物：
+
+- Today。
+- Agenda。
+- Capture 快速记录。
+- 语音食物草稿。
+- 周 Review 草稿。
+
+完成标准：
+
+- 用户能从 mobile 完成一天的核心健康行动，不需要 Web。
+
+### R3：Mac App 工作台
+
+产物：
+
+- 今日 Agenda 小窗。
+- 快速记录。
+- Trace。
+- 周复盘工作台。
+
+完成标准：
+
+- 用户在桌面工作时能记录、理解和复盘，不打断主流程。
+
+### R4：Web 后台和报告
+
+产物：
+
+- HealthProblem 管理。
+- Program/Protocol 管理。
+- 复查日历。
+- 设备数据质量。
+- 报告上传确认。
+- 隐私和审计。
+
+完成标准：
+
+- 长周期健康管理和数据治理不依赖 mobile 小屏。
+
+### R5：Apple Watch companion 决策
+
+先用 mobile 通知和 shortcut 验证。
+
+如果满足以下任一条件，再做独立 watchOS app：
+
+- complication 对执行率明显有提升。
+- 训练前 gate 需要腕上即时反馈。
+- 语音记食物在 Watch 上使用频率高。
+- 离线记录是刚需。
+
+### R6：Outcome Proof
+
+产物：
+
+- 7/30/90 天复盘。
+- Program 指标趋势。
+- 个人响应强弱。
+- 计划调整记录。
+- n=1 实验的 washout 和置信度。
+
+完成标准：
+
+- 用户能回答“过去 90 天哪些行为可能让哪些指标变好，哪些没有用”。
+
+## 15. 实现顺序
+
+建议按以下顺序执行：
+
+1. 清理文档和安全边界：删除敏感个人细节，补齐 PRD 自包含契约。
+2. 后端先做 AgendaItem 和 AgendaEvent，不先做复杂 UI。
+3. 把现有计划、用药/补剂、训练恢复、测量复查投影进 Agenda。
+4. Mobile 做 Today 和 Agenda，确保能完成和跳过。
+5. Capture 接入语音食物和快速手填。
+6. Mac app 做今日小窗、快速记录和 Trace。
+7. Web 做 HealthProblem、Program、Protocol 和复查日历。
+8. 做 Router 数据质量和通知分级。
+9. 再决定是否做独立 Watch app。
+10. 最后做 Outcome Proof 和 n=1 严谨化。
+
+不建议先做：
+
+- 大而全的健康知识库。
+- 完整 watchOS app。
+- 复杂 Agent 自动规划。
+- 新模型训练。
+- 花哨 dashboard。
+
+## 16. Review 清单
+
+评审实现时逐条问：
+
+- 这项功能是否生成、完成或改变了 Agenda item？
+- 是否同时支持低摩擦路径和手工兜底？
+- 是否能解释为什么提醒用户？
+- 用户跳过后，系统是否学到了原因？
+- 数据缺失时是否诚实显示，而不是伪装正常？
+- 医疗风险是否由规则和证据处理，而不是 LLM 自行判断？
+- 三端是否看到同一事实，而不是各做一套状态？
+- 是否有 user_id 隔离、审计、脱敏和撤权路径？
+- 是否能在 7/30/90 天复盘中证明价值？
+
+## 17. 关键开放问题
+
+1. 现有后端哪些对象最适合作为 Agenda projection source，需要代码 review 后确定。
+2. Mobile、Mac、Web 的现有导航和状态管理是否能承载统一 Agenda store。
+3. 语音食物先走系统语音转写还是已有输入法/第三方转写。
+4. Apple Watch 先做通知/shortcut 还是直接 watchOS companion。
+5. HealthProblem 的证据库和红线阈值由谁维护，如何版本化。
+6. 外部 agent 调用 Agenda rebuild 和计划调整时的授权边界。
+
+## 18. Definition of Done
+
+一个版本只有同时满足以下条件才算完成：
+
+- 用户每天能在 mobile 看到今天最重要的健康行动。
+- 用户能用一键、语音、设备同步或手填完成行动。
+- Mac app 能支持桌面快速记录和解释。
+- Web 能管理长期计划、复查和数据权限。
+- 所有端共享同一 Agenda event 事实。
+- 安全、隐私、医疗边界有测试或人工 review 证据。
+- 周复盘能基于真实执行事件提出下周调整。
