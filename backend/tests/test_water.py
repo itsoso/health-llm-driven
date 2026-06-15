@@ -83,6 +83,20 @@ class TestWaterAPI:
         data = response.json()
         assert data["amount"] == 300
 
+    def test_quick_add_water_uses_given_amount_not_default(self, client, auth_headers):
+        """用户给了大数量 → 必须按原值记录(回归:曾静默记成 250)。"""
+        r = client.post("/api/v1/water/records/quick?amount=2000", headers=auth_headers)
+        assert r.status_code == 200 and r.json()["amount"] == 2000
+
+    def test_quick_add_water_missing_amount_400(self, client, auth_headers):
+        """漏 amount → 400(不再静默默认 250,失败要可见)。"""
+        r = client.post("/api/v1/water/records/quick", headers=auth_headers)
+        assert r.status_code == 400
+
+    def test_quick_add_water_out_of_range_400(self, client, auth_headers):
+        r = client.post("/api/v1/water/records/quick?amount=99999", headers=auth_headers)
+        assert r.status_code == 400
+
     def test_get_my_water_records(self, client, auth_headers, sample_water_data):
         """测试获取我的饮水记录"""
         # 先创建记录

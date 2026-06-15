@@ -127,11 +127,22 @@ def get_daily_water_summary(
 
 @router.post("/records/quick", response_model=WaterRecordResponse)
 def quick_add_water(
-    amount: int = Query(default=250, description="饮水量(ml)"),
+    amount: Optional[int] = Query(default=None, description="饮水量(ml),必填"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """快速添加饮水（默认250ml，需要登录）"""
+    """快速添加饮水（amount 必填,ml）。
+
+    不再静默默认 250：缺 amount 直接 400，避免弱模型 tool-calling 漏传 ?amount
+    时把用户的「2000ml」静默记成 250(守 Rule #1:失败要可见,不写错值)。
+    """
+    if amount is None:
+        raise HTTPException(
+            status_code=400,
+            detail="必须提供 amount(毫升数),如 ?amount=2000;不要省略。",
+        )
+    if amount <= 0 or amount > 5000:
+        raise HTTPException(status_code=400, detail="amount 需在 1–5000 ml 之间。")
     now = datetime.now()
     db_record = WaterIntakeModel(
         user_id=current_user.id,

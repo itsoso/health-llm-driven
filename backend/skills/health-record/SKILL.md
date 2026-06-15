@@ -30,21 +30,25 @@ You can record health data via the Health Management System API.
 ## 记录饮水
 
 ```bash
+# 把 2000 换成用户说的毫升数，?amount= 绝不能省略
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" \
-  "$HEALTH_API_URL/water/records/quick?amount=<毫升数>"
+  "$HEALTH_API_URL/water/records/quick?amount=2000"
 ```
 
-**amount 必须来自用户原话：**
+⚠️ **`?amount=` 是必填的，URL 里必须带上具体数字。** 后端没有默认值，漏了会直接报 400（不会替你猜）。
 
-| 用户说 | amount |
+**amount 必须来自用户原话，整条 URL 这样拼：**
+
+| 用户说 | 拼出的 URL |
 |--------|--------|
-| 喝了 500 毫升 / 500ml | 500 |
-| 喝了一杯水 | 250 |
-| 喝了两杯水 | 500 |
-| 喝了一大杯 | 350 |
-| 喝了半杯 | 125 |
+| 记录饮水 2000 毫升 | `…/water/records/quick?amount=2000` |
+| 喝了 500 毫升 / 500ml | `…/water/records/quick?amount=500` |
+| 喝了一杯水 | `…/water/records/quick?amount=250` |
+| 喝了两杯水 | `…/water/records/quick?amount=500` |
+| 喝了一大杯 | `…/water/records/quick?amount=350` |
+| 喝了半杯 | `…/water/records/quick?amount=125` |
 
-用户明确说了毫升数 → 必须用用户的数字，禁止使用任何默认值。
+用户明确说了毫升数 → 必须用用户的数字；任何情况都要在 URL 写出 `?amount=<数字>`，禁止省略、禁止用占位符。
 
 **成功后回复格式：** `✅ 已记录喝水 {amount}ml`
 
