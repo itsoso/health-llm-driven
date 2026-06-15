@@ -230,7 +230,10 @@ def _interpret(est: EffectEstimate) -> str:
 
     desirable = "降" if est.direction == "down" else "升"
     if est.is_effective:
-        verdict = f"该干预对你**有效** (CI 整段在'{desirable}'方向, 排除 0), 值得继续。"
+        verdict = (
+            f"证据支持该干预对你**很可能有效** (80% CI 整段在'{desirable}'方向, 排除 0), "
+            f"可建议继续; 非确诊, 重大调整结合医生。"
+        )
     elif est.confidence == "low":
         verdict = "观测仍少, 效应不确定, 建议继续积累复查再判断。"
     else:
