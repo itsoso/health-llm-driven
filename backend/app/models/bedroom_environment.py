@@ -17,6 +17,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -73,5 +74,55 @@ class BedroomEnvironmentSnapshot(Base):
         ),
         Index(
             "ix_bedroom_env_user_room_ts", "user_id", "room_id", "captured_at"
+        ),
+    )
+
+
+class BedroomAutomationEvent(Base):
+    """卧室自动化事件 (Home Assistant automation / 手动操作上行, 设计文档 §7/§10).
+
+    事件上行链路: HA automation -> POST /api/v1/integrations/home-assistant/webhook
+    -> BedroomAutomationEvent -> AuditLog -> Review.
+
+    与 BedroomEnvironmentSnapshot 的分工: snapshot 是**环境读数** (CO2/温湿度点事件),
+    event 是**自动化/控制事件** (新风开了、灯调暗了、人工 override 了). 两者都不进
+    通用 LLM 上下文 (§11 隐私: 居住状态 / 自动化行为同样敏感).
+
+    向后兼容: 除 event_type 外字段全可空 —— HA 不同自动化携带的上下文不同.
+    """
+
+    __tablename__ = "bedroom_automation_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # 房间标识. 默认 "bedroom"; 多房间未来可扩.
+    room_id = Column(String(64), nullable=False, default="bedroom")
+
+    # 事件类型 (必填). 例: sleep_protection_window_started / ventilation_boost /
+    # humidity_restore / manual_override / scene_triggered.
+    event_type = Column(String(64), nullable=False)
+
+    # 触发原因 (人话). 例: "CO2 1280ppm 持续 10 分钟".
+    reason = Column(String(256), nullable=True)
+
+    # 命令落点 (设计文档 §7 command.entity_id / command.mode). 红外单向时可能为空.
+    command_entity_id = Column(String(128), nullable=True)
+    command_mode = Column(String(64), nullable=True)
+
+    # 事件来源: ha (Home Assistant automation) | reva (Reva 下发) | manual (人工操作).
+    source = Column(String(16), nullable=False, default="ha")
+
+    # 是否人工 override (床头开关/App 手动操作进入 override window).
+    manual_override = Column(Boolean, nullable=False, default=False)
+
+    # 关联的审计行引用 (AuditLog.id, 字符串化便于跨来源). 旁路写审计成功时回填.
+    audit_ref = Column(String(64), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index(
+            "ix_bedroom_event_user_created", "user_id", "created_at"
         ),
     )
