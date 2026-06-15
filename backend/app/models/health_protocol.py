@@ -51,7 +51,8 @@ class HealthProtocol(Base):
     status = Column(String(20), default="active")      # active/paused/archived
     # 关联(可空):疗程/项目/目标记录表,后续 slice 接 HealthProgram/HealthProblem
     program_id = Column(Integer)
-    source_model = Column(String(50))                  # 协议完成最终落到哪张业务表(如 water_records),后续 slice 接通
+    source_model = Column(String(50))                  # 协议完成落到哪张业务表(water_records / medication_logs / diet_records)
+    source_id = Column(Integer)                        # 链接的具体业务记录 id(如 Medication.id),完成时写真实记录
 
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
