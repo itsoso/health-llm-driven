@@ -47,3 +47,17 @@ async def get_recommendation(
     基于恢复就绪度和 ACWR 的二维矩阵决策。
     """
     return exercise_recovery_service.get_recommendation(db, current_user.id)
+
+
+@router.get("/decision", summary="今日训练决策灯 GREEN/YELLOW/RED + 置信度 + 一个动作")
+async def get_training_decision(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """多源恢复/训练决策引擎(P0)。
+
+    一句话回答"今天能不能练": 合成已有的恢复就绪度(zone)、ACWR、急性病兜底、
+    多设备一致性置信度 → light + confidence + reasons + next_action。
+    """
+    from app.services.recovery_decision import training_decision
+    return training_decision(db, current_user.id)
