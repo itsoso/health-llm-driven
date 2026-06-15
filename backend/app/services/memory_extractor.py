@@ -447,14 +447,25 @@ def extract_from_briefing_entry(
         r"(-?\d+(?:\.\d+)?)\s*"
         r"(mmHg|bpm|%|分|ms|mmol/L|mg/dL|kg|次|小时|h|min)?",
     )
+    # 只为已知健康指标建 is_value 事实 —— 否则简报 objective 里嵌的基因/补剂文案碎片
+    # ("AA 9"/"基因提示 9"/"上午补充 500"/"ml 2")会被正则当成"事实",且每日简报重抽
+    # 同一段文字 → reinforcement 飙到置信度 1.0,垃圾反而最"可信"(画像页根因)。
+    _metric_tokens = (
+        "hrv", "rhr", "心率", "血压", "收缩压", "舒张压", "spo2", "血氧", "体温",
+        "压力", "电量", "battery", "readiness", "恢复", "步数", "睡眠", "深睡",
+        "ldl", "hdl", "胆固醇", "甘油三酯", "hba1c", "糖化", "血糖", "alt", "ast",
+        "ggt", "尿酸", "肌酐", "egfr", "白细胞", "血红蛋白", "体重", "bmi", "体脂", "腰围",
+    )
     seen_subjects: set = set()
     for m in list(pattern.finditer(obj))[:15]:
         try:
             subj = m.group(1).strip()
             val = m.group(2)
             unit = m.group(3) or ""
-            # 过滤: subj 过短 / 纯数字字 / 重复
+            # 过滤: subj 过短 / 纯数字字 / 重复 / 不在已知指标白名单
             if not subj or len(subj) < 2 or subj in seen_subjects or subj.isdigit():
+                continue
+            if not any(tok in subj.lower() for tok in _metric_tokens):
                 continue
             seen_subjects.add(subj)
             f = _safe_call(

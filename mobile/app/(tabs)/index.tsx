@@ -463,7 +463,9 @@ export default function TodayScreen() {
 
   // ── Vitals 数据 (variant A 用 VitalsGrid 组件; variant B 折叠进 hero) ──
   const vitalsProps = {
-    sleep: sleepHoursRaw,
+    // 睡眠时长优先用 Twin 的 sleep_duration_h_latest(已跨源合并、已是小时);
+    // 回退到 garmin days[0](/garmin/me 未按日期合并,可能落到全 null 行)。
+    sleep: twinSnap.sleep_hours ?? sleepHoursRaw,
     deepSleep: deepSleepRaw,
     sleepScore: twinSnap.sleep_score ?? null,
     heartRate: twinSnap.resting_hr ?? null,
@@ -580,10 +582,12 @@ function pickTwinSnapshot(twin: any, garmin: any): TwinSnapshot {
   return {
     hrv: phys.hrv_latest ?? phys.hrv_7d_avg ?? garmin?.hrv ?? null,
     sleep_score: phys.sleep_score_latest ?? null,
-    sleep_hours: phys.sleep_hours_latest ?? null,
-    resting_hr: phys.resting_hr_latest ?? garmin?.resting_heart_rate ?? null,
+    // Twin 物理分区字段名:resting_hr / body_battery_current / sleep_duration_h_latest
+    // (之前误用 *_latest 后缀的不存在键 → 读空 → 回退到未合并的 garmin days[0] → "--")
+    sleep_hours: phys.sleep_duration_h_latest ?? null,
+    resting_hr: phys.resting_hr ?? garmin?.resting_heart_rate ?? null,
     body_battery:
-      phys.body_battery_latest ??
+      phys.body_battery_current ??
       garmin?.body_battery_current ??
       garmin?.body_battery_most_charged ??
       null,

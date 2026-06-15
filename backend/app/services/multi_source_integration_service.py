@@ -80,6 +80,7 @@ class MultiSourceIntegrationService:
             merged = merge_rows(garmin_rows, [
                 "resting_heart_rate", "hrv", "sleep_score", "steps",
                 "stress_level", "body_battery_current", "spo2_avg",
+                "total_sleep_duration",
             ])
             v = merged["values"]
             gm = {"date": str(garmin.record_date),
@@ -90,6 +91,7 @@ class MultiSourceIntegrationService:
                   "stress_level": v.get("stress_level"),
                   "body_battery_current": v.get("body_battery_current"),
                   "spo2_avg": v.get("spo2_avg"),
+                  "total_sleep_duration": v.get("total_sleep_duration"),  # 分钟(跨源合并后)
                   "sources": merged["sources"]}  # P4: 每字段 winning source, LLM source-aware
 
         bc = {"date": str(weight.record_date), "weight": weight.weight, "bmi": weight.bmi,

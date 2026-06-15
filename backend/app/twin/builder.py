@@ -176,6 +176,10 @@ def _fill_integrated_profile(db: Session, user_id: int, twin: HealthTwin, source
             p.stress_level_current = _as_int(garmin.get("stress_level"))
             p.body_battery_current = _as_int(garmin.get("body_battery_current"))
             p.spo2_avg = _as_float(garmin.get("spo2_avg"))
+            # 最近一晚睡眠时长(分钟→小时)。total_sleep_duration 后端单位是分钟。
+            _sleep_min = _as_int(garmin.get("total_sleep_duration"))
+            if _sleep_min:
+                p.sleep_duration_h_latest = round(_sleep_min / 60, 1)
             p.last_updated = _as_date(garmin.get("date"))
             # P4: 多源合并产生的字段→source 字典 (LLM 可知道每个数值由哪个设备提供)
             srcs = garmin.get("sources") or {}
@@ -592,9 +596,12 @@ def _fill_sleep_deep(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
             if hrv_avg and not twin.physiological.hrv_7d_avg:
                 twin.physiological.hrv_7d_avg = hrv_avg
 
-        twin.physiological.sleep_duration_h_latest = _as_float(
-            analysis.get("duration_avg_hours")
-        )
+        # 仅当最近一晚睡眠时长还没从 garmin merge 填上时,才回退到 7 日均值。
+        # (sleep-deep analysis 偶发失败会返回 None,别用它覆盖掉已有的 latest 值。)
+        if twin.physiological.sleep_duration_h_latest is None:
+            twin.physiological.sleep_duration_h_latest = _as_float(
+                analysis.get("duration_avg_hours")
+            )
 
         if arch or consistency or hrv_recovery:
             sources.add("sleep")
