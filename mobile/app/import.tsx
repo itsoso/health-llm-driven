@@ -33,6 +33,7 @@ import { uploadMedicalExamPdf, uploadMedicalExamImage, uploadMedicalExamText } f
 import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '../services/geneticData';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createImportResultAgentContext } from '../utils/agentContext';
+import { geneticImportStatusView, isTerminalGeneticImportStatus } from '../utils/geneticImportStatus';
 
 type FileKind = 'genetic_txt' | 'genetic_pdf' | 'medical_pdf' | 'medical_image';
 
@@ -167,25 +168,37 @@ export default function ImportScreen() {
       let message = '';
       let detail = '';
       if (kind === 'genetic_txt') {
-        message = `成功匹配 ${data.matched_count ?? 0} 个健康相关基因位点`;
-        detail = data.message || '';
+        const view = geneticImportStatusView({
+          id: data.id,
+          status: 'done',
+          variant_count: data.matched_count ?? 0,
+          import_job: data.import_job,
+          coverage: data.coverage,
+        });
+        message = view.detail;
+        detail = view.coverageLine || data.message || '';
       } else if (kind === 'genetic_pdf') {
         // PDF 异步 — 立刻回一个 "上传成功" 再轮询真实结果
         const profileId = data.id;
         setBusyHint(`档案 #${profileId} 上传成功, 正在轮询解析进度...`);
         const final = await pollGeneticProfileStatus(profileId, {
           onTick: (s) => {
-            if (s.variant_count > 0) setBusyHint(`已提取 ${s.variant_count} 个位点, 继续解析中...`);
+            const view = geneticImportStatusView(s);
+            setBusyHint(`${view.label}: ${view.detail}${view.coverageLine ? '\n' + view.coverageLine : ''}`);
           },
         });
-        if (final.status === 'done') {
-          message = `基因报告解析完成: 提取 ${final.variant_count} 个位点`;
-          detail = final.notes || '';
-        } else if (final.status === 'failed') {
-          throw new Error(final.notes || '基因 PDF 解析失败');
+        const view = geneticImportStatusView(final);
+        if (view.phase === 'complete') {
+          message = view.detail;
+          detail = view.coverageLine || final.notes || '';
+        } else if (view.phase === 'failed') {
+          throw new Error(view.detail);
         } else {
-          message = `基因报告上传成功, 仍在后台解析 (已提取 ${final.variant_count} 个位点)`;
-          detail = '稍后在"基因档案"里可以查看最终结果.';
+          message = `${view.label}: ${view.detail}`;
+          detail = view.coverageLine || '稍后在"基因档案"里可以查看最终结果.';
+        }
+        if (!isTerminalGeneticImportStatus(view)) {
+          detail = `${detail}\n稍后在"基因档案"里可以查看最终结果.`;
         }
       } else if (kind === 'medical_pdf') {
         message = `体检报告解析成功: ${data.items_count ?? 0} 个指标`;

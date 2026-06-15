@@ -9,6 +9,11 @@ import {
   clinicalBoundaryForGeneticFinding,
   sanitizePgxTemplateLabel,
 } from '@/components/genetic/geneticClinicalBoundary';
+import {
+  geneticImportStatusView,
+  isTerminalGeneticImportStatus,
+  type GeneticImportStatusView,
+} from '@/components/genetic/geneticImportStatus';
 
 const CATEGORIES = [
   { key: 'nutrition', label: '营养代谢', icon: '🥗' },
@@ -133,6 +138,19 @@ type Variant = {
 };
 type Profile = { id: number; test_provider: string; test_date: string; report_id?: string; notes?: string };
 
+function importStatusToneClass(tone: GeneticImportStatusView['tone']): string {
+  switch (tone) {
+    case 'teal':
+      return 'border-teal-200 bg-teal-50 text-teal-800';
+    case 'red':
+      return 'border-red-200 bg-red-50 text-red-800';
+    case 'amber':
+      return 'border-amber-200 bg-amber-50 text-amber-800';
+    default:
+      return 'border-gray-200 bg-gray-50 text-gray-700';
+  }
+}
+
 function GeneticContent() {
   const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
@@ -143,6 +161,7 @@ function GeneticContent() {
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [pdfUploading, setPdfUploading] = useState(false);
   const [pdfStatus, setPdfStatus] = useState('');
+  const [importStatusView, setImportStatusView] = useState<GeneticImportStatusView | null>(null);
   const [profileForm, setProfileForm] = useState({ test_provider: '', test_date: '', report_id: '', notes: '' });
   const [crossAnalysis, setCrossAnalysis] = useState<string | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -292,6 +311,7 @@ function GeneticContent() {
                   }
                   const isTxt = file.name.endsWith('.txt') || file.name.endsWith('.csv');
                   setPdfUploading(true);
+                  setImportStatusView(null);
                   setPdfStatus(isTxt ? '正在解析原始数据...' : '正在上传 PDF...');
 
                   if (isTxt) {
@@ -305,8 +325,16 @@ function GeneticContent() {
                           txt_content: reader.result as string,
                           notes: profileForm.notes,
                         });
+                        const view = geneticImportStatusView({
+                          id: res.data.id,
+                          status: 'done',
+                          variant_count: res.data.matched_count,
+                          import_job: res.data.import_job,
+                          coverage: res.data.coverage,
+                        });
                         setPdfUploading(false);
-                        setPdfStatus(`解析完成！匹配到 ${res.data.matched_count} 个健康相关基因位点`);
+                        setImportStatusView(view);
+                        setPdfStatus(view.detail);
                         setShowProfileForm(false);
                         queryClient.invalidateQueries({ queryKey: ['genetic-profiles'] });
                         queryClient.invalidateQueries({ queryKey: ['genetic-variants'] });
@@ -328,27 +356,53 @@ function GeneticContent() {
                           pdf_base64: base64,
                           notes: profileForm.notes,
                         });
-                        setPdfStatus(`AI 正在提取... (ID: ${res.data.id})`);
                         const pollId = res.data.id;
-                        const poll = setInterval(async () => {
+                        const initialView = geneticImportStatusView({
+                          id: pollId,
+                          status: res.data.status || 'queued',
+                          variant_count: 0,
+                          notes: res.data.message,
+                        });
+                        setImportStatusView(initialView);
+                        setPdfStatus(`${initialView.label}: ${initialView.detail}`);
+                        let poll: ReturnType<typeof setInterval>;
+                        let timeout: ReturnType<typeof setTimeout>;
+                        let stopped = false;
+                        const stopPolling = () => {
+                          if (stopped) return;
+                          stopped = true;
+                          clearInterval(poll);
+                          clearTimeout(timeout);
+                        };
+                        poll = setInterval(async () => {
                           try {
-                            const detail = await api.get(`/genetic/profiles/${pollId}`);
-                            const variants = detail.data.variants || [];
-                            if (variants.length > 0 || (detail.data.notes && detail.data.notes.includes('完成'))) {
-                              clearInterval(poll);
+                            const detail = await api.get(`/genetic/profiles/${pollId}/status`);
+                            const view = geneticImportStatusView(detail.data);
+                            setImportStatusView(view);
+                            setPdfStatus(`${view.label}: ${view.detail}`);
+                            if (isTerminalGeneticImportStatus(view)) {
+                              stopPolling();
                               setPdfUploading(false);
-                              setPdfStatus(`提取完成！发现 ${variants.length} 个基因位点`);
-                              setShowProfileForm(false);
+                              if (view.phase === 'complete') {
+                                setShowProfileForm(false);
+                              }
                               queryClient.invalidateQueries({ queryKey: ['genetic-profiles'] });
                               queryClient.invalidateQueries({ queryKey: ['genetic-variants'] });
-                            } else if (detail.data.notes && detail.data.notes.includes('失败')) {
-                              clearInterval(poll);
-                              setPdfUploading(false);
-                              setPdfStatus('提取失败: ' + detail.data.notes);
                             }
                           } catch { /* continue polling */ }
                         }, 3000);
-                        setTimeout(() => { clearInterval(poll); setPdfUploading(false); }, 300000);
+                        timeout = setTimeout(() => {
+                          stopPolling();
+                          setPdfUploading(false);
+                          const view = geneticImportStatusView({
+                            id: pollId,
+                            status: 'processing',
+                            variant_count: 0,
+                            notes: '轮询超时',
+                          });
+                          setImportStatusView(view);
+                          setPdfStatus('仍在后台解析，稍后刷新档案即可查看结果');
+                        }, 300000);
                       } catch (err: any) {
                         setPdfUploading(false);
                         setPdfStatus('上传失败: ' + (err.response?.data?.detail || err.message));
@@ -360,14 +414,25 @@ function GeneticContent() {
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
                 disabled={pdfUploading}
               />
-              {pdfUploading && (
-                <div className="mt-2 flex items-center gap-2 text-sm text-teal-700">
-                  <div className="animate-spin h-4 w-4 border-2 border-teal-500 border-t-transparent rounded-full" />
-                  {pdfStatus || 'AI 正在提取基因位点...'}
+              {(pdfUploading || importStatusView || pdfStatus) && (
+                <div className={`mt-3 rounded-lg border p-3 text-sm ${
+                  importStatusView ? importStatusToneClass(importStatusView.tone) : 'border-teal-200 bg-teal-50 text-teal-800'
+                }`}>
+                  <div className="flex items-center gap-2 font-medium">
+                    {pdfUploading && (
+                      <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                    )}
+                    <span>{importStatusView ? importStatusView.label : (pdfStatus || 'AI 正在提取基因位点...')}</span>
+                  </div>
+                  {importStatusView ? (
+                    <div className="mt-1 space-y-1 text-xs leading-5">
+                      <p>{importStatusView.detail}</p>
+                      {importStatusView.coverageLine && <p>{importStatusView.coverageLine}</p>}
+                    </div>
+                  ) : pdfStatus ? (
+                    <p className="mt-1 text-xs leading-5">{pdfStatus}</p>
+                  ) : null}
                 </div>
-              )}
-              {!pdfUploading && pdfStatus && (
-                <p className="mt-2 text-sm text-teal-700">{pdfStatus}</p>
               )}
             </div>
 

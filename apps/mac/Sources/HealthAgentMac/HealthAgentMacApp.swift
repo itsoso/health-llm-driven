@@ -2675,8 +2675,25 @@ struct WorkspaceOverviewView: View {
 
                         if let latestImport = genomic.latestImport {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text(appText("Genetic Import Coverage", appLanguageRaw))
-                                    .font(.callout.weight(.semibold))
+                                HStack(spacing: 8) {
+                                    Text(appText("Genetic Import Coverage", appLanguageRaw))
+                                        .font(.callout.weight(.semibold))
+                                    Spacer(minLength: 0)
+                                    Text(appText(GenomicImportPresentation.statusLabel(for: latestImport), appLanguageRaw))
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(genomicImportStatusColor(GenomicImportPresentation.phase(for: latestImport)))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(
+                                            genomicImportStatusColor(GenomicImportPresentation.phase(for: latestImport)).opacity(0.12),
+                                            in: Capsule()
+                                        )
+                                }
+                                if let detail = GenomicImportPresentation.detailText(for: latestImport) {
+                                    Text(detail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
                                     coverageMetric(title: "Raw", value: latestImport.rawRecordCount.map { "\($0)" } ?? "—", color: .indigo)
                                     coverageMetric(title: "Coverage", value: latestImport.coveragePct.map { "\($0)%" } ?? "—", color: .blue)
@@ -3455,6 +3472,19 @@ struct WorkspaceOverviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private func genomicImportStatusColor(_ phase: GenomicImportPhase) -> Color {
+        switch phase {
+        case .pending, .running:
+            return .orange
+        case .complete:
+            return .teal
+        case .failed:
+            return .red
+        case .unknown:
+            return .secondary
+        }
     }
 
     private func localKnowledgeSourcePanel(_ source: KnowledgeLocalSourceSummary) -> some View {

@@ -10,8 +10,10 @@ import api from './api';
 export interface GeneticTxtUploadResult {
   id: number;
   matched_count: number;
-  variants: Array<{ gene: string; genotype: string; result: string; risk: string }>;
+  variants: { gene: string; genotype: string; result: string; risk: string }[];
   message: string;
+  import_job?: GeneticImportJob;
+  coverage?: GeneticImportCoverage;
 }
 
 export interface GeneticPdfUploadResult {
@@ -56,9 +58,27 @@ export async function uploadGeneticPdf(
 
 export interface GeneticProfileStatus {
   id: number;
-  status: 'processing' | 'done' | 'failed';
+  status: 'queued' | 'processing' | 'done' | 'failed' | string;
   variant_count: number;
   notes: string;
+  import_job?: GeneticImportJob | null;
+  coverage?: GeneticImportCoverage | null;
+}
+
+export interface GeneticImportJob {
+  status?: string | null;
+  matched_count?: number | null;
+  unmapped_count?: number | null;
+  missing_count?: number | null;
+  error_message?: string | null;
+}
+
+export interface GeneticImportCoverage {
+  known_total?: number | null;
+  present?: number | null;
+  missing?: number | null;
+  missing_by_reason?: Record<string, number> | null;
+  missing_by_rsids?: Record<string, string> | null;
 }
 
 export async function getGeneticProfileStatus(profileId: number): Promise<GeneticProfileStatus> {
@@ -82,7 +102,9 @@ export async function pollGeneticProfileStatus(
     try {
       last = await getGeneticProfileStatus(profileId);
       opts.onTick?.(last);
-      if (last.status !== 'processing') return last;
+      if (!['queued', 'processing', 'running', 'started'].includes((last.status || '').toLowerCase())) {
+        return last;
+      }
     } catch {
       // 网络瞬断忽略, 继续轮
     }
