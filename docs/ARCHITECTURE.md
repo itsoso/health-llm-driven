@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 140 API 路由 · 222 services              │
+│                  health-api.executor.life · 141 API 路由 · 223 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 140 API 路由, 222 services, 84 models, 55 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 141 API 路由, 223 services, 85 models, 55 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -114,7 +114,7 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 140 条 API 路由 |
+| `backend/app/api/*.py` | 141 条 API 路由 |
 | `backend/app/services/*.py` | 205 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 55 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
