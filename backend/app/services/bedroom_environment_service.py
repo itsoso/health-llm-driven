@@ -16,7 +16,10 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.bedroom_environment import BedroomEnvironmentSnapshot
+from app.models.bedroom_environment import (
+    BedroomAutomationEvent,
+    BedroomEnvironmentSnapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,3 +195,120 @@ def get_history(
         return []
     now = _now()
     return [_serialize(r, stale=_is_stale(r.captured_at, now)) for r in rows]
+
+
+# ─────────────────────── 自动化事件 (HA webhook 上行) ───────────────────────
+
+_EVENT_SOURCES = {"ha", "reva", "manual"}
+
+
+def _serialize_event(row: BedroomAutomationEvent) -> Dict[str, Any]:
+    created = _coerce_aware(row.created_at) if row.created_at else None
+    return {
+        "id": row.id,
+        "room_id": row.room_id,
+        "event_type": row.event_type,
+        "reason": row.reason,
+        "command_entity_id": row.command_entity_id,
+        "command_mode": row.command_mode,
+        "source": row.source,
+        "manual_override": row.manual_override,
+        "audit_ref": row.audit_ref,
+        "created_at": created.isoformat() if created else None,
+    }
+
+
+def record_event(
+    db: Session, user_id: int, payload: Dict[str, Any]
+) -> BedroomAutomationEvent:
+    """落一条卧室自动化事件 + 写一条审计 (旁路, 失败不阻断事件).
+
+    设计文档 §10 事件上行: HA automation -> webhook -> BedroomAutomationEvent
+    -> AuditLog -> Review. 摄入失败向上抛 (让客户端感知, 对齐地基 PR 取舍).
+
+    向后兼容: 除 event_type 外字段全可空; source 未知回退 'ha'.
+    """
+    payload = payload or {}
+
+    event_type = payload.get("event_type")
+    if not event_type or not str(event_type).strip():
+        # 没有 event_type 的事件无意义 —— 让调用方感知 (不静默写垃圾行).
+        raise ValueError("event_type 必填")
+    event_type = str(event_type).strip()
+
+    source = payload.get("source") or "ha"
+    if source not in _EVENT_SOURCES:
+        logger.warning("[BedroomEvent] 未知 source=%r, 回退 ha", source)
+        source = "ha"
+
+    room_id = payload.get("room_id") or "bedroom"
+    reason = payload.get("reason")
+    command_entity_id = payload.get("command_entity_id")
+    command_mode = payload.get("command_mode")
+    manual_override = bool(payload.get("manual_override") or False)
+
+    event = BedroomAutomationEvent(
+        user_id=user_id,
+        room_id=room_id,
+        event_type=event_type,
+        reason=reason,
+        command_entity_id=command_entity_id,
+        command_mode=command_mode,
+        source=source,
+        manual_override=manual_override,
+    )
+    try:
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+    except Exception:
+        db.rollback()
+        logger.exception("[BedroomEvent] 写入事件失败 user=%s", user_id)
+        raise
+
+    # 审计: 旁路, 失败不抛 —— 事件已落库, 审计缺失不能反向阻断摄入 (§11).
+    try:
+        from app.agents.audit import log_bedroom_event
+
+        audit_id = log_bedroom_event(
+            db,
+            user_id,
+            event_type=event_type,
+            source=source,
+            room_id=room_id,
+            reason=reason,
+            command_entity_id=command_entity_id,
+            command_mode=command_mode,
+            manual_override=manual_override,
+        )
+        if audit_id is not None:
+            event.audit_ref = str(audit_id)
+            db.commit()
+            db.refresh(event)
+    except Exception:
+        # 审计/回填失败不影响主事件; 回滚审计相关变更, 保留已落库的 event.
+        db.rollback()
+        logger.warning("[BedroomEvent] 审计回填失败 (跳过) user=%s", user_id)
+
+    return event
+
+
+def get_events(
+    db: Session, user_id: int, days: int = 7, room_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """近 N 天卧室自动化事件, 时间倒序. DB 异常 → []."""
+    days = max(1, int(days)) if days else 7
+    since = _now() - timedelta(days=days)
+    try:
+        q = db.query(BedroomAutomationEvent).filter(
+            BedroomAutomationEvent.user_id == user_id,
+            BedroomAutomationEvent.created_at >= since,
+        )
+        if room_id is not None:
+            q = q.filter(BedroomAutomationEvent.room_id == room_id)
+        rows = q.order_by(BedroomAutomationEvent.created_at.desc()).all()
+    except Exception:
+        db.rollback()
+        logger.exception("[BedroomEvent] 读取 events 失败 user=%s", user_id)
+        return []
+    return [_serialize_event(r) for r in rows]

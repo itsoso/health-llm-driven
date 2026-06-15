@@ -338,6 +338,50 @@ def log_longevity_trigger(
         return None
 
 
+def log_bedroom_event(
+    db: Session,
+    user_id: int,
+    *,
+    event_type: str,
+    source: str,
+    room_id: str = "bedroom",
+    reason: Optional[str] = None,
+    command_entity_id: Optional[str] = None,
+    command_mode: Optional[str] = None,
+    manual_override: bool = False,
+) -> Optional[int]:
+    """记录一次卧室自动化事件摄入 (设计文档 §10/§11: 每条命令/事件写 AuditLog).
+
+    agent_type='bedroom_automation' — Review / 审计可据此追溯"昨夜自动化"。
+    旁路, 失败不抛 (返回 None), 不阻断事件落库。返回 audit_log.id 供回填 audit_ref。
+    """
+    if user_id is None:
+        return None
+    try:
+        summary = f"bedroom {event_type} source={source}"
+        if manual_override:
+            summary += " manual_override"
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="bedroom_automation",
+            action=event_type,
+            result_summary=summary,
+            result_detail={
+                "room_id": room_id,
+                "event_type": event_type,
+                "source": source,
+                "reason": reason,
+                "command_entity_id": command_entity_id,
+                "command_mode": command_mode,
+                "manual_override": manual_override,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_bedroom_event 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,
