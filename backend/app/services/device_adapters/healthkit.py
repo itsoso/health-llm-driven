@@ -44,6 +44,9 @@ _SOURCE_NAME_MAP: Dict[str, str] = {
     "com.withings.wiScaleNG": "withings-app",
     "com.withings.healthmate": "withings-app",
     "com.garmin.connect.mobile": "garmin-app",
+    # Garmin Connect 写 HealthKit 用显示名 "Connect"(非 bundle id、不含 "Garmin"),
+    # mobile 端正则也抓不到 → 之前落 unknown(生产日志实锤)。两层 map 都补上。
+    "Connect": "garmin-app",
 }
 
 # 校验白名单 — mobile 端推上来的 data_source 必须在这个集合里 (或 unknown 兜底)

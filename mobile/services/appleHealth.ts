@@ -151,6 +151,9 @@ const SOURCE_NAME_MAP: Record<string, DataSource> = {
   // 智能秤 / 第三方
   'com.withings.wiScaleNG': 'withings-app',
   'com.garmin.connect.mobile': 'garmin-app',
+  // Garmin Connect 写 HealthKit 时 sourceName 是显示名 "Connect"(不是 bundle id、
+  // 不含 "Garmin")→ 之前漏网落 unknown(生产日志实锤 user3 步数全是 'Connect')。
+  'Connect': 'garmin-app',
 };
 
 export function mapSourceNameToDataSource(sourceName?: string): DataSource {

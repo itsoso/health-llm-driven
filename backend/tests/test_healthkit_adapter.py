@@ -100,6 +100,28 @@ def test_healthkit_import_unknown_source_falls_back(client, db):
     assert body["source_breakdown"].get("ringconn") == 1
 
 
+def test_garmin_connect_display_name_maps_to_garmin_app():
+    """回归: Garmin Connect 写 HealthKit 用显示名 'Connect'(非 bundle id、不含
+    'Garmin')→ 之前落 unknown。两层 map 补 'Connect' → garmin-app。"""
+    from app.services.device_adapters.healthkit import map_source_name_to_data_source
+    assert map_source_name_to_data_source("Connect") == "garmin-app"
+    # bundle id 路径仍可用, 未知源仍兜底 unknown
+    assert map_source_name_to_data_source("com.garmin.connect.mobile") == "garmin-app"
+    assert map_source_name_to_data_source("com.fitbit.FitbitMobile") == "unknown"
+
+
+def test_healthkit_import_connect_source_lands_garmin_app(client, db):
+    """端到端: source_name='Connect' 的 record → data_source='garmin-app'(不再 unknown)。"""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"records": [
+        {"record_date": "2026-06-14", "source_name": "Connect", "steps": 5143},
+    ]}
+    resp = client.post("/api/v1/devices/healthkit/import", json=payload, headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source_breakdown"].get("garmin-app") == 1
+
+
 def test_healthkit_import_apple_xml_path_unaffected(client, db):
     """回归: AppleHealthAdapter (XML 文件导入) 与 HealthKitAdapter 共存,
     XML 路径走 source='apple', HealthKit 路径走 source='apple-watch' 等,各占独立行."""
