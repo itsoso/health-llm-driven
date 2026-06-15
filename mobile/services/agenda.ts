@@ -22,6 +22,11 @@ export interface AgendaItem {
   detail?: string;
   responsible?: string;
   next_due?: string;
+  // 训练决策灯(type === 'training', status === 'info')专属字段
+  light?: 'green' | 'yellow' | 'red';
+  zone?: string;
+  readiness_score?: number | null;
+  confidence?: number;
   source: AgendaSource;
 }
 

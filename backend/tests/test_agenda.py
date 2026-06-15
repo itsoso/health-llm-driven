@@ -40,3 +40,33 @@ def test_due_checkup_in_agenda_and_priority(client, auth_user_and_headers):
     assert checkup["source"]["object_type"] == "health_problem"
     # 复查(P1,priority 95)排在饮水协议(50)前面
     assert items[0]["type"] == "checkup"
+
+
+def test_training_light_skipped_when_no_signal(monkeypatch):
+    """无任何恢复/负荷信号(zone=unknown 且无 acwr)→ 不投训练灯(不假装黄灯)。"""
+    from app.services import agenda_service
+    monkeypatch.setattr(agenda_service, "training_decision",
+                        lambda db, uid: {"zone": "unknown", "light": "yellow"},
+                        raising=False)
+    # training_decision 在函数内部 import,需 patch 源模块
+    import app.services.recovery_decision as rd
+    monkeypatch.setattr(rd, "training_decision",
+                        lambda db, uid: {"zone": "unknown", "light": "yellow"})
+    assert agenda_service._training_item(None, 1) is None
+
+
+def test_training_light_projected_when_signal_present(monkeypatch):
+    """有恢复信号 → 投只读训练灯项(status=info,带灯色/分数,不可完成)。"""
+    from app.services import agenda_service
+    import app.services.recovery_decision as rd
+    monkeypatch.setattr(rd, "training_decision", lambda db, uid: {
+        "zone": "rest", "light": "red", "readiness_score": 38,
+        "next_action": "今天以休息为主", "reasons": ["恢复就绪度 38/100"],
+        "confidence": 0.7,
+    })
+    item = agenda_service._training_item(None, 7)
+    assert item is not None
+    assert item["type"] == "training" and item["status"] == "info"
+    assert item["light"] == "red" and item["readiness_score"] == 38
+    assert item["priority"] == 90  # red 抬到复查档
+    assert item["source"]["object_type"] == "training_decision"

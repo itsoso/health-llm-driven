@@ -3,8 +3,9 @@
 把分散来源投影成一条统一的 HealthAgendaItem 列表(item 引用 source object,不复制业务事实):
 - HealthProtocol 今日待办(三域:饮水/用药/饮食 + 自定义)
 - HealthProblem 到期/逾期复查(= 复查日历)
+- 今日训练决策灯(green/yellow/red,只读建议项,来自 recovery_decision)
 
-后续 slice 再并入:DailyOperatingPlan 行动、用药 regimen、今日训练决策灯。
+后续 slice 再并入:DailyOperatingPlan 行动、用药 regimen。
 只读投影,无副作用(完成/跳过仍走各自 source 的端点)。详见 docs/prd/reva-personal-health-os-prd.md §4 / R1。
 """
 import logging
@@ -26,6 +27,43 @@ def _agenda_item(**kw) -> Dict[str, Any]:
     return kw
 
 
+def _training_item(db: Session, user_id: int) -> Dict[str, Any] | None:
+    """今日训练决策灯 → 议程项(只读建议,不可在议程内"完成")。
+
+    防御性:无任何恢复信号(zone=unknown)且无训练负荷信号时返回 None ——
+    不投一个凭空的黄灯(守 Rule #1,不假装有判断)。任何异常都吞掉只记日志,
+    训练灯失败绝不拖垮整条议程。
+    """
+    try:
+        from app.services.recovery_decision import training_decision
+        d = training_decision(db, user_id)
+    except Exception as e:  # noqa: BLE001 — 投影增强失败不应破坏议程
+        logger.warning("agenda: 训练决策灯计算失败,跳过该项: %s", e)
+        return None
+
+    zone = d.get("zone")
+    has_signal = (zone and zone != "unknown") or bool(d.get("acwr_zone"))
+    if not has_signal:
+        return None
+
+    light = d.get("light", "yellow")
+    # red 灯(建议休息)优先级抬到复查档,green/yellow 居协议之上
+    priority = 90 if light == "red" else 80
+    return _agenda_item(
+        type="training",
+        title=f"今日训练:{d.get('next_action') or '查看建议'}",
+        status="info",                       # 建议项,非待办;前端不渲染 ✓
+        time_window="morning",
+        priority=priority,
+        light=light,
+        zone=zone,
+        readiness_score=d.get("readiness_score"),
+        confidence=d.get("confidence"),
+        detail="；".join(d.get("reasons", []) or []),
+        source={"object_type": "training_decision", "object_id": user_id},
+    )
+
+
 def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str, Any]:
     """今日统一议程:协议待办 + 近 N 天到期复查。按优先级(高在前)+ 时间窗排序。"""
     items: List[Dict[str, Any]] = []
@@ -44,7 +82,12 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
             source={"object_type": "health_protocol", "object_id": p["protocol_id"]},
         ))
 
-    # 2) 到期复查(HealthProblem follow_up)→ 复查日历项
+    # 2) 今日训练决策灯(只读建议项)
+    ti = _training_item(db, user_id)
+    if ti is not None:
+        items.append(ti)
+
+    # 3) 到期复查(HealthProblem follow_up)→ 复查日历项
     for f in prob_svc.due_followups(db, user_id, within_days=followup_within_days):
         items.append(_agenda_item(
             type="checkup",

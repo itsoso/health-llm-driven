@@ -29,6 +29,11 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '待完成', completed: '已完成', skipped: '已跳过', due: '待复查', overdue: '已逾期',
+  info: '今日建议',
+};
+
+const LIGHT_COLOR: Record<string, string> = {
+  green: '#34C759', yellow: '#FFCC00', red: '#FF3B30',
 };
 
 export default function AgendaScreen() {
@@ -101,7 +106,14 @@ export default function AgendaScreen() {
                   </Text>
                   {item.detail ? <Text style={styles.cardDetail}>{item.detail}</Text> : null}
                 </View>
-                {isProtocolActionable(item) ? (
+                {item.type === 'training' && item.light ? (
+                  <View style={styles.lightWrap}>
+                    <View style={[styles.lightDot, { backgroundColor: LIGHT_COLOR[item.light] ?? c.labelTertiary }]} />
+                    {typeof item.readiness_score === 'number' && item.readiness_score > 0 ? (
+                      <Text style={styles.lightScore}>{item.readiness_score}</Text>
+                    ) : null}
+                  </View>
+                ) : isProtocolActionable(item) ? (
                   <TouchableOpacity
                     style={styles.doneBtn}
                     disabled={complete.isPending}
@@ -144,6 +156,9 @@ function createStyles(c: ColorPalette) {
       width: 36, height: 36, borderRadius: radii.full, backgroundColor: c.brand,
       alignItems: 'center', justifyContent: 'center',
     },
+    lightWrap: { alignItems: 'center', width: 36, gap: 2 },
+    lightDot: { width: 16, height: 16, borderRadius: radii.full },
+    lightScore: { fontSize: 11, fontWeight: '600', color: c.labelSecondary },
     seedBtn: {
       marginTop: spacing.lg, backgroundColor: c.brand,
       paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radii.full,
