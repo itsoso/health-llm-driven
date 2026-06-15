@@ -28,6 +28,7 @@ class ProtocolCreate(BaseModel):
     manual_track_allowed: bool = True
     program_id: Optional[int] = None
     source_model: Optional[str] = None
+    source_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -78,6 +79,20 @@ async def seed_water_cup(
 ):
     """快速建一个 2000ml 温水杯协议(参考实现)。"""
     return svc.serialize_protocol(svc.create_water_cup_protocol(db, current_user.id))
+
+
+@router.post("/from-medication/{medication_id}")
+async def from_medication(
+    medication_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """从一味已存在的药生成用药域协议(完成→写 MedicationLog,双轨同源)。"""
+    try:
+        p = svc.create_protocol_for_medication(db, current_user.id, medication_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return svc.serialize_protocol(p)
 
 
 @router.post("/{protocol_id}/complete")
