@@ -84,6 +84,12 @@ describe('mapSourceNameToDataSource', () => {
     expect(mapSourceNameToDataSource('Garmin Connect')).toBe('garmin-app');
   });
 
+  it('Garmin Connect 的 HealthKit 显示名 "Connect" → garmin-app (回归: 之前落 unknown)', () => {
+    // react-native-health 给 Garmin Connect 返回显示名 "Connect"(非 bundle id、
+    // 不含 "Garmin"), 精确匹配命中, 不再走正则漏到 unknown。
+    expect(mapSourceNameToDataSource('Connect')).toBe('garmin-app');
+  });
+
   it('未知 bundle id 落 unknown 而不是抛错', () => {
     expect(mapSourceNameToDataSource('com.fitbit.FitbitMobile')).toBe('unknown');
     expect(mapSourceNameToDataSource('com.somerandom.app')).toBe('unknown');
