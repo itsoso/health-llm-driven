@@ -630,8 +630,37 @@ public struct GenomicFindingSummary: Decodable, Equatable, Identifiable, Sendabl
     public let resultLabel: String?
     public let riskLevel: String?
     public let evidenceLevel: String?
+    public let clinicalStatus: String?
     public let description: String?
     public let variantNature: String?
+
+    public init(
+        id: Int,
+        rsid: String? = nil,
+        category: String? = nil,
+        geneName: String,
+        variantName: String? = nil,
+        genotype: String? = nil,
+        resultLabel: String? = nil,
+        riskLevel: String? = nil,
+        evidenceLevel: String? = nil,
+        clinicalStatus: String? = nil,
+        description: String? = nil,
+        variantNature: String? = nil
+    ) {
+        self.id = id
+        self.rsid = rsid
+        self.category = category
+        self.geneName = geneName
+        self.variantName = variantName
+        self.genotype = genotype
+        self.resultLabel = resultLabel
+        self.riskLevel = riskLevel
+        self.evidenceLevel = evidenceLevel
+        self.clinicalStatus = clinicalStatus
+        self.description = description
+        self.variantNature = variantNature
+    }
 
     public var displayTitle: String {
         if let variantName, !variantName.isEmpty {
@@ -650,6 +679,7 @@ public struct GenomicFindingSummary: Decodable, Equatable, Identifiable, Sendabl
         case resultLabel = "result_label"
         case riskLevel = "risk_level"
         case evidenceLevel = "evidence_level"
+        case clinicalStatus = "clinical_status"
         case description
         case variantNature = "variant_nature"
     }

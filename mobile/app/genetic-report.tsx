@@ -45,6 +45,7 @@ import EvidenceChip from '../components/shared/EvidenceChip';
 import { EvidenceRefsRow } from '../components/knowledge';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createGeneticReportAgentContext } from '../utils/agentContext';
+import { geneticClinicalBoundary, geneticRiskBadgeOverride } from '../utils/geneticClinicalBoundary';
 
 export default function GeneticReportScreen() {
   const { c } = useTheme();
@@ -471,6 +472,14 @@ function SnpCard({
       {expanded && (
         <View style={styles.snpExpand}>
           <Text style={[styles.snpDesc, { color: c.labelSecondary }]}>{item.description}</Text>
+          {geneticClinicalBoundary(item) && (
+            <View style={[styles.boundaryBox, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+              <Ionicons name="shield-checkmark-outline" size={14} color={c.amber} />
+              <Text style={[styles.boundaryText, { color: c.labelSecondary }]}>
+                {geneticClinicalBoundary(item)}
+              </Text>
+            </View>
+          )}
           <Text style={[styles.snpMeta, { color: c.labelTertiary }]}>
             {item.rsid} · {CATEGORY_LABELS[item.category] ?? item.category}
           </Text>
@@ -510,9 +519,8 @@ function SnpCard({
 }
 
 function getRiskBadge(item: GeneticReportItem) {
-  if (item.clinical_status === 'requires_confirmation') {
-    return { bg: '#E0F2FE', text: '#075985', label: '待确认' };
-  }
+  const boundaryBadge = geneticRiskBadgeOverride(item);
+  if (boundaryBadge) return boundaryBadge;
   return item.risk_level ? RISK_COLORS[item.risk_level] : null;
 }
 
@@ -657,6 +665,15 @@ const styles = StyleSheet.create({
   snpExpand: { gap: 6, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E2E8F0' },
   snpDesc: { fontSize: 13, lineHeight: 18 },
   snpMeta: { fontSize: 11, fontFamily: 'Courier' },
+  boundaryBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    padding: 8,
+  },
+  boundaryText: { flex: 1, fontSize: 11, lineHeight: 16 },
   // G-W3 Why 面板
   relatedSection: { gap: 6, marginTop: 6 },
   relatedTitle: { fontSize: 11, fontWeight: '600' },

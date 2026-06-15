@@ -2784,7 +2784,7 @@ struct WorkspaceOverviewView: View {
                                         .font(.callout.weight(.semibold))
                                         .lineLimit(2)
                                     Spacer(minLength: 8)
-                                    Text((finding.riskLevel ?? "info").uppercased())
+                                    Text(GenomicFindingPresentation.badgeLabel(for: finding))
                                         .font(.caption2.weight(.bold))
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 4)
@@ -2812,6 +2812,12 @@ struct WorkspaceOverviewView: View {
                                     Text(description)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                if let boundary = GenomicFindingPresentation.boundaryText(for: finding) {
+                                    Text(appText(boundary, appLanguageRaw))
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
                                         .lineLimit(2)
                                 }
                                 HStack(spacing: 8) {
@@ -3346,6 +3352,7 @@ struct WorkspaceOverviewView: View {
         - 结果：\(finding.resultLabel ?? "unknown")
         - 风险等级：\(finding.riskLevel ?? "unknown")
         - 证据等级：\(finding.evidenceLevel ?? "unknown")
+        - 临床边界：\(finding.clinicalStatus ?? "unknown")
         - 位点性质：\(finding.variantNature ?? "unknown")
         - 描述：\(finding.description ?? "无")
         """
@@ -3379,6 +3386,7 @@ struct WorkspaceOverviewView: View {
                 finding.genotype,
                 finding.riskLevel,
                 finding.evidenceLevel,
+                finding.clinicalStatus,
                 finding.description
             ].compactMap { $0 }.joined(separator: " · "),
             payload: [
@@ -3390,6 +3398,7 @@ struct WorkspaceOverviewView: View {
                 "result_label": finding.resultLabel ?? "",
                 "risk_level": finding.riskLevel ?? "",
                 "evidence_level": finding.evidenceLevel ?? "",
+                "clinical_status": finding.clinicalStatus ?? "",
                 "category": finding.category ?? "",
                 "variant_nature": finding.variantNature ?? ""
             ]
@@ -3702,7 +3711,7 @@ private struct GenomicFindingDetailSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text((finding.riskLevel ?? "info").uppercased())
+                Text(GenomicFindingPresentation.badgeLabel(for: finding))
                     .font(.caption.bold())
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
@@ -3730,6 +3739,9 @@ private struct GenomicFindingDetailSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(appText("Clinical Boundary", appLanguageRaw))
                     .font(.headline)
+                if let boundary = GenomicFindingPresentation.boundaryText(for: finding) {
+                    Label(appText(boundary, appLanguageRaw), systemImage: "exclamationmark.triangle.fill")
+                }
                 Label(appText("Use genotype as a risk flag, not a diagnosis.", appLanguageRaw), systemImage: "exclamationmark.shield.fill")
                 Label(appText("Confirm high-impact findings with clinical testing before medication or disease decisions.", appLanguageRaw), systemImage: "checkmark.seal")
                 Label(appText("Ask Agent with recent labs, symptoms, supplements, and exercise before changing plans.", appLanguageRaw), systemImage: "sparkles")

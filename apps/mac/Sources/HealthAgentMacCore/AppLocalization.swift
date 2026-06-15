@@ -672,6 +672,8 @@ public enum L10n {
         "Use this source with your own data before turning it into an action.": "先结合你的真实数据，再把这条资料转成行动。",
         "Clinical Boundary": "临床边界",
         "Use genotype as a risk flag, not a diagnosis.": "基因型只作为风险提示，不作为诊断。",
+        "PGx result is a medication risk flag; confirm with a clinician or pharmacist before starting, stopping, or changing medication.": "PGx 结果只提示用药风险分层；开始、停用或调整药物前请让医生或药师确认。",
+        "DTC genetic data is a screening flag; confirm clinically before disease or carrier-status decisions.": "DTC 基因数据只是筛查提示；涉及疾病或携带状态决策前需临床确认。",
         "Confirm high-impact findings with clinical testing before medication or disease decisions.": "涉及用药或疾病决策前，先用临床检测确认高影响发现。",
         "Ask Agent with recent labs, symptoms, supplements, and exercise before changing plans.": "调整计划前，结合近期化验、症状、补剂和运动数据问 Agent。",
         "Quick Capture": "快速记录",

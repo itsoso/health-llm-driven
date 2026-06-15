@@ -5,6 +5,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import {
+  clinicalBoundaryForGeneticFinding,
+  sanitizePgxTemplateLabel,
+} from '@/components/genetic/geneticClinicalBoundary';
 
 const CATEGORIES = [
   { key: 'nutrition', label: '营养代谢', icon: '🥗' },
@@ -76,16 +80,16 @@ const GENE_TEMPLATES: Record<string, Array<{gene: string; variant: string; optio
     ]},
     { gene: "CYP2D6", variant: "止痛药代谢", options: [
       { genotype: "正常", label: "正常代谢", risk: "low" },
-      { genotype: "慢代谢", label: "慢代谢(需调整剂量)", risk: "high" },
-      { genotype: "超快代谢", label: "超快代谢(需调整剂量)", risk: "medium" },
+      { genotype: "慢代谢", label: "慢代谢，用药前需医生/药师确认", risk: "high" },
+      { genotype: "超快代谢", label: "超快代谢，用药前需医生/药师确认", risk: "medium" },
     ]},
     { gene: "SLCO1B1", variant: "他汀类药物", options: [
       { genotype: "正常", label: "他汀耐受正常", risk: "low" },
       { genotype: "敏感", label: "他汀肌病风险增高", risk: "high" },
     ]},
     { gene: "HLA-B*5801", variant: "别嘌醇过敏", options: [
-      { genotype: "阴性", label: "别嘌醇可使用", risk: "low" },
-      { genotype: "阳性", label: "别嘌醇禁用(严重过敏)", risk: "high" },
+      { genotype: "阴性", label: "未发现此位点风险信号，仍需结合病史与医嘱", risk: "low" },
+      { genotype: "阳性", label: "别嘌醇用药前需医生/药师确认", risk: "high" },
     ]},
   ],
   disease_risk: [
@@ -125,6 +129,7 @@ const GENE_TEMPLATES: Record<string, Array<{gene: string; variant: string; optio
 type Variant = {
   id: number; category: string; gene_name: string; variant_name: string;
   genotype: string; result_label: string; risk_level: string; description?: string;
+  clinical_status?: string | null;
 };
 type Profile = { id: number; test_provider: string; test_date: string; report_id?: string; notes?: string };
 
@@ -193,7 +198,9 @@ function GeneticContent() {
     if (!opt) return;
     addVariantMutation.mutate([{
       profile_id: latestProfile.id, category: activeTab, gene_name: tpl.gene,
-      variant_name: tpl.variant, genotype: opt.genotype, result_label: opt.label, risk_level: opt.risk,
+      variant_name: tpl.variant, genotype: opt.genotype,
+      result_label: activeTab === 'drug_sensitivity' ? sanitizePgxTemplateLabel(opt.label) : opt.label,
+      risk_level: opt.risk,
     }]);
   };
 
@@ -427,8 +434,16 @@ function GeneticContent() {
                     </button>
                   </div>
                 </div>
-                <div className="mt-2 text-sm font-medium">{v.genotype} - {v.result_label}</div>
+                <div className="mt-2 text-sm font-medium">
+                  {v.genotype} - {v.category === 'drug_sensitivity' ? sanitizePgxTemplateLabel(v.result_label) : v.result_label}
+                </div>
                 {v.description && <p className="mt-1 text-xs opacity-70">{v.description}</p>}
+                {clinicalBoundaryForGeneticFinding(v) && (
+                  <div className="mt-3 rounded-lg border border-white/70 bg-white/70 p-2 text-xs leading-5">
+                    <span className="font-semibold">{clinicalBoundaryForGeneticFinding(v)?.label}: </span>
+                    {clinicalBoundaryForGeneticFinding(v)?.text}
+                  </div>
+                )}
               </div>
             ))}
           </div>

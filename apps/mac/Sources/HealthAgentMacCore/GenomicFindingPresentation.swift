@@ -17,6 +17,28 @@ public struct GenomicFindingDisplayGroup: Equatable, Identifiable, Sendable {
 }
 
 public enum GenomicFindingPresentation {
+    public static func badgeLabel(for finding: GenomicFindingSummary) -> String {
+        switch normalizedClinicalStatus(finding) {
+        case "pharmacogenomic_screening":
+            return "用药确认"
+        case "requires_confirmation":
+            return "待确认"
+        default:
+            return (finding.riskLevel ?? "info").uppercased()
+        }
+    }
+
+    public static func boundaryText(for finding: GenomicFindingSummary) -> String? {
+        switch normalizedClinicalStatus(finding) {
+        case "pharmacogenomic_screening":
+            return "PGx result is a medication risk flag; confirm with a clinician or pharmacist before starting, stopping, or changing medication."
+        case "requires_confirmation":
+            return "DTC genetic data is a screening flag; confirm clinically before disease or carrier-status decisions."
+        default:
+            return nil
+        }
+    }
+
     public static func groups(from findings: [GenomicFindingSummary]) -> [GenomicFindingDisplayGroup] {
         var orderedKeys: [String] = []
         var buckets: [String: [GenomicFindingSummary]] = [:]
@@ -48,6 +70,15 @@ public enum GenomicFindingPresentation {
         }
     }
 
+    private static func normalizedClinicalStatus(_ finding: GenomicFindingSummary) -> String {
+        let status = (finding.clinicalStatus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !status.isEmpty { return status }
+        if (finding.category ?? "").lowercased() == "drug_sensitivity" {
+            return "pharmacogenomic_screening"
+        }
+        return ""
+    }
+
     private static func groupKey(for finding: GenomicFindingSummary) -> String {
         [
             finding.category ?? "",
@@ -55,6 +86,7 @@ public enum GenomicFindingPresentation {
             finding.resultLabel ?? "",
             finding.riskLevel ?? "",
             finding.evidenceLevel ?? "",
+            finding.clinicalStatus ?? "",
             finding.description ?? ""
         ]
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }

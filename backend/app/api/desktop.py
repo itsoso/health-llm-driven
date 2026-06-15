@@ -33,6 +33,7 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.weight import WeightRecord
 from app.services.daily_operating_plan import build_daily_operating_plan
+from app.services.genetic_risk import clinical_status
 from app.services.health_trajectory import build_health_trajectory_snapshot
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
@@ -436,6 +437,11 @@ def _variant_to_finding(variant: GeneticVariant) -> dict[str, Any]:
         "result_label": variant.result_label,
         "risk_level": variant.risk_level,
         "evidence_level": variant.evidence_level,
+        "clinical_status": clinical_status(
+            variant.category,
+            variant.evidence_level,
+            variant.health_implications,
+        ),
         "description": variant.description,
         "variant_nature": variant.variant_nature,
     }

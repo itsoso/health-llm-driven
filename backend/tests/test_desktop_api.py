@@ -304,6 +304,7 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     assert body["genomic_summary"]["provider"] == "wegene"
     assert body["genomic_summary"]["top_findings"][0]["gene_name"] == "HLA-A*31:01"
     assert body["genomic_summary"]["top_findings"][0]["genotype"] == "AA"
+    assert body["genomic_summary"]["top_findings"][0]["clinical_status"] == "pharmacogenomic_screening"
     assert body["genomic_summary"]["top_categories"][0]["category"] == "disease_risk"
     assert body["genomic_summary"]["profile_summaries"][0]["profile_id"] == profile.id
     assert body["genomic_summary"]["profile_summaries"][0]["is_active"] is True
