@@ -27,6 +27,7 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   training: 'barbell-outline',
   checkup: 'calendar-outline',
   data_quality: 'git-compare-outline',
+  correction: 'construct-outline',
 };
 
 const STATUS_LABEL: Record<string, string> = {

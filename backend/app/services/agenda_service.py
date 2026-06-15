@@ -99,6 +99,30 @@ def _data_quality_item(db: Session, user_id: int) -> Dict[str, Any] | None:
     )
 
 
+def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """协议自纠偏(R14)→ 只读建议项(不可完成)。失败降级。"""
+    try:
+        from app.services.protocol_self_correction import detect_self_corrections
+        corrections = detect_self_corrections(db, user_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda: 自纠偏计算失败,跳过: %s", e)
+        return []
+    return [
+        _agenda_item(
+            type="correction",
+            title=f"协议待调整:{c['name']}",
+            status="info",
+            time_window="anytime",
+            priority=72,
+            detail=c["message"],
+            suggestion=c["suggestion"],
+            skip_count=c["skip_count"],
+            source={"object_type": "health_protocol", "object_id": c["protocol_id"]},
+        )
+        for c in corrections
+    ]
+
+
 def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str, Any]:
     """今日统一议程:协议待办 + 近 N 天到期复查。按优先级(高在前)+ 时间窗排序。"""
     items: List[Dict[str, Any]] = []
@@ -127,7 +151,11 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     if dq is not None:
         items.append(dq)
 
-    # 4) 到期复查(HealthProblem follow_up)→ 复查日历项
+    # 4) 协议自纠偏(连续跳过)→ correction 提示(R14,非羞辱式)
+    for c in _self_correction_items(db, user_id):
+        items.append(c)
+
+    # 5) 到期复查(HealthProblem follow_up)→ 复查日历项
     for f in prob_svc.due_followups(db, user_id, within_days=followup_within_days):
         items.append(_agenda_item(
             type="checkup",

@@ -122,6 +122,33 @@ def test_cadence_event_triggered_not_on_daily_calendar(client, auth_user_and_hea
     assert row["is_due_today"] is False
 
 
+def test_self_correction_triggers_on_repeated_skips(client, auth_user_and_headers, db):
+    """近 7 天跳过 ≥2 次 → /corrections 出非羞辱式建议(R14)。"""
+    user, h = auth_user_and_headers
+    pid = client.post("/api/v1/protocols/seed/water-cup", headers=h).json()["id"]
+    from datetime import date, timedelta
+    from app.services import health_protocol_service as svc
+
+    # 还没跳过 → 无建议
+    assert client.get("/api/v1/protocols/corrections", headers=h).json() == []
+
+    # 跳过昨天 + 今天(同因 no_supply)。skip_protocol 支持 day 参数,直接落两天事件。
+    svc.skip_protocol(db, pid, user.id, reason="no_supply", day=date.today() - timedelta(days=1))
+    svc.skip_protocol(db, pid, user.id, reason="no_supply", day=date.today())
+    db.commit()
+
+    corr = client.get("/api/v1/protocols/corrections", headers=h).json()
+    assert len(corr) == 1
+    assert corr[0]["skip_count"] == 2
+    assert corr[0]["dominant_reason"] == "no_supply"
+    assert "不是你的错" in corr[0]["message"]          # 非羞辱式措辞
+    assert "耗材" in corr[0]["suggestion"]             # no_supply → 查耗材
+
+    # 也进今日议程(advisory correction 项)
+    items = client.get("/api/v1/agenda/today", headers=h).json()["items"]
+    assert any(i["type"] == "correction" for i in items)
+
+
 def test_period_start_boundaries():
     """_period_start:周/月/季/年 边界。"""
     from datetime import date
