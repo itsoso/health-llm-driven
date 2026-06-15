@@ -96,6 +96,44 @@ def test_skip_with_reason_and_flip(client, auth_user_and_headers):
     assert row["today_status"] == "completed"
 
 
+def test_cadence_weekly_due_until_completed_this_week(client, auth_user_and_headers):
+    """周协议:本周未完成→到期;完成后→不到期(掉出议程,下周再现)。"""
+    _, h = auth_user_and_headers
+    pid = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "training", "name": "周一次长跑", "cadence": "weekly",
+    }).json()["id"]
+    row = next(x for x in client.get("/api/v1/protocols/today", headers=h).json()
+               if x["protocol_id"] == pid)
+    assert row["is_due_today"] is True
+    client.post(f"/api/v1/protocols/{pid}/complete", headers=h, json={"track": "protocol"})
+    row = next(x for x in client.get("/api/v1/protocols/today", headers=h).json()
+               if x["protocol_id"] == pid)
+    assert row["is_due_today"] is False  # 本周已完成
+
+
+def test_cadence_event_triggered_not_on_daily_calendar(client, auth_user_and_headers):
+    """event_triggered 不上每日日历(由事件触发)→ is_due_today=False。"""
+    _, h = auth_user_and_headers
+    pid = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "diet", "name": "饭后散步", "cadence": "event_triggered",
+    }).json()["id"]
+    row = next(x for x in client.get("/api/v1/protocols/today", headers=h).json()
+               if x["protocol_id"] == pid)
+    assert row["is_due_today"] is False
+
+
+def test_period_start_boundaries():
+    """_period_start:周/月/季/年 边界。"""
+    from datetime import date
+    from app.services.health_protocol_service import _period_start
+    d = date(2026, 6, 15)  # 周一? 2026-06-15 是周一
+    assert _period_start("weekly", d) == date(2026, 6, 15)
+    assert _period_start("monthly", d) == date(2026, 6, 1)
+    assert _period_start("quarterly", d) == date(2026, 4, 1)   # Q2 首月
+    assert _period_start("annual", d) == date(2026, 1, 1)
+    assert _period_start("daily", d) is None
+
+
 def test_user_isolation(client, auth_user_and_headers, db):
     from tests.conftest import create_authenticated_user
     user_a, ha = auth_user_and_headers

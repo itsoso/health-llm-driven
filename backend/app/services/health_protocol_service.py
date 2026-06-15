@@ -4,7 +4,7 @@
 饮水域作参考实现;用药/饮食后续 slice 照搬同一模式。
 """
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -70,9 +70,50 @@ def archive_protocol(db: Session, protocol_id: int, user_id: int) -> bool:
     return True
 
 
-def _is_due_today(p: HealthProtocol) -> bool:
-    """本 slice:daily 每天到期;非 daily cadence 的到期投影留后续 slice。"""
-    return (p.cadence or "daily") == "daily"
+def _period_start(cadence: str, today: date) -> Optional[date]:
+    """给定 cadence 的当前周期起始日(用于「本周期内是否已完成」判断)。
+
+    daily/per_meal_slot 每天到期(无周期概念,返回 None);event_triggered 不上日历。
+    """
+    if cadence == "weekly":
+        return today - timedelta(days=today.weekday())          # 本周一
+    if cadence == "monthly":
+        return today.replace(day=1)                              # 本月一号
+    if cadence == "quarterly":
+        q_start_month = ((today.month - 1) // 3) * 3 + 1
+        return date(today.year, q_start_month, 1)                # 本季度首月一号
+    if cadence == "annual":
+        return date(today.year, 1, 1)                            # 本年一号
+    return None
+
+
+def _completed_in_period(db: Session, protocol_id: int, user_id: int,
+                         since: date, today: date) -> bool:
+    """周期内(since..today)是否已有完成/自动观测事件 → 已完成本周期。"""
+    return db.query(HealthProtocolEvent.id).filter(
+        HealthProtocolEvent.protocol_id == protocol_id,
+        HealthProtocolEvent.user_id == user_id,
+        HealthProtocolEvent.status.in_(("completed", "auto_observed")),
+        HealthProtocolEvent.event_date >= since,
+        HealthProtocolEvent.event_date <= today,
+    ).first() is not None
+
+
+def _is_due_today(db: Session, p: HealthProtocol, user_id: int, today: date) -> bool:
+    """按 cadence 判定今天是否到期(进议程投影)。
+
+    - daily / per_meal_slot:每天到期(完成态由 today_status 单独反映)
+    - weekly/monthly/quarterly/annual:本周期内未完成才到期(完成后掉出,下周期再现)
+    - event_triggered:不上日历(由事件触发,非每日投影)→ 不到期
+    - 未知 cadence:退回 daily 行为(安全,不漏)
+    """
+    cadence = p.cadence or "daily"
+    if cadence == "event_triggered":
+        return False
+    since = _period_start(cadence, today)
+    if since is None:
+        return True  # daily / per_meal_slot / 未知
+    return not _completed_in_period(db, p.id, user_id, since, today)
 
 
 def _today_event(db: Session, protocol_id: int, user_id: int, day: date) -> Optional[HealthProtocolEvent]:
@@ -97,7 +138,7 @@ def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "implied_quantity": p.implied_quantity,
             "time_window": p.time_window,
             "cadence": p.cadence,
-            "is_due_today": _is_due_today(p),
+            "is_due_today": _is_due_today(db, p, user_id, today),
             "can_default_complete": p.can_default_complete,
             "manual_track_allowed": p.manual_track_allowed,
             "today_status": ev.status if ev else "pending",
