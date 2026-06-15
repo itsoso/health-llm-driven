@@ -329,6 +329,19 @@ public struct AgentConversationSnapshot: Codable, Equatable, Identifiable, Senda
         self.messages = messages
         self.updatedAt = updatedAt
     }
+
+    /// Returns a copy carrying `newMessages`, keeping id / conversationID / title /
+    /// updatedAt. Used when merging the message-less backend list with cached or
+    /// freshly-loaded transcripts.
+    public func replacingMessages(_ newMessages: [AgentChatMessage]) -> AgentConversationSnapshot {
+        AgentConversationSnapshot(
+            id: id,
+            conversationID: conversationID,
+            title: title,
+            messages: newMessages,
+            updatedAt: updatedAt
+        )
+    }
 }
 
 public protocol AgentConversationStoring: Sendable {
@@ -512,12 +525,22 @@ public final class AgentChatViewModel {
     public var toolActivities: [AgentToolActivity] = []
     public var proposedActions: [AgentProposedAction] = []
 
+    /// Set when the backend history list/detail fetch fell back to the local
+    /// cache (offline / 401 / server error). The UI surfaces this so a stale
+    /// local view is never silently presented as authoritative. nil = backend
+    /// data is current.
+    public var historyNotice: String?
+    /// True while a backend history list or detail fetch is in flight.
+    public var isLoadingHistory = false
+
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
     @ObservationIgnored
     private let contextBundleStore: AgentContextBundleStoring?
     @ObservationIgnored
     private let conversationStore: AgentConversationStoring?
+    @ObservationIgnored
+    private let remoteSource: AgentConversationRemoteSourcing?
     @ObservationIgnored
     private var currentConversationSnapshotID: UUID?
 
@@ -537,13 +560,17 @@ public final class AgentChatViewModel {
         selectedModelID: String? = nil,
         streamService: AgentStreamServicing? = nil,
         contextBundleStore: AgentContextBundleStoring? = nil,
-        conversationStore: AgentConversationStoring? = nil
+        conversationStore: AgentConversationStoring? = nil,
+        remoteSource: AgentConversationRemoteSourcing? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
         self.contextBundleStore = contextBundleStore
         self.conversationStore = conversationStore
+        self.remoteSource = remoteSource
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
+        // Seed from the local cache so the list isn't empty before the first
+        // backend fetch returns; `refreshConversationHistory()` replaces it.
         self.conversationHistory = conversationStore?.loadConversations() ?? []
         if let latest = conversationHistory.first {
             self.currentConversationSnapshotID = latest.id
@@ -791,6 +818,86 @@ public final class AgentChatViewModel {
         preparedDraft = nil
     }
 
+    /// Refreshes the history list from the backend (`GET /agent/conversations`),
+    /// matching web/mobile. On success the backend list becomes authoritative and
+    /// is written to the local cache as an offline fallback. On failure (offline /
+    /// 401 / 5xx) the existing cache is kept and `historyNotice` is set so the UI
+    /// can tell the user it's showing a possibly-stale local copy — never silently
+    /// cleared. No-op when no remote source is wired (e.g. unit tests, previews).
+    public func refreshConversationHistory(limit: Int = 30) async {
+        guard let remoteSource else { return }
+        isLoadingHistory = true
+        defer { isLoadingHistory = false }
+        do {
+            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0)
+            // The backend list carries no messages. Don't let it wipe transcripts
+            // we already have cached: keep the open chat's live messages, and keep
+            // any previously-cached transcript for the rest (so offline-open still
+            // works). Backend list is otherwise authoritative for ordering/titles.
+            let cachedByID = Dictionary(
+                conversationHistory.map { ($0.id, $0.messages) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let merged = remote.map { snapshot -> AgentConversationSnapshot in
+                if snapshot.id == currentConversationSnapshotID, !messages.isEmpty {
+                    return snapshot.replacingMessages(messages)
+                }
+                if let cached = cachedByID[snapshot.id], !cached.isEmpty {
+                    return snapshot.replacingMessages(cached)
+                }
+                return snapshot
+            }
+            conversationHistory = merged
+            conversationStore?.saveConversations(merged)
+            historyNotice = nil
+        } catch APIError.unauthorized {
+            // 401 already cleared the token + posted authSessionExpired; the app
+            // root drops to login. Keep the cache visible meanwhile.
+            historyNotice = "登录已过期，下面是本地缓存的历史。"
+        } catch {
+            AppLogger.agent.error("conversation history refresh failed: \(error.localizedDescription, privacy: .public)")
+            historyNotice = "离线或服务不可用，显示本地缓存的历史。"
+        }
+    }
+
+    /// Loads a conversation a user tapped in the history list. If the snapshot has
+    /// no messages (it came from the backend list), the full transcript is fetched
+    /// from `GET /agent/conversations/{id}` so other devices' conversations open
+    /// correctly. On detail-fetch failure the locally-cached messages (if any) are
+    /// used and a notice is shown.
+    public func openConversation(_ conversation: AgentConversationSnapshot) async {
+        loadConversation(conversation)
+        guard conversation.messages.isEmpty,
+              let conversationID = conversation.conversationID,
+              let remoteSource else {
+            return
+        }
+        isLoadingHistory = true
+        defer { isLoadingHistory = false }
+        do {
+            let detail = try await remoteSource.fetchDetail(conversationID: conversationID)
+            // The user may have navigated away while the fetch was in flight.
+            guard currentConversationSnapshotID == conversation.id else { return }
+            messages = detail
+            lastPrompt = detail.last(where: { $0.role == .user })?.content
+            rebuildProposedActions()
+            historyNotice = nil
+            cacheLoadedMessages(detail, for: conversation)
+        } catch {
+            AppLogger.agent.error("conversation detail load failed: \(error.localizedDescription, privacy: .public)")
+            // Fall back to whatever the local cache had for this snapshot.
+            let cached = cachedMessages(for: conversation)
+            if currentConversationSnapshotID == conversation.id {
+                messages = cached
+                lastPrompt = cached.last(where: { $0.role == .user })?.content
+                rebuildProposedActions()
+            }
+            historyNotice = cached.isEmpty
+                ? "无法加载这条对话，请检查网络后重试。"
+                : "离线或服务不可用，显示本地缓存的这条对话。"
+        }
+    }
+
     public func loadConversation(_ conversation: AgentConversationSnapshot) {
         currentConversationSnapshotID = conversation.id
         conversationID = conversation.conversationID
@@ -804,12 +911,78 @@ public final class AgentChatViewModel {
         rebuildProposedActions()
     }
 
+    /// Writes the freshly-loaded messages back into the cached snapshot so a later
+    /// offline open of the same conversation still shows its transcript.
+    private func cacheLoadedMessages(_ messages: [AgentChatMessage], for conversation: AgentConversationSnapshot) {
+        guard let index = conversationHistory.firstIndex(where: { $0.id == conversation.id }) else { return }
+        conversationHistory[index] = conversationHistory[index].replacingMessages(messages)
+        conversationStore?.saveConversations(conversationHistory)
+    }
+
+    private func cachedMessages(for conversation: AgentConversationSnapshot) -> [AgentChatMessage] {
+        if !conversation.messages.isEmpty { return conversation.messages }
+        let cache = conversationStore?.loadConversations() ?? []
+        if let byID = cache.first(where: { $0.id == conversation.id }), !byID.messages.isEmpty {
+            return byID.messages
+        }
+        if let convID = conversation.conversationID,
+           let byConvID = cache.first(where: { $0.conversationID == convID }), !byConvID.messages.isEmpty {
+            return byConvID.messages
+        }
+        return []
+    }
+
     public func deleteConversation(_ conversation: AgentConversationSnapshot) {
+        // Optimistically drop it locally; if it had a backend id, also delete it
+        // server-side so it stays gone across devices. Backend failure surfaces a
+        // notice but the local removal stands (the next refresh reconciles).
+        if let conversationID = conversation.conversationID, let remoteSource {
+            Task { [weak self] in
+                do {
+                    try await remoteSource.deleteConversation(conversationID: conversationID)
+                } catch {
+                    await self?.reportDeleteFailure(error)
+                }
+            }
+        }
         conversationHistory.removeAll { $0.id == conversation.id }
         conversationStore?.saveConversations(conversationHistory)
         if currentConversationSnapshotID == conversation.id {
             startNewConversation()
         }
+    }
+
+    /// Renames a conversation: pushes the new title to the backend (so it matches
+    /// web/mobile), then updates the local list/cache. Backend failure surfaces a
+    /// notice and leaves the old title in place rather than faking success.
+    public func renameConversation(_ conversation: AgentConversationSnapshot, to newTitle: String) async {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let conversationID = conversation.conversationID, let remoteSource {
+            do {
+                try await remoteSource.renameConversation(conversationID: conversationID, title: trimmed)
+            } catch {
+                AppLogger.agent.error("conversation rename failed: \(error.localizedDescription, privacy: .public)")
+                historyNotice = "改名失败，请检查网络后重试。"
+                return
+            }
+        }
+        if let index = conversationHistory.firstIndex(where: { $0.id == conversation.id }) {
+            let existing = conversationHistory[index]
+            conversationHistory[index] = AgentConversationSnapshot(
+                id: existing.id,
+                conversationID: existing.conversationID,
+                title: trimmed,
+                messages: existing.messages,
+                updatedAt: existing.updatedAt
+            )
+            conversationStore?.saveConversations(conversationHistory)
+        }
+    }
+
+    private func reportDeleteFailure(_ error: Error) {
+        AppLogger.agent.error("conversation delete failed: \(error.localizedDescription, privacy: .public)")
+        historyNotice = "删除未同步到服务器，可能在其它设备仍可见。"
     }
 
     private func applyToolEvent(_ event: AgentToolEvent) {
@@ -887,7 +1060,19 @@ public final class AgentChatViewModel {
         guard !messages.isEmpty else {
             return
         }
-        let snapshotID = currentConversationSnapshotID ?? UUID()
+        // Once the backend assigns a conversation id, key the local snapshot by the
+        // SAME deterministic UUID the remote list uses. Otherwise a fresh chat keeps
+        // a random local UUID and the next backend refresh shows it twice (random +
+        // deterministic). Drop any earlier random-id row for this conversation.
+        let snapshotID: UUID
+        if let conversationID {
+            snapshotID = AgentConversationClient.deterministicID(forConversationID: conversationID)
+            if let previous = currentConversationSnapshotID, previous != snapshotID {
+                conversationHistory.removeAll { $0.id == previous }
+            }
+        } else {
+            snapshotID = currentConversationSnapshotID ?? UUID()
+        }
         currentConversationSnapshotID = snapshotID
         let snapshot = AgentConversationSnapshot(
             id: snapshotID,
