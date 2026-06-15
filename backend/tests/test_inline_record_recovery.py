@@ -7,9 +7,13 @@
 """
 import json
 
+import pytest
+
 from app.services.agent_executor import (
     _extract_inline_tool_call,
     _infer_record_type_from_payload,
+    _loads_lenient,
+    _repair_truncated_json,
     _strip_bracket_tool_markers,
 )
 
@@ -168,3 +172,60 @@ def test_normalize_json_quotes_noop_on_valid_json():
     from app.services.agent_executor import _normalize_json_quotes
     good = '{"record_type": "diet", "note": "正常文本"}'
     assert json.loads(_normalize_json_quotes(good)) == json.loads(good)
+
+
+# ── 截断 JSON 兜底(glm-5.1 等弱模型把 tool args 切到一半)──────────────────
+# 回归(截图实拍): 记"打喷嚏一次" → glm-5.1 吐
+# {"record_type":"rhinitis","data":{"sneezing":1,"congestion":0,"runny_nose":0}
+# 外层 } 缺失 → 标准解析失败 → "参数解析失败" 裸露给用户 + 鼻炎打卡丢失。
+def test_repair_truncated_json_missing_outer_brace():
+    bad = ('{"record_type": "rhinitis", "data": '
+           '{"sneezing": 1, "congestion": 0, "runny_nose": 0}')
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(bad)
+    parsed = json.loads(_repair_truncated_json(bad))
+    assert parsed["record_type"] == "rhinitis"
+    assert parsed["data"]["sneezing"] == 1
+
+
+def test_repair_truncated_json_trailing_comma_and_array():
+    parsed = _loads_lenient('{"a": 1, "b": [1, 2, 3,')
+    assert parsed == {"a": 1, "b": [1, 2, 3]}
+
+
+def test_repair_truncated_json_unterminated_string():
+    parsed = _loads_lenient('{"food_items": "虾仁 20')
+    assert parsed["food_items"] == "虾仁 20"
+
+
+def test_repair_truncated_json_noop_on_valid():
+    # 完整 JSON 不被改动(无未闭合结构 → 原样返回)
+    good = '{"record_type": "diet", "data": {"calories": 100}}'
+    assert _repair_truncated_json(good) == good
+    assert _loads_lenient(good) == json.loads(good)
+
+
+def test_repair_does_not_invent_missing_value():
+    # 截断在 key 后无值 → 修不出合法 JSON,_loads_lenient 必抛(不假装成功)
+    with pytest.raises(json.JSONDecodeError):
+        _loads_lenient('{"record_type": "rhinitis", "data": {"sneezing":')
+
+
+def test_loads_lenient_smart_quotes_plus_truncation():
+    # 弯引号 + 截断叠加: 归一+修复组合兜底
+    bad = '{ “record_type”: “rhinitis”, “data”: { “sneezing”: 2'
+    parsed = _loads_lenient(bad)
+    assert parsed["record_type"] == "rhinitis"
+    assert parsed["data"]["sneezing"] == 2
+
+
+def test_inline_recovery_of_truncated_named_tool_call():
+    # 整段是被截断的 named tool-call JSON(raw_decode 全失败)→ 截断修复后恢复
+    text = ('{"name": "health_record", "parameters": '
+            '{"record_type": "rhinitis", "data": {"sneezing": 1, "congestion": 0}')
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    assert recovered["function"]["name"] == "health_record"
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["record_type"] == "rhinitis"
+    assert args["data"]["sneezing"] == 1

@@ -403,6 +403,78 @@ def _normalize_json_quotes(s: str) -> str:
     return s.translate(_QUOTE_NORMALIZE_TABLE)
 
 
+def _repair_truncated_json(s: str) -> str:
+    """Best-effort 修复被截断的 JSON — 弱模型/网关常把 tool call 的 arguments 截断,
+    停在缺尾 ``}`` ``]`` 或断在字符串/逗号处。
+
+    实测案例(glm-5.1 记"打喷嚏一次"):
+    ``{"record_type":"rhinitis","data":{"sneezing":1,"congestion":0,"runny_nose":0}``
+    外层 ``}`` 缺失 → json.loads 失败 → "参数解析失败" 裸露给用户、记录丢失。
+
+    扫描时按栈跟踪未闭合的 ``{`` ``[`` 与字符串状态,在末尾补未闭合字符串、去掉结尾
+    多余逗号、按栈逆序补 closer。只在标准 + 引号归一解析都失败后兜底:无法修复时原样
+    返回(调用方仍失败 → 报错给 LLM 重试,不假装成功)。
+    """
+    s = s.strip()
+    if not s:
+        return s
+    stack: List[str] = []
+    in_string = False
+    escape = False
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            if in_string:
+                escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in "{[":
+            stack.append(ch)
+        elif ch == "}":
+            if stack and stack[-1] == "{":
+                stack.pop()
+        elif ch == "]":
+            if stack and stack[-1] == "[":
+                stack.pop()
+    if not stack and not in_string:
+        return s  # 没有未闭合结构 → 截断不在结构层,修不了,原样返回
+    repaired = s + ('"' if in_string else "")
+    repaired = re.sub(r",\s*$", "", repaired.rstrip())  # 去尾逗号(补 closer 前)
+    closers = {"{": "}", "[": "]"}
+    repaired += "".join(closers[opener] for opener in reversed(stack))
+    return repaired
+
+
+def _loads_lenient(raw: str) -> Any:
+    """标准 → 引号归一 → 截断修复 → 归一+修复,逐级兜底解析弱模型 JSON。
+
+    任何一级成功即返回;全失败抛最后一个 JSONDecodeError(调用方决定如何处理)。
+    """
+    candidates = (
+        raw,
+        _normalize_json_quotes(raw),
+        _repair_truncated_json(raw),
+        _repair_truncated_json(_normalize_json_quotes(raw)),
+    )
+    last_err: Optional[json.JSONDecodeError] = None
+    seen: set = set()
+    for cand in candidates:
+        if cand in seen:
+            continue
+        seen.add(cand)
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError as e:
+            last_err = e
+    raise last_err if last_err else json.JSONDecodeError("empty", raw or "", 0)
+
+
 def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
     """Recover tool calls emitted as visible JSON text by weaker gateways/models.
 
@@ -430,17 +502,9 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
     if bracket is not None:
         return bracket
 
-    decoder = json.JSONDecoder()
-    for idx, ch in enumerate(raw):
-        if ch != "{":
-            continue
-        try:
-            payload, end = decoder.raw_decode(raw[idx:])
-        except json.JSONDecodeError:
-            continue
+    def _payload_to_tool_call(payload: Any) -> Optional[Dict[str, Any]]:
         if not isinstance(payload, dict):
-            continue
-
+            return None
         fn = payload.get("function") if isinstance(payload.get("function"), dict) else None
         name = payload.get("name") or payload.get("tool") or (fn or {}).get("name")
         if name not in allowed:
@@ -460,7 +524,7 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
                             ),
                         },
                     }
-            continue
+            return None
 
         args = (
             payload.get("parameters")
@@ -469,23 +533,39 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
         )
         if isinstance(args, str):
             try:
-                args = json.loads(args)
+                args = _loads_lenient(args)  # 弯/全角引号 + 截断兜底
             except json.JSONDecodeError:
-                try:
-                    args = json.loads(_normalize_json_quotes(args))  # 弯/全角引号兜底
-                except json.JSONDecodeError:
-                    return None
+                return None
         if not isinstance(args, dict):
             return None
-
         return {
             "id": "inline_tool_call_0",
             "type": "function",
-            "function": {
-                "name": name,
-                "arguments": json.dumps(args, ensure_ascii=False),
-            },
+            "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
         }
+
+    decoder = json.JSONDecoder()
+    for idx, ch in enumerate(raw):
+        if ch != "{":
+            continue
+        try:
+            payload, end = decoder.raw_decode(raw[idx:])
+        except json.JSONDecodeError:
+            continue
+        call = _payload_to_tool_call(payload)
+        if call is not None:
+            return call
+
+    # 兜底:整段就是一个被截断的 tool-call JSON(raw_decode 对每个 `{` 都失败)。
+    # 从第一个 `{` 起做截断修复再解析一次 —— 救 glm-5.1 吐到一半被切断的调用。
+    first = raw.find("{")
+    if first != -1:
+        try:
+            payload = _loads_lenient(raw[first:])
+        except json.JSONDecodeError:
+            payload = None
+        if payload is not None:
+            return _payload_to_tool_call(payload)
     return None
 
 
@@ -2583,12 +2663,17 @@ class AgentExecutor:
             else:
                 args = args_raw
         except json.JSONDecodeError:
-            # 弱模型(如 glm-5.1)常吐弯引号/全角引号的 JSON → 标准解析失败。
-            # 归一引号后重试;仍失败才把错误返回给 LLM(它会重试),不裸露给用户。
+            # 弱模型(如 glm-5.1)常吐弯引号/全角引号或被截断的 JSON → 标准解析失败。
+            # 逐级兜底(引号归一 / 截断修复)后重试;仍失败才把错误返回给 LLM
+            # (它会重试),不裸露给用户。
             if isinstance(args_raw, str):
                 try:
-                    args = json.loads(_normalize_json_quotes(args_raw))
+                    args = _loads_lenient(args_raw)
                 except json.JSONDecodeError:
+                    logger.warning(
+                        "[_execute_tool] %s args 解析失败(含引号归一+截断修复后): %s",
+                        tool_name, args_raw[:200],
+                    )
                     return f"Error: 参数解析失败: {args_raw}"
             else:
                 return f"Error: 参数解析失败: {args_raw}"
