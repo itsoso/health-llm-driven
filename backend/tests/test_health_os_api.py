@@ -41,7 +41,8 @@ def test_biomarkers_me_and_profile(client, db, auth_user_and_headers):
 
 def test_intervention_cycle_api_flow(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
-    _ingest(db, user.id, [("低密度脂蛋白", 3.8, "mmol/L"), ("尿酸", 460, "µmol/L")], datetime.date(2026, 3, 1))
+    # LDL 4.5(高,留出超 RCV 又不达标的空间), UA 460(高)
+    _ingest(db, user.id, [("低密度脂蛋白", 4.5, "mmol/L"), ("尿酸", 460, "µmol/L")], datetime.date(2026, 3, 1))
 
     r = client.post("/api/v1/intervention-cycles", headers=headers, json={"days": 90})
     assert r.status_code == 200, r.text
@@ -61,8 +62,8 @@ def test_intervention_cycle_api_flow(client, db, auth_user_and_headers):
     ra = client.get("/api/v1/intervention-cycles/active", headers=headers)
     assert ra.json()["cycle"]["id"] == cid
 
-    # 复查 (改善后)
-    _ingest(db, user.id, [("低密度脂蛋白", 3.1, "mmol/L"), ("尿酸", 370, "µmol/L")], datetime.date(2026, 6, 1))
+    # 复查 (改善后): LDL 4.5→3.3 = -26.7% 超 RCV~23% 且仍 >目标3.0 → improving;UA 370 ≤380 → met
+    _ingest(db, user.id, [("低密度脂蛋白", 3.3, "mmol/L"), ("尿酸", 370, "µmol/L")], datetime.date(2026, 6, 1))
     rr = client.post(f"/api/v1/intervention-cycles/{cid}/recheck", headers=headers)
     assert rr.status_code == 200, rr.text
     outs = {o["metric_code"]: o for o in rr.json()["cycle"]["outcomes"]}
