@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
-import { useAgendaToday, useCompleteAgendaItem } from '../hooks/useAgenda';
+import { useAgendaToday, useCompleteAgendaItem, useSeedDemo } from '../hooks/useAgenda';
 import { isProtocolActionable, type AgendaItem } from '../services/agenda';
 
 const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -36,6 +36,7 @@ export default function AgendaScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const { data, isLoading, isError, refetch, isRefetching } = useAgendaToday();
   const complete = useCompleteAgendaItem();
+  const seed = useSeedDemo();
 
   const onComplete = (item: AgendaItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -68,7 +69,21 @@ export default function AgendaScreen() {
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
         >
           {(data?.items ?? []).length === 0 ? (
-            <View style={styles.center}><Text style={styles.muted}>今天没有待办,先去建一个协议吧</Text></View>
+            <View style={styles.center}>
+              <Text style={styles.muted}>今天没有待办</Text>
+              <TouchableOpacity
+                style={styles.seedBtn}
+                disabled={seed.isPending}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                  seed.mutate();
+                }}
+              >
+                <Text style={styles.seedBtnText}>
+                  {seed.isPending ? '生成中…' : '一键试用(水杯协议 + 登记胃溃疡)'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             (data?.items ?? []).map((item, idx) => (
               <View key={`${item.source.object_type}-${item.source.object_id}-${idx}`} style={styles.card}>
@@ -129,5 +144,10 @@ function createStyles(c: ColorPalette) {
       width: 36, height: 36, borderRadius: radii.full, backgroundColor: c.brand,
       alignItems: 'center', justifyContent: 'center',
     },
+    seedBtn: {
+      marginTop: spacing.lg, backgroundColor: c.brand,
+      paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radii.full,
+    },
+    seedBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   });
 }
