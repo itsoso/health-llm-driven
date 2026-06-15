@@ -272,16 +272,17 @@ def log_proactive_trigger(
     delta: float,
     notable: bool,
     notified: bool,
+    tier: str = "P1",
 ) -> Optional[int]:
     """泛型主动 Agent 触发埋点(longevity_watch / trajectory_watch 等共用)。
 
     eval 看板(agent_eval_service)按 agent_type ∈ {*_watch} 聚合 notable/推送率。
-    旁路, 失败不抛。
+    tier(R15 三级预算)记入 result_detail,供 proactive_coordinator 分级计数。旁路, 失败不抛。
     """
     if user_id is None:
         return None
     try:
-        summary = f"{agent_type} {metric} {kind} {delta:+.3f} notable={notable} notified={notified}"
+        summary = f"{agent_type} {metric} {kind} {delta:+.3f} notable={notable} notified={notified} tier={tier}"
         return _write(
             db,
             user_id=user_id,
@@ -289,7 +290,7 @@ def log_proactive_trigger(
             action="proactive_trigger",
             result_summary=summary,
             result_detail={"metric": metric, "kind": kind, "delta": delta,
-                           "notable": notable, "notified": notified},
+                           "notable": notable, "notified": notified, "tier": tier},
         )
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[audit] log_proactive_trigger 失败 (跳过): {e}")

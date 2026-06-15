@@ -202,6 +202,9 @@ class Settings(BaseSettings):
     agent_specialist_tools: bool = False
     # 主动触达全局打扰预算:每用户每周跨所有 *_watch 主动推送上限(0=不限)
     proactive_weekly_budget: int = 1
+    # R15 三级通知预算:P0 必响应(处方药/复查当天/异常血压)周上限;全局周上限(跨所有 tier)
+    proactive_p0_weekly_budget: int = 3
+    proactive_global_weekly_budget: int = 15
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
