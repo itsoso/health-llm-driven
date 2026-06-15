@@ -102,6 +102,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("garmin_official",       lambda s: _fill_garmin_official(s, user_id, twin, sources)),
         ("vo2max",                lambda s: _fill_vo2max(s, user_id, twin, sources)),
         ("personal_baseline",     lambda s: _fill_personal_baseline(s, user_id, twin, sources)),
+        ("cross_source",          lambda s: _fill_cross_source(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -524,6 +525,41 @@ def _fill_problem_red_lines(db: Session, user_id: int, twin: HealthTwin, sources
             sources.add("problem_red_lines")
     except Exception as e:
         logger.warning(f"[twin] problem_red_lines 失败: {e}")
+
+
+def _fill_cross_source(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """R3 多源置信度回灌:跨设备一致性指数 + 偏离指标,构 Twin 时算一次写进 physiological。
+
+    决策灯/specialist/agenda 统一从 Twin 读,不各自重算。单源(<2 设备)→ index=None,
+    不产偏离项。失败降级(不阻塞 Twin 构建)。
+    """
+    try:
+        from app.services.recovery_decision import device_agreement_index
+        from app.services.cross_source_validator import detect_cross_source_anomalies
+        from app.twin.schema import CrossSourceDivergence
+
+        idx, detail = device_agreement_index(db, user_id)
+        srcs = list(detail.get("sources") or [])
+        if idx is None and len(srcs) < 2:
+            return  # 单源用户:无跨源置信可言,不写(保持 None 默认)
+
+        twin.physiological.device_agreement_index = idx
+        twin.physiological.device_sources = srcs
+
+        anomalies = detect_cross_source_anomalies(db, user_id)
+        twin.physiological.divergent_metrics = [
+            CrossSourceDivergence(
+                metric=a["metric"], label=a["label"],
+                trusted_source=a.get("trusted_source") or "",
+                outlier_source=a.get("outlier_source") or "",
+                deviation_pct=a.get("deviation_pct") or 0.0,
+                hint=a.get("hint") or "",
+            )
+            for a in anomalies[:5]
+        ]
+        sources.add("cross_source")
+    except Exception as e:
+        logger.warning(f"[twin] cross_source 失败: {e}")
 
 
 # ─────────────────────────── 3. 睡眠深度 ───────────────────────────

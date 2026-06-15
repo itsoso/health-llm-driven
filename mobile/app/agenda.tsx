@@ -25,6 +25,7 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   sleep: 'moon-outline',
   training: 'barbell-outline',
   checkup: 'calendar-outline',
+  data_quality: 'git-compare-outline',
 };
 
 const STATUS_LABEL: Record<string, string> = {

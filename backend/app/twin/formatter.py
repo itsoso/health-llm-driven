@@ -120,6 +120,11 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
                         items.append(f"{_label.get(k, k)}←{srcs[k]}")
                 if items:
                     lines.append("数据源: " + ", ".join(items))
+        # R3: 跨源置信度 + 偏离(冲突降置信不平均,标暂以谁为准)
+        if p.device_agreement_index is not None and len(p.device_sources) > 1:
+            lines.append(f"多源一致性: {p.device_agreement_index:.0%}({'/'.join(p.device_sources)})")
+        for d in (p.divergent_metrics or [])[:3]:
+            lines.append(f"  ⚠ {d.label} {d.outlier_source} 偏离{d.deviation_pct:+.0f}%,暂以 {d.trusted_source} 为准")
 
     # ─── 个人基线对比 (Phase 0: 你现在 vs 你自己的历史)
     # 优先展 deviation (|z|>=2), 再补几条非偏离指标的 z 供 LLM 判断"在不在自己常态内"。

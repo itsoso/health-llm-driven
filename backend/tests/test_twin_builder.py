@@ -202,6 +202,42 @@ class TestBuilderWithPartialData:
         assert "黑便/呕血" in conds
         assert twin.acute.problem_red_lines[0].action == "立即就医/急诊"
 
+    def test_cross_source_confidence_back_filled(self, monkeypatch):
+        """R3 回灌:多源用户 → device_agreement_index + divergent_metrics 写进 physiological。"""
+        from app.twin.builder import _fill_cross_source
+        from app.twin.schema import HealthTwin, TwinMeta
+        import app.services.recovery_decision as rd
+        import app.services.cross_source_validator as csv
+
+        monkeypatch.setattr(rd, "device_agreement_index",
+                            lambda db, uid, days=7: (0.72, {"sources": ["garmin", "ringconn"]}))
+        monkeypatch.setattr(csv, "detect_cross_source_anomalies", lambda db, uid, days=7: [
+            {"metric": "resting_heart_rate", "label": "静息心率", "trusted_source": "garmin",
+             "outlier_source": "ringconn", "deviation_pct": 22.0, "hint": "戒指偏高"},
+        ])
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+        srcs: set = set()
+        _fill_cross_source(None, 1, twin, srcs)
+
+        assert twin.physiological.device_agreement_index == 0.72
+        assert twin.physiological.device_sources == ["garmin", "ringconn"]
+        assert len(twin.physiological.divergent_metrics) == 1
+        assert twin.physiological.divergent_metrics[0].trusted_source == "garmin"
+        assert "cross_source" in srcs
+
+    def test_cross_source_single_source_skipped(self, monkeypatch):
+        """单源用户(<2 设备)→ 不写,保持默认 None(无跨源置信可言)。"""
+        from app.twin.builder import _fill_cross_source
+        from app.twin.schema import HealthTwin, TwinMeta
+        import app.services.recovery_decision as rd
+
+        monkeypatch.setattr(rd, "device_agreement_index",
+                            lambda db, uid, days=7: (None, {"sources": ["garmin"]}))
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+        _fill_cross_source(None, 1, twin, set())
+        assert twin.physiological.device_agreement_index is None
+        assert twin.physiological.divergent_metrics == []
+
     def test_build_picks_up_water_intake(self, db):
         """插入一条 WaterIntake 后 Twin 应显示。"""
         from app.models.user import User

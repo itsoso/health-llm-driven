@@ -98,6 +98,27 @@ class PhysiologicalState(BaseModel):
     # 单项 schema 见 PersonalBaselineMetric。
     personal_baselines: List["PersonalBaselineMetric"] = Field(default_factory=list)
 
+    # R3 多源置信度回灌: 跨设备(Garmin/Apple Watch/RingConn 等)同指标一致性,构 Twin 时算一次写进来,
+    # 让决策灯/specialist/agenda 统一消费(而非各自重算)。仅多源(≥2)用户填充。
+    # device_agreement_index: 0–1,越高越一致(None=单源,置信度退回只看 source)。
+    device_agreement_index: Optional[float] = None
+    device_sources: List[str] = Field(default_factory=list)
+    divergent_metrics: List["CrossSourceDivergence"] = Field(default_factory=list)
+
+
+class CrossSourceDivergence(BaseModel):
+    """单指标跨源偏离(超阈值)—— 由 cross_source_validator.flag_outliers 投影。
+
+    用于 agenda 生成 data_quality 提示(R3:冲突降置信不平均,暂以高优先级源为准),
+    以及 prompt blob 让 agent source-aware。不做诊断,只标「这个数可疑、暂以谁为准」。
+    """
+    metric: str
+    label: str
+    trusted_source: str          # 暂以谁为准
+    outlier_source: str          # 偏离最大的源
+    deviation_pct: float         # outlier 相对各源均值偏离 %
+    hint: str                    # 人话描述
+
 
 class PersonalBaselineMetric(BaseModel):
     """单指标个人滚动基线 + 偏离 (Phase 0, 纯统计)。

@@ -4,6 +4,7 @@
 - HealthProtocol 今日待办(三域:饮水/用药/饮食 + 自定义)
 - HealthProblem 到期/逾期复查(= 复查日历)
 - 今日训练决策灯(green/yellow/red,只读建议项,来自 recovery_decision)
+- 跨源数据质量提示(data_quality,设备读数冲突时,来自 Twin 回灌的 divergent_metrics)
 
 后续 slice 再并入:DailyOperatingPlan 行动、用药 regimen。
 只读投影,无副作用(完成/跳过仍走各自 source 的端点)。详见 docs/prd/reva-personal-health-os-prd.md §4 / R1。
@@ -64,6 +65,40 @@ def _training_item(db: Session, user_id: int) -> Dict[str, Any] | None:
     )
 
 
+def _data_quality_item(db: Session, user_id: int) -> Dict[str, Any] | None:
+    """跨源偏离 → data_quality 议程项(R3:冲突降置信不平均,暂以高优先级源为准)。
+
+    从 Twin 读已回灌的 divergent_metrics(build_twin 算过,生产走 Redis 缓存→廉价)。
+    无偏离 → None。只读建议项,不可完成。失败降级。
+    """
+    try:
+        from app.twin.builder import build_twin
+        twin = build_twin(db, user_id, use_cache=True)
+        divs = twin.physiological.divergent_metrics or []
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda: data_quality 计算失败,跳过: %s", e)
+        return None
+    if not divs:
+        return None
+
+    top = divs[0]
+    extra = f"等 {len(divs)} 项指标" if len(divs) > 1 else ""
+    return _agenda_item(
+        type="data_quality",
+        title=f"设备数据待核对:{top.label}{extra}",
+        status="info",
+        time_window="anytime",
+        priority=70,
+        detail=top.hint,
+        divergent_metrics=[
+            {"label": d.label, "trusted_source": d.trusted_source,
+             "deviation_pct": d.deviation_pct, "hint": d.hint}
+            for d in divs
+        ],
+        source={"object_type": "data_quality", "object_id": user_id},
+    )
+
+
 def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str, Any]:
     """今日统一议程:协议待办 + 近 N 天到期复查。按优先级(高在前)+ 时间窗排序。"""
     items: List[Dict[str, Any]] = []
@@ -87,7 +122,12 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     if ti is not None:
         items.append(ti)
 
-    # 3) 到期复查(HealthProblem follow_up)→ 复查日历项
+    # 3) 跨源数据质量(设备读数冲突)→ data_quality 提示
+    dq = _data_quality_item(db, user_id)
+    if dq is not None:
+        items.append(dq)
+
+    # 4) 到期复查(HealthProblem follow_up)→ 复查日历项
     for f in prob_svc.due_followups(db, user_id, within_days=followup_within_days):
         items.append(_agenda_item(
             type="checkup",

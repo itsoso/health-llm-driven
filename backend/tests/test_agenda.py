@@ -70,3 +70,41 @@ def test_training_light_projected_when_signal_present(monkeypatch):
     assert item["light"] == "red" and item["readiness_score"] == 38
     assert item["priority"] == 90  # red 抬到复查档
     assert item["source"]["object_type"] == "training_decision"
+
+
+def _twin_with_divergence(*divs):
+    from app.twin.schema import HealthTwin, TwinMeta, CrossSourceDivergence
+    from datetime import datetime
+    twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+    twin.physiological.device_agreement_index = 0.6
+    twin.physiological.device_sources = ["garmin", "ringconn"]
+    twin.physiological.divergent_metrics = [
+        CrossSourceDivergence(metric=m, label=lbl, trusted_source="garmin",
+                              outlier_source="ringconn", deviation_pct=18.0,
+                              hint=f"{lbl} 差异较大")
+        for m, lbl in divs
+    ]
+    return twin
+
+
+def test_data_quality_item_when_divergence(monkeypatch):
+    """跨源偏离 → 议程出 data_quality 提示项(只读,不可完成)。"""
+    from app.services import agenda_service
+    import app.twin.builder as builder
+    monkeypatch.setattr(builder, "build_twin",
+                        lambda db, uid, use_cache=True: _twin_with_divergence(
+                            ("resting_heart_rate", "静息心率"), ("hrv", "HRV")))
+    item = agenda_service._data_quality_item(None, 1)
+    assert item is not None
+    assert item["type"] == "data_quality" and item["status"] == "info"
+    assert "静息心率" in item["title"] and "等 2 项" in item["title"]
+    assert len(item["divergent_metrics"]) == 2
+    assert item["source"]["object_type"] == "data_quality"
+
+
+def test_data_quality_item_none_when_no_divergence(monkeypatch):
+    from app.services import agenda_service
+    import app.twin.builder as builder
+    monkeypatch.setattr(builder, "build_twin",
+                        lambda db, uid, use_cache=True: _twin_with_divergence())
+    assert agenda_service._data_quality_item(None, 1) is None
