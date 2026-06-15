@@ -318,7 +318,52 @@ struct HealthAnalysisOpenIntent: AppIntent {
 }
 
 // ============================================================================
-// AppShortcutsProvider — registers all 3 intents with Siri.
+// QuickWaterIntent — 手腕零听写速记。固定一句"喝了一杯水", 抬腕说四个字即记,
+// 表上极简确认(不念后端长回复)。无参数 → Apple Watch Siri 上摩擦最低的打卡。
+// openAppWhenRun=false: 不唤起 App, 表上原地完成。
+// ============================================================================
+
+struct QuickWaterIntent: AppIntent {
+    static let title: LocalizedStringResource = "记一杯水"
+    static let description = IntentDescription("抬腕一句话记录喝了一杯水, 无需听写整句")
+    static let openAppWhenRun = false
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
+            return .result(dialog: "请先打开健康助理 App 登录")
+        }
+        guard let url = URL(string: "https://health.executor.life/api/v1/agent/stream") else {
+            return .result(dialog: "服务地址配置错误")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \\(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        let body: [String: Any] = ["message": "记录我喝了一杯水(约250毫升)", "stream": false]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return .result(dialog: "网络请求失败")
+            }
+            if httpResponse.statusCode == 401 {
+                return .result(dialog: "登录已过期, 请打开健康助理 重新登录")
+            }
+            if httpResponse.statusCode >= 400 {
+                return .result(dialog: "服务暂时不可用, 请稍后再试")
+            }
+            // 表上极简确认: 速记成功固定一句, 不回放后端长文本(瞥一眼即可)。
+            return .result(dialog: "已记录一杯水")
+        } catch {
+            return .result(dialog: "网络错误, 请检查网络连接")
+        }
+    }
+}
+
+// ============================================================================
+// AppShortcutsProvider — registers all 4 intents with Siri.
 // phrase 里 \\(\\.$content) / \\(\\.$query) 只有当 parameter 类型是
 // AppEntity/AppEnum 时才合法, 我们用 FreeTextEntity 包装任意字符串。
 // ============================================================================
@@ -337,6 +382,17 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "记录健康数据",
             systemImageName: "heart.text.square"
+        )
+        AppShortcut(
+            intent: QuickWaterIntent(),
+            phrases: [
+                "使用\\(.applicationName)记一杯水",
+                "用\\(.applicationName)记一杯水",
+                "\\(.applicationName)记一杯水",
+                "\\(.applicationName)喝水打卡",
+            ],
+            shortTitle: "记一杯水",
+            systemImageName: "drop.fill"
         )
         AppShortcut(
             intent: HealthAnalysisIntent(),
