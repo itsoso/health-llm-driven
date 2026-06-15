@@ -59,3 +59,9 @@ export async function skipProtocol(protocolId: number, reason?: string): Promise
 export function isProtocolActionable(item: AgendaItem): boolean {
   return item.source.object_type === 'health_protocol' && item.status === 'pending';
 }
+
+/** 一键试用:seed 一个 2000ml 温水杯协议 + 登记胃溃疡(Hp-),让议程立刻有内容。 */
+export async function seedDemo(): Promise<void> {
+  await api.post('/protocols/seed/water-cup');
+  await api.post('/problems/seed/gastric-ulcer-hp-neg');
+}
