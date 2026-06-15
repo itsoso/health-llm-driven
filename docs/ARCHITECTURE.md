@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (9 类 57 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (10 类 58 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -98,7 +98,7 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建、缓存、格式化 |
-| `backend/app/agents/safety_guardian/` | 57 条安全规则引擎(不依赖 LLM) |
+| `backend/app/agents/safety_guardian/` | 58 条安全规则引擎(不依赖 LLM) |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 (Garmin training_readiness 优先, 否则自算 5 维) |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 (Garmin training_status 映射优先) |
 | `backend/app/agents/fuel_strategist/` | TDEE-缺口 + 基因驱动饮食 |
@@ -163,7 +163,7 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  13 Specialists                                               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 57 条确定性规则, 不调 LLM             │   │
+│  │ SafetyGuardian  — 58 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
 │  │   pgx.py (9) training_load.py (3) cgm.py (6)           │   │
 │  ├─────────────────────────────────────────────────────────┤   │

@@ -319,6 +319,19 @@ class BehavioralState(BaseModel):
     sneeze_count_today: int = 0
 
 
+class ProblemRedLine(BaseModel):
+    """用户已登记 HealthProblem 的个性化红线(命中症状即升级)。
+
+    由 builder 从未 resolved(active + monitoring)的 HealthProblem.red_lines 投影到 Twin,供 safety
+    规则 problem_red_lines.py 把当前症状文本与每条 condition 做关键词匹配。
+    这让安全网随用户的具体病情(如胃溃疡黑便/呕血)个性化,而非只有通用急症规则。
+    """
+    problem_name: str
+    condition: str          # 触发短语,如 "黑便/呕血"
+    action: str             # 命中动作,如 "立即就医/急诊"
+    risk_level: str = "P1"  # 来源 problem 的 P0/P1/P2
+
+
 class AcuteHealthState(BaseModel):
     """急性病/近期症状状态，用于安全兜底运动、睡眠和用药建议。"""
 
@@ -333,6 +346,8 @@ class AcuteHealthState(BaseModel):
     fever_reported: bool = False
     should_rest_from_training: bool = False
     training_guardrail: Optional[str] = None
+    # 用户已登记健康问题的个性化红线(builder 从 active HealthProblem 投影)
+    problem_red_lines: List["ProblemRedLine"] = Field(default_factory=list)
 
 
 class WorkoutSummary(BaseModel):

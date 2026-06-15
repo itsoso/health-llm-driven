@@ -72,6 +72,57 @@ class TestEmptyTwinSafe:
         assert report.evaluate_ms >= 0
 
 
+class TestProblemRedLines:
+    """个性化红线:用户登记的 HealthProblem.red_lines 命中症状即升级。"""
+
+    def _twin_with_redline(self, condition, action, symptoms, risk="P1"):
+        from app.twin.schema import ProblemRedLine
+        twin = _empty_twin()
+        twin.acute.problem_red_lines = [
+            ProblemRedLine(problem_name="胃溃疡(Hp 阴性)", condition=condition,
+                           action=action, risk_level=risk)
+        ]
+        twin.acute.symptom_texts_all = symptoms
+        return twin
+
+    def test_redline_hit_escalates_critical(self):
+        twin = self._twin_with_redline("黑便/呕血", "立即就医/急诊", ["今早拉了黑便,有点担心"])
+        report = evaluate_safety(twin)
+        hit = next(a for a in report.alerts
+                   if a.rule_id == "problem_red_lines.health_problem_red_line")
+        assert hit.severity == Severity.CRITICAL
+        assert hit.requires_medical_attention is True
+        assert hit.action == "立即就医/急诊"
+        assert hit.data_citation["matched"] == "黑便"
+
+    def test_redline_no_symptom_no_alert(self):
+        # 红线在 Twin 里但无匹配症状 → 不告警(不凭空升级)
+        twin = self._twin_with_redline("黑便/呕血", "立即就医/急诊", ["轻微口渴"])
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "problem_red_lines.health_problem_red_line" not in ids
+
+    def test_redline_p2_is_high_not_critical(self):
+        twin = self._twin_with_redline("无诱因体重骤降", "消化内科评估",
+                                       ["最近无诱因体重骤降明显"], risk="P2")
+        hit = next(a for a in evaluate_safety(twin).alerts
+                   if a.rule_id == "problem_red_lines.health_problem_red_line")
+        assert hit.severity == Severity.HIGH
+
+    def test_empty_redlines_silent(self):
+        # 没有任何红线 → 规则静默(不报错)
+        twin = _empty_twin()
+        twin.acute.symptom_texts_all = ["黑便"]
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "problem_red_lines.health_problem_red_line" not in ids
+
+    def test_negation_still_hits_by_design(self):
+        # 否定语境(「没有呕血」)仍命中 —— 这是有意偏严,不是 bug。
+        # 钉住此行为,免得日后有人当 bug 改成漏判。
+        twin = self._twin_with_redline("黑便/呕血", "立即就医/急诊", ["这两天没有呕血"])
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "problem_red_lines.health_problem_red_line" in ids
+
+
 # ─────────────────────── Vitals rules ─────────────────────
 
 

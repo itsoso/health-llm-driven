@@ -175,6 +175,33 @@ class TestBuilderWithPartialData:
         assert any("咳嗽" in s for s in twin.acute.recent_symptoms)
         assert "acute" in twin.meta.data_sources
 
+    def test_build_projects_monitoring_problem_red_lines(self, db):
+        """未 resolved 的 HealthProblem 红线应投影到 Twin。
+
+        覆盖安全评审建议①:愈合转 monitoring 的问题红线不能丢(黑便复发场景)。
+        """
+        from app.models.user import User
+        from app.services import health_problem_service as prob_svc
+
+        user = User(
+            username=f"rl_{uuid.uuid4().hex[:6]}",
+            email=f"rl_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="RedLine User", is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+
+        p = prob_svc.create_problem(db, user.id, {
+            "name": "胃溃疡(随访中)", "risk_level": "P1", "status": "active",
+            "red_lines": [{"condition": "黑便/呕血", "action": "立即就医/急诊"}],
+        })
+        prob_svc.set_status(db, p.id, user.id, "monitoring")
+
+        twin = build_twin(db, user_id=user.id, use_cache=False)
+
+        conds = [rl.condition for rl in twin.acute.problem_red_lines]
+        assert "黑便/呕血" in conds
+        assert twin.acute.problem_red_lines[0].action == "立即就医/急诊"
+
     def test_build_picks_up_water_intake(self, db):
         """插入一条 WaterIntake 后 Twin 应显示。"""
         from app.models.user import User

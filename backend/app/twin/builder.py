@@ -78,6 +78,8 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
     # 急性病/感冒症状是安全约束，必须在主流程同步填充，避免并行 session
     # 在测试或事务边界内看不到刚写入的症状/病症记录。
     _fill_acute_health(db, user_id, twin, sources)
+    # 个性化红线也是安全约束,同步填充(同 acute,避免并行 session 看不到刚写入的 problem)
+    _fill_problem_red_lines(db, user_id, twin, sources)
     _fill_epigenetic(db, user_id, twin, sources)
 
     # ── Phase B: 8 个独立步骤并行执行 ──
@@ -490,6 +492,38 @@ def _fill_acute_health(db: Session, user_id: int, twin: HealthTwin, sources: Set
         sources.add("acute")
     except Exception as e:
         logger.warning(f"[twin] acute_health 失败: {e}")
+
+
+def _fill_problem_red_lines(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """把 active HealthProblem 的个性化红线投影到 acute 分区,供 safety 规则消费。
+
+    独立于 _fill_acute_health(它无症状即早返回);红线即使当下无症状也要在 Twin 里,
+    安全规则才能在症状出现时拿来匹配。失败降级(不阻塞 Twin 构建)。
+    """
+    try:
+        from app.services import health_problem_service as prob_svc
+        from app.twin.schema import ProblemRedLine
+
+        red_lines = []
+        # active_only=True 保留 active + monitoring(只排除 resolved):
+        # 愈合转「随访监测」的问题红线仍要兜(如胃溃疡黑便复发),不能收窄到只 active。
+        for p in prob_svc.list_problems(db, user_id, active_only=True):
+            for rl in (p.red_lines or []):
+                cond = (rl.get("condition") or "").strip()
+                action = (rl.get("action") or "").strip()
+                if not cond or not action:
+                    continue
+                red_lines.append(ProblemRedLine(
+                    problem_name=p.name or "健康问题",
+                    condition=cond,
+                    action=action,
+                    risk_level=p.risk_level or "P1",
+                ))
+        if red_lines:
+            twin.acute.problem_red_lines = red_lines
+            sources.add("problem_red_lines")
+    except Exception as e:
+        logger.warning(f"[twin] problem_red_lines 失败: {e}")
 
 
 # ─────────────────────────── 3. 睡眠深度 ───────────────────────────

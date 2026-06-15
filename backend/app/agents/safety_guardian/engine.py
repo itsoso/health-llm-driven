@@ -86,6 +86,7 @@ def _load_rule_modules() -> None:
         cgm,
         symptoms,
         cardiac,
+        problem_red_lines,
     )
 
 
