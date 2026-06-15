@@ -110,6 +110,8 @@ export default function SettingsScreen() {
 
         {/* AI 模型 — 置顶 */}
         <View style={styles.card}>
+          <SettingRow icon="today-outline" label="今日议程"
+            onPress={() => router.push('/agenda' as any)} />
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="calendar-outline" label="本周建议"
