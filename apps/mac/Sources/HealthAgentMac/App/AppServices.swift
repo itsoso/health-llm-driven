@@ -59,7 +59,10 @@ struct AppServices {
         self.agentViewModel = AgentChatViewModel(
             streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider),
             contextBundleStore: UserDefaultsAgentContextBundleStore(),
-            conversationStore: UserDefaultsAgentConversationStore()
+            conversationStore: UserDefaultsAgentConversationStore(),
+            // Backend conversation list/detail so Mac matches web/mobile; the local
+            // store above is now only the offline fallback.
+            remoteSource: AgentConversationClient(apiClient: apiClient)
         )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)

@@ -105,6 +105,12 @@ struct AgentChatView: View {
             ingestPreparedDraft()
             editorFocusToken += 1
         }
+        .task {
+            // Pull the durable conversation list from the backend so Mac shows the
+            // same history as web/mobile. Failure falls back to the local cache
+            // (viewModel sets historyNotice) — never silently empty.
+            await viewModel.refreshConversationHistory()
+        }
         .onChange(of: viewModel.preparedDraft) { _, _ in
             ingestPreparedDraft()
         }
@@ -765,27 +771,53 @@ struct AgentChatView: View {
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
 
-            if !viewModel.conversationHistory.isEmpty {
+            if !viewModel.conversationHistory.isEmpty || viewModel.historyNotice != nil || viewModel.isLoadingHistory {
                 Divider()
 
                 HStack {
                     Label(appText("History", appLanguageRaw), systemImage: "clock.arrow.circlepath")
                         .font(.subheadline.bold())
+                    if viewModel.isLoadingHistory {
+                        ProgressView().controlSize(.small)
+                    }
                     Spacer()
-                    Text("\(viewModel.conversationHistory.count)")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.10), in: Capsule())
+                    if !viewModel.conversationHistory.isEmpty {
+                        Text("\(viewModel.conversationHistory.count)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.10), in: Capsule())
+                    }
+                    Button {
+                        Task { await viewModel.refreshConversationHistory() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .disabled(viewModel.isLoadingHistory)
+                    .help(appText("Refresh", appLanguageRaw))
                 }
+
+                // Offline / 401 / server-error: the list below is the local cache,
+                // not the live backend. Say so instead of pretending it's current.
+                if let notice = viewModel.historyNotice {
+                    Text(notice)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(historyPageItems) { conversation in
                         AgentConversationHistoryRow(
                             conversation: conversation,
                             isSelected: conversation.id == viewModel.currentConversationID,
                             onLoad: {
-                                viewModel.loadConversation(conversation)
+                                // Fetch the full transcript from the backend so a
+                                // conversation started on another device opens here.
+                                Task { await viewModel.openConversation(conversation) }
                             },
                             onDelete: {
                                 viewModel.deleteConversation(conversation)
@@ -1724,12 +1756,15 @@ private struct AgentConversationHistoryRow: View {
     }
 
     private var historySubtitle: String {
-        let count = conversation.messages.count
         let date = conversation.updatedAt.formatted(date: .numeric, time: .shortened)
+        // A backend list snapshot has no messages until it's opened — show only id
+        // + date then, so the row never claims a misleading "0 messages".
+        let count = conversation.messages.count
+        let countSegment = count > 0 ? "\(count) \(appText("messages", appLanguageRaw)) · " : ""
         if let conversationID = conversation.conversationID {
-            return "#\(conversationID) · \(count) \(appText("messages", appLanguageRaw)) · \(date)"
+            return "#\(conversationID) · \(countSegment)\(date)"
         }
-        return "\(count) \(appText("messages", appLanguageRaw)) · \(date)"
+        return "\(countSegment)\(date)"
     }
 }
 
