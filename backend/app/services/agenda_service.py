@@ -64,3 +64,45 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
         "count": len(items),
         "items": items,
     }
+
+
+def range_view(db: Session, user_id: int, days: int = 7) -> Dict[str, Any]:
+    """周/区间视图:常驻每日协议 + 窗口内按到期日排布的复查。"""
+    today_d = date.today()
+    recurring = [
+        {"protocol_id": p["protocol_id"], "domain": p["domain"],
+         "name": p["name"], "cadence": p["cadence"]}
+        for p in proto_svc.today_status(db, user_id)
+        if (p.get("cadence") or "daily") == "daily"
+    ]
+    scheduled = [
+        {"date": f["next_due"], "type": "checkup", "title": f"复查:{f['name']}",
+         "overdue": f["overdue"], "what_to_check": f.get("what_to_check"),
+         "source": {"object_type": "health_problem", "object_id": f["problem_id"]}}
+        for f in prob_svc.due_followups(db, user_id, within_days=days)
+    ]
+    scheduled.sort(key=lambda x: x["date"])
+    from datetime import timedelta
+    return {
+        "start": str(today_d), "end": str(today_d + timedelta(days=days)),
+        "recurring_protocols": recurring,
+        "scheduled": scheduled,
+    }
+
+
+def complete_item(
+    db: Session, user_id: int, object_type: str, object_id: int,
+    track: str = "protocol", value: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """统一完成路由:按 agenda item 的 source.object_type 路由到对应 source 的完成。
+
+    health_protocol → 双轨完成(写真实业务记录)。其余来源(复查/safety)后续接通;
+    不支持的来源显式报错(不静默假装完成,守 Rule #1)。
+    """
+    if object_type == "health_protocol":
+        ev = proto_svc.complete_protocol(db, object_id, user_id, track=track, value=value)
+        if ev is None:
+            raise ValueError("协议不存在")
+        return {"object_type": object_type, "object_id": object_id,
+                "status": ev.status, "track": ev.track}
+    raise ValueError(f"不支持经议程完成的来源: {object_type}")
