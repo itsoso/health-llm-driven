@@ -85,6 +85,7 @@ def _load_rule_modules() -> None:
         training_load,
         cgm,
         symptoms,
+        cardiac,
     )
 
 

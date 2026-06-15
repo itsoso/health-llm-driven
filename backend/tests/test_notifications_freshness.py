@@ -19,8 +19,11 @@ def test_notifications_get_user_city_routes_to_fresh_helper(db):
     )
     db.add(user); db.commit(); db.refresh(user)
 
-    # 昨天的时间戳, stale 20h, source='ip'
-    yesterday = datetime.now(timezone.utc) - timedelta(hours=20)
+    # 昨天的时间戳, stale 26h, source='ip'.
+    # 必须 >=24h: get_fresh_city 的"单用户单日限速"按 location_updated_at.date()
+    # == today 跳过 re-geo. 20h 在 UTC 小时 >=20 时仍落同一日历日 → 限速 → 不刷新
+    # → 测试时刻依赖地翻红 (CI 22:xx UTC 挂, 16:xx UTC 过). 26h 恒为前一日历日.
+    yesterday = datetime.now(timezone.utc) - timedelta(hours=26)
     p = UserProfile(
         user_id=user.id,
         detected_city="杭州", detected_region="杭州市",

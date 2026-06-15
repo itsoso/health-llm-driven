@@ -77,6 +77,15 @@ class PhysiologicalState(BaseModel):
     respiration_nightly_stddev: Optional[float] = None  # 同时间窗标准差
     respiration_nightly_samples: int = 0                # 样本数 (判断数据可靠)
 
+    # ECG (Apple Watch 独有, 房颤筛查信号非诊断) — 供 SafetyGuardian + agent 读.
+    # ecg_classification: 最近一次 HealthKit 原样分类字符串.
+    # afib_recent: 最近一次分类是否为 AtrialFibrillation (或 afib_event_count>=1).
+    # afib_event_count: 最近一次上送窗口内的房颤分类次数.
+    ecg_classification: Optional[str] = None
+    ecg_recorded_at: Optional[datetime] = None
+    afib_recent: bool = False
+    afib_event_count: int = 0
+
     last_updated: Optional[date] = None
 
     # P4 多源合并: 每字段的 winning data_source. 用于 LLM source-aware prompting

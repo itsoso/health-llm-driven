@@ -1046,6 +1046,15 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
             twin.labs.blood_pressure_date = bp.get("record_date")
             sources.add("blood_pressure")
 
+    # — ECG (Apple Watch 房颤筛查信号, 非诊断) → physiological
+    ecg = _collectors.fetch_ecg_latest(db, user_id)
+    if ecg:
+        twin.physiological.ecg_classification = ecg.get("ecg_classification")
+        twin.physiological.ecg_recorded_at = ecg.get("ecg_recorded_at")
+        twin.physiological.afib_event_count = ecg.get("afib_event_count", 0)
+        twin.physiological.afib_recent = ecg.get("afib_recent", False)
+        sources.add("ecg")
+
     # — Waist circumference (metabolic syndrome should not rely on BMI only)
     waist = _collectors.fetch_waist_latest(db, user_id)
     if waist:

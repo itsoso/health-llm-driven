@@ -17,6 +17,8 @@ from datetime import date as _date, datetime, time as _time
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 
+from sqlalchemy.exc import IntegrityError
+
 from sqlalchemy.orm import Session
 
 from .base import (
@@ -135,14 +137,12 @@ class HealthKitAdapter(DeviceAdapter):
                     return None
         return None
 
-    @classmethod
-    def _record_to_normalized(cls, record: Dict[str, Any]) -> Tuple[NormalizedHealthData, str]:
-        """单条 record dict → NormalizedHealthData. 返回 (data, validated_data_source)."""
-        record_date = cls._parse_date(record.get("record_date"))
-        if record_date is None:
-            raise ValueError(f"record_date 缺失或格式错误: {record.get('record_date')!r}")
+    @staticmethod
+    def _resolve_data_source(record: Dict[str, Any]) -> str:
+        """从 record 解析 validated data_source — 不依赖 record_date.
 
-        # data_source 优先取 record 字段,其次按 source_name 映射,兜底 unknown
+        优先取 record.data_source,其次按 source_name 映射,兜底 unknown.
+        独立于 _record_to_normalized,使 ECG 点事件在日聚合解析失败时仍能确定来源."""
         ds_raw = record.get("data_source")
         if ds_raw is None and record.get("source_name"):
             ds_raw = map_source_name_to_data_source(record["source_name"])
@@ -150,6 +150,16 @@ class HealthKitAdapter(DeviceAdapter):
             if ds_raw is not None:
                 logger.warning(f"[healthkit] data_source='{ds_raw}' 不在白名单, fallback=unknown")
             ds_raw = "unknown"
+        return ds_raw
+
+    @classmethod
+    def _record_to_normalized(cls, record: Dict[str, Any]) -> Tuple[NormalizedHealthData, str]:
+        """单条 record dict → NormalizedHealthData. 返回 (data, validated_data_source)."""
+        record_date = cls._parse_date(record.get("record_date"))
+        if record_date is None:
+            raise ValueError(f"record_date 缺失或格式错误: {record.get('record_date')!r}")
+
+        ds_raw = cls._resolve_data_source(record)
 
         return NormalizedHealthData(
             record_date=record_date,
@@ -186,6 +196,70 @@ class HealthKitAdapter(DeviceAdapter):
             raw_data=record.get("raw_data") or {},
         ), ds_raw
 
+    @staticmethod
+    def _parse_datetime(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _save_ecg(cls, db: Session, user_id: int, record: Dict[str, Any], data_source: str) -> bool:
+        """落库一条 ECG 观测 (点事件, 独立 ecg_observations 表). 返回是否写入.
+
+        仅当 ecg_classification 存在时落库. (user_id, recorded_at) 唯一 → 重复上送幂等:
+        命中已存在则更新分类/计数, 否则插入. raw_data 留审计."""
+        classification = record.get("ecg_classification")
+        if not classification:
+            return False
+
+        from app.models.ecg_observation import EcgObservation
+
+        recorded_at = cls._parse_datetime(record.get("ecg_recorded_at"))
+        afib_count = record.get("afib_event_count") or 0
+        try:
+            afib_count = int(afib_count)
+        except (TypeError, ValueError):
+            afib_count = 0
+
+        existing = None
+        if recorded_at is not None:
+            existing = (
+                db.query(EcgObservation)
+                .filter(
+                    EcgObservation.user_id == user_id,
+                    EcgObservation.recorded_at == recorded_at,
+                )
+                .first()
+            )
+
+        if existing:
+            existing.classification = str(classification)
+            existing.afib_event_count = afib_count
+            existing.data_source = data_source
+            existing.raw_data = record.get("raw_data") or existing.raw_data
+        else:
+            db.add(EcgObservation(
+                user_id=user_id,
+                classification=str(classification),
+                recorded_at=recorded_at,
+                afib_event_count=afib_count,
+                data_source=data_source,
+                raw_data=record.get("raw_data") or None,
+            ))
+        try:
+            db.commit()
+        except IntegrityError:
+            # 并发/重复上送撞唯一约束 — 回滚视为幂等成功, 不抛给整批
+            db.rollback()
+        return True
+
     @classmethod
     def batch_save(
         cls,
@@ -195,20 +269,31 @@ class HealthKitAdapter(DeviceAdapter):
     ) -> Dict[str, Any]:
         """逐条独立 try/except 写入 garmin_data,一条坏数据不让整批 fail.
 
+        ECG 是点事件,语义上**不依赖**日聚合写入成功,因此与日聚合并行各自独立
+        try/except:即使 _record_to_normalized(日聚合)因 record_date 缺失抛错,
+        本条若带 ecg_classification 仍尝试落 ECG。ECG 丢弃/落库失败走**可区分**的
+        "ECG dropped" 错误项(`kind: "ecg"`),不混进通用 record error,让调用方感知。
+
         返回:
           {
             "imported_count": int,
+            "ecg_imported_count": int,
             "source_breakdown": {"apple-watch": 12, "ringconn": 5, ...},
-            "errors": [{"index": int, "record_date": str|None, "error": str}, ...]
+            "errors": [
+              {"index": int, "kind": "daily"|"ecg", "record_date": str|None, "error": str},
+              ...
+            ]
           }
         """
         from .manager import DeviceManager
 
         imported = 0
+        ecg_imported = 0
         breakdown: Dict[str, int] = {}
         errors: List[Dict[str, Any]] = []
 
         for idx, record in enumerate(records):
+            # ── 日聚合写入 (独立 try) ────────────────────────────────────────
             try:
                 normalized, ds = cls._record_to_normalized(record)
                 DeviceManager._save_health_data(db, user_id, normalized)
@@ -221,18 +306,47 @@ class HealthKitAdapter(DeviceAdapter):
                 )
                 errors.append({
                     "index": idx,
+                    "kind": "daily",
                     "record_date": str(record.get("record_date")) if record.get("record_date") else None,
                     "error": f"{type(e).__name__}: {e}",
                 })
                 # _save_health_data 内部 db.commit() 失败时由调用方负责 rollback;
-                # 这里独立 try 仅捕获,后续 record 继续.
+                # 这里独立 try 仅捕获,后续逻辑继续。
                 try:
                     db.rollback()
                 except Exception:
                     pass
 
+            # ── ECG 点事件写入 (独立 try, 与日聚合并行) ──────────────────────
+            # 即使日聚合失败也尝试落 ECG: ECG 是点事件, 不依赖日聚合成功。
+            # data_source 独立解析 (不经 _record_to_normalized, 后者可能已抛错)。
+            if record.get("ecg_classification"):
+                try:
+                    ds_ecg = cls._resolve_data_source(record)
+                    if cls._save_ecg(db, user_id, record, ds_ecg):
+                        ecg_imported += 1
+                except Exception as ecg_err:  # noqa: BLE001
+                    # 可区分日志: 明确 "ECG dropped", 不混进通用 record error。
+                    logger.error(
+                        f"[healthkit] ECG dropped idx={idx} "
+                        f"ecg_recorded_at={record.get('ecg_recorded_at')!r} "
+                        f"classification={record.get('ecg_classification')!r}: "
+                        f"{type(ecg_err).__name__}: {ecg_err}"
+                    )
+                    errors.append({
+                        "index": idx,
+                        "kind": "ecg",
+                        "record_date": str(record.get("ecg_recorded_at")) if record.get("ecg_recorded_at") else None,
+                        "error": f"ECG dropped: {type(ecg_err).__name__}: {ecg_err}",
+                    })
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+
         return {
             "imported_count": imported,
+            "ecg_imported_count": ecg_imported,
             "source_breakdown": breakdown,
             "errors": errors,
         }
