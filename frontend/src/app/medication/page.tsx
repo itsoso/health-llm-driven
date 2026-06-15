@@ -5,10 +5,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { medicationApi, MedicationItem, MedicationTodayStatus } from '@/services/api/records';
+import type { MedicationSafetyAlert } from '@/services/api/records';
+import { MedicationSafetyAlertsPanel } from '@/components/medication/MedicationSafetyAlertsPanel';
 
 function MedicationContent() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [safetyAlerts, setSafetyAlerts] = useState<MedicationSafetyAlert[]>([]);
   const [formData, setFormData] = useState({
     name: '', dosage: '', frequency: '', times_per_day: '1',
     reminder_times: '', category: '', purpose: '', notes: '',
@@ -34,9 +37,10 @@ function MedicationContent() {
       const res = await medicationApi.addMedication(data);
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ['medications'] });
       queryClient.invalidateQueries({ queryKey: ['medication-today'] });
+      setSafetyAlerts(saved.safety_alerts ?? []);
       setShowForm(false);
       setFormData({ name: '', dosage: '', frequency: '', times_per_day: '1', reminder_times: '', category: '', purpose: '', notes: '' });
     },
@@ -110,12 +114,17 @@ function MedicationContent() {
             <p className="text-gray-500 mt-1">记录用药、追踪依从性</p>
           </div>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              setShowForm(!showForm);
+              if (!showForm) setSafetyAlerts([]);
+            }}
             className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
           >
             {showForm ? '取消' : '+ 添加药品'}
           </button>
         </div>
+
+        <MedicationSafetyAlertsPanel alerts={safetyAlerts} />
 
         {/* 依从性概览 */}
         {adherence && (

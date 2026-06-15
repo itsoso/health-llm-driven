@@ -2683,15 +2683,54 @@ struct RecordHubView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            frequentChipsRow(
-                label: appText("Tap a medication to log a dose", appLanguageRaw),
-                icon: "cross.case.fill",
-                tint: .red,
-                chips: myMedications.map { FrequentChipModel(id: "\($0.id)", title: $0.name, meta: $0.dosage) }
-            ) { index in
-                let med = myMedications[index]
-                Task { await logMedicationDose(med) }
+            VStack(alignment: .leading, spacing: 10) {
+                frequentChipsRow(
+                    label: appText("Tap a medication to log a dose", appLanguageRaw),
+                    icon: "cross.case.fill",
+                    tint: .red,
+                    chips: myMedications.map { FrequentChipModel(id: "\($0.id)", title: $0.name, meta: $0.dosage) }
+                ) { index in
+                    let med = myMedications[index]
+                    Task { await logMedicationDose(med) }
+                }
+
+                if !medicationSafetyAlerts.isEmpty {
+                    medicationSafetyAlertsPanel
+                }
             }
+        }
+    }
+
+    private var medicationSafetyAlerts: [MedicationSafetyAlert] {
+        myMedications
+            .flatMap(\.safetyAlerts)
+            .sorted { $0.severity.value > $1.severity.value }
+    }
+
+    private var medicationSafetyAlertsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(appText("Medication safety alerts", appLanguageRaw), systemImage: "exclamationmark.triangle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+            ForEach(Array(medicationSafetyAlerts.prefix(3).enumerated()), id: \.offset) { _, alert in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(alert.severity.labelZH) · \(alert.title)")
+                        .font(.caption.weight(.semibold))
+                    Text(alert.action ?? alert.message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Text(appText("Medication safety alerts are risk stratification, not a diagnosis or prescription decision.", appLanguageRaw))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.orange.opacity(0.18), lineWidth: 1)
         }
     }
 

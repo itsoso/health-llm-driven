@@ -47,6 +47,20 @@ export interface MedicationAdherence {
   days: number;
 }
 
+export interface MedicationSafetyAlert {
+  rule_id: string;
+  category: string;
+  severity: {
+    value: number;
+    label: string;
+    label_zh: string;
+  };
+  title: string;
+  message: string;
+  action?: string | null;
+  requires_medical_attention?: boolean;
+}
+
 export interface MedicationItem {
   id: number;
   user_id: number;
@@ -62,6 +76,7 @@ export interface MedicationItem {
   end_date: string | null;
   notes: string | null;
   created_at: string | null;
+  safety_alerts?: MedicationSafetyAlert[];
 }
 
 export interface MedicationTodayStatus {

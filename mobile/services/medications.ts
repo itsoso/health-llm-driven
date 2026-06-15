@@ -1,5 +1,19 @@
 import api from './api';
 
+export interface MedicationSafetyAlert {
+  rule_id: string;
+  category: string;
+  severity: {
+    value: number;
+    label: string;
+    label_zh: string;
+  };
+  title: string;
+  message: string;
+  action?: string | null;
+  requires_medical_attention?: boolean;
+}
+
 export interface Medication {
   id: number;
   name: string;
@@ -13,6 +27,7 @@ export interface Medication {
   end_date: string | null;
   is_active: boolean;
   notes: string | null;
+  safety_alerts?: MedicationSafetyAlert[];
 }
 
 export async function listMedications(activeOnly = true): Promise<Medication[]> {

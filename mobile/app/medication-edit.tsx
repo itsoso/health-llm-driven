@@ -28,7 +28,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 
-import { getMedication, updateMedication, type Medication } from '../services/medications';
+import { getMedication, updateMedication, type Medication, type MedicationSafetyAlert } from '../services/medications';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { useToast } from '../hooks/useToast';
@@ -57,6 +57,7 @@ export default function MedicationEditScreen() {
   const [frequency, setFrequency] = useState('');
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
+  const [safetyAlerts, setSafetyAlerts] = useState<MedicationSafetyAlert[]>([]);
 
   useEffect(() => {
     const m = medQuery.data;
@@ -70,9 +71,12 @@ export default function MedicationEditScreen() {
 
   const updateMut = useMutation({
     mutationFn: (payload: Partial<Medication>) => updateMedication(id, payload),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ['medications'] });
-      toast.show('已保存', 'success');
+      const alerts = saved.safety_alerts ?? [];
+      setSafetyAlerts(alerts);
+      toast.show(alerts.length > 0 ? '已保存，发现用药安全提醒' : '已保存', 'success');
+      if (alerts.length > 0) return;
       router.back();
     },
     onError: () => Alert.alert('保存失败', '请稍后再试'),
@@ -158,6 +162,7 @@ export default function MedicationEditScreen() {
             </View>
           ) : (
             <View style={styles.form}>
+              <MedicationSafetyAlertsPanel alerts={safetyAlerts} />
               <Field label="药品名称" required>
                 <TextInput
                   value={name}
@@ -220,6 +225,34 @@ export default function MedicationEditScreen() {
   );
 }
 
+function MedicationSafetyAlertsPanel({ alerts }: { alerts: MedicationSafetyAlert[] }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+
+  if (alerts.length === 0) return null;
+
+  return (
+    <View style={styles.alertPanel}>
+      <View style={styles.alertHeader}>
+        <Ionicons name="warning-outline" size={18} color="#B45309" />
+        <Text style={txt.alertTitle}>用药安全提醒</Text>
+      </View>
+      {alerts.map((alert) => (
+        <View key={alert.rule_id} style={styles.alertItem}>
+          <View style={styles.alertItemHeader}>
+            <Text style={txt.alertBadge}>{alert.severity.label_zh}</Text>
+            <Text style={txt.alertItemTitle}>{alert.title}</Text>
+          </View>
+          <Text style={txt.alertMessage}>{alert.message}</Text>
+          {alert.action ? <Text style={txt.alertAction}>{alert.action}</Text> : null}
+        </View>
+      ))}
+      <Text style={txt.alertBoundary}>这些提醒用于风险分层，不替代医生诊断或处方决定。</Text>
+    </View>
+  );
+}
+
 function Field({
   label,
   required,
@@ -264,6 +297,22 @@ function createStyles(c: ColorPalette) {
       ...shadows.subtle,
     },
     form: { paddingTop: spacing.md, gap: spacing.md },
+    alertPanel: {
+      gap: 10,
+      padding: spacing.md,
+      borderRadius: radii.lg,
+      backgroundColor: '#FFFBEB',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#F59E0B',
+    },
+    alertHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    alertItem: {
+      gap: 6,
+      paddingTop: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: 'rgba(180, 83, 9, 0.25)',
+    },
+    alertItemHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     input: {
       backgroundColor: c.bgCard,
       borderRadius: radii.md,
@@ -283,5 +332,20 @@ function createTxt(c: ColorPalette) {
     errorTitle: { marginTop: 10, fontSize: 16, fontWeight: '700', color: c.labelPrimary } as TextStyle,
     retryText: { fontSize: 15, fontWeight: '700', color: c.brand } as TextStyle,
     saveText: { fontSize: 15, fontWeight: '700', color: c.brand } as TextStyle,
+    alertTitle: { fontSize: 15, fontWeight: '800', color: '#92400E' } as TextStyle,
+    alertBadge: {
+      overflow: 'hidden',
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      backgroundColor: '#FDE68A',
+      fontSize: 12,
+      fontWeight: '800',
+      color: '#92400E',
+    } as TextStyle,
+    alertItemTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: '#78350F' } as TextStyle,
+    alertMessage: { fontSize: 13, lineHeight: 18, color: '#92400E' } as TextStyle,
+    alertAction: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: '#78350F' } as TextStyle,
+    alertBoundary: { fontSize: 12, lineHeight: 17, color: '#A16207' } as TextStyle,
   };
 }

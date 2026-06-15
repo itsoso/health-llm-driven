@@ -698,6 +698,42 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(meds.first?.dosage, "每侧2喷")
     }
 
+    func testRecordClientDecodesMedicationSafetyAlertsForMacSurface() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/medication/medications/me?active_only=true")
+            let data = """
+            [{
+              "id": 9,
+              "name": "卡马西平",
+              "dosage": "100mg",
+              "frequency": "每日一次",
+              "safety_alerts": [{
+                "rule_id": "pgx.cpic.hla-b_卡马西平",
+                "category": "pgx",
+                "severity": {"label": "critical", "label_zh": "紧急", "value": 4},
+                "title": "HLA-B × 卡马西平",
+                "message": "携带 HLA-B 风险等位基因时，卡马西平相关严重皮肤不良反应风险升高。",
+                "action": "请先与医生或药师确认，不要自行调整用药。"
+              }]
+            }]
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let meds = await RecordClient(apiClient: client).fetchMyMedications()
+
+        XCTAssertEqual(meds.first?.safetyAlerts.count, 1)
+        XCTAssertEqual(meds.first?.safetyAlerts.first?.title, "HLA-B × 卡马西平")
+        XCTAssertEqual(meds.first?.safetyAlerts.first?.severity.labelZH, "紧急")
+        XCTAssertEqual(meds.first?.safetyAlertSummary, "紧急 · HLA-B × 卡马西平")
+    }
+
     func testRecordClientLogsMedicationDose() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")

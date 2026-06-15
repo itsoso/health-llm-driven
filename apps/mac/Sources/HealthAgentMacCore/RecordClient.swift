@@ -198,12 +198,64 @@ public struct MedicationOption: Decodable, Equatable, Sendable, Identifiable {
     public let name: String
     public let dosage: String?
     public let frequency: String?
+    public let safetyAlerts: [MedicationSafetyAlert]
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case dosage
         case frequency
+        case safetyAlerts = "safety_alerts"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        dosage = try container.decodeIfPresent(String.self, forKey: .dosage)
+        frequency = try container.decodeIfPresent(String.self, forKey: .frequency)
+        safetyAlerts = try container.decodeIfPresent([MedicationSafetyAlert].self, forKey: .safetyAlerts) ?? []
+    }
+
+    public var safetyAlertSummary: String? {
+        guard let alert = safetyAlerts.sorted(by: { $0.severity.value > $1.severity.value }).first else {
+            return nil
+        }
+        return "\(alert.severity.labelZH) · \(alert.title)"
+    }
+}
+
+public struct MedicationSafetyAlert: Decodable, Equatable, Sendable, Identifiable {
+    public let ruleID: String
+    public let category: String
+    public let severity: MedicationSafetyAlertSeverity
+    public let title: String
+    public let message: String
+    public let action: String?
+    public let requiresMedicalAttention: Bool?
+
+    public var id: String { ruleID }
+
+    enum CodingKeys: String, CodingKey {
+        case ruleID = "rule_id"
+        case category
+        case severity
+        case title
+        case message
+        case action
+        case requiresMedicalAttention = "requires_medical_attention"
+    }
+}
+
+public struct MedicationSafetyAlertSeverity: Decodable, Equatable, Sendable {
+    public let value: Int
+    public let label: String
+    public let labelZH: String
+
+    enum CodingKeys: String, CodingKey {
+        case value
+        case label
+        case labelZH = "label_zh"
     }
 }
 

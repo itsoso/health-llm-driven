@@ -172,6 +172,8 @@ public enum L10n {
         "Note (optional)": "随记(可选)",
         "No active medications. Add them on web first.": "暂无在用药物，请先在网页端添加。",
         "Tap a medication to log a dose": "点药物一键记录服用",
+        "Medication safety alerts": "用药安全提醒",
+        "Medication safety alerts are risk stratification, not a diagnosis or prescription decision.": "用药安全提醒只用于风险分层，不作为诊断或处方决定。",
         "one tap": "一键",
         "1-10": "1-10",
         "Blood Glucose": "血糖",
