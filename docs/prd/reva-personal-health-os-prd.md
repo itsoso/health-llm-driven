@@ -1,13 +1,14 @@
-# Reva Personal Health OS — 统一重设计蓝图(协议层 + 手工录入双轨)
+# Reva Personal Health OS — 全局产品需求说明书(PRD · 合并统一蓝图)
 
-> **状态**: 重设计纲领 v1(2026-06-15)。本文**整合三个输入**,作为下一轮重设计的单一事实来源:
-> 1. **TO-BE 目标形态** ← Codex《全局产品需求说明书》[`docs/prd/2026-06-15-global-product-requirements.md`](2026-06-15-global-product-requirements.md)(HealthAgenda / HealthProgram / Router / R1–R10 / WSCLA / 5 入口)
-> 2. **AS-IS 现状基线 + 不变量 + 技术债** ← [`docs/PRD.md`](../PRD.md)(逐子系统逆向 review;PR #181)
-> 3. **「容器化/协议化健康」最佳实践 + 手工/协议双轨原则** ← 本轮产品决策
+> **状态**: **v1 合并基线(2026-06-15)。这是唯一权威 PRD**,已把以下全部输入合并、内联成一份自洽文档(下列输入自此降级为历史素材,一切以本文为准;冲突时本文优先):
+> 1. **TO-BE 目标形态** ← Codex 全局 PRD(HealthAgenda / HealthProgram / Router / R1–R10 / WSCLA / 5 入口)
+> 2. **AS-IS 现状基线 + 不变量 + 技术债** ← docs/PRD.md(逐子系统逆向 review,~85% 已建成的复用清单)
+> 3. **容器化/协议化最佳实践 + 手工/协议双轨** ← 产品决策
+> 4. **多轮外部分析**:ChatGPT Pro 8 层框架 + HealthProblem;多模型(数据/状态/计划/执行/复盘五层 + 慢病抗衰循证)→ L1–L4 健康定义、打卡三铁律、状态机护城河、三级通知、n=1 严谨化、临床默认配置附录、诚实声明。
 >
-> **本文新增的核心**:在 Codex 的 `HealthAgendaItem` 之上引入一等对象 **`HealthProtocol`**,并确立 **双轨录入模型(协议轨 + 手工轨,两轨写同一份数据、同一议程)**——这是把「最佳实践 = 一次设定 + 完成确认 + 被动采集」与「手工录入永远可用」统一进 Codex 目标架构的关键。
+> **本 PRD 的两个原创内核**:① 在 `HealthAgendaItem` 之上引入一等对象 **`HealthProblem`(医学问题登记)** 与 **`HealthProtocol`(协议层)**,形成 `Problem → Program → Protocol → AgendaItem` 完整层级;② **双轨录入模型**(协议轨 + 手工轨,写同一份数据、同一议程,手工永不被取代)。
 >
-> **关系**:本文不另立北极星/IA,沿用 Codex PRD;只在「一等对象」「录入模型」「需求清单」「路线图」上**增补 + 收口**。Codex PRD 与本文有冲突时,以本文为准(本文是更晚的整合)。
+> **读法**:§1–§3 定方向(定位/原则/架构);§4 一等对象;§5 双轨录入;§6 需求 R1–R16(全自洽);§7 不变量(验收 gate);§8 复用与债;§9 路线图;§10 待拍板;附录 A/B 临床默认配置与同行参考;§11 诚实声明。
 
 ---
 
@@ -179,11 +180,21 @@ HealthProtocol:
 
 ---
 
-## 6. 需求清单整合(Codex R1–R10 + 本文 R11–R14)
+## 6. 需求清单 R1–R16(自洽,本节即完整需求)
 
-**沿用 Codex R1–R10**(逐条见 Codex §6):R1 Health Agenda 服务端统一层 · R2 时间/日程驱动 · R3 Wearable Router v2 · R4 Apple Watch Companion · R5 Food Voice Capture 协议 · R6 Measurement Automation Protocol · R7 Checkup & Screening Planner · R8 Training Prescription & Readiness Gate · R9 Outcome Proof · R10 三端职责。
+**R1–R10(目标形态需求,源自 Codex,已内联)**:
+- **R1 Health Agenda 服务端统一层**:把 Daily Plan/ActionCard/InterventionCycle/Reminder/Medication/Supplement/Training/Measurement/ReviewSchedule 统一成可查询/执行/审计的议程;`GET /agenda/today`、`/agenda/range`、`POST /agenda/items/{id}/events`、`/agenda/rebuild`;item 引用 source object 不复制业务事实;三端看到同一批 item,任一端完成全端同步。
+- **R2 时间/日程驱动**:支持时间窗(起床后/饭后/运动前/睡前/周末/季度复查)+ cadence(日/周/月/季/8-12 周/异常触发)+ event-triggered(饭后 20-40min/训练后/睡眠同步后/体检上传后)+ quiet hours + calendar-aware 占位。
+- **R3 Multi-Wearable Router v2**:指标级输出 winning_source/agreement/freshness/confidence;训练决策用 recovery_decision 的 green/yellow/red 作 Agenda input;冲突降置信不平均;设备缺失生成 data_quality item;安全指标保留多源证据。
+- **R4 Apple Watch Wrist Companion**:Today Status(灯+置信+最重要行动)/Action Feedback(完成/跳过/稍后/调整)/Food Voice Capture/Quick Record/Smart Stack-Complication/分级通知;**不做**腕上长对话/影像/本地诊断/常驻监听;不开 iPhone 也能完成今日最重要反馈。
+- **R5 Food Voice Capture 协议**:语音记食物成稳定事实流(raw_text/source/meal_type/foods[]/confidence/risk_tags/confirmation_state);v1 不新表,写 DietRecord + raw 入 notes;腕上最多追问 1 个问题;不追克级精确,优先长期行为分析。
+- **R6 Measurement Automation Protocol**:每个测量 item 带 automation_path(vendor/HealthKit 自动 > 外部设备 > 手动 > 提醒上传);袖带血压/智能秤/化验为 ground truth,穿戴趋势只触发提示;过期指标自动进 Agenda。
+- **R7 Checkup & Specialty Screening Planner**:按年龄/性别/家族史/既往异常/症状/可穿戴异常/医生指令生成检查建议(区分 wellness/复查/就诊/急性红旗),输出 项目+时间窗+理由+来源+风险边界+是否需医生确认,全进 Agenda;不越界为诊断。
+- **R8 Training Prescription & Readiness Gate**:recovery_decision green/yellow/red 作训练 gate;输入 RingConn 睡眠/HRV/SpO2/皮温 + Garmin readiness/load/recovery + Apple 活动/主观疲劳 + 症状;训练前 30-60min 在 Watch/Mobile 出现;训练后捕获 RPE/疼痛 + Garmin workout 事实;**急性病/低氧/症状优先于 Garmin readiness**。
+- **R9 Outcome Proof**:每个 Program 绑 primary/secondary metrics;每个 action 标是否影响 outcome;7/30/90 复盘 = 执行率+指标变化+复查结果+个人响应强弱+下周期调整;temporal association 明确「非因果」;代谢周期输出 baseline→latest→target。
+- **R10 三端职责**:Mobile 主体验(Today/Agenda/Capture/Programs/Review + HealthKit/Watch 配对/语音/照片饮食);Mac 深度工作台(快速记录/导入/Agent 长对话/Trace,不复制健康判断);Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行;OpenClaw/MCP 受控外部入口(最小权限+审计)。
 
-**本文新增**:
+**R11–R16(本 PRD 新增)**:
 - **R11 HealthProtocol 协议层 + 双轨录入**
   - 新增 `HealthProtocol`(§4.2),Program 与 Agenda 间的投影层;每域可选/可空。
   - **每个 Capture 域必须同时实现协议轨 + 手工轨**,两轨写同一 `source_models` + 同一 agenda event;验收:同一 item 用任一轨完成,Today/Agenda/Review 表现一致,outcome 不区分来源。
@@ -303,4 +314,4 @@ Blueprint(抄:测量密度+自动化 SOP/盒餐;防:数十补剂叠加+逆龄叙
 
 ---
 
-*本文为重设计单一事实来源。TO-BE 需求细节见 Codex PRD;AS-IS 现状/不变量/技术债细节见 docs/PRD.md;用药协议见 docs/MEDICATION_AUTOPILOT.md;可穿戴 Router 见 docs/plans/2026-06-15-multi-wearable-health-router-roadmap.md。临床附录是默认配置非医嘱。架构数字以 docs/ARCHITECTURE.md + check_doc_drift.py 为准。*
+*本文是**唯一权威 PRD**,已自洽合并 Codex 全局 PRD(TO-BE)、docs/PRD.md(AS-IS 基线/不变量/技术债)、协议双轨与多轮外部分析——这些输入降级为历史素材,一切以本文为准。子领域深规可继续参考:用药 docs/MEDICATION_AUTOPILOT.md、可穿戴 Router docs/plans/2026-06-15-multi-wearable-health-router-roadmap.md。临床附录 A 是默认配置非医嘱。架构数字以 docs/ARCHITECTURE.md + check_doc_drift.py 为准。*
