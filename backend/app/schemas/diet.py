@@ -168,3 +168,22 @@ class CreateDietFromImageRequest(BaseModel):
     record_date: date = Field(..., description="记录日期")
     meal_type: MealType = Field(..., description="餐食类型")
     notes: Optional[str] = None
+
+
+# ── 语音食物解析(Apple Watch Companion / R5)──────────────────────
+class VoiceFoodParseRequest(BaseModel):
+    """语音转写文本 → 食物草稿(只解析不写库)。"""
+    raw_text: str = Field(..., min_length=1, max_length=1000, description="语音转写文本")
+    meal_type: Optional[str] = Field(None, description="餐次(不给则按文本/时刻推断)")
+
+
+class VoiceFoodParseResponse(BaseModel):
+    """食物草稿。客户端确认后再 POST /diet/records 写库。"""
+    raw_text: str
+    meal_type: str
+    foods: List[Dict[str, Any]] = []
+    risk_tags: List[str] = []
+    confidence: float
+    needs_confirmation: bool
+    clarifying_question: Optional[str] = None
+    parser_version: str

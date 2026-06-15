@@ -23,6 +23,8 @@ from app.schemas.diet import (
     FoodRecognitionRequest,
     FoodRecognitionResponse,
     CreateDietFromImageRequest,
+    VoiceFoodParseRequest,
+    VoiceFoodParseResponse,
 )
 from statistics import median
 from app.services.ai.food_recognition import food_recognition_service
@@ -444,6 +446,22 @@ def delete_diet_record(
 
 
 # ========== AI食物识别端点 ==========
+
+@router.post("/voice/parse", response_model=VoiceFoodParseResponse)
+async def parse_voice_food_endpoint(
+    request: VoiceFoodParseRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """语音转写文本 → 结构化食物草稿(Apple Watch Companion / R5)。
+
+    只解析不写库;客户端确认后再 POST /diet/records。分层:规则(餐次/风险标签)+
+    记忆(常吃中位营养)+ LLM(自由文本→结构化)。LLM 不可用则降级 + 标 needs_confirmation。
+    """
+    from app.services.diet_voice_parser import parse_voice_food
+
+    return await parse_voice_food(db, current_user.id, request.raw_text, request.meal_type)
+
 
 @router.post("/recognize", response_model=FoodRecognitionResponse)
 async def recognize_food(
