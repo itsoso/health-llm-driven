@@ -312,6 +312,8 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
         ],
         "phenotype_exclude_keywords": [
             "no ", "low ", "阴性", "not susceptible", "无易感", "negative",
+            "未检出", "未见", "未发现", "无致病", "无恶性高热", "无 mh",
+            "wild", "野生", "正常", "benign", "良性", "likely benign",
         ],
         "phenotype_label": "RYR1 恶性高热易感变异",
         "drug_keywords": [
@@ -332,6 +334,8 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
         ],
         "phenotype_exclude_keywords": [
             "no ", "low ", "阴性", "not susceptible", "无易感", "negative",
+            "未检出", "未见", "未发现", "无致病", "无恶性高热", "无 mh",
+            "wild", "野生", "正常", "benign", "良性", "likely benign",
         ],
         "phenotype_label": "CACNA1S 恶性高热易感变异",
         "drug_keywords": [

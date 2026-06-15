@@ -641,6 +641,41 @@ class TestPGxCpicTable:
             for a in evaluate_safety(twin_pos).alerts
         )
 
+    def test_ryr1_chinese_negative_phrasings_no_alert(self):
+        """阻断收尾：中文报告非连续否定写法 "未检出致病变异" 是阴性 MH 报告，
+        绝不能被 phenotype 子串 "致病" 命中而误报 CRITICAL 恶性高热（患者即将麻醉）。"""
+        twin_neg = self._twin_with(
+            "RYR1", "wild-type", "未检出致病变异", "七氟烷",
+            pool="risk_variants",
+        )
+        assert not any(
+            a.rule_id.startswith("pgx.cpic.ryr1")
+            for a in evaluate_safety(twin_neg).alerts
+        )
+
+    def test_cacna1s_chinese_negative_phrasing_no_alert(self):
+        """同形防漂移：CACNA1S 阴性写法 "未见致病性变异" 同样不能误报。"""
+        twin_neg = self._twin_with(
+            "CACNA1S", "wild-type", "未见致病性变异", "七氟烷",
+            pool="risk_variants",
+        )
+        assert not any(
+            a.rule_id.startswith("pgx.cpic.cacna1s")
+            for a in evaluate_safety(twin_neg).alerts
+        )
+
+    def test_ryr1_chinese_positive_still_alerts(self):
+        """避免误杀：真阳性中文写法 "恶性高热易感（致病变异）" 仍必须报 CRITICAL。"""
+        twin_pos = self._twin_with(
+            "RYR1", "c.7300G>A", "恶性高热易感（致病变异）", "七氟烷",
+            pool="risk_variants",
+        )
+        a = next(
+            x for x in evaluate_safety(twin_pos).alerts
+            if x.rule_id.startswith("pgx.cpic.ryr1")
+        )
+        assert a.severity == Severity.CRITICAL
+
     def test_no_drug_no_alert(self):
         """有变异但没在用相关药 → 不报。"""
         twin = _empty_twin()
