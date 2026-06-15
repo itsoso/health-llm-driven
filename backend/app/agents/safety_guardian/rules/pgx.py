@@ -6,7 +6,7 @@
 
 规则覆盖的基因：
   CYP2D6, CYP2C19, CYP2C9, VKORC1, SLCO1B1, G6PD, HLA-B*57:01,
-  DPYD, TPMT, UGT1A1, ALDH2, MTHFR
+  DPYD, TPMT, ALDH2, MTHFR
 
 每条规则只在（a）用户基因有该位点 AND（b）用户在服相关药物时触发。
 """
@@ -456,6 +456,10 @@ def pgx_cpic_table_check(twin: HealthTwin) -> List[Alert]:
         if not variant:
             continue
         blob = (variant.get("result_label") or "").lower() + " " + (variant.get("genotype") or "").lower()
+        # 保守触发：先查 exclude —— 命中任一否定/反向词即跳过该项，绝不误报。
+        exclude = entry.get("phenotype_exclude_keywords") or []
+        if any(k.lower() in blob for k in exclude):
+            continue
         if not any(k.lower() in blob for k in entry["phenotype_keywords"]):
             continue  # 保守：phenotype 标签不明确就不报
         hit = [m for m in meds if any(dk.lower() in m for dk in entry["drug_keywords"])

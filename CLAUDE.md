@@ -298,7 +298,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 - `labs.py` (7): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别
 - `ddi.py` (7): GLP-1×磺脲、华法林×NSAID、SSRI×MAOI 等
 - `dsi.py` (7): 鱼油×抗凝、钙×铁、维K×华法林、圣约翰草等
-- `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动(`pgx_cpic_table.py` 纯数据,无 @register;迭代 TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S)
+- `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动(`pgx_cpic_table.py` 纯数据,无 @register;迭代 TPMT/NUDT15/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S)
 - `training_load.py` (3): ACWR 过载/欠训练/零运动
 - `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
 - `symptoms.py` (5): 症状级急症红线(可疑心脏事件/卒中FAST/急性呼吸困难/急腹症/大病前兆)

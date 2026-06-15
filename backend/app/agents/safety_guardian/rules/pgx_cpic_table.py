@@ -21,6 +21,8 @@ CPIC Level-A 中 phenotype 可由单标签/关键词判定」的对。引擎规�
 每项字段：
   gene                基因名（大写，与 _find_variant_by_gene 比对）
   phenotype_keywords  命中 result_label / genotype 的关键词（中英），任一命中即视为高风险 phenotype
+  phenotype_exclude_keywords  (可选) 否定/反向词；引擎先查 exclude，命中任一即跳过该项不报
+                      （避免 "non-expresser" 命中 "express"、"no MH risk" 命中 "risk" 等反向假阳性）
   phenotype_label     人类可读的 phenotype 概述（填入 message）
   drug_keywords       药名同义词（中英），任一命中 _med_names 即视为在服
   severity            Severity 名（字符串，引擎转 enum）
@@ -45,10 +47,12 @@ _PM_IM = [
 ]
 # ultrarapid / rapid（CYP 系列“代谢快”一侧）
 _UM_RM = ["ultra", "rapid", "um", "rm", "超快代谢", "快代谢", "ultrarapid"]
-# 酶/转运体功能缺陷一侧（DPYD/TPMT/NUDT15/UGT1A1/G6PD 等“活性低”）
+# 酶/转运体功能缺陷一侧（DPYD/TPMT/NUDT15/G6PD 等“活性低”）。
+# 只放表型词：裸合子词（纯合/杂合）会命中该基因下挂的良性变异，故剔除——
+# 要求与代谢表型词共现才触发。
 _DEFICIENT = [
     "poor", "intermediate", "deficien", "缺陷", "缺乏", "活性降低",
-    "功能降低", "纯合", "杂合", "中间", "低活性",
+    "功能降低", "中间", "低活性",
 ]
 
 
@@ -79,18 +83,6 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
         "action": "与处方医生讨论按 CPIC NUDT15 指南减量并密切监测血常规；东亚人群该位点风险尤高，切勿自行用药。",
         "message_template": "{gene} 基因型 ({genotype}) 提示 {phenotype}。NUDT15 低活性者使用硫唑嘌呤/巯基嘌呤类发生重度白细胞减少、脱发等骨髓毒性风险显著升高。你当前在用：{drugs}。",
         "cpic_url": "https://cpicpgx.org/guidelines/guideline-for-thiopurines-and-tpmt/",
-    },
-
-    # ─────────── UGT1A1 × 伊立替康（*28 纯合→中性粒细胞减少）───────────
-    {
-        "gene": "UGT1A1",
-        "phenotype_keywords": _DEFICIENT,
-        "phenotype_label": "UGT1A1 活性降低（如 *28/*28，葡萄糖醛酸化能力下降）",
-        "drug_keywords": ["伊立替康", "irinotecan", "cpt-11"],
-        "severity": "HIGH",
-        "action": "与肿瘤科医生讨论按 CPIC 调整伊立替康起始剂量并加强中性粒细胞/腹泻监测；不要自行停药或改量。",
-        "message_template": "{gene} 基因型 ({genotype}) 提示 {phenotype}。伊立替康活性代谢物 SN-38 经 UGT1A1 灭活，活性降低者发生严重中性粒细胞减少和腹泻风险升高。你当前在用：{drugs}。",
-        "cpic_url": "https://cpicpgx.org/guidelines/guideline-for-irinotecan-and-ugt1a1/",
     },
 
     # ─────────── HLA-B*15:02 × 卡马西平/奥卡西平/苯妥英（SJS/TEN）───────────
@@ -222,7 +214,7 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
         "severity": "MEDIUM",
         "action": "若止吐效果不佳，与处方医生讨论换用不经 CYP2D6 代谢的止吐药（如格拉司琼）——超快代谢者昂丹司琼/托烷司琼清除过快、止吐可能失败。",
         "message_template": "{gene} 基因型 ({genotype}) 提示 {phenotype}。昂丹司琼/托烷司琼经 CYP2D6 灭活，超快代谢者药物清除过快、止吐疗效下降。你当前在用：{drugs}。",
-        "cpic_url": "https://cpicpgx.org/guidelines/cpic-guideline-for-ondansetron-and-tropisetron-and-cyp2d6-genotype/",
+        "cpic_url": "https://cpicpgx.org/guidelines/guideline-for-ondansetron-and-tropisetron-and-cyp2d6/",
     },
 
     # ─────────── CYP2D6 × SSRI（帕罗西汀/氟伏沙明等经 CYP2D6 者）───────────
@@ -284,8 +276,12 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
     {
         "gene": "CYP3A5",
         "phenotype_keywords": [
-            "expresser", "express", "表达", "normal metabolizer", "intermediate",
-            "*1/*1", "*1/*3", "高代谢", "正常代谢", "中间代谢",
+            "expresser", "intermediate expresser", "normal metabolizer",
+            "高代谢", "*1/*1", "*1/*3", "*1/*6", "*1/*7",
+        ],
+        "phenotype_exclude_keywords": [
+            "non-express", "nonexpress", "非表达", "*3/*3",
+            "poor", "慢代谢", "低代谢",
         ],
         "phenotype_label": "CYP3A5 表达者（如 *1 携带，他克莫司清除更快）",
         "drug_keywords": ["他克莫司", "tacrolimus", "fk506", "fk-506"],
@@ -312,7 +308,10 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
         "gene": "RYR1",
         "phenotype_keywords": [
             "malignant hyperthermia", "mh", "恶性高热", "susceptib", "易感",
-            "pathogenic", "致病", "risk", "高风险",
+            "pathogenic", "致病",
+        ],
+        "phenotype_exclude_keywords": [
+            "no ", "low ", "阴性", "not susceptible", "无易感", "negative",
         ],
         "phenotype_label": "RYR1 恶性高热易感变异",
         "drug_keywords": [
@@ -329,7 +328,10 @@ CPIC_LEVEL_A_PAIRS: List[Dict[str, Any]] = [
         "gene": "CACNA1S",
         "phenotype_keywords": [
             "malignant hyperthermia", "mh", "恶性高热", "susceptib", "易感",
-            "pathogenic", "致病", "risk", "高风险",
+            "pathogenic", "致病",
+        ],
+        "phenotype_exclude_keywords": [
+            "no ", "low ", "阴性", "not susceptible", "无易感", "negative",
         ],
         "phenotype_label": "CACNA1S 恶性高热易感变异",
         "drug_keywords": [

@@ -587,18 +587,26 @@ class TestPGxCpicTable:
         ids = _rule_ids(evaluate_safety(twin).alerts)
         assert any("hla-b" in i and "别嘌醇" in i for i in ids)
 
-    def test_ugt1a1_irinotecan(self):
-        twin = self._twin_with("UGT1A1", "*28/*28", "poor metabolizer", "伊立替康")
-        a = next(
-            x for x in evaluate_safety(twin).alerts
-            if x.rule_id.startswith("pgx.cpic.ugt1a1")
-        )
-        assert a.severity == Severity.HIGH
-
     def test_cyp3a5_tacrolimus_expresser(self):
         twin = self._twin_with("CYP3A5", "*1/*3", "expresser", "他克莫司")
         ids = _rule_ids(evaluate_safety(twin).alerts)
         assert any(i.startswith("pgx.cpic.cyp3a5") for i in ids)
+
+    def test_cyp3a5_nonexpresser_no_alert(self):
+        """阻断-1 回归：non-expresser (*3/*3) 是非表达者，方向与 expresser 相反，
+        绝不能误报"他克莫司需加量"(会致他克莫司中毒)；而 *1/*1 expresser 应报。"""
+        # non-expresser → exclude 命中 → 不报
+        twin_ne = self._twin_with("CYP3A5", "*3/*3", "non-expresser", "他克莫司")
+        assert not any(
+            a.rule_id.startswith("pgx.cpic.cyp3a5")
+            for a in evaluate_safety(twin_ne).alerts
+        )
+        # expresser *1/*1 → 报
+        twin_e = self._twin_with("CYP3A5", "*1/*1", "expresser", "他克莫司")
+        assert any(
+            a.rule_id.startswith("pgx.cpic.cyp3a5")
+            for a in evaluate_safety(twin_e).alerts
+        )
 
     def test_ryr1_anesthetic_critical(self):
         twin = self._twin_with(
@@ -610,6 +618,28 @@ class TestPGxCpicTable:
             if x.rule_id.startswith("pgx.cpic.ryr1")
         )
         assert a.severity == Severity.CRITICAL
+
+    def test_ryr1_negative_no_alert(self):
+        """阻断-2 回归："no MH risk detected" / "low risk" 是阴性，绝不能误触发
+        CRITICAL 恶性高热告警；而 "MH susceptible" 应报。"""
+        # 阴性 → exclude 命中 → 不报
+        twin_neg = self._twin_with(
+            "RYR1", "wild-type", "no MH risk detected", "七氟烷",
+            pool="risk_variants",
+        )
+        assert not any(
+            a.rule_id.startswith("pgx.cpic.ryr1")
+            for a in evaluate_safety(twin_neg).alerts
+        )
+        # 易感 → 报
+        twin_pos = self._twin_with(
+            "RYR1", "c.7300G>A", "MH susceptible", "七氟烷",
+            pool="risk_variants",
+        )
+        assert any(
+            a.rule_id.startswith("pgx.cpic.ryr1")
+            for a in evaluate_safety(twin_pos).alerts
+        )
 
     def test_no_drug_no_alert(self):
         """有变异但没在用相关药 → 不报。"""
