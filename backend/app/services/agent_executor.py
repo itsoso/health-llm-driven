@@ -1996,6 +1996,16 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 干预闭环提议注入失败: {e}")
 
+        # 注入 N-of-1 干预效应估计(active/近期周期 + 复查数据 → 个人化效应后验)。
+        # 无周期/无复查 → 空串不注入(Phase 1, effect_estimator)。
+        try:
+            from app.services.effect_estimator import effect_estimate_prompt_blob
+            blob = effect_estimate_prompt_blob(self.db, user_id)
+            if blob:
+                parts.append("\n" + blob)
+        except Exception as e:
+            logger.warning(f"Agent 干预效应估计注入失败: {e}")
+
         # 注入记忆
         try:
             from app.services.conversation_memory_service import get_relevant_memories
