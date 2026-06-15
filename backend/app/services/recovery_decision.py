@@ -22,6 +22,11 @@ from sqlalchemy.orm import Session
 _ZONE_TO_LIGHT = {"hard": "green", "moderate": "green", "light": "yellow", "rest": "red"}
 _LIGHT_RANK = {"green": 2, "yellow": 1, "red": 0}
 
+# ACWR 词表兼容两套:exercise_recovery_service 实际产出 undertraining/optimal/danger/overtraining;
+# schema 注释写的是 under/optimal/risky。两套都认,避免哪天来源切换又静默失效。
+_ACWR_OVERLOAD = {"danger", "overtraining", "risky"}   # 急性负荷过高 → 封顶到黄
+_ACWR_UNDER = {"undertraining", "under"}                # 负荷偏低 → 有余量
+
 # 参与"设备一致性"的恢复相关指标(其余指标差异不影响训练决策置信度)
 _AGREEMENT_METRICS = {"hrv", "resting_heart_rate", "total_sleep_duration", "spo2_avg"}
 
@@ -90,13 +95,13 @@ def decide(readiness: Any, acute: Any, behavioral: Any,
 
     # 2) ACWR 过载 → 封顶到黄(即使恢复就绪度是绿)
     acwr_zone = getattr(behavioral, "acwr_zone", None)
-    if acwr_zone == "risky":
+    if acwr_zone in _ACWR_OVERLOAD:
         capped = _cap(light, "yellow")
         if capped != light:
-            reasons.append("急性训练负荷偏高(ACWR risky),高强度降级")
+            reasons.append(f"急性训练负荷偏高(ACWR {acwr_zone}),高强度降级")
         light = capped
-    elif acwr_zone == "under":
-        reasons.append("训练负荷偏低(ACWR under),有余量")
+    elif acwr_zone in _ACWR_UNDER:
+        reasons.append(f"训练负荷偏低(ACWR {acwr_zone}),有余量")
 
     conf_score, conf_label = _confidence(source, agreement_index, len(missing))
     if agreement_index is not None:

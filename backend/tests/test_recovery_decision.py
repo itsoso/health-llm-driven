@@ -46,16 +46,24 @@ def test_acute_illness_overrides_green():
     assert any("急性病" in r or "休息" in r for r in d.reasons)
 
 
-def test_acwr_risky_caps_green_to_yellow():
-    d = decide(_rb(zone="hard", score=85), _acute(), _beh(acwr="risky"))
-    assert d.light == "yellow"
-    assert any("ACWR" in r for r in d.reasons)
+def test_acwr_overload_caps_green_to_yellow():
+    # 用 exercise_recovery_service 实际产出的值(danger/overtraining),不是 schema 注释的 "risky"
+    for z in ("danger", "overtraining", "risky"):
+        d = decide(_rb(zone="hard", score=85), _acute(), _beh(acwr=z))
+        assert d.light == "yellow", f"acwr={z} 应封顶到黄"
+        assert any("ACWR" in r for r in d.reasons)
 
 
 def test_acwr_under_keeps_green_with_note():
-    d = decide(_rb(zone="hard", score=85), _acute(), _beh(acwr="under"))
+    for z in ("undertraining", "under"):
+        d = decide(_rb(zone="hard", score=85), _acute(), _beh(acwr=z))
+        assert d.light == "green"
+        assert any("余量" in r for r in d.reasons)
+
+
+def test_acwr_optimal_no_cap():
+    d = decide(_rb(zone="hard", score=85), _acute(), _beh(acwr="optimal"))
     assert d.light == "green"
-    assert any("余量" in r or "under" in r for r in d.reasons)
 
 
 # ── 置信度 ──────────────────────────────────────
