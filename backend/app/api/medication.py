@@ -266,6 +266,82 @@ async def get_deprescribing_review(
     return review_medications(payload)
 
 
+class RegimenInstantiate(BaseModel):
+    template_id: Optional[str] = None  # 选模板;与 phases 二选一
+    phases: Optional[List[Dict[str, Any]]] = None  # 自定义/OCR 解析的多阶段
+    name: Optional[str] = None
+    start_on: Optional[str] = None  # YYYY-MM-DD,默认今天
+    override_safety: bool = False  # 用户明确知情后强行录入(仅放行非 CRITICAL? CRITICAL 也需显式)
+
+
+@router.get("/regimen-templates")
+async def list_regimen_templates(
+    current_user: User = Depends(get_current_user_required),
+):
+    """列出可选用药方案模板(录入脚手架,非用药建议)。"""
+    from app.services import regimen_templates
+    return {
+        "templates": regimen_templates.list_templates(),
+        "disclaimer": regimen_templates.TEMPLATE_DISCLAIMER,
+    }
+
+
+@router.post("/regimens")
+async def create_regimen(
+    data: RegimenInstantiate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """实例化用药方案:解析阶段 → 引入即 DDI 预检 → 建疗程+当前阶段药品。
+
+    有 CRITICAL 药物相互作用且未 override_safety → 422 阻断(不写库),返回触发的告警。
+    """
+    from datetime import date as _date
+    from app.services import medication_regimen_service as mrs
+
+    start = None
+    if data.start_on:
+        try:
+            start = _date.fromisoformat(data.start_on)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="start_on 格式应为 YYYY-MM-DD")
+
+    try:
+        result = mrs.instantiate_regimen(
+            db, current_user.id,
+            template_id=data.template_id,
+            phases=data.phases,
+            name=data.name,
+            start_on=start,
+            override_safety=data.override_safety,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if result["blocked"]:
+        # 用 422 + 结构化 body 让前端弹「检测到高危相互作用」确认页;
+        # 用户知情后可带 override_safety=true 重试(强录,会留审计)
+        raise HTTPException(status_code=422, detail={
+            "reason": "high_risk_drug_interaction",
+            "message": "检测到高危药物相互作用(需医生评估),已阻断录入。请咨询医生;确需录入可在确认后重试。",
+            "safety_alerts": result["safety_alerts"],
+            "disclaimer": result["disclaimer"],
+            "can_override": True,
+        })
+    return result
+
+
+@router.get("/regimens/me")
+async def list_my_regimens(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """列出我的用药方案/疗程。"""
+    from app.services import medication_regimen_service as mrs
+    return mrs.list_regimens(db, current_user.id, active_only)
+
+
 def _serialize_medication(med) -> Dict[str, Any]:
     return {
         "id": med.id,
