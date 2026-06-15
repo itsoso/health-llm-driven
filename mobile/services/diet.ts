@@ -1,10 +1,13 @@
 import api from './api';
 
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type VoiceMealType = MealType | 'extra';
+
 export interface DietRecord {
   id: number;
   user_id: number;
   record_date: string;
-  meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  meal_type: MealType;
   food_items: string;
   calories: number | null;
   protein: number | null;
@@ -19,7 +22,7 @@ export interface DietRecord {
 
 export interface DietRecordCreate {
   record_date: string;
-  meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  meal_type: MealType;
   food_items: string;
   calories?: number;
   protein?: number;
@@ -73,6 +76,28 @@ export interface FoodRecognitionResponse {
   error: string | null;
 }
 
+export interface VoiceFoodDraftItem {
+  name: string;
+  quantity?: number | null;
+  unit?: string | null;
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+}
+
+export interface VoiceFoodParseResponse {
+  raw_text: string;
+  meal_type: VoiceMealType;
+  meal_type_label: string;
+  foods: VoiceFoodDraftItem[];
+  risk_tags: string[];
+  confidence: number;
+  needs_confirmation: boolean;
+  clarifying_question: string | null;
+  parser_version: string;
+}
+
 export async function getDailyDiet(date: string): Promise<DailyDietSummary> {
   const { data } = await api.get<DailyDietSummary>(`/diet/records/me/date/${date}`);
   return data;
@@ -85,7 +110,7 @@ export async function getDietStats(days = 7): Promise<DietStats> {
 
 export interface FrequentFood {
   food_items: string;
-  meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  meal_type: MealType;
   count: number;
   calories: number | null;
   protein: number | null;
@@ -128,5 +153,13 @@ export async function recognizeFood(imageBase64: string): Promise<FoodRecognitio
 
 export async function estimateNutrition(description: string): Promise<FoodRecognitionResponse> {
   const { data } = await api.post<FoodRecognitionResponse>(`/diet/estimate-nutrition?food_description=${encodeURIComponent(description)}`);
+  return data;
+}
+
+export async function parseVoiceFood(rawText: string, mealType?: MealType): Promise<VoiceFoodParseResponse> {
+  const { data } = await api.post<VoiceFoodParseResponse>('/diet/voice/parse', {
+    raw_text: rawText,
+    meal_type: mealType,
+  });
   return data;
 }

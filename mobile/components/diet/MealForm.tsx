@@ -11,6 +11,7 @@ interface Props {
   onCancel: () => void;
   /** 编辑模式: 传入 record 预填全部字段; 不传则是新建. */
   initialRecord?: DietRecord;
+  initialMealType?: DietRecordCreate['meal_type'];
   initialDescription?: string;
   initialCalories?: number;
   initialProtein?: number;
@@ -25,13 +26,13 @@ const MEAL_TYPES = [
   { key: 'snack' as const, label: '加餐' },
 ];
 
-export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat }: Props) {
+export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialMealType, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat }: Props) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
 
   const isEdit = !!initialRecord;
   const [mealType, setMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>(
-    (initialRecord?.meal_type as any) || 'lunch'
+    (initialRecord?.meal_type as any) || initialMealType || 'lunch'
   );
   const [desc, setDesc] = useState(initialRecord?.food_items ?? initialDescription ?? '');
   const [cal, setCal] = useState(

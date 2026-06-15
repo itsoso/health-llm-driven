@@ -12,9 +12,12 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from statistics import median
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
+
+from app.schemas.diet import MealType
 
 logger = logging.getLogger(__name__)
 
@@ -23,27 +26,38 @@ _BEIJING_TZ = timezone(timedelta(hours=8))
 
 # 规则层
 _MEAL_BY_KEYWORD = [
-    (("早餐", "早饭", "早上吃"), "早餐"),
-    (("午餐", "午饭", "中午吃"), "午餐"),
-    (("晚餐", "晚饭", "晚上吃"), "晚餐"),
-    (("夜宵", "宵夜", "加餐", "零食", "下午茶"), "加餐"),
+    (("早餐", "早饭", "早上吃"), MealType.BREAKFAST.value),
+    (("午餐", "午饭", "中午吃"), MealType.LUNCH.value),
+    (("晚餐", "晚饭", "晚上吃"), MealType.DINNER.value),
+    (("夜宵", "宵夜", "加餐", "零食", "下午茶"), MealType.SNACK.value),
 ]
+_MEAL_LABELS = {
+    MealType.BREAKFAST.value: "早餐",
+    MealType.LUNCH.value: "午餐",
+    MealType.DINNER.value: "晚餐",
+    MealType.SNACK.value: "加餐",
+    MealType.EXTRA.value: "其他",
+}
 _ALCOHOL_KW = ("啤酒", "白酒", "红酒", "黄酒", "清酒", "鸡尾酒", "威士忌", "伏特加", "梅酒")
 _SWEET_KW = ("可乐", "雪碧", "奶茶", "果汁", "甜饮", "含糖", "蛋糕", "甜品", "冰淇淋", "巧克力")
 
 
 def infer_meal_type(raw_text: str, hour: int) -> str:
-    """先看文本关键词,无则按本地时刻兜底。"""
+    """先看文本关键词,无则按本地时刻兜底。返回 /diet/records 可直接写库的 MealType enum。"""
     for kws, meal in _MEAL_BY_KEYWORD:
         if any(k in raw_text for k in kws):
             return meal
     if 5 <= hour < 10:
-        return "早餐"
+        return MealType.BREAKFAST.value
     if 10 <= hour < 14:
-        return "午餐"
+        return MealType.LUNCH.value
     if 16 <= hour < 21:
-        return "晚餐"
-    return "加餐"
+        return MealType.DINNER.value
+    return MealType.SNACK.value
+
+
+def meal_type_label(meal_type: str) -> str:
+    return _MEAL_LABELS.get(meal_type, meal_type)
 
 
 def detect_risk_tags(raw_text: str) -> List[str]:
@@ -67,11 +81,9 @@ def _frequent_index(db: Session, user_id: int, days: int = 60) -> Dict[str, Dict
     ).all()
     groups: Dict[str, list] = {}
     for r in rows:
-        groups.setdefault((r.food_name or "").strip(), []).append(r)
-
-    def _median(vals):
-        v = sorted(x for x in vals if x is not None)
-        return v[len(v) // 2] if v else None
+        for name in {(r.food_name or "").strip(), (r.food_items or "").strip()}:
+            if name:
+                groups.setdefault(name, []).append(r)
 
     out: Dict[str, Dict[str, Any]] = {}
     for name, rs in groups.items():
@@ -86,6 +98,11 @@ def _frequent_index(db: Session, user_id: int, days: int = 60) -> Dict[str, Dict
             "unit": next((r.unit for r in rs if r.unit), None),
         }
     return out
+
+
+def _median(vals: list[Any]) -> float | None:
+    values = [v for v in vals if v is not None]
+    return float(median(values)) if values else None
 
 
 async def _llm_parse_foods(db: Session, user_id: int, raw_text: str):
@@ -113,13 +130,13 @@ async def _llm_parse_foods(db: Session, user_id: int, raw_text: str):
 
 
 async def parse_voice_food(
-    db: Session, user_id: int, raw_text: str, meal_type: Optional[str] = None,
+    db: Session, user_id: int, raw_text: str, meal_type: Optional[str | MealType] = None,
     *, llm_parse: Optional[Callable[..., Awaitable]] = None,
 ) -> Dict[str, Any]:
     """语音食物草稿(不写库)。llm_parse 可注入(默认走 _llm_parse_foods)。"""
     raw_text = (raw_text or "").strip()
     hour = datetime.now(_BEIJING_TZ).hour
-    meal = meal_type or infer_meal_type(raw_text, hour)
+    meal = _normalize_meal_type(meal_type) or infer_meal_type(raw_text, hour)
     tags = detect_risk_tags(raw_text)
 
     fn = llm_parse or _llm_parse_foods
@@ -153,6 +170,7 @@ async def parse_voice_food(
     return {
         "raw_text": raw_text,
         "meal_type": meal,
+        "meal_type_label": meal_type_label(meal),
         "foods": foods,
         "risk_tags": tags,
         "confidence": confidence,
@@ -160,3 +178,12 @@ async def parse_voice_food(
         "clarifying_question": question,
         "parser_version": PARSER_VERSION,
     }
+
+
+def _normalize_meal_type(value: Optional[str | MealType]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, MealType):
+        return value.value
+    text = str(value).strip()
+    return text if text in _MEAL_LABELS else None

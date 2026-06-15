@@ -366,6 +366,45 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(result.success)
     }
 
+    func testRecordClientParsesVoiceDietDraft() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/diet/voice/parse")
+            let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: String]
+            XCTAssertEqual(body?["raw_text"], "晚饭吃了鸡胸肉和米饭")
+            XCTAssertEqual(body?["meal_type"], "dinner")
+            let data = """
+            {
+              "raw_text": "晚饭吃了鸡胸肉和米饭",
+              "meal_type": "dinner",
+              "meal_type_label": "晚餐",
+              "foods": [{"name": "鸡胸肉", "quantity": 120, "unit": "g", "calories": 198, "protein": 37}],
+              "risk_tags": [],
+              "confidence": 0.86,
+              "needs_confirmation": false,
+              "clarifying_question": null,
+              "parser_version": "voice-1.0"
+            }
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let draft = try await RecordClient(apiClient: client).parseVoiceDietDraft(
+            rawText: "晚饭吃了鸡胸肉和米饭",
+            mealType: "dinner"
+        )
+
+        XCTAssertEqual(draft.mealType, "dinner")
+        XCTAssertEqual(draft.mealTypeLabel, "晚餐")
+        XCTAssertEqual(draft.foods.first?.name, "鸡胸肉")
+        XCTAssertFalse(draft.needsConfirmation)
+    }
+
     func testSupplementProductLibraryClientSearchesProductsForPickerAutofill() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.httpMethod, "GET")

@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { voiceDraftToDietForm, type VoiceFoodParseResponse } from '@/components/diet/voiceFoodDraft';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -84,6 +85,7 @@ function DietContent() {
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isVoiceParsing, setIsVoiceParsing] = useState(false);
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -339,6 +341,47 @@ function DietContent() {
     }
   };
 
+  const handleVoiceParse = async () => {
+    const text = formData.food_items.trim();
+    if (!text) {
+      showToast('请先输入或粘贴语音转写文本', 'warning');
+      return;
+    }
+
+    setIsVoiceParsing(true);
+    try {
+      const res = await fetch(`${API_BASE}/diet/voice/parse`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          raw_text: text,
+          meal_type: formData.meal_type,
+        }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `语音解析失败: ${res.status}`);
+      }
+      const draft = await res.json() as VoiceFoodParseResponse;
+      const patch = voiceDraftToDietForm(draft);
+      setFormData(prev => ({ ...prev, ...patch }));
+      setRecognitionResult(null);
+      showToast(
+        draft.needs_confirmation
+          ? (draft.clarifying_question || '语音草稿已填入，请确认份量后保存')
+          : '语音草稿已填入，确认后保存',
+        draft.needs_confirmation ? 'info' : 'success',
+      );
+    } catch (error: any) {
+      showToast(error.message || '语音草稿解析失败，请稍后重试', 'error');
+    } finally {
+      setIsVoiceParsing(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.food_items.trim()) {
@@ -586,15 +629,25 @@ function DietContent() {
                     <button
                       type="button"
                       onClick={handleTextAnalyze}
-                      disabled={isAnalyzing || !formData.food_items.trim()}
+                      disabled={isAnalyzing || isVoiceParsing || !formData.food_items.trim()}
                       className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1 self-start"
                       title="AI智能分析营养成分"
                     >
                       {isAnalyzing ? '⏳' : '✨'}
                       <span className="text-sm">{isAnalyzing ? '分析中' : 'AI分析'}</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={handleVoiceParse}
+                      disabled={isVoiceParsing || isAnalyzing || !formData.food_items.trim()}
+                      className="px-4 py-2 bg-gradient-to-r from-sky-500 to-teal-500 text-white rounded-lg hover:from-sky-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1 self-start"
+                      title="解析语音转写饮食草稿"
+                    >
+                      <span>{isVoiceParsing ? '⏳' : '🎙️'}</span>
+                      <span className="text-sm">{isVoiceParsing ? '解析中' : '语音草稿'}</span>
+                    </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">💡 输入食物后点击"✨ AI分析"自动计算营养成分</p>
+                  <p className="text-xs text-gray-500 mt-1">💡 输入食物后可做营养分析；粘贴 Apple Watch/Siri 转写文本可先生成语音草稿再确认保存</p>
 
                   {/* 文字分析结果显示 */}
                   {recognitionResult && recognitionResult.success && !imageBase64 && (

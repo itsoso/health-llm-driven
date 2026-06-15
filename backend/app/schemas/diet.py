@@ -174,15 +174,27 @@ class CreateDietFromImageRequest(BaseModel):
 class VoiceFoodParseRequest(BaseModel):
     """语音转写文本 → 食物草稿(只解析不写库)。"""
     raw_text: str = Field(..., min_length=1, max_length=1000, description="语音转写文本")
-    meal_type: Optional[str] = Field(None, description="餐次(不给则按文本/时刻推断)")
+    meal_type: Optional[MealType] = Field(None, description="餐次(不给则按文本/时刻推断)")
+
+
+class VoiceFoodDraftItem(BaseModel):
+    """单个语音食物草稿项。营养值允许为空,客户端确认后再入库。"""
+    name: str
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fat: Optional[float] = None
 
 
 class VoiceFoodParseResponse(BaseModel):
     """食物草稿。客户端确认后再 POST /diet/records 写库。"""
     raw_text: str
-    meal_type: str
-    foods: List[Dict[str, Any]] = []
-    risk_tags: List[str] = []
+    meal_type: MealType
+    meal_type_label: str
+    foods: List[VoiceFoodDraftItem] = Field(default_factory=list)
+    risk_tags: List[str] = Field(default_factory=list)
     confidence: float
     needs_confirmation: bool
     clarifying_question: Optional[str] = None

@@ -25,13 +25,13 @@ def auth(client, db):
 
 # ── 规则层 ──
 def test_infer_meal_type_keyword_beats_hour():
-    assert dvp.infer_meal_type("早上吃了两个包子", hour=20) == "早餐"
+    assert dvp.infer_meal_type("早上吃了两个包子", hour=20) == "breakfast"
 
 
 def test_infer_meal_type_by_hour():
-    assert dvp.infer_meal_type("两个包子", hour=8) == "早餐"
-    assert dvp.infer_meal_type("一碗面", hour=12) == "午餐"
-    assert dvp.infer_meal_type("烧烤", hour=23) == "加餐"
+    assert dvp.infer_meal_type("两个包子", hour=8) == "breakfast"
+    assert dvp.infer_meal_type("一碗面", hour=12) == "lunch"
+    assert dvp.infer_meal_type("烧烤", hour=23) == "snack"
 
 
 def test_detect_risk_tags():
@@ -55,7 +55,8 @@ def test_parse_high_conf_no_confirmation(db, auth):
     user, _ = auth
     foods = [{"name": "鸡胸肉沙拉", "quantity": 1, "unit": "份", "calories": 300, "protein": 30}]
     draft = _run(dvp.parse_voice_food(db, user.id, "午餐吃了鸡胸肉沙拉", llm_parse=_stub(foods, 0.9)))
-    assert draft["meal_type"] == "午餐"
+    assert draft["meal_type"] == "lunch"
+    assert draft["meal_type_label"] == "午餐"
     assert draft["confidence"] == 0.9
     assert draft["needs_confirmation"] is False
     assert draft["clarifying_question"] is None
@@ -99,7 +100,8 @@ def test_api_voice_parse_degraded_path(client, auth):
                     json={"raw_text": "晚饭喝了一瓶啤酒"})   # 关键词「晚饭」→确定性,不看挂钟
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["meal_type"] == "晚餐"
+    assert body["meal_type"] == "dinner"
+    assert body["meal_type_label"] == "晚餐"
     assert "alcohol" in body["risk_tags"]
     assert body["parser_version"] == dvp.PARSER_VERSION
     assert body["needs_confirmation"] is True          # 降级必确认
@@ -107,3 +109,13 @@ def test_api_voice_parse_degraded_path(client, auth):
 
 def test_api_voice_parse_requires_auth(client):
     assert client.post("/api/v1/diet/voice/parse", json={"raw_text": "x"}).status_code == 401
+
+
+def test_api_voice_parse_rejects_invalid_meal_type(client, auth):
+    _, headers = auth
+    r = client.post(
+        "/api/v1/diet/voice/parse",
+        headers=headers,
+        json={"raw_text": "吃了鸡胸肉", "meal_type": "午餐"},
+    )
+    assert r.status_code == 422

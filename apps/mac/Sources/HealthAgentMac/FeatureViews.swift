@@ -1970,6 +1970,7 @@ struct RecordHubView: View {
     @State private var resultMessage: String?
     @State private var lastSavedRecord: QuickRecordResult?
     @State private var isSubmitting = false
+    @State private var isParsingVoiceDraft = false
     @State private var isUndoing = false
     @State private var quickFocusToken = 0
 
@@ -2616,6 +2617,11 @@ struct RecordHubView: View {
         switch recordType {
         case .diet:
             recordTextField(appText("Food name or photo description", appLanguageRaw), text: $foodName)
+            Button(appText(isParsingVoiceDraft ? "Parsing Voice Draft..." : "Parse Voice Draft", appLanguageRaw)) {
+                Task { await parseVoiceDietDraft() }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isParsingVoiceDraft || foodName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             HStack {
                 recordTextField(appText("Calories kcal", appLanguageRaw), text: $calories)
                 recordTextField(appText("Protein g", appLanguageRaw), text: $protein)
@@ -3277,6 +3283,34 @@ struct RecordHubView: View {
         }
     }
 
+    private func parseVoiceDietDraft() async {
+        let text = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            resultMessage = appText("Paste Apple Watch/Siri transcript first.", appLanguageRaw)
+            return
+        }
+        isParsingVoiceDraft = true
+        defer { isParsingVoiceDraft = false }
+        do {
+            let draft = try await client.parseVoiceDietDraft(rawText: text)
+            let foodText = draft.foods.map(voiceFoodLabel).filter { !$0.isEmpty }.joined(separator: "、")
+            if !foodText.isEmpty {
+                foodName = foodText
+            }
+            if let caloriesValue = sumVoiceFoods(draft.foods, keyPath: \.calories) {
+                calories = formatVoiceNumber(caloriesValue)
+            }
+            if let proteinValue = sumVoiceFoods(draft.foods, keyPath: \.protein) {
+                protein = formatVoiceNumber(proteinValue)
+            }
+            resultMessage = draft.needsConfirmation
+                ? (draft.clarifyingQuestion ?? appText("Voice draft filled. Confirm before saving.", appLanguageRaw))
+                : appText("Voice draft filled. Confirm before saving.", appLanguageRaw)
+        } catch {
+            resultMessage = "\(appText("Voice draft parse failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
+        }
+    }
+
     private func handleRecordResult(_ result: QuickRecordResult, fallbackText: String) -> Bool {
         resultMessage = result.message
         if result.success {
@@ -3346,6 +3380,29 @@ struct RecordHubView: View {
             stoolType = ""
             excretionNotes = ""
         }
+    }
+
+    private func voiceFoodLabel(_ food: VoiceFoodDraftItem) -> String {
+        let name = food.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return "" }
+        if let quantity = food.quantity, quantity > 0 {
+            return "\(name) \(formatVoiceNumber(quantity))\(food.unit ?? "")"
+        }
+        return name
+    }
+
+    private func sumVoiceFoods(_ foods: [VoiceFoodDraftItem], keyPath: KeyPath<VoiceFoodDraftItem, Double?>) -> Double? {
+        let values = foods.compactMap { $0[keyPath: keyPath] }
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +)
+    }
+
+    private func formatVoiceNumber(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded.rounded() == rounded {
+            return String(Int(rounded))
+        }
+        return String(format: "%.1f", rounded)
     }
 }
 

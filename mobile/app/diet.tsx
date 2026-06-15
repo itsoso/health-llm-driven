@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
-import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, getFrequentFoods, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
+import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, getFrequentFoods, parseVoiceFood, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
 import * as ImagePicker from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
@@ -16,6 +16,7 @@ import { useToast } from '../hooks/useToast';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
+import { voiceDraftToDietDefaults } from '../utils/dietVoiceDraft';
 
 function todayStr() {
   const d = new Date();
@@ -161,6 +162,32 @@ export default function DietScreen() {
     });
   }, []);
 
+  const handleVoiceText = useCallback(async () => {
+    Alert.prompt('语音记录饮食', '说完后保留转写文本，例如: "晚饭吃了鸡胸肉和一碗米饭"', async (text) => {
+      const raw = text?.trim();
+      if (!raw) return;
+      setEstimating(true);
+      try {
+        const draft = await parseVoiceFood(raw);
+        setFormDefaults(voiceDraftToDietDefaults(draft, date));
+        setEditingRecord(null);
+        setShowForm(true);
+        if (draft.needs_confirmation && draft.clarifying_question) {
+          toast.show(draft.clarifying_question, 'info');
+        } else {
+          toast.show('语音草稿已填入,确认后保存', 'success');
+        }
+      } catch {
+        Alert.alert('语音解析失败', '已保留原文,你可以手动确认后保存。');
+        setFormDefaults({ record_date: date, meal_type: 'snack', food_items: raw });
+        setEditingRecord(null);
+        setShowForm(true);
+      } finally {
+        setEstimating(false);
+      }
+    });
+  }, [date, toast]);
+
   const handlePhoto = useCallback(async () => {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -278,6 +305,7 @@ export default function DietScreen() {
         {showForm && (
           <MealForm date={date}
             initialRecord={editingRecord || undefined}
+            initialMealType={formDefaults.meal_type}
             onSubmit={handleSave}
             onCancel={() => { setShowForm(false); setEditingRecord(null); setFormDefaults({}); }}
             initialDescription={formDefaults.food_items}
@@ -334,7 +362,7 @@ export default function DietScreen() {
         <View style={{ height: 140 }} />
       </ScrollView>
 
-      <DietFAB onPhoto={handlePhoto} onText={handleText} />
+      <DietFAB onPhoto={handlePhoto} onText={handleText} onVoice={handleVoiceText} />
 
       <Modal visible={estimating} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.estimateOverlay}>

@@ -24,8 +24,52 @@ public struct QuickRecordResult: Decodable, Equatable, Sendable {
     }
 }
 
+public struct VoiceFoodDraftItem: Decodable, Equatable, Sendable {
+    public let name: String
+    public let quantity: Double?
+    public let unit: String?
+    public let calories: Double?
+    public let protein: Double?
+    public let carbs: Double?
+    public let fat: Double?
+}
+
+public struct VoiceFoodParseResponse: Decodable, Equatable, Sendable {
+    public let rawText: String
+    public let mealType: String
+    public let mealTypeLabel: String
+    public let foods: [VoiceFoodDraftItem]
+    public let riskTags: [String]
+    public let confidence: Double
+    public let needsConfirmation: Bool
+    public let clarifyingQuestion: String?
+    public let parserVersion: String
+
+    enum CodingKeys: String, CodingKey {
+        case rawText = "raw_text"
+        case mealType = "meal_type"
+        case mealTypeLabel = "meal_type_label"
+        case foods
+        case riskTags = "risk_tags"
+        case confidence
+        case needsConfirmation = "needs_confirmation"
+        case clarifyingQuestion = "clarifying_question"
+        case parserVersion = "parser_version"
+    }
+}
+
 private struct QuickRecordRequest: Encodable {
     let text: String
+}
+
+private struct VoiceFoodParseRequest: Encodable {
+    let rawText: String
+    let mealType: String?
+
+    enum CodingKeys: String, CodingKey {
+        case rawText = "raw_text"
+        case mealType = "meal_type"
+    }
 }
 
 private struct SavedRecordResponse: Decodable {
@@ -326,6 +370,13 @@ public final class RecordClient: Sendable {
 
     public func quickRecord(text: String) async throws -> QuickRecordResult {
         try await apiClient.post("quick-record", body: QuickRecordRequest(text: text))
+    }
+
+    public func parseVoiceDietDraft(rawText: String, mealType: String? = nil) async throws -> VoiceFoodParseResponse {
+        try await apiClient.post(
+            "diet/voice/parse",
+            body: VoiceFoodParseRequest(rawText: rawText, mealType: mealType)
+        )
     }
 
     public func recordDiet(foodItems: String, calories: Double?, protein: Double?) async throws -> QuickRecordResult {
