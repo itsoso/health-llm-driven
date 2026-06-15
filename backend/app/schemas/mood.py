@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class MoodRecordBase(BaseModel):
     """情绪记录基础字段"""
-    record_date: date = Field(..., description="记录日期")
+    record_date: date = Field(default_factory=date.today, description="记录日期(默认今天)")
     mood_score: int = Field(..., ge=1, le=5, description="情绪评分 1-5")
     mood_tags: List[str] = Field(default_factory=list, description="情绪标签")
     energy_level: Optional[int] = Field(None, ge=1, le=5, description="精力等级 1-5")

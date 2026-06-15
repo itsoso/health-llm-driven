@@ -265,6 +265,58 @@ category: 维生素 / 矿物质 / 氨基酸 / 抗氧化 / 益生菌 / 中药 / �
 
 ---
 
+## 记录心情 / 情绪
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/mood/records" \
+  -d '{"mood_score":4,"journal":"今天挺好"}'
+```
+
+- `mood_score`（必填）：**1–5** 整数(1 很差 / 3 一般 / 5 很好)。⚠️ 是 1–5 不是 1–10，用户说「8 分」要折算到 1–5（8/10≈4）。
+- `journal`（可选）：用户原话/心情日记
+- `energy_level` / `stress_level` / `anxiety_level` / `sleep_quality`（可选 1–5）：用户提到才填
+- `record_date` 可省（默认今天）
+
+**成功后回复格式：** `✅ 已记录心情 {mood_score}/5`
+
+---
+
+## 记录血糖
+
+```bash
+# 中国习惯用 mmol/L:直接传 glucose_mmol_l,后端自动换算
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/cgm/readings" \
+  -d '{"glucose_mmol_l":6.5,"source":"manual"}'
+```
+
+- 用户说「血糖 6.5」「血糖 6.5 mmol」→ `glucose_mmol_l`（中国默认单位）
+- 用户说「血糖 110 mg/dL」→ `glucose_mg_dl`
+- 两者**二选一**，只传一个
+- `measured_at`：默认现在。**但用户提到非当下的时间(昨天/今早/上次/具体时刻)时,必须传 `measured_at`**(ISO8601),否则补录的旧值会被当成「最新读数」误触发急性血糖告警。例:`{"glucose_mmol_l":15,"measured_at":"2026-06-14T08:00:00"}`
+
+**成功后回复格式：** `✅ 已记录血糖 {值}（来自响应 glucose_mmol_l）`
+
+---
+
+## 记录病程（一段病程,如「我感冒了」「发烧第 2 天」）
+
+⚠️ 区分:**单次症状**(打喷嚏/头痛)走上面的 `/symptoms`;只有一段**持续病程**才用这里。
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/illness/episodes" \
+  -d '{"name":"感冒","severity":5}'
+```
+
+- `name`（必填）：病名,如「感冒」「肠胃炎」。字段名是 `name`,不要写 `illness_name`
+- `severity`（可选 1–10）；`start_date` 可省（默认今天）；`notes`（可选）
+
+**成功后回复格式：** `✅ 已记录病程：{name}`
+
+---
+
 ## 同步 Garmin 数据
 
 触发词：同步Garmin / 同步数据 / 更新运动数据 / 拉取最新数据 / sync garmin
@@ -292,6 +344,10 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" \
 | 血压 | `✅ 已记录血压 120/80 mmHg` |
 | 运动 | `✅ 已记录俯卧撑 43 个` |
 | 补剂 | `✅ 已记录：NAC 600mg ✓` |
+| 症状 | `✅ 已记录症状：打喷嚏 1 次` |
+| 心情 | `✅ 已记录心情 4/5` |
+| 血糖 | `✅ 已记录血糖 6.5 mmol/L` |
+| 病程 | `✅ 已记录病程：感冒` |
 | 失败 | 说明原因 + 建议重试，不输出错误 JSON |
 
 回复要简洁：一句话，包含类型和关键数值。

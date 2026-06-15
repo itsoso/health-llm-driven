@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -23,15 +23,35 @@ from app.services.cgm import CgmService
 router = APIRouter(prefix="/cgm", tags=["cgm"])
 
 
+# 与 models/cgm_reading.py 的 mmol property 及 rules/cgm.py 同口径(round-trip 自洽)
+_MMOL_TO_MGDL = 18.0
+
+
 class CgmReadingIn(BaseModel):
-    measured_at: datetime
-    glucose_mg_dl: float = Field(..., ge=20, le=600)
+    # 血糖可传 mg/dL 或 mmol/L(中国默认 mmol)—— 二选一,只给 mmol 时自动换算。
+    # measured_at 在此**不默认**:留 None,单条端点 create_reading 才补 now;batch 缺时间须被
+    # service 跳过(若在此默认 now 会把设备导入缺时间的脏数据全标当前 → 见安全评审阻断2)。
+    measured_at: Optional[datetime] = None
+    glucose_mg_dl: Optional[float] = Field(None, ge=20, le=600)
+    glucose_mmol_l: Optional[float] = Field(None, ge=1.0, le=33.0)
     trend_arrow: Optional[str] = None
     trend_rate: Optional[float] = None
     source: str = "manual"
     device_serial: Optional[str] = None
     raw_id: Optional[str] = None
     notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _normalize_glucose(self):
+        if self.glucose_mg_dl is None:
+            if self.glucose_mmol_l is None:
+                raise ValueError("必须提供 glucose_mg_dl 或 glucose_mmol_l 其一")
+            self.glucose_mg_dl = round(self.glucose_mmol_l * _MMOL_TO_MGDL, 1)
+        # 换算后复检值域(field 的 ge/le 在赋值前已跑过,这里兜住 mmol→mg/dL 的越界,
+        # 否则 mmol 1.0→18mg/dL 会绕过 mg_dL 的 ≥20 下限喂给低血糖 CRITICAL 规则)
+        if not (20 <= self.glucose_mg_dl <= 600):
+            raise ValueError("血糖换算后超出合理范围(20–600 mg/dL,约 1.1–33.3 mmol/L)")
+        return self
 
 
 class CgmReadingOut(BaseModel):
@@ -58,10 +78,12 @@ def create_reading(
 ):
     """录入一条 CGM 读数。"""
     svc = CgmService()
+    # 单条手动录入:缺 measured_at 默认现在(batch 不走这,缺时间由 service 跳过)。
+    # ⚠️ 补录历史血糖须由调用方显式传 measured_at,否则旧值被当「最新」误触急性告警。
     reading = svc.ingest_reading(
         db=db,
         user_id=current_user.id,
-        measured_at=body.measured_at,
+        measured_at=body.measured_at or datetime.now(timezone.utc),
         glucose_mg_dl=body.glucose_mg_dl,
         source=body.source,
         trend_arrow=body.trend_arrow,
