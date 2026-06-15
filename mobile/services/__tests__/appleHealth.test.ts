@@ -30,6 +30,7 @@ jest.mock('react-native-health', () => {
         Vo2Max: 'Vo2Max',
         Weight: 'Weight',
         WaistCircumference: 'WaistCircumference',
+        Electrocardiogram: 'Electrocardiogram',
       },
     },
     initHealthKit: jest.fn((_p: any, cb: (e: string) => void) => cb('')),
@@ -46,6 +47,7 @@ jest.mock('react-native-health', () => {
     getHeartRateSamples: jest.fn((_o: any, cb: any) => cb('', [])),
     getWeightSamples: jest.fn((_o: any, cb: any) => cb('', [])),
     getWaistCircumferenceSamples: jest.fn((_o: any, cb: any) => cb('', [])),
+    getElectrocardiogramSamples: jest.fn((_o: any, cb: any) => cb('', [])),
   };
   return { __esModule: true, default: mock, ...mock };
 });
@@ -222,6 +224,65 @@ describe('fetchDailyRecords (按源拆分)', () => {
   });
 });
 
+describe('ECG (Apple Watch 房颤筛查)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Object.entries(mockHK).forEach(([k, fn]: [string, any]) => {
+      if (typeof fn === 'function' && k.startsWith('get')) {
+        fn.mockImplementation((_o: any, cb: any) => cb('', []));
+      }
+    });
+  });
+
+  it('取最近一次 classification + startDate, 统计窗口内房颤次数, 挂 apple-watch 记录', async () => {
+    // 需要 apple-watch 有其它指标 → 才会在主循环产出 apple-watch 记录
+    mockHK.getRestingHeartRateSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 58, sourceName: 'com.apple.health', startDate: '2026-05-20T06:00:00Z', endDate: '2026-05-20T06:00:00Z' }]),
+    );
+    mockHK.getElectrocardiogramSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { classification: 'SinusRhythm', startDate: '2026-05-20T08:00:00Z', endDate: '2026-05-20T08:00:30Z' },
+        { classification: 'AtrialFibrillation', startDate: '2026-05-20T12:00:00Z', endDate: '2026-05-20T12:00:30Z' },
+        { classification: 'AtrialFibrillation', startDate: '2026-05-20T18:00:00Z', endDate: '2026-05-20T18:00:30Z' },
+      ]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const watch = recs.find((r) => r.data_source === 'apple-watch');
+    expect(watch).toBeDefined();
+    // 最近一次 = 18:00 的 AtrialFibrillation
+    expect(watch!.ecg_classification).toBe('AtrialFibrillation');
+    expect(watch!.ecg_recorded_at).toBe('2026-05-20T18:00:00Z');
+    // 窗口内 2 次房颤
+    expect(watch!.afib_event_count).toBe(2);
+  });
+
+  it('当天仅有 ECG (无其它指标) 仍补一条 apple-watch 记录上行', async () => {
+    mockHK.getElectrocardiogramSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { classification: 'SinusRhythm', startDate: '2026-05-20T09:00:00Z', endDate: '2026-05-20T09:00:30Z' },
+      ]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    expect(recs).toHaveLength(1);
+    const watch = recs[0];
+    expect(watch.data_source).toBe('apple-watch');
+    expect(watch.ecg_classification).toBe('SinusRhythm');
+    expect(watch.afib_event_count).toBe(0);
+  });
+
+  it('无 ECG 数据 → 三字段缺省 (后端 Optional)', async () => {
+    mockHK.getRestingHeartRateSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 58, sourceName: 'com.apple.health', startDate: '2026-05-20T06:00:00Z', endDate: '2026-05-20T06:00:00Z' }]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const watch = recs.find((r) => r.data_source === 'apple-watch');
+    expect(watch).toBeDefined();
+    expect(watch!.ecg_classification).toBeUndefined();
+    expect(watch!.ecg_recorded_at).toBeUndefined();
+    expect(watch!.afib_event_count).toBeUndefined();
+  });
+});
+
 describe('syncRecentDays', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -255,6 +316,26 @@ describe('syncRecentDays', () => {
     const result = await syncRecentDays(3);
     expect(result.totalImported).toBe(3);
     expect(result.errors).toEqual([]);
+  });
+
+  it('ECG 三字段经 toApiRecord 进入 import POST 出口 payload', async () => {
+    mockHK.getElectrocardiogramSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { classification: 'AtrialFibrillation', startDate: '2026-05-20T18:00:00Z', endDate: '2026-05-20T18:00:30Z' },
+      ]),
+    );
+    (api.post as jest.Mock).mockResolvedValue({
+      data: { imported_count: 1, source_breakdown: {}, errors: [] },
+    });
+    await syncRecentDays(1);
+    const importCall = (api.post as jest.Mock).mock.calls.find(
+      ([url]) => url === '/devices/healthkit/import',
+    );
+    expect(importCall).toBeDefined();
+    const posted = importCall![1].records.find((r: any) => r.data_source === 'apple-watch');
+    expect(posted.ecg_classification).toBe('AtrialFibrillation');
+    expect(posted.ecg_recorded_at).toBe('2026-05-20T18:00:00Z');
+    expect(posted.afib_event_count).toBe(1);
   });
 
   it('同步 HealthKit 体重腰围到一屏录入同源 API', async () => {

@@ -14,6 +14,7 @@ import ReactNativeHealth, {
   type HealthInputOptions,
   type HealthValue,
   type HealthUnit,
+  type ElectrocardiogramSampleValue,
 } from 'react-native-health';
 import api from './api';
 
@@ -114,6 +115,11 @@ export interface HealthKitDailyRecord {
   vo2_max?: number;
   weight_kg?: number;
   waist_cm?: number;
+  // ECG (Apple Watch 独有). 最近一次分类的原始 HealthKit 字符串 + 记录时间,
+  // 加上送窗口内 AtrialFibrillation 次数. 无 ECG 数据时三者均缺省.
+  ecg_classification?: string;
+  ecg_recorded_at?: string; // ISO 8601, 取自最近一次 sample.startDate
+  afib_event_count?: number;
 }
 
 export interface BackfillProgress {
@@ -192,6 +198,9 @@ const PERMISSIONS: HealthKitPermissions = {
       AppleHealthKit.Constants.Permissions.Vo2Max,
       AppleHealthKit.Constants.Permissions.Weight,
       AppleHealthKit.Constants.Permissions.WaistCircumference,
+      // ECG (Apple Watch 房颤筛查信号). 纯运行时读权限 — Info.plist 的
+      // NSHealthShareUsageDescription 已覆盖所有 HealthKit 读取, 不需改 native config.
+      AppleHealthKit.Constants.Permissions.Electrocardiogram,
     ],
     write: [],
   },
@@ -236,6 +245,30 @@ function fetchSamples(
         return;
       }
       resolve(results as SampleWithSource[]);
+    });
+  });
+}
+
+// ECG 专用 fetch — 返回类型与通用 fetchSamples (HealthValue[]) 不同, 单列一个.
+function fetchEcgSamples(options: HealthInputOptions): Promise<ElectrocardiogramSampleValue[]> {
+  return new Promise((resolve) => {
+    const fn = AppleHealthKit.getElectrocardiogramSamples as
+      | ((
+          options: HealthInputOptions,
+          cb: (err: string, results: ElectrocardiogramSampleValue[]) => void,
+        ) => void)
+      | undefined;
+    // 旧桥 / Jest mock 可能没这方法 → 安全降级为无 ECG (后端 Optional, 不崩).
+    if (typeof fn !== 'function') {
+      resolve([]);
+      return;
+    }
+    fn(options, (err, results) => {
+      if (err || !results) {
+        resolve([]);
+        return;
+      }
+      resolve(results);
     });
   });
 }
@@ -354,6 +387,34 @@ function buildRecordForSource(
   };
 }
 
+// ── ECG 摘要 ─────────────────────────────────────────────────────────────────
+// getElectrocardiogramSamples 每条 = 一次 30s ECG 记录, 形如:
+//   { classification: "AtrialFibrillation" | "SinusRhythm" | ..., startDate, endDate,
+//     averageHeartRate, samplingFrequency, device, algorithmVersion, voltageMeasurements }
+// 取窗口内最近一次的 classification + startDate, 并统计 AtrialFibrillation 次数.
+// Apple Watch 独有 → 摘要只挂到 apple-watch 源记录上.
+interface EcgSummary {
+  classification: string;
+  recordedAt: string; // ISO 8601 (最近一次 startDate)
+  afibCount: number;
+}
+
+function summarizeEcgSamples(samples: ElectrocardiogramSampleValue[]): EcgSummary | null {
+  if (!samples || samples.length === 0) return null;
+  // 按 startDate 升序排, 取最后一条作"最近一次"; 上游(fetchDailyRecords)虽已 ascending,
+  // 但 ECG 走独立调用, 这里自排序不依赖外部顺序.
+  const sorted = [...samples].sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+  );
+  const latest = sorted[sorted.length - 1];
+  const afibCount = sorted.filter((s) => s.classification === 'AtrialFibrillation').length;
+  return {
+    classification: String(latest.classification),
+    recordedAt: latest.startDate,
+    afibCount,
+  };
+}
+
 /** 一条记录是否含任何指标值;全空 (该源当天无数据) 则不产出/不上传。 */
 function recordHasData(r: HealthKitDailyRecord): boolean {
   return (
@@ -369,7 +430,8 @@ function recordHasData(r: HealthKitDailyRecord): boolean {
     r.body_temp_deviation_c !== undefined ||
     r.vo2_max !== undefined ||
     r.weight_kg !== undefined ||
-    r.waist_cm !== undefined
+    r.waist_cm !== undefined ||
+    r.ecg_classification !== undefined
   );
 }
 
@@ -404,6 +466,7 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
     vo2,
     weight,
     waist,
+    ecg,
   ] = await Promise.all([
     fetchSamples(AppleHealthKit.getDailyStepCountSamples, opts),
     fetchSamples(AppleHealthKit.getRestingHeartRateSamples, opts),
@@ -426,7 +489,11 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
       ...opts,
       unit: 'cm' as HealthUnit,
     }),
+    fetchEcgSamples(opts),
   ]);
+
+  // ECG 是 Apple Watch 独有, 不参与 per-source 拆分 — 摘要后挂到 apple-watch 记录上.
+  const ecgSummary = summarizeEcgSamples(ecg);
 
   const record_date = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 
@@ -461,10 +528,29 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
       weight: samplesForSource(weight, src),
       waist: samplesForSource(waist, src),
     });
+    // ECG 只挂 apple-watch 源 (HealthKit 不在 ECG sample 上暴露 sourceName,
+    // 且 ECG 仅 Apple Watch 产出). 无 ECG 数据时三字段不填 (后端 Optional).
+    if (src === 'apple-watch' && ecgSummary) {
+      rec.ecg_classification = ecgSummary.classification;
+      rec.ecg_recorded_at = ecgSummary.recordedAt;
+      rec.afib_event_count = ecgSummary.afibCount;
+    }
     if (recordHasData(rec)) {
       if (src === 'unknown' && topUnknownRaw) rec.source_name = topUnknownRaw;
       records.push(rec);
     }
+  }
+
+  // 边界情况: 当天有 ECG 但 apple-watch 没有任何其它指标 (没产出 apple-watch 记录).
+  // 仍需把 ECG 上行, 否则房颤信号丢失. 补一条 apple-watch 记录只带 ECG 三字段.
+  if (ecgSummary && !records.some((r) => r.data_source === 'apple-watch')) {
+    records.push({
+      record_date,
+      data_source: 'apple-watch',
+      ecg_classification: ecgSummary.classification,
+      ecg_recorded_at: ecgSummary.recordedAt,
+      afib_event_count: ecgSummary.afibCount,
+    });
   }
   return records;
 }
@@ -539,6 +625,12 @@ function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
     respiration_rate_min: r.respiration_rate_min,
     respiration_rate_max: r.respiration_rate_max,
     body_temp_deviation_c: r.body_temp_deviation_c,
+    // ECG — 原样转发 HealthKit 分类字符串 + 记录时间 + 窗口内房颤计数.
+    // 无 ECG 时三者 undefined (后端 Optional, 不下发). 对象字面量受 ApiHealthKitRecord
+    // 约束 → 后端改名/删字段时这里 tsc 直接红.
+    ecg_classification: r.ecg_classification,
+    ecg_recorded_at: r.ecg_recorded_at,
+    afib_event_count: r.afib_event_count,
   };
 }
 
