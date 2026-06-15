@@ -544,6 +544,120 @@ class TestPGxRules:
         assert not any(a.rule_id.startswith("pgx.cyp2d6") for a in alerts)
 
 
+class TestPGxCpicTable:
+    """CPIC Level-A 表驱动规则 (pgx_cpic_table_check)。"""
+
+    def _twin_with(self, gene, genotype, label, drug, pool="drug_sensitivity", risk="高风险"):
+        twin = _empty_twin()
+        twin.medication = MedicationState(active_meds=[{"name": drug}])
+        variant = {
+            "gene_name": gene,
+            "genotype": genotype,
+            "result_label": label,
+            "risk_level": risk,
+        }
+        twin.genetic = GeneticContext(has_profile=True, **{pool: [variant]})
+        return twin
+
+    def test_tpmt_thiopurine_critical(self):
+        twin = self._twin_with("TPMT", "*3A/*3A", "poor metabolizer", "硫唑嘌呤")
+        alerts = evaluate_safety(twin).alerts
+        a = next(a for a in alerts if a.rule_id.startswith("pgx.cpic.tpmt"))
+        assert a.severity == Severity.CRITICAL
+        assert a.requires_medical_attention
+        assert any("cpicpgx.org" in r for r in a.references)
+
+    def test_nudt15_mercaptopurine(self):
+        twin = self._twin_with("NUDT15", "*3/*3", "intermediate metabolizer", "6-巯基嘌呤")
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert any(i.startswith("pgx.cpic.nudt15") for i in ids)
+
+    def test_hla_b1502_carbamazepine_critical(self):
+        twin = self._twin_with(
+            "HLA-B", "*15:02 positive", "HLA-B*15:02 阳性", "卡马西平"
+        )
+        a = next(
+            x for x in evaluate_safety(twin).alerts
+            if x.rule_id.startswith("pgx.cpic.hla-b")
+        )
+        assert a.severity == Severity.CRITICAL
+
+    def test_hla_b5801_allopurinol(self):
+        twin = self._twin_with("HLA-B", "*58:01 positive", "阳性", "别嘌醇")
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert any("hla-b" in i and "别嘌醇" in i for i in ids)
+
+    def test_ugt1a1_irinotecan(self):
+        twin = self._twin_with("UGT1A1", "*28/*28", "poor metabolizer", "伊立替康")
+        a = next(
+            x for x in evaluate_safety(twin).alerts
+            if x.rule_id.startswith("pgx.cpic.ugt1a1")
+        )
+        assert a.severity == Severity.HIGH
+
+    def test_cyp3a5_tacrolimus_expresser(self):
+        twin = self._twin_with("CYP3A5", "*1/*3", "expresser", "他克莫司")
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert any(i.startswith("pgx.cpic.cyp3a5") for i in ids)
+
+    def test_ryr1_anesthetic_critical(self):
+        twin = self._twin_with(
+            "RYR1", "c.7300G>A", "malignant hyperthermia susceptibility", "七氟烷",
+            pool="risk_variants",
+        )
+        a = next(
+            x for x in evaluate_safety(twin).alerts
+            if x.rule_id.startswith("pgx.cpic.ryr1")
+        )
+        assert a.severity == Severity.CRITICAL
+
+    def test_no_drug_no_alert(self):
+        """有变异但没在用相关药 → 不报。"""
+        twin = _empty_twin()
+        twin.genetic = GeneticContext(
+            has_profile=True,
+            drug_sensitivity=[{
+                "gene_name": "TPMT",
+                "genotype": "*3A/*3A",
+                "result_label": "poor metabolizer",
+                "risk_level": "高风险",
+            }],
+        )
+        # 没有任何药物
+        assert not any(
+            a.rule_id.startswith("pgx.cpic") for a in evaluate_safety(twin).alerts
+        )
+
+    def test_ambiguous_phenotype_no_alert(self):
+        """phenotype 标签不明确（关键词没命中）→ 保守不报。"""
+        twin = self._twin_with(
+            "TPMT", "未知", "normal metabolizer", "硫唑嘌呤", risk="低风险"
+        )
+        assert not any(
+            a.rule_id.startswith("pgx.cpic.tpmt") for a in evaluate_safety(twin).alerts
+        )
+
+    def test_no_double_report_with_handwritten(self):
+        """CYP2D6 × 可待因已有手写规则 → 表驱动不重复出 CPIC 告警。"""
+        twin = self._twin_with(
+            "CYP2D6", "*4/*4", "poor metabolizer", "可待因"
+        )
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        # 手写规则照常触发
+        assert "pgx.cyp2d6_opioid_pm" in ids
+        # 表驱动不应对可待因再出 CPIC 告警
+        assert not any(i.startswith("pgx.cpic.cyp2d6") and "可待因" in i for i in ids)
+
+    def test_action_is_medical_oriented(self):
+        """所有表驱动 action 都是就医导向, 绝不含'自行停药'。"""
+        twin = self._twin_with("TPMT", "*3A/*3A", "poor metabolizer", "硫唑嘌呤")
+        a = next(
+            x for x in evaluate_safety(twin).alerts
+            if x.rule_id.startswith("pgx.cpic.tpmt")
+        )
+        assert "自行" not in a.action or "切勿自行" in a.action or "不要自行" in a.action
+
+
 # ─────────────────────── Training load ────────────────────
 
 
