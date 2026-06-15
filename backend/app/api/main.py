@@ -87,6 +87,7 @@ from app.api import (
     activity_status,
     smart_plan,
     health_event,
+    bedroom_environment,
     withings,
     onboarding,
     data_export,
@@ -227,6 +228,7 @@ api_router.include_router(exercise_coaching.router, tags=["exercise-coaching"])
 api_router.include_router(exercise_recovery.router)
 
 # ── Devices & Data Sync ───────────────────────────────────────────
+api_router.include_router(bedroom_environment.router, tags=["bedroom-environment"])
 api_router.include_router(withings.router)
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
 api_router.include_router(data_collection.router, prefix="/data-collection", tags=["data-collection"])
