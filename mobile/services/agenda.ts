@@ -41,18 +41,29 @@ export async function getAgendaToday(): Promise<AgendaToday> {
   return resp.data;
 }
 
-/** 统一完成:按 source 路由(协议→双轨写真实记录)。track 默认协议轨。 */
+/** 统一完成:按 source 路由(协议→双轨写真实记录)。track 默认协议轨;手工轨带 value(量/剂量)。 */
 export async function completeAgendaItem(
   source: AgendaSource,
   track: 'protocol' | 'manual' = 'protocol',
+  value?: Record<string, unknown>,
 ): Promise<unknown> {
   const resp = await api.post('/agenda/complete', {
     object_type: source.object_type,
     object_id: source.object_id,
     track,
+    value: value ?? null,
   });
   return resp.data;
 }
+
+/** 域 → 手工轨录入配置(提问 + value 字段名 + 是否数字)。双轨原则:手工永远一个点击之遥。 */
+export const MANUAL_CAPTURE: Record<string, {
+  prompt: string; valueKey: string; numeric: boolean; placeholder?: string;
+}> = {
+  hydration: { prompt: '实际喝了多少毫升?', valueKey: 'volume_ml', numeric: true, placeholder: '如 500' },
+  medication: { prompt: '实际剂量(留空=按医嘱)', valueKey: 'actual_dosage', numeric: false, placeholder: '如 1片 / 20mg' },
+  diet: { prompt: '吃了什么?', valueKey: 'food_items', numeric: false, placeholder: '如 鸡胸肉沙拉' },
+};
 
 /** 跳过(仅协议来源),带失败原因(R14)。 */
 export async function skipProtocol(protocolId: number, reason?: string): Promise<unknown> {

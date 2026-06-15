@@ -185,7 +185,20 @@ def _write_domain_record(
         )
         db.add(rec); db.flush()
         return rec.id
-    # water_records 适配器后续接通(当前协议事件即记录)
+    if p.source_model == "water_records":
+        # 协议轨:implied_quantity 的容量为底(一键=喝完整杯);手工轨:value 覆盖实际量。
+        from app.models.daily_health import WaterIntake
+        v = {**(p.implied_quantity or {}), **(value or {})}
+        amount = v.get("volume_ml") or v.get("water_ml") or v.get("amount_ml")
+        if not amount:
+            return None
+        rec = WaterIntake(
+            user_id=user_id, record_date=day, intake_time=datetime.now(),
+            amount_ml=int(round(float(amount))),
+            drink_type="水", notes="via protocol",
+        )
+        db.add(rec); db.flush()
+        return rec.id
     return None
 
 

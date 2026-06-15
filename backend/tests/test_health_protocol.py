@@ -58,6 +58,17 @@ def test_manual_track_with_value(client, auth_user_and_headers):
     assert c.status_code == 200 and c.json()["track"] == "manual"
 
 
+def test_water_completion_writes_real_water_intake(client, auth_user_and_headers, db):
+    """双轨写同一份记录:饮水协议完成 → 真实 WaterIntake(手工轨用 value 的量)。"""
+    from app.models.daily_health import WaterIntake
+    user, h = auth_user_and_headers
+    pid = client.post("/api/v1/protocols/seed/water-cup", headers=h).json()["id"]
+    client.post(f"/api/v1/protocols/{pid}/complete", headers=h,
+                json={"track": "manual", "value": {"volume_ml": 500}})
+    rows = db.query(WaterIntake).filter(WaterIntake.user_id == user.id).all()
+    assert len(rows) == 1 and rows[0].amount_ml == 500
+
+
 def test_complete_is_idempotent_per_day(client, auth_user_and_headers, db):
     from app.models.health_protocol import HealthProtocolEvent
     user, h = auth_user_and_headers

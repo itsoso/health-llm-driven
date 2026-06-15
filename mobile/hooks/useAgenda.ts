@@ -17,7 +17,11 @@ export function useAgendaToday() {
 export function useCompleteAgendaItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (source: AgendaSource) => completeAgendaItem(source),
+    mutationFn: ({ source, track = 'protocol', value }: {
+      source: AgendaSource;
+      track?: 'protocol' | 'manual';
+      value?: Record<string, unknown>;
+    }) => completeAgendaItem(source, track, value),
     onSuccess: () => qc.invalidateQueries({ queryKey: AGENDA_TODAY_KEY }),
   });
 }
