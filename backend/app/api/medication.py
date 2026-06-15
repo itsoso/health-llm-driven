@@ -5,15 +5,19 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
+from app.agents.safety_guardian import evaluate_safety
 from app.database import get_db
 from app.models.medication import Medication, MedicationLog, medication_timing_label
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services.medication_service import medication_service
+from app.twin.builder import build_twin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/medication", tags=["用药管理"])
+
+_MEDICATION_SAFETY_CATEGORIES = {"pgx", "ddi", "dsi"}
 
 
 class MedicationCreate(BaseModel):
@@ -83,7 +87,9 @@ async def add_medication(
         db.rollback()
         logger.warning(f"[MedAPI] KG extract 失败 (旁路): {e}")
 
-    return _serialize_medication(med)
+    body = _serialize_medication(med)
+    body["safety_alerts"] = _medication_safety_alerts(db, current_user.id)
+    return body
 
 
 @router.get("/medications/me")
@@ -121,7 +127,9 @@ async def update_medication(
     med = medication_service.update_medication(db, medication_id, current_user.id, data.model_dump(exclude_none=True))
     if not med:
         raise HTTPException(status_code=404, detail="药品不存在")
-    return _serialize_medication(med)
+    body = _serialize_medication(med)
+    body["safety_alerts"] = _medication_safety_alerts(db, current_user.id)
+    return body
 
 
 @router.delete("/medications/{medication_id}")
@@ -369,6 +377,23 @@ def _serialize_medication(med) -> Dict[str, Any]:
         "notes": med.notes,
         "created_at": str(med.created_at) if med.created_at else None,
     }
+
+
+def _medication_safety_alerts(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """新增/更新药品后的即时用药安全预览:只返回 PGx/DDI/DSI。"""
+    try:
+        twin = build_twin(db, user_id, use_cache=False)
+        report = evaluate_safety(twin)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[MedAPI] 用药安全预览失败: user_id=%s error=%s", user_id, e)
+        return []
+
+    alerts = [
+        a for a in report.alerts
+        if a.category in _MEDICATION_SAFETY_CATEGORIES
+    ]
+    alerts.sort(key=lambda a: (-int(a.severity), a.category, a.rule_id))
+    return [a.model_dump_for_api() for a in alerts]
 
 
 def _serialize_medication_log(log: MedicationLog) -> Dict[str, Any]:

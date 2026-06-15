@@ -3,6 +3,10 @@
 钉:① 中文时点标签渲染 ② API 写入/读出带时点 ③ today_status 带 timing_label
 ④ 提醒文案含「饭前/饭后/空腹」(复杂方案如胃溃疡三联无脑化的关键)。
 """
+from types import SimpleNamespace
+
+import app.api.medication as med_api
+from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.medication import medication_timing_label
 
 
@@ -68,3 +72,46 @@ def test_medication_without_timing_is_backward_compatible(client, auth_user_and_
     assert r.status_code == 200, r.text
     # 无时点 → label 空串,不报错
     assert r.json()["timing_label"] == ""
+
+
+def test_create_medication_returns_medication_safety_alerts(client, auth_user_and_headers, monkeypatch):
+    """录入药物后立刻返回 PGx/DDI/DSI 提醒,但不混入非用药类安全提醒。"""
+    _, h = auth_user_and_headers
+    calls = {}
+
+    def fake_build_twin(db, user_id, use_cache=True):
+        calls["use_cache"] = use_cache
+        return object()
+
+    def fake_evaluate_safety(twin):
+        return SimpleNamespace(alerts=[
+            Alert(
+                rule_id="pgx.cpic.tpmt_硫唑嘌呤",
+                category="pgx",
+                severity=Severity.CRITICAL,
+                title="TPMT × 硫唑嘌呤 —— CPIC 药物基因组提示",
+                message="TPMT 低活性携带者使用硫唑嘌呤风险升高。",
+                action="请与医生确认基因检测结果和剂量方案。",
+                requires_medical_attention=True,
+            ),
+            Alert(
+                rule_id="vitals.bp_crisis",
+                category="vitals",
+                severity=Severity.CRITICAL,
+                title="血压危象",
+                message="这不是用药录入响应应该混入的提醒。",
+            ),
+        ])
+
+    monkeypatch.setattr(med_api, "build_twin", fake_build_twin, raising=False)
+    monkeypatch.setattr(med_api, "evaluate_safety", fake_evaluate_safety, raising=False)
+
+    r = client.post("/api/v1/medication/medications", headers=h, json={
+        "name": "硫唑嘌呤", "dosage": "50mg",
+    })
+    assert r.status_code == 200, r.text
+
+    body = r.json()
+    assert calls["use_cache"] is False
+    assert [a["rule_id"] for a in body["safety_alerts"]] == ["pgx.cpic.tpmt_硫唑嘌呤"]
+    assert body["safety_alerts"][0]["severity"]["label"] == "critical"

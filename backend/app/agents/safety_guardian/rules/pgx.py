@@ -23,19 +23,40 @@ from app.twin.schema import HealthTwin
 # ─────────────────────── 基因查找工具 ──────────────────
 
 
-def _find_variant_by_gene(twin: HealthTwin, gene_name: str) -> Optional[Dict[str, Any]]:
-    """在 twin.genetic 的三个分类里找某基因的变异。"""
-    pools = (
+def _variant_pools(twin: HealthTwin) -> tuple[List[Dict[str, Any]], ...]:
+    """PGx 只读 Twin.genetic 的结构化 variant 池,不直接碰原始文件。"""
+    return (
         twin.genetic.drug_sensitivity,
         twin.genetic.risk_variants,
         twin.genetic.protective_variants,
     )
-    for pool in pools:
+
+
+def _find_variants_by_gene(twin: HealthTwin, gene_name: str) -> List[Dict[str, Any]]:
+    """返回某基因的全部变异,避免 HLA-B 等多等位型被第一条记录遮蔽。"""
+    out: List[Dict[str, Any]] = []
+    target = gene_name.upper()
+    for pool in _variant_pools(twin):
         for v in pool or []:
             name = (v.get("gene_name") or "").strip().upper()
-            if name == gene_name.upper():
-                return v
-    return None
+            if name == target:
+                out.append(v)
+    return out
+
+
+def _find_variant_by_gene(twin: HealthTwin, gene_name: str) -> Optional[Dict[str, Any]]:
+    """在 twin.genetic 的三个分类里找某基因的第一条变异。"""
+    variants = _find_variants_by_gene(twin, gene_name)
+    return variants[0] if variants else None
+
+
+def _variant_blob(variant: Dict[str, Any]) -> str:
+    return f"{variant.get('result_label') or ''} {variant.get('genotype') or ''}".lower()
+
+
+def _matches_keywords(variant: Dict[str, Any], keywords: List[str]) -> bool:
+    blob = _variant_blob(variant)
+    return any(k.lower() in blob for k in keywords)
 
 
 def _is_poor_metabolizer(variant: Dict[str, Any]) -> bool:
@@ -289,11 +310,15 @@ def pgx_g6pd_contraindicated(twin: HealthTwin) -> Optional[Alert]:
 @register
 def pgx_hla_b5701_abacavir(twin: HealthTwin) -> Optional[Alert]:
     """HLA-B*57:01 阳性 → 阿巴卡韦禁忌 (FDA 黑框, 超敏综合征)。"""
-    variant = _find_variant_by_gene(twin, "HLA-B") or _find_variant_by_gene(twin, "HLA-B*5701")
+    variants = _find_variants_by_gene(twin, "HLA-B") + _find_variants_by_gene(twin, "HLA-B*5701")
+    variant = next(
+        (
+            v for v in variants
+            if "57:01" in _variant_blob(v) or "5701" in _variant_blob(v)
+        ),
+        None,
+    )
     if not variant:
-        return None
-    label = (variant.get("result_label") or "").lower() + (variant.get("genotype") or "").lower()
-    if "57:01" not in label and "5701" not in label:
         return None
 
     meds = _med_names(twin)
@@ -451,36 +476,41 @@ def pgx_cpic_table_check(twin: HealthTwin) -> List[Alert]:
     if not meds:
         return []
     alerts: List[Alert] = []
+    seen_rule_ids: set[str] = set()
     for entry in CPIC_LEVEL_A_PAIRS:
-        variant = _find_variant_by_gene(twin, entry["gene"])
-        if not variant:
+        variants = _find_variants_by_gene(twin, entry["gene"])
+        if not variants:
             continue
-        blob = (variant.get("result_label") or "").lower() + " " + (variant.get("genotype") or "").lower()
-        # 保守触发：先查 exclude —— 命中任一否定/反向词即跳过该项，绝不误报。
-        exclude = entry.get("phenotype_exclude_keywords") or []
-        if any(k.lower() in blob for k in exclude):
-            continue
-        if not any(k.lower() in blob for k in entry["phenotype_keywords"]):
-            continue  # 保守：phenotype 标签不明确就不报
         hit = [m for m in meds if any(dk.lower() in m for dk in entry["drug_keywords"])
                and not _is_handwritten_pair(entry["gene"], m)]
         if not hit:
             continue
-        sev = Severity[entry["severity"]]
-        alerts.append(Alert(
-            rule_id=f"pgx.cpic.{entry['gene'].lower().replace('*', '').replace(':', '')}_{hit[0]}",
-            category="pgx",
-            severity=sev,
-            title=f"{entry['gene']} × {hit[0]} —— CPIC 药物基因组提示",
-            message=entry["message_template"].format(
-                gene=entry["gene"],
-                genotype=variant.get("genotype") or "N/A",
-                phenotype=entry["phenotype_label"],
-                drugs=", ".join(hit),
-            ),
-            action=entry["action"],
-            data_citation={"variant": variant, "meds": hit, "cpic_level": "A"},
-            references=[entry["cpic_url"]],
-            requires_medical_attention=sev >= Severity.HIGH,
-        ))
+        for variant in variants:
+            # 保守触发：先查 exclude —— 命中任一否定/反向词即跳过该 variant，绝不误报。
+            exclude = entry.get("phenotype_exclude_keywords") or []
+            if exclude and _matches_keywords(variant, exclude):
+                continue
+            if not _matches_keywords(variant, entry["phenotype_keywords"]):
+                continue  # 保守：phenotype 标签不明确就不报
+            rule_id = f"pgx.cpic.{entry['gene'].lower().replace('*', '').replace(':', '')}_{hit[0]}"
+            if rule_id in seen_rule_ids:
+                continue
+            seen_rule_ids.add(rule_id)
+            sev = Severity[entry["severity"]]
+            alerts.append(Alert(
+                rule_id=rule_id,
+                category="pgx",
+                severity=sev,
+                title=f"{entry['gene']} × {hit[0]} —— CPIC 药物基因组提示",
+                message=entry["message_template"].format(
+                    gene=entry["gene"],
+                    genotype=variant.get("genotype") or "N/A",
+                    phenotype=entry["phenotype_label"],
+                    drugs=", ".join(hit),
+                ),
+                action=entry["action"],
+                data_citation={"variant": variant, "meds": hit, "cpic_level": "A"},
+                references=[entry["cpic_url"]],
+                requires_medical_attention=sev >= Severity.HIGH,
+            ))
     return alerts

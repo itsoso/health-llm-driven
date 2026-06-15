@@ -543,6 +543,32 @@ class TestPGxRules:
         alerts = evaluate_safety(twin).alerts
         assert not any(a.rule_id.startswith("pgx.cyp2d6") for a in alerts)
 
+    def test_hla_b5701_abacavir_scans_all_hla_b_variants(self):
+        """同一 gene 多条 HLA-B 记录时,手写 HLA-B*57:01 规则不能只看第一条。"""
+        twin = _empty_twin()
+        twin.medication = MedicationState(active_meds=[{"name": "阿巴卡韦"}])
+        twin.genetic = GeneticContext(
+            has_profile=True,
+            drug_sensitivity=[
+                {
+                    "gene_name": "HLA-B",
+                    "genotype": "*15:02 positive",
+                    "result_label": "HLA-B*15:02 阳性",
+                    "risk_level": "高风险",
+                },
+                {
+                    "gene_name": "HLA-B",
+                    "genotype": "*57:01 positive",
+                    "result_label": "HLA-B*57:01 阳性",
+                    "risk_level": "高风险",
+                },
+            ],
+        )
+
+        alerts = evaluate_safety(twin).alerts
+
+        assert "pgx.hla_b5701_abacavir" in _rule_ids(alerts)
+
 
 class TestPGxCpicTable:
     """CPIC Level-A 表驱动规则 (pgx_cpic_table_check)。"""
@@ -580,6 +606,35 @@ class TestPGxCpicTable:
             x for x in evaluate_safety(twin).alerts
             if x.rule_id.startswith("pgx.cpic.hla-b")
         )
+        assert a.severity == Severity.CRITICAL
+
+    def test_hla_b1502_carbamazepine_scans_all_hla_b_variants(self):
+        """同一 gene 多条 HLA-B 记录时,CPIC 表驱动规则不能只看第一条。"""
+        twin = _empty_twin()
+        twin.medication = MedicationState(active_meds=[{"name": "卡马西平"}])
+        twin.genetic = GeneticContext(
+            has_profile=True,
+            drug_sensitivity=[
+                {
+                    "gene_name": "HLA-B",
+                    "genotype": "*57:01 positive",
+                    "result_label": "HLA-B*57:01 阳性",
+                    "risk_level": "高风险",
+                },
+                {
+                    "gene_name": "HLA-B",
+                    "genotype": "*15:02 positive",
+                    "result_label": "HLA-B*15:02 阳性",
+                    "risk_level": "高风险",
+                },
+            ],
+        )
+
+        a = next(
+            x for x in evaluate_safety(twin).alerts
+            if x.rule_id.startswith("pgx.cpic.hla-b")
+        )
+
         assert a.severity == Severity.CRITICAL
 
     def test_hla_b5801_allopurinol(self):
