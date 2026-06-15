@@ -45,7 +45,11 @@ jobs:
           DATABASE_URL: "sqlite:///:memory:"
         # --maxfail=5 而非 -x:-x 第一个红就停,会掩盖同时存在的多个真红,
         # 分支保护下导致"修一个又冒一个"的死锁(见 memory 教训)。允许暴露最多 5 个。
-        run: pytest tests/ -q --no-cov --tb=short --maxfail=5
+        # --timeout=120(thread):repo 偶发 asyncio 事件循环污染会让某个 @pytest.mark.asyncio
+        # 测试永久 hang,以前直接撞 6h job 上限(单 commit attempt 1 挂、attempt 2 不挂 =
+        # 非确定性)。120s per-test 超时把"6h 挂死"变成"几分钟红 + 打印 hang 在哪个测试",
+        # 可快速重试 + 定位污染源。全套 ~8min/2954 测试,无单测接近 120s,不误伤。
+        run: pytest tests/ -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
 
       - name: Check CLAUDE.md doc drift
         env:
