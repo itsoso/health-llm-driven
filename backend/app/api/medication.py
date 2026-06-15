@@ -276,13 +276,18 @@ class RegimenInstantiate(BaseModel):
 
 @router.get("/regimen-templates")
 async def list_regimen_templates(
+    hp_status: Optional[str] = None,   # positive/negative → 按 Hp 状态分流;None=全部
     current_user: User = Depends(get_current_user_required),
 ):
-    """列出可选用药方案模板(录入脚手架,非用药建议)。"""
+    """列出可选用药方案模板(录入脚手架,非用药建议)。
+
+    传 hp_status 按幽门螺杆菌状态分流:Hp 阳性才给根除方案,Hp 阴性给 PPI 愈合(不含抗生素)。
+    """
     from app.services import regimen_templates
     return {
-        "templates": regimen_templates.list_templates(),
+        "templates": regimen_templates.templates_for_hp_status(hp_status),
         "disclaimer": regimen_templates.TEMPLATE_DISCLAIMER,
+        "hp_status_filter": hp_status,
     }
 
 
