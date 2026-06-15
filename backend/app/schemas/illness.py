@@ -1,7 +1,7 @@
 """当前病症追踪 Pydantic Schemas"""
 from datetime import date, datetime
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class IllnessUpdateCreate(BaseModel):
@@ -24,8 +24,12 @@ class IllnessUpdateResponse(BaseModel):
 
 
 class IllnessEpisodeCreate(BaseModel):
-    name: str = Field(..., max_length=100)
-    start_date: date
+    # 弱模型 tool-calling 常把字段写成 illness_name、漏 start_date —— 接受别名 + 默认今天,
+    # 避免 422(name Field required)。规范字段仍是 name(见 SKILL.md)。
+    model_config = ConfigDict(populate_by_name=True)
+    name: str = Field(..., max_length=100,
+                      validation_alias=AliasChoices("name", "illness_name"))
+    start_date: date = Field(default_factory=date.today)
     severity: int = Field(5, ge=1, le=10)
     status: str = Field("active")
     notes: Optional[str] = None

@@ -54,6 +54,35 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" \
 
 ---
 
+## 记录症状 / 不适（打喷嚏、头痛、眼痒、嗓子疼、皮疹、肚子不舒服等）
+
+单个症状/不适一律走 `/symptoms`（**不要**建 illness episode，也**不要**用 `illness_name` 字段）。
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/symptoms" \
+  -d '{"body_part":"respiratory","description":"打喷嚏 1 次","severity":3}'
+```
+
+**字段（全用这些名字，别自己造）：**
+- `body_part`（必填）：只能是这 8 个之一 —— `respiratory`(喷嚏/鼻塞/咳嗽/咽痛)、`eye`(眼痒/流泪)、`skin`(皮疹/瘙痒)、`digestive`(腹痛/腹泻/恶心)、`musculoskeletal`(肌肉/关节痛)、`head`(头痛/头晕)、`general`(乏力/发热等全身)、`other`
+- `description`（必填）：用户原话，如「打喷嚏 1 次」「左眼痒」
+- `severity`（可选 1–10）：用户提到程度才填，没提就省略
+
+| 用户说 | body_part | description |
+|--------|-----------|-------------|
+| 打了一个喷嚏 | respiratory | 喷嚏 1 次 |
+| 鼻子塞 / 流鼻涕 | respiratory | 鼻塞 / 流涕 |
+| 眼睛痒 | eye | 眼痒 |
+| 头疼 | head | 头痛 |
+| 起了皮疹 | skin | 皮疹 |
+
+**成功后回复格式：** `✅ 已记录症状：{description}`
+
+> 只有用户明确说「我感冒了/我病了 X 天」这种**一段病程**才用 illness episode（字段是 `name` 不是 `illness_name`）；单次症状一律用上面的 `/symptoms`。
+
+---
+
 ## 记录体重
 
 ```bash
