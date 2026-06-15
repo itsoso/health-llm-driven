@@ -884,10 +884,17 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
         from sqlalchemy import desc
 
         from app.models.daily_health import GarminData, SpO2Sample
+        from app.services.device_source_priority import excluded_sources
+
+        # 血氧排除源(garmin):SpO2Sample 当前只由 garmin 写(source 硬编码 garmin),
+        # 这条主路径喂夜间低氧 CRITICAL,必须按 source 过滤,否则 garmin 假性低值漏进。
+        # notin_ 同时把 source 为 NULL(历史/默认 garmin)的行排除,与"默认 garmin"一致。
+        _ex_spo2 = list(excluded_sources("spo2_min"))
 
         latest_row = (
             db.query(SpO2Sample.record_date)
             .filter(SpO2Sample.user_id == user_id)
+            .filter(SpO2Sample.source.notin_(_ex_spo2) if _ex_spo2 else True)
             .order_by(desc(SpO2Sample.record_date))
             .first()
         )
@@ -897,13 +904,20 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
             # 只读 SpO2Sample → 戒指/手表用户的夜间血氧下降永不告警。这里兜底:
             # 取最新一天跨源最小 spo2_min 喂给该规则(worst-value,不掩盖危险低值)。
             # 仅当存在非 garmin 源时启用 → 纯 garmin 用户行为完全不变(back-compat)。
-            min_rows = (
-                db.query(GarminData)
-                .filter(GarminData.user_id == user_id, GarminData.spo2_min.isnot(None))
-                .order_by(desc(GarminData.record_date))
-                .all()
-            )
-            if min_rows and any((r.data_source or "garmin") != "garmin" for r in min_rows):
+            # 血氧整源剔除被排除源(garmin 腕式反射不准),与 pick_value 一致 —— 否则这条
+            # 直查 SQL 兜底会把 garmin 假性低值漏进夜间低氧 CRITICAL 规则(安全评审阻断项)。
+            # excluded_sources 已在函数顶部 import。
+            ex_min = excluded_sources("spo2_min")
+            min_rows = [
+                r for r in (
+                    db.query(GarminData)
+                    .filter(GarminData.user_id == user_id, GarminData.spo2_min.isnot(None))
+                    .order_by(desc(GarminData.record_date))
+                    .all()
+                )
+                if (r.data_source or "garmin") not in ex_min
+            ]
+            if min_rows:  # 过滤后只剩可信源;garmin-only → 空 → 保持 None(宁可无数据)
                 latest_min_date = min_rows[0].record_date
                 day_mins = [
                     r.spo2_min for r in min_rows
@@ -912,13 +926,17 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
                 if day_mins and twin.physiological.spo2_min_overnight is None:
                     twin.physiological.spo2_min_overnight = min(day_mins)
 
-            # spo2_avg 兜底:跨源取最差(最小)日均,而非单源 .first()(防掩盖危险低值)。
-            avg_rows = (
-                db.query(GarminData)
-                .filter(GarminData.user_id == user_id, GarminData.spo2_avg.isnot(None))
-                .order_by(desc(GarminData.record_date))
-                .all()
-            )
+            # spo2_avg 兜底:跨源取最差(最小)日均,同样剔除被排除源。
+            ex_avg = excluded_sources("spo2_avg")
+            avg_rows = [
+                r for r in (
+                    db.query(GarminData)
+                    .filter(GarminData.user_id == user_id, GarminData.spo2_avg.isnot(None))
+                    .order_by(desc(GarminData.record_date))
+                    .all()
+                )
+                if (r.data_source or "garmin") not in ex_avg
+            ]
             if avg_rows:
                 latest_avg_date = avg_rows[0].record_date
                 day_avgs = [
@@ -933,6 +951,7 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
         samples = (
             db.query(SpO2Sample)
             .filter(SpO2Sample.user_id == user_id, SpO2Sample.record_date == rd)
+            .filter(SpO2Sample.source.notin_(_ex_spo2) if _ex_spo2 else True)
             .order_by(SpO2Sample.epoch_ms.asc())
             .all()
         )

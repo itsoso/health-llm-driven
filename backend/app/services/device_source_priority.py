@@ -39,6 +39,22 @@ DEFAULT_PRIORITY: List[str] = ["garmin", "apple-watch", "ringconn", "oura", "wit
 # 却被丢弃)。仅对单向下限指标启用;双向指标(如静息心率)不能用 min,仍走优先级。
 WORST_VALUE_METRICS = frozenset({"spo2_avg", "spo2_min"})
 
+# 按指标排除的数据源:该指标完全不采纳这些源(连"取最差"也不算进去)。
+# TODO(多租户): 这是单租户全局假设(就这一个用户实测 garmin 血氧不准)。多租户上线前
+# 必须改成 per-user override,否则会无差别误伤所有用户的 garmin 血氧。
+# 血氧:Garmin 腕式反射血氧个体实测不准(假性低值会经 WORST_VALUE 取最小被误采,
+# 触发假性低氧告警),改为只信 RingConn 等贴肤光路;Garmin SpO2 整源剔除。
+# 注:睡眠/HRV/呼吸等仍走 _RING_FIRST,Garmin 作 fallback 不受影响——只排血氧。
+EXCLUDED_SOURCES: Dict[str, frozenset] = {
+    "spo2_avg": frozenset({"garmin"}),
+    "spo2_min": frozenset({"garmin"}),
+    "spo2_max": frozenset({"garmin"}),
+}
+
+
+def excluded_sources(metric: str) -> frozenset:
+    return EXCLUDED_SOURCES.get(metric, frozenset())
+
 
 # 指标 → 设备优先级. 字段名必须与 GarminData 列一致.
 METRIC_SOURCE_PRIORITY: Dict[str, List[str]] = {
@@ -122,7 +138,13 @@ def pick_value(rows: Sequence[Any], metric: str) -> tuple[Any, Optional[str]]:
 
     安全下限指标 (WORST_VALUE_METRICS): 跨源取最小值(最差),不让任一源的正常读数
     掩盖另一源的危险低值。返回该最小值所在的源。
+
+    被排除源 (EXCLUDED_SOURCES,如血氧的 garmin) 先整体过滤掉,三条路径都不采纳。
     """
+    ex = excluded_sources(metric)
+    if ex:
+        rows = [r for r in rows if _row_source(r) not in ex]
+
     if metric in WORST_VALUE_METRICS:
         worst_v: Any = None
         worst_src: Optional[str] = None

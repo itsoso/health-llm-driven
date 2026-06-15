@@ -163,9 +163,9 @@ class TestServiceDB:
         # 同日 ringconn 88 / apple-watch 95 → 合并取最差 88 (WORST_VALUE)
         u = _mk_user(db, "ms")
         end = date.today()
-        # 30 天高基线 (单源), 最后一天双源
+        # 30 天高基线 (ringconn — 血氧整源剔除 garmin,基线须非 garmin 源), 最后一天双源
         _seed_garmin(db, u.id, "spo2_avg", [97.0] * 30,
-                     end=end - timedelta(days=1))
+                     end=end - timedelta(days=1), data_source="ringconn")
         from app.models.daily_health import GarminData
         db.add(GarminData(user_id=u.id, record_date=end,
                           data_source="ringconn", spo2_avg=88.0))

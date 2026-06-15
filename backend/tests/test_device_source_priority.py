@@ -128,7 +128,8 @@ def test_merge_empty():
 
 
 def test_merge_default_metrics_covers_all_priority_keys():
-    rows = [_Row(data_source="garmin", **{k: 1 for k in METRIC_SOURCE_PRIORITY})]
+    # 用 ringconn(任何指标都不被排除)→ 每个 priority key 都能解析;garmin 血氧已整源剔除。
+    rows = [_Row(data_source="ringconn", **{k: 1 for k in METRIC_SOURCE_PRIORITY})]
     merged = merge_daily_by_priority(rows)
     for k in METRIC_SOURCE_PRIORITY:
         assert merged[k] == 1
@@ -171,11 +172,36 @@ def test_spo2_worst_value_via_merge():
     assert merged["_source_by_metric"]["spo2_min"] == "apple-watch"
 
 
-def test_spo2_single_source_back_compat():
-    """单源(旧 garmin-only)→ worst-value 退化为该行值,行为不变。"""
+def test_spo2_excludes_garmin_even_if_only_source():
+    """血氧整源剔除 Garmin(腕式反射不准):garmin-only → 无血氧(None),不采纳。"""
     rows = [_Row(data_source="garmin", spo2_avg=97.0, spo2_min=93.0)]
-    assert pick_value(rows, "spo2_avg") == (97.0, "garmin")
-    assert pick_value(rows, "spo2_min") == (93.0, "garmin")
+    assert pick_value(rows, "spo2_avg") == (None, None)
+    assert pick_value(rows, "spo2_min") == (None, None)
+
+
+def test_spo2_garmin_low_does_not_override_ringconn():
+    """Garmin 假性低值不得经 worst-value 压过 RingConn:取 RingConn 值,garmin 被排除。"""
+    rows = [
+        _Row(data_source="ringconn", spo2_avg=96.0, spo2_min=95.0),
+        _Row(data_source="garmin", spo2_avg=85.0, spo2_min=80.0),  # 不准的低值,应被剔除
+    ]
+    assert pick_value(rows, "spo2_avg") == (96.0, "ringconn")
+    assert pick_value(rows, "spo2_min") == (95.0, "ringconn")
+
+
+def test_spo2_apple_watch_still_counts_for_worst_value():
+    """只排 Garmin:Apple Watch 的真实低值仍按 worst-value 采纳(不误伤其他源)。"""
+    rows = [
+        _Row(data_source="ringconn", spo2_avg=96.0, spo2_min=95.0),
+        _Row(data_source="apple-watch", spo2_avg=88.0, spo2_min=82.0),
+    ]
+    assert pick_value(rows, "spo2_avg") == (88.0, "apple-watch")
+
+
+def test_garmin_excluded_only_for_spo2_not_hrv():
+    """排除是按指标的:HRV 等仍可用 Garmin 作 fallback。"""
+    rows = [_Row(data_source="garmin", hrv=49.0)]
+    assert pick_value(rows, "hrv") == (49.0, "garmin")
 
 
 def test_spo2_all_none_returns_none():

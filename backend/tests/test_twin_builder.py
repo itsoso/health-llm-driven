@@ -238,6 +238,123 @@ class TestBuilderWithPartialData:
         assert twin.physiological.device_agreement_index is None
         assert twin.physiological.divergent_metrics == []
 
+    def test_garmin_only_spo2_excluded_in_overnight_fill(self, db):
+        """血氧整源剔除 garmin:garmin-only → spo2_avg/spo2_min_overnight 均 None。
+
+        覆盖安全评审阻断:_fill_spo2_overnight 直查 SQL 兜底曾绕过 EXCLUDED_SOURCES,
+        把 garmin 假性低值漏进夜间低氧 CRITICAL 规则。直接调该 filler(它是 Phase B,
+        build_twin 里走 SessionLocal 看不到测试 db)。
+        """
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin, TwinMeta
+
+        user = User(
+            username=f"sp_{uuid.uuid4().hex[:6]}", email=f"sp_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="SpO2 User", is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        db.add(GarminData(user_id=user.id, record_date=date.today(),
+                          data_source="garmin", spo2_avg=85.0, spo2_min=80.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_avg is None            # garmin 血氧不采纳
+        assert twin.physiological.spo2_min_overnight is None   # 不漏进夜间低氧 CRITICAL
+
+    def test_ringconn_spo2_kept_in_overnight_fill(self, db):
+        """RingConn spo2 正常采纳(只排 garmin,不误伤可信源)。"""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin, TwinMeta
+
+        user = User(
+            username=f"rc_{uuid.uuid4().hex[:6]}", email=f"rc_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="Ring User", is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        db.add(GarminData(user_id=user.id, record_date=date.today(),
+                          data_source="ringconn", spo2_avg=96.0, spo2_min=93.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight == 93.0
+
+    def test_mixed_source_spo2_garmin_low_excluded_in_overnight_fill(self, db):
+        """混源夜:garmin 假性低值(78)被剔除,取 ringconn 的 93(不误触夜间低氧)。"""
+        from app.models.user import User
+        from app.models.daily_health import GarminData
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin, TwinMeta
+
+        user = User(
+            username=f"mx_{uuid.uuid4().hex[:6]}", email=f"mx_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="Mixed User", is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        db.add(GarminData(user_id=user.id, record_date=date.today(),
+                          data_source="ringconn", spo2_avg=96.0, spo2_min=93.0))
+        db.add(GarminData(user_id=user.id, record_date=date.today(),
+                          data_source="garmin", spo2_avg=82.0, spo2_min=78.0))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight == 93.0   # garmin 78 被剔除
+
+    def test_spo2sample_garmin_excluded_main_branch(self, db):
+        """主分支(有 SpO2Sample):garmin 逐分钟样本被剔除 → spo2_min_overnight None。
+
+        SpO2Sample 只由 garmin 写(source 硬编码 garmin),是戴 Garmin 用户真实命中的路径。
+        覆盖第二轮安全评审阻断:此前主分支无 source 过滤,garmin 假性低值直灌夜间低氧 CRITICAL。
+        """
+        from app.models.user import User
+        from app.models.daily_health import SpO2Sample
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin, TwinMeta
+
+        user = User(
+            username=f"ss_{uuid.uuid4().hex[:6]}", email=f"ss_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="Sample User", is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        for i, v in enumerate([95, 78, 80, 90]):  # garmin 含假性低值 78
+            db.add(SpO2Sample(user_id=user.id, record_date=date.today(),
+                              sample_time=datetime(2026, 6, 15, 0, i).time(),
+                              epoch_ms=i * 60000, spo2_value=v, source="garmin"))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight is None   # garmin 样本全剔除
+        assert twin.physiological.spo2_avg is None
+
+    def test_spo2sample_ringconn_kept_main_branch(self, db):
+        """若 SpO2Sample 来自可信源(ringconn)→ 主分支正常采纳低点。"""
+        from app.models.user import User
+        from app.models.daily_health import SpO2Sample
+        from app.twin.builder import _fill_spo2_overnight
+        from app.twin.schema import HealthTwin, TwinMeta
+
+        user = User(
+            username=f"sr_{uuid.uuid4().hex[:6]}", email=f"sr_{uuid.uuid4().hex[:6]}@x.com",
+            hashed_password="x", name="Sample Ring", is_active=True, is_approved=True,
+        )
+        db.add(user); db.commit(); db.refresh(user)
+        for i, v in enumerate([96, 92, 94]):
+            db.add(SpO2Sample(user_id=user.id, record_date=date.today(),
+                              sample_time=datetime(2026, 6, 15, 0, i).time(),
+                              epoch_ms=i * 60000, spo2_value=v, source="ringconn"))
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        _fill_spo2_overnight(db, user.id, twin, set())
+        assert twin.physiological.spo2_min_overnight == 92
+
     def test_build_picks_up_water_intake(self, db):
         """插入一条 WaterIntake 后 Twin 应显示。"""
         from app.models.user import User
