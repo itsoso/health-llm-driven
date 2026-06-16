@@ -208,8 +208,13 @@ final class AgentConversationHistoryTests: XCTestCase {
         await model.refreshConversationHistory()
 
         model.deleteConversation(model.conversationHistory[0])
-        // Let the fire-and-forget backend delete Task run.
-        await Task.yield()
+        // 等 fire-and-forget 的后端删除 Task 完成。单个 Task.yield() 在 CI 繁忙调度下
+        // 不保证 detached Task 已跑 → 竞态翻红(本地快机过、CI 挂)。有界轮询直到副作用出现。
+        for _ in 0..<200 {
+            if !remote.deletedIDs.isEmpty { break }
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 1_000_000)  // 1ms
+        }
 
         XCTAssertTrue(model.conversationHistory.isEmpty)
         XCTAssertEqual(remote.deletedIDs, [42])
