@@ -89,12 +89,20 @@ asset_catalog = File.join(src_dir, 'Assets.xcassets')
 if Dir.exist?(asset_catalog)
   target.resources_build_phase.files.each do |build_file|
     ref = build_file.file_ref
-    next unless ref&.path&.end_with?('Assets.xcassets')
+    next unless ref&.path&.end_with?('Assets.xcassets') || ref&.path&.include?('AppIcon.appiconset/') || ref&.path&.include?('IconFiles/')
     build_file.remove_from_project
   end
   asset_ref = group.new_file(asset_catalog)
   target.resources_build_phase.add_file_reference(asset_ref)
   puts "✓ 已把 Assets.xcassets 加进 #{watch_name} resources"
+
+  icon_pngs = Dir.glob(File.join(asset_catalog, 'AppIcon.appiconset', '*.png')).sort
+  icon_pngs.concat(Dir.glob(File.join(src_dir, 'IconFiles', '*.png')).sort)
+  icon_pngs.each do |png|
+    ref = group.new_file(png)
+    target.resources_build_phase.add_file_reference(ref)
+  end
+  puts "✓ 已把 #{icon_pngs.size} 个 watch icon PNG 加进 #{watch_name} resources"
 end
 
 # ── complication widget extension(WidgetKit,嵌入 watch app)──────────────

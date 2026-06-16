@@ -13,6 +13,19 @@ const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIconFiles</key>
+  <array>
+    <string>AppIcon-24x24@2x.png</string>
+    <string>AppIcon-27.5x27.5@2x.png</string>
+    <string>AppIcon-29x29@2x.png</string>
+    <string>AppIcon-29x29@3x.png</string>
+    <string>AppIcon-40x40@2x.png</string>
+    <string>AppIcon-44x44@2x.png</string>
+    <string>AppIcon-50x50@2x.png</string>
+    <string>AppIcon-86x86@2x.png</string>
+    <string>AppIcon-98x98@2x.png</string>
+    <string>AppIcon-108x108@2x.png</string>
+  </array>
   <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -85,6 +98,7 @@ function withWatchSources(config) {
       const coreFiles = fs.readdirSync(core).filter((f) => f.endsWith('.swift'));
       copySwift(core, path.join(iosRoot, 'RevaWatch'), coreFiles);
       copyDirectory(path.join(watchRoot, 'Assets.xcassets'), path.join(iosRoot, 'RevaWatch', 'Assets.xcassets'));
+      copyDirectory(path.join(watchRoot, 'IconFiles'), path.join(iosRoot, 'RevaWatch', 'IconFiles'));
       fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'Info.plist'), WATCH_INFO_PLIST, 'utf-8');
       fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'RevaWatch.entitlements'), entitlementsPlist(), 'utf-8');
 
