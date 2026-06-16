@@ -77,6 +77,7 @@ from app.api import (
     health_protocol,
     health_problem,
     agenda,
+    watch,
     health_program,
     womens_health,
     vision,
@@ -220,6 +221,7 @@ api_router.include_router(medication.router)
 api_router.include_router(health_protocol.router)
 api_router.include_router(health_problem.router)
 api_router.include_router(agenda.router)
+api_router.include_router(watch.router)
 api_router.include_router(health_program.router)
 
 # ── Exercise & Activity ────────────────────────────────────────────
