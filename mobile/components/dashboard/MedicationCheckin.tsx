@@ -11,10 +11,14 @@ import { ColorPalette, useTheme } from '../../hooks/useTheme';
 const COLLAPSED_LIMIT = 3;
 
 interface Props {
-  /** 来自首页 dashboard 的 medicationToday (GET /medication/today/me) */
+  /** 来自首页 dashboard 的 medicationToday (GET /medication/today/me),已按需过滤 */
   items: MedicationTodayItem[] | null | undefined;
   /** 打卡成功后让首页刷新 dashboard (qc.invalidateQueries) */
   onChanged?: () => void;
+  /** 卡片标题(药品/补剂分区用),默认「今日用药」 */
+  title?: string;
+  /** 头部图标(Ionicons 名),默认 medkit */
+  icon?: keyof typeof Ionicons.glyphMap;
 }
 
 function nowHHMM(): string {
@@ -27,7 +31,7 @@ function targetCount(item: MedicationTodayItem): number {
   return Math.max(item.total_count ?? 1, 1);
 }
 
-export default function MedicationCheckin({ items, onChanged }: Props) {
+export default function MedicationCheckin({ items, onChanged, title = '今日用药', icon = 'medkit' }: Props) {
   const { c, isDark } = useTheme();
   const router = useRouter();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
@@ -87,10 +91,10 @@ export default function MedicationCheckin({ items, onChanged }: Props) {
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={[styles.iconCircle, { backgroundColor: c.tintRed }]}>
-          <Ionicons name="medkit" size={14} color={c.red} />
+          <Ionicons name={icon} size={14} color={c.red} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={txt.title}>今日用药</Text>
+          <Text style={txt.title}>{title}</Text>
           <Text style={txt.summarySub}>
             {allDone ? '今日已全部服用' : `${pendingItems.length} 项待服`}
           </Text>
@@ -107,10 +111,10 @@ export default function MedicationCheckin({ items, onChanged }: Props) {
           style={styles.allDoneRow}
           onPress={() => setExpanded(true)}
           accessibilityRole="button"
-          accessibilityLabel="查看全部用药"
+          accessibilityLabel={`查看全部${title}`}
         >
           <Ionicons name="checkmark-circle" size={16} color={c.green} />
-          <Text style={txt.allDoneText}>今日用药已全部完成</Text>
+          <Text style={txt.allDoneText}>{title}已全部完成</Text>
         </Pressable>
       ) : null}
 

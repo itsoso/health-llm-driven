@@ -249,9 +249,21 @@ export default function TodayScreen() {
         {/* 4 · 今日时间线 strip(自取数) */}
         <RevaTimelineStrip />
 
-        {/* 4 · 用药(折叠:汇总 + 待服最多 3 条 + 查看全部) */}
+        {/* 4 · 药品 / 补剂分区(按 category 拆开;各自空态自动不渲染) */}
         <MedicationCheckin
-          items={dashboardQuery.data?.medicationToday}
+          title="今日用药"
+          icon="medkit"
+          items={(dashboardQuery.data?.medicationToday ?? []).filter(
+            (m: any) => m?.category !== 'supplement',
+          )}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
+        />
+        <MedicationCheckin
+          title="今日补剂"
+          icon="leaf"
+          items={(dashboardQuery.data?.medicationToday ?? []).filter(
+            (m: any) => m?.category === 'supplement',
+          )}
           onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
         />
 
