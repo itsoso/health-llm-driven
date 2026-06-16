@@ -31,6 +31,9 @@ jest.mock('react-native-health', () => {
         Weight: 'Weight',
         WaistCircumference: 'WaistCircumference',
         Electrocardiogram: 'Electrocardiogram',
+        BloodPressureSystolic: 'BloodPressureSystolic',
+        BloodPressureDiastolic: 'BloodPressureDiastolic',
+        BodyFatPercentage: 'BodyFatPercentage',
       },
     },
     initHealthKit: jest.fn((_p: any, cb: (e: string) => void) => cb('')),
@@ -48,6 +51,8 @@ jest.mock('react-native-health', () => {
     getWeightSamples: jest.fn((_o: any, cb: any) => cb('', [])),
     getWaistCircumferenceSamples: jest.fn((_o: any, cb: any) => cb('', [])),
     getElectrocardiogramSamples: jest.fn((_o: any, cb: any) => cb('', [])),
+    getBodyFatPercentageSamples: jest.fn((_o: any, cb: any) => cb('', [])),
+    getBloodPressureSamples: jest.fn((_o: any, cb: any) => cb('', [])),
   };
   return { __esModule: true, default: mock, ...mock };
 });
@@ -286,6 +291,106 @@ describe('ECG (Apple Watch 房颤筛查)', () => {
     expect(watch!.ecg_classification).toBeUndefined();
     expect(watch!.ecg_recorded_at).toBeUndefined();
     expect(watch!.afib_event_count).toBeUndefined();
+  });
+});
+
+describe('血压 + 体脂 (身体度量自动化)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Object.entries(mockHK).forEach(([k, fn]: [string, any]) => {
+      if (typeof fn === 'function' && k.startsWith('get')) {
+        fn.mockImplementation((_o: any, cb: any) => cb('', []));
+      }
+    });
+  });
+
+  it('血压点事件逐条进数组 (不塞日聚合), 取整 + measured_at = startDate(ISO)', async () => {
+    mockHK.getBloodPressureSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        {
+          bloodPressureSystolicValue: 128.4,
+          bloodPressureDiastolicValue: 82.6,
+          startDate: '2026-05-20T07:00:00.000Z',
+          endDate: '2026-05-20T07:00:00.000Z',
+          sourceName: 'com.withings.wiScaleNG',
+        },
+        {
+          bloodPressureSystolicValue: 119,
+          bloodPressureDiastolicValue: 78,
+          startDate: '2026-05-20T20:00:00.000Z',
+          endDate: '2026-05-20T20:00:00.000Z',
+          sourceName: 'com.withings.wiScaleNG',
+        },
+      ]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    // 仅有血压 → 补一条 apple-watch 载体记录 (与 ECG 同范式)
+    const carrier = recs.find((r) => r.blood_pressure_readings !== undefined);
+    expect(carrier).toBeDefined();
+    expect(carrier!.blood_pressure_readings).toHaveLength(2);
+    // 逐条点事件, 取整, measured_at = startDate
+    expect(carrier!.blood_pressure_readings![0]).toEqual({
+      systolic: 128,
+      diastolic: 83,
+      measured_at: '2026-05-20T07:00:00.000Z',
+      source: 'com.withings.wiScaleNG',
+    });
+    expect(carrier!.blood_pressure_readings![1].systolic).toBe(119);
+  });
+
+  it('血压坏值 (缺收缩/舒张) 整条丢弃, 不进数组', async () => {
+    mockHK.getBloodPressureSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [
+        { bloodPressureSystolicValue: 120, bloodPressureDiastolicValue: 80, startDate: '2026-05-20T07:00:00.000Z', endDate: '2026-05-20T07:00:00.000Z' },
+        { bloodPressureSystolicValue: null, bloodPressureDiastolicValue: 80, startDate: '2026-05-20T08:00:00.000Z', endDate: '2026-05-20T08:00:00.000Z' },
+      ]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const carrier = recs.find((r) => r.blood_pressure_readings !== undefined);
+    expect(carrier!.blood_pressure_readings).toHaveLength(1);
+  });
+
+  it('体脂 HealthKit 0–1 小数 ×100 成百分数, 随体重落 weight_kg', async () => {
+    mockHK.getBodyFatPercentageSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 0.182, sourceName: 'com.withings.wiScaleNG', startDate: '2026-05-20T07:00:00Z', endDate: '2026-05-20T07:00:00Z' }]),
+    );
+    mockHK.getWeightSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 80.0, sourceName: 'com.withings.wiScaleNG', startDate: '2026-05-20T07:00:00Z', endDate: '2026-05-20T07:00:00Z' }]),
+    );
+    const recs = await fetchDailyRecords(new Date('2026-05-20T12:00:00Z'));
+    const rec = recs.find((r) => r.body_fat_percentage !== undefined);
+    expect(rec).toBeDefined();
+    // 0.182 ×100 = 18.2 (百分数), 不是 0.182
+    expect(rec!.body_fat_percentage).toBe(18.2);
+    expect(rec!.weight_kg).toBe(80.0);
+  });
+
+  it('血压/体脂经 toApiRecord 进入 import 出口 payload (体脂随 weight_kg)', async () => {
+    mockHK.getBloodPressureSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ bloodPressureSystolicValue: 130, bloodPressureDiastolicValue: 85, startDate: '2026-05-20T07:00:00.000Z', endDate: '2026-05-20T07:00:00.000Z', sourceName: 'com.apple.health' }]),
+    );
+    mockHK.getBodyFatPercentageSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 0.2, sourceName: 'com.withings.wiScaleNG', startDate: '2026-05-20T07:00:00Z', endDate: '2026-05-20T07:00:00Z' }]),
+    );
+    mockHK.getWeightSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 75.5, sourceName: 'com.withings.wiScaleNG', startDate: '2026-05-20T07:00:00Z', endDate: '2026-05-20T07:00:00Z' }]),
+    );
+    (api.post as jest.Mock).mockResolvedValue({ data: { imported_count: 1, source_breakdown: {}, errors: [] } });
+
+    await syncRecentDays(1);
+
+    const importCall = (api.post as jest.Mock).mock.calls.find(([url]) => url === '/devices/healthkit/import');
+    expect(importCall).toBeDefined();
+    const records = importCall![1].records;
+    // 血压挂在 apple-watch 载体上
+    const bpRec = records.find((r: any) => r.blood_pressure_readings?.length);
+    expect(bpRec.blood_pressure_readings[0]).toEqual({
+      systolic: 130, diastolic: 85, measured_at: '2026-05-20T07:00:00.000Z', source: 'com.apple.health',
+    });
+    // 体脂 + 其载体体重一并上行 (后端要求体脂随体重落库)
+    const bfRec = records.find((r: any) => r.body_fat_percentage !== undefined);
+    expect(bfRec.body_fat_percentage).toBe(20);
+    expect(bfRec.weight_kg).toBe(75.5);
   });
 });
 
