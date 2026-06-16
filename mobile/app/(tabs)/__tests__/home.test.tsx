@@ -1,27 +1,23 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
-const mockRecordDailyPlanActionEvent = jest.fn();
-const mockPushChatWithContext = jest.fn();
 let mockDailyPlanActions: unknown[] = [];
 let mockTwinData: Record<string, unknown> = {};
-let mockTrajectoryData: any = null;
-let mockWeeklyAdvice: any[] = [];
 let mockSafetyAlerts: any[] = [];
 let mockActiveCycle: any = null;
-let mockGeneticStats: { hits: number | null; total: number | null } = { hits: null, total: null };
-let mockProgressStats: { improved: number | null; total: number | null } = { improved: null, total: null };
-let mockStreakData: { current_streak: number; best_streak: number } | null = null;
-let mockStreakError = false;
-let mockProgressDashboard: { stats: Record<string, number> } | null = null;
-let mockProgressDashboardError = false;
 let mockRefetchingKeys = new Set<string>();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
+}));
+
+// Reva fonts load async via expo-font; in tests force "loaded" so the screen
+// renders deterministically (otherwise the first render hits the font gate).
+jest.mock('../../../components/reva/useRevaFonts', () => ({
+  useRevaFonts: () => true,
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -31,9 +27,6 @@ jest.mock('@tanstack/react-query', () => ({
     if (key.includes('safety')) {
       return { data: { alerts: mockSafetyAlerts }, isLoading: false, isRefetching };
     }
-    if (key.includes('action-cards')) {
-      return { data: [], isLoading: false, isRefetching };
-    }
     if (key.includes('twin')) {
       return { data: mockTwinData, isLoading: false, isRefetching };
     }
@@ -42,21 +35,6 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('intervention-cycle')) {
       return { data: mockActiveCycle, isLoading: false, isRefetching };
-    }
-    if (key.includes('trajectory')) {
-      return { data: mockTrajectoryData, isLoading: false, isRefetching };
-    }
-    if (key.includes('genetic-stats')) {
-      return { data: mockGeneticStats, isLoading: false, isRefetching };
-    }
-    if (key.includes('progress-stats')) {
-      return { data: mockProgressStats, isLoading: false, isRefetching };
-    }
-    if (key.includes('checkin-streak')) {
-      return { data: mockStreakData, isLoading: false, isError: mockStreakError, isRefetching };
-    }
-    if (key.includes('progress-dashboard')) {
-      return { data: mockProgressDashboard, isLoading: false, isError: mockProgressDashboardError, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -75,6 +53,7 @@ jest.mock('../../../hooks/useTheme', () => ({
       labelPrimary: '#111',
       labelSecondary: '#555',
       labelTertiary: '#999',
+      labelQuaternary: '#bbb',
       separator: '#eee',
       brand: '#0A8F8F',
       brandLight: '#E6F7F7',
@@ -103,19 +82,8 @@ jest.mock('../../../services/safety', () => ({
   getSafetyReport: jest.fn(),
 }));
 
-jest.mock('../../../services/actionCards', () => ({
-  getActiveCards: jest.fn(),
-  pickWeeklySuggestionCards: jest.fn(() => mockWeeklyAdvice),
-}));
-
 jest.mock('../../../services/dailyPlan', () => ({
   getDailyOperatingPlan: jest.fn(),
-  recordDailyPlanActionEvent: (...args: unknown[]) => mockRecordDailyPlanActionEvent(...args),
-}));
-
-jest.mock('../../../services/trajectory', () => ({
-  getHealthTrajectory: jest.fn(),
-  pickPrimaryTrajectoryRisks: jest.fn((risks = [], limit = 3) => risks.slice(0, limit)),
 }));
 
 jest.mock('../../../services/api', () => ({
@@ -123,108 +91,89 @@ jest.mock('../../../services/api', () => ({
   default: { get: jest.fn() },
 }));
 
-jest.mock('../../../utils/agentContext', () => ({
-  pushChatWithContext: (...args: unknown[]) => mockPushChatWithContext(...args),
-}));
-
-jest.mock('../../../components/dashboard/EnvironmentCard', () => {
-  const { Text } = require('react-native');
-  const MockEnvironmentCard = () => <Text>环境反馈</Text>;
-  MockEnvironmentCard.displayName = 'MockEnvironmentCard';
-  return MockEnvironmentCard;
-});
-jest.mock('../../../components/dashboard/DataFreshnessPanel', () => {
-  const { Text } = require('react-native');
-  const MockDataFreshnessPanel = () => <Text>Agent 数据视野</Text>;
-  MockDataFreshnessPanel.displayName = 'MockDataFreshnessPanel';
-  return MockDataFreshnessPanel;
-});
+// Reva self-fetching strips read their own hooks (timeline / weather). Under the
+// generic react-query mock they degrade to null/empty — that's fine for the home
+// feed structure assertions. We only assert on the cards that take props from index.
 
 import TodayScreen from '../index';
 
-describe('TodayScreen', () => {
+describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDailyPlanActions = [];
     mockTwinData = {};
-    mockTrajectoryData = null;
-    mockWeeklyAdvice = [];
     mockSafetyAlerts = [];
     mockActiveCycle = null;
-    mockGeneticStats = { hits: null, total: null };
-    mockProgressStats = { improved: null, total: null };
-    mockStreakData = null;
-    mockStreakError = false;
-    mockProgressDashboard = null;
-    mockProgressDashboardError = false;
     mockRefetchingKeys = new Set<string>();
   });
 
-  // ── Agent command card: identity + status ──────────────────────────
+  // ── #1 Hero readiness uses the real Garmin Training Readiness, not body_battery ──
 
-  it('does not surface the low-value Agent data visibility panel on the home feed', () => {
-    const { queryByText } = render(<TodayScreen />);
-    expect(queryByText('Agent 数据视野')).toBeNull();
-  });
-
-  it('surfaces the check-in streak badge on the home feed', () => {
-    mockStreakData = { current_streak: 6, best_streak: 14 };
+  it('uses Garmin training_readiness_score for the Hero readiness ring', () => {
+    // readiness 93 is the truth; body_battery 36 must NOT be used as the readiness.
+    mockTwinData = {
+      physiological: { training_readiness_score: 93, body_battery_current: 36, sleep_score_latest: 70 },
+    };
     const { getByText } = render(<TodayScreen />);
-    expect(getByText('连续 6 天')).toBeTruthy();
-    expect(getByText('· 最佳 14')).toBeTruthy();
+    // ReadinessRing renders the score as text inside the Hero (93, not 36).
+    expect(getByText('93')).toBeTruthy();
+    // 93 ≥ 80 → RevaHeroCard readinessTitle '可上强度'. If body_battery 36 had been
+    // used, the title would have been '注意恢复' (< 60).
+    expect(getByText('可上强度')).toBeTruthy();
   });
 
-  it('shows an inviting streak zero-state instead of faking a streak', () => {
-    mockStreakData = { current_streak: 0, best_streak: 0 };
-    const { getByText, queryByText } = render(<TodayScreen />);
-    expect(getByText('今天开始记录')).toBeTruthy();
-    expect(queryByText(/连续 0 天/)).toBeNull();
+  it('shows the Hero "待同步" placeholder when training readiness is missing', () => {
+    // No training_readiness_score → null → placeholder, never falling back to body_battery.
+    mockTwinData = {
+      physiological: { body_battery_current: 42, sleep_score_latest: 80 },
+    };
+    const { getAllByText } = render(<TodayScreen />);
+    // Hero shows the 待同步 placeholder (ring placeholder + readinessTitle).
+    expect(getAllByText('待同步').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows an honest streak error state instead of degrading to zero', () => {
-    mockStreakError = true;
+  // ── Hero "现在只做一件事" lever (driven by next action) ──
+
+  it('labels a measurement task as a record lever and shows its title in the Hero', () => {
+    mockDailyPlanActions = [
+      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
+    ];
     const { getByText } = render(<TodayScreen />);
-    expect(getByText('连续天数加载失败')).toBeTruthy();
+    expect(getByText('现在只做 · 记录')).toBeTruthy();
+    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
   });
 
-  it('opens the record tab when the streak badge is tapped', () => {
-    mockStreakData = { current_streak: 3, best_streak: 3 };
-    const { getByTestId } = render(<TodayScreen />);
-    fireEvent.press(getByTestId('home-streak-badge'));
+  it('names a lifestyle intervention lever by its strategy domain', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+    ];
+    const { getByText } = render(<TodayScreen />);
+    expect(getByText('现在只做 · 饮食')).toBeTruthy();
+    expect(getByText('提高早餐蛋白')).toBeTruthy();
+  });
+
+  it('shows a risk lever when a critical alert exists', () => {
+    mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧持续偏低' }];
+    const { getByText } = render(<TodayScreen />);
+    expect(getByText('现在只做 · 风险')).toBeTruthy();
+  });
+
+  it('routes the Hero action to the record tab when there is no plan', () => {
+    const { getByLabelText } = render(<TodayScreen />);
+    fireEvent.press(getByLabelText('现在只做一件事:补齐今天记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
 
-  it('surfaces the AI outcome win metric on the home feed', () => {
-    mockProgressDashboard = { stats: { improved: 3, graded: 5, total_surfaced: 8 } };
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('AI 已帮你改善 3 项')).toBeTruthy();
+  it('routes a nutrition Hero action to the diet plan', () => {
+    mockDailyPlanActions = [
+      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
+    ];
+    const { getByLabelText } = render(<TodayScreen />);
+    fireEvent.press(getByLabelText('现在只做一件事:提高早餐蛋白'));
+    expect(mockPush).toHaveBeenCalledWith('/diet-plan');
   });
 
-  it('shows the outcome verifying state instead of a fake win', () => {
-    mockProgressDashboard = { stats: { improved: 0, graded: 0, total_surfaced: 4 } };
-    const { getByText, queryByText } = render(<TodayScreen />);
-    expect(getByText('成果验证中')).toBeTruthy();
-    expect(queryByText(/已帮你改善/)).toBeNull();
-  });
-
-  it('shows an honest outcome error state instead of degrading to zero', () => {
-    mockProgressDashboardError = true;
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('成果加载失败')).toBeTruthy();
-  });
-
-  it('opens my-progress when the outcome win card is tapped', () => {
-    mockProgressDashboard = { stats: { improved: 2, graded: 4, total_surfaced: 6 } };
-    const { getByTestId } = render(<TodayScreen />);
-    fireEvent.press(getByTestId('home-outcome-win-card'));
-    expect(mockPush).toHaveBeenCalledWith('/my-progress');
-  });
-
-  it('shows the health Agent identity with a calm background-monitoring status', () => {
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('健康 Agent')).toBeTruthy();
-    expect(getByText(/后台监测中/)).toBeTruthy();
-  });
+  // ── 90-day metabolic cycle strip ──
 
   it('promotes an active 90-day health cycle as the home cockpit', () => {
     const today = Date.now();
@@ -250,7 +199,6 @@ describe('TodayScreen', () => {
 
     const { getByTestId, getByText, getByLabelText } = render(<TodayScreen />);
 
-    // Reva 重设计:90 天周期降为细条(SectionLabel「90 天代谢周期」+ DayProgress + 主指标 baseline→target)。
     expect(getByTestId('home-health-cycle-cockpit')).toBeTruthy();
     expect(getByText('90 天代谢周期')).toBeTruthy();
     expect(getByText('第 15 / 90 天')).toBeTruthy();
@@ -258,13 +206,6 @@ describe('TodayScreen', () => {
 
     fireEvent.press(getByLabelText('查看 90 天健康周期'));
     expect(mockPush).toHaveBeenCalledWith('/intervention-cycle');
-  });
-
-  it('switches the status to syncing while a tracked query is refetching', () => {
-    mockRefetchingKeys = new Set(['twin:me']);
-    const { getByText, queryByText } = render(<TodayScreen />);
-    expect(getByText(/同步中/)).toBeTruthy();
-    expect(queryByText(/后台监测中/)).toBeNull();
   });
 
   it('keeps the pull-to-refresh spinner separate from background sync', () => {
@@ -275,231 +216,7 @@ describe('TodayScreen', () => {
     expect(refreshControl.props.refreshing).toBe(false);
   });
 
-  it('exposes an ask-Agent shortcut on the command card', () => {
-    const { getByText, getByLabelText } = render(<TodayScreen />);
-    expect(getByText('问原因')).toBeTruthy();
-    expect(getByLabelText('问 Agent 原因')).toBeTruthy();
-  });
-
-  it('renders both command rows: a judgment row and a next-action row', () => {
-    const { getByTestId, getByText } = render(<TodayScreen />);
-    expect(getByTestId('home-command-judgment')).toBeTruthy();
-    expect(getByTestId('home-command-action')).toBeTruthy();
-    expect(getByText('今日判断')).toBeTruthy();
-  });
-
-  // ── Agent judgment copy ────────────────────────────────────────────
-
-  it('falls back to a record-prompting judgment when there is no plan or data', () => {
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('补齐今天记录后，Agent 会重新排序干预。')).toBeTruthy();
-  });
-
-  it('uses live wearable feedback for the judgment even when no plan is generated', () => {
-    mockTwinData = {
-      physiological: { sleep_score_latest: 82, hrv_latest: 48, spo2_avg: 93 },
-    };
-    const { getByText, queryByText } = render(<TodayScreen />);
-    expect(getByText('已有睡眠分、HRV、血氧反馈，先稳住恢复并补齐关键记录。')).toBeTruthy();
-    expect(queryByText('补齐今天记录后，Agent 会重新排序干预。')).toBeNull();
-  });
-
-  it('frames a sleep action judgment around the outcomes it should move', () => {
-    mockDailyPlanActions = [
-      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
-    ];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('今天先 23:00 上床，观察血氧、睡眠分、HRV。')).toBeTruthy();
-  });
-
-  it('turns a critical risk into a concrete judgment instead of only a badge', () => {
-    mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧持续偏低' }];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('夜间血氧持续偏低，先查看风险原因并调整今晚策略。')).toBeTruthy();
-  });
-
-  // ── Next-action lever + copy ────────────────────────────────────────
-
-  // Reva 重设计:lever 文案现在同时出现在 Hero「现在只做一件事」和被降权进「工具」分组的
-  // HomeCommandCard 行动行,故用 getAllByText(长度 ≥ 1)断言,而非唯一性。
-  it('labels a measurement task as a record lever and shows its title', () => {
-    mockDailyPlanActions = [
-      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
-    ];
-    const { getAllByText } = render(<TodayScreen />);
-    expect(getAllByText('现在只做 · 记录').length).toBeGreaterThanOrEqual(1);
-    expect(getAllByText('晨起记录体重和腰围').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('names a lifestyle intervention lever by its strategy domain', () => {
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
-    ];
-    const { getAllByText } = render(<TodayScreen />);
-    expect(getAllByText('现在只做 · 饮食').length).toBeGreaterThanOrEqual(1);
-    expect(getAllByText('提高早餐蛋白').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('shows a risk lever and a concrete next step when a critical alert exists', () => {
-    mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧持续偏低' }];
-    const { getAllByText, getByText } = render(<TodayScreen />);
-    expect(getAllByText('现在只做 · 风险').length).toBeGreaterThanOrEqual(1);
-    expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
-  });
-
-  it('prompts to backfill records as the next step when nothing is scheduled', () => {
-    const { getAllByText, getByText } = render(<TodayScreen />);
-    expect(getAllByText('现在只做').length).toBeGreaterThanOrEqual(1);
-    expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
-  });
-
-  it('keeps the critical risk as the next step even when a record task exists', () => {
-    mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧过低' }];
-    mockDailyPlanActions = [
-      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
-    ];
-    const { getByLabelText, getAllByText, queryByText } = render(<TodayScreen />);
-    expect(getAllByText('现在只做 · 风险').length).toBeGreaterThanOrEqual(1);
-    expect(queryByText('现在只做 · 记录')).toBeNull();
-
-    fireEvent.press(getByLabelText('打开下一步行动'));
-    expect(mockPush).toHaveBeenCalledWith('/alerts');
-  });
-
-  // ── Command-card interactions / routing ────────────────────────────
-
-  it('routes the next-action row to the record tab when there is no plan', () => {
-    const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('打开下一步行动'));
-    expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
-  });
-
-  it('opens a measurement task from the judgment row', () => {
-    mockDailyPlanActions = [
-      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
-    ];
-    const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('打开今日判断'));
-    expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
-  });
-
-  it('routes a nutrition intervention to the diet plan', () => {
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
-    ];
-    const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('打开下一步行动'));
-    expect(mockPush).toHaveBeenCalledWith('/diet-plan');
-  });
-
-  it('opens the Agent explanation with workspace and intervention context', () => {
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
-      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
-    ];
-    const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('问 Agent 原因'));
-
-    expect(mockPushChatWithContext).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        badge: '首页工作台',
-        context: expect.objectContaining({
-          from: 'home/agent-workspace',
-          intervention_domains: expect.arrayContaining([
-            expect.objectContaining({ key: 'diet', active_count: 1 }),
-            expect.objectContaining({ key: 'sleep', active_count: 1 }),
-          ]),
-          data_sources: expect.arrayContaining([
-            expect.objectContaining({ key: 'genetic' }),
-            expect.objectContaining({ key: 'wearable' }),
-          ]),
-        }),
-      }),
-    );
-  });
-
-  // ── Next-action completion flow ────────────────────────────────────
-
-  it('lets the user complete the next best action from the top card', async () => {
-    mockRecordDailyPlanActionEvent.mockResolvedValueOnce({ action_state: 'completed', payload: {} });
-    mockDailyPlanActions = [
-      { action_key: 'movement.walk_20', domain: 'movement', title: '步行 20 分钟' },
-    ];
-    const { getByText } = render(<TodayScreen />);
-
-    fireEvent.press(getByText('完成'));
-
-    await waitFor(() => {
-      expect(mockRecordDailyPlanActionEvent).toHaveBeenCalledWith(
-        'movement.walk_20',
-        { event_type: 'completed', payload: { source: 'next_best_action' } },
-      );
-    });
-  });
-
-  it('opens record tasks without a separate complete button', () => {
-    mockDailyPlanActions = [
-      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
-    ];
-    const { getAllByText, queryByText, queryByLabelText } = render(<TodayScreen />);
-    expect(getAllByText('现在只做 · 记录').length).toBeGreaterThanOrEqual(1);
-    expect(getAllByText('晨起记录体重和腰围').length).toBeGreaterThanOrEqual(1);
-    // record tasks expose no inline complete control — just the open chevron
-    expect(queryByText('完成')).toBeNull();
-    expect(queryByLabelText('标记完成')).toBeNull();
-  });
-
-  it('shows an inline failure when completing the next action fails', async () => {
-    mockRecordDailyPlanActionEvent.mockRejectedValueOnce(new Error('network'));
-    mockDailyPlanActions = [
-      { action_key: 'movement.walk_20', domain: 'movement', title: '步行 20 分钟' },
-    ];
-    const { getByText } = render(<TodayScreen />);
-
-    fireEvent.press(getByText('完成'));
-
-    await waitFor(() => {
-      expect(getByText('记录失败，请重试')).toBeTruthy();
-    });
-  });
-
-  it('resets completion state when the next action changes', async () => {
-    mockRecordDailyPlanActionEvent.mockResolvedValueOnce({ action_state: 'completed', payload: {} });
-    mockDailyPlanActions = [
-      { action_key: 'movement.walk_20', domain: 'movement', title: '步行 20 分钟' },
-    ];
-    const { getByText, queryByText, rerender } = render(<TodayScreen />);
-
-    fireEvent.press(getByText('完成'));
-
-    await waitFor(() => {
-      expect(getByText('已完成')).toBeTruthy();
-    });
-
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.log_lunch', domain: 'nutrition', title: '记录午餐' },
-    ];
-    rerender(<TodayScreen />);
-
-    expect(queryByText('已完成')).toBeNull();
-    expect(getByText('完成')).toBeTruthy();
-  });
-
-  it('only completes intervention actions, never record tasks', () => {
-    mockDailyPlanActions = [
-      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '今天蛋白质目标' },
-    ];
-    const { queryByText, getAllByText } = render(<TodayScreen />);
-    // primary action is the first one (record) → no 完成 button anywhere.
-    // (Reva 重设计:标题同时出现在 Hero + HomeCommandCard,故只断言 ≥ 1,不再要求唯一。)
-    expect(queryByText('完成')).toBeNull();
-    expect(getAllByText('晨起记录体重和腰围').length).toBeGreaterThanOrEqual(1);
-    expect(queryByText('今天蛋白质目标')).toBeNull();
-  });
-
-  // ── BodyStatsRow ───────────────────────────────────────────────────
+  // ── 身体数据 (ActivityRing + Vitals + BodyStats) ──
 
   it('renders the basic vitals grid with pending placeholders when data is missing', () => {
     const { getByText, getByLabelText } = render(<TodayScreen />);
@@ -527,44 +244,21 @@ describe('TodayScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
 
-  // ── AgentTopicsRow ─────────────────────────────────────────────────
+  // ── #4 deep-analysis cards moved off the home feed ──
 
-  it('renders the background topics row with empty-state cards by default', () => {
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('今日话题')).toBeTruthy();
-    expect(getByText('暂无新增风险')).toBeTruthy();
-    expect(getByText('等待复盘')).toBeTruthy();
-    expect(getByText('结果追踪')).toBeTruthy();
-  });
-
-  it('surfaces a trajectory risk as a topic card title', () => {
-    mockTrajectoryData = {
-      trajectory_risks: [
-        {
-          domain: 'metabolic_health',
-          level: 'attention',
-          title: '代谢健康轨迹需要关注',
-          why: '围绕腰围、蛋白和睡眠节律继续执行。',
-        },
-      ],
-      data_gaps: [],
+  it('does not surface deep-analysis cards on the home feed (moved to 我 tab)', () => {
+    // Even with rich data that would have populated the old 进展/工具 groups,
+    // the home feed must not render the analysis cards or the agent command card.
+    mockTwinData = {
+      physiological: { sleep_score_latest: 82, hrv_latest: 48, spo2_avg: 93, training_readiness_score: 88 },
     };
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('代谢健康轨迹需要关注')).toBeTruthy();
-  });
-
-  it('hints how many interventions are in progress in the topics header', () => {
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
-      { action_key: 'sleep.bedtime', domain: 'sleep', title: '23:00 上床' },
-    ];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText(/2 个干预进行中/)).toBeTruthy();
-  });
-
-  it('opens the result-tracking route from its topic card', () => {
-    const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('结果追踪: 3 项关键指标'));
-    expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
+    mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧持续偏低' }];
+    const { queryByText, queryByTestId } = render(<TodayScreen />);
+    expect(queryByText('今日话题')).toBeNull();
+    expect(queryByText('健康 Agent')).toBeNull();
+    expect(queryByText('今日判断')).toBeNull();
+    expect(queryByTestId('home-command-judgment')).toBeNull();
+    expect(queryByTestId('home-streak-badge')).toBeNull();
+    expect(queryByTestId('home-outcome-win-card')).toBeNull();
   });
 });

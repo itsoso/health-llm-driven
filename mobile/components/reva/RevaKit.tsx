@@ -220,15 +220,15 @@ export function TrendChart({ series, target, w = 320, h = 150 }: { series: { t: 
   );
 }
 
-export function PlanItem({ icon, title, sub, tag, done, onToggle, last }: { icon: string; title: string; sub?: string; tag?: string; done?: boolean; onToggle?: () => void; last?: boolean }) {
+export function PlanItem({ icon, title, sub, tag, done, onToggle, last, titleLines, subLines }: { icon: string; title: string; sub?: string; tag?: string; done?: boolean; onToggle?: () => void; last?: boolean; titleLines?: number; subLines?: number }) {
   return (
     <Pressable onPress={onToggle} style={[k.rowItem, last && { borderBottomWidth: 0 }]}>
       <View style={[k.rowIcon, { backgroundColor: done ? C.green50 : C.paper2 }]}>
         <Icon name={icon} size={19} color={done ? C.green500 : C.ink2} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontWeight: '600', fontSize: 15, color: C.ink1, textDecorationLine: done ? 'line-through' : 'none', opacity: done ? 0.55 : 1 }}>{title}</Text>
-        {sub ? <Text style={{ fontSize: 12.5, color: C.ink3 }}>{sub}</Text> : null}
+        <Text numberOfLines={titleLines} style={{ fontWeight: '600', fontSize: 15, color: C.ink1, textDecorationLine: done ? 'line-through' : 'none', opacity: done ? 0.55 : 1 }}>{title}</Text>
+        {sub ? <Text numberOfLines={subLines} style={{ fontSize: 12.5, color: C.ink3 }}>{sub}</Text> : null}
       </View>
       {tag && !done ? <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 11, color: C.ink3 }}>{tag}</Text> : null}
       <View style={[k.check, { borderWidth: done ? 0 : 2, borderColor: C.lineStrong, backgroundColor: done ? C.green500 : 'transparent' }]}>

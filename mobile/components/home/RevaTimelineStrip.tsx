@@ -2,7 +2,8 @@
  * RevaTimelineStrip —— 首页今日时间线(Reva 重设计第 3 块)。
  *
  * 复用 useTodayTimeline 的真实条目(训练 / 补水 / 血氧 / 设备待核对…),
- * 用 RevaKit 的 Card + PlanItem 重排,文字不截断(title 换行)。
+ * 用 RevaKit 的 Card + PlanItem 重排。每行一眼扫:title 单行截断,subtitle 只取
+ * 第一个分句(shortSubtitle)单行 + 省略号,完整内容留给点击进详情(deep_link)。
  *   - 顶部 SectionLabel「今日时间线」+ 右侧「待办 N · 已完成 M」。
  *   - 已完成项 done 打勾;血氧偏低这类 severity=critical/high 的 advisory 用 risk Chip 标红。
  *   - action 项点「开始」→ 引导式执行屏(R17);可完成项点行勾走 /agenda/complete 双轨。
@@ -66,6 +67,20 @@ const ICON_BACK: Record<string, string> = {
 };
 function planIcon(item: TodayTimelineItem): string {
   return ICON_BACK[item.icon] ?? item.icon ?? 'sparkles';
+}
+
+// 时间线一眼扫:subtitle 只取第一个分句(到首个 ; ; , , 。 . 止),完整内容留给点击进详情。
+// 同时清洗后端把 unknown / 空来源名糊进文案的情况(「unknown 的步数窗口…」→「某设备 …」)。
+function shortSubtitle(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  let s = raw.trim();
+  if (!s) return undefined;
+  // 来源名 unknown / 空 泄漏:替换为「某设备」,不把 unknown 直接显示给用户。
+  s = s.replace(/\bunknown\b/gi, '某设备').replace(/未知设备|未知来源/g, '某设备');
+  // 取第一个分句:首个分隔符之前。中英文分号/逗号/句号都断。
+  const cut = s.search(/[;；,，。.]/);
+  if (cut > 0) s = s.slice(0, cut);
+  return s.trim() || undefined;
 }
 
 export default function RevaTimelineStrip() {
@@ -160,7 +175,9 @@ export default function RevaTimelineStrip() {
               <PlanItem
                 icon={planIcon(item)}
                 title={item.title}
-                sub={item.subtitle ?? undefined}
+                titleLines={1}
+                sub={shortSubtitle(item.subtitle)}
+                subLines={1}
                 tag={tag}
                 done={done}
                 last={last && !(isRisk(item) || domain || (item.can_complete && item.complete_ref))}

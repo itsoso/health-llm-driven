@@ -132,6 +132,21 @@ export default function SettingsScreen() {
             onPress={() => router.push('/intervention-cycle' as any)} />
         </View>
 
+        {/* 健康分析 — 深度分析从首页移到这里(首页只留日常驱动);各卡路由仍可达 */}
+        <Text style={txt.sectionLabel}>健康分析</Text>
+        <View style={styles.card}>
+          <SettingRow icon="trending-up" label="结果追踪"
+            onPress={() => router.push('/my-progress' as any)} />
+          <SettingRow icon="hourglass-outline" label="生物年龄"
+            onPress={() => router.push('/medical-exams' as any)} />
+          <SettingRow icon="leaf-outline" label="抗衰下一步"
+            onPress={() => router.push('/indicator-history?type=weight' as any)} />
+          <SettingRow icon="git-compare-outline" label="设备一致性"
+            onPress={() => router.push('/device-sources' as any)} />
+          <SettingRow icon="analytics-outline" label="健康轨迹分析"
+            onPress={() => router.push('/(tabs)/chat' as any)} />
+        </View>
+
         {/* Settings items */}
         <View style={styles.card}>
           <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
@@ -346,6 +361,7 @@ const createTxt = (c: ColorPalette) => ({
   email: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   settingLabel: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
   settingValue: { fontSize: 14, color: c.labelTertiary } as TextStyle,
+  sectionLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: c.labelTertiary, marginLeft: spacing.xs, marginBottom: spacing.xs, marginTop: spacing.xs } as TextStyle,
   locationTitle: { fontSize: 15, fontWeight: '700', color: c.labelPrimary, flexShrink: 1 } as TextStyle,
   locationHint: { fontSize: 12, color: c.labelSecondary, marginTop: 3 } as TextStyle,
   locationMode: { fontSize: 12, fontWeight: '600', color: c.brand } as TextStyle,
