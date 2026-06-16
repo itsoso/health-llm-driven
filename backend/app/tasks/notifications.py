@@ -1190,10 +1190,6 @@ def generate_daily_briefing_message():
     """
     from app.models.user import GarminCredential
     from app.models.daily_health import GarminData, DietRecord, WaterIntake
-    from app.models.anomaly_alert import AnomalyAlert
-    from app.models.genetic_data import GeneticVariant
-    from app.models.user_profile import UserProfile
-    from app.services.health_score_service import health_score_service
     from app.utils.timezone import get_china_today
 
     logger.info("[每日简报] 开始生成")
