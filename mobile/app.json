@@ -95,7 +95,29 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "911ea84f-bc7e-4a12-90cf-33966b6f7398"
+        "projectId": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "RevaWatch",
+                  "bundleIdentifier": "life.executor.health.watchkitapp",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.life.executor.health"]
+                  }
+                },
+                {
+                  "targetName": "RevaComplication",
+                  "bundleIdentifier": "life.executor.health.watchkitapp.complication",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.life.executor.health"]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "owner": "itsoso",
