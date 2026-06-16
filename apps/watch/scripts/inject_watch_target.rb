@@ -50,7 +50,8 @@ target.build_configurations.each do |c|
   # 注:显示名不写进 pbxproj(中文会让 CocoaPods 读 pbxproj 时 ASCII-8BIT 崩);
   # 腕上显示名走 watch target 的 Info.plist(GENERATE_INFOPLIST_FILE 默认取 PRODUCT_NAME),
   # 需中文时在 W3 设备步骤里改 Info.plist CFBundleDisplayName。
-  bs['CODE_SIGNING_ALLOWED'] = 'NO'                           # 仅编译验证;发版时由 EAS 处理签名
+  # 不再强制 CODE_SIGNING_ALLOWED=NO —— 发版时 EAS/xcodebuild 要给 watch target 签名,
+  # 强制 NO 会让嵌入二进制未签名 → "not signed with the same certificate as the parent app"。
   bs['PRODUCT_NAME'] = watch_name
   bs['MARKETING_VERSION'] = mv                                # 与主 app 一致,过 watchOS 版本校验
   bs['CURRENT_PROJECT_VERSION'] = cv
@@ -91,7 +92,6 @@ if Dir.exist?(comp_dir)
     bs['SWIFT_VERSION'] = '5.0'
     bs['GENERATE_INFOPLIST_FILE'] = 'NO'
     bs['INFOPLIST_FILE'] = "#{comp_name}/Info.plist"
-    bs['CODE_SIGNING_ALLOWED'] = 'NO'
     bs['PRODUCT_NAME'] = comp_name
     bs['MARKETING_VERSION'] = mv                              # 与主 app 一致,过 watchOS 版本校验
     bs['CURRENT_PROJECT_VERSION'] = cv
