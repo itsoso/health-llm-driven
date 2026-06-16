@@ -22,6 +22,13 @@ abort("✗ 源目录不存在: #{src_dir}") unless Dir.exist?(src_dir)
 
 project = Xcodeproj::Project.open(proj_path)
 
+# 版本号必须与主 app HealthPilot 一致(否则 watchOS 校验报版本不匹配)。
+main_t = project.targets.find { |t| t.name == 'HealthPilot' }
+main_bs = main_t&.build_configurations&.find { |c| c.name == 'Release' }&.build_settings || {}
+mv = main_bs['MARKETING_VERSION'] || '1.0'
+cv = main_bs['CURRENT_PROJECT_VERSION'] || '1'
+puts "• 主 app 版本: MARKETING_VERSION=#{mv} CURRENT_PROJECT_VERSION=#{cv}"
+
 target = project.targets.find { |t| t.name == watch_name }
 if target.nil?
   target = project.new_target(:application, watch_name, :watchos, '10.0')
@@ -45,6 +52,8 @@ target.build_configurations.each do |c|
   # 需中文时在 W3 设备步骤里改 Info.plist CFBundleDisplayName。
   bs['CODE_SIGNING_ALLOWED'] = 'NO'                           # 仅编译验证;发版时由 EAS 处理签名
   bs['PRODUCT_NAME'] = watch_name
+  bs['MARKETING_VERSION'] = mv                                # 与主 app 一致,过 watchOS 版本校验
+  bs['CURRENT_PROJECT_VERSION'] = cv
   bs.delete('INFOPLIST_KEY_CFBundleDisplayName')              # 幂等清理:历史中文值会让 CocoaPods 崩
 end
 
@@ -84,6 +93,8 @@ if Dir.exist?(comp_dir)
     bs['INFOPLIST_FILE'] = "#{comp_name}/Info.plist"
     bs['CODE_SIGNING_ALLOWED'] = 'NO'
     bs['PRODUCT_NAME'] = comp_name
+    bs['MARKETING_VERSION'] = mv                              # 与主 app 一致,过 watchOS 版本校验
+    bs['CURRENT_PROJECT_VERSION'] = cv
   end
 
   cgroup = project.main_group.find_subpath(comp_name, true)
