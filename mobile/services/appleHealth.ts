@@ -15,6 +15,7 @@ import ReactNativeHealth, {
   type HealthValue,
   type HealthUnit,
   type ElectrocardiogramSampleValue,
+  type BloodPressureSampleValue,
 } from 'react-native-health';
 import api from './api';
 
@@ -45,6 +46,8 @@ import type { components } from '../types/api.generated';
 // 注:float→int 是运行时值问题(TS 只有 number),由客户端 round + 后端 validator 兜,
 // 这层专抓"名字/结构漂移"。
 type ApiHealthKitRecord = components['schemas']['HealthKitDailyRecord'];
+// 血压点事件出口 payload —— 同样用生成 schema 标注, 防字段漂移。
+type ApiBPReading = components['schemas']['BPReadingIn'];
 
 type AppleHealthKitModule = typeof ReactNativeHealth & Record<string, any>;
 
@@ -120,6 +123,11 @@ export interface HealthKitDailyRecord {
   ecg_classification?: string;
   ecg_recorded_at?: string; // ISO 8601, 取自最近一次 sample.startDate
   afib_event_count?: number;
+  // 血压点事件 (一天多次, 与 ECG 同范式 —— 逐条进数组, 不塞日聚合).
+  // 每条 {systolic, diastolic, measured_at(ISO), source?}; 无数据时缺省.
+  blood_pressure_readings?: ApiBPReading[];
+  // 体脂率 (百分数 0–100, HealthKit 原始 0–1 已 ×100). 随 weight_kg 落 WeightRecord.
+  body_fat_percentage?: number;
 }
 
 export interface BackfillProgress {
@@ -204,6 +212,11 @@ const PERMISSIONS: HealthKitPermissions = {
       // ECG (Apple Watch 房颤筛查信号). 纯运行时读权限 — Info.plist 的
       // NSHealthShareUsageDescription 已覆盖所有 HealthKit 读取, 不需改 native config.
       AppleHealthKit.Constants.Permissions.Electrocardiogram,
+      // 血压 (收缩压/舒张压) + 体脂率. 同 ECG, 纯运行时读权限,
+      // NSHealthShareUsageDescription 已覆盖, 不需改 native config (可 OTA).
+      AppleHealthKit.Constants.Permissions.BloodPressureSystolic,
+      AppleHealthKit.Constants.Permissions.BloodPressureDiastolic,
+      AppleHealthKit.Constants.Permissions.BodyFatPercentage,
     ],
     write: [],
   },
@@ -276,6 +289,33 @@ function fetchEcgSamples(options: HealthInputOptions): Promise<Electrocardiogram
   });
 }
 
+// 血压样本 = 点事件. 运行时每条带 sourceName (库类型 BloodPressureSampleValue 没声明,
+// 本地扩一个). 返回类型与通用 fetchSamples (HealthValue[]) 不同, 单列一个.
+type BPSampleWithSource = BloodPressureSampleValue & { sourceName?: string };
+
+function fetchBloodPressureSamples(options: HealthInputOptions): Promise<BPSampleWithSource[]> {
+  return new Promise((resolve) => {
+    const fn = AppleHealthKit.getBloodPressureSamples as
+      | ((
+          options: HealthInputOptions,
+          cb: (err: string, results: BloodPressureSampleValue[]) => void,
+        ) => void)
+      | undefined;
+    // 旧桥 / Jest mock 可能没这方法 → 安全降级为无血压 (后端 Optional, 不崩).
+    if (typeof fn !== 'function') {
+      resolve([]);
+      return;
+    }
+    fn(options, (err, results) => {
+      if (err || !results) {
+        resolve([]);
+        return;
+      }
+      resolve(results as BPSampleWithSource[]);
+    });
+  });
+}
+
 function fetchSingle(
   fn: (
     options: HealthInputOptions,
@@ -330,6 +370,7 @@ interface MetricSamples {
   vo2: SampleWithSource[];
   weight: SampleWithSource[];
   waist: SampleWithSource[];
+  bodyFat: SampleWithSource[];
 }
 
 /** 从「同一个源」的样本束算出一条日记录。纯函数,不读 HealthKit。 */
@@ -387,6 +428,9 @@ function buildRecordForSource(
     vo2_max: avg(m.vo2),
     weight_kg: avg(m.weight),
     waist_cm: avg(m.waist),
+    // HealthKit 体脂率单位是 0–1 小数 (e.g. 0.18) → ×100 成百分数 (18.0),
+    // 后端 weight_records.body_fat_percentage 期望百分数 (user_profile ge=1 le=70).
+    body_fat_percentage: ((bf) => (bf !== undefined ? Math.round(bf * 100 * 10) / 10 : undefined))(avg(m.bodyFat)),
   };
 }
 
@@ -418,6 +462,28 @@ function summarizeEcgSamples(samples: ElectrocardiogramSampleValue[]): EcgSummar
   };
 }
 
+// ── 血压点事件映射 ───────────────────────────────────────────────────────────
+// getBloodPressureSamples 每条 = 一次血压测量, 形如:
+//   { bloodPressureSystolicValue, bloodPressureDiastolicValue, startDate, endDate, sourceName? }
+// 血压是点事件 (一天可多次) → 逐条映射成 BPReadingIn, 不塞日聚合 (与 ECG 同范式).
+// measured_at 取 startDate (后端按 (user_id, measured_at) 去重幂等). source 取 sourceName.
+function mapBloodPressureSamples(samples: BPSampleWithSource[]): ApiBPReading[] {
+  const out: ApiBPReading[] = [];
+  for (const s of samples) {
+    const systolic = s.bloodPressureSystolicValue;
+    const diastolic = s.bloodPressureDiastolicValue;
+    // 任一缺失 → 丢弃该条 (后端坏值也会丢, 但不发更省一趟).
+    if (systolic == null || diastolic == null || !s.startDate) continue;
+    out.push({
+      systolic: Math.round(systolic),
+      diastolic: Math.round(diastolic),
+      measured_at: new Date(s.startDate).toISOString(),
+      source: s.sourceName,
+    });
+  }
+  return out;
+}
+
 /** 一条记录是否含任何指标值;全空 (该源当天无数据) 则不产出/不上传。 */
 function recordHasData(r: HealthKitDailyRecord): boolean {
   return (
@@ -434,7 +500,9 @@ function recordHasData(r: HealthKitDailyRecord): boolean {
     r.vo2_max !== undefined ||
     r.weight_kg !== undefined ||
     r.waist_cm !== undefined ||
-    r.ecg_classification !== undefined
+    r.ecg_classification !== undefined ||
+    r.body_fat_percentage !== undefined ||
+    (r.blood_pressure_readings !== undefined && r.blood_pressure_readings.length > 0)
   );
 }
 
@@ -469,6 +537,8 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
     vo2,
     weight,
     waist,
+    bodyFat,
+    bp,
     ecg,
   ] = await Promise.all([
     fetchSamples(AppleHealthKit.getDailyStepCountSamples, opts),
@@ -492,15 +562,19 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
       ...opts,
       unit: 'cm' as HealthUnit,
     }),
+    fetchSamples(AppleHealthKit.getBodyFatPercentageSamples, opts),
+    fetchBloodPressureSamples(opts),
     fetchEcgSamples(opts),
   ]);
 
   // ECG 是 Apple Watch 独有, 不参与 per-source 拆分 — 摘要后挂到 apple-watch 记录上.
   const ecgSummary = summarizeEcgSamples(ecg);
+  // 血压点事件 (一天多次) — 不参与 per-source 拆分, 逐条进数组挂到单条记录上.
+  const bpReadings = mapBloodPressureSamples(bp);
 
   const record_date = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 
-  const allMetrics = [steps, rhr, hrv, spo2, sleep, activeCal, basalCal, respRate, bodyTemp, vo2, weight, waist];
+  const allMetrics = [steps, rhr, hrv, spo2, sleep, activeCal, basalCal, respRate, bodyTemp, vo2, weight, waist, bodyFat];
   const sources = new Set<DataSource>();
   // 未识别来源的原始 sourceName 计数 —— 用于定位"这台设备在健康里叫什么"
   const unknownRawCounts: Record<string, number> = {};
@@ -530,6 +604,7 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
       vo2: samplesForSource(vo2, src),
       weight: samplesForSource(weight, src),
       waist: samplesForSource(waist, src),
+      bodyFat: samplesForSource(bodyFat, src),
     });
     // ECG 只挂 apple-watch 源 (HealthKit 不在 ECG sample 上暴露 sourceName,
     // 且 ECG 仅 Apple Watch 产出). 无 ECG 数据时三字段不填 (后端 Optional).
@@ -538,22 +613,31 @@ export async function fetchDailyRecords(date: Date): Promise<HealthKitDailyRecor
       rec.ecg_recorded_at = ecgSummary.recordedAt;
       rec.afib_event_count = ecgSummary.afibCount;
     }
+    // 血压点事件挂到 apple-watch 记录上 (单条载体即可, 后端按 measured_at 去重
+    // 幂等, 不论 data_source). BP 样本的 source 已逐条保留在 reading.source 里.
+    if (src === 'apple-watch' && bpReadings.length > 0) {
+      rec.blood_pressure_readings = bpReadings;
+    }
     if (recordHasData(rec)) {
       if (src === 'unknown' && topUnknownRaw) rec.source_name = topUnknownRaw;
       records.push(rec);
     }
   }
 
-  // 边界情况: 当天有 ECG 但 apple-watch 没有任何其它指标 (没产出 apple-watch 记录).
-  // 仍需把 ECG 上行, 否则房颤信号丢失. 补一条 apple-watch 记录只带 ECG 三字段.
-  if (ecgSummary && !records.some((r) => r.data_source === 'apple-watch')) {
-    records.push({
-      record_date,
-      data_source: 'apple-watch',
-      ecg_classification: ecgSummary.classification,
-      ecg_recorded_at: ecgSummary.recordedAt,
-      afib_event_count: ecgSummary.afibCount,
-    });
+  // 边界情况: 当天有 ECG / 血压 但没产出 apple-watch 记录 (apple-watch 无其它指标).
+  // 仍需把 ECG / BP 上行, 否则房颤信号 / 血压点事件丢失. 补一条 apple-watch 记录.
+  // (ECG 仅 Apple Watch 产出; BP 用 apple-watch 作单条载体, 后端按 measured_at 去重.)
+  if ((ecgSummary || bpReadings.length > 0) && !records.some((r) => r.data_source === 'apple-watch')) {
+    const carrier: HealthKitDailyRecord = { record_date, data_source: 'apple-watch' };
+    if (ecgSummary) {
+      carrier.ecg_classification = ecgSummary.classification;
+      carrier.ecg_recorded_at = ecgSummary.recordedAt;
+      carrier.afib_event_count = ecgSummary.afibCount;
+    }
+    if (bpReadings.length > 0) {
+      carrier.blood_pressure_readings = bpReadings;
+    }
+    records.push(carrier);
   }
   return records;
 }
@@ -601,8 +685,10 @@ function generateMonthRanges(start: Date, end: Date): { start: Date; end: Date; 
 }
 
 // 本地聚合 record(superset)→ 后端 import schema。只挑后端认的字段;
-// 名字对齐(active_calories→calories_active);后端没有的(vo2_max / weight_kg /
-// waist_cm — 后两者走 /weight、/waist 端点)不发。对象字面量受生成类型约束。
+// 名字对齐(active_calories→calories_active);后端没有的(vo2_max / waist_cm —
+// 走 /waist 端点)不发。weight_kg 平时走 /weight/records 端点,只有在带 body_fat
+// 时才随 import 上行(后端 _save_body_composition 要求体脂必须有体重作载体,
+// 同 (user_id, record_date) upsert 与 /weight 端点幂等)。对象字面量受生成类型约束。
 function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
   const caloriesTotal =
     r.active_calories !== undefined && r.basal_calories !== undefined
@@ -634,6 +720,17 @@ function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
     ecg_classification: r.ecg_classification,
     ecg_recorded_at: r.ecg_recorded_at,
     afib_event_count: r.afib_event_count,
+    // 血压点事件 — 逐条数组原样转发 (systolic/diastolic 已取整, measured_at ISO).
+    // 无血压时 undefined (后端 Optional)。对象字面量受 ApiHealthKitRecord 约束 →
+    // 后端改 BPReadingIn 字段时这里 tsc 直接红。
+    blood_pressure_readings: r.blood_pressure_readings,
+    // 体脂率 (百分数) + 其载体体重。后端要求体脂随体重落库,故仅在有体脂时把
+    // weight_kg 一并上行 (round 到 0.1kg); 无体脂则不发 weight_kg (走 /weight 端点)。
+    body_fat_percentage: r.body_fat_percentage,
+    weight_kg:
+      r.body_fat_percentage !== undefined && r.weight_kg !== undefined
+        ? Math.round(r.weight_kg * 10) / 10
+        : undefined,
   };
 }
 
