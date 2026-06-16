@@ -171,8 +171,16 @@ class CheckinRecordResponse(CheckinRecordBase):
     template_name: Optional[str] = Field(None, description="模板名称")
     template_icon: Optional[str] = Field(None, description="模板图标")
     template_category: Optional[str] = Field(None, description="模板分类")
+    # 成品话术: skill 统一只输出这个字段, 避免弱模型把整坨响应吐给用户 (对齐 DietRecordResponse)
+    display_message: str = ""
 
     model_config = ConfigDict(from_attributes=True)
+
+    def model_post_init(self, __context: Any) -> None:
+        name = self.template_name or "打卡"
+        val = self.value
+        val_str = str(int(val)) if val == int(val) else f"{val:g}"
+        object.__setattr__(self, "display_message", f"✅ 已记录{name} {val_str}")
 
 
 # =====================================================

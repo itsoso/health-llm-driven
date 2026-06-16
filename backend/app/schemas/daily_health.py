@@ -192,8 +192,27 @@ class ExerciseRecordResponse(BaseModel):
     distance: Optional[float] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
+    # 成品话术: 弱模型常把整坨响应吐给用户, skill 统一只输出这个字段 (对齐 DietRecordResponse)
+    display_message: str = ""
 
     model_config = ConfigDict(from_attributes=True)
+
+    def model_post_init(self, __context: Any) -> None:
+        parts = []
+        if self.sets and self.sets > 1 and self.reps is not None:
+            parts.append(f"{self.sets} 组 × {self.reps} 个")
+        elif self.reps is not None:
+            parts.append(f"{self.reps} 个")
+        elif self.duration_seconds is not None:
+            parts.append(f"{self.duration_seconds} 秒")
+        elif self.duration is not None:
+            parts.append(f"{self.duration} 分钟")
+        if self.distance is not None:
+            parts.append(f"{self.distance:g} 公里")
+        msg = f"✅ 已记录{self.exercise_type}"
+        if parts:
+            msg += " " + "，".join(parts)
+        object.__setattr__(self, "display_message", msg)
 
 
 class DietRecordCreate(BaseModel):

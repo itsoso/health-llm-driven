@@ -4752,6 +4752,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/timeline/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Spine
+         * @description 统一今日时间线:未来该做(议程)+ 今日已发生(观测)+ 结果归因。
+         *
+         *     只读投影,组合 agenda_service + events_timeline_service。完成动作走 /agenda/complete。
+         *     强制 user_id 隔离(PRD §7 不变量)。
+         */
+        get: operations["get_today_spine_api_v1_timeline_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/timeline": {
         parameters: {
             query?: never;
@@ -5466,6 +5489,29 @@ export interface paths {
          * @description 删除饮食记录（需登录，且只能删除自己的记录）
          */
         delete: operations["delete_diet_record_api_v1_diet_records__record_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/diet/voice/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Voice Food Endpoint
+         * @description 语音转写文本 → 结构化食物草稿(Apple Watch Companion / R5)。
+         *
+         *     只解析不写库;客户端确认后再 POST /diet/records。分层:规则(餐次/风险标签)+
+         *     记忆(常吃中位营养)+ LLM(自由文本→结构化)。LLM 不可用则降级 + 标 needs_confirmation。
+         */
+        post: operations["parse_voice_food_endpoint_api_v1_diet_voice_parse_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7038,6 +7084,29 @@ export interface paths {
          * @description 统一完成路由:按来源类型路由到对应 source 的完成(写真实业务记录)。
          */
         post: operations["agenda_complete_api_v1_agenda_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Watch Summary
+         * @description 腕上摘要(只读投影 agenda.today → watch 优化视图)。
+         *
+         *     watch 冷启动 / complication 刷新拉这个:一眼看到今日状态灯 + 最该做的事 +
+         *     打点入口 + 该推到手腕的关键信息(运动/补剂/睡眠/复查)。
+         */
+        get: operations["watch_summary_api_v1_watch_summary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -17228,6 +17297,24 @@ export interface components {
             avatar_url: string;
         };
         /**
+         * BPReadingIn
+         * @description 单条血压点事件 — 血压一天多次, 是点事件 (和 ECG 同理), 不塞日聚合避免互相覆盖.
+         *
+         *     容错: systolic/diastolic 走 before-validator float→int 取整 (avg() 聚合可能给小数);
+         *     measured_at 是去重锚点 ((user_id, measured_at) 唯一); source 是 HealthKit sourceName,
+         *     仅用于备注, 不参与去重。坏值在 service 层丢弃, 不崩整批。
+         */
+        BPReadingIn: {
+            /** Systolic */
+            systolic?: number | null;
+            /** Diastolic */
+            diastolic?: number | null;
+            /** Measured At */
+            measured_at?: string | null;
+            /** Source */
+            source?: string | null;
+        };
+        /**
          * Base64UploadRequest
          * @description Base64上传请求
          */
@@ -18136,6 +18223,11 @@ export interface components {
              * @description 模板分类
              */
             template_category?: string | null;
+            /**
+             * Display Message
+             * @default
+             */
+            display_message: string;
         };
         /**
          * CheckinStats
@@ -18614,6 +18706,13 @@ export interface components {
             source_type: string;
             /** Video Url */
             video_url?: string | null;
+        };
+        /** CompleteRef */
+        CompleteRef: {
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id: number;
         };
         /** ConnectionCheckinBody */
         ConnectionCheckinBody: {
@@ -20421,6 +20520,11 @@ export interface components {
             notes?: string | null;
             /** Created At */
             created_at?: string | null;
+            /**
+             * Display Message
+             * @default
+             */
+            display_message: string;
         };
         /**
          * ExerciseRecordUpdate
@@ -22094,6 +22198,12 @@ export interface components {
             ecg_recorded_at?: string | null;
             /** Afib Event Count */
             afib_event_count?: number | null;
+            /** Blood Pressure Readings */
+            blood_pressure_readings?: components["schemas"]["BPReadingIn"][] | null;
+            /** Weight Kg */
+            weight_kg?: number | null;
+            /** Body Fat Percentage */
+            body_fat_percentage?: number | null;
             /** Raw Data */
             raw_data?: Record<string, never> | null;
         };
@@ -22125,6 +22235,11 @@ export interface components {
              * @default 0
              */
             ecg_imported_count: number;
+            /**
+             * Blood Pressure Imported Count
+             * @default 0
+             */
+            blood_pressure_imported_count: number;
             /** Source Breakdown */
             source_breakdown: Record<string, never>;
             /** Errors */
@@ -24541,6 +24656,22 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** ProofRef */
+        ProofRef: {
+            /** Metric */
+            metric: string;
+            /** Label */
+            label: string;
+            /** Delta */
+            delta: string;
+            /** Direction */
+            direction?: string | null;
+            /**
+             * Association Only
+             * @default true
+             */
+            association_only: boolean;
+        };
         /** ProtocolComplete */
         ProtocolComplete: {
             /**
@@ -26371,6 +26502,62 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** TodayCounts */
+        TodayCounts: {
+            /** Actionable */
+            actionable: number;
+            /** Overdue */
+            overdue: number;
+            /** Info */
+            info: number;
+        };
+        /** TodayPast */
+        TodayPast: {
+            /** Completed Count */
+            completed_count: number;
+            /** Events */
+            events: components["schemas"]["TodaySpineItem"][];
+        };
+        /** TodaySpineItem */
+        TodaySpineItem: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Time Window */
+            time_window: string;
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle?: string | null;
+            /** Icon */
+            icon: string;
+            /** Color */
+            color: string;
+            /** Status */
+            status?: string | null;
+            /** Priority */
+            priority: number;
+            /** Can Complete */
+            can_complete: boolean;
+            complete_ref?: components["schemas"]["CompleteRef"] | null;
+            /** Deep Link */
+            deep_link?: string | null;
+            /** Severity */
+            severity?: string | null;
+            proof?: components["schemas"]["ProofRef"] | null;
+        };
+        /** TodaySpineResponse */
+        TodaySpineResponse: {
+            /** Date */
+            date: string;
+            /** Current Window */
+            current_window: string;
+            /** Items */
+            items: components["schemas"]["TodaySpineItem"][];
+            past: components["schemas"]["TodayPast"];
+            counts: components["schemas"]["TodayCounts"];
+        };
         /**
          * Token
          * @description 访问令牌
@@ -27086,6 +27273,62 @@ export interface components {
             interventions: string[];
             /** Notes */
             notes?: string | null;
+        };
+        /**
+         * VoiceFoodDraftItem
+         * @description 单个语音食物草稿项。营养值允许为空,客户端确认后再入库。
+         */
+        VoiceFoodDraftItem: {
+            /** Name */
+            name: string;
+            /** Quantity */
+            quantity?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Calories */
+            calories?: number | null;
+            /** Protein */
+            protein?: number | null;
+            /** Carbs */
+            carbs?: number | null;
+            /** Fat */
+            fat?: number | null;
+        };
+        /**
+         * VoiceFoodParseRequest
+         * @description 语音转写文本 → 食物草稿(只解析不写库)。
+         */
+        VoiceFoodParseRequest: {
+            /**
+             * Raw Text
+             * @description 语音转写文本
+             */
+            raw_text: string;
+            /** @description 餐次(不给则按文本/时刻推断) */
+            meal_type?: components["schemas"]["MealType"] | null;
+        };
+        /**
+         * VoiceFoodParseResponse
+         * @description 食物草稿。客户端确认后再 POST /diet/records 写库。
+         */
+        VoiceFoodParseResponse: {
+            /** Raw Text */
+            raw_text: string;
+            meal_type: components["schemas"]["MealType"];
+            /** Meal Type Label */
+            meal_type_label: string;
+            /** Foods */
+            foods?: components["schemas"]["VoiceFoodDraftItem"][];
+            /** Risk Tags */
+            risk_tags?: string[];
+            /** Confidence */
+            confidence: number;
+            /** Needs Confirmation */
+            needs_confirmation: boolean;
+            /** Clarifying Question */
+            clarifying_question?: string | null;
+            /** Parser Version */
+            parser_version: string;
         };
         /** VoiceScriptResponse */
         VoiceScriptResponse: {
@@ -35524,6 +35767,26 @@ export interface operations {
             };
         };
     };
+    get_today_spine_api_v1_timeline_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodaySpineResponse"];
+                };
+            };
+        };
+    };
     get_timeline_api_v1_timeline_get: {
         parameters: {
             query?: {
@@ -36968,6 +37231,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_voice_food_endpoint_api_v1_diet_voice_parse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceFoodParseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceFoodParseResponse"];
                 };
             };
             /** @description Validation Error */
@@ -39638,6 +39934,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watch_summary_api_v1_watch_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
