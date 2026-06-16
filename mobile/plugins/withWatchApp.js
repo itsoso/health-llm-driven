@@ -15,16 +15,16 @@ const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIconFiles</key>
   <array>
-    <string>AppIcon-24x24@2x.png</string>
-    <string>AppIcon-27.5x27.5@2x.png</string>
-    <string>AppIcon-29x29@2x.png</string>
-    <string>AppIcon-29x29@3x.png</string>
-    <string>AppIcon-40x40@2x.png</string>
-    <string>AppIcon-44x44@2x.png</string>
-    <string>AppIcon-50x50@2x.png</string>
-    <string>AppIcon-86x86@2x.png</string>
-    <string>AppIcon-98x98@2x.png</string>
-    <string>AppIcon-108x108@2x.png</string>
+    <string>AppIcon-24x24@2x</string>
+    <string>AppIcon-27.5x27.5@2x</string>
+    <string>AppIcon-29x29@2x</string>
+    <string>AppIcon-29x29@3x</string>
+    <string>AppIcon-40x40@2x</string>
+    <string>AppIcon-44x44@2x</string>
+    <string>AppIcon-50x50@2x</string>
+    <string>AppIcon-86x86@2x</string>
+    <string>AppIcon-98x98@2x</string>
+    <string>AppIcon-108x108@2x</string>
   </array>
   <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
