@@ -36,9 +36,11 @@ final class WatchConnectivityClient: NSObject {
     /// 取今日摘要:返回 watch/summary 的原始 JSON data(交给 WatchSummary.decode)。
     func fetchSummary() async throws -> Data {
         let reply = try await send(["op": "summary"])
-        guard let ok = reply["ok"] as? Bool, ok,
-              let b64 = reply["data"] as? String,
-              let data = Data(base64Encoded: b64) else {
+        // 中继失败时带回 iPhone 侧的真实原因(未登录 / HTTP 401 / 网络…),别吞成笼统 badResponse。
+        guard let ok = reply["ok"] as? Bool, ok else {
+            throw WCError.relayFailed((reply["error"] as? String) ?? "中继失败")
+        }
+        guard let b64 = reply["data"] as? String, let data = Data(base64Encoded: b64) else {
             throw WCError.badResponse
         }
         return data

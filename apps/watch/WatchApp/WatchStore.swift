@@ -36,8 +36,26 @@ final class WatchStore: ObservableObject {
             ComplicationCache.save(ComplicationState.from(decoded))
             reloadComplicationTimelines()
         } catch {
-            lastError = "拉取失败,下拉重试"
+            lastError = Self.fetchErrorMessage(for: error)
         }
+    }
+
+    /// 把取摘要的失败映射成可读、可行动的提示(fail loud + 指明该去哪修),不再笼统「拉取失败」。
+    static func fetchErrorMessage(for error: Error) -> String {
+        if let wc = error as? WatchConnectivityClient.WCError {
+            switch wc {
+            case .unreachable:
+                return "iPhone 未连接 —— 请在 iPhone 打开「健康助理」后下拉重试"
+            case .badResponse:
+                return "数据异常,请下拉重试"
+            case .relayFailed(let m):
+                if m.contains("未登录") { return "请先在 iPhone 上登录「健康助理」,再下拉重试" }
+                if m.contains("401") { return "登录已过期,请在 iPhone 重新登录" }
+                if m.hasPrefix("HTTP") { return "服务器繁忙(\(m)),稍后下拉重试" }
+                return m   // 网络等系统错误原文,直说
+            }
+        }
+        return "数据解析失败,请下拉重试"
     }
 
     /// 打点:校验(WatchCompanionCore)→ 经 iPhone 中继。失败 fail loud,不假装成功。
