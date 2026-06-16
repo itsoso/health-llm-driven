@@ -18,25 +18,14 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { useAgendaToday, useCompleteAgendaItem, useSeedDemo } from '../hooks/useAgenda';
 import { isProtocolActionable, MANUAL_CAPTURE, type AgendaItem } from '../services/agenda';
+import { agendaItemPresentation, agendaSummary } from '../utils/agendaPresentation';
 
-const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  hydration: 'water-outline',
-  medication: 'medkit-outline',
-  diet: 'restaurant-outline',
-  sleep: 'moon-outline',
-  training: 'barbell-outline',
-  checkup: 'calendar-outline',
-  data_quality: 'git-compare-outline',
-  correction: 'construct-outline',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: '待完成', completed: '已完成', skipped: '已跳过', due: '待复查', overdue: '已逾期',
-  info: '今日建议',
-};
-
-const LIGHT_COLOR: Record<string, string> = {
-  green: '#34C759', yellow: '#FFCC00', red: '#FF3B30',
+const TONE_COLOR: Record<string, string> = {
+  green: '#34C759',
+  yellow: '#FFCC00',
+  red: '#FF3B30',
+  blue: '#0A84FF',
+  gray: '#8E8E93',
 };
 
 export default function AgendaScreen() {
@@ -45,6 +34,7 @@ export default function AgendaScreen() {
   const { data, isLoading, isError, refetch, isRefetching } = useAgendaToday();
   const complete = useCompleteAgendaItem();
   const seed = useSeedDemo();
+  const summary = agendaSummary(data?.items ?? []);
 
   const onComplete = (item: AgendaItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -101,6 +91,13 @@ export default function AgendaScreen() {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
         >
+          {data && data.items.length > 0 ? (
+            <View style={styles.summaryRow}>
+              <SummaryPill label="待执行" value={summary.actionable} color={c.brand} />
+              <SummaryPill label="逾期" value={summary.overdue} color={c.red} />
+              <SummaryPill label="建议" value={summary.info} color={c.amber} />
+            </View>
+          ) : null}
           {(data?.items ?? []).length === 0 ? (
             <View style={styles.center}>
               <Text style={styles.muted}>今天没有待办</Text>
@@ -119,51 +116,17 @@ export default function AgendaScreen() {
             </View>
           ) : (
             (data?.items ?? []).map((item, idx) => (
-              <View key={`${item.source.object_type}-${item.source.object_id}-${idx}`} style={styles.card}>
-                <Ionicons
-                  name={TYPE_ICON[item.type] ?? 'ellipse-outline'}
-                  size={22}
-                  color={item.status === 'overdue' ? c.red : c.brand}
-                  style={styles.icon}
-                />
-                <View style={styles.cardBody}>
-                  <Text style={styles.cardTitle}>{item.title}</Text>
-                  <Text style={[styles.cardStatus, { color: statusColor(item.status) }]}>
-                    {STATUS_LABEL[item.status] ?? item.status}
-                    {item.next_due ? ` · ${item.next_due}` : ''}
-                  </Text>
-                  {item.detail ? <Text style={styles.cardDetail}>{item.detail}</Text> : null}
-                </View>
-                {item.type === 'training' && item.light ? (
-                  <View style={styles.lightWrap}>
-                    <View style={[styles.lightDot, { backgroundColor: LIGHT_COLOR[item.light] ?? c.labelTertiary }]} />
-                    {typeof item.readiness_score === 'number' && item.readiness_score > 0 ? (
-                      <Text style={styles.lightScore}>{item.readiness_score}</Text>
-                    ) : null}
-                  </View>
-                ) : isProtocolActionable(item) ? (
-                  <View style={styles.actions}>
-                    {MANUAL_CAPTURE[item.type] ? (
-                      <TouchableOpacity
-                        style={styles.manualBtn}
-                        disabled={complete.isPending}
-                        onPress={() => onManual(item)}
-                      >
-                        <Text style={styles.manualBtnText}>手工</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                    <TouchableOpacity
-                      style={styles.doneBtn}
-                      disabled={complete.isPending}
-                      onPress={() => onComplete(item)}
-                    >
-                      <Ionicons name="checkmark" size={18} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ) : item.status === 'completed' ? (
-                  <Ionicons name="checkmark-circle" size={24} color={c.brand} />
-                ) : null}
-              </View>
+              <AgendaCard
+                key={`${item.source.object_type}-${item.source.object_id}-${idx}`}
+                item={item}
+                styles={styles}
+                completePending={complete.isPending}
+                statusColor={statusColor}
+                onComplete={onComplete}
+                onManual={onManual}
+                completedColor={c.brand}
+                fallbackColor={c.labelTertiary}
+              />
             ))
           )}
         </ScrollView>
@@ -171,6 +134,99 @@ export default function AgendaScreen() {
     </SafeAreaView>
   );
 }
+
+function AgendaCard({
+  item,
+  styles,
+  completePending,
+  statusColor,
+  onComplete,
+  onManual,
+  completedColor,
+  fallbackColor,
+}: {
+  item: AgendaItem;
+  styles: ReturnType<typeof createStyles>;
+  completePending: boolean;
+  statusColor: (status: string) => string;
+  onComplete: (item: AgendaItem) => void;
+  onManual: (item: AgendaItem) => void;
+  completedColor: string;
+  fallbackColor: string;
+}) {
+  const presentation = agendaItemPresentation(item);
+  const toneColor = TONE_COLOR[presentation.tone] ?? fallbackColor;
+
+  return (
+    <View style={styles.card}>
+      <Ionicons
+        name={presentation.icon as keyof typeof Ionicons.glyphMap}
+        size={22}
+        color={toneColor}
+        style={styles.icon}
+      />
+      <View style={styles.cardBody}>
+        <Text style={styles.cardTitle}>{item.title}</Text>
+        <Text style={[styles.cardStatus, { color: statusColor(item.status) }]}>
+          {presentation.statusLabel}
+          {presentation.meta ? ` · ${presentation.meta}` : ''}
+        </Text>
+        {item.detail ? <Text style={styles.cardDetail}>{item.detail}</Text> : null}
+      </View>
+      {item.type === 'training' && item.light ? (
+        <View style={styles.lightWrap}>
+          <View style={[styles.lightDot, { backgroundColor: toneColor }]} />
+          {typeof item.readiness_score === 'number' && item.readiness_score > 0 ? (
+            <Text style={styles.lightScore}>{item.readiness_score}</Text>
+          ) : null}
+        </View>
+      ) : presentation.canComplete && isProtocolActionable(item) ? (
+        <View style={styles.actions}>
+          {MANUAL_CAPTURE[item.type] ? (
+            <TouchableOpacity
+              style={styles.manualBtn}
+              disabled={completePending}
+              onPress={() => onManual(item)}
+            >
+              <Text style={styles.manualBtnText}>手工</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={styles.doneBtn}
+            disabled={completePending}
+            onPress={() => onComplete(item)}
+          >
+            <Ionicons name="checkmark" size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      ) : item.status === 'completed' ? (
+        <Ionicons name="checkmark-circle" size={24} color={completedColor} />
+      ) : null}
+    </View>
+  );
+}
+
+function SummaryPill({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <View style={[summaryStyles.pill, { borderColor: color }]}>
+      <Text style={[summaryStyles.value, { color }]}>{value}</Text>
+      <Text style={summaryStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const summaryStyles = StyleSheet.create({
+  pill: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+  },
+  value: { fontSize: 18, fontWeight: '800' },
+  label: { fontSize: 11, color: '#6B7280', marginTop: 2, fontWeight: '700' },
+});
 
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
@@ -182,6 +238,7 @@ function createStyles(c: ColorPalette) {
     muted: { color: c.labelSecondary, fontSize: 14 },
     retry: { color: c.brand, fontSize: 14, marginTop: spacing.sm },
     list: { padding: spacing.lg, gap: spacing.md },
+    summaryRow: { flexDirection: 'row', gap: spacing.sm },
     card: {
       flexDirection: 'row', alignItems: 'center', backgroundColor: c.bgCard,
       borderRadius: radii.lg, padding: spacing.lg, gap: spacing.md, ...shadows.subtle,

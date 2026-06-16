@@ -78,6 +78,7 @@ export default function Navigation() {
   const mainNavItems: NavItem[] = [
     { href: '/', label: '首页', icon: <Home className="w-4 h-4" /> },
     { href: '/overview', label: '健康概览', icon: <LayoutDashboard className="w-4 h-4" /> },
+    { href: '/agenda', label: '今日议程', icon: <CalendarCheck className="w-4 h-4" /> },
     { href: '/daily-insights', label: '今日建议', icon: <Sparkles className="w-4 h-4" /> },
     { href: '/ai-assistant', label: '智能助理', icon: <MessageCircle className="w-4 h-4" /> },
     { href: '/smart-plan', label: '智能计划', icon: <CalendarCheck className="w-4 h-4" /> },

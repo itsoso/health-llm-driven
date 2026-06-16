@@ -26,7 +26,7 @@ export interface AgendaItem {
   light?: 'green' | 'yellow' | 'red';
   zone?: string;
   readiness_score?: number | null;
-  confidence?: number;
+  confidence?: string | number;
   source: AgendaSource;
 }
 

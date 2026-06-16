@@ -34,6 +34,14 @@ export default function Home() {
 
           {/* 今日建议 */}
           <Link
+            href="/agenda"
+            className="p-6 bg-gradient-to-r from-slate-700 to-sky-700 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2">今日议程</h2>
+            <p className="text-sky-100 text-sm">训练灯 / 复查 / 协议待办</p>
+          </Link>
+
+          <Link
             href="/daily-insights"
             className="p-6 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
           >

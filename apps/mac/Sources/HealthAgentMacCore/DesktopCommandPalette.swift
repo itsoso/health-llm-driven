@@ -38,6 +38,7 @@ public enum DesktopCommandPalette {
     public static func defaultCommands(language: AppLanguage) -> [DesktopCommandPaletteCommand] {
         [
             navigateCommand(.today, language: language, keywords: ["dashboard", "home", "today", "看板", "首页", "今日"]),
+            navigateCommand(.agenda, language: language, keywords: ["agenda", "schedule", "plan", "today agenda", "议程", "日程", "待办", "复查"]),
             navigateCommand(.agent, language: language, keywords: ["agent", "chat", "analysis", "assistant", "问", "助手", "分析"]),
             navigateCommand(.record, language: language, keywords: ["record", "food", "water", "supplement", "diet", "饮食", "饮水", "补剂", "记录"]),
             navigateCommand(.data, language: language, keywords: ["data", "labs", "records", "trend", "化验", "趋势", "健康数据"]),
@@ -160,6 +161,8 @@ public enum DesktopCommandPalette {
         switch destination {
         case .today:
             L10n.text("Daily dashboard, priorities, and recent context.", language: language)
+        case .agenda:
+            L10n.text("Training gate, follow-ups, protocols, and device quality.", language: language)
         case .agent:
             L10n.text("Ask questions with files, selected context, and evidence.", language: language)
         case .record:

@@ -41,6 +41,7 @@ struct AppServices {
     let workoutClient: WorkoutClient
     let goalClient: GoalClient
     let deviceSourcesClient: DeviceSourcesClient
+    let agendaClient: AgendaClient
     let originatorClient: OriginatorClient
     let liverHealthClient: LiverHealthClient
     let healthExtrasClient: HealthExtrasClient
@@ -78,6 +79,7 @@ struct AppServices {
         self.workoutClient = WorkoutClient(apiClient: apiClient)
         self.goalClient = GoalClient(apiClient: apiClient)
         self.deviceSourcesClient = DeviceSourcesClient(apiClient: apiClient)
+        self.agendaClient = AgendaClient(apiClient: apiClient)
         self.originatorClient = OriginatorClient(apiClient: apiClient)
         self.liverHealthClient = LiverHealthClient(apiClient: apiClient)
         self.healthExtrasClient = HealthExtrasClient(apiClient: apiClient)

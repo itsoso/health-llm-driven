@@ -111,6 +111,8 @@ struct AppRootView: View {
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
+        case .agenda:
+            AgendaView(client: services.agendaClient)
         case .agent:
             AgentChatView(viewModel: services.agentViewModel, navigation: navigation)
         case .record:
