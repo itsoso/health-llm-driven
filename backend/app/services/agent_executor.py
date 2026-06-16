@@ -386,6 +386,34 @@ def _strip_bracket_tool_markers(text: str) -> str:
     return _BRACKET_TOOL_CALL_STRIP_RE.sub("", text).strip()
 
 
+_BARE_JSON_START_RE = re.compile(r'^\{\s*"\w+"\s*:')
+
+
+def _looks_like_bare_tool_json(text: str) -> bool:
+    """整条最终回复其实是裸 JSON(工具参数或后端返回的记录),不是给用户看的人话。
+
+    弱模型(如 deepseek-v4-pro)记录后会把工具结果/参数 JSON 当最终回复回显:
+    `{"id":231,"user_id":3,...,"reps":20}` / `{"record_date":...,"meal_type":...}`
+    (用户截图)。这类应被工具结果合成的"已记录…"替换,绝不裸露给用户。
+
+    判定保守:去 ```json fence 后,以 `{"key":` 开头(截断也算)或能整体解析成
+    dict/list 才算;调用方再 gate"本轮确有工具结果"才替换,避免误伤用户主动要的 JSON。
+    """
+    s = (text or "").strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\s*", "", s).rstrip("`").strip()
+    if not s:
+        return False
+    if _BARE_JSON_START_RE.match(s):
+        return True  # 含截断的 `{"k":...` —— 强裸 JSON 信号
+    if s[0] in "{[":
+        try:
+            return isinstance(json.loads(s), (dict, list))
+        except json.JSONDecodeError:
+            return False
+    return False
+
+
 _SMART_DOUBLE_QUOTES = "“”„‟″＂"  # “ ” „ ‟ ″ ＂
 _SMART_SINGLE_QUOTES = "‘’‚‛′＇"  # ‘ ’ ‚ ‛ ′ ＇
 _QUOTE_NORMALIZE_TABLE = str.maketrans(
@@ -1598,6 +1626,14 @@ class AgentExecutor:
                     if stripped != final_text:
                         final_text = stripped
                         streamed_to_client = False
+                    # 兜底:弱模型(如 deepseek-v4-pro)把工具结果/参数裸 JSON 当最终回复
+                    # 回显(用户截图:记录后正文是 {"id":231,...} / {"record_date":...})。
+                    # 整条是裸 JSON 且本轮确有工具结果 → 用工具结果合成"已记录…",绝不裸露。
+                    if _looks_like_bare_tool_json(final_text):
+                        synthesized = _fast_record_reply_from_tool_results(messages)
+                        if synthesized.strip():
+                            final_text = synthesized
+                            streamed_to_client = False
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False
