@@ -7,6 +7,9 @@ final class WatchSummaryTests: XCTestCase {
     {
       "status": {"light": "green", "readiness_score": 78, "headline": "今日恢复良好,可按计划训练"},
       "top_action": {"title": "2000ml 温水杯", "kind": "hydration", "time_window": "anytime",
+                     "priority_tier": "P2", "leverage_score": 186,
+                     "rationale_short": "低摩擦高频动作, 先保证当天执行",
+                     "verification_window_days": 7, "safety_status": "allowed",
                      "source": {"object_type": "health_protocol", "object_id": 12}},
       "agenda": {"total": 4, "pending": 2},
       "quick_actions": [
@@ -26,6 +29,11 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.status.readinessScore, 78)
         XCTAssertEqual(s.topAction?.kind, "hydration")
         XCTAssertEqual(s.topAction?.source?.objectId, 12)
+        XCTAssertEqual(s.topAction?.priorityTier, "P2")
+        XCTAssertEqual(s.topAction?.leverageScore, 186)
+        XCTAssertEqual(s.topAction?.rationaleShort, "低摩擦高频动作, 先保证当天执行")
+        XCTAssertEqual(s.topAction?.verificationWindowDays, 7)
+        XCTAssertEqual(s.topAction?.safetyStatus, "allowed")
         XCTAssertEqual(s.agenda.pending, 2)
         XCTAssertEqual(s.quickActions.count, 2)
         XCTAssertEqual(s.pushItems.first?.tier, "P1")

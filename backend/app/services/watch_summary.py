@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service
+from app.services.action_ranker import rank_agenda_actions
 
 # 打点入口目录(canonical):watch 据此渲染按钮,endpoint 指向已有写接口。
 # value 由 watch 端补(喝水 ml / 运动 reps 等);diet_voice 走语音解析草稿流。
@@ -57,6 +58,11 @@ def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "kind": item.get("type"),
         "time_window": item.get("time_window"),
         "source": item.get("source"),
+        "priority_tier": item.get("priority_tier"),
+        "leverage_score": item.get("leverage_score"),
+        "rationale_short": item.get("rationale_short"),
+        "verification_window_days": item.get("verification_window_days"),
+        "safety_status": item.get("safety_status"),
     }
 
 
@@ -84,8 +90,8 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
         if (i.get("source") or {}).get("object_type") == "health_protocol"
         and i.get("status") == "pending"
     ]
-    actionable.sort(key=lambda x: -(x.get("priority") or 0))
-    top_action = _action_view(actionable[0]) if actionable else None
+    ranked_actions = rank_agenda_actions(actionable)
+    top_action = _action_view(ranked_actions[0]) if ranked_actions else None
 
     if training and training.get("light") in _LIGHT_HEADLINE:
         headline = _LIGHT_HEADLINE[training["light"]]

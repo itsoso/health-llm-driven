@@ -1,6 +1,8 @@
 """POST /client-events + observability client_events 统计."""
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.models.client_event import ClientEvent
 
 
@@ -103,8 +105,6 @@ def test_client_events_stats_empty(db):
 
 # ─────────────── Phase 0.4: 5 种新事件白名单 ───────────────
 
-import pytest
-
 
 @pytest.mark.parametrize("event_name,meta", [
     ("home_chip_clicked", {"chip": "trust_hero", "target": "/specialist/recovery_coach"}),
@@ -150,3 +150,29 @@ def test_phase_0_4_all_5_events_in_allowed_list(client, auth_user_and_headers):
         "quick_record_logged",
     ]:
         assert evt in allowed, f"白名单缺 {evt}"
+
+
+@pytest.mark.parametrize("event_name", [
+    "watch_action_shown",
+    "watch_action_completed",
+    "watch_action_snoozed",
+    "watch_action_skipped",
+    "watch_action_failed",
+])
+def test_watch_action_events_accepted(client, db, auth_user_and_headers, event_name):
+    """Watch top_action 必须能上报 shown/complete/snooze/skip/fail,否则无法算闭环."""
+    _, headers = auth_user_and_headers
+    r = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": event_name,
+            "meta": {
+                "action_id": "agenda-health_protocol-12",
+                "kind": "medication",
+                "priority_tier": "P1",
+            },
+        },
+    )
+    assert r.status_code == 202, f"{event_name} 被拒, body={r.text}"
+    assert r.json()["ok"] is True

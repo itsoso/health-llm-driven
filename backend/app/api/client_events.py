@@ -37,6 +37,12 @@ _ALLOWED_EVENTS = frozenset({
     # Phase 5 (2026-05-29) — starter chip CTR (调权从拍脑袋变成有据)
     "starter_chips_shown",        # meta: { keys: string[], source: 'chat' }  曝光(分母)
     "starter_chip_clicked",       # meta: { key, priority, position, source: 'chat' }  点击(分子)
+    # Watch leverage-action loop (2026-06-16) — Health Agenda top_action 可观测
+    "watch_action_shown",         # meta: { action_id, kind, priority_tier }
+    "watch_action_completed",     # meta: { action_id, kind, priority_tier }
+    "watch_action_snoozed",       # meta: { action_id, kind, priority_tier, minutes? }
+    "watch_action_skipped",       # meta: { action_id, kind, priority_tier, reason? }
+    "watch_action_failed",        # meta: { action_id, kind, priority_tier, error? }
 })
 
 

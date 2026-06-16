@@ -34,10 +34,42 @@ public struct WatchTopAction: Codable, Sendable {
     public let kind: String
     public let timeWindow: String?
     public let source: WatchSource?
+    public let priorityTier: String?
+    public let leverageScore: Int?
+    public let rationaleShort: String?
+    public let verificationWindowDays: Int?
+    public let safetyStatus: String?
+
+    public init(
+        title: String,
+        kind: String,
+        timeWindow: String?,
+        source: WatchSource?,
+        priorityTier: String? = nil,
+        leverageScore: Int? = nil,
+        rationaleShort: String? = nil,
+        verificationWindowDays: Int? = nil,
+        safetyStatus: String? = nil
+    ) {
+        self.title = title
+        self.kind = kind
+        self.timeWindow = timeWindow
+        self.source = source
+        self.priorityTier = priorityTier
+        self.leverageScore = leverageScore
+        self.rationaleShort = rationaleShort
+        self.verificationWindowDays = verificationWindowDays
+        self.safetyStatus = safetyStatus
+    }
 
     enum CodingKeys: String, CodingKey {
         case title, kind, source
         case timeWindow = "time_window"
+        case priorityTier = "priority_tier"
+        case leverageScore = "leverage_score"
+        case rationaleShort = "rationale_short"
+        case verificationWindowDays = "verification_window_days"
+        case safetyStatus = "safety_status"
     }
 }
 

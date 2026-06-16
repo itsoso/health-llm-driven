@@ -16,7 +16,9 @@ from app.models.user import User
 def auth(client, db):
     user = User(username=f"w_{uuid.uuid4().hex[:6]}", email=f"w_{uuid.uuid4().hex[:6]}@x.com",
                 hashed_password="x", name="w", is_active=True, is_approved=True)
-    db.add(user); db.commit(); db.refresh(user)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     from app.services.auth import auth_service
     return user, {"Authorization": f"Bearer {auth_service.create_access_token({'sub': str(user.id)})}"}
 
@@ -47,6 +49,10 @@ def test_top_action_is_highest_priority_pending(db, auth, monkeypatch):
     monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
     s = ws.build_watch_summary(db, user.id)
     assert s["top_action"]["title"] == "吃药"          # 80 > 50
+    assert s["top_action"]["priority_tier"] == "P1"
+    assert s["top_action"]["verification_window_days"] == 28
+    assert s["top_action"]["leverage_score"] > 0
+    assert "依从" in s["top_action"]["rationale_short"]
     assert s["agenda"]["pending"] == 2
 
 
