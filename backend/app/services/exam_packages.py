@@ -151,6 +151,14 @@ ITEM_NAME_MAPPING: Dict[str, str] = {
     "HbA1": "glucose_hba1_total",
     "GHbA1": "glucose_hba1_total",
 
+    # 血红蛋白 (hemoglobin, g/L) —— 「血红蛋白」是「糖化血红蛋白」的子串,
+    # 必须有独立精确映射, 否则模糊匹配 (clean_name in key) 会把它误归 glucose_hba1c。
+    "血红蛋白": "hemoglobin",
+    "血色素": "hemoglobin",
+    "Hb": "hemoglobin",
+    "HGB": "hemoglobin",
+    "HB": "hemoglobin",
+
     # 粪便检查
     "粪便常规": "stool_routine",
     "大便常规": "stool_routine",
@@ -289,6 +297,7 @@ ITEM_LABELS: Dict[str, str] = {
     # 血糖相关
     "glucose_hba1c": "糖化血红蛋白",
     "glucose_hba1_total": "糖化血红蛋白A1",
+    "hemoglobin": "血红蛋白",
     "glucose_fasting": "空腹血糖",
     "glucose_postprandial": "餐后血糖",
     "glucose_ga": "糖化白蛋白",
