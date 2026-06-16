@@ -263,6 +263,132 @@ class HealthKitAdapter(DeviceAdapter):
             db.rollback()
         return True
 
+    @staticmethod
+    def _coerce_int(value: Any) -> Optional[int]:
+        """容错取整: float/数字字符串 → int, 坏值 → None (丢弃不崩)。"""
+        if value is None:
+            return None
+        if isinstance(value, bool):  # bool 是 int 子类, 显式拒绝
+            return None
+        try:
+            return int(round(float(value)))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _coerce_float(value: Any) -> Optional[float]:
+        """容错转 float: 坏值 → None (丢弃不崩)。"""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _save_blood_pressure(cls, db: Session, user_id: int, reading: Dict[str, Any]) -> bool:
+        """落库一条血压点事件 (blood_pressure_records 表). 返回是否写入.
+
+        血压是点事件 (一天多次), 与 ECG 同范式: 按 (user_id, measured_at) 去重幂等。
+        - systolic/diastolic 容错取整, 任一缺失/坏值 → 整条丢弃返回 False (不写半截记录)。
+        - measured_at 缺失/不可解析 → 无去重锚点, 丢弃返回 False (点事件必须带测量时刻)。
+        - record_date 从 measured_at 推导。
+        - 命中已存在 (同 user+measured_at) 则跳过 (幂等), 不覆盖。
+        - IntegrityError (并发撞唯一约束) 回滚视为幂等成功。
+        """
+        systolic = cls._coerce_int(reading.get("systolic"))
+        diastolic = cls._coerce_int(reading.get("diastolic"))
+        if systolic is None or diastolic is None:
+            return False
+
+        measured_at = cls._parse_datetime(reading.get("measured_at"))
+        if measured_at is None:
+            return False
+
+        from app.models.blood_pressure import BloodPressureRecord
+
+        existing = (
+            db.query(BloodPressureRecord)
+            .filter(
+                BloodPressureRecord.user_id == user_id,
+                BloodPressureRecord.measured_at == measured_at,
+            )
+            .first()
+        )
+        if existing:
+            # 已存在同测量时刻记录 → 幂等跳过, 不覆盖 (重复上送不增行)。
+            return False
+
+        source = reading.get("source")
+        notes = f"HealthKit 自动同步 ({source})" if source else "HealthKit 自动同步"
+        db.add(BloodPressureRecord(
+            user_id=user_id,
+            record_date=measured_at.date(),
+            measured_at=measured_at,
+            systolic=systolic,
+            diastolic=diastolic,
+            notes=notes,
+        ))
+        try:
+            db.commit()
+        except IntegrityError:
+            # 并发/重复上送撞唯一约束 — 回滚视为幂等成功, 不抛给整批
+            db.rollback()
+            return False
+        return True
+
+    @classmethod
+    def _save_body_composition(cls, db: Session, user_id: int, record: Dict[str, Any], data_source: str) -> bool:
+        """落库体重+体脂到 weight_records 表 (随体重, 按天 upsert). 返回是否写入.
+
+        - 仅当存在 weight_kg 时落库 (weight 列 NOT NULL, body_fat 必须随体重)。
+          只有 body_fat 没 weight → 无载体, 返回 False。
+        - body_fat_percentage 容错 float, 缺失则不写该列。
+        - 按 (user_id, record_date) upsert (与 /weight/records 端点同语义), 重复幂等。
+        """
+        weight = cls._coerce_float(record.get("weight_kg"))
+        if weight is None:
+            return False
+
+        record_date = cls._parse_date(record.get("record_date"))
+        if record_date is None:
+            return False
+
+        body_fat = cls._coerce_float(record.get("body_fat_percentage"))
+
+        from app.models.weight import WeightRecord
+
+        existing = (
+            db.query(WeightRecord)
+            .filter(
+                WeightRecord.user_id == user_id,
+                WeightRecord.record_date == record_date,
+            )
+            .first()
+        )
+        if existing:
+            existing.weight = weight
+            if body_fat is not None:
+                existing.body_fat_percentage = body_fat
+            if not existing.source:
+                existing.source = data_source
+        else:
+            db.add(WeightRecord(
+                user_id=user_id,
+                record_date=record_date,
+                weight=weight,
+                body_fat_percentage=body_fat,
+                source=data_source,
+                notes="HealthKit 自动同步",
+            ))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+        return True
+
     @classmethod
     def batch_save(
         cls,
@@ -277,13 +403,22 @@ class HealthKitAdapter(DeviceAdapter):
         本条若带 ecg_classification 仍尝试落 ECG。ECG 丢弃/落库失败走**可区分**的
         "ECG dropped" 错误项(`kind: "ecg"`),不混进通用 record error,让调用方感知。
 
+        血压 (blood_pressure_readings) 同理是**点事件** (一天多次): 与日聚合并行各自
+        独立 try, 逐条按 (user_id, measured_at) 去重幂等落 blood_pressure_records,
+        失败走可区分 "BP dropped" 错误项 (`kind: "blood_pressure"`)。
+        体脂 (body_fat_percentage) 随体重 (weight_kg) 落 weight_records, 也独立 try
+        (`kind: "body_composition"`)。各源失败互不影响, 不静默吞。
+
         返回:
           {
             "imported_count": int,
             "ecg_imported_count": int,
+            "blood_pressure_imported_count": int,
             "source_breakdown": {"apple-watch": 12, "ringconn": 5, ...},
             "errors": [
-              {"index": int, "kind": "daily"|"ecg", "record_date": str|None, "error": str},
+              {"index": int,
+               "kind": "daily"|"ecg"|"blood_pressure"|"body_composition",
+               "record_date": str|None, "error": str},
               ...
             ]
           }
@@ -292,6 +427,7 @@ class HealthKitAdapter(DeviceAdapter):
 
         imported = 0
         ecg_imported = 0
+        bp_imported = 0
         breakdown: Dict[str, int] = {}
         errors: List[Dict[str, Any]] = []
 
@@ -347,9 +483,59 @@ class HealthKitAdapter(DeviceAdapter):
                     except Exception:
                         pass
 
+            # ── 血压点事件写入 (独立 try, 与日聚合并行) ──────────────────────
+            # 血压一天多次、是点事件, 不依赖日聚合成功。每条 reading 各自去重幂等落库。
+            bp_readings = record.get("blood_pressure_readings")
+            if bp_readings:
+                for bp_idx, reading in enumerate(bp_readings):
+                    try:
+                        if cls._save_blood_pressure(db, user_id, reading):
+                            bp_imported += 1
+                    except Exception as bp_err:  # noqa: BLE001
+                        logger.error(
+                            f"[healthkit] BP dropped idx={idx} reading={bp_idx} "
+                            f"measured_at={reading.get('measured_at')!r}: "
+                            f"{type(bp_err).__name__}: {bp_err}"
+                        )
+                        errors.append({
+                            "index": idx,
+                            "kind": "blood_pressure",
+                            "record_date": str(reading.get("measured_at")) if reading.get("measured_at") else None,
+                            "error": f"BP dropped: {type(bp_err).__name__}: {bp_err}",
+                        })
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+
+            # ── 体脂随体重写入 (独立 try, 与日聚合并行) ──────────────────────
+            # body_fat_percentage 随 weight_kg 落 weight_records。只有 body_fat 没
+            # weight → _save_body_composition 返回 False (无 NOT NULL 载体), 不报错。
+            if record.get("weight_kg") is not None or record.get("body_fat_percentage") is not None:
+                try:
+                    ds_bc = cls._resolve_data_source(record)
+                    cls._save_body_composition(db, user_id, record, ds_bc)
+                except Exception as bc_err:  # noqa: BLE001
+                    logger.error(
+                        f"[healthkit] body_composition dropped idx={idx} "
+                        f"record_date={record.get('record_date')!r}: "
+                        f"{type(bc_err).__name__}: {bc_err}"
+                    )
+                    errors.append({
+                        "index": idx,
+                        "kind": "body_composition",
+                        "record_date": str(record.get("record_date")) if record.get("record_date") else None,
+                        "error": f"body_composition dropped: {type(bc_err).__name__}: {bc_err}",
+                    })
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+
         return {
             "imported_count": imported,
             "ecg_imported_count": ecg_imported,
+            "blood_pressure_imported_count": bp_imported,
             "source_breakdown": breakdown,
             "errors": errors,
         }
