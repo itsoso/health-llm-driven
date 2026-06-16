@@ -109,7 +109,8 @@
                 },
                 {
                   "targetName": "RevaComplication",
-                  "bundleIdentifier": "life.executor.health.watchkitapp.complication",
+                  "bundleIdentifier": "life.executor.health.watchkitapp.watchkitextension",
+                  "parentBundleIdentifier": "life.executor.health.watchkitapp",
                   "entitlements": {
                     "com.apple.security.application-groups": ["group.life.executor.health"]
                   }

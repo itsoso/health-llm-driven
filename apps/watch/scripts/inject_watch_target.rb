@@ -97,7 +97,7 @@ if Dir.exist?(comp_dir)
 
   comp.build_configurations.each do |c|
     bs = c.build_settings
-    bs['PRODUCT_BUNDLE_IDENTIFIER'] = "#{watch_bundle}.complication"
+    bs['PRODUCT_BUNDLE_IDENTIFIER'] = "#{watch_bundle}.watchkitextension"
     bs['SDKROOT'] = 'watchos'
     bs['TARGETED_DEVICE_FAMILY'] = '4'
     bs['WATCHOS_DEPLOYMENT_TARGET'] = '10.0'
