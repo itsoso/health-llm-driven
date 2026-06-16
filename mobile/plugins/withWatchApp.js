@@ -7,8 +7,6 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const APP_GROUP_IDENTIFIER = 'group.life.executor.health';
-
 const WIDGET_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -35,12 +33,7 @@ function entitlementsPlist() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-  <key>com.apple.security.application-groups</key>
-  <array>
-    <string>${APP_GROUP_IDENTIFIER}</string>
-  </array>
-</dict>
+<dict/>
 </plist>
 `;
 }
