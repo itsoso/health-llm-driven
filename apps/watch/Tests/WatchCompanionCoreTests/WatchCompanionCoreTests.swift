@@ -92,6 +92,40 @@ final class ComplicationStateTests: XCTestCase {
         XCTAssertTrue(st.shortText.hasSuffix("…"))
     }
 
+    private func summaryWithAction(light: ComplicationTone, action: String, pending: Int,
+                                   push: [WatchPushItem] = []) -> WatchSummary {
+        WatchSummary(
+            status: WatchStatus(light: light, readinessScore: 70, headline: "h"),
+            topAction: WatchTopAction(title: action, kind: "hydration", timeWindow: "morning", source: nil),
+            agenda: WatchAgendaCount(total: pending, pending: pending),
+            quickActions: [],
+            pushItems: push
+        )
+    }
+
+    func testTopActionShownAsTimelineSpine() {
+        // R18 ★1:无 P0 时表盘显示「下一项该做什么」+ readiness 灯 + 待办数
+        let st = ComplicationState.from(summaryWithAction(light: .yellow, action: "喝水 250ml", pending: 3))
+        XCTAssertEqual(st.tone, .yellow, "tone 用 readiness 灯,不是强制色")
+        XCTAssertEqual(st.shortText, "喝水 250ml")
+        XCTAssertEqual(st.fullText, "喝水 250ml · 待办 3")
+        XCTAssertEqual(st.urgentBadge, 0)
+    }
+
+    func testSinglePendingActionOmitsCount() {
+        let st = ComplicationState.from(summaryWithAction(light: .green, action: "晨起拉伸", pending: 1))
+        XCTAssertEqual(st.fullText, "晨起拉伸", "只剩 1 项时不缀「待办 N」")
+    }
+
+    func testP0OverridesTopAction() {
+        // P0 紧急仍压过「下一项」(安全优先)
+        let st = ComplicationState.from(summaryWithAction(
+            light: .green, action: "喝水", pending: 2,
+            push: [push("P0", "复查:胃溃疡", "checkup")]))
+        XCTAssertEqual(st.tone, .red)
+        XCTAssertEqual(st.fullText, "复查:胃溃疡")
+    }
+
     func testComplicationCacheRoundTrip() {
         let state = ComplicationState(tone: .yellow, shortText: "适度", fullText: "下午低强度活动", urgentBadge: 0)
         ComplicationCache.save(state)

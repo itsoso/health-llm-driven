@@ -30,6 +30,19 @@ public struct ComplicationState: Sendable, Equatable {
             )
         }
 
+        // R18 ★1:Complication = 时间线脊柱。无 P0 时优先显示「下一项该做什么」,
+        // tone 用 readiness 灯、fullText 带待办数 —— 抬腕一眼即知此刻该做什么。
+        if let action = summary.topAction {
+            let pending = summary.agenda.pending
+            return ComplicationState(
+                tone: summary.status.light,
+                shortText: shorten(action.title),
+                fullText: pending > 1 ? "\(action.title) · 待办 \(pending)" : action.title,
+                urgentBadge: 0
+            )
+        }
+
+        // 无 P0、无待办 → 回退显示恢复状态
         let short: String
         if let score = summary.status.readinessScore, score > 0 {
             short = "恢复 \(score)"
