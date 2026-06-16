@@ -1,10 +1,15 @@
 #!/usr/bin/env ruby
+# encoding: utf-8
+# pbxproj 含中文显示名 → 强制 UTF-8,否则 Ruby 默认 US-ASCII 读 pbxproj 报 invalid byte。
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
 # 把 RevaWatch watchOS App target 注入 prebuilt 的 HealthPilot.xcodeproj。
 # 用法: ruby apps/watch/scripts/inject_watch_target.rb [path/to/HealthPilot.xcodeproj]
 #
 # 这是 config-plugin 的可执行参考(纯 Ruby xcodeproj,比 JS xcode lib 更可靠地建 watch target)。
 # 幂等: 已存在 RevaWatch target 则跳过创建,只刷新源文件引用。
 require 'xcodeproj'
+require 'fileutils'
 
 proj_path = ARGV[0] || File.expand_path('../../../../mobile/ios/HealthPilot.xcodeproj', __FILE__)
 watch_name = 'RevaWatch'
@@ -52,6 +57,79 @@ Dir.glob(File.join(src_dir, '*.swift')).sort.each do |f|
   target.add_file_references([ref])
 end
 puts "✓ 已加 #{Dir.glob(File.join(src_dir, '*.swift')).size} 个 swift 源"
+
+# ── complication widget extension(WidgetKit,嵌入 watch app)──────────────
+comp_name = 'RevaComplication'
+comp_dir = File.join(File.dirname(proj_path), comp_name)   # ios/RevaComplication
+if Dir.exist?(comp_dir)
+  comp = project.targets.find { |t| t.name == comp_name }
+  if comp.nil?
+    comp = project.new_target(:app_extension, comp_name, :watchos, '10.0')
+    puts "✓ 新建 widget extension target: #{comp_name}"
+  else
+    puts "• widget target 已存在,刷新源引用: #{comp_name}"
+  end
+
+  comp.build_configurations.each do |c|
+    bs = c.build_settings
+    bs['PRODUCT_BUNDLE_IDENTIFIER'] = "#{watch_bundle}.complication"
+    bs['SDKROOT'] = 'watchos'
+    bs['TARGETED_DEVICE_FAMILY'] = '4'
+    bs['WATCHOS_DEPLOYMENT_TARGET'] = '10.0'
+    bs['SWIFT_VERSION'] = '5.0'
+    bs['GENERATE_INFOPLIST_FILE'] = 'NO'
+    bs['INFOPLIST_FILE'] = "#{comp_name}/Info.plist"
+    bs['CODE_SIGNING_ALLOWED'] = 'NO'
+    bs['PRODUCT_NAME'] = comp_name
+  end
+
+  cgroup = project.main_group.find_subpath(comp_name, true)
+  cgroup.set_source_tree('SOURCE_ROOT')
+  cgroup.clear
+  cexisting = comp.source_build_phase.files_references.map(&:real_path).map(&:to_s)
+  Dir.glob(File.join(comp_dir, '*.swift')).sort.each do |f|
+    ref = cgroup.new_file(f)
+    next if cexisting.include?(File.expand_path(f))
+    comp.add_file_references([ref])
+  end
+  puts "✓ 已加 #{Dir.glob(File.join(comp_dir, '*.swift')).size} 个 widget swift 源"
+
+  # 嵌入 watch app(Embed App Extensions copy phase)+ 依赖
+  unless target.dependencies.any? { |d| d.display_name == comp_name }
+    target.add_dependency(comp)
+  end
+  embed = target.copy_files_build_phases.find { |p| p.name == 'Embed Watch Extensions' }
+  if embed.nil?
+    embed = target.new_copy_files_build_phase('Embed Watch Extensions')
+    embed.symbol_dst_subfolder_spec = :plug_ins
+  end
+  already = embed.files_references.map { |r| r.path }.compact
+  unless already.include?(comp.product_reference.path)
+    bf = embed.add_file_reference(comp.product_reference)
+    bf.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
+  end
+  puts "✓ 已把 #{comp_name} 嵌入 #{watch_name}"
+end
+
+# ── iPhone WC bridge(加进主 app target,持 token 转发后端)──────────────
+ios_root = File.dirname(proj_path)
+bridge_src = File.expand_path('../../../../mobile/native/watch/WatchPhoneBridge.swift', __FILE__)
+if File.exist?(bridge_src)
+  main_target = project.targets.find { |t| t.name == 'HealthPilot' }
+  if main_target
+    bridge_dir = File.join(ios_root, 'HealthPilot', 'WatchBridge')
+    FileUtils.mkdir_p(bridge_dir)
+    dest = File.join(bridge_dir, 'WatchPhoneBridge.swift')
+    FileUtils.cp(bridge_src, dest)
+    bgroup = project.main_group.find_subpath('HealthPilot/WatchBridge', true)
+    bgroup.set_source_tree('SOURCE_ROOT')
+    main_refs = main_target.source_build_phase.files_references.map(&:real_path).map(&:to_s)
+    unless main_refs.include?(File.expand_path(dest))
+      main_target.add_file_references([bgroup.new_file(dest)])
+    end
+    puts "✓ WatchPhoneBridge.swift 已加进主 target HealthPilot"
+  end
+end
 
 project.save
 puts "✓ 保存: #{proj_path}"

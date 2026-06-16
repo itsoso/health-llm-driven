@@ -33,12 +33,21 @@ cd ios && xcodebuild -project HealthPilot.xcodeproj -target RevaWatch \
   -sdk watchsimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build   # ✅ 编译验证(已 BUILD SUCCEEDED)
 ```
 
-> 2026-06-16 实测:上面整链路在 watchOS 26.5 SDK **BUILD SUCCEEDED**。脚本幂等,prebuild --clean 后重跑即可。
-> 下一步把该脚本逻辑移植成 `mobile/plugins/withWatchApp.js`(config-plugin,survive prebuild + 随 EAS 自动注入)。
+脚本一次注入**三个东西**(幂等,prebuild --clean 后重跑):
+1. `RevaWatch` watchOS app target(`WatchApp/` + `Sources/WatchCompanionCore/`)
+2. `RevaComplication` widget extension target(`WatchComplication/`,嵌入 watch app)
+3. iPhone WC bridge(`mobile/native/watch/WatchPhoneBridge.swift` → 主 target HealthPilot)
 
-## 真机集成(设备步骤 —— 待迭代)
+> 2026-06-16 实测(watchOS 26.5 SDK):RevaWatch **BUILD SUCCEEDED**、RevaComplication **BUILD SUCCEEDED**、
+> WatchPhoneBridge `swiftc -typecheck` 通过。整条原生链路已编译验证(非纸面)。
+> config-plugin `mobile/plugins/withWatchApp.js`(把本脚本移植成 survive prebuild 的自动注入)= 下一步。
 
-complication(独立 widget extension target,`WatchComplication/`)+ iPhone WC bridge + 真机运行 + EAS 发版:
+## 真机集成(只剩设备步骤)
+
+- **激活 bridge**:App 启动时调 `WatchPhoneBridge.shared.activate()`(AppDelegate 或一个极小 Expo module 里一行)。
+- **Capabilities**:watch app + widget + 主 app 加 App Group `group.life.executor.health`(complication 缓存 + token 共享);bridge token 复用 Siri 的 `siri_auth_token`。
+- **真机运行**:装到配对手表跑通(complication 出状态灯、腕上喝水/俯卧撑回写、关键推送)。
+- **发版**:EAS build production(watch app 随 iOS app 一起打包),见 `mobile-testflight-release` skill。
 
 1. `cd mobile && npx expo prebuild --platform ios`(生成/刷新 `ios/`)。
 2. Xcode 打开 `ios/*.xcworkspace` → File ▸ New ▸ Target ▸ **watchOS App**(bundle `life.executor.health.watchkitapp`,companion=`life.executor.health`)。
