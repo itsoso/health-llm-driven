@@ -107,12 +107,30 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         higher_is_risk=True,
     ),
     BiomarkerDefinition(
+        # 标准糖化(NGSP A1c). bare「糖化血红蛋白」按惯例就是这个标准指标。
         code="glucose_hba1c", display="糖化血红蛋白", domain="glucose", canonical_unit="%",
-        aliases=("糖化血红蛋白", "糖化血红蛋白测定", "糖化", "HbA1c", "GHb", "A1C"),
+        aliases=("糖化血红蛋白", "糖化血红蛋白测定", "糖化血红蛋白A1c", "糖化", "HbA1c", "HbA1C", "GHb", "A1C"),
         ref_ranges=(RefRange(high=5.7),),
         # IFCC mmol/mol → NGSP%: %≈mmol/mol/10.929+2.15; 用近似线性系数 + 偏移在 normalize 里特判
         unit_conversions={},
         higher_is_risk=True,
+    ),
+    BiomarkerDefinition(
+        # 总糖化血红蛋白(HbA1, 参考 6.3–9.0%), 与标准 A1c 是不同指标 —— 别名误判过它(锚点用户 user 3)。
+        code="glucose_hba1_total", display="糖化血红蛋白A1", domain="glucose", canonical_unit="%",
+        aliases=("糖化血红蛋白A1", "HbA1", "GHbA1"),
+        ref_ranges=(RefRange(low=6.3, high=9.0),),
+        unit_conversions={},
+        higher_is_risk=True,
+    ),
+    # 血液学
+    BiomarkerDefinition(
+        # 血红蛋白(g/L). 历史误判进糖化序列(「血红蛋白」是「糖化血红蛋白」的子串)。
+        code="hemoglobin", display="血红蛋白", domain="hematology", canonical_unit="g/L",
+        aliases=("血红蛋白", "血色素", "Hb", "HGB", "HGB-总", "HB"),
+        ref_ranges=(RefRange(low=130, high=175, sex="male"), RefRange(low=115, high=150, sex="female"),
+                    RefRange(low=115, high=175)),
+        higher_is_risk=False,  # 高低均可异常; 保守取 False(偏低=贫血风险)
     ),
     # 肝功能
     BiomarkerDefinition(
@@ -180,17 +198,26 @@ for _d in _DEFS:
 def resolve_code(name_or_code: str) -> Optional[str]:
     """把任意项目名/别名/code 解析成 canonical code; 解析不到返回 None。
 
-    先查本注册表别名索引 (精确 + 包含), 再退化到 exam_packages.normalize_item_name。
+    匹配优先级 (安全敏感 —— biomarker code 喂给 safety/twin/干预周期, 误判会污染序列):
+      1. 精确别名 (`_ALIAS_INDEX[key]`).
+      2. 包含匹配: 只接受「别名是查询名的子串」(`alias in key`), **去掉反向** `key in alias`
+         (反向会让「血红蛋白」误中「糖化血红蛋白」)。命中多个别名时取**最长**(最具体)的那个,
+         避免短别名抢走带后缀的具体名 (「血清糖化血红蛋白测定」→「糖化血红蛋白」而非更短的子串)。
+      3. 退化到 exam_packages.normalize_item_name。
     """
     if not name_or_code:
         return None
     key = name_or_code.strip().lower()
     if key in _ALIAS_INDEX:
         return _ALIAS_INDEX[key]
-    # 包含匹配 (中文项目名常带前后缀)
+    # 包含匹配 (中文项目名常带前后缀): 只「别名 ⊆ 查询名」, 取最长子串.
+    best_alias: Optional[str] = None
+    best_code: Optional[str] = None
     for alias, code in _ALIAS_INDEX.items():
-        if alias and (alias in key or key in alias):
-            return code
+        if alias and alias in key and (best_alias is None or len(alias) > len(best_alias)):
+            best_alias, best_code = alias, code
+    if best_code is not None:
+        return best_code
     # 退化到既有别名表
     try:
         from app.services.exam_packages import normalize_item_name

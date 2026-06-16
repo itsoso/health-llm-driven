@@ -138,12 +138,18 @@ ITEM_NAME_MAPPING: Dict[str, str] = {
     "UA": "UA",
     "尿酸": "UA",
 
-    # 糖化血红蛋白
+    # 糖化血红蛋白 (标准 NGSP A1c)
     "糖化血红蛋白": "glucose_hba1c",
     "糖化血红蛋白测定": "glucose_hba1c",
+    "糖化血红蛋白A1c": "glucose_hba1c",
     "HbA1c": "glucose_hba1c",
     "糖化": "glucose_hba1c",
     "GHb": "glucose_hba1c",
+    # 总糖化血红蛋白 (HbA1, 参考 6.3–9.0%) —— 与标准 A1c 是不同指标, 必须分流,
+    # 否则子串「糖化血红蛋白」会把 A1 误归 glucose_hba1c, 污染糖尿病阈值/趋势。
+    "糖化血红蛋白A1": "glucose_hba1_total",
+    "HbA1": "glucose_hba1_total",
+    "GHbA1": "glucose_hba1_total",
 
     # 粪便检查
     "粪便常规": "stool_routine",
@@ -282,6 +288,7 @@ ITEM_LABELS: Dict[str, str] = {
 
     # 血糖相关
     "glucose_hba1c": "糖化血红蛋白",
+    "glucose_hba1_total": "糖化血红蛋白A1",
     "glucose_fasting": "空腹血糖",
     "glucose_postprandial": "餐后血糖",
     "glucose_ga": "糖化白蛋白",
@@ -364,11 +371,16 @@ def normalize_item_name(name: str) -> tuple[str, str]:
         label = ITEM_LABELS.get(code, clean_name)
         return code, label
 
-    # 尝试模糊匹配（包含关系）
+    # 尝试模糊匹配（包含关系）—— 取最长匹配 key, 避免短别名抢走更具体的项
+    # (例: 「糖化血红蛋白A1」必须命中 A1 总糖化, 而非更短子串「糖化血红蛋白」标准 A1c)。
+    best_key: str = ""
+    best_code: str = ""
     for key, code in ITEM_NAME_MAPPING.items():
-        if key in clean_name or clean_name in key:
-            label = ITEM_LABELS.get(code, clean_name)
-            return code, label
+        if (key in clean_name or clean_name in key) and len(key) > len(best_key):
+            best_key, best_code = key, code
+    if best_code:
+        label = ITEM_LABELS.get(best_code, clean_name)
+        return best_code, label
 
     # 无法匹配，返回原始名称
     return "", clean_name

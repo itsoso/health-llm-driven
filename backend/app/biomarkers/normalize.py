@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Optional
 
-from app.biomarkers.definitions import get_definition, to_canonical_unit
+from app.biomarkers.definitions import _norm_unit, get_definition, to_canonical_unit
 
 
 @dataclass
@@ -57,6 +57,12 @@ def normalize_observation(
 
     norm_val, norm_unit = to_canonical_unit(defn, fval, unit)
     unit_converted_cleanly = norm_unit == defn.canonical_unit
+
+    # 纵深防呆: 糖化(% 指标)不可能是 g/L 或 >20% —— 多半是血红蛋白(g/L, ~160)被名字滑进糖化序列。
+    # biomarker code 喂给 safety/twin/干预周期, 宁可丢弃也不污染。
+    if defn.code in ("glucose_hba1c", "glucose_hba1_total"):
+        if _norm_unit(unit) in ("g/l", "g/dl") or norm_val > 20:
+            return None
 
     rng = defn.resolve_range(sex, age)
     ref_low = rng.low if rng else None

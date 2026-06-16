@@ -187,15 +187,27 @@ def fetch_fasting_glucose(db: Session, user_id: int, end_date: date) -> Optional
 def _fetch_lab_item(
     db: Session, user_id: int, end_date: date, name_patterns: list,
     days_window: int = 30,
+    canonical_code: Optional[str] = None,
 ) -> Optional[float]:
-    """通用化验项取数. days_window 默认 30 天 (微营养窗口宽)."""
+    """通用化验项取数. days_window 默认 30 天 (微营养窗口宽).
+
+    canonical_code 非空时: 仅接受 item_name 经 biomarker resolve_code 解析为该 code 的行,
+    防子串误判 (如「糖化血红蛋白A1」总糖化被「糖化血红蛋白」吞进标准 A1c 序列)。
+    """
     try:
         from app.models.medical_exam import MedicalExamItem, MedicalExamRecord
     except ImportError:
         return None
+    resolve_code = None
+    if canonical_code is not None:
+        try:
+            from app.biomarkers.definitions import resolve_code as _rc
+            resolve_code = _rc
+        except ImportError:
+            resolve_code = None
     start = end_date - timedelta(days=days_window)
     for pat in name_patterns:
-        item = (
+        q = (
             db.query(MedicalExamItem)
             .join(MedicalExamRecord, MedicalExamRecord.id == MedicalExamItem.exam_record_id)
             .filter(
@@ -205,9 +217,13 @@ def _fetch_lab_item(
                 MedicalExamItem.item_name.ilike(f"%{pat}%"),
             )
             .order_by(desc(MedicalExamRecord.exam_date))
-            .first()
         )
-        if item is not None and item.value is not None:
+        items = q.limit(20).all() if resolve_code is not None else [q.first()]
+        for item in items:
+            if item is None or item.value is None:
+                continue
+            if resolve_code is not None and resolve_code(item.item_name or "") != canonical_code:
+                continue
             try:
                 return float(item.value)
             except (ValueError, TypeError):
@@ -322,7 +338,11 @@ def fetch_ldl(db, user_id, end_date):
 
 
 def fetch_hba1c(db, user_id, end_date):
-    return _fetch_lab_item(db, user_id, end_date, ["HbA1c", "糖化血红蛋白"])
+    # 只取标准糖化 A1c; 排除「糖化血红蛋白A1」(总糖化, 参考 6.3–9.0%, 不同指标)。
+    return _fetch_lab_item(
+        db, user_id, end_date, ["HbA1c", "糖化血红蛋白"],
+        canonical_code="glucose_hba1c",
+    )
 
 
 def fetch_phenotypic_age(db: Session, user_id: int, end_date: date) -> Optional[float]:

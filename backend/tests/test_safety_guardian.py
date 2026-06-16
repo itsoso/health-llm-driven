@@ -368,6 +368,65 @@ class TestLabsRules:
         alert = next(a for a in alerts if a.rule_id == "labs.ldl_high")
         assert alert.severity == Severity.HIGH
 
+    def test_hba1c_diabetes_alert_fires_for_standard_a1c(self):
+        """标准糖化 A1c 7.0% 仍应触发糖尿病告警 (回归保护: 修 total-HbA1 误判别误伤本体)。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "糖化血红蛋白A1c", "value": 7.0, "unit": "%",
+                 "reference_range": "0-5.7"},
+            ]
+        )
+        alerts = evaluate_safety(twin).alerts
+        assert "labs.hba1c_diabetes" in _rule_ids(alerts)
+        alert = next(a for a in alerts if a.rule_id == "labs.hba1c_diabetes")
+        assert alert.severity == Severity.HIGH
+
+    def test_total_hba1_does_not_trigger_diabetes_false_positive(self):
+        """总糖化 HbA1 (糖化血红蛋白A1, 参考 6.3–9.0%) 与标准 A1c 是不同指标。
+
+        7.0% 对总糖化是正常值, 绝不能落进糖尿病/前期阈值 (≥6.5 / ≥5.7) 产生假告警。
+        历史 bug: 子串匹配「糖化血红蛋白」吞下「糖化血红蛋白A1」→ 假 HIGH 糖尿病告警。
+        """
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "糖化血红蛋白A1", "value": 7.0, "unit": "%",
+                 "reference_range": "6.3-9.0"},
+            ]
+        )
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "labs.hba1c_diabetes" not in ids
+        assert "labs.hba1c_prediabetes" not in ids
+
+    def test_hba1c_diabetes_alert_fires_for_english_a1c(self):
+        """英文名 "Hemoglobin A1c" (最长子串解析会判成 hemoglobin) 仍须触发糖尿病告警。
+
+        关键字兜底护栏: 不让本规则单点依赖 resolve_code 而漏报真糖尿病。
+        """
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "Hemoglobin A1c", "value": 9.2, "unit": "%",
+                 "reference_range": "4.0-5.7"},
+            ]
+        )
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "labs.hba1c_diabetes" in ids
+
+    def test_abnormal_total_hba1_surfaces_as_uncategorized(self):
+        """真异常的总糖化 HbA1 不能被「已覆盖」误判而静默丢弃 —— 落到 uncategorized 兜底。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "糖化血红蛋白A1", "value": 10.5, "unit": "%",
+                 "reference_range": "6.3-9.0"},
+            ]
+        )
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "labs.hba1c_diabetes" not in ids
+        assert "labs.uncategorized_abnormal" in ids
+
 
 # ─────────────────────── DDI rules ────────────────────────
 

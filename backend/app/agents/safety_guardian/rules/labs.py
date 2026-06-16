@@ -37,6 +37,36 @@ def _as_float(v: Any) -> Optional[float]:
         return None
 
 
+def _find_standard_hba1c(abnormals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """只匹配标准糖化 (NGSP A1c, code=glucose_hba1c), 排除总糖化 HbA1。
+
+    历史误判: 子串匹配 ``"糖化血红蛋白" in name`` 会把「糖化血红蛋白A1」(总糖化 HbA1,
+    参考 6.3–9.0%, 与标准 A1c 是不同指标) 也吞进来 —— 它的正常值 7.0% 落进 ≥6.5%
+    的糖尿病阈值, 产生假 CRITICAL 告警。这里改用 biomarker 归一化层的 ``resolve_code``,
+    它把「糖化血红蛋白A1c」→ glucose_hba1c、「糖化血红蛋白A1」→ glucose_hba1_total
+    精确分流 (见 app/biomarkers/definitions.py)。
+
+    安全兜底 (不让本规则单点依赖 resolve_code, 避免漏报真糖尿病):
+      - resolve_code 明确判成 glucose_hba1_total → 是总糖化, 直接跳过。
+      - resolve_code 没认成糖化 (例如英文 "Hemoglobin A1c" 被最长子串规则判成 hemoglobin)
+        时, 用关键字「a1c / hba1c」补救识别标准 A1c —— 这两个标记里都含 "c", 天然排除了
+        总糖化的「A1」「HbA1」形态。
+    """
+    from app.biomarkers.definitions import resolve_code
+
+    for item in abnormals:
+        name = item.get("item_name") or ""
+        code = resolve_code(name)
+        if code == "glucose_hba1c":
+            return item
+        if code == "glucose_hba1_total":
+            continue  # 总糖化 HbA1, 明确排除
+        low = name.lower()
+        if "a1c" in low or "hba1c" in low:
+            return item
+    return None
+
+
 # ─────────────────────── 肝酶三联 ─────────────────────────
 
 
@@ -171,7 +201,7 @@ def ldl_high(twin: HealthTwin) -> Optional[Alert]:
 def hba1c_diabetes_range(twin: HealthTwin) -> Optional[Alert]:
     """糖化血红蛋白进入糖尿病/前期区间。"""
     abns = twin.labs.flagged_abnormal or []
-    item = _find_item(abns, ["HbA1c", "糖化血红蛋白"])
+    item = _find_standard_hba1c(abns)
     val = _as_float(item.get("value")) if item else twin.labs.hba1c
     if val is None:
         return None
@@ -333,14 +363,20 @@ def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
     # 已被其他规则精确覆盖的关键字
     covered = [
         "谷丙转氨酶", "谷草转氨酶", "谷氨酰转肽酶", "ALT", "AST", "GGT",
-        "LDL", "低密度", "HbA1c", "糖化血红蛋白",
+        "LDL", "低密度",
         "eGFR", "肾小球", "肌酐",
         "淋巴细胞比例", "中性粒细胞比例",
     ]
-    remaining = [
-        it for it in abns
-        if not any(kw in (it.get("item_name") or "") for kw in covered)
-    ]
+
+    def _covered(name: str) -> bool:
+        if any(kw in name for kw in covered):
+            return True
+        # 糖化只把「标准 A1c」算作已覆盖 (hba1c_diabetes_range 处理); 总糖化 HbA1 不是
+        # 该规则的指标, 不能因子串「糖化血红蛋白」被当成已覆盖而静默丢弃 —— 让它落到本兜底。
+        from app.biomarkers.definitions import resolve_code
+        return resolve_code(name) == "glucose_hba1c"
+
+    remaining = [it for it in abns if not _covered(it.get("item_name") or "")]
     if not remaining:
         return None
 

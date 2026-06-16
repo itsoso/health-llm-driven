@@ -301,25 +301,38 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             "wbc": ["WBC", "白细胞"],
         }
 
+        from sqlalchemy import or_
+        from app.biomarkers.definitions import resolve_code
+
         for key, patterns in KEY_PATTERNS.items():
             # 构建 OR 条件: name_en/name/item_code 任一匹配关键字
-            from sqlalchemy import or_
             cond = or_(*[
                 MedicalIndicator.name.ilike(f"%{p}%") |
                 MedicalIndicator.name_en.ilike(f"%{p}%") |
                 MedicalIndicator.item_code.ilike(f"%{p}%")
                 for p in patterns
             ])
-            row = (
-                db.query(MedicalIndicator.value)
+            base_q = (
+                db.query(MedicalIndicator.value, MedicalIndicator.name)
                 .filter(
                     MedicalIndicator.user_id == user_id,
                     MedicalIndicator.value.isnot(None),
                     cond,
                 )
                 .order_by(desc(MedicalIndicator.record_date))
-                .first()
             )
+            # hba1c 医疗敏感: 子串「糖化血红蛋白」会吞下「糖化血红蛋白A1」(总糖化 HbA1,
+            # 与标准 A1c 是不同指标, 参考 6.3–9.0%)。该总糖化值喂进 twin.labs.hba1c →
+            # 污染 SafetyGuardian 糖尿病阈值规则的 fallback。用 canonical resolve_code 校验:
+            # 只接受解析为 glucose_hba1c(标准 A1c)的行, 逐条向旧回退直到命中。
+            if key == "hba1c":
+                row = None
+                for cand_value, cand_name in base_q.limit(20).all():
+                    if resolve_code(cand_name or "") == "glucose_hba1c":
+                        row = (cand_value,)
+                        break
+            else:
+                row = base_q.first()
             if row and row[0] is not None:
                 try:
                     out[key] = float(row[0])
