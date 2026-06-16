@@ -29,6 +29,15 @@ mv = main_bs['MARKETING_VERSION'] || '1.0'
 cv = main_bs['CURRENT_PROJECT_VERSION'] || '1'
 puts "• 主 app 版本: MARKETING_VERSION=#{mv} CURRENT_PROJECT_VERSION=#{cv}"
 
+# Apple Team ID:watch app + complication 必须有显式 DEVELOPMENT_TEAM,否则 EAS 构建时
+# 这两个 target(EAS 只为主 app target 注入凭据,不认识 watch)会落到"无 team"自动签名,
+# Xcode 14 默认对 resource bundle / 嵌入二进制要求每个 target 有 team → EAS #94:
+# "resource bundles are signed by default, which requires setting the development team for each target"。
+# 本地 xcodebuild 用命令行 DEVELOPMENT_TEAM 兜全 target 所以复现不出;EAS 复现得出 → 必须烤进工程。
+# 取值优先级:env APPLE_TEAM_ID(EAS 可注)→ 主 app 已有的 DEVELOPMENT_TEAM → 已知团队 QA2U724DAN(baokun Pan)。
+team_id = ENV['APPLE_TEAM_ID'] || main_bs['DEVELOPMENT_TEAM'] || 'QA2U724DAN'
+puts "• watch 签名 team: DEVELOPMENT_TEAM=#{team_id} (CODE_SIGN_STYLE=Automatic)"
+
 target = project.targets.find { |t| t.name == watch_name }
 if target.nil?
   target = project.new_target(:application, watch_name, :watchos, '10.0')
@@ -56,6 +65,8 @@ target.build_configurations.each do |c|
   bs['MARKETING_VERSION'] = mv                                # 与主 app 一致,过 watchOS 版本校验
   bs['CURRENT_PROJECT_VERSION'] = cv
   bs.delete('INFOPLIST_KEY_CFBundleDisplayName')              # 幂等清理:历史中文值会让 CocoaPods 崩
+  bs['DEVELOPMENT_TEAM'] = team_id                            # EAS 不为 watch target 注 team → 必须烤进工程(见上)
+  bs['CODE_SIGN_STYLE'] = 'Automatic'                         # 配 -allowProvisioningUpdates 自动建 watch profile
 end
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
@@ -95,6 +106,8 @@ if Dir.exist?(comp_dir)
     bs['PRODUCT_NAME'] = comp_name
     bs['MARKETING_VERSION'] = mv                              # 与主 app 一致,过 watchOS 版本校验
     bs['CURRENT_PROJECT_VERSION'] = cv
+    bs['DEVELOPMENT_TEAM'] = team_id                          # 同 watch app:EAS 不注 team → 烤进工程
+    bs['CODE_SIGN_STYLE'] = 'Automatic'
   end
 
   cgroup = project.main_group.find_subpath(comp_name, true)
@@ -160,6 +173,16 @@ if File.exist?(bridge_src)
     end
     puts "✓ 已把 #{watch_name} 嵌进 iOS app HealthPilot"
   end
+end
+
+# ── 防御:主工程里任何 resource bundle 类型 target 都设 CODE_SIGNING_ALLOWED=NO ──────────
+# Xcode 14 起 resource bundle 默认要签名 → 无 team 时报 EAS #94。Pods 的 bundle 由 Expo
+# post_install 已设 NO,但主工程若(将来 watch 引入)出现 bundle target 不会被 Pods 那段覆盖。
+# resource bundle 本就不该签名(只是资源容器),统一设 NO,fail-safe 掉这层校验。
+project.targets.each do |t|
+  next unless t.respond_to?(:product_type) && t.product_type == 'com.apple.product-type.bundle'
+  t.build_configurations.each { |c| c.build_settings['CODE_SIGNING_ALLOWED'] = 'NO' }
+  puts "✓ resource bundle #{t.name} → CODE_SIGNING_ALLOWED=NO"
 end
 
 project.save
