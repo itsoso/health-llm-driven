@@ -60,6 +60,20 @@ export default function TodayTimelineBlock() {
     [router],
   );
 
+  // R17:运动 action 项点「开始」→ 引导式执行屏(裁决③:用户主动进,不自动打开)。
+  // 带上 complete_ref,让引导屏完成时走 /agenda/complete 双轨写真实记录。
+  const onStart = useCallback(
+    (item: TodayTimelineItem, domain: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      const ref = item.complete_ref;
+      const q = ref
+        ? `&completeType=${encodeURIComponent(ref.object_type)}&completeId=${ref.object_id}`
+        : '';
+      router.push(`/guided-task?domain=${encodeURIComponent(domain)}${q}` as any);
+    },
+    [router],
+  );
+
   const onComplete = useCallback(
     (item: TodayTimelineItem) => {
       const ref = item.complete_ref;
@@ -155,6 +169,7 @@ export default function TodayTimelineBlock() {
           pending={pendingRef === (item.complete_ref ? refKey(item.complete_ref) : '')}
           locked={Boolean(pendingRef)}
           onComplete={onComplete}
+          onStart={onStart}
           onPressRow={openDeepLink}
         />
       ))}
@@ -192,6 +207,31 @@ export default function TodayTimelineBlock() {
 
 function refKey(ref: TimelineCompleteRef): string {
   return `${ref.object_type}-${ref.object_id}`;
+}
+
+// 运动域识别 → 给「开始」入口(R17 引导式执行)。
+// 时间线 item 不直接带 domain,用 icon/标题关键词推断。
+// 后端 GET /movement/guided-task 的 domain 只接受 Literal["strength","mobility"](其它 → 422),
+// 所以返回必须收敛到这两档:拉伸/柔韧 → mobility;力量/泛运动 → strength。
+// 纯有氧(跑步/健走/步行)v1 不给「开始」入口(返回 null,保留原完成/deep_link)。
+const MOVEMENT_ICONS = ['barbell', 'fitness', 'body'];
+const MOVEMENT_WORDS = ['训练', '运动', '拉伸', '柔韧', '力量', '锻炼', '俯卧撑'];
+const MOBILITY_WORDS = ['拉伸', '柔韧'];
+const CARDIO_ONLY_WORDS = ['跑步', '健走', '步行', '快走', '慢跑'];
+function movementDomain(item: TodayTimelineItem): 'strength' | 'mobility' | null {
+  if (item.kind !== 'action') return null;
+  const icon = (item.icon || '').toLowerCase();
+  const text = `${item.title} ${item.subtitle ?? ''}`;
+  // 柔韧类优先归 mobility(即便文案里也含「运动」)。
+  if (MOBILITY_WORDS.some((w) => text.includes(w))) return 'mobility';
+  // 纯有氧项:无「开始」引导入口(v1 后端不支持 cardio domain)。
+  const cardioHit = CARDIO_ONLY_WORDS.some((w) => text.includes(w));
+  const strengthHit =
+    MOVEMENT_ICONS.some((k) => icon.includes(k)) ||
+    MOVEMENT_WORDS.some((w) => text.includes(w));
+  if (cardioHit && !strengthHit) return null;
+  // 力量 / 俯卧撑 / 泛运动 → strength。
+  return strengthHit ? 'strength' : null;
 }
 
 // ── 结果归因(放大器:你的行动有用)─────────────────────
@@ -253,6 +293,7 @@ function ItemRow({
   pending,
   locked,
   onComplete,
+  onStart,
   onPressRow,
 }: {
   item: TodayTimelineItem;
@@ -261,8 +302,10 @@ function ItemRow({
   pending: boolean;
   locked: boolean;
   onComplete: (item: TodayTimelineItem) => void;
+  onStart: (item: TodayTimelineItem, domain: string) => void;
   onPressRow: (link: string | null) => void;
 }) {
+  const domain = movementDomain(item);
   return (
     <TouchableOpacity
       style={styles.itemRow}
@@ -282,6 +325,16 @@ function ItemRow({
           </Text>
         ) : null}
       </View>
+      {domain ? (
+        <TouchableOpacity
+          style={styles.startBtn}
+          disabled={locked}
+          onPress={() => onStart(item, domain)}
+        >
+          <Ionicons name="play" size={13} color="#fff" />
+          <Text style={styles.startText}>开始</Text>
+        </TouchableOpacity>
+      ) : null}
       {item.can_complete && item.complete_ref ? (
         <TouchableOpacity
           style={[styles.completeBtn, (pending || locked) && styles.completeBtnDisabled]}
@@ -297,7 +350,7 @@ function ItemRow({
             </>
           )}
         </TouchableOpacity>
-      ) : item.deep_link ? (
+      ) : !domain && item.deep_link ? (
         <Ionicons name="chevron-forward" size={16} color={c.labelTertiary} />
       ) : null}
     </TouchableOpacity>
@@ -431,6 +484,17 @@ function createStyles(c: ColorPalette) {
     } as ViewStyle,
     completeBtnDisabled: { opacity: 0.5 },
     completeText: { ...typography.bodySmall, color: c.brand, fontWeight: '600' } as TextStyle,
+    startBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radii.full,
+      backgroundColor: c.brand,
+      justifyContent: 'center',
+    } as ViewStyle,
+    startText: { ...typography.bodySmall, color: '#fff', fontWeight: '700' } as TextStyle,
 
     // more
     moreRow: {

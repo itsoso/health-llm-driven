@@ -12,7 +12,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useTheme, type SemanticTone } from '../../hooks/useTheme';
 
 interface Props {
-  level?: 'high' | 'medium' | 'low' | 'medical_grade' | string | null;
+  level?: 'high' | 'medium' | 'low' | 'medical_grade' | 'A' | 'B' | 'C' | string | null;
 }
 
 const CONF: Record<string, { tone: SemanticTone; label: string }> = {
@@ -20,6 +20,10 @@ const CONF: Record<string, { tone: SemanticTone; label: string }> = {
   medium: { tone: 'warning', label: '中等' },
   low: { tone: 'neutral', label: '弱证据' },
   medical_grade: { tone: 'danger', label: '需医生' },
+  // 后端 evidence_tier ∈ {A,B,C}(如循证运动库):A→高/绿、B→中/琥珀、C→低/灰。
+  A: { tone: 'success', label: '证据级 A' },
+  B: { tone: 'warning', label: '证据级 B' },
+  C: { tone: 'neutral', label: '证据级 C' },
 };
 
 export default function EvidenceChip({ level }: Props) {

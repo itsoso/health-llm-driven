@@ -112,6 +112,7 @@ from app.api import (
     data_health,
     sleep_analysis,
     exercise_recovery,
+    movement,
     chronic_risk,
     multi_source_integration,
     agent,
@@ -229,6 +230,7 @@ api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
 api_router.include_router(activity_status.router)
 api_router.include_router(exercise_coaching.router, tags=["exercise-coaching"])
 api_router.include_router(exercise_recovery.router)
+api_router.include_router(movement.router)
 
 # ── Devices & Data Sync ───────────────────────────────────────────
 api_router.include_router(bedroom_environment.router, tags=["bedroom-environment"])
