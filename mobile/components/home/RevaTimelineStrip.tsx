@@ -88,7 +88,18 @@ export default function RevaTimelineStrip() {
   const { data, isLoading, isError } = useTodayTimeline();
   const complete = useCompleteAgendaItem();
   const [expand, setExpand] = useState(false);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [pendingRef, setPendingRef] = useState<string | null>(null);
+
+  const toggleOpen = useCallback((id: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const openDeepLink = useCallback(
     (link: string | null) => {
@@ -169,23 +180,25 @@ export default function RevaTimelineStrip() {
           const pending = pendingRef === (item.complete_ref ? refKey(item.complete_ref) : '');
           const done = item.status === 'completed';
           const last = i === visible.length - 1 && hidden === 0;
-          const tag = item.subtitle && !done ? undefined : undefined; // sub carries detail; tag unused
+          const completable = Boolean(item.can_complete && item.complete_ref && !done);
+          const isOpen = openIds.has(item.id);
+          // 信息行(无打卡、无深链)点开展开全文;有深链则跳转;可打卡则打卡。
+          const onToggle = completable
+            ? () => onComplete(item)
+            : item.deep_link
+              ? () => openDeepLink(item.deep_link)
+              : () => toggleOpen(item.id);
           return (
             <View key={item.id}>
               <PlanItem
                 icon={planIcon(item)}
                 title={item.title}
-                titleLines={1}
-                sub={shortSubtitle(item.subtitle)}
-                subLines={1}
-                tag={tag}
+                titleLines={isOpen ? undefined : 1}
+                sub={isOpen ? item.subtitle ?? undefined : shortSubtitle(item.subtitle)}
+                subLines={isOpen ? undefined : 1}
                 done={done}
-                last={last && !(isRisk(item) || domain || (item.can_complete && item.complete_ref))}
-                onToggle={
-                  item.can_complete && item.complete_ref && !done
-                    ? () => onComplete(item)
-                    : () => openDeepLink(item.deep_link)
-                }
+                last={last && !(isRisk(item) || domain || completable)}
+                onToggle={onToggle}
               />
               {/* 行动子区:风险标红 chip / 「开始」引导 / 完成 pending 指示 */}
               {isRisk(item) || domain || pending ? (

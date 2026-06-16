@@ -19,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -226,6 +227,7 @@ export default function TodayScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: revaColors.paper }]} edges={['top']}>
+      <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
@@ -241,7 +243,10 @@ export default function TodayScreen() {
           onPressAction={onHeroAction}
         />
 
-        {/* 3 · 今日时间线 strip(自取数) */}
+        {/* 3 · 天气 + 空气(前置:环境是重要日常信息,含 PM2.5) */}
+        <RevaWeatherRow />
+
+        {/* 4 · 今日时间线 strip(自取数) */}
         <RevaTimelineStrip />
 
         {/* 4 · 用药(折叠:汇总 + 待服最多 3 条 + 查看全部) */}
@@ -268,10 +273,7 @@ export default function TodayScreen() {
         {/* 6 · 90 天代谢周期细条(自取数) */}
         <RevaCycleStrip />
 
-        {/* 7 · 天气一行(降级) */}
-        <RevaWeatherRow />
-
-        {/* 8 · 快捷动作行 */}
+        {/* 7 · 快捷动作行 */}
         <RevaQuickActions
           onRun={() => router.push('/live-run' as any)}
           onVoice={() => router.push('/voice-chat?intent=journal' as any)}

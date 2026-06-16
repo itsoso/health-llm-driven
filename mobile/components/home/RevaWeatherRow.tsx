@@ -1,10 +1,10 @@
 /**
- * RevaWeatherRow —— 首页天气一行(Reva 重设计第 5 块,降级版)。
+ * RevaWeatherCard —— 首页天气卡(前置到 hero 下方,环境是重要日常信息)。
  *
- * 不再是整张大卡:一行内联「{城市} {温度}° {天气} · 湿度 X%」+ 右侧空气 Chip。
- * 复用 EnvironmentCard 已有的 env query keys(['env','weather'|'aqi'|'location'])
- * → React Query 自动去重,不新建请求。整行无数据 → 不渲染(不显示噪声)。
- * 点击进 /location(设置当前位置)。
+ * 第 1 行:[图标] {城市} · {温度}° {天气}        [空气等级 Chip]
+ * 第 2 行:湿度 X% · AQI N · PM2.5 N μg/m³(PM2.5 用 mono 数字,空气质量关键指标)
+ * 复用 EnvironmentCard 的 env query keys(['env','weather'|'aqi'|'location'])→ React Query 去重。
+ * 整卡无数据 → 不渲染。点击进 /location。
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 
 import api from '../../services/api';
-import { revaColors as C } from '../../constants/revaTheme';
+import { revaColors as C, revaRadii } from '../../constants/revaTheme';
 import { Chip, Icon } from '../reva/RevaKit';
 import type { RevaStatus } from '../../constants/revaTheme';
 
@@ -26,6 +26,7 @@ interface WeatherResponse {
 }
 interface AirQuality {
   aqi?: number;
+  pm25?: number;
 }
 interface ProfileLocation {
   use_manual_location?: boolean;
@@ -102,38 +103,63 @@ export default function RevaWeatherRow() {
 
   if (!w && !a && !loc?.city) return null;
 
-  const left = [
+  const top = [
     loc?.city || null,
     w?.temperature != null ? `${Math.round(w.temperature)}°` : null,
     w?.weather || null,
-    w?.humidity != null ? `湿度 ${w.humidity}%` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
+  const metrics: { label: string; value: string }[] = [];
+  if (w?.humidity != null) metrics.push({ label: '湿度', value: `${w.humidity}%` });
+  if (a?.aqi != null) metrics.push({ label: 'AQI', value: `${a.aqi}` });
+  if (a?.pm25 != null) metrics.push({ label: 'PM2.5', value: `${a.pm25}` });
+
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+      style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
       onPress={() => router.push('/location' as any)}
       accessibilityRole="button"
       accessibilityLabel="天气与空气质量,点击设置位置"
     >
-      <Icon name="sun" size={15} color={C.ink3} />
-      <Text style={styles.text} numberOfLines={1}>
-        {left || '环境同步中'}
-      </Text>
-      <Chip status={aqiStatus(a?.aqi)}>{aqiLabel(a?.aqi)}</Chip>
+      <View style={styles.topRow}>
+        <Icon name="sun" size={17} color={C.ink2} />
+        <Text style={styles.topText} numberOfLines={1}>
+          {top || '环境同步中'}
+        </Text>
+        <Chip status={aqiStatus(a?.aqi)}>{aqiLabel(a?.aqi)}</Chip>
+      </View>
+      {metrics.length > 0 ? (
+        <View style={styles.metricsRow}>
+          {metrics.map((m, idx) => (
+            <View key={m.label} style={styles.metric}>
+              {idx > 0 ? <Text style={styles.dot}>·</Text> : null}
+              <Text style={styles.metricLabel}>{m.label}</Text>
+              <Text style={styles.metricValue}>{m.value}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
   },
-  text: { flex: 1, minWidth: 0, fontSize: 13, color: C.ink2, fontWeight: '600' },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topText: { flex: 1, minWidth: 0, fontSize: 14.5, color: C.ink1, fontWeight: '600' },
+  metricsRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 7 },
+  metric: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  dot: { color: C.ink4, fontSize: 12, marginRight: 2 },
+  metricLabel: { fontSize: 12, color: C.ink3 },
+  metricValue: { fontFamily: 'IBMPlexMono', fontSize: 13, fontWeight: '500', color: C.ink2 },
 });
