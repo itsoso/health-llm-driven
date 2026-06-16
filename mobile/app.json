@@ -74,6 +74,7 @@
         }
       ],
       "./plugins/withIntentsExtension",
+      "./plugins/withWatchApp",
       "@sentry/react-native",
       "expo-font",
       "expo-image",

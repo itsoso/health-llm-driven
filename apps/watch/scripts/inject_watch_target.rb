@@ -40,9 +40,12 @@ target.build_configurations.each do |c|
   bs['GENERATE_INFOPLIST_FILE'] = 'YES'
   bs['INFOPLIST_KEY_WKApplication'] = 'YES'                   # 现代单 target watch app
   bs['INFOPLIST_KEY_WKCompanionAppBundleIdentifier'] = ios_bundle
-  bs['INFOPLIST_KEY_CFBundleDisplayName'] = '健康助理'
+  # 注:显示名不写进 pbxproj(中文会让 CocoaPods 读 pbxproj 时 ASCII-8BIT 崩);
+  # 腕上显示名走 watch target 的 Info.plist(GENERATE_INFOPLIST_FILE 默认取 PRODUCT_NAME),
+  # 需中文时在 W3 设备步骤里改 Info.plist CFBundleDisplayName。
   bs['CODE_SIGNING_ALLOWED'] = 'NO'                           # 仅编译验证;发版时由 EAS 处理签名
   bs['PRODUCT_NAME'] = watch_name
+  bs.delete('INFOPLIST_KEY_CFBundleDisplayName')              # 幂等清理:历史中文值会让 CocoaPods 崩
 end
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
@@ -128,6 +131,23 @@ if File.exist?(bridge_src)
       main_target.add_file_references([bgroup.new_file(dest)])
     end
     puts "✓ WatchPhoneBridge.swift 已加进主 target HealthPilot"
+
+    # 把 watch app 嵌进 iOS app(否则 EAS 打的 iOS 包不含手表 App)+ iOS 依赖 watch
+    unless main_target.dependencies.any? { |d| d.display_name == watch_name }
+      main_target.add_dependency(target)
+    end
+    embed_watch = main_target.copy_files_build_phases.find { |p| p.name == 'Embed Watch Content' }
+    if embed_watch.nil?
+      embed_watch = main_target.new_copy_files_build_phase('Embed Watch Content')
+      embed_watch.symbol_dst_subfolder_spec = :products_directory
+      embed_watch.dst_path = '$(CONTENTS_FOLDER_PATH)/Watch'
+    end
+    w_already = embed_watch.files_references.map { |r| r.path }.compact
+    unless w_already.include?(target.product_reference.path)
+      wbf = embed_watch.add_file_reference(target.product_reference)
+      wbf.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
+    end
+    puts "✓ 已把 #{watch_name} 嵌进 iOS app HealthPilot"
   end
 end
 
