@@ -244,7 +244,7 @@ class TestDeduplication:
 
     def test_duplicate_alert_not_created(self, db, test_user, service, today):
         """同一天同类型预警不重复创建"""
-        _create_garmin_data(db, test_user.id, today, spo2_avg=90.0)
+        _create_garmin_data(db, test_user.id, today, data_source="ringconn", spo2_avg=90.0)
 
         # 第一次检测
         alerts1 = service.detect_anomalies(test_user.id, today)
@@ -277,6 +277,7 @@ class TestEdgeCases:
         # 今天：RHR飙升 + HRV骤降 + 血氧低 + body battery低
         _create_garmin_data(
             db, test_user.id, today,
+            data_source="ringconn",  # spo2 走多源合并;garmin 血氧被排除
             resting_heart_rate=75,  # +25%
             hrv=30.0,               # -40%
             spo2_avg=93.0,          # <95%
@@ -292,7 +293,7 @@ class TestEdgeCases:
 
     def test_alert_persisted_to_db(self, db, test_user, service, today):
         """预警应持久化到数据库"""
-        _create_garmin_data(db, test_user.id, today, spo2_avg=90.0)
+        _create_garmin_data(db, test_user.id, today, data_source="ringconn", spo2_avg=90.0)
 
         service.detect_anomalies(test_user.id, today)
 
