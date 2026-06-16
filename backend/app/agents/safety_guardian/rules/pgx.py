@@ -11,6 +11,7 @@
 每条规则只在（a）用户基因有该位点 AND（b）用户在服相关药物时触发。
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from app.agents.safety_guardian.engine import register
@@ -469,6 +470,13 @@ def _is_handwritten_pair(gene: str, drug: str) -> bool:
     return False
 
 
+def _canonical_cpic_rule_id(entry: Dict[str, Any]) -> str:
+    gene_token = entry["gene"].lower().replace("*", "").replace(":", "")
+    drug_keyword = (entry.get("drug_keywords") or ["drug"])[0]
+    drug_token = re.sub(r"[^0-9a-zA-Z\u4e00-\u9fff]+", "_", drug_keyword.lower()).strip("_")
+    return f"pgx.cpic.{gene_token}_{drug_token or 'drug'}"
+
+
 @register
 def pgx_cpic_table_check(twin: HealthTwin) -> List[Alert]:
     """迭代 CPIC Level-A 表：基因命中 + phenotype 关键词命中 + 在服药命中 → 出 Alert。"""
@@ -492,7 +500,7 @@ def pgx_cpic_table_check(twin: HealthTwin) -> List[Alert]:
                 continue
             if not _matches_keywords(variant, entry["phenotype_keywords"]):
                 continue  # 保守：phenotype 标签不明确就不报
-            rule_id = f"pgx.cpic.{entry['gene'].lower().replace('*', '').replace(':', '')}_{hit[0]}"
+            rule_id = _canonical_cpic_rule_id(entry)
             if rule_id in seen_rule_ids:
                 continue
             seen_rule_ids.add(rule_id)

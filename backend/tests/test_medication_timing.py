@@ -115,3 +115,35 @@ def test_create_medication_returns_medication_safety_alerts(client, auth_user_an
     assert calls["use_cache"] is False
     assert [a["rule_id"] for a in body["safety_alerts"]] == ["pgx.cpic.tpmt_硫唑嘌呤"]
     assert body["safety_alerts"][0]["severity"]["label"] == "critical"
+
+
+def test_list_and_get_medications_include_safety_alerts(client, auth_user_and_headers, monkeypatch):
+    """客户端重进页面/打开详情时也必须能拿到用药安全提醒,不能只在新增/更新响应里出现。"""
+    _, h = auth_user_and_headers
+
+    def fake_build_twin(db, user_id, use_cache=True):
+        return object()
+
+    def fake_evaluate_safety(twin):
+        return SimpleNamespace(alerts=[
+            Alert(
+                rule_id="ddi.warfarin_bleeding",
+                category="ddi",
+                severity=Severity.CRITICAL,
+                title="华法林相互作用",
+                message="出血风险升高。",
+            ),
+        ])
+
+    monkeypatch.setattr(med_api, "build_twin", fake_build_twin, raising=False)
+    monkeypatch.setattr(med_api, "evaluate_safety", fake_evaluate_safety, raising=False)
+
+    created = client.post("/api/v1/medication/medications", headers=h, json={"name": "华法林"})
+    assert created.status_code == 200, created.text
+    med_id = created.json()["id"]
+
+    list_body = client.get("/api/v1/medication/medications/me", headers=h).json()
+    detail_body = client.get(f"/api/v1/medication/medications/{med_id}", headers=h).json()
+
+    assert [a["rule_id"] for a in list_body[0]["safety_alerts"]] == ["ddi.warfarin_bleeding"]
+    assert [a["rule_id"] for a in detail_body["safety_alerts"]] == ["ddi.warfarin_bleeding"]

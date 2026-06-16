@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const APP_GROUP_IDENTIFIER = 'group.life.executor.health';
+
 const WIDGET_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -29,6 +31,20 @@ const WIDGET_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `;
 
+function entitlementsPlist() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>${APP_GROUP_IDENTIFIER}</string>
+  </array>
+</dict>
+</plist>
+`;
+}
+
 function copySwift(srcDir, destDir, files) {
   fs.mkdirSync(destDir, { recursive: true });
   for (const f of files) {
@@ -50,12 +66,14 @@ function withWatchSources(config) {
       copySwift(path.join(watchRoot, 'WatchApp'), path.join(iosRoot, 'RevaWatch'), appFiles);
       const coreFiles = fs.readdirSync(core).filter((f) => f.endsWith('.swift'));
       copySwift(core, path.join(iosRoot, 'RevaWatch'), coreFiles);
+      fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'RevaWatch.entitlements'), entitlementsPlist(), 'utf-8');
 
-      // 2) complication widget 源 = RevaComplication + ComplicationState + WatchSummary + Info.plist
+      // 2) complication widget 源 = RevaComplication + ComplicationState + WatchSummary + shared cache + Info.plist
       const compDir = path.join(iosRoot, 'RevaComplication');
       copySwift(path.join(watchRoot, 'WatchComplication'), compDir, ['RevaComplication.swift']);
-      copySwift(core, compDir, ['ComplicationState.swift', 'WatchSummary.swift']);
+      copySwift(core, compDir, ['ComplicationState.swift', 'WatchSummary.swift', 'ComplicationCache.swift']);
       fs.writeFileSync(path.join(compDir, 'Info.plist'), WIDGET_INFO_PLIST, 'utf-8');
+      fs.writeFileSync(path.join(compDir, 'RevaComplication.entitlements'), entitlementsPlist(), 'utf-8');
 
       // 3) 跑已验证的 ruby 注入(建 target + 嵌入 + 加 bridge 进主 target)。EAS 构建机有 xcodeproj gem。
       const script = path.join(watchRoot, 'scripts', 'inject_watch_target.rb');

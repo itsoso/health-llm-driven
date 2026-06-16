@@ -37,6 +37,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _ensure_self_or_admin(current_user: User, user_id: int) -> None:
+    """Legacy /user/{user_id} routes must not leak another user's health data."""
+    if current_user.id != user_id and not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="无权访问他人的补剂数据")
+
+
+def _get_owned_supplement(db: Session, user_id: int, supplement_id: int) -> SupplementDefinition:
+    supplement = db.query(SupplementDefinition).filter(
+        SupplementDefinition.id == supplement_id,
+        SupplementDefinition.user_id == user_id,
+    ).first()
+    if not supplement:
+        raise HTTPException(status_code=404, detail="补剂不存在")
+    return supplement
+
+
 # ========== 补剂定义 ==========
 
 @router.post("/definitions", response_model=SupplementDefinitionResponse)
@@ -61,9 +77,11 @@ def create_supplement(
 def get_user_supplements(
     user_id: int,
     active_only: bool = True,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取用户的补剂列表"""
+    _ensure_self_or_admin(current_user, user_id)
     query = db.query(SupplementDefinition).filter(SupplementDefinition.user_id == user_id)
     if active_only:
         query = query.filter(SupplementDefinition.is_active)
@@ -117,11 +135,16 @@ def delete_supplement(
 @router.post("/records", response_model=SupplementRecordResponse)
 def create_supplement_record(
     record: SupplementRecordCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建/更新补剂打卡记录"""
+    user_id = current_user.id
+    _get_owned_supplement(db, user_id, record.supplement_id)
+
     # 检查是否已存在记录
     existing = db.query(SupplementRecord).filter(
+        SupplementRecord.user_id == user_id,
         SupplementRecord.supplement_id == record.supplement_id,
         SupplementRecord.record_date == record.record_date
     ).first()
@@ -134,7 +157,9 @@ def create_supplement_record(
         db.refresh(existing)
         return existing
 
-    db_record = SupplementRecord(**record.model_dump())
+    record_data = record.model_dump()
+    record_data["user_id"] = user_id
+    db_record = SupplementRecord(**record_data)
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
@@ -155,8 +180,12 @@ def batch_checkin(
     for checkin in batch.checkins:
         supplement_id = checkin.get("supplement_id")
         taken = checkin.get("taken", False)
+        if isinstance(supplement_id, bool) or not isinstance(supplement_id, int):
+            raise HTTPException(status_code=400, detail="supplement_id 无效")
+        _get_owned_supplement(db, user_id, supplement_id)
 
         existing = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == user_id,
             SupplementRecord.supplement_id == supplement_id,
             SupplementRecord.record_date == batch.record_date
         ).first()
@@ -183,9 +212,11 @@ def batch_checkin(
 def get_user_supplements_with_records(
     user_id: int,
     record_date: date,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取用户某天的补剂列表及打卡状态"""
+    _ensure_self_or_admin(current_user, user_id)
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == user_id,
         SupplementDefinition.is_active
@@ -194,6 +225,7 @@ def get_user_supplements_with_records(
     result = []
     for supp in supplements:
         record = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == user_id,
             SupplementRecord.supplement_id == supp.id,
             SupplementRecord.record_date == record_date
         ).first()
@@ -210,9 +242,11 @@ def get_user_supplements_with_records(
 def get_supplement_stats(
     user_id: int,
     days: int = 7,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取补剂统计"""
+    _ensure_self_or_admin(current_user, user_id)
     end_date = date.today()
     start_date = end_date - timedelta(days=days-1)
 
@@ -224,6 +258,7 @@ def get_supplement_stats(
     stats = []
     for supp in supplements:
         records = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == user_id,
             SupplementRecord.supplement_id == supp.id,
             SupplementRecord.record_date >= start_date,
             SupplementRecord.record_date <= end_date
@@ -354,6 +389,7 @@ def copy_day_records(
     for src in source_records:
         # 检查目标日期是否已有记录
         existing = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == current_user.id,
             SupplementRecord.supplement_id == src.supplement_id,
             SupplementRecord.record_date == request.to_date
         ).first()
@@ -394,6 +430,7 @@ def get_my_supplements_with_records(
     result = []
     for supp in supplements:
         record = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == current_user.id,
             SupplementRecord.supplement_id == supp.id,
             SupplementRecord.record_date == record_date
         ).first()
@@ -424,6 +461,7 @@ def get_my_supplement_stats(
     stats = []
     for supp in supplements:
         records = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == current_user.id,
             SupplementRecord.supplement_id == supp.id,
             SupplementRecord.record_date >= start_date,
             SupplementRecord.record_date <= end_date

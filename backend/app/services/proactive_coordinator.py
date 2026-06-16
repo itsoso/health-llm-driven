@@ -14,17 +14,16 @@ fail-open(健康告警宁可多推不可漏),但 P2 永不推、异常可观测�
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
+from app.utils.timezone import get_user_now
 
 logger = logging.getLogger(__name__)
-
-_BEIJING_TZ = timezone(timedelta(hours=8))  # quiet_hours 以本地(Asia/Shanghai)时刻配置
 
 
 def proactive_notifications_sent(
@@ -73,7 +72,7 @@ def _in_quiet_hours(db: Session, user_id: int) -> bool:
         )
         start = _parse_hhmm(getattr(s, "quiet_hours_start", None) or "22:00", time(22, 0))
         end = _parse_hhmm(getattr(s, "quiet_hours_end", None) or "08:30", time(8, 30))
-        now = datetime.now(_BEIJING_TZ).time()
+        now = get_user_now(db, user_id).time()
         if start <= end:
             return start <= now < end
         return now >= start or now < end  # 跨午夜

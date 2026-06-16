@@ -58,31 +58,4 @@ struct RevaComplication: Widget {
     }
 }
 
-/// complication 与 watch app 共享最近一次状态(App Group 缓存,watch app 刷新时写入)。
-enum ComplicationCache {
-    private static let key = "reva.complication.state"
-    private static var defaults: UserDefaults { .standard }
-
-    static func save(_ state: ComplicationState) {
-        let dict: [String: Any] = [
-            "tone": state.tone.rawValue, "short": state.shortText,
-            "full": state.fullText, "badge": state.urgentBadge,
-        ]
-        defaults.set(dict, forKey: key)
-    }
-
-    static func load() -> ComplicationState {
-        guard let d = defaults.dictionary(forKey: key),
-              let toneRaw = d["tone"] as? String,
-              let tone = ComplicationTone(rawValue: toneRaw) else {
-            return .init(tone: .gray, shortText: "Reva", fullText: "健康助理", urgentBadge: 0)
-        }
-        return .init(
-            tone: tone,
-            shortText: d["short"] as? String ?? "",
-            fullText: d["full"] as? String ?? "",
-            urgentBadge: d["badge"] as? Int ?? 0
-        )
-    }
-}
 #endif

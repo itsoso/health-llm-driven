@@ -67,6 +67,7 @@ target.build_configurations.each do |c|
   bs.delete('INFOPLIST_KEY_CFBundleDisplayName')              # 幂等清理:历史中文值会让 CocoaPods 崩
   bs['DEVELOPMENT_TEAM'] = team_id                            # EAS 不为 watch target 注 team → 必须烤进工程(见上)
   bs['CODE_SIGN_STYLE'] = 'Automatic'                         # 配 -allowProvisioningUpdates 自动建 watch profile
+  bs['CODE_SIGN_ENTITLEMENTS'] = "#{watch_name}/#{watch_name}.entitlements"
 end
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
@@ -108,6 +109,7 @@ if Dir.exist?(comp_dir)
     bs['CURRENT_PROJECT_VERSION'] = cv
     bs['DEVELOPMENT_TEAM'] = team_id                          # 同 watch app:EAS 不注 team → 烤进工程
     bs['CODE_SIGN_STYLE'] = 'Automatic'
+    bs['CODE_SIGN_ENTITLEMENTS'] = "#{comp_name}/#{comp_name}.entitlements"
   end
 
   cgroup = project.main_group.find_subpath(comp_name, true)

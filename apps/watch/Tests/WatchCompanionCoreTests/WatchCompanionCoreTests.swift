@@ -91,6 +91,13 @@ final class ComplicationStateTests: XCTestCase {
         XCTAssertLessThanOrEqual(st.shortText.count, 10)
         XCTAssertTrue(st.shortText.hasSuffix("…"))
     }
+
+    func testComplicationCacheRoundTrip() {
+        let state = ComplicationState(tone: .yellow, shortText: "适度", fullText: "下午低强度活动", urgentBadge: 0)
+        ComplicationCache.save(state)
+
+        XCTAssertEqual(ComplicationCache.load(), state)
+    }
 }
 
 final class QuickRecordTests: XCTestCase {
@@ -128,9 +135,44 @@ final class QuickRecordTests: XCTestCase {
         let r = try QuickRecord.dietVoice(rawText: "午餐吃了鸡胸肉")
         XCTAssertEqual(r.path, "/diet/voice/parse")
         XCTAssertEqual(r.body["raw_text"], "午餐吃了鸡胸肉")
+        XCTAssertEqual(r.resultKind, .draft)
     }
 
     func testDietVoiceEmpty() {
         XCTAssertThrowsError(try QuickRecord.dietVoice(rawText: "   "))
+    }
+
+    func testVoiceFoodDraftBuildsConfirmRequest() throws {
+        let data = Data("""
+        {
+          "raw_text": "午餐吃了鸡胸肉 150g 和米饭一碗",
+          "meal_type": "lunch",
+          "meal_type_label": "午餐",
+          "foods": [
+            {"name":"鸡胸肉","amount":"150g","calories":248,"protein":46.5,"carbs":0,"fat":5.4},
+            {"name":"米饭","amount":"1碗","calories":232,"protein":4.2,"carbs":51.8,"fat":0.5}
+          ],
+          "confidence": 0.82,
+          "needs_confirmation": true,
+          "clarifying_question": "米饭大约多少克?",
+          "risk_tags": ["portion_uncertain"],
+          "parser_version": "rules-v1"
+        }
+        """.utf8)
+
+        let draft = try VoiceFoodDraft.decode(data)
+        let req = draft.confirmRequest(recordDate: "2026-06-16")
+
+        XCTAssertEqual(req.path, "/diet/records")
+        XCTAssertEqual(req.resultKind, .saved)
+        XCTAssertEqual(req.body["record_date"], "2026-06-16")
+        XCTAssertEqual(req.body["meal_type"], "lunch")
+        XCTAssertEqual(req.body["food_items"], "鸡胸肉 150g, 米饭 1碗")
+        XCTAssertEqual(req.body["calories"], "480")
+        XCTAssertEqual(req.body["protein"], "50.7")
+        XCTAssertEqual(req.body["carbs"], "51.8")
+        XCTAssertEqual(req.body["fat"], "5.9")
+        XCTAssertEqual(req.body["ai_recognized"], "true")
+        XCTAssertEqual(draft.summaryLine, "午餐: 鸡胸肉 150g, 米饭 1碗")
     }
 }

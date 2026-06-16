@@ -7,6 +7,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { medicationApi, MedicationItem, MedicationTodayStatus } from '@/services/api/records';
 import type { MedicationSafetyAlert } from '@/services/api/records';
 import { MedicationSafetyAlertsPanel } from '@/components/medication/MedicationSafetyAlertsPanel';
+import { collectMedicationSafetyAlerts } from '@/components/medication/medicationSafety';
 
 function MedicationContent() {
   const queryClient = useQueryClient();
@@ -102,6 +103,9 @@ function MedicationContent() {
 
   const todayList = Array.isArray(todayStatus) ? todayStatus : [];
   const medsList = Array.isArray(medications) ? medications : [];
+  const visibleSafetyAlerts = safetyAlerts.length > 0
+    ? safetyAlerts
+    : collectMedicationSafetyAlerts(medsList);
   const now = format(new Date(), 'HH:mm');
 
   return (
@@ -124,7 +128,7 @@ function MedicationContent() {
           </button>
         </div>
 
-        <MedicationSafetyAlertsPanel alerts={safetyAlerts} />
+        <MedicationSafetyAlertsPanel alerts={visibleSafetyAlerts} />
 
         {/* 依从性概览 */}
         {adherence && (

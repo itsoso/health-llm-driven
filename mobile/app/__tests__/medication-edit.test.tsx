@@ -92,6 +92,32 @@ describe('MedicationEditScreen', () => {
     expect(mockBack).not.toHaveBeenCalled();
   });
 
+  it('shows medication safety alerts returned by detail loading', async () => {
+    mockGetMedication.mockResolvedValueOnce({
+      id: 1,
+      name: '卡马西平',
+      dosage: '100mg',
+      frequency: '每日 1 次',
+      purpose: '神经痛',
+      notes: null,
+      is_active: true,
+      safety_alerts: [{
+        rule_id: 'pgx.cpic.hla-b_卡马西平',
+        category: 'pgx',
+        severity: { label: 'critical', label_zh: '紧急', value: 4 },
+        title: 'HLA-B × 卡马西平',
+        message: '携带 HLA-B 风险等位基因时，卡马西平相关严重皮肤不良反应风险升高。',
+        action: '请先与医生或药师确认，不要自行调整用药。',
+      }],
+    });
+
+    const screen = renderWithProviders(<MedicationEditScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('HLA-B × 卡马西平')).toBeTruthy();
+    });
+  });
+
   it('shows an error state and retries when loading fails', async () => {
     mockGetMedication
       .mockRejectedValueOnce(new Error('network error'))

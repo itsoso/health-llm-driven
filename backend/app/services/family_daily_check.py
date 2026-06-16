@@ -56,10 +56,14 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
 
         # ── 1. 健康数据异常 ──────────────────────────
         try:
-            from app.models.daily_health import GarminData
-            latest = db.query(GarminData).filter(
-                GarminData.user_id == m.user_id
-            ).order_by(GarminData.record_date.desc()).first()
+            from app.services.garmin_daily_merged import merged_daily_rows
+            rows = merged_daily_rows(
+                db,
+                m.user_id,
+                since=today - timedelta(days=2),
+                until=today,
+            )
+            latest = rows[0] if rows else None
 
             if latest and latest.record_date >= today - timedelta(days=2):
                 if latest.spo2_avg and latest.spo2_avg < 95:
@@ -148,9 +152,9 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
         # ── 5. 饮水提醒（下午才提醒） ─────────────────
         try:
             from app.models.daily_health import WaterIntake
-            from datetime import datetime, timezone, timedelta as td
-            beijing_hour = datetime.now(timezone(td(hours=8))).hour
-            if beijing_hour >= 14:
+            from app.utils.timezone import get_user_now
+            local_hour = get_user_now(db, m.user_id).hour
+            if local_hour >= 14:
                 water = db.query(WaterIntake).filter(
                     WaterIntake.user_id == m.user_id,
                     WaterIntake.record_date == today,

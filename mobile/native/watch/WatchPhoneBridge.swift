@@ -14,6 +14,12 @@ import WatchConnectivity
     private let appGroup = "group.life.executor.health"
     private let tokenKey = "siri_auth_token"          // 与 withIntentsExtension 的 SharedKeychain 一致
     private let apiBase = "https://health.executor.life/api/v1"
+    private let allowedQuickRecordRoutes: [String: Set<String>] = [
+        "/water/records/quick": ["POST"],
+        "/daily-health/exercise": ["POST"],
+        "/diet/voice/parse": ["POST"],
+        "/diet/records": ["POST"],
+    ]
 
     @objc func activate() {
         #if canImport(WatchConnectivity)
@@ -45,12 +51,22 @@ import WatchConnectivity
             }
         case "quick_record":
             let path = message["path"] as? String ?? ""
-            let method = message["method"] as? String ?? "POST"
+            let method = (message["method"] as? String ?? "POST").uppercased()
             let query = message["query"] as? [String: String] ?? [:]
             let body = message["body"] as? [String: String] ?? [:]
-            guard path.hasPrefix("/") else { reply(["ok": false, "error": "非法 path"]); return }
+            guard allowedQuickRecordRoutes[path]?.contains(method) == true else {
+                reply(["ok": false, "error": "不允许的腕上操作"]); return
+            }
             request(path: path, method: method, query: query, body: body, token: token) { data, err in
-                reply(data != nil ? ["ok": true] : ["ok": false, "error": err ?? "请求失败"])
+                if let data = data {
+                    var payload: [String: Any] = ["ok": true]
+                    if !data.isEmpty {
+                        payload["data"] = data.base64EncodedString()
+                    }
+                    reply(payload)
+                } else {
+                    reply(["ok": false, "error": err ?? "请求失败"])
+                }
             }
         default:
             reply(["ok": false, "error": "未知 op"])

@@ -10,11 +10,34 @@ public enum QuickRecordError: Error, Equatable, Sendable {
     case missing(String)
 }
 
+public enum QuickRecordResultKind: String, Equatable, Sendable {
+    case saved
+    case draft
+}
+
 public struct QuickRecordRequest: Equatable, Sendable {
     public let path: String
     public let method: String
     public let query: [String: String]
     public let body: [String: String]   // 简化:字符串值(WC payload 友好);数字以字符串承载
+    public let resultKind: QuickRecordResultKind
+    public let successMessage: String
+
+    public init(
+        path: String,
+        method: String,
+        query: [String: String],
+        body: [String: String],
+        resultKind: QuickRecordResultKind = .saved,
+        successMessage: String = "已记录"
+    ) {
+        self.path = path
+        self.method = method
+        self.query = query
+        self.body = body
+        self.resultKind = resultKind
+        self.successMessage = successMessage
+    }
 }
 
 public enum QuickRecord {
@@ -51,7 +74,9 @@ public enum QuickRecord {
         let t = rawText.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { throw QuickRecordError.missing("语音内容") }
         return QuickRecordRequest(
-            path: "/diet/voice/parse", method: "POST", query: [:], body: ["raw_text": t]
+            path: "/diet/voice/parse", method: "POST", query: [:], body: ["raw_text": t],
+            resultKind: .draft,
+            successMessage: "待确认"
         )
     }
 }

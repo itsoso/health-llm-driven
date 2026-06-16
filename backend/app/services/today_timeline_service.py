@@ -15,17 +15,15 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service
 from app.services.agenda_service import _TW_ORDER  # 复用议程时间窗排序
 from app.services.events_timeline_service import build_timeline
+from app.utils.timezone import get_user_timezone
 
 logger = logging.getLogger(__name__)
-
-_TZ = ZoneInfo("Asia/Shanghai")
 
 # agenda item.type(域) → (Ionicons 名, 颜色). 颜色沿用 events_timeline_service 的色系风格。
 _DOMAIN_STYLE: Dict[str, tuple[str, str]] = {
@@ -52,7 +50,7 @@ def _style_for(domain: str) -> tuple[str, str]:
 
 
 def _current_window(now: datetime) -> str:
-    """按 Asia/Shanghai 当前时间推时间窗(与 agenda 的 _TW_ORDER 同词表)。"""
+    """按用户本地当前时间推时间窗(与 agenda 的 _TW_ORDER 同词表)。"""
     h = now.hour
     if h < 11:
         return "morning"
@@ -238,7 +236,8 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
 
     主路径(agenda + past)失败让调用方感知;归因增强项失败降级。
     """
-    now = datetime.now(_TZ)
+    tz = get_user_timezone(db, user_id)
+    now = datetime.now(tz)
     today = now.date()
 
     # 1) 未来/现在项:agenda → action / checkup / advisory
@@ -260,7 +259,7 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
         timeline = build_timeline(db, user_id, days=1, limit=20)
         for ev in timeline:
             occ = ev.occurred_at
-            occ_local = occ.astimezone(_TZ) if occ.tzinfo else occ.replace(tzinfo=_TZ)
+            occ_local = occ.astimezone(tz) if occ.tzinfo else occ.replace(tzinfo=tz)
             if occ_local.date() == today:
                 past_events.append(_map_observation(ev))
     except Exception:

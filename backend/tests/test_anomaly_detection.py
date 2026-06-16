@@ -193,7 +193,7 @@ class TestSpo2Low:
 
     def test_spo2_critical(self, db, test_user, service, today):
         """血氧<95%为critical"""
-        _create_garmin_data(db, test_user.id, today, spo2_avg=92.5)
+        _create_garmin_data(db, test_user.id, today, data_source="ringconn", spo2_avg=92.5)
 
         alerts = service.detect_anomalies(test_user.id, today)
         spo2_alerts = [a for a in alerts if a.alert_type == "spo2_low"]
@@ -202,11 +202,20 @@ class TestSpo2Low:
 
     def test_spo2_normal(self, db, test_user, service, today):
         """血氧>=95%不预警"""
-        _create_garmin_data(db, test_user.id, today, spo2_avg=97.0)
+        _create_garmin_data(db, test_user.id, today, data_source="ringconn", spo2_avg=97.0)
 
         alerts = service.detect_anomalies(test_user.id, today)
         spo2_alerts = [a for a in alerts if a.alert_type == "spo2_low"]
         assert len(spo2_alerts) == 0
+
+    def test_spo2_ignores_excluded_garmin_low_when_ringconn_normal(self, db, test_user, service, today):
+        """异常检测必须走多源合并层:Garmin 血氧已排除,不能用假低值触发低氧告警。"""
+        _create_garmin_data(db, test_user.id, today, data_source="garmin", spo2_avg=85.0)
+        _create_garmin_data(db, test_user.id, today, data_source="ringconn", spo2_avg=97.0)
+
+        alerts = service.detect_anomalies(test_user.id, today)
+
+        assert [a for a in alerts if a.alert_type == "spo2_low"] == []
 
 
 class TestBatteryLow:

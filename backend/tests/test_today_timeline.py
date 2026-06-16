@@ -45,6 +45,29 @@ def test_empty_user_valid_shape(db, auth_user_and_headers):
     assert spine["counts"]["actionable"] == 0
 
 
+def test_today_uses_user_profile_timezone(db, auth_user_and_headers, monkeypatch):
+    """用户在美东晚间时,不应被固定 Asia/Shanghai 推到下一天。"""
+    import app.services.today_timeline_service as svc
+    from app.models.user_profile import UserProfile
+
+    user, _ = auth_user_and_headers
+    db.add(UserProfile(user_id=user.id, timezone="America/New_York"))
+    db.commit()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 6, 16, 2, 30, tzinfo=timezone.utc)
+            return base.astimezone(tz) if tz else base.replace(tzinfo=None)
+
+    monkeypatch.setattr(svc, "datetime", FixedDateTime)
+
+    spine = svc.build_today_spine(db, user.id)
+
+    assert spine["date"] == "2026-06-15"
+    assert spine["current_window"] == "bedtime"
+
+
 def test_due_protocol_and_today_workout(client, db, auth_user_and_headers):
     user, h = auth_user_and_headers
     # 1 个 due 协议(今日待办、pending)

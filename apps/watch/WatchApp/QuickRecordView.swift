@@ -29,6 +29,10 @@ struct QuickRecordView: View {
                     }
                 }
 
+                if let draft = store.pendingDietDraft {
+                    dietDraftPanel(draft)
+                }
+
                 statusLine
             }
             .padding(.horizontal, 6)
@@ -43,9 +47,13 @@ struct QuickRecordView: View {
     @ViewBuilder
     private var statusLine: some View {
         if store.lastRecordOK == true {
-            Label("已记录", systemImage: "checkmark.circle.fill")
+            Label(store.lastRecordMessage ?? "已记录", systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(RevaWatch.normal)
+        } else if let message = store.lastRecordMessage {
+            Label(message, systemImage: "text.badge.checkmark")
+                .font(.caption2)
+                .foregroundStyle(RevaWatch.caution)
         } else if store.lastRecordOK == false, let e = store.lastError {
             Label(e, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption2)
@@ -95,6 +103,42 @@ struct QuickRecordView: View {
             .background(tileBackground)
         }
         .buttonStyle(.plain)
+    }
+
+    private func dietDraftPanel(_ draft: VoiceFoodDraft) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(draft.summaryLine)
+                .font(.caption)
+                .foregroundStyle(RevaWatch.ink1)
+                .lineLimit(3)
+            if let question = draft.clarifyingQuestion, !question.isEmpty {
+                Text(question)
+                    .font(.caption2)
+                    .foregroundStyle(RevaWatch.caution)
+                    .lineLimit(2)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    Task { await store.confirmDietDraft() }
+                } label: {
+                    Label("保存", systemImage: "checkmark.circle.fill")
+                        .font(.caption2)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    store.clearDietDraft()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .frame(width: 28, height: 24)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tileBackground)
     }
 
     private var tileBackground: some View {

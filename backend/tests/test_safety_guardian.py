@@ -593,6 +593,13 @@ class TestPGxCpicTable:
         assert a.requires_medical_attention
         assert any("cpicpgx.org" in r for r in a.references)
 
+    def test_rule_id_uses_canonical_drug_keyword_not_display_name(self):
+        """同一药物带剂量/商品名时 rule_id 必须稳定,否则解释、去重、静默设置都会漂移。"""
+        twin = self._twin_with("TPMT", "*3A/*3A", "poor metabolizer", "硫唑嘌呤片 50mg")
+        alerts = evaluate_safety(twin).alerts
+        a = next(a for a in alerts if a.rule_id.startswith("pgx.cpic.tpmt"))
+        assert a.rule_id == "pgx.cpic.tpmt_硫唑嘌呤"
+
     def test_nudt15_mercaptopurine(self):
         twin = self._twin_with("NUDT15", "*3/*3", "intermediate metabolizer", "6-巯基嘌呤")
         ids = _rule_ids(evaluate_safety(twin).alerts)

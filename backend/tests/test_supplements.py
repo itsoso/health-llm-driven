@@ -1,6 +1,7 @@
 """补剂管理API测试"""
 import pytest
 from datetime import date, timedelta
+from app.models.supplement import SupplementRecord
 from app.models.user import User
 
 
@@ -155,6 +156,26 @@ class TestSupplementDefinitionAPI:
 class TestSupplementRecordAPI:
     """补剂记录API测试类"""
 
+    def test_create_supplement_record_requires_auth(self, client, sample_supplement_definition, auth_headers, test_user):
+        """单条补剂打卡必须登录,不能信任请求体 user_id。"""
+        create_response = client.post(
+            "/api/v1/supplements/definitions",
+            json=sample_supplement_definition,
+            headers=auth_headers,
+        )
+        supplement_id = create_response.json()["id"]
+
+        response = client.post(
+            "/api/v1/supplements/records",
+            json={
+                "supplement_id": supplement_id,
+                "user_id": test_user.id,
+                "record_date": str(date.today()),
+                "taken": True,
+            },
+        )
+        assert response.status_code in (401, 403)
+
     def test_create_supplement_record(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试创建补剂打卡记录"""
         # 先创建补剂
@@ -181,6 +202,81 @@ class TestSupplementRecordAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["taken"] == True
+        assert data["user_id"] == test_user.id
+
+    def test_create_supplement_record_ignores_forged_user_id(self, client, auth_headers, sample_supplement_definition, test_user):
+        """单条打卡用当前登录用户,忽略请求体伪造的 user_id。"""
+        create_response = client.post(
+            "/api/v1/supplements/definitions",
+            json=sample_supplement_definition,
+            headers=auth_headers,
+        )
+        supplement_id = create_response.json()["id"]
+
+        response = client.post(
+            "/api/v1/supplements/records",
+            json={
+                "supplement_id": supplement_id,
+                "user_id": test_user.id + 999,
+                "record_date": str(date.today()),
+                "taken": True,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["user_id"] == test_user.id
+
+    def test_batch_checkin_rejects_other_users_supplement(self, client, db, auth_headers, sample_supplement_definition):
+        """批量打卡必须校验 supplement_id 属于当前用户。"""
+        create_response = client.post(
+            "/api/v1/supplements/definitions",
+            json=sample_supplement_definition,
+            headers=auth_headers,
+        )
+        foreign_supplement_id = create_response.json()["id"]
+
+        other = User(
+            username="suppother",
+            email="suppother@example.com",
+            hashed_password="hashed_password",
+            name="另一个用户",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other)
+        db.commit()
+        db.refresh(other)
+
+        from app.services.auth import auth_service
+        other_headers = {
+            "Authorization": f"Bearer {auth_service.create_access_token({'sub': str(other.id)})}"
+        }
+
+        response = client.post(
+            "/api/v1/supplements/records/batch",
+            json={
+                "record_date": str(date.today()),
+                "checkins": [{"supplement_id": foreign_supplement_id, "taken": True}],
+            },
+            headers=other_headers,
+        )
+        assert response.status_code == 404
+        assert db.query(SupplementRecord).filter(
+            SupplementRecord.supplement_id == foreign_supplement_id,
+            SupplementRecord.record_date == date.today(),
+        ).count() == 0
+
+    def test_batch_checkin_rejects_bool_supplement_id(self, client, auth_headers):
+        """bool 是 Python int 子类,但不能被当作 supplement_id。"""
+        response = client.post(
+            "/api/v1/supplements/records/batch",
+            json={
+                "record_date": str(date.today()),
+                "checkins": [{"supplement_id": True, "taken": True}],
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
 
     def test_batch_checkin(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试批量打卡"""

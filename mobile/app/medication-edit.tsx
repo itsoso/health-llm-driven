@@ -67,6 +67,9 @@ export default function MedicationEditScreen() {
     setFrequency(m.frequency || '');
     setPurpose(m.purpose || '');
     setNotes(m.notes || '');
+    if (Array.isArray(m.safety_alerts)) {
+      setSafetyAlerts(m.safety_alerts);
+    }
   }, [medQuery.data]);
 
   const updateMut = useMutation({

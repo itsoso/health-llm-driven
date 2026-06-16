@@ -267,7 +267,16 @@ class AnomalyDetectionService:
 
     def _check_spo2_low(self, user_id: int, check_date: date) -> Optional[AnomalyAlert]:
         """检测血氧饱和度异常"""
-        today = self._get_today_garmin(user_id, check_date)
+        from app.services.garmin_daily_merged import merged_daily_rows
+
+        rows = merged_daily_rows(
+            self.db,
+            user_id,
+            since=check_date,
+            until=check_date,
+            require_metrics=["spo2_avg"],
+        )
+        today = rows[0] if rows else None
         if not today or today.spo2_avg is None:
             return None
 

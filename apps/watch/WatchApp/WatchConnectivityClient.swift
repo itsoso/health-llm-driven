@@ -8,7 +8,7 @@ import WatchConnectivity
 ///
 /// 消息协议(与 iPhone 侧 watch-bridge 约定):
 ///   - {"op":"summary"} → 回 {"ok":true,"data":<watch/summary JSON bytes(base64)>}
-///   - {"op":"quick_record","path":..,"method":..,"query":..,"body":..} → 回 {"ok":bool,"error":?}
+///   - {"op":"quick_record","path":..,"method":..,"query":..,"body":..} → 回 {"ok":bool,"data"?:base64,"error"?:String}
 final class WatchConnectivityClient: NSObject {
     static let shared = WatchConnectivityClient()
 
@@ -44,8 +44,8 @@ final class WatchConnectivityClient: NSObject {
         return data
     }
 
-    /// 发打点请求(已由 QuickRecord 校验)。iPhone 中继到后端。
-    func sendQuickRecord(_ req: QuickRecordRequest) async throws {
+    /// 发打点请求(已由 QuickRecord 校验)。iPhone 中继到后端;草稿解析类请求会回原始 JSON data。
+    func sendQuickRecord(_ req: QuickRecordRequest) async throws -> Data? {
         let reply = try await send([
             "op": "quick_record",
             "path": req.path, "method": req.method,
@@ -54,6 +54,11 @@ final class WatchConnectivityClient: NSObject {
         guard let ok = reply["ok"] as? Bool, ok else {
             throw WCError.relayFailed((reply["error"] as? String) ?? "中继失败")
         }
+        if let b64 = reply["data"] as? String {
+            guard let data = Data(base64Encoded: b64) else { throw WCError.badResponse }
+            return data
+        }
+        return nil
     }
 
     private func send(_ message: [String: Any]) async throws -> [String: Any] {

@@ -100,7 +100,8 @@ async def list_my_medications(
 ):
     """获取我的药品列表"""
     meds = medication_service.list_medications(db, current_user.id, active_only)
-    return [_serialize_medication(m) for m in meds]
+    safety_alerts = _medication_safety_alerts(db, current_user.id)
+    return [_serialize_medication(m, safety_alerts=safety_alerts) for m in meds]
 
 
 @router.get("/medications/{medication_id}")
@@ -113,7 +114,7 @@ async def get_medication(
     med = medication_service.get_medication(db, medication_id, current_user.id)
     if not med:
         raise HTTPException(status_code=404, detail="药品不存在")
-    return _serialize_medication(med)
+    return _serialize_medication(med, safety_alerts=_medication_safety_alerts(db, current_user.id))
 
 
 @router.put("/medications/{medication_id}")
@@ -355,8 +356,8 @@ async def list_my_regimens(
     return mrs.list_regimens(db, current_user.id, active_only)
 
 
-def _serialize_medication(med) -> Dict[str, Any]:
-    return {
+def _serialize_medication(med, safety_alerts: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    body = {
         "id": med.id,
         "user_id": med.user_id,
         "name": med.name,
@@ -377,6 +378,9 @@ def _serialize_medication(med) -> Dict[str, Any]:
         "notes": med.notes,
         "created_at": str(med.created_at) if med.created_at else None,
     }
+    if safety_alerts is not None:
+        body["safety_alerts"] = safety_alerts
+    return body
 
 
 def _medication_safety_alerts(db: Session, user_id: int) -> List[Dict[str, Any]]:

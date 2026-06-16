@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.services import health_protocol_service as proto_svc
 from app.services import health_problem_service as prob_svc
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
 
     items.sort(key=lambda x: (-x["priority"], _TW_ORDER.get(x.get("time_window"), 9)))
     return {
-        "agenda_date": str(date.today()),
+        "agenda_date": str(get_user_today(db, user_id)),
         "count": len(items),
         "items": items,
     }
@@ -198,7 +199,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
 
 def range_view(db: Session, user_id: int, days: int = 7) -> Dict[str, Any]:
     """周/区间视图:常驻每日协议 + 窗口内按到期日排布的复查。"""
-    today_d = date.today()
+    today_d = get_user_today(db, user_id)
     recurring = [
         {"protocol_id": p["protocol_id"], "domain": p["domain"],
          "name": p["name"], "cadence": p["cadence"]}
