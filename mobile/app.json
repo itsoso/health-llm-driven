@@ -102,12 +102,14 @@
               "appExtensions": [
                 {
                   "targetName": "RevaWatch",
-                  "bundleIdentifier": "life.executor.health.watchkitapp"
+                  "bundleIdentifier": "life.executor.health.watchkitapp",
+                  "entitlements": {}
                 },
                 {
                   "targetName": "RevaComplication",
                   "bundleIdentifier": "life.executor.health.watchkitapp.watchkitextension",
-                  "parentBundleIdentifier": "life.executor.health.watchkitapp"
+                  "parentBundleIdentifier": "life.executor.health.watchkitapp",
+                  "entitlements": {}
                 }
               ]
             }

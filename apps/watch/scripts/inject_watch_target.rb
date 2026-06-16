@@ -29,6 +29,14 @@ mv = main_bs['MARKETING_VERSION'] || '1.0'
 cv = main_bs['CURRENT_PROJECT_VERSION'] || '1'
 puts "• 主 app 版本: MARKETING_VERSION=#{mv} CURRENT_PROJECT_VERSION=#{cv}"
 
+if main_t
+  main_t.build_configurations.each do |c|
+    bs = c.build_settings
+    bs['PRODUCT_BUNDLE_IDENTIFIER'] = ios_bundle
+    bs['DEVELOPMENT_TEAM'] ||= ENV['APPLE_TEAM_ID'] || main_bs['DEVELOPMENT_TEAM'] || 'QA2U724DAN'
+  end
+end
+
 # Apple Team ID:watch app + complication 必须有显式 DEVELOPMENT_TEAM,否则 EAS 构建时
 # 这两个 target(EAS 只为主 app target 注入凭据,不认识 watch)会落到"无 team"自动签名,
 # Xcode 14 默认对 resource bundle / 嵌入二进制要求每个 target 有 team → EAS #94:
@@ -69,7 +77,11 @@ target.build_configurations.each do |c|
   bs.delete('INFOPLIST_KEY_CFBundleDisplayName')              # 幂等清理:历史中文值会让 CocoaPods 崩
   bs['DEVELOPMENT_TEAM'] = team_id                            # EAS 不为 watch target 注 team → 必须烤进工程(见上)
   bs['CODE_SIGN_STYLE'] = 'Automatic'                         # 配 -allowProvisioningUpdates 自动建 watch profile
-  bs['CODE_SIGN_ENTITLEMENTS'] = "#{watch_name}/#{watch_name}.entitlements"
+  # App Store profile for the companion watch app currently has no extra capabilities.
+  # Leaving CODE_SIGN_ENTITLEMENTS unset prevents Xcode/EAS from validating main-app
+  # HealthKit/Siri/App Group entitlements against the watch profile during archive.
+  bs.delete('CODE_SIGN_ENTITLEMENTS')
+  bs['CODE_SIGN_INJECT_BASE_ENTITLEMENTS'] = 'NO'
 end
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
@@ -131,7 +143,8 @@ if Dir.exist?(comp_dir)
     bs['CURRENT_PROJECT_VERSION'] = cv
     bs['DEVELOPMENT_TEAM'] = team_id                          # 同 watch app:EAS 不注 team → 烤进工程
     bs['CODE_SIGN_STYLE'] = 'Automatic'
-    bs['CODE_SIGN_ENTITLEMENTS'] = "#{comp_name}/#{comp_name}.entitlements"
+    bs.delete('CODE_SIGN_ENTITLEMENTS')
+    bs['CODE_SIGN_INJECT_BASE_ENTITLEMENTS'] = 'NO'
   end
 
   cgroup = project.main_group.find_subpath(comp_name, true)
@@ -207,6 +220,21 @@ project.targets.each do |t|
   next unless t.respond_to?(:product_type) && t.product_type == 'com.apple.product-type.bundle'
   t.build_configurations.each { |c| c.build_settings['CODE_SIGNING_ALLOWED'] = 'NO' }
   puts "✓ resource bundle #{t.name} → CODE_SIGNING_ALLOWED=NO"
+end
+
+attrs = project.root_object.attributes['TargetAttributes'] ||= {}
+[main_t, target, project.targets.find { |t| t.name == comp_name }].compact.each do |t|
+  target_attrs = attrs[t.uuid] ||= {}
+  target_attrs['DevelopmentTeam'] = team_id
+  target_attrs['ProvisioningStyle'] = 'Automatic'
+  target_attrs.delete('SystemCapabilities') if [watch_name, comp_name].include?(t.name)
+end
+
+[main_t, target, project.targets.find { |t| t.name == comp_name }].compact.each do |t|
+  t.build_configurations.each do |c|
+    bs = c.build_settings
+    puts "• #{t.name}/#{c.name}: bundle=#{bs['PRODUCT_BUNDLE_IDENTIFIER']} entitlements=#{bs['CODE_SIGN_ENTITLEMENTS'] || '(none)'} profile=#{bs['PROVISIONING_PROFILE_SPECIFIER'] || '(auto)'}"
+  end
 end
 
 project.save
