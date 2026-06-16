@@ -51,6 +51,7 @@ import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
 import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
+import TodayTimelineBlock from '../../components/home/TodayTimelineBlock';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
 import LongevityNextCard from '../../components/home/LongevityNextCard';
 import DeviceCompareCard from '../../components/home/DeviceCompareCard';
@@ -490,6 +491,7 @@ export default function TodayScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
+        <TodayTimelineBlock />
         <MetabolicEntryCard />
         <EnvironmentCard />
         <StreakBadge

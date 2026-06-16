@@ -60,6 +60,7 @@ jest.mock('@tanstack/react-query', () => ({
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
+  useMutation: () => ({ mutate: jest.fn(), isPending: false }),
   useQueryClient: () => ({
     invalidateQueries: mockInvalidateQueries,
   }),
