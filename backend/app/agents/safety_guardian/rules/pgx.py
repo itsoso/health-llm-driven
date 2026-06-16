@@ -401,7 +401,10 @@ def pgx_aldh2_alcohol(twin: HealthTwin) -> Optional[Alert]:
         title="ALDH2 变异 —— 饮酒高风险",
         message=(
             f"你的 ALDH2 基因型 ({variant.get('genotype')}) 使乙醛代谢显著受损。"
-            "饮酒后乙醛蓄积会引发面红、心悸、头痛，并长期显著升高食管癌、胃癌、心血管疾病风险。"
+            "饮酒后乙醛蓄积会引发面红、心悸、头痛；乙醛已被 IARC 列为 1 类致癌物，"
+            "孟德尔随机化研究显示该变异携带者长期饮酒会显著升高食管癌、上消化道癌风险"
+            "（杂合饮酒者食管癌 OR≈3，重度饮酒者可达 >10 倍）。"
+            "（与心血管疾病的关联证据更存争议，作次要并列。）"
         ),
         action=(
             "最安全的策略是完全戒酒。若确需社交饮酒，每周不超过 1-2 次少量，"
@@ -409,7 +412,11 @@ def pgx_aldh2_alcohol(twin: HealthTwin) -> Optional[Alert]:
         ),
         data_citation={"variant": variant},
         references=[
-            "https://www.cell.com/cell-metabolism/fulltext/S1550-4131(14)00384-2",
+            # IARC Monographs Vol.100E (2012) —— 含"饮酒/乙醛"列为 Group 1 人类致癌物
+            "https://publications.iarc.who.int/Book-And-Report-Series/Iarc-Monographs-On-The-Identification-Of-Carcinogenic-Hazards-To-Humans/Personal-Habits-And-Indoor-Combustions-2012",
+            # Brooks PJ et al., PLoS Medicine 2009 —— ALDH2 缺陷(酒后面红)是食管鳞癌的未被识别风险因素;
+            # 精准预防视角,给出携带者饮酒的食管癌风险量级(经典孟德尔随机化式证据)
+            "https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1000050",
         ],
     )
 

@@ -151,7 +151,9 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
         cfg.apoe_type = geno if geno else None
         if "4" in geno:
             cfg.saturated_fat_sensitivity = "high"
-            cfg.summary_lines.append(f"APOE {geno}: 饱和脂肪敏感，需严格控制LDL")
+            cfg.summary_lines.append(
+                f"APOE {geno}: 饱和脂肪敏感倾向，建议盯 LDL/ApoB 并以复查验证（具体目标值需医生评估）"
+            )
 
     # ── FADS1 ──
     if _risk("FADS1"):
@@ -200,7 +202,7 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
         label = _label("CYP1A2")
         if "slow" in label or "poor" in label:
             cfg.caffeine_metabolism = "slow"
-            cfg.summary_lines.append("CYP1A2: 咖啡因慢代谢，下午后避免咖啡")
+            cfg.summary_lines.append("CYP1A2: 咖啡因慢代谢倾向，可把咖啡时间前移，以睡眠反馈为准")
         elif "fast" in label or "ultra" in label:
             cfg.caffeine_metabolism = "fast"
 
@@ -219,7 +221,8 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
             cfg.stress_type = "warrior"
         elif "worrier" in label or "MET/MET" in geno:
             cfg.stress_type = "worrier"
-            cfg.summary_lines.append("COMT Met/Met: 焦虑敏感型，需正念和低咖啡因")
+            # 单 SNP 强结论已剔除:COMT 对认知/焦虑的解释方差 <1%,候选基因时代未复现。
+            # 仅保留 stress_type 分型供下游参考,不再注入"需正念和低咖啡因"的祈使指令。
 
     # ── 药物代谢 ──
     for enzyme in ["CYP2D6", "CYP2C19", "CYP2C9", "SLCO1B1"]:

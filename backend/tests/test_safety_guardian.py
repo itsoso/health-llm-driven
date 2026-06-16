@@ -594,6 +594,36 @@ class TestPGxRules:
         alerts = evaluate_safety(twin).alerts
         assert "pgx.aldh2_alcohol" in _rule_ids(alerts)
 
+    def test_aldh2_references_replaced_and_conclusion_intact(self):
+        """Phase 0: 引用换成 IARC + 食管癌精准预防权威源;戒酒结论不软化;CV 关联降级并列。"""
+        twin = _empty_twin()
+        twin.genetic = GeneticContext(
+            has_profile=True,
+            risk_variants=[
+                {
+                    "gene_name": "ALDH2",
+                    "genotype": "*1/*2",
+                    "result_label": "reduced activity",
+                    "risk_level": "中风险",
+                }
+            ],
+        )
+        alerts = evaluate_safety(twin).alerts
+        aldh2 = next(a for a in alerts if a.rule_id == "pgx.aldh2_alcohol")
+
+        # 旧单篇机制类文献已移除
+        assert all("cell-metabolism" not in r and "cell.com" not in r for r in aldh2.references)
+        # 换成 IARC (致癌物分类) + 食管癌精准预防权威源
+        assert any("iarc" in r.lower() for r in aldh2.references)
+        assert any("plosmedicine" in r.lower() for r in aldh2.references)
+        # 结论(戒酒最安全)不软化
+        assert "完全戒酒" in aldh2.action
+        # 食管癌作主要关联,心血管降级为"次要/争议"并列
+        assert "食管癌" in aldh2.message
+        assert "争议" in aldh2.message
+        # 规则严重度不变
+        assert aldh2.severity == Severity.MEDIUM
+
     def test_pgx_no_variant_no_alert(self):
         """基因缺失时 PGx 规则不触发。"""
         twin = _empty_twin()
