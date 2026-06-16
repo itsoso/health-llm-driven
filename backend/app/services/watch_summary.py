@@ -52,8 +52,19 @@ def _push_tier(item: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _action_id(item: Dict[str, Any]) -> Optional[str]:
+    """由 item.source 合成 action_id(agenda-{ot}-{oid});无 source → None(不可一键完成)。"""
+    src = item.get("source") or {}
+    ot = src.get("object_type")
+    oid = src.get("object_id")
+    if ot is None or oid is None:
+        return None
+    return f"agenda-{ot}-{oid}"
+
+
 def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
+        "action_id": _action_id(item),
         "title": item.get("title"),
         "kind": item.get("type"),
         "time_window": item.get("time_window"),
@@ -63,6 +74,16 @@ def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "rationale_short": item.get("rationale_short"),
         "verification_window_days": item.get("verification_window_days"),
         "safety_status": item.get("safety_status"),
+    }
+
+
+def _due_view(item: Dict[str, Any]) -> Dict[str, Any]:
+    """只读到点项(腕上「待打点」列表):带 action_id 可一键完成。"""
+    return {
+        "action_id": _action_id(item),
+        "title": item.get("title"),
+        "kind": item.get("type"),
+        "time_window": item.get("time_window"),
     }
 
 
@@ -92,6 +113,7 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     ]
     ranked_actions = rank_agenda_actions(actionable)
     top_action = _action_view(ranked_actions[0]) if ranked_actions else None
+    due_items = [_due_view(i) for i in ranked_actions]
 
     if training and training.get("light") in _LIGHT_HEADLINE:
         headline = _LIGHT_HEADLINE[training["light"]]
@@ -111,8 +133,10 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     return {
         "status": {"light": light, "readiness_score": readiness, "headline": headline},
         "top_action": top_action,
+        "due_items": due_items,
         "agenda": {"total": agenda.get("count", 0), "pending": len(actionable)},
-        "quick_actions": QUICK_ACTIONS,
+        # quick_actions 是目录入口(无具体 source)→ action_id=null,不可一键完成。
+        "quick_actions": [{**qa, "action_id": None} for qa in QUICK_ACTIONS],
         "push_items": push,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

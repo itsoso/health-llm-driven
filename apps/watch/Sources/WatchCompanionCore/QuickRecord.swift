@@ -69,6 +69,18 @@ public enum QuickRecord {
         return QuickRecordRequest(path: "/daily-health/exercise", method: "POST", query: [:], body: body)
     }
 
+    /// 「一键已做」:把到点项标记完成。对齐 POST /watch/actions/{action_id}/complete(空 body)。
+    /// action_id 由后端 watch_summary 注入(`agenda-{object_type}-{object_id}`);为空则拒发(不静默)。
+    public static func completeAction(actionId: String) throws -> QuickRecordRequest {
+        let id = actionId.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { throw QuickRecordError.missing("action_id") }
+        return QuickRecordRequest(
+            path: "/watch/actions/\(id)/complete", method: "POST",
+            query: [:], body: [:],
+            successMessage: "已完成"
+        )
+    }
+
     /// 语音记一餐:转写文本 → 走解析草稿(/diet/voice/parse),确认后再写库(不在此直接入库)。
     public static func dietVoice(rawText: String) throws -> QuickRecordRequest {
         let t = rawText.trimmingCharacters(in: .whitespaces)

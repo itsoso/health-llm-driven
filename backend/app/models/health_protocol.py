@@ -11,7 +11,8 @@ HealthProtocol = 用户为某个域「一次设定的最佳实践」(固定容�
 详见 docs/prd/reva-personal-health-os-prd.md §4.2 / §5。
 """
 from sqlalchemy import (
-    Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, Index
+    Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, Index,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
@@ -87,7 +88,10 @@ class HealthProtocolEvent(Base):
     protocol = relationship("HealthProtocol", back_populates="events")
 
     __table_args__ = (
-        Index("ix_hpe_protocol_date", "protocol_id", "event_date"),
+        # 每协议每天一条终态事件(本表语义)。腕上双击 / bridge 重发 / 重试的并发写
+        # 由此唯一约束兜底:第二条 (protocol_id, event_date) 撞约束 → IntegrityError,
+        # 配合 complete_protocol 的原子 UPDATE 门保证领域记录最多写一次(D1)。
+        UniqueConstraint("protocol_id", "event_date", name="uq_hpe_protocol_date"),
         Index("ix_hpe_user_date", "user_id", "event_date"),
     )
 

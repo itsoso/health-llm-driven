@@ -146,8 +146,15 @@ class MedicationService:
         skip_reason: Optional[str] = None,
         actual_dosage: Optional[str] = None,
         notes: Optional[str] = None,
+        commit: bool = True,
     ) -> MedicationLog:
-        """记录服药"""
+        """记录服药。
+
+        commit=True(默认,保持既有调用方行为)立即提交并 refresh。
+        commit=False:只 flush(拿到 id),把提交权交还调用方 —— 协议完成路径
+        (complete_protocol)用它把领域写并入终态事件的一次性 commit,避免中途
+        提交半成品 event 破坏原子性(S2)。
+        """
         logger.info(f"[Medication] 记录服药: user={user_id}, med={medication_id}, status={status}")
 
         log = MedicationLog(
@@ -161,8 +168,11 @@ class MedicationService:
             notes=notes,
         )
         db.add(log)
-        db.commit()
-        db.refresh(log)
+        if commit:
+            db.commit()
+            db.refresh(log)
+        else:
+            db.flush()
         return log
 
     def get_today_status(

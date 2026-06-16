@@ -14,11 +14,15 @@ final class WatchStore: ObservableObject {
     @Published var lastRecordOK: Bool?
     @Published var lastRecordMessage: String?
     @Published var pendingDietDraft: VoiceFoodDraft?
+    @Published var completing = false          // 「一键已做」请求在途(禁重复点 + tile 转圈)
 
     private let connectivity: WatchConnectivityClient
+    private let events: WatchEventClient
 
-    init(connectivity: WatchConnectivityClient = .shared) {
+    init(connectivity: WatchConnectivityClient = .shared,
+         events: WatchEventClient = .shared) {
         self.connectivity = connectivity
+        self.events = events
     }
 
     var complication: ComplicationState? {
@@ -89,6 +93,23 @@ final class WatchStore: ObservableObject {
             lastRecordOK = false
             lastError = "记录失败,请重试"
         }
+    }
+
+    /// 「一键已做」:把到点项标记完成。仅可完成项(有 action_id 且 health_protocol 域)调用。
+    /// 走与 submit 同一 fail-loud 链路;完成确认成功(lastRecordOK==true)后才发 completed 埋点。
+    func completeAction(_ action: WatchTopAction) async {
+        guard let actionId = action.actionId, action.isCompletable, !completing else { return }
+        completing = true
+        defer { completing = false }
+        await submit { try QuickRecord.completeAction(actionId: actionId) }
+        if lastRecordOK == true {
+            events.actionCompleted(action)
+        }
+    }
+
+    /// tile 曝光埋点(分母)。由 TodayStatusView.onAppear 调,旁路 fire-and-forget。
+    func reportActionShown(_ action: WatchTopAction) {
+        events.actionShown(action)
     }
 
     func confirmDietDraft() async {

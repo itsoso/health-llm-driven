@@ -383,6 +383,46 @@ def log_bedroom_event(
         return None
 
 
+def log_watch_complete(
+    db: Session,
+    user_id: int,
+    *,
+    protocol_id: int,
+    source_model: str,
+    linked_record_id: int,
+    taken_time: Optional[str] = None,
+    source_model_label: Optional[str] = None,
+) -> Optional[int]:
+    """腕上一键完成用药/补剂依从的取证审计(D1 灌水的追溯手段)。
+
+    依从是进临床推断的事实(喂 DDI/PGx/SafetyGuardian),要可追溯到「谁在何时把哪条
+    协议落成了哪条领域记录」。action='watch_complete'。旁路,失败不影响主流程(返回 None)。
+    """
+    if user_id is None:
+        return None
+    try:
+        summary = (
+            f"watch_complete protocol={protocol_id} {source_model} "
+            f"record={linked_record_id}"
+        )
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="watch_action",
+            action="watch_complete",
+            result_summary=summary,
+            result_detail={
+                "protocol_id": protocol_id,
+                "source_model": source_model,
+                "linked_record_id": linked_record_id,
+                "taken_time": taken_time,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_watch_complete 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,

@@ -86,14 +86,40 @@ struct TodayStatusView: View {
     }
 
     // MARK: - Top action (醒目圆角行)
+    // 可完成项(有 action_id 且 health_protocol 域)→ 可点 tile,点击「一键已做」;
+    // 非可完成项(action_id=null,如复查/训练)→ 只读行,不给完成按钮(对齐后端边界)。
 
+    @ViewBuilder
     private func topActionRow(_ action: WatchTopAction) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("最该做")
                 .font(.caption2)
                 .foregroundStyle(RevaWatch.ink2)
+            if action.isCompletable {
+                completableTile(action)
+            } else {
+                readonlyActionTile(action)
+            }
+            if store.lastRecordOK == true, let msg = store.lastRecordMessage {
+                Label(msg, systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(RevaWatch.greenBright)
+            }
+        }
+        // tile 出现即上报曝光(分母)。仅可完成项发(WatchEventClient 内已 guard action_id)。
+        .onAppear {
+            if action.isCompletable {
+                store.reportActionShown(action)
+            }
+        }
+    }
+
+    private func completableTile(_ action: WatchTopAction) -> some View {
+        Button {
+            Task { await store.completeAction(action) }
+        } label: {
             HStack(spacing: 8) {
-                Image(systemName: "target")
+                Image(systemName: store.completing ? "hourglass" : "checkmark.circle")
                     .font(.footnote)
                     .foregroundStyle(RevaWatch.greenBright)
                 Text(action.title)
@@ -101,9 +127,9 @@ struct TodayStatusView: View {
                     .foregroundStyle(RevaWatch.ink1)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(RevaWatch.ink2)
+                Text("已做")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(RevaWatch.greenBright)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
@@ -113,9 +139,37 @@ struct TodayStatusView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
-                    .stroke(RevaWatch.focusLine, lineWidth: 1)
+                    .stroke(RevaWatch.greenBright.opacity(0.5), lineWidth: 1)
             )
         }
+        .buttonStyle(.plain)
+        .disabled(store.completing)
+    }
+
+    private func readonlyActionTile(_ action: WatchTopAction) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "target")
+                .font(.footnote)
+                .foregroundStyle(RevaWatch.greenBright)
+            Text(action.title)
+                .font(.body)
+                .foregroundStyle(RevaWatch.ink1)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(RevaWatch.ink2)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                .fill(RevaWatch.focusBg2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                .stroke(RevaWatch.focusLine, lineWidth: 1)
+        )
     }
 
     // MARK: - Pending count

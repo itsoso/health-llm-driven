@@ -7,6 +7,8 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.health_protocol import (
@@ -148,6 +150,34 @@ def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
     return out
 
 
+def _claim_today_event(
+    db: Session, protocol_id: int, user_id: int, day: date,
+) -> HealthProtocolEvent:
+    """拿到今日事件行(并发安全)。
+
+    首次创建竞态由唯一约束 uq_hpe_protocol_date 兜底:两个并发请求都尝试 INSERT,
+    一个成功、另一个撞 IntegrityError → rollback + 重读已存在行(D1)。
+    """
+    ev = _today_event(db, protocol_id, user_id, day)
+    if ev is not None:
+        return ev
+    ev = HealthProtocolEvent(
+        user_id=user_id, protocol_id=protocol_id, event_date=day,
+        status="pending", track="protocol",
+    )
+    db.add(ev)
+    try:
+        db.flush()
+    except IntegrityError:
+        # 另一个并发请求已建了今日行 → 回滚本次 INSERT,重读那一行
+        db.rollback()
+        existing = _today_event(db, protocol_id, user_id, day)
+        if existing is None:  # 理论不至于(约束撞了说明存在),保底 fail loud
+            raise
+        return existing
+    return ev
+
+
 def complete_protocol(
     db: Session, protocol_id: int, user_id: int,
     track: str = "protocol", value: Optional[Dict[str, Any]] = None,
@@ -156,6 +186,13 @@ def complete_protocol(
     """完成今日协议(track=protocol 协议轨一键/自动;track=manual 手工轨带量)。
 
     每协议每天一条终态事件:已有终态则更新(改轨/改量/从 skip 翻成 completed),不重复插。
+
+    幂等 / 并发(D1):领域记录(MedicationLog 等)的落库由 **DB 原子状态转移**门控,
+    不再靠应用层读-检查-写。用
+        UPDATE ... SET status='completed' WHERE id=:id AND status != 'completed'
+    抢转移:仅当本事务的 rowcount==1(真把 pending/skipped 翻成 completed)才写领域
+    记录 + 审计;rowcount==0(别人已完成 / 已是 completed)→ 跳过领域写。生产 PG 下
+    两个并发 POST 至多一个 rowcount==1,故同一剂依从至多落一条。
     """
     p = get_protocol(db, protocol_id, user_id)
     if not p:
@@ -165,25 +202,53 @@ def complete_protocol(
     if track == "manual" and not p.manual_track_allowed:
         raise ValueError("该协议未开放手工轨")
     day = day or date.today()
-    ev = _today_event(db, protocol_id, user_id, day)
-    was_completed = ev is not None and ev.status == "completed"  # 防重复写真实记录
-    if ev is None:
-        ev = HealthProtocolEvent(user_id=user_id, protocol_id=protocol_id, event_date=day)
-        db.add(ev)
-    ev.status = "completed"
-    ev.track = track
-    merged = dict(value or {})
-    # 双轨写同一份业务记录:首次从非完成→完成时,落真实领域记录(MedicationLog 等)
-    if not was_completed:
+    ev = _claim_today_event(db, protocol_id, user_id, day)
+
+    # 原子 claim:仅当从「非完成」翻成「完成」才算本事务抢到状态转移。
+    res = db.execute(
+        update(HealthProtocolEvent)
+        .where(
+            HealthProtocolEvent.id == ev.id,
+            HealthProtocolEvent.status != "completed",
+        )
+        .values(status="completed", track=track, skip_reason=None)
+    )
+    won_transition = res.rowcount == 1
+
+    if won_transition:
+        merged = dict(value or {})
+        # 双轨写同一份业务记录:仅抢到转移的事务落真实领域记录(MedicationLog 等)
         linked = _write_domain_record(db, user_id, p, track, value, day)
         if linked is not None:
             merged["linked_model"] = p.source_model
             merged["linked_record_id"] = linked
-    ev.value = merged or None
-    ev.skip_reason = None
-    db.commit()
+        db.execute(
+            update(HealthProtocolEvent)
+            .where(HealthProtocolEvent.id == ev.id)
+            .values(value=merged or None)
+        )
+        db.commit()
+        if linked is not None:
+            # 依从是临床推断的事实 → 旁路审计取证(D1 灌水的追溯手段)。
+            # 完成已 commit,审计是侧路,任何异常都不得回流主流程(在此兜一层)。
+            try:
+                from app.agents import audit
+                audit.log_watch_complete(
+                    db, user_id,
+                    protocol_id=protocol_id,
+                    source_model=p.source_model,
+                    linked_record_id=linked,
+                    taken_time=datetime.now().strftime("%H:%M"),
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[Protocol] watch_complete 审计失败(跳过): {e}")
+    else:
+        # 别人已完成(或已是 completed):状态保持,不重复写领域记录,提交无害 no-op。
+        db.commit()
+
     db.refresh(ev)
-    logger.info(f"[Protocol] 完成: user={user_id} protocol={protocol_id} track={track} linked={ev.value}")
+    logger.info(f"[Protocol] 完成: user={user_id} protocol={protocol_id} track={track} "
+                f"won={won_transition} value={ev.value}")
     return ev
 
 
@@ -204,10 +269,12 @@ def _write_domain_record(
         from app.services.medication_service import medication_service
         taken_time = datetime.now().strftime("%H:%M")
         actual = (value or {}).get("actual_dosage")
+        # commit=False:把用药记录的提交并入 complete_protocol 的一次性 commit,
+        # 避免中途提交半成品 event 破坏原子性(S2);四分支(用药/餐/补剂/饮水)对齐用 flush。
         log = medication_service.log_medication(
             db, user_id=user_id, medication_id=p.source_id,
             taken_time=taken_time, status="taken",
-            actual_dosage=actual, notes="via protocol",
+            actual_dosage=actual, notes="via protocol", commit=False,
         )
         return log.id
     if p.source_model == "diet_records":
@@ -223,6 +290,18 @@ def _write_domain_record(
             calories=m.get("calories"), protein=m.get("protein"),
             carbs=m.get("carbs"), fat=m.get("fat"), fiber=m.get("fiber"),
             notes="via protocol",
+        )
+        db.add(rec); db.flush()
+        return rec.id
+    if p.source_model == "supplement_records":
+        # 补剂依从:一键已吃 → 落 SupplementRecord(taken=True, taken_time≈now)。
+        # source_id 链接到 SupplementDefinition.id(= SupplementRecord.supplement_id)。
+        if not p.source_id:   # 补剂需链接到具体补剂定义
+            return None
+        from app.models.supplement import SupplementRecord
+        rec = SupplementRecord(
+            user_id=user_id, supplement_id=p.source_id, record_date=day,
+            taken=True, taken_time=datetime.now().time(), notes="via protocol",
         )
         db.add(rec); db.flush()
         return rec.id

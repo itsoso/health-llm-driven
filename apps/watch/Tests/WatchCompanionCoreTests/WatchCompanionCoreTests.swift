@@ -40,6 +40,41 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertFalse(s.pushItems.first!.isUrgent)
     }
 
+    func testTopActionWithoutActionIdIsNotCompletable() throws {
+        // 既有 fixture 不带 action_id → 可选字段缺省 nil,不破解码,且不可完成(只读)。
+        let s = try WatchSummary.decode(json)
+        XCTAssertNil(s.topAction?.actionId)
+        XCTAssertEqual(s.topAction?.isCompletable, false)
+    }
+
+    func testCompletableTopActionDecodesActionId() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":{"title":"二甲双胍 0.5g","kind":"medication","time_window":"morning",
+                       "action_id":"agenda-health_protocol-7",
+                       "source":{"object_type":"health_protocol","object_id":7}},
+         "agenda":{"total":1,"pending":1},"quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+        XCTAssertEqual(s.topAction?.actionId, "agenda-health_protocol-7")
+        XCTAssertEqual(s.topAction?.kind, "medication")
+        XCTAssertEqual(s.topAction?.isCompletable, true)
+    }
+
+    func testNonProtocolKindNotCompletableEvenWithActionId() throws {
+        // 训练/复查等非 health_protocol 域:即便后端给了 action_id 也只读(对齐回写边界)。
+        let data = Data("""
+        {"status":{"light":"red","readiness_score":40,"headline":"h"},
+         "top_action":{"title":"今日休息","kind":"training","time_window":"anytime",
+                       "action_id":"agenda-training_decision-3",
+                       "source":{"object_type":"training_decision","object_id":3}},
+         "agenda":{"total":1,"pending":1},"quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+        XCTAssertEqual(s.topAction?.actionId, "agenda-training_decision-3")
+        XCTAssertEqual(s.topAction?.isCompletable, false, "非 health_protocol 域不可腕上完成")
+    }
+
     func testDecodeNullTopAction() throws {
         let data = Data("""
         {"status":{"light":"gray","readiness_score":null,"headline":"今日暂无待办"},
@@ -182,6 +217,21 @@ final class QuickRecordTests: XCTestCase {
 
     func testDietVoiceEmpty() {
         XCTAssertThrowsError(try QuickRecord.dietVoice(rawText: "   "))
+    }
+
+    func testCompleteActionBuildsPath() throws {
+        let r = try QuickRecord.completeAction(actionId: "agenda-health_protocol-12")
+        XCTAssertEqual(r.path, "/watch/actions/agenda-health_protocol-12/complete")
+        XCTAssertEqual(r.method, "POST")
+        XCTAssertTrue(r.query.isEmpty)
+        XCTAssertTrue(r.body.isEmpty, "完成端点空 body")
+        XCTAssertEqual(r.resultKind, .saved)
+    }
+
+    func testCompleteActionEmptyIdThrows() {
+        XCTAssertThrowsError(try QuickRecord.completeAction(actionId: "   ")) { err in
+            XCTAssertEqual(err as? QuickRecordError, .missing("action_id"))
+        }
     }
 
     func testVoiceFoodDraftBuildsConfirmRequest() throws {

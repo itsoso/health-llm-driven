@@ -19,7 +19,35 @@ import WatchConnectivity
         "/daily-health/exercise": ["POST"],
         "/diet/voice/parse": ["POST"],
         "/diet/records": ["POST"],
+        "/client-events": ["POST"],              // watch action 埋点中继(shown/completed)
     ]
+    // 动态放行:/watch/actions/{action_id}/complete 的 POST。前缀+后缀不够——
+    // 中段必须是「单层合法 action_id」,否则 `/watch/actions/../../admin/x/complete`
+    // 也同时满足 prefix+suffix(URLComponents 不折叠 ..)。见下 isWatchActionComplete。
+    private let watchActionPrefix = "/watch/actions/"
+    private let watchActionSuffix = "/complete"
+    // 与后端 _ACTION_ID_RE 同形: agenda-{object_type}-{object_id}。NSString 锚定(^…$),
+    // 中段不含 `/`,故天然单层;`.` 仅出现在 \d 之外即拒,`..` 无从构造。
+    private let actionIDPattern = "^agenda-[a-z_]+-[0-9]+$"
+
+    /// /watch/actions/{action_id}/complete 的 POST 才放行,且 {action_id} 须是合法单层 id。
+    private func isWatchActionComplete(path: String, method: String) -> Bool {
+        guard method == "POST" else { return false }
+        // 纵深防御:任何 .. 直接拒(即便正则已挡,留显式断言便于 review)。
+        guard !path.contains("..") else { return false }
+        guard path.hasPrefix(watchActionPrefix), path.hasSuffix(watchActionSuffix) else { return false }
+        let mid = String(path.dropFirst(watchActionPrefix.count).dropLast(watchActionSuffix.count))
+        // mid 必须就是一个 action_id:不含 `/`(单层)且匹配后端同形正则。
+        guard !mid.contains("/") else { return false }
+        return mid.range(of: actionIDPattern, options: .regularExpression) != nil
+    }
+
+    /// 是否放行该 (path, method)。先查精确白名单,再查受限动态规则。其余一律拒。
+    private func isRouteAllowed(path: String, method: String) -> Bool {
+        if allowedQuickRecordRoutes[path]?.contains(method) == true { return true }
+        if isWatchActionComplete(path: path, method: method) { return true }
+        return false
+    }
 
     @objc func activate() {
         #if canImport(WatchConnectivity)
@@ -54,7 +82,7 @@ import WatchConnectivity
             let method = (message["method"] as? String ?? "POST").uppercased()
             let query = message["query"] as? [String: String] ?? [:]
             let body = message["body"] as? [String: String] ?? [:]
-            guard allowedQuickRecordRoutes[path]?.contains(method) == true else {
+            guard isRouteAllowed(path: path, method: method) else {
                 reply(["ok": false, "error": "不允许的腕上操作"]); return
             }
             request(path: path, method: method, query: query, body: body, token: token) { data, err in
@@ -68,9 +96,48 @@ import WatchConnectivity
                     reply(["ok": false, "error": err ?? "请求失败"])
                 }
             }
+        case "event":
+            // watch action 埋点中继。body 形如 {event_name, meta:{action_id,kind,priority_tier}}。
+            // 走固定 /client-events,白名单仍校验(防 op 绕过)。失败不阻塞 UI(fire-and-forget)。
+            let path = "/client-events"
+            guard isRouteAllowed(path: path, method: "POST") else {
+                reply(["ok": false, "error": "不允许的腕上操作"]); return
+            }
+            guard let eventName = message["event_name"] as? String, !eventName.isEmpty else {
+                reply(["ok": false, "error": "缺少 event_name"]); return
+            }
+            let meta = message["meta"] as? [String: String] ?? [:]
+            var envelope: [String: Any] = ["event_name": eventName]
+            if !meta.isEmpty { envelope["meta"] = meta }
+            requestJSON(path: path, method: "POST", jsonBody: envelope, token: token) { _, err in
+                if err == nil {
+                    reply(["ok": true])
+                } else {
+                    reply(["ok": false, "error": err ?? "请求失败"])
+                }
+            }
         default:
             reply(["ok": false, "error": "未知 op"])
         }
+    }
+
+    /// 发带任意 JSON object body 的请求(埋点 envelope 含嵌套 meta,无法走 [String:String] 通道)。
+    private func requestJSON(
+        path: String, method: String, jsonBody: [String: Any],
+        token: String, completion: @escaping (Data?, String?) -> Void
+    ) {
+        guard let url = URL(string: apiBase + path) else { completion(nil, "URL 构造失败"); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: jsonBody)
+        URLSession.shared.dataTask(with: req) { data, resp, error in
+            if let error = error { completion(nil, error.localizedDescription); return }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code) else { completion(nil, "HTTP \(code)"); return }
+            completion(data ?? Data(), nil)
+        }.resume()
     }
 
     private func request(

@@ -29,6 +29,10 @@ public struct WatchStatus: Codable, Sendable {
     }
 }
 
+/// 可在腕上「一键完成」的 kind(= health_protocol 域:处方药/补剂/喝水/餐协议)。
+/// 其余 kind(训练/复查/测量…)只读不可勾,与后端 health_protocol-only 回写边界一致。
+public let watchCompletableKinds: Set<String> = ["medication", "supplement", "hydration", "diet"]
+
 public struct WatchTopAction: Codable, Sendable {
     public let title: String
     public let kind: String
@@ -39,6 +43,8 @@ public struct WatchTopAction: Codable, Sendable {
     public let rationaleShort: String?
     public let verificationWindowDays: Int?
     public let safetyStatus: String?
+    /// 后端注入:`agenda-{object_type}-{object_id}`。无 source 的项为 nil(不可完成,只读)。
+    public let actionId: String?
 
     public init(
         title: String,
@@ -49,7 +55,8 @@ public struct WatchTopAction: Codable, Sendable {
         leverageScore: Int? = nil,
         rationaleShort: String? = nil,
         verificationWindowDays: Int? = nil,
-        safetyStatus: String? = nil
+        safetyStatus: String? = nil,
+        actionId: String? = nil
     ) {
         self.title = title
         self.kind = kind
@@ -60,6 +67,13 @@ public struct WatchTopAction: Codable, Sendable {
         self.rationaleShort = rationaleShort
         self.verificationWindowDays = verificationWindowDays
         self.safetyStatus = safetyStatus
+        self.actionId = actionId
+    }
+
+    /// 可一键完成 = 有 action_id 且 kind 属于 health_protocol 可回写域。非可完成项只渲染只读。
+    public var isCompletable: Bool {
+        guard let id = actionId, !id.isEmpty else { return false }
+        return watchCompletableKinds.contains(kind)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -70,6 +84,7 @@ public struct WatchTopAction: Codable, Sendable {
         case rationaleShort = "rationale_short"
         case verificationWindowDays = "verification_window_days"
         case safetyStatus = "safety_status"
+        case actionId = "action_id"
     }
 }
 

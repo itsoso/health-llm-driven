@@ -63,6 +63,14 @@ final class WatchConnectivityClient: NSObject {
         return nil
     }
 
+    /// 发埋点事件(经 iPhone 中继到 /client-events)。fire-and-forget:失败抛出由调用方决定是否吞。
+    func sendEvent(name: String, meta: [String: String]) async throws {
+        let reply = try await send(["op": "event", "event_name": name, "meta": meta])
+        guard let ok = reply["ok"] as? Bool, ok else {
+            throw WCError.relayFailed((reply["error"] as? String) ?? "埋点中继失败")
+        }
+    }
+
     private func send(_ message: [String: Any]) async throws -> [String: Any] {
         #if canImport(WatchConnectivity)
         guard let s = session, s.isReachable else { throw WCError.unreachable }
