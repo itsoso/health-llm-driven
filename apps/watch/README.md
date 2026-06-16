@@ -21,9 +21,24 @@
 cd apps/watch && swift test
 ```
 
+## 注入 watch target 并编译验证(脚本化,已跑通)
+
+`xcode` npm lib 对 watch target 支持脆弱,改用 **ruby `xcodeproj`** 脚本注入(更可靠):
+
+```bash
+cd mobile && npx expo prebuild --platform ios          # 生成/刷新 ios/
+cp ../apps/watch/WatchApp/*.swift ../apps/watch/Sources/WatchCompanionCore/*.swift ios/RevaWatch/   # 单一真相源
+ruby ../apps/watch/scripts/inject_watch_target.rb       # 注入 RevaWatch watchOS app target(幂等)
+cd ios && xcodebuild -project HealthPilot.xcodeproj -target RevaWatch \
+  -sdk watchsimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build   # ✅ 编译验证(已 BUILD SUCCEEDED)
+```
+
+> 2026-06-16 实测:上面整链路在 watchOS 26.5 SDK **BUILD SUCCEEDED**。脚本幂等,prebuild --clean 后重跑即可。
+> 下一步把该脚本逻辑移植成 `mobile/plugins/withWatchApp.js`(config-plugin,survive prebuild + 随 EAS 自动注入)。
+
 ## 真机集成(设备步骤 —— 待迭代)
 
-watchOS app 必须是独立 `watchapp2` Xcode target,加进 Expo prebuilt 的 `ios/` 工程。`xcode` npm lib 对 watch target 支持脆弱(见 `docs/plans/2026-06-15-apple-watch-companion-implementation-plan.md` §2「最脆点」),建议**先 Xcode 手工建 target 验证可上架,再写 config-plugin 固化**:
+complication(独立 widget extension target,`WatchComplication/`)+ iPhone WC bridge + 真机运行 + EAS 发版:
 
 1. `cd mobile && npx expo prebuild --platform ios`(生成/刷新 `ios/`)。
 2. Xcode 打开 `ios/*.xcworkspace` → File ▸ New ▸ Target ▸ **watchOS App**(bundle `life.executor.health.watchkitapp`,companion=`life.executor.health`)。
