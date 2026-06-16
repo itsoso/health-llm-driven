@@ -115,6 +115,7 @@ from app.api import (
     movement,
     chronic_risk,
     multi_source_integration,
+    personal_models,
     agent,
     twin,
     safety,
@@ -275,6 +276,7 @@ api_router.include_router(anomaly_alert.router)
 api_router.include_router(sleep_analysis.router)
 api_router.include_router(chronic_risk.router)
 api_router.include_router(multi_source_integration.router)
+api_router.include_router(personal_models.router)
 api_router.include_router(personal_outcome.router, tags=["personal-outcome"])
 api_router.include_router(biomarkers.router)
 api_router.include_router(intervention_cycles.router)
