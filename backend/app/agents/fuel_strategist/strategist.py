@@ -107,7 +107,7 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
         if gc.caffeine_metabolism == "slow":
             nudges.append({
                 "gene": "CYP1A2",
-                "tip": "咖啡因慢代谢，下午14:00后避免咖啡/茶，以免影响睡眠质量。",
+                "tip": "咖啡因慢代谢倾向，可把咖啡/茶时间前移，以睡眠反馈为准（非硬性限制）。",
             })
         return nudges
 

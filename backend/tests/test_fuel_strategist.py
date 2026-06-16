@@ -219,6 +219,30 @@ def test_gene_nudge_mthfr_uses_conservative_language():
     assert "结合同型半胱氨酸" in mthfr["tip"]
 
 
+def test_gene_nudge_cyp1a2_slow_no_avoid_imperative():
+    """CYP1A2 慢代谢: FuelStrategist 的咖啡因提示已与 gene_config 软化对齐 —
+    不再硬性'避免咖啡', 改为概率性'可前移, 以睡眠反馈为准'(弱证据,临床结局重复性差)."""
+    from app.twin.gene_config import build_gene_config
+
+    t = _empty_twin()
+    t.genetic = GeneticContext(
+        has_profile=True,
+        total_variants=1,
+        nutrition_variants=[
+            {"gene_name": "CYP1A2", "genotype": "AC", "result_label": "slow metabolizer"},
+        ],
+    )
+    t.gene_config = build_gene_config(t)
+    assert t.gene_config is not None and t.gene_config.caffeine_metabolism == "slow"
+
+    nudges = _gene_nudges(t)
+    cyp = next(n for n in nudges if n["gene"] == "CYP1A2")
+
+    assert "避免咖啡" not in cyp["tip"]
+    assert "避免咖啡/茶" not in cyp["tip"]
+    assert "睡眠反馈" in cyp["tip"]
+
+
 def test_run_includes_knowledge_evidence_from_context():
     s = FuelStrategistSpecialist()
     f = s.run(
