@@ -8,6 +8,7 @@ final class HealthAgentMacCoreTests: XCTestCase {
 
         XCTAssertEqual(ids, [
             "today",
+            "agenda",
             "agent",
             "record",
             "data",
