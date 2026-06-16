@@ -24,7 +24,6 @@ fi
 DATABASE_URL="${DATABASE_URL:-postgresql://health_user:health2026@localhost:5432/health_db}"
 
 BACKUP_DIR="/opt/health-app/backups"
-KEEP_DAYS=30
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
 DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||')
 BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.sql.gz"
@@ -44,12 +43,14 @@ else
     exit 1
 fi
 
-# 清理过期备份（保留最近 N 天）
-DELETED=$(find "$BACKUP_DIR" -name "${DB_NAME}_*.sql.gz" -mtime +${KEEP_DAYS} -delete -print | wc -l)
+# 只保留最新 1 份（避免备份堆积吃硬盘）—— 删除除最新外的所有旧备份
+DELETED=$(ls -t "${BACKUP_DIR}/${DB_NAME}_"*.sql.gz 2>/dev/null | tail -n +2 | xargs -r rm -fv | wc -l)
 if [ "$DELETED" -gt 0 ]; then
-    echo "[$(date)] 🗑️ 清理了 ${DELETED} 个过期备份"
+    echo "[$(date)] 🗑️ 删除了 ${DELETED} 份旧备份（仅保留最新 1 份）"
 fi
 
-# 统计当前备份数量
+# 打印容量信息（防硬盘不足）
 COUNT=$(ls -1 "${BACKUP_DIR}/${DB_NAME}_"*.sql.gz 2>/dev/null | wc -l)
-echo "[$(date)] 📦 当前共有 ${COUNT} 个备份"
+DB_SIZE=$(psql "$DATABASE_URL" -tAc "SELECT pg_size_pretty(pg_database_size(current_database()))" 2>/dev/null | tr -d ' ')
+DISK=$(df -h "$BACKUP_DIR" 2>/dev/null | awk 'NR==2{print $4" 可用 / "$2" 总 ("$5" 已用)"}')
+echo "[$(date)] 📦 当前共有 ${COUNT} 个备份 | 数据库实际大小: ${DB_SIZE:-未知} | 磁盘: ${DISK}"

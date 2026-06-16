@@ -120,20 +120,12 @@ DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests
 # 备份数据库
 backup_database() {
     print_step "备份数据库..."
-    BACKUP_TS=$(date +%Y%m%d_%H%M%S)
-    ssh $SERVER "
-        BACKUP_DIR=$REMOTE_PATH/backups
-        mkdir -p \$BACKUP_DIR
-        cd $REMOTE_PATH/backend
-        source venv/bin/activate
-        PGPASSWORD=\$(grep '^POSTGRES_PASSWORD=' .env 2>/dev/null | cut -d= -f2) \
-        pg_dump -h localhost \
-            -U \$(grep '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2 || echo health) \
-            \$(grep '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2 || echo health_db) \
-            2>/dev/null | gzip > \$BACKUP_DIR/db_${BACKUP_TS}.gz && \
-        echo \"备份完成: \$BACKUP_DIR/db_${BACKUP_TS}.gz\" && \
-        ls -t \$BACKUP_DIR/db_*.gz 2>/dev/null | tail -n +11 | xargs -r rm
-    " 2>/dev/null && print_success "数据库备份完成 (保留最近10份)" || print_warning "数据库备份跳过（可能未配置 pg_dump）"
+    # 复用服务器上已验证的备份脚本(cron 也用它): 正确解析 DATABASE_URL、set -euo pipefail
+    # 诚实判成败、仅保留 1 份、打印 DB 大小 + 磁盘剩余。不再在此内联重复(历史上内联版
+    # 取错 env key 导致静默假成功 —— pg_dump|gzip 退出码恒 0)。
+    ssh $SERVER "bash $REMOTE_PATH/backend/scripts/backup_db.sh" \
+        && print_success "数据库备份完成 (仅保留 1 份)" \
+        || print_warning "数据库备份失败（已保留旧备份），详见上方输出"
 }
 
 # 记录当前 commit 用于回滚
