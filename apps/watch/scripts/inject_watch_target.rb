@@ -53,9 +53,11 @@ target.build_configurations.each do |c|
   bs['TARGETED_DEVICE_FAMILY'] = '4'                          # Apple Watch
   bs['WATCHOS_DEPLOYMENT_TARGET'] = '10.0'
   bs['SWIFT_VERSION'] = '5.0'
-  bs['GENERATE_INFOPLIST_FILE'] = 'YES'
-  bs['INFOPLIST_KEY_WKApplication'] = 'YES'                   # 现代单 target watch app
-  bs['INFOPLIST_KEY_WKCompanionAppBundleIdentifier'] = ios_bundle
+  bs['GENERATE_INFOPLIST_FILE'] = 'NO'
+  bs['INFOPLIST_FILE'] = "#{watch_name}/Info.plist"
+  bs.delete('INFOPLIST_KEY_WKApplication')
+  bs.delete('INFOPLIST_KEY_WKCompanionAppBundleIdentifier')
+  bs.delete('INFOPLIST_KEY_CFBundleIconName')
   # 注:显示名不写进 pbxproj(中文会让 CocoaPods 读 pbxproj 时 ASCII-8BIT 崩);
   # 腕上显示名走 watch target 的 Info.plist(GENERATE_INFOPLIST_FILE 默认取 PRODUCT_NAME),
   # 需中文时在 W3 设备步骤里改 Info.plist CFBundleDisplayName。
@@ -82,6 +84,18 @@ Dir.glob(File.join(src_dir, '*.swift')).sort.each do |f|
   target.add_file_references([ref])
 end
 puts "✓ 已加 #{Dir.glob(File.join(src_dir, '*.swift')).size} 个 swift 源"
+
+asset_catalog = File.join(src_dir, 'Assets.xcassets')
+if Dir.exist?(asset_catalog)
+  target.resources_build_phase.files.each do |build_file|
+    ref = build_file.file_ref
+    next unless ref&.path&.end_with?('Assets.xcassets')
+    build_file.remove_from_project
+  end
+  asset_ref = group.new_file(asset_catalog)
+  target.resources_build_phase.add_file_reference(asset_ref)
+  puts "✓ 已把 Assets.xcassets 加进 #{watch_name} resources"
+end
 
 # ── complication widget extension(WidgetKit,嵌入 watch app)──────────────
 comp_name = 'RevaComplication'

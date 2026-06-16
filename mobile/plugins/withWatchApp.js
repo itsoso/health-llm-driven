@@ -7,6 +7,25 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIconName</key><string>AppIcon</string>
+  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+  <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>WKApplication</key><true/>
+  <key>WKCompanionAppBundleIdentifier</key><string>life.executor.health</string>
+</dict>
+</plist>
+`;
+
 const WIDGET_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -46,6 +65,12 @@ function copySwift(srcDir, destDir, files) {
   }
 }
 
+function copyDirectory(srcDir, destDir) {
+  if (!fs.existsSync(srcDir)) return;
+  fs.rmSync(destDir, { recursive: true, force: true });
+  fs.cpSync(srcDir, destDir, { recursive: true });
+}
+
 function withWatchSources(config) {
   return withDangerousMod(config, [
     'ios',
@@ -59,6 +84,8 @@ function withWatchSources(config) {
       copySwift(path.join(watchRoot, 'WatchApp'), path.join(iosRoot, 'RevaWatch'), appFiles);
       const coreFiles = fs.readdirSync(core).filter((f) => f.endsWith('.swift'));
       copySwift(core, path.join(iosRoot, 'RevaWatch'), coreFiles);
+      copyDirectory(path.join(watchRoot, 'Assets.xcassets'), path.join(iosRoot, 'RevaWatch', 'Assets.xcassets'));
+      fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'Info.plist'), WATCH_INFO_PLIST, 'utf-8');
       fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'RevaWatch.entitlements'), entitlementsPlist(), 'utf-8');
 
       // 2) complication widget 源 = RevaComplication + ComplicationState + WatchSummary + shared cache + Info.plist
