@@ -250,11 +250,11 @@ describe('TodayScreen', () => {
 
     const { getByTestId, getByText, getByLabelText } = render(<TodayScreen />);
 
+    // Reva 重设计:90 天周期降为细条(SectionLabel「90 天代谢周期」+ DayProgress + 主指标 baseline→target)。
     expect(getByTestId('home-health-cycle-cockpit')).toBeTruthy();
-    expect(getByText('90 天健康周期')).toBeTruthy();
+    expect(getByText('90 天代谢周期')).toBeTruthy();
     expect(getByText('第 15 / 90 天')).toBeTruthy();
-    expect(getByText('复查倒计时 76 天')).toBeTruthy();
-    expect(getByText('LDL-C 3.8 → 2.6 mmol/L')).toBeTruthy();
+    expect(getByText('LDL-C')).toBeTruthy();
 
     fireEvent.press(getByLabelText('查看 90 天健康周期'));
     expect(mockPush).toHaveBeenCalledWith('/intervention-cycle');
@@ -320,34 +320,36 @@ describe('TodayScreen', () => {
 
   // ── Next-action lever + copy ────────────────────────────────────────
 
+  // Reva 重设计:lever 文案现在同时出现在 Hero「现在只做一件事」和被降权进「工具」分组的
+  // HomeCommandCard 行动行,故用 getAllByText(长度 ≥ 1)断言,而非唯一性。
   it('labels a measurement task as a record lever and shows its title', () => {
     mockDailyPlanActions = [
       { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
     ];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 记录')).toBeTruthy();
-    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+    const { getAllByText } = render(<TodayScreen />);
+    expect(getAllByText('现在只做 · 记录').length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText('晨起记录体重和腰围').length).toBeGreaterThanOrEqual(1);
   });
 
   it('names a lifestyle intervention lever by its strategy domain', () => {
     mockDailyPlanActions = [
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
     ];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 饮食')).toBeTruthy();
-    expect(getByText('提高早餐蛋白')).toBeTruthy();
+    const { getAllByText } = render(<TodayScreen />);
+    expect(getAllByText('现在只做 · 饮食').length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText('提高早餐蛋白').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows a risk lever and a concrete next step when a critical alert exists', () => {
     mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧持续偏低' }];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 风险')).toBeTruthy();
+    const { getAllByText, getByText } = render(<TodayScreen />);
+    expect(getAllByText('现在只做 · 风险').length).toBeGreaterThanOrEqual(1);
     expect(getByText('查看风险原因，调整今晚策略')).toBeTruthy();
   });
 
   it('prompts to backfill records as the next step when nothing is scheduled', () => {
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做')).toBeTruthy();
+    const { getAllByText, getByText } = render(<TodayScreen />);
+    expect(getAllByText('现在只做').length).toBeGreaterThanOrEqual(1);
     expect(getByText('补齐今天记录，Agent 再排干预')).toBeTruthy();
   });
 
@@ -356,8 +358,8 @@ describe('TodayScreen', () => {
     mockDailyPlanActions = [
       { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
     ];
-    const { getByLabelText, getByText, queryByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 风险')).toBeTruthy();
+    const { getByLabelText, getAllByText, queryByText } = render(<TodayScreen />);
+    expect(getAllByText('现在只做 · 风险').length).toBeGreaterThanOrEqual(1);
     expect(queryByText('现在只做 · 记录')).toBeNull();
 
     fireEvent.press(getByLabelText('打开下一步行动'));
@@ -440,9 +442,9 @@ describe('TodayScreen', () => {
     mockDailyPlanActions = [
       { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
     ];
-    const { getByText, queryByText, queryByLabelText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 记录')).toBeTruthy();
-    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
+    const { getAllByText, queryByText, queryByLabelText } = render(<TodayScreen />);
+    expect(getAllByText('现在只做 · 记录').length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText('晨起记录体重和腰围').length).toBeGreaterThanOrEqual(1);
     // record tasks expose no inline complete control — just the open chevron
     expect(queryByText('完成')).toBeNull();
     expect(queryByLabelText('标记完成')).toBeNull();
@@ -490,9 +492,10 @@ describe('TodayScreen', () => {
       { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '今天蛋白质目标' },
     ];
     const { queryByText, getAllByText } = render(<TodayScreen />);
-    // primary action is the first one (record) → no 完成 button, and it appears once
+    // primary action is the first one (record) → no 完成 button anywhere.
+    // (Reva 重设计:标题同时出现在 Hero + HomeCommandCard,故只断言 ≥ 1,不再要求唯一。)
     expect(queryByText('完成')).toBeNull();
-    expect(getAllByText('晨起记录体重和腰围').length).toBe(1);
+    expect(getAllByText('晨起记录体重和腰围').length).toBeGreaterThanOrEqual(1);
     expect(queryByText('今天蛋白质目标')).toBeNull();
   });
 

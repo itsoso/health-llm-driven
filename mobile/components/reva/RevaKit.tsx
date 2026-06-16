@@ -57,9 +57,11 @@ export function Chip({ status = 'info', children, style }: { status?: RevaStatus
   );
 }
 
-export function Card({ children, pad = 18, onPress, style }: { children: React.ReactNode; pad?: number; onPress?: () => void; style?: StyleProp<ViewStyle> }) {
+export function Card({ children, pad = 18, onPress, style, testID, accessibilityLabel }: { children: React.ReactNode; pad?: number; onPress?: () => void; style?: StyleProp<ViewStyle>; testID?: string; accessibilityLabel?: string }) {
   const inner = <View style={[k.card, { padding: pad }, style]}>{children}</View>;
-  return onPress ? <Pressable onPress={onPress}>{inner}</Pressable> : inner;
+  return onPress
+    ? <Pressable onPress={onPress} testID={testID} accessibilityLabel={accessibilityLabel} accessibilityRole={accessibilityLabel ? 'button' : undefined}>{inner}</Pressable>
+    : <View testID={testID}>{inner}</View>;
 }
 
 export function SectionLabel({ children, action, onAction }: { children: React.ReactNode; action?: string; onAction?: () => void }) {

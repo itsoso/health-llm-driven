@@ -42,7 +42,6 @@ import {
   pickPrimaryTrajectoryRisks,
 } from '../../services/trajectory';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
-import EnvironmentCard from '../../components/dashboard/EnvironmentCard';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import HomeCommandCard from '../../components/home/HomeCommandCard';
@@ -50,11 +49,18 @@ import AgentTopicsRow, { type TopicCard } from '../../components/home/AgentTopic
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import StreakBadge from '../../components/home/StreakBadge';
 import OutcomeWinCard from '../../components/home/OutcomeWinCard';
-import MetabolicEntryCard from '../../components/home/MetabolicEntryCard';
-import TodayTimelineBlock from '../../components/home/TodayTimelineBlock';
 import BiologicalAgeCard from '../../components/home/BiologicalAgeCard';
 import LongevityNextCard from '../../components/home/LongevityNextCard';
 import DeviceCompareCard from '../../components/home/DeviceCompareCard';
+import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
+import RevaHeroCard from '../../components/home/RevaHeroCard';
+import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
+import RevaCycleStrip from '../../components/home/RevaCycleStrip';
+import RevaWeatherRow from '../../components/home/RevaWeatherRow';
+import RevaQuickActions from '../../components/home/RevaQuickActions';
+import RevaSectionGroup from '../../components/home/RevaSectionGroup';
+import { useRevaFonts } from '../../components/reva/useRevaFonts';
+import { revaColors } from '../../constants/revaTheme';
 import { getDeviceComparison } from '../../services/deviceCompare';
 import { extractPhenoAge } from '../../services/twinHelpers';
 import {
@@ -115,6 +121,7 @@ export default function TodayScreen() {
   const router = useRouter();
   const { c } = useTheme();
   const qc = useQueryClient();
+  const revaFontsLoaded = useRevaFonts();
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [nextActionCompletion, setNextActionCompletion] = useState<{
     actionKey: string | null;
@@ -348,6 +355,12 @@ export default function TodayScreen() {
     [router],
   );
 
+  // Hero 行动:有 nextAction → 走其专属落点;否则补齐今天记录。
+  const onHeroAction = useCallback(() => {
+    if (nextAction) openPlanAction(nextAction);
+    else router.push('/(tabs)/record' as any);
+  }, [nextAction, openPlanAction, router]);
+
   const completeNextAction = useCallback(
     async (action: DailyPlanAction) => {
       if (!action.action_key || nextActionCompletion.state === 'sending') return;
@@ -485,78 +498,130 @@ export default function TodayScreen() {
   // 抗衰下一步:跳到该建议对应的目标(血检→/medical-exams、可穿戴→/import、体重→体重趋势);后端没给 route 时兜底体重趋势
   const nextData = topNextData(nextDataQuery.data);
 
+  // ── Reva Hero 派生值 ────────────────────────────────────
+  // 就绪分:无独立端点,沿用 useRevaData 的诚实代理(电量 → 睡眠分);拿不到 → null(Hero 显示「待同步」)。
+  const readinessScore = twinSnap.body_battery ?? twinSnap.sleep_score ?? null;
+  // 问候名:取 /profile/me 昵称(无 → 不带名,只问候)。不引入 auth 依赖。
+  const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
+  // Hero「现在只做一件事」:有 nextAction → 其标题 + lever + openPlanAction;否则退化成「补齐今天记录」走 /record。
+  const heroActionTitle = nextAction?.title ?? '补齐今天记录';
+
+  // 字体没 load 时给个 ActivityIndicator(参考 app/reva.tsx),避免 mono 数字闪烁。
+  if (!revaFontsLoaded) {
+    return (
+      <View style={[styles.fontGate, { backgroundColor: revaColors.paper }]}>
+        <ActivityIndicator color={revaColors.green500} />
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: revaColors.paper }]} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
-        <TodayTimelineBlock />
-        <MetabolicEntryCard />
-        <EnvironmentCard />
-        <StreakBadge
-          current={streakQuery.data?.current_streak}
-          best={streakQuery.data?.best_streak}
-          isError={streakQuery.isError}
-          onPress={() => router.push('/(tabs)/record' as any)}
+        {/* 1 · 问候头 */}
+        <RevaGreetingHeader name={profileName} />
+
+        {/* 2 · 深绿 Hero(就绪环 + 现在只做一件事) */}
+        <RevaHeroCard
+          readiness={readinessScore}
+          actionTitle={heroActionTitle}
+          actionLever={actionLeverLabel}
+          onPressAction={onHeroAction}
         />
-        <OutcomeWinCard
-          improved={progressDashboardQuery.data?.stats?.improved}
-          graded={progressDashboardQuery.data?.stats?.graded}
-          totalSurfaced={progressDashboardQuery.data?.stats?.total_surfaced}
-          isError={progressDashboardQuery.isError}
-          onPress={() => router.push('/my-progress' as any)}
+
+        {/* 3 · 今日时间线 strip(自取数) */}
+        <RevaTimelineStrip />
+
+        {/* 4 · 90 天代谢周期细条(自取数) */}
+        <RevaCycleStrip />
+
+        {/* 5 · 天气一行(降级) */}
+        <RevaWeatherRow />
+
+        {/* 6 · 快捷动作行 */}
+        <RevaQuickActions
+          onRun={() => router.push('/live-run' as any)}
+          onVoice={() => router.push('/voice-chat?intent=journal' as any)}
+          onRecord={() => router.push('/(tabs)/record' as any)}
         />
-        <BiologicalAgeCard
-          view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
-          win={pickBioAgeWin(progressDashboardQuery.data)}
-          isError={twinQuery.isError}
-          onPress={() => router.push('/medical-exams' as any)}
-        />
-        <LongevityNextCard
-          next={nextData}
-          causal={pickCausalHighlight(causalNotesQuery.data)}
-          onPress={() => router.push((nextData?.route ?? '/indicator-history?type=weight') as any)}
-        />
-        <DeviceCompareCard
-          data={deviceCompareQuery.data}
-          onPress={() => router.push('/device-sources' as any)}
-        />
-        <HomeCommandCard
-          agentJudgmentText={agentJudgmentText}
-          nextStepActionText={nextStepActionText}
-          actionLeverLabel={actionLeverLabel}
-          refreshing={isRefreshing}
-          hasCritical={criticalAlerts.length > 0}
-          canComplete={canComplete}
-          completionState={visibleNextActionState}
-          onPressJudgment={onPressJudgment}
-          onPressAction={onPressJudgment}
-          onPressAgent={openWorkspaceChat}
-          onPressComplete={
-            canComplete && nextAction ? () => completeNextAction(nextAction) : undefined
-          }
-        />
-        <MedicationCheckin
-          items={dashboardQuery.data?.medicationToday}
-          onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
-        />
-        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
-        <VitalsGrid
-          {...vitalsProps}
-          onTilePress={(metric) => {
-            if (metric === 'sleep') router.push('/sleep' as any);
-            else if (metric === 'heart_rate') router.push('/indicator-history?type=heart_rate' as any);
-            else if (metric === 'hrv') router.push('/indicator-history?type=hrv' as any);
-            else router.push('/indicator-history?type=body_battery' as any);
-          }}
-        />
-        <BodyStatsRow values={bodyStatsValues} />
-        <AgentTopicsRow
-          cards={topicCards}
-          loading={trajectoryQuery.isLoading}
-          rightHint={activePlanCount > 0 ? `${activePlanCount} 个干预进行中` : '等记录'}
-        />
+
+        {/* ── 身体数据 ──────────────────────────────────── */}
+        <RevaSectionGroup title="身体数据">
+          <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
+          <VitalsGrid
+            {...vitalsProps}
+            onTilePress={(metric) => {
+              if (metric === 'sleep') router.push('/sleep' as any);
+              else if (metric === 'heart_rate') router.push('/indicator-history?type=heart_rate' as any);
+              else if (metric === 'hrv') router.push('/indicator-history?type=hrv' as any);
+              else router.push('/indicator-history?type=body_battery' as any);
+            }}
+          />
+          <BodyStatsRow values={bodyStatsValues} />
+        </RevaSectionGroup>
+
+        {/* ── 进展 ──────────────────────────────────────── */}
+        <RevaSectionGroup title="进展">
+          <StreakBadge
+            current={streakQuery.data?.current_streak}
+            best={streakQuery.data?.best_streak}
+            isError={streakQuery.isError}
+            onPress={() => router.push('/(tabs)/record' as any)}
+          />
+          <OutcomeWinCard
+            improved={progressDashboardQuery.data?.stats?.improved}
+            graded={progressDashboardQuery.data?.stats?.graded}
+            totalSurfaced={progressDashboardQuery.data?.stats?.total_surfaced}
+            isError={progressDashboardQuery.isError}
+            onPress={() => router.push('/my-progress' as any)}
+          />
+          <BiologicalAgeCard
+            view={twinQuery.data ? extractPhenoAge(twinQuery.data) : null}
+            win={pickBioAgeWin(progressDashboardQuery.data)}
+            isError={twinQuery.isError}
+            onPress={() => router.push('/medical-exams' as any)}
+          />
+          <LongevityNextCard
+            next={nextData}
+            causal={pickCausalHighlight(causalNotesQuery.data)}
+            onPress={() => router.push((nextData?.route ?? '/indicator-history?type=weight') as any)}
+          />
+        </RevaSectionGroup>
+
+        {/* ── 工具 ──────────────────────────────────────── */}
+        <RevaSectionGroup title="工具">
+          <DeviceCompareCard
+            data={deviceCompareQuery.data}
+            onPress={() => router.push('/device-sources' as any)}
+          />
+          <MedicationCheckin
+            items={dashboardQuery.data?.medicationToday}
+            onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
+          />
+          <HomeCommandCard
+            agentJudgmentText={agentJudgmentText}
+            nextStepActionText={nextStepActionText}
+            actionLeverLabel={actionLeverLabel}
+            refreshing={isRefreshing}
+            hasCritical={criticalAlerts.length > 0}
+            canComplete={canComplete}
+            completionState={visibleNextActionState}
+            onPressJudgment={onPressJudgment}
+            onPressAction={onPressJudgment}
+            onPressAgent={openWorkspaceChat}
+            onPressComplete={
+              canComplete && nextAction ? () => completeNextAction(nextAction) : undefined
+            }
+          />
+          <AgentTopicsRow
+            cards={topicCards}
+            loading={trajectoryQuery.isLoading}
+            rightHint={activePlanCount > 0 ? `${activePlanCount} 个干预进行中` : '等记录'}
+          />
+        </RevaSectionGroup>
 
         {isLoading && (
           <View style={styles.loading}>
@@ -931,6 +996,8 @@ function getTrajectoryLevelColor(level: string, c: ReturnType<typeof useTheme>['
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: 110 },
+  // 暖纸背景 + 统一垂直节奏(各块/分组间距 18)
+  content: { padding: spacing.lg, paddingBottom: 110, gap: 18 },
+  fontGate: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
 });
