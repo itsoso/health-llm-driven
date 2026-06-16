@@ -1,5 +1,5 @@
 """血压追踪模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Index
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -10,6 +10,11 @@ class BloodPressureRecord(Base):
     __tablename__ = "blood_pressure_records"
     __table_args__ = (
         Index("idx_blood_pressure_records_user_date", "user_id", "record_date"),
+        # 血压是点事件(一天多次)。(user_id, measured_at) 唯一让 HealthKit 重复上送幂等,
+        # 按测量时刻去重而非按日聚合(避免同日多次互相覆盖)。配对迁移见
+        # migrations/managed/20260616_100000_add_blood_pressure_unique.*.sql。
+        # measured_at 为 NULL 的历史/手动记录不参与唯一约束(SQL NULL != NULL),退化为追加。
+        UniqueConstraint("user_id", "measured_at", name="uq_bp_user_measured"),
     )
 
     id = Column(Integer, primary_key=True, index=True)

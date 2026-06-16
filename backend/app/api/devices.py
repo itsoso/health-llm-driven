@@ -802,6 +802,28 @@ async def sync_apple_data(
 
 # ===== HealthKit (iOS App 主动推送数据) =====
 
+class BPReadingIn(BaseModel):
+    """单条血压点事件 — 血压一天多次, 是点事件 (和 ECG 同理), 不塞日聚合避免互相覆盖.
+
+    容错: systolic/diastolic 走 before-validator float→int 取整 (avg() 聚合可能给小数);
+    measured_at 是去重锚点 ((user_id, measured_at) 唯一); source 是 HealthKit sourceName,
+    仅用于备注, 不参与去重。坏值在 service 层丢弃, 不崩整批。"""
+    # systolic/diastolic 也设 Optional + 容错: 坏值 (None / 非数) 不在请求级 422 拖垮
+    # 整批, 而是过校验后由 service 层 _save_blood_pressure 丢弃该条 (不崩, 不误写)。
+    systolic: Optional[int] = None
+    diastolic: Optional[int] = None
+    # measured_at 是去重锚点。Optional: 缺失不 422, 由 service 丢弃该条 (无锚点无法去重)。
+    measured_at: Optional[datetime] = None
+    source: Optional[str] = None
+
+    @field_validator("systolic", "diastolic", mode="before")
+    @classmethod
+    def _round_bp_to_int(cls, v):
+        if isinstance(v, float):
+            return round(v)
+        return v
+
+
 class HealthKitDailyRecord(BaseModel):
     """单日 HealthKit 聚合记录 — mobile 端按天预聚合后推上来.
 
@@ -857,6 +879,16 @@ class HealthKitDailyRecord(BaseModel):
     ecg_recorded_at: Optional[datetime] = None  # 该次 ECG 记录时间 (sample startDate)
     afib_event_count: Optional[int] = None  # 本窗口内 AtrialFibrillation 分类次数, 默认按 0 处理
 
+    # ===== 血压点事件 (一天多次, 不塞日聚合) =====
+    # 每条 reading 各自按 (user_id, measured_at) 去重幂等落 blood_pressure_records。
+    blood_pressure_readings: Optional[List[BPReadingIn]] = None
+
+    # ===== 体脂 (随体重) =====
+    # body_fat_percentage 随 weight_kg 一并落 weight_records (weight 列 NOT NULL,
+    # body_fat 必须有体重作载体)。只有 body_fat 没 weight → 无法落库, 静默不写 (非错误)。
+    weight_kg: Optional[float] = None
+    body_fat_percentage: Optional[float] = None
+
     raw_data: Optional[dict] = None
 
     # 客户端用 avg()/sum() 聚合,常把小数 float 喂给 int 字段(如 resting_heart_rate
@@ -885,7 +917,9 @@ class HealthKitImportRequest(BaseModel):
 
 class HealthKitImportError(BaseModel):
     index: int
-    kind: str = "daily"  # "daily" (日聚合写入) | "ecg" (ECG 点事件落库)
+    # "daily" (日聚合) | "ecg" (ECG 点事件) | "blood_pressure" (血压点事件) |
+    # "body_composition" (体重+体脂)
+    kind: str = "daily"
     record_date: Optional[str]
     error: str
 
@@ -893,6 +927,7 @@ class HealthKitImportError(BaseModel):
 class HealthKitImportResponse(BaseModel):
     imported_count: int
     ecg_imported_count: int = 0  # 独立落库的 ECG 点事件数 (与日聚合并行, 不依赖其成功)
+    blood_pressure_imported_count: int = 0  # 独立落库的血压点事件数 (与日聚合并行)
     source_breakdown: dict  # {"apple-watch": 12, "ringconn": 5, ...}
     errors: List[HealthKitImportError]
 
@@ -930,12 +965,14 @@ async def healthkit_import(
     logger.info(
         f"[healthkit_import] user={current_user.id} batch={len(records)} "
         f"imported={result['imported_count']} ecg_imported={result['ecg_imported_count']} "
+        f"bp_imported={result['blood_pressure_imported_count']} "
         f"sources={result['source_breakdown']} errors={len(result['errors'])}"
     )
 
     return HealthKitImportResponse(
         imported_count=result["imported_count"],
         ecg_imported_count=result["ecg_imported_count"],
+        blood_pressure_imported_count=result["blood_pressure_imported_count"],
         source_breakdown=result["source_breakdown"],
         errors=[HealthKitImportError(**e) for e in result["errors"]],
     )
