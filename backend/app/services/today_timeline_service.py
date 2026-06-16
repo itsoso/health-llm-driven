@@ -38,11 +38,12 @@ _DOMAIN_STYLE: Dict[str, tuple[str, str]] = {
     "checkup": ("calendar-outline", "#5AC8FA"),
     "data_quality": ("git-compare-outline", "#8E8E93"),
     "correction": ("sync-outline", "#FF9500"),
+    "baseline_deviation": ("pulse-outline", "#8E8E93"),
 }
 _DEFAULT_STYLE = ("ellipse-outline", "#8E8E93")
 
 # agenda item.type → 统一 kind
-_ADVISORY_TYPES = {"training", "data_quality", "correction"}
+_ADVISORY_TYPES = {"training", "data_quality", "correction", "baseline_deviation"}
 
 
 def _style_for(domain: str) -> tuple[str, str]:

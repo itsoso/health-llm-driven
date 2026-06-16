@@ -175,6 +175,15 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     for c in _self_correction_items(db, user_id):
         items.append(c)
 
+    # 4.5) 个人基线漂移哨兵(R18 王牌③:RHR z-score 偏离)→ 归因候选 advisory
+    # 哨兵"加层不减层":急性 RHR 也自身产带就医出口的 advisory 兜底(不再依赖
+    # SafetyGuardian 接管——后者 rhr_tachycardia/bradycardia 仅 Severity.MEDIUM,
+    # 且与哨兵 latest 语义不一致,数据不同步时两路可能全漏)。
+    # import 放函数内避免与本模块被 watch_summary 等 import 形成循环。
+    from app.services import baseline_deviation_sentinel
+    for it in baseline_deviation_sentinel.deviation_advisories(db, user_id):
+        items.append(it)
+
     # 5) 到期复查(HealthProblem follow_up)→ 复查日历项
     for f in prob_svc.due_followups(db, user_id, within_days=followup_within_days):
         items.append(_agenda_item(
