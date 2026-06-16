@@ -416,3 +416,59 @@ def test_gene_config_uses_specific_gene_variants_without_overclaiming():
     assert cfg.methylation == "severely_impaired"
     assert all("必须" not in line for line in cfg.summary_lines)
     assert cfg.insulin_sensitivity == "normal"
+
+
+# ─────────────── Phase 0: gene_config 强指令降级 ───────────────
+
+
+def _gene_twin(**genetic_kwargs):
+    """构造仅含基因分区的最小 twin (SimpleNamespace,build_gene_config 只读 .genetic)。"""
+    from types import SimpleNamespace
+
+    from app.twin.schema import GeneticContext
+
+    return SimpleNamespace(genetic=GeneticContext(has_profile=True, total_variants=1, **genetic_kwargs))
+
+
+def test_apoe4_line_downgraded_no_strict_imperative():
+    """APOE4: '需严格控制LDL' 已降级为'建议盯+验证+需医生评估'。"""
+    from app.twin.gene_config import build_gene_config
+
+    twin = _gene_twin(risk_variants=[
+        {"gene_name": "APOE", "genotype": "ε3/ε4", "risk_level": "high"},
+    ])
+    cfg = build_gene_config(twin)
+    apoe_line = next(l for l in cfg.summary_lines if l.startswith("APOE"))
+    assert "需严格控制LDL" not in apoe_line
+    assert "严格" not in apoe_line
+    # 软化后仍保留可行动指标 + 医生评估
+    assert "LDL" in apoe_line or "ApoB" in apoe_line
+    assert "医生" in apoe_line
+
+
+def test_cyp1a2_slow_line_no_avoid_imperative():
+    """CYP1A2 慢代谢: '下午后避免咖啡' 已改为'可前移咖啡时间,以睡眠反馈为准'。"""
+    from app.twin.gene_config import build_gene_config
+
+    twin = _gene_twin(nutrition_variants=[
+        {"gene_name": "CYP1A2", "genotype": "AC", "result_label": "slow metabolizer"},
+    ])
+    cfg = build_gene_config(twin)
+    assert cfg.caffeine_metabolism == "slow"
+    cyp_line = next(l for l in cfg.summary_lines if l.startswith("CYP1A2"))
+    assert "避免咖啡" not in cyp_line
+    assert "睡眠反馈" in cyp_line
+
+
+def test_comt_single_snp_strong_conclusion_removed():
+    """COMT Met/Met: 单 SNP 强结论 '需正念和低咖啡因' 已剔除 (解释方差<1%)。"""
+    from app.twin.gene_config import build_gene_config
+
+    twin = _gene_twin(personality_variants=[
+        {"gene_name": "COMT", "genotype": "Met/Met", "result_label": "worrier"},
+    ])
+    cfg = build_gene_config(twin)
+    # 表型分型保留,供下游参考
+    assert cfg.stress_type == "worrier"
+    # 但不再注入任何 COMT 祈使建议行
+    assert all("COMT" not in line for line in cfg.summary_lines)

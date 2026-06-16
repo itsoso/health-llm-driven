@@ -1736,10 +1736,10 @@ def get_comprehensive_profile(
         },
     }
 
-    # PRS 多基因风险评分
-    from app.services.genetic_prs import compute_all_prs
+    # 相关位点计数 + 方向 (非 PRS,非人群百分位 —— 见 Phase 0 降级)
+    from app.services.genetic_prs import DISCLAIMER as LOCUS_DISCLAIMER, compute_all_locus_summaries
     variant_dicts = [{"gene_name": v.gene_name, "genotype": v.genotype, "result_label": v.result_label} for v in variants]
-    prs = compute_all_prs(variant_dicts)
+    locus_summary = compute_all_locus_summaries(variant_dicts)
 
     return {
         "status": "ok",
@@ -1747,7 +1747,12 @@ def get_comprehensive_profile(
         "genes_tested": len(variants),
         "categories_covered": list(by_category.keys()),
         "profile": profile,
-        "polygenic_risk_scores": prs,
+        # 相关位点的命中数 + 方向。注意:这**不是**人群校准的多基因风险评分,也无人群百分位。
+        "locus_direction_summary": locus_summary,
+        "locus_direction_disclaimer": LOCUS_DISCLAIMER,
+        # DEPRECATED: 旧的伪 PRS (含凭空构造的 percentile) 已下线,置空以保后向兼容。
+        # 新客户端请读 locus_direction_summary。
+        "polygenic_risk_scores": None,
     }
 
 

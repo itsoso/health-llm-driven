@@ -1,14 +1,30 @@
-"""多基因风险评分 (Polygenic Risk Score, PRS)
+"""相关位点计数 + 方向 (locus direction summary)
 
-基于用户已检测 SNP 位点的加权评分，评估特定疾病领域的遗传风险。
-仅使用消费级基因芯片常见位点（非全基因组），结果供参考。
+⚠️ 这**不是**人群校准的多基因风险评分 (PRS)。下面的权重是**手写的序数方向标注**
+(命中位点把概率往升/降方向移),既无公开权威效应量来源,也未做祖源校准。
+因此本模块**对外不输出 PRS、不输出人群百分位**——只给"命中几个相关位点 + 整体偏哪个方向"。
+
+为什么降级 (见 docs/design-genetic-interpretation-first-principles.md §6 Phase 0):
+- 复杂性状的遗传方差被成百上千位点稀释,消费级芯片这几个 SNP 对**个体**几乎无预测力。
+- 原 `percentile = raw_score/max_score*100` 是**凭空构造的伪人群百分位**,会被误读为"你比 X% 的人风险高"。
+- 原子串匹配 `pattern in geno` 会让 ε2/ε4 等等位互相误配。
+
+在接入任何 agent 先验前,这里必须先替换为带溯源效应量的版本 (见 Phase 2)。当前**仅供展示**。
 """
 
 from typing import Any, Dict, List, Optional
 
-PRS_WEIGHTS: Dict[str, Dict[str, Dict[str, float]]] = {
+DISCLAIMER = (
+    "非人群校准多基因评分,仅为相关位点的方向性提示;"
+    "单/少数 SNP 对个体无预测力,非诊断,不可据此判断患病风险。"
+)
+
+# 手写序数方向标注:正值=该基因型把概率往"升高方向"移,负值=往"降低方向"移,0=中性。
+# 仅用于「命中几个位点 + 整体偏哪个方向」,不构成评分/百分位/风险等级。
+# key 是**精确基因型** (大写归一后精确相等匹配,不做子串)。
+_LOCUS_DIRECTIONS: Dict[str, Dict[str, Dict[str, float]]] = {
     "cardiovascular": {
-        "APOE": {"ε4/ε4": 2.0, "ε3/ε4": 1.0, "ε3/ε3": 0.0, "ε2": -0.5},
+        "APOE": {"ε4/ε4": 2.0, "ε3/ε4": 1.0, "ε3/ε3": 0.0, "ε2/ε3": -0.5, "ε2/ε2": -0.5},
         "9P21": {"AA": 1.2, "AG": 0.6, "GG": 0.0},
         "CETP": {"GG": 0.0, "AG": -0.2, "AA": -0.4},
         "NOS3": {"Asp/Asp": 0.6, "Glu/Asp": 0.3, "Glu/Glu": 0.0},
@@ -38,26 +54,43 @@ PRS_WEIGHTS: Dict[str, Dict[str, Dict[str, float]]] = {
     },
 }
 
-_RISK_THRESHOLDS = {
-    "cardiovascular": [(2.5, "high"), (1.2, "moderate"), (0.5, "mild"), (0.0, "low")],
-    "diabetes": [(2.5, "high"), (1.5, "moderate"), (0.7, "mild"), (0.0, "low")],
-    "obesity": [(1.5, "high"), (0.8, "moderate"), (0.3, "mild"), (0.0, "low")],
-    "inflammation": [(2.0, "high"), (1.2, "moderate"), (0.5, "mild"), (0.0, "low")],
-    "cognition": [(2.0, "high"), (1.0, "moderate"), (0.4, "mild"), (0.0, "low")],
-}
+
+def _normalize_genotype(geno: str) -> str:
+    """归一化基因型字符串以便精确比较 (大写 + 去空白)。
+
+    注意:对希腊字母 ε 等不区分大小写没有意义,但去掉首尾/内部空白可避免
+    "ε3 / ε4" vs "ε3/ε4" 这类纯格式差异导致漏配。
+    """
+    return geno.replace(" ", "").upper()
 
 
-def compute_prs(
+def _match_direction(geno: str, geno_directions: Dict[str, float]) -> Optional[float]:
+    """精确等位/基因型匹配,返回方向值;无匹配返回 None。
+
+    用精确相等 (归一化后) 取代旧的子串包含——后者会让 'ε2' 命中 'ε2/ε4'、
+    'AA' 命中 'GAAT' 这类等位/基因型误配。
+    """
+    if not geno:
+        return None
+    norm = _normalize_genotype(geno)
+    for pattern, direction in geno_directions.items():
+        if _normalize_genotype(pattern) == norm:
+            return direction
+    return None
+
+
+def compute_locus_summary(
     variants: List[Dict[str, Any]],
     domain: str,
 ) -> Optional[Dict[str, Any]]:
-    """计算某领域的多基因风险评分。
+    """统计某领域命中的相关位点数 + 整体方向。
 
+    **不是 PRS**:不返回 percentile / risk_level / score。
     variants: [{gene_name, genotype, result_label, ...}]
-    domain: PRS_WEIGHTS 的 key
+    domain: _LOCUS_DIRECTIONS 的 key
     """
-    weights = PRS_WEIGHTS.get(domain)
-    if not weights:
+    geno_directions_by_gene = _LOCUS_DIRECTIONS.get(domain)
+    if not geno_directions_by_gene:
         return None
 
     by_gene: Dict[str, str] = {}
@@ -67,55 +100,64 @@ def compute_prs(
         if name:
             by_gene.setdefault(name, geno)
 
-    raw_score = 0.0
-    max_score = 0.0
-    matched_genes = []
+    loci_matched = 0          # 命中且方向非中性 (能影响整体方向) 的位点数
+    loci_tested = 0           # 用户测过且能精确匹配上的位点数
+    raise_count = 0           # 偏"升高方向"的位点
+    lower_count = 0           # 偏"降低方向"的位点
+    direction_sum = 0.0       # 仅用于决定整体方向符号,不对外输出为分数
+    loci: List[Dict[str, Any]] = []
 
-    for gene, geno_weights in weights.items():
+    for gene, geno_directions in geno_directions_by_gene.items():
         geno = by_gene.get(gene, "")
-        max_weight = max(geno_weights.values())
-        max_score += max(max_weight, 0)
+        if not geno:
+            continue
+        direction = _match_direction(geno, geno_directions)
+        if direction is None:
+            loci.append({"gene": gene, "genotype": geno, "direction": "unknown", "note": "unmatched"})
+            continue
 
-        matched = False
-        for pattern, w in geno_weights.items():
-            if pattern.upper() in geno.upper():
-                raw_score += w
-                matched_genes.append({"gene": gene, "genotype": geno, "weight": w})
-                matched = True
-                break
+        loci_tested += 1
+        direction_sum += direction
+        if direction > 0:
+            dir_label = "raise"
+            raise_count += 1
+            loci_matched += 1
+        elif direction < 0:
+            dir_label = "lower"
+            lower_count += 1
+            loci_matched += 1
+        else:
+            dir_label = "neutral"
+        loci.append({"gene": gene, "genotype": geno, "direction": dir_label})
 
-        if not matched and geno:
-            matched_genes.append({"gene": gene, "genotype": geno, "weight": 0, "note": "unmatched"})
-
-    if not matched_genes:
+    if not loci:
         return None
 
-    percentile = int(min(99, max(1, (raw_score / max_score * 100) if max_score > 0 else 50)))
-
-    thresholds = _RISK_THRESHOLDS.get(domain, [])
-    risk_level = "unknown"
-    for threshold, level in thresholds:
-        if raw_score >= threshold:
-            risk_level = level
-            break
+    if direction_sum > 0:
+        overall_direction = "raise"
+    elif direction_sum < 0:
+        overall_direction = "lower"
+    else:
+        overall_direction = "neutral"
 
     return {
         "domain": domain,
-        "raw_score": round(raw_score, 2),
-        "max_possible": round(max_score, 2),
-        "percentile": percentile,
-        "risk_level": risk_level,
-        "genes_evaluated": len(matched_genes),
-        "genes_available": len(weights),
-        "details": matched_genes,
+        "loci_matched": loci_matched,      # 非中性命中数
+        "loci_tested": loci_tested,        # 精确匹配上的位点数
+        "loci_available": len(geno_directions_by_gene),
+        "overall_direction": overall_direction,  # raise | lower | neutral
+        "raise_count": raise_count,
+        "lower_count": lower_count,
+        "disclaimer": DISCLAIMER,
+        "loci": loci,
     }
 
 
-def compute_all_prs(variants: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """计算所有领域的 PRS。"""
-    results = {}
-    for domain in PRS_WEIGHTS:
-        prs = compute_prs(variants, domain)
-        if prs:
-            results[domain] = prs
+def compute_all_locus_summaries(variants: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """计算所有领域的相关位点方向汇总 (非 PRS)。"""
+    results: Dict[str, Any] = {}
+    for domain in _LOCUS_DIRECTIONS:
+        summary = compute_locus_summary(variants, domain)
+        if summary:
+            results[domain] = summary
     return results
