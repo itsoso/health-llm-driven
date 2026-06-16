@@ -109,7 +109,6 @@ if Dir.exist?(asset_catalog)
   puts "✓ 已把 Assets.xcassets 加进 #{watch_name} resources"
 
   icon_pngs = Dir.glob(File.join(asset_catalog, 'AppIcon.appiconset', '*.png')).sort
-  icon_pngs.concat(Dir.glob(File.join(src_dir, 'IconFiles', '*.png')).sort)
   icon_pngs.each do |png|
     ref = group.new_file(png)
     target.resources_build_phase.add_file_reference(ref)

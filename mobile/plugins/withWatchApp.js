@@ -98,7 +98,6 @@ function withWatchSources(config) {
       const coreFiles = fs.readdirSync(core).filter((f) => f.endsWith('.swift'));
       copySwift(core, path.join(iosRoot, 'RevaWatch'), coreFiles);
       copyDirectory(path.join(watchRoot, 'Assets.xcassets'), path.join(iosRoot, 'RevaWatch', 'Assets.xcassets'));
-      copyDirectory(path.join(watchRoot, 'IconFiles'), path.join(iosRoot, 'RevaWatch', 'IconFiles'));
       fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'Info.plist'), WATCH_INFO_PLIST, 'utf-8');
       fs.writeFileSync(path.join(iosRoot, 'RevaWatch', 'RevaWatch.entitlements'), entitlementsPlist(), 'utf-8');
 
