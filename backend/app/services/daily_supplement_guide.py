@@ -231,10 +231,20 @@ def _build_slots(
                 "category": s.category or "",
             })
 
+        # 依从性重构: 把"N 个 checkbox"压成"1 个时段动作"。
+        # 客户端拿 pending_ids 一把 POST /supplements/records/batch 即可整段完成。
+        # 注: 仅补剂可一键批量; 药物走 _build_medication_section, 禁止默认完成。
+        pending_ids = [it["id"] for it in slot_items if not it["taken"]]
+        taken_count = sum(1 for it in slot_items if it["taken"])
         slots.append({
             "timing": timing,
             "label": TIMING_LABELS.get(timing, timing),
             "items": slot_items,
+            "total": len(slot_items),
+            "taken_count": taken_count,
+            "pending_count": len(pending_ids),
+            "pending_ids": pending_ids,
+            "all_taken": len(pending_ids) == 0,
         })
 
     return slots
