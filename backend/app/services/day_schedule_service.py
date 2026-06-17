@@ -86,6 +86,16 @@ def build_day_schedule(
         .all()
     )
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+
+    # 日历忙碌块(CalDAV 同步来的)→ DayContext.busy,solver 浮动项避开会议。
+    # 失败不阻塞排程(降级到无忙碌块);调用方传入的 ctx_overrides.busy 优先。
+    overrides = dict(ctx_overrides or {})
+    if "busy" not in overrides:
+        try:
+            from app.services.caldav_sync import today_busy_blocks
+            overrides["busy"] = today_busy_blocks(db, user_id)
+        except Exception:  # 忙碌块读取失败 → 退化为不避会议,不让它炸掉整条排程
+            pass
     return schedule_from_medications(
-        meds, profile=profile, forbidden_reasons=forbidden_reasons, ctx_overrides=ctx_overrides
+        meds, profile=profile, forbidden_reasons=forbidden_reasons, ctx_overrides=overrides
     )

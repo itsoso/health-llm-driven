@@ -55,3 +55,7 @@ curl_cffi==0.14.0
 pdfplumber==0.11.8
 sentry-sdk[fastapi]==2.20.0
 dashscope>=1.23.0
+
+# CalDAV 日历同步(timing-solver 议程驱动;无现成 CalDAV 客户端替代,当前维护版本,exact pin)
+caldav==3.2.1
+icalendar==7.1.3
