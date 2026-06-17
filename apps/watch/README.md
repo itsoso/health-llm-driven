@@ -5,6 +5,7 @@
 Watch App 优先独立展示: iPhone App 登录后通过 WatchConnectivity applicationContext
 把 token 同步到 Watch 本机 Keychain;Watch 刷新今日状态、打点和埋点时优先直连
 `/api/v1`,不要求 iPhone App 前台打开。旧 iPhone relay 保留为 token 未同步或直连失败时的兜底。
+Watch 启动时会先展示上次成功的 `WatchSummary` 缓存,再异步刷新;缓存只用于可用性兜底,实时性仍以刷新结果和 freshness 标识为准。
 
 ## 结构与「测试边界」
 

@@ -123,6 +123,33 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertTrue(s.dueItems.isEmpty)
     }
 
+    func testSummaryCacheRoundTripsLastSuccessfulSummary() throws {
+        let suite = "WatchSummaryCacheTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = WatchSummaryCache(defaults: defaults, key: "summary")
+        let summary = try WatchSummary.decode(json)
+
+        cache.save(summary)
+        let loaded = try XCTUnwrap(cache.load())
+
+        XCTAssertEqual(loaded.status.headline, summary.status.headline)
+        XCTAssertEqual(loaded.topAction?.title, summary.topAction?.title)
+        XCTAssertEqual(loaded.dueItems.first?.actionId, "agenda-health_protocol-8")
+        XCTAssertEqual(loaded.agenda.pending, 2)
+    }
+
+    func testSummaryCacheReturnsNilForCorruptData() throws {
+        let suite = "WatchSummaryCacheTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = WatchSummaryCache(defaults: defaults, key: "summary")
+
+        defaults.set(Data("not-json".utf8), forKey: "summary")
+
+        XCTAssertNil(cache.load())
+    }
+
     func testDueItemNonProtocolSourceIsNotCompletableEvenWithActionId() throws {
         let data = Data("""
         {"status":{"light":"green","readiness_score":80,"headline":"h"},
