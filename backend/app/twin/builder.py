@@ -386,6 +386,7 @@ def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: 
 
         if row.training_readiness_score is not None:
             p.training_readiness_score = int(row.training_readiness_score)
+            p.training_readiness_date = row.record_date  # 哪天的 readiness(前端判新鲜度,旧分不当今日)
         if row.training_readiness_level:
             p.training_readiness_level = str(row.training_readiness_level)
         if row.training_readiness_factors:

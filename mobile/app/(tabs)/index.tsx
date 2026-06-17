@@ -53,6 +53,7 @@ import { useHomeColdStartTrace } from '../../services/perfTrace';
 interface TwinSnapshot {
   hrv?: number | null;
   readiness?: number | null;
+  readiness_date?: string | null;
   sleep_score?: number | null;
   sleep_hours?: number | null;
   systolic_bp?: number | null;
@@ -211,6 +212,12 @@ export default function TodayScreen() {
   // 与时间线 advisory 写的「恢复就绪度」同源。不再用 body_battery 兜底(那是另一指标,
   // 同屏会与时间线就绪分矛盾)。拿不到 → null(Hero 显示「待同步」)。
   const readinessScore = twinSnap.readiness ?? null;
+  // 新鲜度守卫:readiness 是每日晨间指标。若来源日期不是「今天」(本地),说明昨晚没同步,
+  // 不能把旧分当「今日就绪」(就是用户撞到的「昨晚没同步还显示 93」)。
+  const _now = new Date();
+  const _todayStr = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
+  const readinessStale =
+    readinessScore != null && !!twinSnap.readiness_date && twinSnap.readiness_date < _todayStr;
   // 问候名:取 /profile/me 昵称(无 → 不带名,只问候)。不引入 auth 依赖。
   const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
   // Hero「现在只做一件事」:有 nextAction → 其标题 + lever + openPlanAction;否则退化成「补齐今天记录」走 /record。
@@ -238,6 +245,8 @@ export default function TodayScreen() {
         {/* 2 · 深绿 Hero(就绪环 + 现在只做一件事) */}
         <RevaHeroCard
           readiness={readinessScore}
+          stale={readinessStale}
+          asOf={twinSnap.readiness_date}
           actionTitle={heroActionTitle}
           actionLever={actionLeverLabel}
           onPressAction={onHeroAction}
@@ -324,6 +333,7 @@ function pickTwinSnapshot(twin: any, garmin: any): TwinSnapshot {
     // 这是 Hero 就绪环与时间线 advisory 应同源的「真就绪分」;之前 Hero 用 body_battery
     // 兜底导致同屏两个就绪分自相矛盾(36 vs 93)。null → Hero 显示「待同步」。
     readiness: phys.training_readiness_score ?? null,
+    readiness_date: phys.training_readiness_date ?? null,
     sleep_score: phys.sleep_score_latest ?? null,
     // Twin 物理分区字段名:resting_hr / body_battery_current / sleep_duration_h_latest
     // (之前误用 *_latest 后缀的不存在键 → 读空 → 回退到未合并的 garmin days[0] → "--")

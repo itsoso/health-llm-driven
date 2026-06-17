@@ -58,6 +58,7 @@ class PhysiologicalState(BaseModel):
     # score 0-100, level: poor/low/moderate/high/prime
     training_readiness_score: Optional[int] = None
     training_readiness_level: Optional[str] = None
+    training_readiness_date: Optional[date] = None  # readiness 来自哪天(可能非今天:同步延迟/昨晚没同步)→ 据此判新鲜度,避免旧分当今日
     training_readiness_factors: Optional[Dict[str, Any]] = None  # hrvWeeklyAverage/sleepScore/recoveryTime 等分解
 
     # 有氧 / 活动

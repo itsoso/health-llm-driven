@@ -27,23 +27,35 @@ function readinessNote(score: number | null, note?: string | null): string {
   return '优先睡眠和低强度恢复';
 }
 
+function cnDate(iso?: string | null): string {
+  if (!iso) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${Number(m[2])} 月 ${Number(m[3])} 日` : iso;
+}
+
 export default function RevaHeroCard({
   readiness,
   note,
+  stale,
+  asOf,
   actionTitle,
   actionLever,
   onPressAction,
 }: {
   readiness: number | null;
   note?: string | null;
+  stale?: boolean;
+  asOf?: string | null;
   actionTitle: string;
   actionLever?: string | null;
   onPressAction: () => void;
 }) {
+  // 旧分(昨晚没同步)→ 不显示成「今日就绪 + 可上强度」,而是「待同步」环 + 标注上次值/日期。
+  const showStale = Boolean(stale && readiness != null);
   return (
     <View style={styles.hero}>
       <View style={styles.topRow}>
-        {readiness != null ? (
+        {readiness != null && !showStale ? (
           <ReadinessRing score={readiness} dark size={96} />
         ) : (
           <View style={styles.ringPlaceholder}>
@@ -53,10 +65,12 @@ export default function RevaHeroCard({
         <View style={styles.copy}>
           <Text style={styles.overline}>今日恢复就绪</Text>
           <Text style={styles.title} numberOfLines={1}>
-            {readinessTitle(readiness)}
+            {showStale ? '昨晚未同步' : readinessTitle(readiness)}
           </Text>
           <Text style={styles.note} numberOfLines={2}>
-            {readinessNote(readiness, note)}
+            {showStale
+              ? `上次 ${readiness} 分 · ${cnDate(asOf)};戴表睡一晚后自动更新`
+              : readinessNote(readiness, note)}
           </Text>
         </View>
       </View>
