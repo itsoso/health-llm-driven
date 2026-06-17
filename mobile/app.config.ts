@@ -22,6 +22,8 @@ const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
 const ASSOCIATED_DOMAIN = `applinks:${APP_LINK_DOMAIN}`;
 const APP_OPEN_PATH_PREFIX = '/open/shared';
+const ROKID_CALLBACK_SCHEME = `${BUNDLE_ID_BASE}.rokid`;
+const ROKID_QUERY_SCHEMES = ['rokidai'];
 const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
   action: 'VIEW',
   autoVerify: true,
@@ -69,6 +71,25 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     infoPlist: {
       ...((config.ios as any)?.infoPlist ?? {}),
       CFBundleDisplayName: displayName,
+      LSApplicationQueriesSchemes: Array.from(new Set([
+        ...((((config.ios as any)?.infoPlist ?? {}) as any).LSApplicationQueriesSchemes ?? []),
+        ...ROKID_QUERY_SCHEMES,
+      ])),
+      CFBundleURLTypes: [
+        ...(((((config.ios as any)?.infoPlist ?? {}) as any).CFBundleURLTypes ?? []) as any[]),
+        {
+          CFBundleURLName: 'Rokid CXR Auth Callback',
+          CFBundleURLSchemes: [ROKID_CALLBACK_SCHEME],
+        },
+      ],
+      UIBackgroundModes: Array.from(new Set([
+        ...(((((config.ios as any)?.infoPlist ?? {}) as any).UIBackgroundModes ?? []) as string[]),
+        'bluetooth-central',
+      ])),
+      NSBluetoothAlwaysUsageDescription:
+        '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
+      NSBluetoothPeripheralUsageDescription:
+        '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
     },
   },
   android: {

@@ -1,6 +1,10 @@
 {
-  "platforms": ["android"],
+  "platforms": ["android", "ios"],
   "android": {
     "modules": ["life.executor.health.rokidbridge.RokidBridgeModule"]
+  },
+  "ios": {
+    "modules": ["RokidBridgeModule"],
+    "appDelegateSubscribers": ["RokidBridgeAppDelegateSubscriber"]
   }
 }

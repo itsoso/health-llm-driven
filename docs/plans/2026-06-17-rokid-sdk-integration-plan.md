@@ -4,9 +4,9 @@
 
 **Goal:** 将 Rokid Glasses 作为 Reva ambient wearable 的视觉/语音/短提示入口接入，而不是做一个孤立的眼镜健康 dashboard。
 
-**Architecture:** 先在现有 Expo mobile app 内新增 `rokid-bridge` 原生模块，负责发现 Hi Rokid、探测 Rokid CXR SDK、打开 companion app，并把眼镜侧事件转成后端已有的 `/ambient/*` 对象。等拿到 Rokid 授权文件、真机和正式样例后，再启用 SDK AAR 并接入 CXR-M/CXR-L 的连接、媒体流、图片、语音和 custom view 能力。
+**Architecture:** 先在现有 Expo mobile app 内新增 `rokid-bridge` 原生模块，负责发现 Hi Rokid、探测 Rokid CXR SDK、打开 companion app，并把眼镜侧事件转成后端已有的 `/ambient/*` 对象。等拿到 Rokid 授权文件、真机和正式样例后，再启用 Android AAR / iOS CocoaPods SDK 并接入 CXR-M/CXR-L 的连接、媒体流、图片、语音和 custom view 能力。
 
-**Tech Stack:** Expo 55, React Native 0.83, Expo native modules, Android Kotlin, Rokid CXR Maven artifacts, FastAPI ambient endpoints.
+**Tech Stack:** Expo 55, React Native 0.83, Expo native modules, Android Kotlin, iOS Swift, Rokid CXR Maven artifacts, CocoaPods `RGCxrClient` / `RGCoreKit`, FastAPI ambient endpoints.
 
 ---
 
@@ -17,7 +17,16 @@
 - `mobile/modules/rokid-bridge/index.ts`
   - 暴露 `getRokidIntegrationStatus()`
   - 暴露 `openHiRokid()`
-  - 非 Android 或 native module 缺失时稳定降级, 不影响 iOS/web/mobile 现有运行
+  - 暴露 iOS SDK facade:
+    - `requestRokidAuthorization()`
+    - `clearRokidAuthorization()`
+    - `openRokidCustomView()`
+    - `updateRokidCustomView()`
+    - `closeRokidCustomView()`
+    - `takeRokidPhotoBase64()`
+    - `startRokidRecord()`
+    - `stopRokidRecord()`
+  - native module 缺失时稳定降级, 不影响 iOS/web/mobile 现有运行
 - `mobile/modules/rokid-bridge/android/*`
   - Expo Android native module: `RokidBridgeModule`
   - 探测两个 Hi Rokid 包名:
@@ -33,6 +42,21 @@
 - `mobile/modules/rokid-bridge/__tests__/rokidBridge.test.ts`
   - 覆盖 native 缺失时的稳定降级
   - 覆盖 Android native 可用时的委托行为
+  - 覆盖 iOS native 可用时的授权、custom view、拍照和录音委托行为
+- `mobile/modules/rokid-bridge/ios/*`
+  - Expo iOS native module: `RokidBridgeModule`
+  - 探测 Hi Rokid URL scheme: `rokidai://`
+  - 默认报告:
+    - `sdkLinked`
+    - `iosSdkDependencyMode`
+    - `callbackScheme=life.executor.health.rokid`
+    - `querySchemes=["rokidai"]`
+  - 通过 `RokidBridgeAppDelegateSubscriber` 接收 OAuth/deeplink callback, 避免依赖被忽略的 `mobile/ios` 手工改动
+  - 默认不链接 `RGCxrClient`, 需要 `ROKID_IOS_SDK_ENABLED=true` 或 `ROKID_SDK_ENABLED=true`
+- `mobile/app.config.ts`
+  - 注入 iOS `LSApplicationQueriesSchemes=rokidai`
+  - 注入 Rokid auth callback URL scheme: `life.executor.health.rokid`
+  - 注入 Bluetooth background mode 和使用说明
 - `mobile/services/rokidAmbient.ts`
   - 将 Rokid 视觉输入写入 `/ambient/visual-inputs`
   - 将 push-to-talk 语音写入 `/ambient/audio-inputs`
@@ -40,7 +64,7 @@
 - `mobile/services/__tests__/rokidAmbient.test.ts`
   - 覆盖 visual/audio/glance API contract
 
-为什么默认不直接链接 AAR:
+为什么默认不直接链接 Android AAR:
 
 - 当前 app Android `minSdk=24`。
 - Rokid `client-m` / `client-l` AAR manifest 标注 `minSdkVersion=28`。
@@ -57,6 +81,26 @@ ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
 
 启用前必须先把 Android app 的 `minSdkVersion` 升到 28 或创建 Rokid-only build variant。
 
+为什么默认不直接链接 iOS Pod:
+
+- 官方 iOS SDK 通过 CocoaPods 分发: `RGCxrClient 1.0.1` 依赖 `RGCoreKit 0.0.2`。
+- 本机 Xcode/Swift 工具链可以拉取 Pod, 但公开二进制 framework 是由 Rokid 的 Swift 6.2.4 工具链构建, 当前本机 Swift 6.3.2 无法导入该二进制模块。
+- 因此 Reva 主工程默认保持可构建; 真正链接 iOS SDK 需要在兼容工具链或 Rokid 重新发布二进制后开启。
+
+启用 iOS SDK build 的方式:
+
+```bash
+cd mobile/ios
+ROKID_IOS_SDK_ENABLED=true pod install
+SENTRY_DISABLE_AUTO_UPLOAD=true xcodebuild \
+  -workspace HealthPilot.xcworkspace \
+  -scheme HealthPilot \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```
+
 ## 2. External SDK Facts
 
 已验证:
@@ -64,6 +108,18 @@ ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
 - Rokid Maven repository 可访问: `https://maven.rokid.com/repository/maven-public/`
 - `com.rokid.cxr:client-m` metadata 最新版本: `1.2.2`
 - `com.rokid.cxr:client-l` metadata 最新版本: `1.0.3`
+- 官方 CXR-L SDK 页面声明支持 Android / iOS。
+- Rokid YodaOS-Sprite 文档显示 iOS SDK 通过 CocoaPods 使用 `RGCxrClient`。
+- App Store 可找到 Hi Rokid companion app。
+- CocoaPods `RGCxrClient 1.0.1` 依赖 `RGCoreKit 0.0.2`。
+- `RGCxrClient` Swift interface 暴露的关键能力包括:
+  - `CxrClient.shared.auth.authenticate(...)`
+  - `openCustomView(...)`
+  - `updateCustomView(...)`
+  - `closeCustomView(...)`
+  - `takePhotoWithData(width:height:quality:callback:)`
+  - `startRecord(...)`
+  - `stopRecord(...)`
 - 两个 AAR URL 均返回 200:
   - `com/rokid/cxr/client-m/1.2.2/client-m-1.2.2.aar`
   - `com/rokid/cxr/client-l/1.0.3/client-l-1.0.3.aar`
@@ -83,6 +139,15 @@ ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
   - `IAudioStreamCallback`
   - `ICustomViewCallback`
   - `IGlassAppCallback`
+
+参考链接:
+
+- [Rokid AR Platform CXR-L SDK](https://ar.rokid.com/sdk?lang=en)
+- [Rokid YodaOS-Sprite](https://ar.rokid.com/sprite?lang=en)
+- [Hi Rokid on App Store](https://apps.apple.com/us/app/hi-rokid-rokid-glasses/id6749669942)
+- [Rokid Academy](https://global.rokid.com/pages/academy)
+- [CocoaPods RGCxrClient](https://cocoapods.org/pods/RGCxrClient)
+- [CocoaPods RGCoreKit](https://cocoapods.org/pods/RGCoreKit)
 
 公开页面和旧文档只能确认方向, 不能替代 SDK 正式文档。落地前仍需向 Rokid 获取:
 
@@ -274,6 +339,8 @@ backend creates GlanceCard(surface=rokid_glasses)
 
 ### Task 1: Bridge API And Status Surface
 
+Status: implemented for Android scaffold and iOS opt-in SDK scaffold.
+
 **Files:**
 
 - Create: `mobile/modules/rokid-bridge/index.ts`
@@ -282,6 +349,10 @@ backend creates GlanceCard(surface=rokid_glasses)
 - Create: `mobile/modules/rokid-bridge/android/build.gradle`
 - Create: `mobile/modules/rokid-bridge/android/src/main/AndroidManifest.xml`
 - Create: `mobile/modules/rokid-bridge/android/src/main/java/life/executor/health/rokidbridge/RokidBridgeModule.kt`
+- Create: `mobile/modules/rokid-bridge/ios/RokidBridge.podspec`
+- Create: `mobile/modules/rokid-bridge/ios/RokidBridgeModule.swift`
+- Create: `mobile/modules/rokid-bridge/ios/RokidBridgeAppDelegateSubscriber.swift`
+- Update: `mobile/app.config.ts`
 
 **Verification:**
 
@@ -289,6 +360,7 @@ backend creates GlanceCard(surface=rokid_glasses)
 cd mobile
 npm test -- --runTestsByPath modules/rokid-bridge/__tests__/rokidBridge.test.ts
 npx expo-modules-autolinking resolve --platform android --json | rg "rokid-bridge"
+npx expo-modules-autolinking resolve --platform ios --json | rg "rokid-bridge|RokidBridge"
 ```
 
 ### Task 2: Mobile Service Contract
@@ -364,6 +436,7 @@ Engineering:
 - SDK artifacts are current as of 2026-06-17 but can drift.
 - Official docs are required before real SDK calls.
 - Android minSdk 28 is the main build constraint.
+- iOS SDK binary compatibility is the main Apple-side build constraint: current public `RGCxrClient 1.0.1` cannot be imported by this machine's Swift 6.3.2 compiler.
 - Local Gradle verification currently blocked by a malformed Android SDK NDK directory: `/Users/liqiuhua/Library/Android/sdk/ndk/27.0.12077973` lacks `source.properties`.
 
 ## 8. Release Criteria
@@ -371,8 +444,10 @@ Engineering:
 P0 bridge ready:
 
 - JS facade tests pass.
-- Expo autolinking discovers `rokid-bridge`.
+- Expo autolinking discovers `rokid-bridge` on Android and iOS.
 - Android module compiles in a clean SDK environment.
+- iOS module compiles without linking Rokid Pod by default.
+- iOS Pod can be linked in a compatible Swift toolchain or after Rokid republishes the framework.
 - Mobile screen can show status and open Hi Rokid.
 
 P1 SDK ready:
