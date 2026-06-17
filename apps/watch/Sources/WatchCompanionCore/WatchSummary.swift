@@ -29,9 +29,12 @@ public struct WatchStatus: Codable, Sendable {
     }
 }
 
-/// 可在腕上「一键完成」的 kind(= health_protocol 域:处方药/补剂/喝水/餐协议)。
-/// 其余 kind(训练/复查/测量…)只读不可勾,与后端 health_protocol-only 回写边界一致。
-public let watchCompletableKinds: Set<String> = ["medication", "supplement", "hydration", "diet"]
+/// 可在腕上「一键完成」的 kind(= health_protocol 域:处方药/补剂/喝水/餐协议/微运动)。
+/// 训练决策、复查、测量等非 health_protocol 来源只读不可勾,与后端回写边界一致。
+public let watchCompletableKinds: Set<String> = [
+    "medication", "supplement", "hydration", "diet",
+    "training", "activity", "exercise",
+]
 
 public struct WatchTopAction: Codable, Sendable {
     public let title: String
@@ -73,6 +76,7 @@ public struct WatchTopAction: Codable, Sendable {
     /// 可一键完成 = 有 action_id 且 kind 属于 health_protocol 可回写域。非可完成项只渲染只读。
     public var isCompletable: Bool {
         guard let id = actionId, !id.isEmpty else { return false }
+        guard source?.objectType == "health_protocol" else { return false }
         return watchCompletableKinds.contains(kind)
     }
 

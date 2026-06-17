@@ -75,6 +75,21 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.topAction?.isCompletable, false, "非 health_protocol 域不可腕上完成")
     }
 
+    func testTrainingProtocolActionIsCompletable() throws {
+        // Watch-first Workday Scheduler:训练/活动类 health_protocol 可作为微运动一键完成。
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":{"title":"到公司后俯卧撑 12 个","kind":"training","time_window":"morning",
+                       "action_id":"agenda-health_protocol-8",
+                       "source":{"object_type":"health_protocol","object_id":8}},
+         "agenda":{"total":1,"pending":1},"quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+        XCTAssertEqual(s.topAction?.actionId, "agenda-health_protocol-8")
+        XCTAssertEqual(s.topAction?.kind, "training")
+        XCTAssertEqual(s.topAction?.isCompletable, true)
+    }
+
     func testDecodeNullTopAction() throws {
         let data = Data("""
         {"status":{"light":"gray","readiness_score":null,"headline":"今日暂无待办"},

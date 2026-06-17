@@ -56,6 +56,24 @@ def test_top_action_is_highest_priority_pending(db, auth, monkeypatch):
     assert s["agenda"]["pending"] == 2
 
 
+def test_training_protocol_can_be_top_action_for_watch_micro_movement(db, auth, monkeypatch):
+    """训练类 health_protocol 是 Watch-first 工作日微运动的执行对象。"""
+    user, _ = auth
+    item = _protocol("到公司后俯卧撑 12 个", priority=80, domain="training")
+    item["source"]["object_id"] = 7
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+
+    s = ws.build_watch_summary(db, user.id)
+
+    assert s["top_action"]["title"] == "到公司后俯卧撑 12 个"
+    assert s["top_action"]["kind"] == "training"
+    assert s["top_action"]["action_id"] == "agenda-health_protocol-7"
+    assert s["top_action"]["source"]["object_type"] == "health_protocol"
+    assert s["top_action"]["priority_tier"] == "P2"
+    assert s["top_action"]["leverage_score"] > 0
+    assert s["agenda"]["pending"] == 1
+
+
 def test_push_tiering_and_cap(db, auth, monkeypatch):
     user, _ = auth
     items = [
