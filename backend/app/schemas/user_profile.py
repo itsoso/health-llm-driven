@@ -108,6 +108,8 @@ class UserProfileBase(BaseModel):
     work_type: Optional[str] = Field(None, description="工作类型")
     work_hours_per_day: Optional[float] = Field(None, ge=0, le=24, description="每天工作时长")
     sitting_hours_per_day: Optional[float] = Field(None, ge=0, le=24, description="久坐时长")
+    work_start_time: Optional[str] = Field(None, description="上班时间 HH:MM(时点日程避开工作窗)")
+    work_end_time: Optional[str] = Field(None, description="下班时间 HH:MM")
 
     # 地理位置
     city: Optional[str] = Field(None, description="所在城市")
@@ -164,6 +166,8 @@ class UserProfileUpdate(BaseModel):
     work_type: Optional[str] = None
     work_hours_per_day: Optional[float] = None
     sitting_hours_per_day: Optional[float] = None
+    work_start_time: Optional[str] = None
+    work_end_time: Optional[str] = None
     city: Optional[str] = None
     timezone: Optional[str] = None
     devices: Optional[List[str]] = None

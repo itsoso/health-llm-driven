@@ -112,6 +112,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="today-outline" label="今日议程"
             onPress={() => router.push('/agenda' as any)} />
+          <SettingRow icon="time-outline" label="今日时间轴 · 工作时间"
+            onPress={() => router.push('/day-schedule' as any)} />
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="calendar-outline" label="本周建议"

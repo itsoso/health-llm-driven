@@ -71,3 +71,14 @@ def test_schedule_today_endpoint(client, db, auth_user_and_headers):
     body = r.json()
     assert set(body.keys()) >= {"scheduled", "rejected", "deferred"}
     assert isinstance(body["scheduled"], list)
+
+
+def test_profile_put_accepts_work_hours_roundtrip(client, db, auth_user_and_headers):
+    """PUT /profile/me 接受 work_start_time/work_end_time(显式 schema 字段,不静默丢)→ GET 读回。"""
+    user, headers = auth_user_and_headers
+    r = client.put("/api/v1/profile/me", headers=headers,
+                   json={"work_start_time": "09:00", "work_end_time": "18:00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["work_start_time"] == "09:00" and r.json()["work_end_time"] == "18:00"
+    g = client.get("/api/v1/profile/me", headers=headers)
+    assert g.json()["work_start_time"] == "09:00" and g.json()["work_end_time"] == "18:00"
