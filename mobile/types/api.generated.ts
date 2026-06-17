@@ -3573,7 +3573,11 @@ export interface paths {
         };
         /**
          * Get My Garmin Data
-         * @description 获取当前用户的Garmin数据（需要登录）
+         * @description 获取当前用户的Garmin数据（需要登录）。
+         *
+         *     多源合并: 同一 record_date 跨 apple-watch / garmin / ringconn 多行 → 合成每天一行
+         *     (见 _merge_garmin_rows_by_date)。skip/limit 按「合并后的天数」生效;两个真实调用方
+         *     (mobile dashboard / web) 都传 date range、不传 skip/limit。
          */
         get: operations["get_my_garmin_data_api_v1_daily_health_garmin_me_get"];
         put?: never;
@@ -7113,6 +7117,160 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/watch/actions/{action_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Action
+         * @description 腕上「一键已做」→ 完成到点项,完成事实落真实业务表(用药/补剂依从)。
+         *
+         *     - user_id 取自 token(绝不信任客户端)。
+         *     - action_id 解析失败 / 非 health_protocol 源 → 400(fail loud)。
+         *     - 协议不存在或非本人(IDOR)→ 404。
+         *     - 幂等:首次「非完成→完成」才落领域记录;重复 POST 不重复写。
+         *     - 请求内禁 build_twin(本端点只操作协议/领域表)。
+         */
+        post: operations["complete_action_api_v1_watch_actions__action_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/actions/{action_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skip Action
+         * @description 腕上「跳过」→ 标记今日协议 skipped,不写领域完成记录。
+         */
+        post: operations["skip_action_api_v1_watch_actions__action_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/actions/{action_id}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snooze Action
+         * @description 腕上「稍后」→ 暂停今日协议一段时间,到期后重新进入 pending。
+         */
+        post: operations["snooze_action_api_v1_watch_actions__action_id__snooze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/symptoms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Symptom
+         * @description 腕上一句话报症状 → 落 SymptomEntry 进时间线 → SafetyGuardian 确定性裁决。
+         *
+         *     全场安全 stakes 最高,不变量(docs/design-watch-voice-symptom.md §不变量):
+         *     - R4 不诊断:critical 给就医动作,不给病名结论。
+         *     - critical 真命中才升级(symptoms.py 急症 / P0·P1 个性化红线),普通不适不误升。
+         *     - **不漏报**:评估抛错绝不吞成「已记录无告警」——明确标注 evaluation_failed + 提示就医。
+         *     - 请求内**禁 build_twin**(它自开 SessionLocal,看不到刚 flush 的症状 + 缺列 psycopg2 红)。
+         *     - user_id 取自 token,SymptomEntry 与红线查询都按 token user_id(不信任客户端)。
+         *     - commit 一次性(症状 + 审计)。
+         */
+        post: operations["record_symptom_api_v1_watch_symptoms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/write-intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Write Intents
+         * @description 列出待确认写意图。先跑「复查到点」生成器(幂等),让用户一打开就看到该提的提议。
+         */
+        get: operations["list_write_intents_api_v1_write_intents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/write-intents/{intent_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Write Intent
+         * @description 一键确认 → 执行(v0:建提醒)。不存在/非本人 → 404;执行失败 → 500(fail loud,状态退回 pending)。
+         */
+        post: operations["confirm_write_intent_api_v1_write_intents__intent_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/write-intents/{intent_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Write Intent
+         * @description 忽略一个写意图(标记 dismissed,不执行)。不存在/非本人 → 404。
+         */
+        post: operations["dismiss_write_intent_api_v1_write_intents__intent_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/programs": {
         parameters: {
             query?: never;
@@ -7874,6 +8032,31 @@ export interface paths {
          *     多设备一致性置信度 → light + confidence + reasons + next_action。
          */
         get: operations["get_training_decision_api_v1_exercise_recovery_decision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/movement/guided-task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * readiness 门控的引导式运动任务(RED 不推力量改拉伸)
+         * @description 到点的引导式运动任务 —— 经 recovery_decision 门控后装配。
+         *
+         *     - RED + strength → rest_instead,换基础拉伸
+         *     - YELLOW → modified(减量)
+         *     - GREEN → do(按上次完成确定性进阶)
+         *     动作要领 / 语音来自循证内容库,非 LLM 现编。
+         */
+        get: operations["get_guided_task_api_v1_movement_guided_task_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -12104,6 +12287,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/personal-models/treatment-effect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Treatment Effect
+         * @description 某干预周期内每个指标的个人化效应估计 (相关非因果, 带 80% 不确定区间)。
+         */
+        get: operations["get_treatment_effect_api_v1_personal_models_treatment_effect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/personal-outcome/me/causal-notes": {
         parameters: {
             query?: never;
@@ -13995,6 +14198,76 @@ export interface paths {
         get: operations["get_desktop_conversation_trace_api_v1_desktop_traces__conversation_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/audio-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Audio Input */
+        post: operations["create_audio_input_api_v1_ambient_audio_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/visual-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Visual Input */
+        post: operations["create_visual_input_api_v1_ambient_visual_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/glance-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Glance Cards */
+        get: operations["list_glance_cards_api_v1_ambient_glance_cards_get"];
+        put?: never;
+        /** Create Glance Card */
+        post: operations["create_glance_card_api_v1_ambient_glance_cards_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/hearing/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Hearing Health Tasks */
+        get: operations["list_hearing_health_tasks_api_v1_ambient_hearing_tasks_get"];
+        put?: never;
+        /** Create Hearing Health Task */
+        post: operations["create_hearing_health_task_api_v1_ambient_hearing_tasks_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17166,6 +17439,22 @@ export interface components {
             /** Extra Context */
             extra_context?: string | null;
         };
+        /** AmbientAudioInputResponse */
+        AmbientAudioInputResponse: {
+            event: components["schemas"]["AudioInputEventResponse"];
+            /** Recommended Next Action */
+            recommended_next_action?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** AmbientVisualInputResponse */
+        AmbientVisualInputResponse: {
+            event: components["schemas"]["VisualInputEventResponse"];
+            /** Recommended Next Action */
+            recommended_next_action?: {
+                [key: string]: string;
+            } | null;
+        };
         /**
          * ApiKeyCreate
          * @description 创建 API Key 请求
@@ -17282,6 +17571,71 @@ export interface components {
             message: string;
             /** Conversation Id */
             conversation_id?: number | null;
+        };
+        /** AudioInputCreate */
+        AudioInputCreate: {
+            /** Intent */
+            intent: string;
+            /** Transcript */
+            transcript: string;
+            /**
+             * Source
+             * @default ambient_audio
+             */
+            source: string;
+            /**
+             * Device Type
+             * @default unknown
+             */
+            device_type: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Captured At */
+            captured_at?: string | null;
+            /**
+             * Privacy Class
+             * @default health_l3
+             */
+            privacy_class: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** AudioInputEventResponse */
+        AudioInputEventResponse: {
+            /** Id */
+            id: number;
+            /** Intent */
+            intent: string;
+            /** Transcript */
+            transcript: string;
+            /** Source */
+            source: string;
+            /** Device Type */
+            device_type: string;
+            /** Confidence */
+            confidence: number | null;
+            /** Status */
+            status: string;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: number | null;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+            /** Safety Result */
+            safety_result?: Record<string, never> | null;
         };
         /**
          * AvatarResponse
@@ -17880,6 +18234,17 @@ export interface components {
              * @default other
              */
             category: string;
+        };
+        /** CaptureOut */
+        CaptureOut: {
+            /**
+             * Mode
+             * @constant
+             * @enum {string}
+             */
+            mode: "manual";
+            /** Fields */
+            fields: string[];
         };
         /** CardDecisionBody */
         CardDecisionBody: {
@@ -20457,6 +20822,21 @@ export interface components {
             /** Daily Summary */
             daily_summary?: components["schemas"]["ExcretionDailySummary"][];
         };
+        /** ExerciseOut */
+        ExerciseOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Evidence Tier */
+            evidence_tier: string;
+            /** Cues */
+            cues: string[];
+            /** Media Ref */
+            media_ref?: string | null;
+            /** Contraindications */
+            contraindications: string[];
+        };
         /**
          * ExerciseRecordCreate
          * @description 创建锻炼记录
@@ -21382,6 +21762,21 @@ export interface components {
             /** Mfa Session Id */
             mfa_session_id?: string | null;
         };
+        /** GateOut */
+        GateOut: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "do" | "modified" | "rest_instead";
+            /**
+             * Readiness Zone
+             * @enum {string}
+             */
+            readiness_zone: "green" | "yellow" | "red" | "unknown";
+            /** Reason */
+            reason: string;
+        };
         /**
          * GeneDrugRulesInput
          * @description 基因-药物规则输入
@@ -21584,6 +21979,70 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** GlanceCardCreate */
+        GlanceCardCreate: {
+            /**
+             * Surface
+             * @default rokid_glasses
+             */
+            surface: string;
+            /**
+             * Card Type
+             * @default action_prompt
+             */
+            card_type: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /**
+             * Priority
+             * @default normal
+             */
+            priority: string;
+            /** Action */
+            action?: Record<string, never> | null;
+            /** Target Type */
+            target_type?: string | null;
+            /** Target Id */
+            target_id?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** GlanceCardResponse */
+        GlanceCardResponse: {
+            /** Id */
+            id: number;
+            /** Surface */
+            surface: string;
+            /** Card Type */
+            card_type: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Priority */
+            priority: string;
+            /** Status */
+            status: string;
+            /** Action */
+            action: Record<string, never> | null;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: number | null;
+            /** Expires At */
+            expires_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
         /**
          * GoalCreate
          * @description 创建目标
@@ -21689,6 +22148,21 @@ export interface components {
          * @enum {string}
          */
         GoalType: "diet" | "exercise" | "sleep" | "water" | "supplement" | "outdoor" | "weight" | "other";
+        /** GuidedTaskOut */
+        GuidedTaskOut: {
+            /** Domain */
+            domain: string;
+            gate: components["schemas"]["GateOut"];
+            /** Title */
+            title: string;
+            exercise: components["schemas"]["ExerciseOut"];
+            plan: components["schemas"]["PlanOut"];
+            /** Voice Script */
+            voice_script: string[];
+            capture: components["schemas"]["CaptureOut"];
+            /** Safety Note */
+            safety_note?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -22200,6 +22674,8 @@ export interface components {
             afib_event_count?: number | null;
             /** Blood Pressure Readings */
             blood_pressure_readings?: components["schemas"]["BPReadingIn"][] | null;
+            /** Spo2 Samples */
+            spo2_samples?: components["schemas"]["Spo2SampleIn"][] | null;
             /** Weight Kg */
             weight_kg?: number | null;
             /** Body Fat Percentage */
@@ -22240,6 +22716,11 @@ export interface components {
              * @default 0
              */
             blood_pressure_imported_count: number;
+            /**
+             * Spo2 Sample Imported Count
+             * @default 0
+             */
+            spo2_sample_imported_count: number;
             /** Source Breakdown */
             source_breakdown: Record<string, never>;
             /** Errors */
@@ -22330,6 +22811,62 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at?: string | null;
+        };
+        /** HearingHealthTaskCreate */
+        HearingHealthTaskCreate: {
+            /**
+             * Task Type
+             * @default hearing_test
+             */
+            task_type: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Source
+             * @default ambient_hearing
+             */
+            source: string;
+            /** Due At */
+            due_at?: string | null;
+            /**
+             * Priority
+             * @default normal
+             */
+            priority: string;
+            /** Payload */
+            payload?: Record<string, never> | null;
+        };
+        /** HearingHealthTaskEnvelope */
+        HearingHealthTaskEnvelope: {
+            task: components["schemas"]["HearingHealthTaskResponse"];
+            /** Write Intent */
+            write_intent: Record<string, never> | null;
+        };
+        /** HearingHealthTaskResponse */
+        HearingHealthTaskResponse: {
+            /** Id */
+            id: number;
+            /** Task Type */
+            task_type: string;
+            /** Status */
+            status: string;
+            /** Source */
+            source: string;
+            /** Reason */
+            reason: string | null;
+            /** Due At */
+            due_at: string | null;
+            /** Priority */
+            priority: string;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /** Payload */
+            payload: Record<string, never> | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * HeartRatePoint
@@ -24473,6 +25010,19 @@ export interface components {
             /** Is Completed */
             is_completed: boolean;
         };
+        /** PlanOut */
+        PlanOut: {
+            /** Sets */
+            sets?: number | null;
+            /** Reps */
+            reps?: number | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Rest Sec */
+            rest_sec?: number | null;
+            /** Progression Note */
+            progression_note: string;
+        };
         /**
          * PlatformType
          * @description 平台类型
@@ -25574,6 +26124,27 @@ export interface components {
              */
             nights_with_odi_above_5: number;
         };
+        /**
+         * Spo2SampleIn
+         * @description 单条整夜血氧采样点 — RingConn / Apple Watch 等写 HealthKit 的设备的逐分钟序列.
+         *
+         *     HealthKit ``HKQuantityTypeIdentifierOxygenSaturation`` 是离散样本: 每条
+         *     ``{value (0-100 百分数), measured_at (ISO)}``。逐分钟 SpO2 是夜间低氧"持续负荷"
+         *     (ODI / below-90% 时长占比) 的唯一数据源 —— 日聚合单点 ``spo2_min`` 无法算这两个
+         *     指标, 而 ``vitals.spo2_min_nocturnal_severe`` 需要它们做佐证才拉 CRITICAL
+         *     (否则降级 INFO, 见 2026-06-17 裁决)。Garmin 血氧已整源剔除, 多设备用户的逐秒
+         *     SpO2 之前无任何入口 → 夜间低氧规则只能靠日聚合单点最低值判断, 本字段补齐缺口。
+         *
+         *     - value: HealthKit 原始 0-1 已由 mobile ×100 成百分数; service 层取整 + sanity
+         *       50-100, 坏值丢弃该条 (不崩整批)。Optional → 缺失不 422。
+         *     - measured_at: 决定 sample_time (转 CST HH:MM) 与 epoch_ms; 缺失/坏值 → service 丢弃。
+         */
+        Spo2SampleIn: {
+            /** Value */
+            value?: number | null;
+            /** Measured At */
+            measured_at?: string | null;
+        };
         /** StartCycleRequest */
         StartCycleRequest: {
             /**
@@ -26280,6 +26851,11 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** SymptomIn */
+        SymptomIn: {
+            /** Text */
+            text: string;
+        };
         /** SymptomItem */
         SymptomItem: {
             /** Name */
@@ -26608,6 +27184,42 @@ export interface components {
         TranscribeResponse: {
             /** Text */
             text: string;
+        };
+        /** TreatmentEffectItem */
+        TreatmentEffectItem: {
+            /** Metric Code */
+            metric_code: string;
+            /** Unit */
+            unit?: string | null;
+            /** Observed Delta */
+            observed_delta?: number | null;
+            /** Posterior Effect */
+            posterior_effect?: number | null;
+            /** Ci Low */
+            ci_low?: number | null;
+            /** Ci High */
+            ci_high?: number | null;
+            /** Ci Level */
+            ci_level: number;
+            /** Confidence */
+            confidence: string;
+            /** Verdict */
+            verdict: string;
+            /** Display Label */
+            display_label: string;
+            /** Evidence Tier */
+            evidence_tier: string;
+            /** Requires Clinician */
+            requires_clinician: boolean;
+            /** Message */
+            message: string;
+            /** Model Version */
+            model_version: string;
+        };
+        /** TreatmentEffectResponse */
+        TreatmentEffectResponse: {
+            /** Estimates */
+            estimates: components["schemas"]["TreatmentEffectItem"][];
         };
         /** TwinLookupRequest */
         TwinLookupRequest: {
@@ -27274,6 +27886,85 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** VisualInputCreate */
+        VisualInputCreate: {
+            /** Intent */
+            intent: string;
+            /**
+             * Source
+             * @default rokid_glasses
+             */
+            source: string;
+            /**
+             * Device Type
+             * @default glasses
+             */
+            device_type: string;
+            /** Image Uri */
+            image_uri?: string | null;
+            /** Image Sha256 */
+            image_sha256?: string | null;
+            /** Ocr Text */
+            ocr_text?: string | null;
+            /** Recognition Result */
+            recognition_result?: Record<string, never> | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Captured At */
+            captured_at?: string | null;
+            /**
+             * Privacy Class
+             * @default health_l3
+             */
+            privacy_class: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** VisualInputEventResponse */
+        VisualInputEventResponse: {
+            /** Id */
+            id: number;
+            /** Intent */
+            intent: string;
+            /** Source */
+            source: string;
+            /** Device Type */
+            device_type: string;
+            /** Image Uri */
+            image_uri: string | null;
+            /** Image Sha256 */
+            image_sha256: string | null;
+            /** Ocr Text */
+            ocr_text: string | null;
+            /** Recognition Result */
+            recognition_result: Record<string, never> | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Status */
+            status: string;
+            /** Privacy Class */
+            privacy_class: string;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: number | null;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+            /** Safety Result */
+            safety_result?: Record<string, never> | null;
+        };
         /**
          * VoiceFoodDraftItem
          * @description 单个语音食物草稿项。营养值允许为空,客户端确认后再入库。
@@ -27306,6 +27997,16 @@ export interface components {
             raw_text: string;
             /** @description 餐次(不给则按文本/时刻推断) */
             meal_type?: components["schemas"]["MealType"] | null;
+            /**
+             * Source
+             * @description 语音来源,如 apple_watch/airpods/mobile
+             */
+            source?: string | null;
+            /**
+             * Device Type
+             * @description 设备类型,如 watch/earbuds/mobile
+             */
+            device_type?: string | null;
         };
         /**
          * VoiceFoodParseResponse
@@ -27390,6 +28091,22 @@ export interface components {
             source?: string | null;
             /** Notes */
             notes?: string | null;
+        };
+        /** WatchSkipRequest */
+        WatchSkipRequest: {
+            /**
+             * Reason
+             * @default no_time
+             */
+            reason: string | null;
+        };
+        /** WatchSnoozeRequest */
+        WatchSnoozeRequest: {
+            /**
+             * Minutes
+             * @default 30
+             */
+            minutes: number;
         };
         /**
          * WaterIntakeCreate
@@ -39958,6 +40675,222 @@ export interface operations {
             };
         };
     };
+    complete_action_api_v1_watch_actions__action_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skip_action_api_v1_watch_actions__action_id__skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchSkipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snooze_action_api_v1_watch_actions__action_id__snooze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchSnoozeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_symptom_api_v1_watch_symptoms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SymptomIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_write_intents_api_v1_write_intents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    confirm_write_intent_api_v1_write_intents__intent_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_write_intent_api_v1_write_intents__intent_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_program_api_v1_programs_post: {
         parameters: {
             query?: never;
@@ -41231,6 +42164,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_guided_task_api_v1_movement_guided_task_get: {
+        parameters: {
+            query?: {
+                domain?: "strength" | "mobility";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidedTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -47616,6 +48580,38 @@ export interface operations {
             };
         };
     };
+    get_treatment_effect_api_v1_personal_models_treatment_effect_get: {
+        parameters: {
+            query?: {
+                /** @description 指定干预周期 id; 省略取最近 active 周期 */
+                cycle_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreatmentEffectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_my_causal_notes_api_v1_personal_outcome_me_causal_notes_get: {
         parameters: {
             query?: never;
@@ -50649,6 +51645,189 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_audio_input_api_v1_ambient_audio_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudioInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AmbientAudioInputResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_visual_input_api_v1_ambient_visual_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisualInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AmbientVisualInputResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_glance_cards_api_v1_ambient_glance_cards_get: {
+        parameters: {
+            query?: {
+                surface?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlanceCardResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_glance_card_api_v1_ambient_glance_cards_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlanceCardCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlanceCardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_hearing_health_tasks_api_v1_ambient_hearing_tasks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HearingHealthTaskResponse"][];
+                };
+            };
+        };
+    };
+    create_hearing_health_task_api_v1_ambient_hearing_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HearingHealthTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HearingHealthTaskEnvelope"];
                 };
             };
             /** @description Validation Error */

@@ -704,6 +704,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/onboarding/step5": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Step5
+         * @description 保存主目标 (2026-05-14): 用户最想改善的 1 件事.
+         *
+         *     primary_goal 是 ActionCard / WeeklyAdvisor / proactive briefing 的偏好信号.
+         */
+        post: operations["save_step5_api_v1_onboarding_step5_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/onboarding/complete": {
         parameters: {
             query?: never;
@@ -1135,6 +1157,580 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/observability/safety-eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 安全 eval — red-team 规则覆盖(确定性)
+         * @description 对抗性危险场景集 → 安全规则必须命中预期严重度。pass_rate<1 = 覆盖回归。
+         */
+        get: operations["get_safety_eval_api_v1_admin_observability_safety_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 激活漏斗 — 注册→改善(去标识增长仪表)
+         * @description 注册 → 建档 → 接受 → 评分 → 改善(北极星)漏斗 + 转化率。
+         */
+        get: operations["get_activation_funnel_api_v1_admin_observability_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent eval 看板 — 主动/闭环/延迟/活动(去标识)
+         * @description RFC 方向九:agent_audit_log + ActionCard 去标识聚合,放量前的仪表盘。
+         */
+        get: operations["get_agent_eval_api_v1_admin_observability_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 观察期看板 — 7 模块聚合
+         * @description 聚合 6-7 个观察期信号给 admin 前端展示.
+         *
+         *     Redis 缓存 180s: admin 反复刷不重跑 SQL. 用 ?refresh=true 穿透.
+         */
+        get: operations["get_observation_dashboard_api_v1_admin_observability_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/performance-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * LLM 性能聚合 (p50/p95 + 成功率 + 成本)
+         * @description 按 model/provider/caller 聚合 llm_usage_log, 返回 p50/p95/p99/avg/
+         *     success_rate/total_tokens/cost. 来自 2026-05-13 用户诉求 (积累性能优化).
+         *
+         *     group_by: model / provider / caller (默认 model)
+         *     days: 时间窗口 (默认 7 天)
+         */
+        get: operations["performance_stats_api_v1_admin_llm_performance_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/performance-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 最近 LLM 失败样本 */
+        get: operations["performance_failures_api_v1_admin_llm_performance_failures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Llm Status
+         * @description 看现在用的是哪家 LLM.
+         */
+        get: operations["llm_status_api_v1_admin_llm_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Llm Switch
+         * @description 临时切换 LLM provider (改进程内 settings + 重置 factory 单例).
+         *     重启进程后会回退到 .env 的 LLM_PROVIDER.
+         *
+         *     生产场景永久切换请改 .env + 重启服务.
+         */
+        post: operations["llm_switch_api_v1_admin_llm_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/ping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Llm Ping
+         * @description 测当前 provider 延迟 + 中文回复. 给管理员 A/B 用.
+         */
+        post: operations["llm_ping_api_v1_admin_llm_ping_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Available Models
+         * @description 列出所有注册的模型 + 可用性 + 当前选中.
+         */
+        get: operations["list_available_models_api_v1_admin_llm_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/select-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select Model
+         * @description 切换活跃模型. 进程内, 重启失效.
+         */
+        post: operations["select_model_api_v1_admin_llm_select_model_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/benchmark/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Benchmark Model
+         * @description 跑指定模型 N 次, 测延迟. 用于对比. 不切换活跃 model.
+         */
+        post: operations["benchmark_model_api_v1_admin_llm_benchmark__model_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/open-loop/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open-Loop 主动推送看板
+         * @description 聚合最近 N 天的 OpenLoopHistory.
+         *
+         *     返回字段:
+         *       total / delivered_ok / delivery_rate
+         *       acceptance_rate = (opened + done) / total
+         *       by_kind = [{kind, count, ok, opened, dismissed, done, acceptance_rate}]
+         *       by_action = {opened, dismissed, done, snooze_7d, not_interested, no_action}
+         *       by_day = [{date, count, ok}]   过去 N 天每天推送数
+         *       active_users = unique user 数
+         */
+        get: operations["open_loop_stats_api_v1_admin_open_loop_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/open-loop/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 最近 N 条推送明细 (admin debug)
+         * @description 看具体推送内容, debug 高 dismiss 率的 kind.
+         */
+        get: operations["open_loop_recent_api_v1_admin_open_loop_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/wscla": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Wscla Dashboard
+         * @description 返回 WSCLA 北极星 + 4 项辅助指标 + 明细.
+         *
+         *     Phase 0 看板: 先不做跨周趋势, 只看当前窗口的一个截面.
+         *     Phase 1+ 会加 series (日粒度 WSCLA 条形图).
+         */
+        get: operations["get_wscla_dashboard_api_v1_admin_wscla_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/wscla/trigger-weekly-advisor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Weekly Advisor
+         * @description 手动触发 WeeklyAdvisor (P2-1) — 不等周日 21:07.
+         *
+         *     用于本地/线上联调首屏的"本周建议队列".
+         */
+        post: operations["trigger_weekly_advisor_api_v1_admin_wscla_trigger_weekly_advisor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/wscla/trigger-verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Verify Outcomes
+         * @description 手动触发 outcome 评分 — 不等每天 08:00.
+         *
+         *     card_id 给定: 强制评单卡 (即使 check_back_date 未到), 用于联调.
+         *     省略: 走 batch (但只评 check_back_date <= now 且 graded_at IS NULL 的).
+         *
+         *     2026-05-16: 已从 verify_outcomes 双路径收敛到 outcome_grader._grade_loop 单路径.
+         */
+        post: operations["trigger_verify_outcomes_api_v1_admin_wscla_trigger_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/slo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Slo Dashboard
+         * @description 三条主链路 SLO + 颜色 + 详情.
+         */
+        get: operations["get_slo_dashboard_api_v1_admin_slo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/longevity/cohort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生物年龄群体证据(去标识)
+         * @description 跨用户聚合已评分的生物年龄 N-of-1 outcome,去标识群体证据。
+         */
+        get: operations["get_longevity_cohort_api_v1_admin_longevity_cohort_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/longevity/cohort/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 任一指标的群体证据(去标识,泛化)
+         * @description 群体证据泛化到全 metric;metric 不传 = 全部已评分指标(逗号分隔可多选)。
+         */
+        get: operations["get_cohort_metrics_api_v1_admin_longevity_cohort_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/longevity/cohort/harm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 反向飞轮 — 群体 harm 信号(去标识)
+         * @description flag 在群体里和 worsening 相关的指标(安全/运营预警,observational 非因果)。
+         */
+        get: operations["get_cohort_harm_api_v1_admin_longevity_cohort_harm_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/movement/plan/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的运动方案 (MovementCoach 输出 + 关联卡片)
+         * @description 聚合 Garmin training_status + ACWR + readiness + 基因偏好 + 本周训练处方 +
+         *     近期 workout + N-of-1 实验 + 关联 action_cards. Mobile /movement-plan 用.
+         *
+         *     failure modes (返回 has_data=False):
+         *       - twin_build_failed: 用户 Twin 构建异常
+         *       - coach_run_failed: MovementCoach 运行异常 (data 不足时仍返 unknown 状态)
+         */
+        get: operations["get_my_movement_plan_api_v1_movement_plan_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/diet-plan/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的饮食方案 (FuelStrategist 输出 + 关联卡片)
+         * @description 聚合 TDEE + 蛋白缺口 + 饮水 + 下一餐 + 基因偏好 + 化验异常关联 +
+         *     N-of-1 实验 + 关联 action_cards.
+         */
+        get: operations["get_my_diet_plan_api_v1_diet_plan_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-plan/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Daily Plan
+         * @description 获取当前用户当天操作计划.
+         */
+        get: operations["get_my_daily_plan_api_v1_daily_plan_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-plan/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Daily Plan Review
+         * @description 获取 Daily Plan 行动执行和关键指标变化复盘.
+         */
+        get: operations["get_my_daily_plan_review_api_v1_daily_plan_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-plan/me/actions/{action_key}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit My Daily Plan Action Feedback
+         * @description 记录 Daily Plan 行动反馈.
+         *
+         *     这是 append-only learning event, 不修改当天计划快照本身。
+         */
+        post: operations["submit_my_daily_plan_action_feedback_api_v1_daily_plan_me_actions__action_key__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-plan/actions/{action_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record My Daily Plan Action Event
+         * @description 记录 Daily Plan 行动事件.
+         *
+         *     新事件流使用 protocol 状态名, 用于后续验证闭环和 Agent 学习。
+         */
+        post: operations["record_my_daily_plan_action_event_api_v1_daily_plan_actions__action_id__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitoring/health": {
         parameters: {
             query?: never;
@@ -1438,6 +2034,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/data-health/integrity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 数据正确性自检(量纲/范围/层断连;系统自我监控)
+         * @description 区别于 /status(完整度):这里查**正确性**——HRV 量纲错、SpO2 小数存、
+         *     归一层断连、周期空目标等静默损坏。空 issues = 健康。
+         */
+        get: operations["get_data_integrity_api_v1_data_health_integrity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/export/health-data": {
         parameters: {
             query?: never;
@@ -1479,6 +2096,29 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/coach-persona": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取当前用户的 Coach Persona */
+        get: operations["get_my_coach_persona_api_v1_users_me_coach_persona_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * 切换 Coach Persona
+         * @description 三档: strict_coach (严厉教练) / gentle_advisor (温和顾问, 默认) / data_driven (数据派).
+         *
+         *     只切 LLM 合成语气, 不改 specialist 逻辑.
+         */
+        patch: operations["set_my_coach_persona_api_v1_users_me_coach_persona_patch"];
         trace?: never;
     };
     "/api/v1/users/me/avatar": {
@@ -1569,6 +2209,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profile/me/effective-location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Effective Location
+         * @description 位置字段单一事实之主 — 所有 mobile / 后端 reader 应该走这里, 不再各自实现优先级.
+         *
+         *     返回: {city, lat, lon, source, updated_at, stale_minutes}
+         *     详细语义见 app/services/location_resolver.py docstring.
+         */
+        get: operations["get_effective_location_api_v1_profile_me_effective_location_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profile/me/refresh-location": {
         parameters: {
             query?: never;
@@ -1611,6 +2274,41 @@ export interface paths {
          */
         put: operations["update_manual_location_api_v1_profile_me_manual_location_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/me/gps-location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update Gps Location
+         * @description GPS 定位: 客户端拿到经纬度后写入 profile (auto 模式下立即生效).
+         *
+         *     payload: { lat: float, lon: float, city?: str, region?: str, country?: str }
+         *
+         *     城市名解析两条路径 (mobile 端优先客户端反查, 去 qweather 依赖):
+         *     1. 客户端用 expo-location `reverseGeocodeAsync` (iOS CLGeocoder 离线可用) 反查 city,
+         *        backend 直接信任 — 跳过 qweather 调用.
+         *     2. 客户端没传 city, 走 qweather GeoAPI 反查 (premium host 必需).
+         *
+         *     可靠性: qweather 未配 / 失败 时不再 502 — 仍 200 返回, 但 city=null, lat/lon 仍写入.
+         *     resolver 标记 source='gps', environment.py 优先读 lat/lon, 天气/AQ 仍能正常出.
+         *
+         *     Garbage 防御: 客户端送的 city 含非中文且 country=中国 → 视为 CLGeocoder 英文化误差
+         *     (iOS 在 PRC 偶尔返 'Beijing'), 丢弃后兜底 qweather.
+         *
+         *     成功后清旧/新 city 的天气/AQI 缓存.
+         */
+        post: operations["update_gps_location_api_v1_profile_me_gps_location_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1854,6 +2552,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/llm-preference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Preference
+         * @description 读当前用户的 LLM 偏好 + 可选模型列表.
+         */
+        get: operations["get_preference_api_v1_me_llm_preference_get"];
+        /**
+         * Update Preference
+         * @description 切换当前用户的 LLM 偏好. None / 空 = 恢复默认.
+         */
+        put: operations["update_preference_api_v1_me_llm_preference_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/llm-preference/selftest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Selftest
+         * @description 自检 — 用当前用户偏好 ping 一次 LLM, 返回实际命中的 model + 延迟 + 样本回复.
+         *
+         *     给设置页"切换完成"后立刻调用, 让用户**眼见为实**自己选的模型确实生效.
+         */
+        post: operations["selftest_api_v1_me_llm_preference_selftest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/weekly-briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本周 AI 给你的 3-5 件事
+         * @description 返回:
+         *     week_start: 本周一 ISO
+         *     primary_goal: 用户主目标 (来自 onboarding step 5)
+         *     cards: [...] 本周 AI 给的建议
+         *     stats: {total, accepted, completed, improved}
+         *     last_run_at: 最近一次 weekly_advisor 跑的时间
+         *     can_trigger: bool 用户可否手动触发 (本周没卡才允许)
+         */
+        get: operations["get_weekly_briefing_api_v1_me_weekly_briefing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/weekly-briefing/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 手动触发本周 AI 建议生成
+         * @description 本周还没生成时, 让用户手动触发一次 (周日 21:07 之前 / 新用户).
+         *
+         *     幂等: weekly_advisor 内部已有"本周一来已写过 → skip"保护, 重复点击安全.
+         *     LLM 调用慢 (~30s), 用 BackgroundTasks 异步, 立刻 200 返回.
+         */
+        post: operations["trigger_weekly_briefing_api_v1_me_weekly_briefing_trigger_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/basic-health/": {
         parameters: {
             query?: never;
@@ -1954,6 +2747,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medical-exams/parse-photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 多模态录入:化验单拍照 → 结构化项(待用户确认)
+         * @description vision 解析化验单照片为 {项目,值,单位};**返回供用户确认,不直接入库**(OCR 可能出错)。
+         */
+        post: operations["parse_lab_photo_endpoint_api_v1_medical_exams_parse_photo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medical-exams/": {
         parameters: {
             query?: never;
@@ -2014,6 +2827,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medical-exams/{exam_id}/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 体检异常解释包 (review #2, 2026-05-12)
+         * @description 单次体检 → 异常项 + 基因关联 + 趋势 + LLM 解释 + 行动 + 复查建议.
+         *
+         *     用户痛点是"我体检异常怎么办" — 这个端点把单次 exam 一次性聚合成
+         *     "为什么异常 + 你能做什么 + 何时复查 + 找什么医生" 的完整包.
+         */
+        get: operations["get_exam_explain_api_v1_medical_exams__exam_id__explain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medical-exams/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Medical Exam Item
+         * @description 手工校正单条 item — 同步更新 medical_indicators (按 exam_id + item_code/name 关联).
+         *
+         *     第一次校正时, 把当前值快照到 original_value/original_value_text (作为 OCR 原值轨迹).
+         */
+        patch: operations["update_medical_exam_item_api_v1_medical_exams_items__item_id__patch"];
+        trace?: never;
+    };
     "/api/v1/medical-exams/user/{user_id}": {
         parameters: {
             query?: never;
@@ -2023,7 +2881,7 @@ export interface paths {
         };
         /**
          * Get User Medical Exams
-         * @description 获取用户的体检记录
+         * @description 获取用户的体检记录 (只能看自己的)
          */
         get: operations["get_user_medical_exams_api_v1_medical_exams_user__user_id__get"];
         put?: never;
@@ -2048,6 +2906,26 @@ export interface paths {
          * @description 从JSON格式导入体检数据
          */
         post: operations["import_medical_exam_from_json_api_v1_medical_exams_import_json_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medical-exams/import/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Medical Exam From Text
+         * @description 从手工粘贴文本导入化验指标,用于 mobile OCR 失败后的兜底路径.
+         */
+        post: operations["import_medical_exam_from_text_api_v1_medical_exams_import_text_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2097,6 +2975,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medical-exams/import/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Medical Exam From Image
+         * @description 从图片导入体检数据 (拍照路径)
+         *
+         *     走 vision model OCR (medical_report_ocr.recognize_medical_report),
+         *     返回结构化指标后按同 /import/pdf 的路径入库 (MedicalExam + MedicalExamItem + MedicalIndicator).
+         */
+        post: operations["import_medical_exam_from_image_api_v1_medical_exams_import_image_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medical-exams/parse-pdf-preview": {
         parameters: {
             query?: never;
@@ -2111,8 +3012,220 @@ export interface paths {
          * @description 预览PDF解析结果（不保存到数据库）
          *
          *     用于在正式导入前预览解析结果，确认内容正确。
+         *     需要登录 — 该路径会消耗 LLM vision 配额,不能裸奔.
          */
         post: operations["parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 处方图片识别 + 原研药查询
+         * @description 上传处方照片,返回识别到的药品 + 各自的原研药(供用户确认,不入库)。
+         */
+        post: operations["recognize_prescription_image_api_v1_prescriptions_recognize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/originator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 按药名查原研药(单条)
+         * @description 给一个药名(通用名/品牌/含规格),查其原研药;表外返回 has_originator=false。
+         */
+        get: operations["lookup_originator_api_v1_prescriptions_originator_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 基于在用药的原研药可换建议(已采纳/忽略的不返回)
+         * @description 对话/客户端共用:用户在用仿制药里有原研药可换、且尚未采纳/忽略的列表。
+         */
+        get: operations["get_recommendations_api_v1_prescriptions_recommendations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prescriptions/recommendations/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 采纳/忽略/重置某药的原研药推荐
+         * @description 采纳后标识为系统推荐 → 后续对话不再二次推荐;dismissed 同样抑制;suggested 可重新推荐。
+         */
+        post: operations["set_recommendation_status_api_v1_prescriptions_recommendations_status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/liver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 肝脏趋势评估(肝酶趋势 + FIB-4 + 脂肪肝风险,非诊断)
+         * @description 基于历史肝酶给趋势 + 风险提示。缺血小板时 FIB-4 返回 null 并提示补血常规。
+         */
+        get: operations["liver_assessment_api_v1_chronic_liver_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/biomarker-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把化验指标同步到归一生物标志层(并刷新干预周期目标)
+         * @description 打通 medical_indicators → biomarker_observations(根因修复:归一层此前为空)。
+         *     顺带刷新 active 代谢周期的目标(此前因归一层空而无目标)。
+         */
+        post: operations["biomarker_sync_api_v1_chronic_biomarker_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/causal-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 用药干预 → 目标指标前后变化(描述性关联,非因果) */
+        get: operations["causal_links_api_v1_chronic_causal_links_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chronic/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 社会连接自评状态(到期判断 + 解读,非诊断) */
+        get: operations["connection_status_api_v1_chronic_connection_get"];
+        put?: never;
+        /** 提交一次社会连接自评(UCLA-3 + 连接结构) */
+        post: operations["submit_connection_checkin_api_v1_chronic_connection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication-course/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 即将结束的用药疗程 + 建议复查 */
+        get: operations["upcoming_api_v1_medication_course_upcoming_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication-course/materialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把即将结束疗程的复查写入复查日历(ReviewSchedule)
+         * @description 幂等:已存在的复查项不重复建。返回 {created, skipped}。
+         */
+        post: operations["materialize_api_v1_medication_course_materialize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/epigenetic-reports/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出我的 DNAm 时钟报告 */
+        get: operations["list_my_epigenetic_reports_api_v1_epigenetic_reports_me_get"];
+        put?: never;
+        /** 上传一份第三方 DNAm 时钟报告 */
+        post: operations["upload_my_epigenetic_report_api_v1_epigenetic_reports_me_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2460,7 +3573,11 @@ export interface paths {
         };
         /**
          * Get My Garmin Data
-         * @description 获取当前用户的Garmin数据（需要登录）
+         * @description 获取当前用户的Garmin数据（需要登录）。
+         *
+         *     多源合并: 同一 record_date 跨 apple-watch / garmin / ringconn 多行 → 合成每天一行
+         *     (见 _merge_garmin_rows_by_date)。skip/limit 按「合并后的天数」生效;两个真实调用方
+         *     (mobile dashboard / web) 都传 date range、不传 skip/limit。
          */
         get: operations["get_my_garmin_data_api_v1_daily_health_garmin_me_get"];
         put?: never;
@@ -2482,7 +3599,14 @@ export interface paths {
         put?: never;
         /**
          * Create Exercise Record
-         * @description 创建锻炼记录
+         * @description 创建锻炼记录.
+         *
+         *     幂等保护 (2026-05-11, 2026-05-13 调整): 1 秒窗口内, 同 user + 同 exercise_type
+         *     + 同 reps + 同 sets + 同 duration_seconds 视为双击重复, 直接返回已有记录, 不重复写.
+         *
+         *     历史 5s 窗口太长, 用户做"俯卧撑两组 1 组 15 个" 时 OpenClaw 连续 POST 两次
+         *     完全相同字段, 第 2 组被 dedup 吃掉. 移动端有 useRef 锁兜底防双击, 后端 1s
+         *     够拦防真双击, 而 OpenClaw / 用户连续打卡两组通常 ≥ 1.5s 间隔不会被误吃.
          */
         post: operations["create_exercise_record_api_v1_daily_health_exercise_post"];
         delete?: never;
@@ -2519,7 +3643,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Update Exercise Record
+         * @description 更新单条锻炼记录（本人）
+         */
+        put: operations["update_exercise_record_api_v1_daily_health_exercise__exercise_id__put"];
         post?: never;
         /**
          * Delete Exercise Record
@@ -3091,6 +4219,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/waist/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Waist Record
+         * @description 创建或更新当天腰围记录.
+         */
+        post: operations["create_waist_record_api_v1_waist_records_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waist/records/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Waist Records
+         * @description 获取当前用户腰围记录.
+         */
+        get: operations["get_my_waist_records_api_v1_waist_records_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waist/records/me/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Latest Waist
+         * @description 获取最新腰围记录.
+         */
+        get: operations["get_my_latest_waist_api_v1_waist_records_me_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waist/records/me/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Waist Stats
+         * @description 获取腰围统计.
+         */
+        get: operations["get_my_waist_stats_api_v1_waist_records_me_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waist/records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Waist Record
+         * @description 更新自己的腰围记录.
+         */
+        put: operations["update_waist_record_api_v1_waist_records__record_id__put"];
+        post?: never;
+        /**
+         * Delete Waist Record
+         * @description 删除自己的腰围记录.
+         */
+        delete: operations["delete_waist_record_api_v1_waist_records__record_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blood-pressure/records": {
         parameters: {
             query?: never;
@@ -3311,7 +4543,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Nightly Spo2 */
+        /**
+         * Get Nightly Spo2
+         * @description 返回指定日期的夜间 SpO2 时间序列.
+         *
+         *     重要: `record_date=D` 的 Garmin 采样范围实际是 `D-1 下午 ~ D 凌晨`,
+         *     因为 Garmin 按"入睡那天"归类. 默认 `window=sleep` 会截断 timeline 到
+         *     `sleep_start ~ sleep_end` 之间, 只保留真正的睡眠期间数据, 避免 LLM
+         *     把下午日间的 SpO2 点误认作凌晨低氧事件.
+         */
         get: operations["get_nightly_spo2_api_v1_spo2_me_nightly__record_date__get"];
         put?: never;
         post?: never;
@@ -3367,6 +4607,187 @@ export interface paths {
          * @description 睡眠阶段 × SpO2 关联分析：按 deep/rem/light/awake 分段统计血氧
          */
         get: operations["get_spo2_sleep_correlation_api_v1_spo2_me_sleep_correlation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts/synthesize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synthesize */
+        post: operations["synthesize_api_v1_tts_synthesize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts/voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Voices */
+        get: operations["list_voices_api_v1_tts_voices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/briefing/voice-script": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Voice Script */
+        get: operations["get_voice_script_api_v1_briefing_voice_script_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/briefing/weekly-voice-script": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Weekly Voice Script
+         * @description 本周回顾语音稿 (E 产品改进 - 周聊).
+         *
+         *     voice-chat ?intent=weekly 进入时拉, 私享女声播完进 listening 接话.
+         *     建议周日 20:00 推送时调用; 也支持用户主动从设置/分析页"听听本周"按钮触发.
+         */
+        get: operations["get_weekly_voice_script_api_v1_briefing_weekly_voice_script_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/briefing/preworkout-voice-script": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Preworkout Voice Script
+         * @description 跑前/练前 readiness 建议短稿 (F 产品改进).
+         *
+         *     用法:
+         *       mobile 首页 '马上要运动' 按钮 → 跳 /voice-chat?intent=preworkout&workout_type=running
+         *       → 拉本端点 → 私享女声播 → 接话.
+         *
+         *     不缓存 (readiness 数据会随当日心率/压力实时更新; 用户重复点也只是再算一次, 便宜).
+         */
+        get: operations["get_preworkout_voice_script_api_v1_briefing_preworkout_voice_script_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clarification/opener": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Opener */
+        get: operations["get_opener_api_v1_clarification_opener_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clarification/extract-memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Memory
+         * @description voice-chat 结束时旁路调用 — 从用户 turns 抽 facts 写 memory_facts.
+         *     Karpathy "anterograde amnesia" 解药: 让 AI 真正记住用户告诉它的事.
+         *
+         *     幂等: write_fact 自动检测重复 → reinforce 而非新建
+         *     失败安全: LLM 抽取失败返回空, 不抛异常 (不能让对话退出体验出错)
+         */
+        post: operations["extract_memory_api_v1_clarification_extract_memory_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/timeline/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Spine
+         * @description 统一今日时间线:未来该做(议程)+ 今日已发生(观测)+ 结果归因。
+         *
+         *     只读投影,组合 agenda_service + events_timeline_service。完成动作走 /agenda/complete。
+         *     强制 user_id 隔离(PRD §7 不变量)。
+         */
+        get: operations["get_today_spine_api_v1_timeline_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Timeline */
+        get: operations["get_timeline_api_v1_timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3697,6 +5118,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/symptoms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Symptom */
+        post: operations["create_symptom_api_v1_symptoms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/symptoms/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Symptoms
+         * @description 默认拉最近 30 天.
+         */
+        get: operations["list_my_symptoms_api_v1_symptoms_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/symptoms/{symptom_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Symptom */
+        put: operations["update_symptom_api_v1_symptoms__symptom_id__put"];
+        post?: never;
+        /** Delete Symptom */
+        delete: operations["delete_symptom_api_v1_symptoms__symptom_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live-run/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Run
+         * @description 开始一次跑步.
+         */
+        post: operations["start_run_api_v1_live_run_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live-run/{run_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End Run
+         * @description 结束跑步, 落盘统计 + 触发跑后复盘.
+         */
+        post: operations["end_run_api_v1_live_run__run_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live-run/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Runs
+         * @description 跑步历史 (默认最近 30 天).
+         */
+        get: operations["list_my_runs_api_v1_live_run_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live-run/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_v1_live_run__run_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Run */
+        delete: operations["delete_run_api_v1_live_run__run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Episodes
+         * @description 当前用户最近 Episode 列表.
+         */
+        get: operations["list_my_episodes_api_v1_episodes_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/{episode_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Episode
+         * @description 获取 Episode 详情 + Actions (按 sequence 排序).
+         */
+        get: operations["get_episode_api_v1_episodes__episode_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/{episode_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Feedback
+         * @description 提交 EpisodeFeedback. action_done / action_skipped 会同步更新 EpisodeAction.status.
+         */
+        post: operations["submit_feedback_api_v1_episodes__episode_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/records": {
         parameters: {
             query?: never;
@@ -3837,6 +5451,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/diet/records/me/frequent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Frequent Foods
+         * @description 当前用户最近 N 天的"常吃"食物, 按出现频次倒序 (供一键复用).
+         *
+         *     按 food_items (去空白后) 分组; 同名食物的营养素取历次中位数, meal_type 取众数.
+         *     无历史营养数据的项营养素返回 null —— 不编造数值 (rule#1).
+         */
+        get: operations["get_my_frequent_foods_api_v1_diet_records_me_frequent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/records/{record_id}": {
         parameters: {
             query?: never;
@@ -3847,7 +5484,7 @@ export interface paths {
         get?: never;
         /**
          * Update Diet Record
-         * @description 更新饮食记录
+         * @description 更新饮食记录（需登录，且只能更新自己的记录）
          */
         put: operations["update_diet_record_api_v1_diet_records__record_id__put"];
         post?: never;
@@ -3856,6 +5493,29 @@ export interface paths {
          * @description 删除饮食记录（需登录，且只能删除自己的记录）
          */
         delete: operations["delete_diet_record_api_v1_diet_records__record_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/diet/voice/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Voice Food Endpoint
+         * @description 语音转写文本 → 结构化食物草稿(Apple Watch Companion / R5)。
+         *
+         *     只解析不写库;客户端确认后再 POST /diet/records。分层:规则(餐次/风险标签)+
+         *     记忆(常吃中位营养)+ LLM(自由文本→结构化)。LLM 不可用则降级 + 标 needs_confirmation。
+         */
+        post: operations["parse_voice_food_endpoint_api_v1_diet_voice_parse_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3998,7 +5658,10 @@ export interface paths {
         put?: never;
         /**
          * Quick Add Water
-         * @description 快速添加饮水（默认250ml，需要登录）
+         * @description 快速添加饮水（amount 必填,ml）。
+         *
+         *     不再静默默认 250：缺 amount 直接 400，避免弱模型 tool-calling 漏传 ?amount
+         *     时把用户的「2000ml」静默记成 250(守 Rule #1:失败要可见,不写错值)。
          */
         post: operations["quick_add_water_api_v1_water_records_quick_post"];
         delete?: never;
@@ -4039,6 +5702,28 @@ export interface paths {
          * @description 获取当前用户饮水记录（需要登录）
          */
         get: operations["get_my_water_records_api_v1_water_records_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/water/records/me/frequent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Frequent Water
+         * @description 当前用户最近 N 天最常用的「饮水量 + 饮品类型」组合, 按频次倒序 (供一键记录).
+         *
+         *     饮水没有名字, 按 (amount_ml, drink_type) 组合聚合 —— 如 "250ml 水"/"350ml 咖啡".
+         */
+        get: operations["get_my_frequent_water_api_v1_water_records_me_frequent_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4342,6 +6027,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supplements/me/frequent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Frequent Supplements
+         * @description 当前用户最近 N 天最常打卡的补剂, 按 taken 次数倒序 (供一键打卡).
+         *
+         *     只统计 taken=True 的打卡记录, 按 supplement_id 聚合; 只返回仍 active 的补剂
+         *     定义 (停用的不再推荐). 同频次按 name 稳定排序.
+         */
+        get: operations["get_my_frequent_supplements_api_v1_supplements_me_frequent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supplements/records/copy-day": {
         parameters: {
             query?: never;
@@ -4414,6 +6122,66 @@ export interface paths {
          * @description 每日补剂动态指南 — 基于身体状况/运动/鼻炎/天气等生成个性化提醒
          */
         get: operations["get_supplement_daily_guide_api_v1_supplements_daily_guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/evidence/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Evidence Catalog
+         * @description 获取已审校的补剂证据目录
+         */
+        get: operations["get_evidence_catalog_api_v1_supplements_evidence_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/evidence/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Evidence Sources
+         * @description 获取补剂证据来源登记表
+         */
+        get: operations["get_evidence_sources_api_v1_supplements_evidence_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/evidence/profile/{name_or_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Evidence Profile
+         * @description 按补剂名称、别名或 key 获取证据画像
+         */
+        get: operations["get_evidence_profile_api_v1_supplements_evidence_profile__name_or_key__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4802,6 +6570,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medication/medications/{medication_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Medication
+         * @description 恢复已停用药品 (误点击回滚). 查 is_active=False 的也支持.
+         */
+        post: operations["restore_medication_api_v1_medication_medications__medication_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medication/logs": {
         parameters: {
             query?: never;
@@ -4830,7 +6618,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Update Medication Log
+         * @description 更新一条服药日志（本人），用于对话内修正误点/漏记
+         */
+        put: operations["update_medication_log_api_v1_medication_logs__log_id__put"];
         post?: never;
         /**
          * Delete Medication Log
@@ -4876,6 +6668,705 @@ export interface paths {
         get: operations["get_adherence_stats_api_v1_medication_adherence_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/deprescribing-review/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deprescribing Review
+         * @description 多药梳理 / 减药候选(非建议停药;请与医生讨论是否可精简)。
+         */
+        get: operations["get_deprescribing_review_api_v1_medication_deprescribing_review_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/regimen-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Regimen Templates
+         * @description 列出可选用药方案模板(录入脚手架,非用药建议)。
+         *
+         *     传 hp_status 按幽门螺杆菌状态分流:Hp 阳性才给根除方案,Hp 阴性给 PPI 愈合(不含抗生素)。
+         */
+        get: operations["list_regimen_templates_api_v1_medication_regimen_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/regimens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Regimen
+         * @description 实例化用药方案:解析阶段 → 引入即 DDI 预检 → 建疗程+当前阶段药品。
+         *
+         *     有 CRITICAL 药物相互作用且未 override_safety → 422 阻断(不写库),返回触发的告警。
+         */
+        post: operations["create_regimen_api_v1_medication_regimens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/regimens/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Regimens
+         * @description 列出我的用药方案/疗程。
+         */
+        get: operations["list_my_regimens_api_v1_medication_regimens_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Protocol */
+        post: operations["create_protocol_api_v1_protocols_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Protocols */
+        get: operations["list_my_protocols_api_v1_protocols_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today
+         * @description 今日协议待办 + 完成态(双轨任一轨完成都算)。
+         */
+        get: operations["today_api_v1_protocols_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corrections
+         * @description 协议自纠偏建议(R14):协议连续跳过 + 结果趋势恶化(体重↑/鼻炎↑)→ 调整建议。
+         */
+        get: operations["corrections_api_v1_protocols_corrections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/seed/water-cup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Water Cup
+         * @description 快速建一个 2000ml 温水杯协议(参考实现)。
+         */
+        post: operations["seed_water_cup_api_v1_protocols_seed_water_cup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/meal-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Meal Template
+         * @description 饮食域:建预承诺餐模板协议(完成→写 DietRecord,双轨同源)。
+         */
+        post: operations["create_meal_template_api_v1_protocols_meal_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/from-medication/{medication_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * From Medication
+         * @description 从一味已存在的药生成用药域协议(完成→写 MedicationLog,双轨同源)。
+         */
+        post: operations["from_medication_api_v1_protocols_from_medication__medication_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/{protocol_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete */
+        post: operations["complete_api_v1_protocols__protocol_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/{protocol_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip */
+        post: operations["skip_api_v1_protocols__protocol_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/protocols/{protocol_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive */
+        post: operations["archive_api_v1_protocols__protocol_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Problem */
+        post: operations["create_problem_api_v1_problems_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Problems */
+        get: operations["list_my_problems_api_v1_problems_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/due": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Due Followups
+         * @description 到期/即将到期的复查随访(driver of 复查日历)。
+         */
+        get: operations["due_followups_api_v1_problems_due_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/seed/gastric-ulcer-hp-neg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Gastric Ulcer
+         * @description 从病理报告登记胃溃疡(Hp 阴性)——锚点用户真实数据。
+         */
+        post: operations["seed_gastric_ulcer_api_v1_problems_seed_gastric_ulcer_hp_neg_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/{problem_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Status */
+        post: operations["set_status_api_v1_problems__problem_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agenda Today
+         * @description 今日统一议程:三域协议待办 + 近 N 天到期复查,按优先级排序。
+         */
+        get: operations["agenda_today_api_v1_agenda_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agenda Range
+         * @description 区间视图:常驻每日协议 + 窗口内按到期日排布的复查。
+         */
+        get: operations["agenda_range_api_v1_agenda_range_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agenda Complete
+         * @description 统一完成路由:按来源类型路由到对应 source 的完成(写真实业务记录)。
+         */
+        post: operations["agenda_complete_api_v1_agenda_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Watch Summary
+         * @description 腕上摘要(只读投影 agenda.today → watch 优化视图)。
+         *
+         *     watch 冷启动 / complication 刷新拉这个:一眼看到今日状态灯 + 最该做的事 +
+         *     打点入口 + 该推到手腕的关键信息(运动/补剂/睡眠/复查)。
+         */
+        get: operations["watch_summary_api_v1_watch_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/actions/{action_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Action
+         * @description 腕上「一键已做」→ 完成到点项,完成事实落真实业务表(用药/补剂依从)。
+         *
+         *     - user_id 取自 token(绝不信任客户端)。
+         *     - action_id 解析失败 / 非 health_protocol 源 → 400(fail loud)。
+         *     - 协议不存在或非本人(IDOR)→ 404。
+         *     - 幂等:首次「非完成→完成」才落领域记录;重复 POST 不重复写。
+         *     - 请求内禁 build_twin(本端点只操作协议/领域表)。
+         */
+        post: operations["complete_action_api_v1_watch_actions__action_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/actions/{action_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skip Action
+         * @description 腕上「跳过」→ 标记今日协议 skipped,不写领域完成记录。
+         */
+        post: operations["skip_action_api_v1_watch_actions__action_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/actions/{action_id}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snooze Action
+         * @description 腕上「稍后」→ 暂停今日协议一段时间,到期后重新进入 pending。
+         */
+        post: operations["snooze_action_api_v1_watch_actions__action_id__snooze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/symptoms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Symptom
+         * @description 腕上一句话报症状 → 落 SymptomEntry 进时间线 → SafetyGuardian 确定性裁决。
+         *
+         *     全场安全 stakes 最高,不变量(docs/design-watch-voice-symptom.md §不变量):
+         *     - R4 不诊断:critical 给就医动作,不给病名结论。
+         *     - critical 真命中才升级(symptoms.py 急症 / P0·P1 个性化红线),普通不适不误升。
+         *     - **不漏报**:评估抛错绝不吞成「已记录无告警」——明确标注 evaluation_failed + 提示就医。
+         *     - 请求内**禁 build_twin**(它自开 SessionLocal,看不到刚 flush 的症状 + 缺列 psycopg2 红)。
+         *     - user_id 取自 token,SymptomEntry 与红线查询都按 token user_id(不信任客户端)。
+         *     - commit 一次性(症状 + 审计)。
+         */
+        post: operations["record_symptom_api_v1_watch_symptoms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/write-intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Write Intents
+         * @description 列出待确认写意图。先跑「复查到点」生成器(幂等),让用户一打开就看到该提的提议。
+         */
+        get: operations["list_write_intents_api_v1_write_intents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/write-intents/{intent_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Write Intent
+         * @description 一键确认 → 执行(v0:建提醒)。不存在/非本人 → 404;执行失败 → 500(fail loud,状态退回 pending)。
+         */
+        post: operations["confirm_write_intent_api_v1_write_intents__intent_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/write-intents/{intent_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Write Intent
+         * @description 忽略一个写意图(标记 dismissed,不执行)。不存在/非本人 → 404。
+         */
+        post: operations["dismiss_write_intent_api_v1_write_intents__intent_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Program */
+        post: operations["create_program_api_v1_programs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Programs */
+        get: operations["list_my_programs_api_v1_programs_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/{program_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Program Progress */
+        get: operations["program_progress_api_v1_programs__program_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/{program_id}/attach-protocol/{protocol_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Protocol */
+        post: operations["attach_protocol_api_v1_programs__program_id__attach_protocol__protocol_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/from-problem/{problem_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** From Problem */
+        post: operations["from_problem_api_v1_programs_from_problem__problem_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/programs/{program_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Status */
+        post: operations["set_status_api_v1_programs__program_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4949,6 +7440,33 @@ export interface paths {
          * @description 删除运动记录
          */
         delete: operations["delete_workout_api_v1_workout_me__workout_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workout/me/{workout_id}/voice-coach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workout Voice Coach
+         * @description 获取运动记录的语音教练短稿 (150-200 字, TTS 用).
+         *
+         *     mobile 'voice-coach 按钮' 流程:
+         *       GET 本 API → script → cloudTts.synthesize → expo-audio 播
+         *
+         *     fallback 优先级:
+         *       1. 有 WorkoutAnalysisResult.aggregation → workout_voice_script 蒸
+         *       2. 无分析但有 record → 只说"本次 X 公里 Y 分钟, 暂无分析"
+         */
+        get: operations["get_workout_voice_coach_api_v1_workout_me__workout_id__voice_coach_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5499,6 +8017,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exercise-recovery/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 今日训练决策灯 GREEN/YELLOW/RED + 置信度 + 一个动作
+         * @description 多源恢复/训练决策引擎(P0)。
+         *
+         *     一句话回答"今天能不能练": 合成已有的恢复就绪度(zone)、ACWR、急性病兜底、
+         *     多设备一致性置信度 → light + confidence + reasons + next_action。
+         */
+        get: operations["get_training_decision_api_v1_exercise_recovery_decision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/movement/guided-task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * readiness 门控的引导式运动任务(RED 不推力量改拉伸)
+         * @description 到点的引导式运动任务 —— 经 recovery_decision 门控后装配。
+         *
+         *     - RED + strength → rest_instead,换基础拉伸
+         *     - YELLOW → modified(减量)
+         *     - GREEN → do(按上次完成确定性进阶)
+         *     动作要领 / 语音来自循证内容库,非 LLM 现编。
+         */
+        get: operations["get_guided_task_api_v1_movement_guided_task_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environment/bedroom/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Snapshot
+         * @description 摄入一条卧室环境快照 (HA / 任意客户端推).
+         */
+        post: operations["ingest_snapshot_api_v1_environment_bedroom_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environment/bedroom/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Current Snapshot
+         * @description 当前 (最近一条) 卧室环境快照, 含 stale 判定. 无数据返回 null.
+         */
+        get: operations["get_current_snapshot_api_v1_environment_bedroom_current_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environment/bedroom/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Snapshot History
+         * @description 近 N 天卧室环境快照, 时间倒序.
+         */
+        get: operations["get_snapshot_history_api_v1_environment_bedroom_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/home-assistant/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Automation Event
+         * @description 摄入一条 HA 自动化事件 → 落 BedroomAutomationEvent + 旁路写 AuditLog.
+         *
+         *     摄入失败 (DB 写入) 上抛 500, 让客户端感知, 不假装成功 (对齐地基 PR).
+         *     event_type 缺失 → 400 (不静默写垃圾行).
+         */
+        post: operations["ingest_automation_event_api_v1_integrations_home_assistant_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/withings/oauth/authorize": {
         parameters: {
             query?: never;
@@ -5642,6 +8291,48 @@ export interface paths {
          * @description 查看 Withings 设备绑定和同步状态
          */
         get: operations["get_withings_status_api_v1_devices_withings_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 双设备一致性对比(如 Apple Watch + Garmin 同指标)
+         * @description 同时戴多台穿戴时,同指标(HRV/静息心率/睡眠/VO2max/SpO2/步数)并排对比 + 一致度。
+         */
+        get: operations["compare_devices_api_v1_devices_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/sources/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 每数据源覆盖天数 + 最新指标快照
+         * @description 近 days 天,按 data_source 分组:覆盖天数 / 最新日期 / 每指标最近非空值。
+         *
+         *     客户端用此区分「记录来自哪个设备」并展示每源的数据量。
+         */
+        get: operations["sources_summary_endpoint_api_v1_devices_sources_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5970,6 +8661,26 @@ export interface paths {
          *     注意：Apple Health 数据来自文件导入，此接口会从已导入的数据中同步到数据库
          */
         post: operations["sync_apple_data_api_v1_devices_apple_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/healthkit/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * HealthKit 数据导入
+         * @description iOS App 端从 HealthKit 读取并按天聚合后,通过此端点 POST 推送. 支持 Apple Watch / RingConn / Oura / Withings App / 其他写 HealthKit 的设备. (user_id, record_date, data_source) 复合唯一,重复 POST 幂等.
+         */
+        post: operations["healthkit_import_api_v1_devices_healthkit_import_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6491,6 +9202,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fitness-snapshot/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Fitness Snapshot
+         * @description 返回当前用户的体能快照 (Fitness Age + 周强度进度).
+         */
+        get: operations["get_my_fitness_snapshot_api_v1_fitness_snapshot_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sleep/spo2/analysis": {
         parameters: {
             query?: never;
@@ -6525,6 +9256,29 @@ export interface paths {
          * @description 与 GET /analysis 行为等价（analyze_night 本身幂等，每次重跑）。
          */
         post: operations["reanalyze_night_api_v1_sleep_spo2_reanalyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sleep/spo2/longitudinal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 近 N 天 SpO2 longitudinal + OSAHS pattern
+         * @description 汇总近 N 天夜间 SpO2 事件与 OSAHS 模式指标.
+         *
+         *     不诊断 OSAHS, 仅做趋势呈现. 数据来自 nocturnal_spo2_events 表 + GarminData
+         *     睡眠时长 (ODI 分母). 不重跑分析, 读已落盘结果.
+         */
+        get: operations["get_longitudinal_api_v1_sleep_spo2_longitudinal_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6715,6 +9469,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/twin/me/next-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 冷启动信息增益 — 下一步补哪项数据解锁最多
+         * @description 按"补这项能解锁什么"的启发式排序,给 day-1 用户最高 ROI 的下一步。
+         */
+        get: operations["get_next_best_data_api_v1_twin_me_next_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/twin/me/invalidate": {
         parameters: {
             query?: never;
@@ -6746,11 +9520,15 @@ export interface paths {
          * Get My Safety Report
          * @description 当前用户的安全告警报告。
          *
+         *     **默认降噪**: severity >= MEDIUM, 最多 8 条, 同规则去重. 前端如需全量可传
+         *     `?severity_min=0&limit=50&dedup_by_rule=false`.
+         *
          *     返回结构：
          *       {
          *         user_id, generated_at,
          *         alerts: [{rule_id, category, severity, title, message, action, ...}],
-         *         summary: {total, critical, high, medium, rules_evaluated},
+         *         summary: {total, critical, high, medium, rules_evaluated,
+         *                   truncated_count, dedup_count},
          *         timing: {twin_build_ms, evaluate_ms}
          *       }
          */
@@ -6954,6 +9732,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 统一健康助理对话列表
+         * @description List current user's Agent conversations (paginated).
+         *
+         *     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
+         *     AgentExecutor persists conversations through OpenClawService so mobile/web
+         *     can resume interrupted streams from the same durable message store.
+         */
+        get: operations["list_conversations_api_v1_agent_conversations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 统一健康助理对话详情 */
+        get: operations["get_conversation_api_v1_agent_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        /** 删除统一健康助理对话 */
+        delete: operations["delete_conversation_api_v1_agent_conversations__conversation_id__delete"];
+        options?: never;
+        head?: never;
+        /** 重命名统一健康助理对话 */
+        patch: operations["update_conversation_title_api_v1_agent_conversations__conversation_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/agent/conversation-opener": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat 起手未读续接 — AI 主动开场白
+         * @description 返回 AI 主动续接上次话题的开场白. 前端 chat tab mount 时拉这个,
+         *     用来替代/前置 SUGGESTIONS chip.
+         *
+         *     Returns:
+         *         - 200 OK: 有 opener 信号 — { opener: { text, source, source_id?, quick_replies, deep_link?, priority } }
+         *         - 200 OK: 无信号 — { opener: null }  (前端退化到默认 SUGGESTIONS)
+         *
+         *     Never raises — 错误时返回 { opener: null }, 静默退化, 不影响 chat 启动.
+         */
+        get: operations["conversation_opener_api_v1_agent_conversation_opener_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/conversation-starters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 新对话页 prompts — 动态建议 chip
+         * @description Return dynamic prompt chips for the new-chat empty state.
+         *
+         *     This endpoint is fail-soft: it never raises (except auth) and falls back to
+         *     stable defaults on any internal error.
+         */
+        get: operations["conversation_starters_api_v1_agent_conversation_starters_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/tools": {
         parameters: {
             query?: never;
@@ -7046,7 +9917,8 @@ export interface paths {
         delete: operations["delete_conversation_api_v1_openclaw_conversations__conversation_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** 重命名 OpenClaw 对话 */
+        patch: operations["update_conversation_title_api_v1_openclaw_conversations__conversation_id__patch"];
         trace?: never;
     };
     "/api/v1/openclaw/messages/{message_id}/rate": {
@@ -7312,6 +10184,26 @@ export interface paths {
          * @description 创建对话分享链接
          */
         post: operations["create_share_api_v1_shared_create_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shared/create-text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Text Share
+         * @description 创建普通文本分享网页, 供 mobile 系统分享/微信链接卡片使用.
+         */
+        post: operations["create_text_share_api_v1_shared_create_text_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7839,7 +10731,9 @@ export interface paths {
          *
          *     前端传 AI 回答的完整 markdown 内容，后端自动：
          *     1. 提取标题（第一个 # 标题 / 加粗文本 / 首行）
-         *     2. 创建卡片
+         *     2. **best-effort LLM 抽取信任循环字段** (metric_key / target_value / verification_days)
+         *        — 抽到了卡片自动进 outcome_grader 队列, 抽不到退化为普通卡 (与历史行为一致).
+         *     3. 创建卡片
          */
         post: operations["create_from_message_api_v1_action_cards_from_message_post"];
         delete?: never;
@@ -7855,7 +10749,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Card
+         * @description 单卡详情 — mobile /card/[id] 用. 比走 list filter 可靠 (closed/verifying
+         *     等所有 status 都能拿).
+         */
+        get: operations["get_card_api_v1_action_cards__card_id__get"];
         put?: never;
         post?: never;
         /**
@@ -7911,6 +10810,85 @@ export interface paths {
          * @description 写入行动卡片复盘结果。
          */
         post: operations["review_card_api_v1_action_cards__card_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-cards/{card_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Card Decision
+         * @description 用户对卡片做决策 — accepted / adjusted / declined / dismissed / false_positive.
+         *
+         *     幂等: 同 decision 重复调用只更新 reason, 不刷新 decided_at;
+         *           换 decision 会更新 decided_at + decision_reason.
+         */
+        post: operations["record_card_decision_api_v1_action_cards__card_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-cards/{card_id}/click": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Card Push Click
+         * @description 通知点击回写 — 客户端打开 health://card/{id} 深链时调.
+         *
+         *     幂等: 已 stamp 过 push_clicked_at 不再覆盖. seen_at 同时盖 (用户打开了卡片).
+         */
+        post: operations["record_card_push_click_api_v1_action_cards__card_id__click_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-cards/me/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的执行监测进度 (用户视角 WSCLA)
+         * @description 用户视角的执行监测看板 — Mobile /my-progress 用.
+         *
+         *     返回:
+         *       window: {since, until, days}
+         *       stats:
+         *         - total_surfaced: 窗口内 AI 给出的建议总数
+         *         - accepted: 用户接受数
+         *         - declined: 用户拒绝数
+         *         - pending: 还没决策数
+         *         - completed: accepted 且执行完成 (completed_at)
+         *         - graded: 已自动评估 (graded_at)
+         *         - improved / unchanged / worsened / inconclusive: outcome 分布
+         *         - acceptance_rate / verification_rate / improvement_rate
+         *       closed_cards: [近 N 条已闭环的卡, 带 metric 旅程]
+         *       verifying_cards: [accepted 但未 graded 的卡, 显示等待中的 metric]
+         */
+        get: operations["get_my_progress_api_v1_action_cards_me_progress_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8847,6 +11825,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trajectory/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Health Trajectory
+         * @description 获取当前用户疾病上游健康轨迹快照.
+         */
+        get: operations["get_my_health_trajectory_api_v1_trajectory_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health-events/ingest": {
         parameters: {
             query?: never;
@@ -9015,6 +12013,32 @@ export interface paths {
          *     - 饮水充足度
          */
         get: operations["get_cross_analysis_api_v1_health_context_me_cross_analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-context/me/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 紧凑健康摘要 — 给外部模板/LLM (替代逐日导出 JSON)
+         * @description 把 Digital Twin 压成一段紧凑摘要(现状 + 7/14/30 日均 + 封顶异常项/基因),
+         *     给"健康建议"这类外部模板/LLM 用 —— 替代把整份 twin / 导出 JSON(2 万+ 字符)
+         *     塞进 prompt 的做法(逐日流水账,LLM 看不过来、又贵又慢)。
+         *
+         *     - detail: brief(~500 字符) / standard(~1.5k) / full(~3k) —— 控制异常项 + 基因条数
+         *     - format: compact(纯文本 blob,直插模板) / json(结构化 {summary, chars, truncated})
+         *     - max_chars: 硬上限,超出截断并标注,永不再炸上下文
+         */
+        get: operations["get_health_summary_api_v1_health_context_me_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9263,6 +12287,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/personal-models/treatment-effect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Treatment Effect
+         * @description 某干预周期内每个指标的个人化效应估计 (相关非因果, 带 80% 不确定区间)。
+         */
+        get: operations["get_treatment_effect_api_v1_personal_models_treatment_effect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/personal-outcome/me/causal-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 因果记忆:事件×指标变化(时序相关,非因果)
+         * @description 从近期干预事件 × 指标前后对比,沉淀可召回的记忆条(observational,相关非因果)。
+         */
+        get: operations["get_my_causal_notes_api_v1_personal_outcome_me_causal_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/personal-outcome/me/timeline": {
         parameters: {
             query?: never;
@@ -9309,6 +12373,268 @@ export interface paths {
          *     - milestone-garmin-start
          */
         get: operations["get_my_event_impact_api_v1_personal_outcome_me_events__event_id__impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/personal-outcome/me/scorecard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * AI 建议成绩单: 命中率 + top 高分/低分
+         * @description AI 建议成绩单 — 给 AI 画像页下半部使用.
+         *
+         *     返回:
+         *       overall: {total, high_count, low_count, avg_score, hit_rate}
+         *       by_specialist: [{name, total, hits, hit_rate, avg_score}]
+         *       top_hits:   [{card_id, title, metric, score, graded_at, specialist}]
+         *       top_misses: [{...}]
+         */
+        get: operations["get_my_scorecard_api_v1_personal_outcome_me_scorecard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/biomarkers/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Biomarkers
+         * @description 当前用户每个指标的最新标准化观测。
+         */
+        get: operations["my_biomarkers_api_v1_biomarkers_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/biomarkers/me/{code}/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Biomarker Series
+         * @description 单指标按时间升序的观测序列 (趋势)。
+         */
+        get: operations["my_biomarker_series_api_v1_biomarkers_me__code__series_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/biomarkers/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Metabolic Profile
+         * @description 代谢健康画像 (交互稿①): 慢病风险分层 + 异常生物标志物。
+         */
+        get: operations["my_metabolic_profile_api_v1_biomarkers_me_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intervention-cycles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Cycle
+         * @description 开启代谢干预周期。已有进行中的周期则直接返回它 (不重复开)。
+         */
+        post: operations["start_cycle_api_v1_intervention_cycles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intervention-cycles/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Active Cycle */
+        get: operations["active_cycle_api_v1_intervention_cycles_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intervention-cycles/{cycle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cycle */
+        get: operations["get_cycle_api_v1_intervention_cycles__cycle_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intervention-cycles/{cycle_id}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck Cycle
+         * @description 复查: 用最新 Twin + biomarker 重算每个指标的 delta/status。
+         */
+        post: operations["recheck_cycle_api_v1_intervention_cycles__cycle_id__recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monthly-report/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 月报列表 (摘要) */
+        get: operations["list_my_reports_api_v1_monthly_report_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monthly-report/me/{year}/{month}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取指定月份的复盘 (缺失时 lazy-generate) */
+        get: operations["get_my_report_api_v1_monthly_report_me__year___month__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monthly-report/me/{year}/{month}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 强制重新生成 */
+        post: operations["regenerate_my_report_api_v1_monthly_report_me__year___month__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/doctor-report/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 导出医生摘要 (markdown + 结构化) */
+        get: operations["export_doctor_report_api_v1_doctor_report_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/doctor-report/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 录入医生反馈 → Clinical Journal */
+        post: operations["post_doctor_feedback_api_v1_doctor_report_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/doctor-report/feedback/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 历史医生反馈列表 */
+        get: operations["get_my_feedback_api_v1_doctor_report_feedback_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9454,6 +12780,199 @@ export interface paths {
         get: operations["get_body_analysis_api_v1_body_composition_analysis_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/entity/{entity_type}/{entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取系统知识库实体与关联 claim */
+        get: operations["get_knowledge_entity_api_v1_knowledge_entity__entity_type___entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/claim/{claim_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取系统知识库 claim 详情 */
+        get: operations["get_knowledge_claim_api_v1_knowledge_claim__claim_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/claim/{claim_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 反馈系统知识库 claim 不适用或不准确 */
+        post: operations["submit_knowledge_claim_feedback_api_v1_knowledge_claim__claim_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 搜索系统知识库 */
+        get: operations["search_system_knowledge_api_v1_knowledge_search_get"];
+        put?: never;
+        /**
+         * 搜索知识库
+         * @description 搜索知识库内容
+         *
+         *     使用向量相似度搜索相关文档
+         */
+        post: operations["search_knowledge_api_v1_knowledge_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/lookup_for_twin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 基于 Twin 摘要查找系统知识库条目 */
+        post: operations["lookup_knowledge_for_twin_api_v1_knowledge_lookup_for_twin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/lint_report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统知识库 lint 报告 */
+        get: operations["get_system_knowledge_lint_report_api_v1_admin_knowledge_lint_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/coverage_report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统知识库覆盖率与 unsupported 看板 */
+        get: operations["get_system_knowledge_coverage_report_api_v1_admin_knowledge_coverage_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/review_queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统知识库人工 review 队列 */
+        get: operations["get_system_knowledge_review_queue_api_v1_admin_knowledge_review_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/claim/{claim_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 更新系统知识库 claim review 状态 */
+        patch: operations["update_system_knowledge_claim_review_api_v1_admin_knowledge_claim__claim_id__review_patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/operations_dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统知识库运营治理总览 */
+        get: operations["get_system_knowledge_operations_dashboard_api_v1_admin_knowledge_operations_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重建系统知识库检索字段 */
+        post: operations["reindex_system_knowledge_api_v1_admin_knowledge_reindex_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9606,28 +13125,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/knowledge/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 搜索知识库
-         * @description 搜索知识库内容
-         *
-         *     使用向量相似度搜索相关文档
-         */
-        post: operations["search_knowledge_api_v1_knowledge_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/knowledge/ask": {
         parameters: {
             query?: never;
@@ -9714,6 +13211,33 @@ export interface paths {
          *     需要管理员权限。
          */
         post: operations["upload_gene_drug_rules_api_v1_knowledge_gene_drug_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/gene-knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传 gene_knowledge.json (llm-wiki-v2)
+         * @description 上传 down-dedao/artifacts/gene_knowledge.json 并刷新内存 registry。
+         *
+         *     这是 llm-wiki-v2 schema 的全量基因知识包（entities + claims + gene_rules
+         *     + snp_registry），由 down-dedao/pipeline/compiler.py 从 wiki/entities/ 与
+         *     wiki/claims/ 编译产出。落盘后立刻热加载到 GeneRulesRegistry，下一次
+         *     LLM 系统提示词构建即生效，无需重启服务。
+         *
+         *     需要管理员权限。
+         */
+        post: operations["upload_gene_knowledge_api_v1_knowledge_gene_knowledge_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9815,6 +13339,29 @@ export interface paths {
         };
         /** 带评分的近期 ActionCard 列表 (信任面板) */
         get: operations["my_recent_graded_cards_api_v1_specialists_me_recent_cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/specialists/{name}/scorecard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 单 specialist 近 N 天 ActionCard + 评分详情
+         * @description 返回该 specialist 近 N 天产的所有 ActionCard (不过滤依从度): 评分详情 + 实际 vs 目标对比.
+         *
+         *     和 /hit-rate 不同: 那个给总览多 specialist 命中率 (过滤低依从); 这个给**详情页展示**,
+         *     所有卡都要列, 评没评分都要列, 过不过滤依从度都要列 (UI 决定怎么呈现).
+         */
+        get: operations["specialist_scorecard_api_v1_specialists__name__scorecard_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9930,6 +13477,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clinical-journal/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 按 case thread 分组的 SOAP timeline
+         * @description 返回用户近 N 天的 SOAP entries 按 case_thread 分组. 无 thread 的 entry 归入'其他'bucket.
+         */
+        get: operations["journal_timeline_api_v1_clinical_journal_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/user-directives/me": {
         parameters: {
             query?: never;
@@ -10011,7 +13578,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Telegram bot webhook (医生回复入口)
+         * Telegram bot webhook (健康助理入口)
          * @description 处理 Telegram 推送的 update.
          */
         post: operations["telegram_webhook_api_v1_telegram_webhook_post"];
@@ -10106,6 +13673,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory-facts/{fact_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 用户标记'这条不对' (soft-delete) */
+        post: operations["dismiss_api_v1_memory_facts__fact_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory-facts/contradictions/check": {
         parameters: {
             query?: never;
@@ -10132,6 +13716,30 @@ export interface paths {
         };
         /** 我的记忆统计 */
         get: operations["stats_api_v1_memory_facts_stats_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversation-memory/opener": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 拉 top 1-2 条记忆给会诊页 opener
+         * @description 供 mobile 会诊 tab 进入时调用 — 拉用户最相关的 1-2 条 active 记忆,
+         *     在第一条 AI 消息前显示 "我记得你: <X>" 给用户感知持久记忆.
+         *
+         *     优先级: allergy > medical > preference > 其他.
+         *     失败 (无记忆 / 异常) 返回空 list, mobile 端不显示 opener.
+         */
+        get: operations["get_opener_memories_api_v1_conversation_memory_opener_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10287,6 +13895,379 @@ export interface paths {
         get: operations["my_hybrid_api_v1_hybrid_search_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reasoning-trace/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 最近 N 天的决策 trace
+         * @description 返回用户过去 N 天所有可解释的决策 trace, 按时间降序.
+         *
+         *     聚合两类:
+         *       1. AnomalyAlert (anomaly_rule) — 确定性规则决策
+         *       2. agent_audit_logs(agent_type=llm_arbitrator) — specialist 冲突的 LLM 仲裁
+         *
+         *     Response:
+         *       {
+         *         "traces": [{id, timestamp, decision_type, severity, title, rule, evidence,
+         *                     confidence, outcome, related_memory}],
+         *         "summary": {"total": N, "by_type": {}, "by_severity": {}}
+         *       }
+         */
+        get: operations["recent_traces_api_v1_reasoning_trace_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reasoning-trace/{trace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 单条 trace 详情 (含更多 related memory)
+         * @description trace_id 格式: '<decision_type>_<db_id>' 如 'anomaly_42'.
+         *
+         *     详情版返回 related_memory 扩到 20 条.
+         */
+        get: operations["trace_detail_api_v1_reasoning_trace__trace_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reasoning-trace/safety/{audit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Safety 告警推理链 (按 rule_id 反查) */
+        get: operations["explain_safety_api_v1_reasoning_trace_safety__audit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reasoning-trace/specialist/{audit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Specialist finding 推理链 */
+        get: operations["explain_specialist_api_v1_reasoning_trace_specialist__audit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 今日 Insight (幂等: 未生成时 lazy 触发 generator) */
+        get: operations["get_today_insight_api_v1_insights_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 最近 N 天 Insight 列表 */
+        get: operations["list_recent_insights_api_v1_insights_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/{insight_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 对 Insight 反馈 (Trust Loop) */
+        post: operations["submit_feedback_api_v1_insights__insight_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/judgment/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 对任意 AI 判断反馈 (Trust Loop 闭环) */
+        post: operations["submit_feedback_api_v1_judgment_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/judgment/feedback/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本人近期反馈列表 + 汇总 */
+        get: operations["list_recent_feedback_api_v1_judgment_feedback_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/client-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 上报一条 UI 事件 */
+        post: operations["post_client_event_api_v1_client_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Desktop Bootstrap
+         * @description Return the Mac app's launch context for the current user.
+         */
+        get: operations["get_desktop_bootstrap_api_v1_desktop_bootstrap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/import-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Desktop Import Job
+         * @description Create a desktop-triggered long-running job.
+         *
+         *     P0 stores the job and leaves actual worker wiring to the specific pipeline.
+         *     The job table gives the Mac app a stable status surface immediately.
+         */
+        post: operations["create_desktop_import_job_api_v1_desktop_import_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Desktop Jobs */
+        get: operations["list_desktop_jobs_api_v1_desktop_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Desktop Job */
+        get: operations["get_desktop_job_api_v1_desktop_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Desktop Job */
+        post: operations["retry_desktop_job_api_v1_desktop_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/traces/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Desktop Conversation Trace
+         * @description Return a desktop-friendly trace summary for one Agent conversation.
+         */
+        get: operations["get_desktop_conversation_trace_api_v1_desktop_traces__conversation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/audio-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Audio Input */
+        post: operations["create_audio_input_api_v1_ambient_audio_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/visual-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Visual Input */
+        post: operations["create_visual_input_api_v1_ambient_visual_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/glance-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Glance Cards */
+        get: operations["list_glance_cards_api_v1_ambient_glance_cards_get"];
+        put?: never;
+        /** Create Glance Card */
+        post: operations["create_glance_card_api_v1_ambient_glance_cards_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/hearing/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Hearing Health Tasks */
+        get: operations["list_hearing_health_tasks_api_v1_ambient_hearing_tasks_get"];
+        put?: never;
+        /** Create Hearing Health Task */
+        post: operations["create_hearing_health_task_api_v1_ambient_hearing_tasks_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10967,7 +14948,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * 更新提醒
+         * @description 更新一个提醒（本人）
+         */
+        put: operations["update_reminder_api_v1_reminders__reminder_id__put"];
         post?: never;
         /**
          * 取消提醒
@@ -11545,6 +15530,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/genetic/profiles/{profile_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 基因档案解析状态 (轻量轮询端点)
+         * @description PDF 异步解析专用轮询端点 — 只返 status + variant_count + notes, 不带 variants 列表.
+         *
+         *     status 语义:
+         *       - "processing": notes 为空或含"提取中/正在"
+         *       - "failed":     notes 含"失败"
+         *       - "done":       notes 含"完成" 或 variant_count > 0
+         */
+        get: operations["get_profile_status_api_v1_genetic_profiles__profile_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/predictions/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的基因预测与安全边界
+         * @description Conservative prediction surface.
+         *
+         *     Height requires an externally validated PRS model, education outcome prediction is
+         *     intentionally unsupported, and disease risk is screening-only.
+         */
+        get: operations["get_my_genetic_predictions_api_v1_genetic_predictions_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/genetic/profiles/{profile_id}": {
         parameters: {
             query?: never;
@@ -11701,6 +15734,86 @@ export interface paths {
         get: operations["get_cross_analysis_api_v1_genetic_cross_analysis_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/report/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 基因报告聚合 (命中+未命中, Mobile 报告页用)
+         * @description 聚合用户基因报告: KNOWN_SNPS 全集 (命中+未命中) + LLM Agent 总结.
+         *
+         *     返回结构:
+         *       {
+         *         profile: {id, test_provider, test_date, notes},
+         *         agent_summary: "你的代谢偏向... → 优先做的事: ..." (1h 缓存, 失败 None),
+         *         items: [{rsid, gene, variant_name, category, hit, genotype?, result_label?,
+         *                  risk_level?, variant_nature?, description}],
+         *         stats: {total_known, hits, miss},
+         *       }
+         *
+         *     排序: 命中优先, 命中内 risk 高→低, 未命中按 category.
+         */
+        get: operations["get_my_genetic_report_api_v1_genetic_report_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/snp/{rsid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 单 SNP 详情 + LLM 个性化建议
+         * @description 单 SNP 详情页. 返回静态信息 + 用户命中 + LLM 个性化 actions
+         *     (饮食/补剂/运动/复查/药物注意, cached 24h) + 关联 cards + 同 cluster siblings.
+         *
+         *     rsid 必须在 KNOWN_SNPS 字典中, 否则 404.
+         */
+        get: operations["get_snp_detail_endpoint_api_v1_genetic_snp__rsid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/profiles/{profile_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 管理员: 按 KNOWN_SNPS 字典校对脏 profile
+         * @description 修复 2026-05-12 串字段 bug: 按 rsid/variant_name 反查 KNOWN_SNPS, 重写 gene/category.
+         *
+         *     机制: 新数据优先使用结构化 rsid; 老数据若 variant_name 含 rsid (如 RS1801133)
+         *     则继续用它找字典.
+         *     找到 → 重写 gene/variant/category; 找不到 → 标 note 不删 (保留原始记录).
+         *
+         *     仅允许 profile owner 自己用.
+         */
+        post: operations["reconcile_profile_by_dict_api_v1_genetic_profiles__profile_id__reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12121,6 +16234,46 @@ export interface paths {
         get: operations["family_dashboard_api_v1_family_dashboard_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/family/invitation/create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 创建家庭邀请码
+         * @description 生成 6 位邀请码, 30min 有效. 调用方必须已是某家庭组的 owner.
+         */
+        post: operations["create_invitation_api_v1_family_invitation_create_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/family/invitation/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 接受家庭邀请
+         * @description 凭邀请码加入家庭组. 一码一用.
+         */
+        post: operations["accept_invitation_api_v1_family_invitation_accept_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12934,6 +17087,8 @@ export interface components {
             verification_days?: number | null;
             /** Checklist */
             checklist?: components["schemas"]["ChecklistItem"][];
+            /** Evidence Refs */
+            evidence_refs?: string[];
             /** Creator Specialist */
             creator_specialist?: string | null;
             /** Check Back Date */
@@ -13251,6 +17406,20 @@ export interface components {
             /** Medical Exams Count */
             medical_exams_count: number;
         };
+        /** AgendaComplete */
+        AgendaComplete: {
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id: number;
+            /**
+             * Track
+             * @default protocol
+             */
+            track: string;
+            /** Value */
+            value?: Record<string, never> | null;
+        };
         /** AgentRequest */
         AgentRequest: {
             /** Message */
@@ -13267,6 +17436,24 @@ export interface components {
             file_base64?: string | null;
             /** File Name */
             file_name?: string | null;
+            /** Extra Context */
+            extra_context?: string | null;
+        };
+        /** AmbientAudioInputResponse */
+        AmbientAudioInputResponse: {
+            event: components["schemas"]["AudioInputEventResponse"];
+            /** Recommended Next Action */
+            recommended_next_action?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** AmbientVisualInputResponse */
+        AmbientVisualInputResponse: {
+            event: components["schemas"]["VisualInputEventResponse"];
+            /** Recommended Next Action */
+            recommended_next_action?: {
+                [key: string]: string;
+            } | null;
         };
         /**
          * ApiKeyCreate
@@ -13385,6 +17572,71 @@ export interface components {
             /** Conversation Id */
             conversation_id?: number | null;
         };
+        /** AudioInputCreate */
+        AudioInputCreate: {
+            /** Intent */
+            intent: string;
+            /** Transcript */
+            transcript: string;
+            /**
+             * Source
+             * @default ambient_audio
+             */
+            source: string;
+            /**
+             * Device Type
+             * @default unknown
+             */
+            device_type: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Captured At */
+            captured_at?: string | null;
+            /**
+             * Privacy Class
+             * @default health_l3
+             */
+            privacy_class: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** AudioInputEventResponse */
+        AudioInputEventResponse: {
+            /** Id */
+            id: number;
+            /** Intent */
+            intent: string;
+            /** Transcript */
+            transcript: string;
+            /** Source */
+            source: string;
+            /** Device Type */
+            device_type: string;
+            /** Confidence */
+            confidence: number | null;
+            /** Status */
+            status: string;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: number | null;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+            /** Safety Result */
+            safety_result?: Record<string, never> | null;
+        };
         /**
          * AvatarResponse
          * @description 头像上传响应
@@ -13397,6 +17649,24 @@ export interface components {
              * @default
              */
             avatar_url: string;
+        };
+        /**
+         * BPReadingIn
+         * @description 单条血压点事件 — 血压一天多次, 是点事件 (和 ECG 同理), 不塞日聚合避免互相覆盖.
+         *
+         *     容错: systolic/diastolic 走 before-validator float→int 取整 (avg() 聚合可能给小数);
+         *     measured_at 是去重锚点 ((user_id, measured_at) 唯一); source 是 HealthKit sourceName,
+         *     仅用于备注, 不参与去重。坏值在 service 层丢弃, 不崩整批。
+         */
+        BPReadingIn: {
+            /** Systolic */
+            systolic?: number | null;
+            /** Diastolic */
+            diastolic?: number | null;
+            /** Measured At */
+            measured_at?: string | null;
+            /** Source */
+            source?: string | null;
         };
         /**
          * Base64UploadRequest
@@ -13545,6 +17815,94 @@ export interface components {
             remaining: number;
         };
         /**
+         * BedroomEventIn
+         * @description 摄入一条卧室自动化事件 (HA automation webhook 上行, 设计文档 §7/§10).
+         *
+         *     字段全 Optional —— 向后兼容: HA 不同自动化携带的上下文不同. event_type 在
+         *     service 层校验非空 (缺则 422/400, 不静默写垃圾行).
+         */
+        BedroomEventIn: {
+            /**
+             * Room Id
+             * @description 房间标识, 默认 bedroom
+             */
+            room_id?: string | null;
+            /**
+             * Event Type
+             * @description 事件类型, 例 ventilation_boost / manual_override
+             */
+            event_type?: string | null;
+            /**
+             * Reason
+             * @description 触发原因 (人话)
+             */
+            reason?: string | null;
+            /**
+             * Command Entity Id
+             * @description 命令落点实体, 例 fan.bedroom_fresh_air
+             */
+            command_entity_id?: string | null;
+            /**
+             * Command Mode
+             * @description 命令档位/模式, 例 high / boost
+             */
+            command_mode?: string | null;
+            /**
+             * Source
+             * @description ha|reva|manual, 缺省 ha
+             */
+            source?: string | null;
+            /**
+             * Manual Override
+             * @description 是否人工 override
+             */
+            manual_override?: boolean | null;
+        };
+        /**
+         * BedroomSnapshotIn
+         * @description 摄入一条卧室环境快照 (HA / 客户端推).
+         */
+        BedroomSnapshotIn: {
+            /**
+             * Room Id
+             * @description 房间标识, 默认 bedroom
+             */
+            room_id?: string | null;
+            /**
+             * Captured At
+             * @description 采集时刻, 缺省取服务器当前时间
+             */
+            captured_at?: string | null;
+            /** Co2 Ppm */
+            co2_ppm?: number | null;
+            /** Pm25 */
+            pm25?: number | null;
+            /** Temperature C */
+            temperature_c?: number | null;
+            /** Humidity Percent */
+            humidity_percent?: number | null;
+            /** Tvoc */
+            tvoc?: number | null;
+            /** Illuminance Lux */
+            illuminance_lux?: number | null;
+            /** Occupancy */
+            occupancy?: boolean | null;
+            /** Bed Presence */
+            bed_presence?: boolean | null;
+            /**
+             * Sources
+             * @description 指标到设备/实体的来源映射
+             */
+            sources?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Confidence
+             * @description high|medium|low, 缺省 medium
+             */
+            confidence?: string | null;
+        };
+        /**
          * BehaviorABOut
          * @description 行为对比结果（同一行为 vs 未发生，ODI 均值差异）。
          */
@@ -13563,6 +17921,23 @@ export interface components {
             delta: number;
             /** Effect */
             effect: string;
+        };
+        /** BenchmarkResponse */
+        BenchmarkResponse: {
+            /** Model Id */
+            model_id: string;
+            /** Label */
+            label: string;
+            /** Runs */
+            runs: number;
+            /** Latency Ms */
+            latency_ms: number[];
+            /** Avg Ms */
+            avg_ms: number;
+            /** Ok */
+            ok: boolean;
+            /** Sample Reply */
+            sample_reply: string;
         };
         /**
          * BindWebLogin
@@ -13746,6 +18121,15 @@ export interface components {
             /** Exam Info */
             exam_info?: Record<string, never>;
         };
+        /** Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post */
+        Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post: {
+            /**
+             * File
+             * Format: binary
+             * @description 体检报告图片 (jpg/png/heic/webp)
+             */
+            file: string;
+        };
         /** Body_import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post */
         Body_import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post: {
             /**
@@ -13761,10 +18145,7 @@ export interface components {
             grant_type?: string | null;
             /** Username */
             username: string;
-            /**
-             * Password
-             * Format: password
-             */
+            /** Password */
             password: string;
             /**
              * Scope
@@ -13773,10 +18154,7 @@ export interface components {
             scope: string;
             /** Client Id */
             client_id?: string | null;
-            /**
-             * Client Secret
-             * Format: password
-             */
+            /** Client Secret */
             client_secret?: string | null;
         };
         /** Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post */
@@ -13785,6 +18163,15 @@ export interface components {
              * File
              * Format: binary
              * @description PDF文件
+             */
+            file: string;
+        };
+        /** Body_recognize_prescription_image_api_v1_prescriptions_recognize_post */
+        Body_recognize_prescription_image_api_v1_prescriptions_recognize_post: {
+            /**
+             * File
+             * Format: binary
+             * @description 处方图片 (jpg/png/heic/webp)
              */
             file: string;
         };
@@ -13848,6 +18235,26 @@ export interface components {
              */
             category: string;
         };
+        /** CaptureOut */
+        CaptureOut: {
+            /**
+             * Mode
+             * @constant
+             * @enum {string}
+             */
+            mode: "manual";
+            /** Fields */
+            fields: string[];
+        };
+        /** CardDecisionBody */
+        CardDecisionBody: {
+            /** Decision */
+            decision: string;
+            /** Reason */
+            reason?: string | null;
+            /** Adjusted Payload */
+            adjusted_payload?: Record<string, never> | null;
+        };
         /** CgmBatchIn */
         CgmBatchIn: {
             /** Readings */
@@ -13855,13 +18262,12 @@ export interface components {
         };
         /** CgmReadingIn */
         CgmReadingIn: {
-            /**
-             * Measured At
-             * Format: date-time
-             */
-            measured_at: string;
+            /** Measured At */
+            measured_at?: string | null;
             /** Glucose Mg Dl */
-            glucose_mg_dl: number;
+            glucose_mg_dl?: number | null;
+            /** Glucose Mmol L */
+            glucose_mmol_l?: number | null;
             /** Trend Arrow */
             trend_arrow?: string | null;
             /** Trend Rate */
@@ -14182,6 +18588,11 @@ export interface components {
              * @description 模板分类
              */
             template_category?: string | null;
+            /**
+             * Display Message
+             * @default
+             */
+            display_message: string;
         };
         /**
          * CheckinStats
@@ -14566,6 +18977,51 @@ export interface components {
              */
             done: boolean;
         };
+        /** ClaimFeedbackRequest */
+        ClaimFeedbackRequest: {
+            /**
+             * Feedback
+             * @default disagree
+             * @constant
+             * @enum {string}
+             */
+            feedback: "disagree";
+            /** Reason */
+            reason?: string | null;
+        };
+        /** ClaimReviewUpdateRequest */
+        ClaimReviewUpdateRequest: {
+            /** Review Status */
+            review_status?: ("draft" | "reviewed" | "needs_review" | "archived") | null;
+            /** Evidence Level */
+            evidence_level?: ("A" | "B" | "C" | "D") | null;
+            /** Confidence */
+            confidence?: number | null;
+            external_source?: components["schemas"]["ExternalSourceReviewRequest"] | null;
+            /**
+             * Clear Candidate Duplicates
+             * @default false
+             */
+            clear_candidate_duplicates: boolean;
+            /**
+             * Resolve Feedback
+             * @default false
+             */
+            resolve_feedback: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /** ClarificationOpenerResponse */
+        ClarificationOpenerResponse: {
+            /** Opener */
+            opener: string;
+            /** Rationale */
+            rationale: string;
+            /** Alert Type */
+            alert_type: string;
+            /** Alert Id */
+            alert_id: number;
+        };
         /** ClawHubInstallRequest */
         ClawHubInstallRequest: {
             /** Slug */
@@ -14586,6 +19042,16 @@ export interface components {
             /** Deleted Count */
             deleted_count: number;
         };
+        /** CoachPersonaRequest */
+        CoachPersonaRequest: {
+            /** Coach Persona */
+            coach_persona: string;
+        };
+        /** CoachPersonaResponse */
+        CoachPersonaResponse: {
+            /** Coach Persona */
+            coach_persona: string;
+        };
         /** CoachingNoteCreate */
         CoachingNoteCreate: {
             /** Exercise Type */
@@ -14605,6 +19071,24 @@ export interface components {
             source_type: string;
             /** Video Url */
             video_url?: string | null;
+        };
+        /** CompleteRef */
+        CompleteRef: {
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id: number;
+        };
+        /** ConnectionCheckinBody */
+        ConnectionCheckinBody: {
+            /** Ucla Score */
+            ucla_score?: number | null;
+            /** Has Confidant */
+            has_confidant?: boolean | null;
+            /** In Stable Group */
+            in_stable_group?: boolean | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** ConsultationItemCreate */
         ConsultationItemCreate: {
@@ -15108,7 +19592,7 @@ export interface components {
              * Heart Rate Timeline
              * @description 心率时间线数据
              */
-            heart_rate_timeline?: components["schemas"]["HeartRatePoint"][];
+            heart_rate_timeline?: components["schemas"]["app__schemas__heart_rate__HeartRatePoint"][];
             /**
              * Hrv
              * @description HRV值（夜间平均）
@@ -15121,6 +19605,83 @@ export interface components {
             zones?: {
                 [key: string]: number;
             } | null;
+        };
+        /** DailyPlanActionEventRequest */
+        DailyPlanActionEventRequest: {
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "suggested" | "accepted" | "adjusted" | "completed" | "skipped" | "verified";
+            /** Payload */
+            payload?: Record<string, never>;
+            /**
+             * Plan Date
+             * @description 默认今天
+             */
+            plan_date?: string | null;
+        };
+        /** DailyPlanActionEventResponse */
+        DailyPlanActionEventResponse: {
+            /** Id */
+            id: number;
+            /** Plan Id */
+            plan_id: number | null;
+            /**
+             * Plan Date
+             * Format: date
+             */
+            plan_date: string;
+            /** Action Id */
+            action_id: string;
+            /** Action Title */
+            action_title: string;
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "suggested" | "accepted" | "adjusted" | "completed" | "skipped" | "verified";
+            /** Action State */
+            action_state: string;
+            /** Payload */
+            payload: Record<string, never>;
+        };
+        /** DailyPlanActionFeedbackRequest */
+        DailyPlanActionFeedbackRequest: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "accepted" | "adjusted" | "done" | "skipped" | "failed";
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Plan Date
+             * @description 默认今天
+             */
+            plan_date?: string | null;
+        };
+        /** DailyPlanActionFeedbackResponse */
+        DailyPlanActionFeedbackResponse: {
+            /** Id */
+            id: number;
+            /** Plan Id */
+            plan_id: number | null;
+            /**
+             * Plan Date
+             * Format: date
+             */
+            plan_date: string;
+            /** Action Key */
+            action_key: string;
+            /** Action Title */
+            action_title: string;
+            /** Status */
+            status: string;
+            /** Reason */
+            reason: string | null;
+            /** Source */
+            source: string;
         };
         /**
          * DailyReviewResponse
@@ -15446,6 +20007,22 @@ export interface components {
              */
             source: string;
         };
+        /** DesktopJobCreate */
+        DesktopJobCreate: {
+            /**
+             * Job Type
+             * @enum {string}
+             */
+            job_type: "gene_reanalysis" | "medical_import" | "system_kb_rebuild" | "dedao_compile" | "eval_run";
+            /** Source Kind */
+            source_kind?: string | null;
+            /** Source Name */
+            source_name?: string | null;
+            /** Source Hash */
+            source_hash?: string | null;
+            /** Request Payload */
+            request_payload?: Record<string, never>;
+        };
         /**
          * DetectedLocation
          * @description IP检测的位置信息
@@ -15505,41 +20082,6 @@ export interface components {
             message: string;
         };
         /**
-         * DietRecordCreate
-         * @description 创建饮食记录
-         */
-        DietRecordCreate: {
-            /** User Id */
-            user_id: number;
-            /**
-             * Record Date
-             * Format: date
-             */
-            record_date: string;
-            /** Meal Type */
-            meal_type: string;
-            /** Meal Time */
-            meal_time?: string | null;
-            /** Food Name */
-            food_name: string;
-            /** Quantity */
-            quantity?: number | null;
-            /** Unit */
-            unit?: string | null;
-            /** Calories */
-            calories?: number | null;
-            /** Protein */
-            protein?: number | null;
-            /** Carbs */
-            carbs?: number | null;
-            /** Fat */
-            fat?: number | null;
-            /** Fiber */
-            fiber?: number | null;
-            /** Notes */
-            notes?: string | null;
-        };
-        /**
          * DietRecordResponse
          * @description 饮食记录响应
          */
@@ -15587,6 +20129,11 @@ export interface components {
             created_at?: string | null;
             /** Updated At */
             updated_at?: string | null;
+            /**
+             * Display Message
+             * @default
+             */
+            display_message: string;
         };
         /**
          * DietRecordUpdate
@@ -15752,6 +20299,29 @@ export interface components {
             /** Notes */
             notes: string | null;
         };
+        /** DoctorFeedbackIn */
+        DoctorFeedbackIn: {
+            /**
+             * Summary
+             * @description 医生说的话 / 主诉上下文
+             */
+            summary?: string | null;
+            /**
+             * Assessment
+             * @description 医生的评估
+             */
+            assessment?: string | null;
+            /**
+             * Plan
+             * @description 医生的下一步安排
+             */
+            plan?: string | null;
+            /**
+             * Visit Date
+             * @description 就诊日期
+             */
+            visit_date?: string | null;
+        };
         /**
          * DocumentBatchInput
          * @description 批量文档输入
@@ -15820,6 +20390,161 @@ export interface components {
              * @default 0.7
              */
             confidence: number;
+        };
+        /** EpigeneticReportIn */
+        EpigeneticReportIn: {
+            /**
+             * Vendor
+             * @description 检测厂商, 如 TruDiagnostic
+             */
+            vendor: string;
+            /**
+             * Clock Type
+             * @description 时钟类型, 如 GrimAge/DunedinPACE
+             */
+            clock_type: string;
+            /**
+             * Sample Date
+             * Format: date
+             * @description 采样日期
+             */
+            sample_date: string;
+            /**
+             * Biological Age
+             * @description 生物年龄(岁)
+             */
+            biological_age?: number | null;
+            /**
+             * Pace Of Aging
+             * @description 衰老速率 (DunedinPACE)
+             */
+            pace_of_aging?: number | null;
+            /**
+             * Raw Summary
+             * @description 原始报告字段(可选)
+             */
+            raw_summary?: Record<string, never>;
+        };
+        /** EpisodeActionOut */
+        EpisodeActionOut: {
+            /** Id */
+            id: number;
+            /** Sequence */
+            sequence: number;
+            /** Title */
+            title: string;
+            /** Body */
+            body?: string | null;
+            /** Icon */
+            icon?: string | null;
+            /** Action Type */
+            action_type: string;
+            /** Template Id */
+            template_id?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Time Window Start */
+            time_window_start?: string | null;
+            /** Time Window End */
+            time_window_end?: string | null;
+            /** Status */
+            status: string;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Skipped At */
+            skipped_at?: string | null;
+        };
+        /** EpisodeDetail */
+        EpisodeDetail: {
+            /** Id */
+            id: number;
+            /** Episode Type */
+            episode_type: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Status */
+            status: string;
+            /** Risk Level */
+            risk_level: string;
+            /** Risk Flags */
+            risk_flags?: string[] | null;
+            /** Protocol Slug */
+            protocol_slug?: string | null;
+            /** Protocol Version */
+            protocol_version?: string | null;
+            /** Headline */
+            headline?: string | null;
+            /** Actions Total */
+            actions_total: number;
+            /** Actions Done */
+            actions_done: number;
+            /** Source Type */
+            source_type?: string | null;
+            /** Source Id */
+            source_id?: number | null;
+            /** Context Snapshot */
+            context_snapshot?: Record<string, never> | null;
+            /** Baseline Snapshot */
+            baseline_snapshot?: Record<string, never> | null;
+            /**
+             * Actions
+             * @default []
+             */
+            actions: components["schemas"]["EpisodeActionOut"][];
+            outcome?: components["schemas"]["EpisodeOutcomeOut"] | null;
+        };
+        /** EpisodeListItem */
+        EpisodeListItem: {
+            /** Id */
+            id: number;
+            /** Episode Type */
+            episode_type: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Status */
+            status: string;
+            /** Risk Level */
+            risk_level: string;
+            /** Risk Flags */
+            risk_flags?: string[] | null;
+            /** Protocol Slug */
+            protocol_slug?: string | null;
+            /** Protocol Version */
+            protocol_version?: string | null;
+            /** Headline */
+            headline?: string | null;
+            /** Actions Total */
+            actions_total: number;
+            /** Actions Done */
+            actions_done: number;
+        };
+        /** EpisodeOutcomeOut */
+        EpisodeOutcomeOut: {
+            /** Actions Total */
+            actions_total: number;
+            /** Actions Done */
+            actions_done: number;
+            /** Actions Skipped */
+            actions_skipped: number;
+            /** Completion Rate */
+            completion_rate?: number | null;
+            /** Metrics Delta */
+            metrics_delta?: Record<string, never> | null;
+            /** Summary */
+            summary?: string | null;
+        };
+        /** EventIn */
+        EventIn: {
+            /** Event Name */
+            event_name: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
         };
         /** EventOut */
         EventOut: {
@@ -16097,6 +20822,21 @@ export interface components {
             /** Daily Summary */
             daily_summary?: components["schemas"]["ExcretionDailySummary"][];
         };
+        /** ExerciseOut */
+        ExerciseOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Evidence Tier */
+            evidence_tier: string;
+            /** Cues */
+            cues: string[];
+            /** Media Ref */
+            media_ref?: string | null;
+            /** Contraindications */
+            contraindications: string[];
+        };
         /**
          * ExerciseRecordCreate
          * @description 创建锻炼记录
@@ -16111,6 +20851,8 @@ export interface components {
             exercise_type: string;
             /** Duration */
             duration?: number | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
             /** Intensity */
             intensity?: string | null;
             /** Calories Burned */
@@ -16142,6 +20884,8 @@ export interface components {
             exercise_type: string;
             /** Duration */
             duration?: number | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
             /** Intensity */
             intensity?: string | null;
             /** Calories Burned */
@@ -16156,6 +20900,37 @@ export interface components {
             notes?: string | null;
             /** Created At */
             created_at?: string | null;
+            /**
+             * Display Message
+             * @default
+             */
+            display_message: string;
+        };
+        /**
+         * ExerciseRecordUpdate
+         * @description 更新锻炼记录
+         */
+        ExerciseRecordUpdate: {
+            /** Record Date */
+            record_date?: string | null;
+            /** Exercise Type */
+            exercise_type?: string | null;
+            /** Duration */
+            duration?: number | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** Intensity */
+            intensity?: string | null;
+            /** Calories Burned */
+            calories_burned?: number | null;
+            /** Reps */
+            reps?: number | null;
+            /** Sets */
+            sets?: number | null;
+            /** Distance */
+            distance?: number | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** ExplainRequest */
         ExplainRequest: {
@@ -16179,6 +20954,37 @@ export interface components {
             generated_at: string;
             /** Cached */
             cached: boolean;
+        };
+        /** ExternalSourceReviewRequest */
+        ExternalSourceReviewRequest: {
+            /** Kind */
+            kind?: string | null;
+            /** Source */
+            source: string;
+            /** Title */
+            title?: string | null;
+            /** Url */
+            url?: string | null;
+            /**
+             * Review Status
+             * @default reviewed
+             * @enum {string}
+             */
+            review_status: "reviewed" | "needs_review" | "draft";
+        };
+        /** ExtractMemoryRequest */
+        ExtractMemoryRequest: {
+            /** User Turns */
+            user_turns: string[];
+            /** Alert Id */
+            alert_id?: number | null;
+        };
+        /** ExtractMemoryResponse */
+        ExtractMemoryResponse: {
+            /** Extracted Count */
+            extracted_count: number;
+            /** Facts */
+            facts: Record<string, never>[];
         };
         /** FactCreate */
         FactCreate: {
@@ -16269,6 +21075,23 @@ export interface components {
              */
             user_id: number;
         };
+        /** FeedbackCreate */
+        FeedbackCreate: {
+            /**
+             * Kind
+             * @description action_done / action_skipped / pain_report / rpe / inline_answer / replan_request
+             */
+            kind: string;
+            /** Action Id */
+            action_id?: number | null;
+            /** Payload */
+            payload?: Record<string, never> | null;
+            /**
+             * Source
+             * @default mobile
+             */
+            source: string;
+        };
         /**
          * FeedbackCreateRequest
          * @description 用户提交反馈（👍👎）
@@ -16284,6 +21107,36 @@ export interface components {
             rating: number;
             /** Feedback Text */
             feedback_text?: string | null;
+        };
+        /** FeedbackOut */
+        FeedbackOut: {
+            /** Id */
+            id: number;
+            /** Episode Id */
+            episode_id: number;
+            /** Action Id */
+            action_id?: number | null;
+            /** Kind */
+            kind: string;
+            /** Payload */
+            payload?: Record<string, never> | null;
+            /** Source */
+            source: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** FeedbackRequest */
+        FeedbackRequest: {
+            /**
+             * Feedback
+             * @description helpful / not_helpful / irrelevant / already_knew
+             */
+            feedback: string;
+            /** Note */
+            note?: string | null;
         };
         /** FeedbackResponse */
         FeedbackResponse: {
@@ -16307,6 +21160,51 @@ export interface components {
          * @enum {string}
          */
         Feeling: "great" | "good" | "normal" | "tired" | "exhausted";
+        /** FitnessSnapshot */
+        FitnessSnapshot: {
+            /** Vo2Max */
+            vo2max?: number | null;
+            /** Vo2Max Source */
+            vo2max_source?: string | null;
+            /** Chronological Age */
+            chronological_age?: number | null;
+            /** Fitness Age */
+            fitness_age?: number | null;
+            /** Age Delta */
+            age_delta?: number | null;
+            /**
+             * Intensity This Week
+             * @default 0
+             */
+            intensity_this_week: number;
+            /**
+             * Intensity Goal
+             * @default 150
+             */
+            intensity_goal: number;
+            /**
+             * Intensity Pct
+             * @default 0
+             */
+            intensity_pct: number;
+            /**
+             * Moderate This Week
+             * @default 0
+             */
+            moderate_this_week: number;
+            /**
+             * Vigorous This Week
+             * @default 0
+             */
+            vigorous_this_week: number;
+            /**
+             * Days Tracked This Week
+             * @default 0
+             */
+            days_tracked_this_week: number;
+            /** Last Data Date */
+            last_data_date?: string | null;
+        };
         /**
          * FoodItem
          * @description 识别出的单个食物
@@ -16382,6 +21280,55 @@ export interface components {
              * @default manual
              */
             source: string;
+        };
+        /**
+         * FrequentFood
+         * @description 常吃食物 —— 由历史 DietRecord 按 food_items 聚合得出, 供首页/记录页一键复用.
+         *
+         *     营养素取该食物历次记录的中位数 (历次数值可能不同), 是"按历史估算"非精确值.
+         */
+        FrequentFood: {
+            /** Food Items */
+            food_items: string;
+            meal_type: components["schemas"]["MealType"];
+            /** Count */
+            count: number;
+            /** Calories */
+            calories?: number | null;
+            /** Protein */
+            protein?: number | null;
+            /** Carbs */
+            carbs?: number | null;
+            /** Fat */
+            fat?: number | null;
+        };
+        /**
+         * FrequentSupplement
+         * @description 最近最常打卡的补剂(供一键打卡)。
+         */
+        FrequentSupplement: {
+            /** Supplement Id */
+            supplement_id: number;
+            /** Name */
+            name: string;
+            /** Dosage */
+            dosage?: string | null;
+            /** Timing */
+            timing?: string | null;
+            /** Count */
+            count: number;
+        };
+        /**
+         * FrequentWater
+         * @description 最近最常用的「饮水量 + 饮品类型」组合(供一键记录)。
+         */
+        FrequentWater: {
+            /** Amount Ml */
+            amount_ml: number;
+            /** Drink Type */
+            drink_type?: string | null;
+            /** Count */
+            count: number;
         };
         /**
          * GarminCredentialCreate
@@ -16684,6 +21631,8 @@ export interface components {
             hydration_ml?: number | null;
             /** Vo2Max Fitness Age */
             vo2max_fitness_age?: number | null;
+            /** Data Source */
+            data_source?: string | null;
         };
         /** GarminDeviceResponse */
         GarminDeviceResponse: {
@@ -16813,6 +21762,21 @@ export interface components {
             /** Mfa Session Id */
             mfa_session_id?: string | null;
         };
+        /** GateOut */
+        GateOut: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "do" | "modified" | "rest_instead";
+            /**
+             * Readiness Zone
+             * @enum {string}
+             */
+            readiness_zone: "green" | "yellow" | "red" | "unknown";
+            /** Reason */
+            reason: string;
+        };
         /**
          * GeneDrugRulesInput
          * @description 基因-药物规则输入
@@ -16850,6 +21814,61 @@ export interface components {
              * @description 基因-药物规则
              */
             rules: Record<string, never>;
+        };
+        /**
+         * GeneKnowledgeInput
+         * @description gene_knowledge.json (llm-wiki-v2) 全量上传
+         */
+        GeneKnowledgeInput: {
+            /**
+             * Id
+             * @default gene_knowledge
+             */
+            id: string;
+            /**
+             * Schema Id
+             * @default llm-wiki-v2-gene-knowledge
+             */
+            schema_id: string;
+            /**
+             * Version
+             * @description 版本号
+             */
+            version: string;
+            /**
+             * Compiled At
+             * @description 编译时间
+             */
+            compiled_at: string;
+            /**
+             * Source
+             * @default ak-kbase
+             */
+            source: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Entities
+             * @description entity_type → id → entity
+             */
+            entities?: Record<string, never>;
+            /**
+             * Claims
+             * @description atomic claims with drug_rules
+             */
+            claims?: Record<string, never>[];
+            /**
+             * Gene Rules
+             * @description gene → phenotype → rules
+             */
+            gene_rules?: Record<string, never>;
+            /**
+             * Snp Registry
+             * @description rsid → metadata
+             */
+            snp_registry?: Record<string, never>;
+            /** Stats */
+            stats?: Record<string, never> | null;
         };
         /** GenerateGoalRequest */
         GenerateGoalRequest: {
@@ -16960,6 +21979,70 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** GlanceCardCreate */
+        GlanceCardCreate: {
+            /**
+             * Surface
+             * @default rokid_glasses
+             */
+            surface: string;
+            /**
+             * Card Type
+             * @default action_prompt
+             */
+            card_type: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /**
+             * Priority
+             * @default normal
+             */
+            priority: string;
+            /** Action */
+            action?: Record<string, never> | null;
+            /** Target Type */
+            target_type?: string | null;
+            /** Target Id */
+            target_id?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** GlanceCardResponse */
+        GlanceCardResponse: {
+            /** Id */
+            id: number;
+            /** Surface */
+            surface: string;
+            /** Card Type */
+            card_type: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Priority */
+            priority: string;
+            /** Status */
+            status: string;
+            /** Action */
+            action: Record<string, never> | null;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: number | null;
+            /** Expires At */
+            expires_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
         /**
          * GoalCreate
          * @description 创建目标
@@ -17029,7 +22112,7 @@ export interface components {
             goal_type: components["schemas"]["GoalType"];
             goal_period: components["schemas"]["GoalPeriod"];
             /** Title */
-            title: string;
+            title?: string | null;
             /** Description */
             description: string | null;
             /** Target Value */
@@ -17065,6 +22148,21 @@ export interface components {
          * @enum {string}
          */
         GoalType: "diet" | "exercise" | "sleep" | "water" | "supplement" | "outdoor" | "weight" | "other";
+        /** GuidedTaskOut */
+        GuidedTaskOut: {
+            /** Domain */
+            domain: string;
+            gate: components["schemas"]["GateOut"];
+            /** Title */
+            title: string;
+            exercise: components["schemas"]["ExerciseOut"];
+            plan: components["schemas"]["PlanOut"];
+            /** Voice Script */
+            voice_script: string[];
+            capture: components["schemas"]["CaptureOut"];
+            /** Safety Note */
+            safety_note?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -17496,6 +22594,139 @@ export interface components {
             priority?: number | null;
         };
         /**
+         * HealthKitDailyRecord
+         * @description 单日 HealthKit 聚合记录 — mobile 端按天预聚合后推上来.
+         *
+         *     data_source 标签由 mobile 端按 sourceName 映射决定 (apple-watch / ringconn /
+         *     oura / withings-app / garmin-app / manual / unknown). 字典外的 sourceName
+         *     会落到 unknown,后端不拒绝,只 warning.
+         */
+        HealthKitDailyRecord: {
+            /** Record Date */
+            record_date: string;
+            /** Data Source */
+            data_source?: string | null;
+            /** Source Name */
+            source_name?: string | null;
+            /** Sleep Score */
+            sleep_score?: number | null;
+            /** Total Sleep Minutes */
+            total_sleep_minutes?: number | null;
+            /** Deep Sleep Minutes */
+            deep_sleep_minutes?: number | null;
+            /** Rem Sleep Minutes */
+            rem_sleep_minutes?: number | null;
+            /** Light Sleep Minutes */
+            light_sleep_minutes?: number | null;
+            /** Awake Minutes */
+            awake_minutes?: number | null;
+            /** Sleep Start Time */
+            sleep_start_time?: string | null;
+            /** Sleep End Time */
+            sleep_end_time?: string | null;
+            /** Resting Heart Rate */
+            resting_heart_rate?: number | null;
+            /** Avg Heart Rate */
+            avg_heart_rate?: number | null;
+            /** Max Heart Rate */
+            max_heart_rate?: number | null;
+            /** Min Heart Rate */
+            min_heart_rate?: number | null;
+            /** Hrv */
+            hrv?: number | null;
+            /** Hrv Status */
+            hrv_status?: string | null;
+            /** Steps */
+            steps?: number | null;
+            /** Distance Meters */
+            distance_meters?: number | null;
+            /** Floors Climbed */
+            floors_climbed?: number | null;
+            /** Active Minutes */
+            active_minutes?: number | null;
+            /** Calories Total */
+            calories_total?: number | null;
+            /** Calories Active */
+            calories_active?: number | null;
+            /** Stress Level */
+            stress_level?: number | null;
+            /** Body Battery High */
+            body_battery_high?: number | null;
+            /** Body Battery Low */
+            body_battery_low?: number | null;
+            /** Spo2 Avg */
+            spo2_avg?: number | null;
+            /** Spo2 Min */
+            spo2_min?: number | null;
+            /** Respiration Rate Avg */
+            respiration_rate_avg?: number | null;
+            /** Respiration Rate Min */
+            respiration_rate_min?: number | null;
+            /** Respiration Rate Max */
+            respiration_rate_max?: number | null;
+            /** Body Temp Deviation C */
+            body_temp_deviation_c?: number | null;
+            /** Ecg Classification */
+            ecg_classification?: string | null;
+            /** Ecg Recorded At */
+            ecg_recorded_at?: string | null;
+            /** Afib Event Count */
+            afib_event_count?: number | null;
+            /** Blood Pressure Readings */
+            blood_pressure_readings?: components["schemas"]["BPReadingIn"][] | null;
+            /** Spo2 Samples */
+            spo2_samples?: components["schemas"]["Spo2SampleIn"][] | null;
+            /** Weight Kg */
+            weight_kg?: number | null;
+            /** Body Fat Percentage */
+            body_fat_percentage?: number | null;
+            /** Raw Data */
+            raw_data?: Record<string, never> | null;
+        };
+        /** HealthKitImportError */
+        HealthKitImportError: {
+            /** Index */
+            index: number;
+            /**
+             * Kind
+             * @default daily
+             */
+            kind: string;
+            /** Record Date */
+            record_date: string | null;
+            /** Error */
+            error: string;
+        };
+        /** HealthKitImportRequest */
+        HealthKitImportRequest: {
+            /** Records */
+            records: components["schemas"]["HealthKitDailyRecord"][];
+        };
+        /** HealthKitImportResponse */
+        HealthKitImportResponse: {
+            /** Imported Count */
+            imported_count: number;
+            /**
+             * Ecg Imported Count
+             * @default 0
+             */
+            ecg_imported_count: number;
+            /**
+             * Blood Pressure Imported Count
+             * @default 0
+             */
+            blood_pressure_imported_count: number;
+            /**
+             * Spo2 Sample Imported Count
+             * @default 0
+             */
+            spo2_sample_imported_count: number;
+            /** Source Breakdown */
+            source_breakdown: Record<string, never>;
+            /** Errors */
+            errors: components["schemas"]["HealthKitImportError"][];
+        };
+        /**
          * HealthQuestionnaire
          * @description 健康问卷
          */
@@ -17581,26 +22812,61 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
-        /**
-         * HeartRatePoint
-         * @description 单个心率数据点
-         */
-        HeartRatePoint: {
+        /** HearingHealthTaskCreate */
+        HearingHealthTaskCreate: {
             /**
-             * Timestamp
-             * @description 时间戳（毫秒）
+             * Task Type
+             * @default hearing_test
              */
-            timestamp: number;
+            task_type: string;
+            /** Reason */
+            reason?: string | null;
             /**
-             * Time
-             * @description 时间（HH:MM格式）
+             * Source
+             * @default ambient_hearing
              */
-            time: string;
+            source: string;
+            /** Due At */
+            due_at?: string | null;
             /**
-             * Value
-             * @description 心率值（bpm）
+             * Priority
+             * @default normal
              */
-            value: number;
+            priority: string;
+            /** Payload */
+            payload?: Record<string, never> | null;
+        };
+        /** HearingHealthTaskEnvelope */
+        HearingHealthTaskEnvelope: {
+            task: components["schemas"]["HearingHealthTaskResponse"];
+            /** Write Intent */
+            write_intent: Record<string, never> | null;
+        };
+        /** HearingHealthTaskResponse */
+        HearingHealthTaskResponse: {
+            /** Id */
+            id: number;
+            /** Task Type */
+            task_type: string;
+            /** Status */
+            status: string;
+            /** Source */
+            source: string;
+            /** Reason */
+            reason: string | null;
+            /** Due At */
+            due_at: string | null;
+            /** Priority */
+            priority: string;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /** Payload */
+            payload: Record<string, never> | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * HeartRatePoint
@@ -17709,6 +22975,8 @@ export interface components {
         IOSDeviceBindRequest: {
             /** Device Token */
             device_token: string;
+            /** Bundle Id */
+            bundle_id?: string | null;
         };
         /** IllnessEpisodeCreate */
         IllnessEpisodeCreate: {
@@ -17718,7 +22986,7 @@ export interface components {
              * Start Date
              * Format: date
              */
-            start_date: string;
+            start_date?: string;
             /**
              * Severity
              * @default 5
@@ -17946,6 +23214,95 @@ export interface components {
             /** Remaining Uses */
             remaining_uses?: number | null;
         };
+        /** InviteAcceptRequest */
+        InviteAcceptRequest: {
+            /** Code */
+            code: string;
+            /**
+             * Relationship Type
+             * @description self/father/mother/spouse/child/sibling/other
+             */
+            relationship_type: string;
+            /** Nickname */
+            nickname?: string | null;
+        };
+        /** InviteCodeResponse */
+        InviteCodeResponse: {
+            /** Code */
+            code: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Group Name */
+            group_name: string;
+        };
+        /** JudgmentFeedbackRequest */
+        JudgmentFeedbackRequest: {
+            /**
+             * Target Type
+             * @description one of ['action_card', 'anomaly_alert', 'insight', 'llm_arbitration', 'safety_alert', 'specialist_finding']
+             */
+            target_type: string;
+            /** Target Id */
+            target_id: number;
+            /**
+             * Feedback
+             * @description one of ['already_knew', 'helpful', 'irrelevant', 'not_helpful']
+             */
+            feedback: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Snapshot
+             * @description 冻结的上下文摘要
+             */
+            snapshot?: string | null;
+        };
+        /** LLMPingResponse */
+        LLMPingResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Sample Reply */
+            sample_reply: string;
+            /** Error */
+            error?: string | null;
+        };
+        /** LLMStatusResponse */
+        LLMStatusResponse: {
+            /** Active Provider */
+            active_provider: string;
+            /** Available Providers */
+            available_providers: string[];
+            /** Current Model */
+            current_model: string;
+            /** Base Url Preview */
+            base_url_preview: string;
+            /** Has Api Key */
+            has_api_key: boolean;
+        };
+        /** LLMSwitchRequest */
+        LLMSwitchRequest: {
+            /** Provider */
+            provider: string;
+        };
+        /** LabPhotoParseRequest */
+        LabPhotoParseRequest: {
+            /**
+             * Image Base64
+             * @description 化验单照片 base64
+             */
+            image_base64: string;
+            /**
+             * Image Type
+             * @default jpeg
+             */
+            image_type: string;
+        };
         /**
          * LapData
          * @description 计圈/分段数据
@@ -17984,6 +23341,138 @@ export interface components {
             summary: string;
             /** Evidence */
             evidence?: string[];
+        };
+        /** LiveRunEndRequest */
+        LiveRunEndRequest: {
+            /** Total Distance M */
+            total_distance_m: number;
+            /** Total Duration S */
+            total_duration_s: number;
+            /** Avg Pace Seconds */
+            avg_pace_seconds?: number | null;
+            /** Avg Hr */
+            avg_hr?: number | null;
+            /** Max Hr */
+            max_hr?: number | null;
+            /**
+             * Z4 Plus Minutes
+             * @default 0
+             */
+            z4_plus_minutes: number;
+            /** Calories */
+            calories?: number | null;
+            /**
+             * Events
+             * @default []
+             */
+            events: components["schemas"]["LiveRunEvent"][];
+            /**
+             * Gps Samples
+             * @default []
+             */
+            gps_samples: components["schemas"]["LiveRunGpsSample"][];
+            /**
+             * Aborted
+             * @default false
+             */
+            aborted: boolean;
+        };
+        /** LiveRunEvent */
+        LiveRunEvent: {
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Rule Id */
+            rule_id: string;
+            /** Message */
+            message: string;
+            /** Metric Snapshot */
+            metric_snapshot?: Record<string, never> | null;
+        };
+        /** LiveRunGpsSample */
+        LiveRunGpsSample: {
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Lat */
+            lat: number;
+            /** Lon */
+            lon: number;
+            /** Pace */
+            pace?: number | null;
+            /** Hr */
+            hr?: number | null;
+        };
+        /** LiveRunResponse */
+        LiveRunResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at?: string | null;
+            /** Target Pace Seconds */
+            target_pace_seconds?: number | null;
+            /** Target Label */
+            target_label?: string | null;
+            /** Max Z4 Minutes */
+            max_z4_minutes?: number | null;
+            /** Readiness Score */
+            readiness_score?: number | null;
+            /** Total Distance M */
+            total_distance_m: number;
+            /** Total Duration S */
+            total_duration_s: number;
+            /** Avg Pace Seconds */
+            avg_pace_seconds?: number | null;
+            /** Avg Hr */
+            avg_hr?: number | null;
+            /** Max Hr */
+            max_hr?: number | null;
+            /** Z4 Plus Minutes */
+            z4_plus_minutes: number;
+            /** Calories */
+            calories?: number | null;
+            /**
+             * Events
+             * @default []
+             */
+            events: Record<string, never>[];
+            /**
+             * Gps Samples
+             * @default []
+             */
+            gps_samples: Record<string, never>[];
+            /** Narrative */
+            narrative?: string | null;
+            /** Narrative Status */
+            narrative_status: string;
+            /** Aborted */
+            aborted: boolean;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** LiveRunStartRequest */
+        LiveRunStartRequest: {
+            /**
+             * Target Label
+             * @default easy
+             * @enum {string}
+             */
+            target_label: "easy" | "tempo" | "fast" | "custom";
+            /** Target Pace Seconds */
+            target_pace_seconds?: number | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** LogSymptomsRequest */
         LogSymptomsRequest: {
@@ -18063,6 +23552,25 @@ export interface components {
              * @description 手工输入的国家
              */
             country?: string | null;
+        };
+        /** MealTemplate */
+        MealTemplate: {
+            /** Name */
+            name: string;
+            /** Meal Type */
+            meal_type?: string | null;
+            /** Food Items */
+            food_items?: string | null;
+            /** Calories */
+            calories?: number | null;
+            /** Protein */
+            protein?: number | null;
+            /** Carbs */
+            carbs?: number | null;
+            /** Fat */
+            fat?: number | null;
+            /** Fiber */
+            fiber?: number | null;
         };
         /**
          * MealType
@@ -18168,6 +23676,34 @@ export interface components {
             is_abnormal?: string | null;
             /** Notes */
             notes?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Manually Corrected At */
+            manually_corrected_at?: string | null;
+            /** Original Value */
+            original_value?: number | null;
+            /** Original Value Text */
+            original_value_text?: string | null;
+        };
+        /**
+         * MedicalExamItemUpdate
+         * @description Calibrate UI — 用户手工校正 OCR 抽错的值. 所有字段可选, 只改传入的部分.
+         */
+        MedicalExamItemUpdate: {
+            /** Item Name */
+            item_name?: string | null;
+            /** Value */
+            value?: number | null;
+            /** Value Text */
+            value_text?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Reference Range */
+            reference_range?: string | null;
+            /** Is Abnormal */
+            is_abnormal?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /**
          * MedicalExamResponse
@@ -18213,6 +23749,20 @@ export interface components {
              */
             items: components["schemas"]["MedicalExamItemResponse"][];
         };
+        /** MedicalExamTextImportRequest */
+        MedicalExamTextImportRequest: {
+            /** Text */
+            text: string;
+            /** Exam Date */
+            exam_date?: string | null;
+            /** Hospital Name */
+            hospital_name?: string | null;
+            /**
+             * Exam Type
+             * @default biochemistry
+             */
+            exam_type: string | null;
+        };
         /** MedicationCreate */
         MedicationCreate: {
             /** Name */
@@ -18228,6 +23778,10 @@ export interface components {
             times_per_day: number;
             /** Reminder Times */
             reminder_times?: string[] | null;
+            /** Timing Relation */
+            timing_relation?: string | null;
+            /** Meal Anchor */
+            meal_anchor?: string | null;
             /** Category */
             category?: string | null;
             /** Purpose */
@@ -18288,6 +23842,21 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** MedicationLogUpdate */
+        MedicationLogUpdate: {
+            /** Medication Id */
+            medication_id?: number | null;
+            /** Taken Time */
+            taken_time?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Skip Reason */
+            skip_reason?: string | null;
+            /** Actual Dosage */
+            actual_dosage?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
         /** MedicationRecognizeRequest */
         MedicationRecognizeRequest: {
             /**
@@ -18308,6 +23877,10 @@ export interface components {
             times_per_day?: number | null;
             /** Reminder Times */
             reminder_times?: string[] | null;
+            /** Timing Relation */
+            timing_relation?: string | null;
+            /** Meal Anchor */
+            meal_anchor?: string | null;
             /** Category */
             category?: string | null;
             /** Purpose */
@@ -18362,6 +23935,57 @@ export interface components {
          * @enum {string}
          */
         MetricType: "page_load" | "api_call" | "render" | "interaction" | "error";
+        /** ModelInfo */
+        ModelInfo: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Speed Tier */
+            speed_tier: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Available */
+            available: boolean;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** ModelListResponse */
+        ModelListResponse: {
+            /** Active Id */
+            active_id: string | null;
+            /** Fallback Provider */
+            fallback_provider: string;
+            /** Fallback Model */
+            fallback_model: string;
+            /** Models */
+            models: components["schemas"]["ModelInfo"][];
+        };
+        /** ModelOption */
+        ModelOption: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Speed Tier */
+            speed_tier: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /**
          * MoodCalendar
          * @description 情绪日历
@@ -18423,9 +24047,9 @@ export interface components {
             /**
              * Record Date
              * Format: date
-             * @description 记录日期
+             * @description 记录日期(默认今天)
              */
-            record_date: string;
+            record_date?: string;
             /**
              * Mood Score
              * @description 情绪评分 1-5
@@ -18480,9 +24104,9 @@ export interface components {
             /**
              * Record Date
              * Format: date
-             * @description 记录日期
+             * @description 记录日期(默认今天)
              */
-            record_date: string;
+            record_date?: string;
             /**
              * Mood Score
              * @description 情绪评分 1-5
@@ -18752,6 +24376,8 @@ export interface components {
             health_alert_enabled?: boolean | null;
             /** Ai Advice Enabled */
             ai_advice_enabled?: boolean | null;
+            /** Workout Analysis Enabled */
+            workout_analysis_enabled?: boolean | null;
             /** Morning Briefing Time */
             morning_briefing_time?: string | null;
             /** Quiet Hours Start */
@@ -18762,6 +24388,12 @@ export interface components {
             wechat_enabled?: boolean | null;
             /** Ios Push Enabled */
             ios_push_enabled?: boolean | null;
+            /** Alert Severity Threshold */
+            alert_severity_threshold?: string | null;
+            /** Alert Rule Opt Outs */
+            alert_rule_opt_outs?: string[] | null;
+            /** Alert Clarify Mode */
+            alert_clarify_mode?: string | null;
         };
         /**
          * OAuthCallbackRequest
@@ -18837,6 +24469,17 @@ export interface components {
              * @default 30
              */
             target_exercise_minutes: number;
+        };
+        /**
+         * OnboardingStep5Request
+         * @description 主目标 (2026-05-14): 用户最想改善的 1 件事.
+         */
+        OnboardingStep5Request: {
+            /**
+             * Primary Goal
+             * @enum {string}
+             */
+            primary_goal: "weight_loss" | "glucose" | "blood_pressure" | "sleep" | "hrv" | "rhinitis" | "general";
         };
         /** OpenClawSendRequest */
         OpenClawSendRequest: {
@@ -18920,6 +24563,11 @@ export interface components {
              * @default true
              */
             stream: boolean;
+            /**
+             * Source
+             * @description 请求来源 (用于 audit): 'siri' | 'chat' | 'widget' | None. 仅埋点用, 不影响路由/合成.
+             */
+            source?: string | null;
         };
         /**
          * OutdoorActivityCreate
@@ -19362,12 +25010,43 @@ export interface components {
             /** Is Completed */
             is_completed: boolean;
         };
+        /** PlanOut */
+        PlanOut: {
+            /** Sets */
+            sets?: number | null;
+            /** Reps */
+            reps?: number | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Rest Sec */
+            rest_sec?: number | null;
+            /** Progression Note */
+            progression_note: string;
+        };
         /**
          * PlatformType
          * @description 平台类型
          * @enum {string}
          */
         PlatformType: "mini_program" | "web" | "h5" | "app";
+        /** PreferenceResponse */
+        PreferenceResponse: {
+            /**
+             * Model Id
+             * @description None = 走系统默认
+             */
+            model_id?: string | null;
+            /** Options */
+            options: components["schemas"]["ModelOption"][];
+        };
+        /** PreferenceUpdate */
+        PreferenceUpdate: {
+            /**
+             * Model Id
+             * @description None / 空字符串 = 恢复默认
+             */
+            model_id?: string | null;
+        };
         /**
          * PrivacySettings
          * @description 隐私设置 - 控制哪些字段对外部API可见
@@ -19409,6 +25088,37 @@ export interface components {
              * @default true
              */
             location: boolean;
+        };
+        /** ProblemCreate */
+        ProblemCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Risk Level
+             * @default P1
+             */
+            risk_level: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Diagnosis */
+            diagnosis?: Record<string, never> | null;
+            /** Risk Stratification */
+            risk_stratification?: string | null;
+            /** Red Lines */
+            red_lines?: Record<string, never>[] | null;
+            /** Responsible */
+            responsible?: string | null;
+            /** Follow Up */
+            follow_up?: Record<string, never> | null;
+            /** Escalation Path */
+            escalation_path?: string | null;
+            /** Evidence Tier */
+            evidence_tier?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** ProfileCreateRequest */
         ProfileCreateRequest: {
@@ -19467,6 +25177,109 @@ export interface components {
              * @default 30
              */
             target_exercise_minutes: number;
+            /** Primary Goal */
+            primary_goal?: string | null;
+        };
+        /** ProgramCreate */
+        ProgramCreate: {
+            /** Name */
+            name: string;
+            /** Program Type */
+            program_type: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Problem Id */
+            problem_id?: number | null;
+            /** Primary Metrics */
+            primary_metrics?: string[] | null;
+            /** Secondary Metrics */
+            secondary_metrics?: string[] | null;
+            /** Baseline */
+            baseline?: Record<string, never> | null;
+            /** Target */
+            target?: Record<string, never> | null;
+            /** Target End On */
+            target_end_on?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** ProofRef */
+        ProofRef: {
+            /** Metric */
+            metric: string;
+            /** Label */
+            label: string;
+            /** Delta */
+            delta: string;
+            /** Direction */
+            direction?: string | null;
+            /**
+             * Association Only
+             * @default true
+             */
+            association_only: boolean;
+        };
+        /** ProtocolComplete */
+        ProtocolComplete: {
+            /**
+             * Track
+             * @default protocol
+             */
+            track: string;
+            /** Value */
+            value?: Record<string, never> | null;
+        };
+        /** ProtocolCreate */
+        ProtocolCreate: {
+            /** Domain */
+            domain: string;
+            /** Name */
+            name: string;
+            /** Mechanism */
+            mechanism?: string | null;
+            /** Implied Quantity */
+            implied_quantity?: Record<string, never> | null;
+            /**
+             * Cadence
+             * @default daily
+             */
+            cadence: string;
+            /**
+             * Time Window
+             * @default anytime
+             */
+            time_window: string;
+            /**
+             * Completion Mode
+             * @default one_tap
+             */
+            completion_mode: string;
+            /**
+             * Can Default Complete
+             * @default false
+             */
+            can_default_complete: boolean;
+            /**
+             * Manual Track Allowed
+             * @default true
+             */
+            manual_track_allowed: boolean;
+            /** Program Id */
+            program_id?: number | null;
+            /** Source Model */
+            source_model?: string | null;
+            /** Source Id */
+            source_id?: number | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** ProtocolSkip */
+        ProtocolSkip: {
+            /** Reason */
+            reason?: string | null;
         };
         /** QuickRecordRequest */
         QuickRecordRequest: {
@@ -19481,6 +25294,10 @@ export interface components {
             message: string;
             /** Success */
             success: boolean;
+            /** Record Id */
+            record_id?: number | null;
+            /** Undo Path */
+            undo_path?: string | null;
         };
         /**
          * RAGQuery
@@ -19545,6 +25362,17 @@ export interface components {
             /** Is Active */
             is_active: number;
         };
+        /** RecStatusBody */
+        RecStatusBody: {
+            /** Generic Name */
+            generic_name: string;
+            /** Status */
+            status: string;
+            /** Brand */
+            brand?: string | null;
+            /** Manufacturer */
+            manufacturer?: string | null;
+        };
         /** RecognitionResponse */
         RecognitionResponse: {
             /** Success */
@@ -19569,6 +25397,22 @@ export interface components {
              * @default 10
              */
             remaining: number;
+        };
+        /** RegimenInstantiate */
+        RegimenInstantiate: {
+            /** Template Id */
+            template_id?: string | null;
+            /** Phases */
+            phases?: Record<string, never>[] | null;
+            /** Name */
+            name?: string | null;
+            /** Start On */
+            start_on?: string | null;
+            /**
+             * Override Safety
+             * @default false
+             */
+            override_safety: boolean;
         };
         /** RelationCreate */
         RelationCreate: {
@@ -19657,6 +25501,33 @@ export interface components {
             message?: string | null;
             /** Enabled */
             enabled?: boolean | null;
+        };
+        /** ReminderUpdateRequest */
+        ReminderUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Message */
+            message?: string | null;
+            /**
+             * Remind At
+             * @description 提醒时间 (ISO 8601)
+             */
+            remind_at?: string | null;
+            /**
+             * Priority
+             * @description 优先级: low/normal/high/urgent
+             */
+            priority?: string | null;
+            /**
+             * Recurrence
+             * @description 重复: daily/weekdays/weekly:1,3,5
+             */
+            recurrence?: string | null;
+            /**
+             * Status
+             * @description 状态: pending/cancelled
+             */
+            status?: string | null;
         };
         /** ReportUploadRequest */
         ReportUploadRequest: {
@@ -19798,6 +25669,33 @@ export interface components {
              */
             source?: string | null;
         };
+        /** SelectModelRequest */
+        SelectModelRequest: {
+            /** Model Id */
+            model_id: string | null;
+        };
+        /**
+         * SelfTestResponse
+         * @description 切换 LLM 偏好后的自检结果 (2026-05-14).
+         */
+        SelfTestResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Model Id */
+            model_id: string | null;
+            /** Actual Model */
+            actual_model: string | null;
+            /** Actual Provider */
+            actual_provider: string | null;
+            /** Base Url */
+            base_url: string | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Sample Reply */
+            sample_reply: string | null;
+            /** Error */
+            error?: string | null;
+        };
         /**
          * SetActiveRequest
          * @description 设置用户状态请求
@@ -19838,6 +25736,8 @@ export interface components {
             share_token: string;
             /** Share Url */
             share_url: string;
+            /** Expires At */
+            expires_at?: string | null;
         };
         /** SharedConversationOut */
         SharedConversationOut: {
@@ -20164,6 +26064,22 @@ export interface components {
             sleep_start?: string | null;
             /** Sleep End */
             sleep_end?: string | null;
+            /**
+             * Window
+             * @description timeline 覆盖的时间窗口: 'sleep'=仅 sleep_start~sleep_end 睡眠期间 (默认); 'all'=整晚全部采样 (包含日间/睡前)
+             * @default sleep
+             */
+            window: string;
+            /**
+             * Window Start
+             * @description timeline 实际起始时间 (CST HH:MM), 便于 LLM 正确推理
+             */
+            window_start?: string | null;
+            /**
+             * Window End
+             * @description timeline 实际结束时间 (CST HH:MM)
+             */
+            window_end?: string | null;
         };
         /** SpO2Point */
         SpO2Point: {
@@ -20207,6 +26123,37 @@ export interface components {
              * @default 0
              */
             nights_with_odi_above_5: number;
+        };
+        /**
+         * Spo2SampleIn
+         * @description 单条整夜血氧采样点 — RingConn / Apple Watch 等写 HealthKit 的设备的逐分钟序列.
+         *
+         *     HealthKit ``HKQuantityTypeIdentifierOxygenSaturation`` 是离散样本: 每条
+         *     ``{value (0-100 百分数), measured_at (ISO)}``。逐分钟 SpO2 是夜间低氧"持续负荷"
+         *     (ODI / below-90% 时长占比) 的唯一数据源 —— 日聚合单点 ``spo2_min`` 无法算这两个
+         *     指标, 而 ``vitals.spo2_min_nocturnal_severe`` 需要它们做佐证才拉 CRITICAL
+         *     (否则降级 INFO, 见 2026-06-17 裁决)。Garmin 血氧已整源剔除, 多设备用户的逐秒
+         *     SpO2 之前无任何入口 → 夜间低氧规则只能靠日聚合单点最低值判断, 本字段补齐缺口。
+         *
+         *     - value: HealthKit 原始 0-1 已由 mobile ×100 成百分数; service 层取整 + sanity
+         *       50-100, 坏值丢弃该条 (不崩整批)。Optional → 缺失不 422。
+         *     - measured_at: 决定 sample_time (转 CST HH:MM) 与 epoch_ms; 缺失/坏值 → service 丢弃。
+         */
+        Spo2SampleIn: {
+            /** Value */
+            value?: number | null;
+            /** Measured At */
+            measured_at?: string | null;
+        };
+        /** StartCycleRequest */
+        StartCycleRequest: {
+            /**
+             * Days
+             * @default 90
+             */
+            days: number;
+            /** Target Specs */
+            target_specs?: unknown[] | null;
         };
         /**
          * SubscribeSettingsRequest
@@ -20879,6 +26826,36 @@ export interface components {
          * @enum {string}
          */
         SwimStyle: "freestyle" | "backstroke" | "breaststroke" | "butterfly" | "mixed";
+        /** SymptomCreate */
+        SymptomCreate: {
+            /**
+             * Body Part
+             * @description 见 VALID_BODY_PARTS
+             */
+            body_part: string;
+            /** Description */
+            description: string;
+            /** Severity */
+            severity?: number | null;
+            /** Triggers */
+            triggers?: string[] | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Occurred At */
+            occurred_at?: string | null;
+            /**
+             * Source
+             * @default manual
+             */
+            source: string;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** SymptomIn */
+        SymptomIn: {
+            /** Text */
+            text: string;
+        };
         /** SymptomItem */
         SymptomItem: {
             /** Name */
@@ -20897,6 +26874,62 @@ export interface components {
              * @default 1
              */
             severity: number;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** SymptomResponse */
+        SymptomResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Body Part */
+            body_part: string;
+            /** Description */
+            description: string;
+            /** Severity */
+            severity?: number | null;
+            /**
+             * Triggers
+             * @default []
+             */
+            triggers: string[];
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Source */
+            source: string;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SymptomUpdate */
+        SymptomUpdate: {
+            /**
+             * Body Part
+             * @description 见 VALID_BODY_PARTS
+             */
+            body_part?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Severity */
+            severity?: number | null;
+            /** Triggers */
+            triggers?: string[] | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Occurred At */
+            occurred_at?: string | null;
+            /** Source */
+            source?: string | null;
             /** Notes */
             notes?: string | null;
         };
@@ -20940,6 +26973,26 @@ export interface components {
             error_count: number;
             /** Message */
             message: string;
+        };
+        /** TTSRequest */
+        TTSRequest: {
+            /**
+             * Text
+             * @description 文本 (句级, 建议 <200 字)
+             */
+            text: string;
+            /**
+             * Voice Style
+             * @description 声色 key
+             * @default cloned_private_female
+             */
+            voice_style: string;
+            /**
+             * Speed
+             * @description 语速倍率
+             * @default 1
+             */
+            speed: number;
         };
         /**
          * TestPushRequest
@@ -20987,6 +27040,99 @@ export interface components {
              * @default manual_input
              */
             source: string | null;
+        };
+        /** TextShareRequest */
+        TextShareRequest: {
+            /** Title */
+            title?: string | null;
+            /** Message */
+            message: string;
+        };
+        /** TimelineEventResponse */
+        TimelineEventResponse: {
+            /** Id */
+            id: string;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle?: string | null;
+            /** Icon */
+            icon: string;
+            /** Color */
+            color: string;
+            /** Occurred At */
+            occurred_at: string;
+            /** Deep Link */
+            deep_link?: string | null;
+            /** Severity */
+            severity?: string | null;
+        };
+        /** TimelineResponse */
+        TimelineResponse: {
+            /** Events */
+            events: components["schemas"]["TimelineEventResponse"][];
+            /** Days */
+            days: number;
+            /** Count */
+            count: number;
+        };
+        /** TodayCounts */
+        TodayCounts: {
+            /** Actionable */
+            actionable: number;
+            /** Overdue */
+            overdue: number;
+            /** Info */
+            info: number;
+        };
+        /** TodayPast */
+        TodayPast: {
+            /** Completed Count */
+            completed_count: number;
+            /** Events */
+            events: components["schemas"]["TodaySpineItem"][];
+        };
+        /** TodaySpineItem */
+        TodaySpineItem: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Time Window */
+            time_window: string;
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle?: string | null;
+            /** Icon */
+            icon: string;
+            /** Color */
+            color: string;
+            /** Status */
+            status?: string | null;
+            /** Priority */
+            priority: number;
+            /** Can Complete */
+            can_complete: boolean;
+            complete_ref?: components["schemas"]["CompleteRef"] | null;
+            /** Deep Link */
+            deep_link?: string | null;
+            /** Severity */
+            severity?: string | null;
+            proof?: components["schemas"]["ProofRef"] | null;
+        };
+        /** TodaySpineResponse */
+        TodaySpineResponse: {
+            /** Date */
+            date: string;
+            /** Current Window */
+            current_window: string;
+            /** Items */
+            items: components["schemas"]["TodaySpineItem"][];
+            past: components["schemas"]["TodayPast"];
+            counts: components["schemas"]["TodayCounts"];
         };
         /**
          * Token
@@ -21038,6 +27184,57 @@ export interface components {
         TranscribeResponse: {
             /** Text */
             text: string;
+        };
+        /** TreatmentEffectItem */
+        TreatmentEffectItem: {
+            /** Metric Code */
+            metric_code: string;
+            /** Unit */
+            unit?: string | null;
+            /** Observed Delta */
+            observed_delta?: number | null;
+            /** Posterior Effect */
+            posterior_effect?: number | null;
+            /** Ci Low */
+            ci_low?: number | null;
+            /** Ci High */
+            ci_high?: number | null;
+            /** Ci Level */
+            ci_level: number;
+            /** Confidence */
+            confidence: string;
+            /** Verdict */
+            verdict: string;
+            /** Display Label */
+            display_label: string;
+            /** Evidence Tier */
+            evidence_tier: string;
+            /** Requires Clinician */
+            requires_clinician: boolean;
+            /** Message */
+            message: string;
+            /** Model Version */
+            model_version: string;
+        };
+        /** TreatmentEffectResponse */
+        TreatmentEffectResponse: {
+            /** Estimates */
+            estimates: components["schemas"]["TreatmentEffectItem"][];
+        };
+        /** TwinLookupRequest */
+        TwinLookupRequest: {
+            /** Genetics */
+            genetics?: Record<string, never>;
+            /** Labs */
+            labs?: Record<string, never>;
+            /** Wearable */
+            wearable?: Record<string, never>;
+            /** Medications */
+            medications?: Record<string, never>[];
+            /** Supplements */
+            supplements?: Record<string, never>[];
+            /** Goals */
+            goals?: Record<string, never>;
         };
         /** UpdateMetricRequest */
         UpdateMetricRequest: {
@@ -21527,20 +27724,6 @@ export interface components {
             invite_code: string;
         };
         /**
-         * UserResponse
-         * @description 用户响应
-         */
-        UserResponse: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Birth Date */
-            birth_date?: string | null;
-            /** Gender */
-            gender?: string | null;
-        };
-        /**
          * UserUpdate
          * @description 用户信息更新
          */
@@ -21577,6 +27760,11 @@ export interface components {
              */
             profile_id: number;
             /**
+             * Rsid
+             * @description rsID
+             */
+            rsid?: string | null;
+            /**
              * Category
              * @description 分类: nutrition/exercise/drug_sensitivity/disease_risk/sleep
              */
@@ -21597,6 +27785,11 @@ export interface components {
              */
             genotype?: string | null;
             /**
+             * Raw Genotype
+             * @description 原始基因型
+             */
+            raw_genotype?: string | null;
+            /**
              * Result Label
              * @description 结果标签
              */
@@ -21607,6 +27800,16 @@ export interface components {
              * @default info
              */
             risk_level: string;
+            /**
+             * Mapping Source
+             * @default manual
+             */
+            mapping_source: string | null;
+            /**
+             * Evidence Level
+             * @default manual
+             */
+            evidence_level: string | null;
             /**
              * Description
              * @description 描述
@@ -21620,6 +27823,8 @@ export interface components {
         };
         /** VariantUpdateRequest */
         VariantUpdateRequest: {
+            /** Rsid */
+            rsid?: string | null;
             /** Category */
             category?: string | null;
             /** Gene Name */
@@ -21628,10 +27833,16 @@ export interface components {
             variant_name?: string | null;
             /** Genotype */
             genotype?: string | null;
+            /** Raw Genotype */
+            raw_genotype?: string | null;
             /** Result Label */
             result_label?: string | null;
             /** Risk Level */
             risk_level?: string | null;
+            /** Mapping Source */
+            mapping_source?: string | null;
+            /** Evidence Level */
+            evidence_level?: string | null;
             /** Description */
             description?: string | null;
             /** Health Implications */
@@ -21674,6 +27885,228 @@ export interface components {
             interventions: string[];
             /** Notes */
             notes?: string | null;
+        };
+        /** VisualInputCreate */
+        VisualInputCreate: {
+            /** Intent */
+            intent: string;
+            /**
+             * Source
+             * @default rokid_glasses
+             */
+            source: string;
+            /**
+             * Device Type
+             * @default glasses
+             */
+            device_type: string;
+            /** Image Uri */
+            image_uri?: string | null;
+            /** Image Sha256 */
+            image_sha256?: string | null;
+            /** Ocr Text */
+            ocr_text?: string | null;
+            /** Recognition Result */
+            recognition_result?: Record<string, never> | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Captured At */
+            captured_at?: string | null;
+            /**
+             * Privacy Class
+             * @default health_l3
+             */
+            privacy_class: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** VisualInputEventResponse */
+        VisualInputEventResponse: {
+            /** Id */
+            id: number;
+            /** Intent */
+            intent: string;
+            /** Source */
+            source: string;
+            /** Device Type */
+            device_type: string;
+            /** Image Uri */
+            image_uri: string | null;
+            /** Image Sha256 */
+            image_sha256: string | null;
+            /** Ocr Text */
+            ocr_text: string | null;
+            /** Recognition Result */
+            recognition_result: Record<string, never> | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Status */
+            status: string;
+            /** Privacy Class */
+            privacy_class: string;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: number | null;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+            /** Safety Result */
+            safety_result?: Record<string, never> | null;
+        };
+        /**
+         * VoiceFoodDraftItem
+         * @description 单个语音食物草稿项。营养值允许为空,客户端确认后再入库。
+         */
+        VoiceFoodDraftItem: {
+            /** Name */
+            name: string;
+            /** Quantity */
+            quantity?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Calories */
+            calories?: number | null;
+            /** Protein */
+            protein?: number | null;
+            /** Carbs */
+            carbs?: number | null;
+            /** Fat */
+            fat?: number | null;
+        };
+        /**
+         * VoiceFoodParseRequest
+         * @description 语音转写文本 → 食物草稿(只解析不写库)。
+         */
+        VoiceFoodParseRequest: {
+            /**
+             * Raw Text
+             * @description 语音转写文本
+             */
+            raw_text: string;
+            /** @description 餐次(不给则按文本/时刻推断) */
+            meal_type?: components["schemas"]["MealType"] | null;
+            /**
+             * Source
+             * @description 语音来源,如 apple_watch/airpods/mobile
+             */
+            source?: string | null;
+            /**
+             * Device Type
+             * @description 设备类型,如 watch/earbuds/mobile
+             */
+            device_type?: string | null;
+        };
+        /**
+         * VoiceFoodParseResponse
+         * @description 食物草稿。客户端确认后再 POST /diet/records 写库。
+         */
+        VoiceFoodParseResponse: {
+            /** Raw Text */
+            raw_text: string;
+            meal_type: components["schemas"]["MealType"];
+            /** Meal Type Label */
+            meal_type_label: string;
+            /** Foods */
+            foods?: components["schemas"]["VoiceFoodDraftItem"][];
+            /** Risk Tags */
+            risk_tags?: string[];
+            /** Confidence */
+            confidence: number;
+            /** Needs Confirmation */
+            needs_confirmation: boolean;
+            /** Clarifying Question */
+            clarifying_question?: string | null;
+            /** Parser Version */
+            parser_version: string;
+        };
+        /** VoiceScriptResponse */
+        VoiceScriptResponse: {
+            /** Script */
+            script: string;
+            /** Char Count */
+            char_count: number;
+            /** Generated At */
+            generated_at: string;
+            /** Target Date */
+            target_date: string;
+        };
+        /** WaistRecordInput */
+        WaistRecordInput: {
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Waist Cm */
+            waist_cm: number;
+            /**
+             * Source
+             * @default manual
+             */
+            source: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** WaistRecordResponse */
+        WaistRecordResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Waist Cm */
+            waist_cm: number;
+            /** Source */
+            source?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** WaistRecordUpdate */
+        WaistRecordUpdate: {
+            /** Record Date */
+            record_date?: string | null;
+            /** Waist Cm */
+            waist_cm?: number | null;
+            /** Source */
+            source?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** WatchSkipRequest */
+        WatchSkipRequest: {
+            /**
+             * Reason
+             * @default no_time
+             */
+            reason: string | null;
+        };
+        /** WatchSnoozeRequest */
+        WatchSnoozeRequest: {
+            /**
+             * Minutes
+             * @default 30
+             */
+            minutes: number;
         };
         /**
          * WaterIntakeCreate
@@ -22426,6 +28859,15 @@ export interface components {
          * @enum {string}
          */
         WorkoutType: "running" | "swimming" | "cycling" | "hiit" | "cardio" | "strength" | "yoga" | "walking" | "hiking" | "other";
+        /** WorkoutVoiceCoachResponse */
+        WorkoutVoiceCoachResponse: {
+            /** Script */
+            script: string;
+            /** Char Count */
+            char_count: number;
+            /** Has Analysis */
+            has_analysis: boolean;
+        };
         /**
          * _TsPoint
          * @description 时间序列一个点 (HH:MM + 数值)。
@@ -22440,6 +28882,16 @@ export interface components {
             value?: number | null;
             /** Epoch Ms */
             epoch_ms?: number | null;
+        };
+        /** ConversationTitleUpdate */
+        app__api__agent__ConversationTitleUpdate: {
+            /** Title */
+            title: string;
+        };
+        /** ConversationTitleUpdate */
+        app__api__openclaw__ConversationTitleUpdate: {
+            /** Title */
+            title: string;
         };
         /**
          * UserResponse
@@ -22492,6 +28944,41 @@ export interface components {
          * DietRecordCreate
          * @description 创建饮食记录
          */
+        app__schemas__daily_health__DietRecordCreate: {
+            /** User Id */
+            user_id: number;
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Meal Type */
+            meal_type: string;
+            /** Meal Time */
+            meal_time?: string | null;
+            /** Food Name */
+            food_name: string;
+            /** Quantity */
+            quantity?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Calories */
+            calories?: number | null;
+            /** Protein */
+            protein?: number | null;
+            /** Carbs */
+            carbs?: number | null;
+            /** Fat */
+            fat?: number | null;
+            /** Fiber */
+            fiber?: number | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /**
+         * DietRecordCreate
+         * @description 创建饮食记录
+         */
         app__schemas__diet__DietRecordCreate: {
             /**
              * Record Date
@@ -22535,6 +29022,41 @@ export interface components {
              * @default jpeg
              */
             image_type: string | null;
+        };
+        /**
+         * HeartRatePoint
+         * @description 单个心率数据点
+         */
+        app__schemas__heart_rate__HeartRatePoint: {
+            /**
+             * Timestamp
+             * @description 时间戳（毫秒）
+             */
+            timestamp: number;
+            /**
+             * Time
+             * @description 时间（HH:MM格式）
+             */
+            time: string;
+            /**
+             * Value
+             * @description 心率值（bpm）
+             */
+            value: number;
+        };
+        /**
+         * UserResponse
+         * @description 用户响应
+         */
+        app__schemas__user__UserResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Birth Date */
+            birth_date?: string | null;
+            /** Gender */
+            gender?: string | null;
         };
         /**
          * HeartRatePoint
@@ -23642,6 +30164,39 @@ export interface operations {
             };
         };
     };
+    save_step5_api_v1_onboarding_step5_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnboardingStep5Request"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     complete_onboarding_api_v1_onboarding_complete_post: {
         parameters: {
             query?: never;
@@ -24275,6 +30830,776 @@ export interface operations {
             };
         };
     };
+    get_safety_eval_api_v1_admin_observability_safety_eval_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_activation_funnel_api_v1_admin_observability_funnel_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_agent_eval_api_v1_admin_observability_eval_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_observation_dashboard_api_v1_admin_observability_dashboard_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                /** @description 限定单用户; 不传 = 全量 */
+                user_id?: number | null;
+                /** @description 跑 journalctl 扫 tool_validator (仅生产机有效) */
+                include_journalctl?: boolean;
+                /** @description 强制跳过 Redis 缓存 */
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    performance_stats_api_v1_admin_llm_performance_stats_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                group_by?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    performance_failures_api_v1_admin_llm_performance_failures_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    llm_status_api_v1_admin_llm_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMStatusResponse"];
+                };
+            };
+        };
+    };
+    llm_switch_api_v1_admin_llm_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LLMSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    llm_ping_api_v1_admin_llm_ping_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMPingResponse"];
+                };
+            };
+        };
+    };
+    list_available_models_api_v1_admin_llm_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelListResponse"];
+                };
+            };
+        };
+    };
+    select_model_api_v1_admin_llm_select_model_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectModelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    benchmark_model_api_v1_admin_llm_benchmark__model_id__post: {
+        parameters: {
+            query?: {
+                runs?: number;
+            };
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BenchmarkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_loop_stats_api_v1_admin_open_loop_stats_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_loop_recent_api_v1_admin_open_loop_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                kind?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_wscla_dashboard_api_v1_admin_wscla_get: {
+        parameters: {
+            query?: {
+                /** @description 过滤单用户; 省略则聚合全部 */
+                user_id?: number | null;
+                /** @description 窗口起点 ISO 8601, 默认本周一 00:00 UTC */
+                since?: string | null;
+                /** @description 窗口终点 ISO 8601, 默认现在 */
+                until?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_weekly_advisor_api_v1_admin_wscla_trigger_weekly_advisor_post: {
+        parameters: {
+            query?: {
+                /** @description 若指定则只为该用户产建议; 省略走当前 admin */
+                user_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_verify_outcomes_api_v1_admin_wscla_trigger_verify_post: {
+        parameters: {
+            query?: {
+                /** @description 若指定只评单卡; 省略走全表 batch */
+                card_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_slo_dashboard_api_v1_admin_slo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_longevity_cohort_api_v1_admin_longevity_cohort_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_cohort_metrics_api_v1_admin_longevity_cohort_metrics_get: {
+        parameters: {
+            query?: {
+                metric?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cohort_harm_api_v1_admin_longevity_cohort_harm_get: {
+        parameters: {
+            query?: {
+                metric?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_movement_plan_api_v1_movement_plan_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_my_diet_plan_api_v1_diet_plan_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_my_daily_plan_api_v1_daily_plan_me_get: {
+        parameters: {
+            query?: {
+                /** @description 默认今天 */
+                plan_date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_daily_plan_review_api_v1_daily_plan_review_get: {
+        parameters: {
+            query?: {
+                /** @description 复盘窗口，仅支持 7/30/90 天 */
+                window_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_my_daily_plan_action_feedback_api_v1_daily_plan_me_actions__action_key__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyPlanActionFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanActionFeedbackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_my_daily_plan_action_event_api_v1_daily_plan_actions__action_id__events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyPlanActionEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanActionEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_check_api_v1_monitoring_health_get: {
         parameters: {
             query?: never;
@@ -24687,6 +32012,26 @@ export interface operations {
             };
         };
     };
+    get_data_integrity_api_v1_data_health_integrity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     export_health_data_api_v1_export_health_data_get: {
         parameters: {
             query?: {
@@ -24754,6 +32099,59 @@ export interface operations {
             };
         };
     };
+    get_my_coach_persona_api_v1_users_me_coach_persona_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachPersonaResponse"];
+                };
+            };
+        };
+    };
+    set_my_coach_persona_api_v1_users_me_coach_persona_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoachPersonaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachPersonaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_avatar_api_v1_users_me_avatar_post: {
         parameters: {
             query?: never;
@@ -24805,7 +32203,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserResponse"][];
+                    "application/json": components["schemas"]["app__schemas__user__UserResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -24838,7 +32236,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserResponse"];
+                    "application/json": components["schemas"]["app__schemas__user__UserResponse"];
                 };
             };
             /** @description Validation Error */
@@ -24869,7 +32267,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserResponse"];
+                    "application/json": components["schemas"]["app__schemas__user__UserResponse"];
                 };
             };
             /** @description Validation Error */
@@ -24936,6 +32334,26 @@ export interface operations {
             };
         };
     };
+    get_effective_location_api_v1_profile_me_effective_location_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     refresh_my_location_api_v1_profile_me_refresh_location_post: {
         parameters: {
             query?: never;
@@ -24966,6 +32384,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ManualLocationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_gps_location_api_v1_profile_me_gps_location_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
             };
         };
         responses: {
@@ -25405,6 +32856,119 @@ export interface operations {
             };
         };
     };
+    get_preference_api_v1_me_llm_preference_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferenceResponse"];
+                };
+            };
+        };
+    };
+    update_preference_api_v1_me_llm_preference_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    selftest_api_v1_me_llm_preference_selftest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfTestResponse"];
+                };
+            };
+        };
+    };
+    get_weekly_briefing_api_v1_me_weekly_briefing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    trigger_weekly_briefing_api_v1_me_weekly_briefing_trigger_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     create_basic_health_data_api_v1_basic_health__post: {
         parameters: {
             query?: never;
@@ -25555,6 +33119,39 @@ export interface operations {
             };
         };
     };
+    parse_lab_photo_endpoint_api_v1_medical_exams_parse_photo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabPhotoParseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_medical_exam_api_v1_medical_exams__post: {
         parameters: {
             query?: never;
@@ -25652,6 +33249,72 @@ export interface operations {
             };
         };
     };
+    get_exam_explain_api_v1_medical_exams__exam_id__explain_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exam_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_medical_exam_item_api_v1_medical_exams_items__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MedicalExamItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalExamItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_user_medical_exams_api_v1_medical_exams_user__user_id__get: {
         parameters: {
             query?: {
@@ -25688,9 +33351,7 @@ export interface operations {
     };
     import_medical_exam_from_json_api_v1_medical_exams_import_json_post: {
         parameters: {
-            query: {
-                user_id: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -25721,11 +33382,42 @@ export interface operations {
             };
         };
     };
+    import_medical_exam_from_text_api_v1_medical_exams_import_text_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MedicalExamTextImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post: {
         parameters: {
-            query: {
-                user_id: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -25758,10 +33450,7 @@ export interface operations {
     };
     import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post: {
         parameters: {
-            query: {
-                /** @description 用户ID */
-                user_id: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -25769,6 +33458,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_medical_exam_from_image_api_v1_medical_exams_import_image_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post"];
             };
         };
         responses: {
@@ -25802,6 +33524,362 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recognize_prescription_image_api_v1_prescriptions_recognize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_recognize_prescription_image_api_v1_prescriptions_recognize_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_originator_api_v1_prescriptions_originator_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recommendations_api_v1_prescriptions_recommendations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_recommendation_status_api_v1_prescriptions_recommendations_status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecStatusBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    liver_assessment_api_v1_chronic_liver_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    biomarker_sync_api_v1_chronic_biomarker_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    causal_links_api_v1_chronic_causal_links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    connection_status_api_v1_chronic_connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    submit_connection_checkin_api_v1_chronic_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionCheckinBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upcoming_api_v1_medication_course_upcoming_get: {
+        parameters: {
+            query?: {
+                within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    materialize_api_v1_medication_course_materialize_post: {
+        parameters: {
+            query?: {
+                within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_epigenetic_reports_api_v1_epigenetic_reports_me_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_my_epigenetic_report_api_v1_epigenetic_reports_me_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EpigeneticReportIn"];
             };
         };
         responses: {
@@ -26501,6 +34579,41 @@ export interface operations {
             };
         };
     };
+    update_exercise_record_api_v1_daily_health_exercise__exercise_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exercise_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExerciseRecordUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExerciseRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_exercise_record_api_v1_daily_health_exercise__exercise_id__delete: {
         parameters: {
             query?: never;
@@ -26572,7 +34685,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DietRecordCreate"];
+                "application/json": components["schemas"]["app__schemas__daily_health__DietRecordCreate"];
             };
         };
         responses: {
@@ -27515,6 +35628,189 @@ export interface operations {
             };
         };
     };
+    create_waist_record_api_v1_waist_records_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaistRecordInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaistRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_waist_records_api_v1_waist_records_me_get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaistRecordResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_latest_waist_api_v1_waist_records_me_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaistRecordResponse"] | null;
+                };
+            };
+        };
+    };
+    get_my_waist_stats_api_v1_waist_records_me_stats_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_waist_record_api_v1_waist_records__record_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaistRecordUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaistRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_waist_record_api_v1_waist_records__record_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_blood_pressure_record_api_v1_blood_pressure_records_post: {
         parameters: {
             query?: never;
@@ -27873,7 +36169,10 @@ export interface operations {
     };
     get_nightly_spo2_api_v1_spo2_me_nightly__record_date__get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description timeline 时间窗口: 'sleep'=仅睡眠期间 (默认, 避免日间采样干扰); 'all'=整晚全部采样 */
+                window?: string;
+            };
             header?: never;
             path: {
                 record_date: string;
@@ -27904,7 +36203,9 @@ export interface operations {
     };
     get_latest_night_spo2_api_v1_spo2_me_latest_night_get: {
         parameters: {
-            query?: never;
+            query?: {
+                window?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -27918,6 +36219,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpO2NightlyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -27971,6 +36281,248 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpO2SleepCorrelationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    synthesize_api_v1_tts_synthesize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TTSRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_voices_api_v1_tts_voices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_voice_script_api_v1_briefing_voice_script_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceScriptResponse"];
+                };
+            };
+        };
+    };
+    get_weekly_voice_script_api_v1_briefing_weekly_voice_script_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceScriptResponse"];
+                };
+            };
+        };
+    };
+    get_preworkout_voice_script_api_v1_briefing_preworkout_voice_script_get: {
+        parameters: {
+            query?: {
+                /** @description 预期运动类型: running/cycling/strength/yoga/... */
+                workout_type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceScriptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_opener_api_v1_clarification_opener_get: {
+        parameters: {
+            query: {
+                /** @description anomaly_alert.id */
+                alert_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarificationOpenerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_memory_api_v1_clarification_extract_memory_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_spine_api_v1_timeline_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodaySpineResponse"];
+                };
+            };
+        };
+    };
+    get_timeline_api_v1_timeline_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineResponse"];
                 };
             };
             /** @description Validation Error */
@@ -28690,6 +37242,397 @@ export interface operations {
             };
         };
     };
+    create_symptom_api_v1_symptoms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SymptomCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymptomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_symptoms_api_v1_symptoms_me_get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+                body_part?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymptomResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_symptom_api_v1_symptoms__symptom_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symptom_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SymptomUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymptomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_symptom_api_v1_symptoms__symptom_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symptom_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_run_api_v1_live_run_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveRunStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_run_api_v1_live_run__run_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveRunEndRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_runs_api_v1_live_run_me_get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveRunResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_v1_live_run__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_run_api_v1_live_run__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_episodes_api_v1_episodes_me_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+                episode_type?: string | null;
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_episode_api_v1_episodes__episode_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_feedback_api_v1_episodes__episode_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_diet_record_api_v1_diet_records_post: {
         parameters: {
             query?: never;
@@ -28920,6 +37863,38 @@ export interface operations {
             };
         };
     };
+    get_my_frequent_foods_api_v1_diet_records_me_frequent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrequentFood"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_diet_record_api_v1_diet_records__record_id__put: {
         parameters: {
             query?: never;
@@ -28973,6 +37948,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_voice_food_endpoint_api_v1_diet_voice_parse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceFoodParseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceFoodParseResponse"];
                 };
             };
             /** @description Validation Error */
@@ -29187,8 +38195,8 @@ export interface operations {
     quick_add_water_api_v1_water_records_quick_post: {
         parameters: {
             query?: {
-                /** @description 饮水量(ml) */
-                amount?: number;
+                /** @description 饮水量(ml),必填 */
+                amount?: number | null;
             };
             header?: never;
             path?: never;
@@ -29269,6 +38277,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WaterRecordResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_frequent_water_api_v1_water_records_me_frequent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrequentWater"][];
                 };
             };
             /** @description Validation Error */
@@ -29811,6 +38851,38 @@ export interface operations {
             };
         };
     };
+    get_my_frequent_supplements_api_v1_supplements_me_frequent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrequentSupplement"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     copy_day_records_api_v1_supplements_records_copy_day_post: {
         parameters: {
             query?: never;
@@ -29925,6 +38997,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_evidence_catalog_api_v1_supplements_evidence_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_evidence_sources_api_v1_supplements_evidence_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_evidence_profile_api_v1_supplements_evidence_profile__name_or_key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name_or_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */
@@ -30684,6 +39827,37 @@ export interface operations {
             };
         };
     };
+    restore_medication_api_v1_medication_medications__medication_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                medication_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     log_medication_api_v1_medication_logs_post: {
         parameters: {
             query?: never;
@@ -30694,6 +39868,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MedicationLogCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_medication_log_api_v1_medication_logs__log_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MedicationLogUpdate"];
             };
         };
         responses: {
@@ -30775,6 +39984,1083 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deprescribing_review_api_v1_medication_deprescribing_review_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_regimen_templates_api_v1_medication_regimen_templates_get: {
+        parameters: {
+            query?: {
+                hp_status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_regimen_api_v1_medication_regimens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegimenInstantiate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_regimens_api_v1_medication_regimens_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_protocol_api_v1_protocols_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_protocols_api_v1_protocols_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    today_api_v1_protocols_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    corrections_api_v1_protocols_corrections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    seed_water_cup_api_v1_protocols_seed_water_cup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_meal_template_api_v1_protocols_meal_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MealTemplate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    from_medication_api_v1_protocols_from_medication__medication_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                medication_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_api_v1_protocols__protocol_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skip_api_v1_protocols__protocol_id__skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolSkip"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_api_v1_protocols__protocol_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_problem_api_v1_problems_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProblemCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_problems_api_v1_problems_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    due_followups_api_v1_problems_due_get: {
+        parameters: {
+            query?: {
+                within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seed_gastric_ulcer_api_v1_problems_seed_gastric_ulcer_hp_neg_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_status_api_v1_problems__problem_id__status_post: {
+        parameters: {
+            query: {
+                status: string;
+            };
+            header?: never;
+            path: {
+                problem_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_today_api_v1_agenda_today_get: {
+        parameters: {
+            query?: {
+                followup_within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_range_api_v1_agenda_range_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_complete_api_v1_agenda_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgendaComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watch_summary_api_v1_watch_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    complete_action_api_v1_watch_actions__action_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skip_action_api_v1_watch_actions__action_id__skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchSkipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snooze_action_api_v1_watch_actions__action_id__snooze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchSnoozeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_symptom_api_v1_watch_symptoms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SymptomIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_write_intents_api_v1_write_intents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    confirm_write_intent_api_v1_write_intents__intent_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_write_intent_api_v1_write_intents__intent_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_program_api_v1_programs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgramCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_programs_api_v1_programs_me_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    program_progress_api_v1_programs__program_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_protocol_api_v1_programs__program_id__attach_protocol__protocol_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: number;
+                protocol_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    from_problem_api_v1_programs_from_problem__problem_id__post: {
+        parameters: {
+            query: {
+                program_type: string;
+                name?: string | null;
+            };
+            header?: never;
+            path: {
+                problem_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_status_api_v1_programs__program_id__status_post: {
+        parameters: {
+            query: {
+                status: string;
+            };
+            header?: never;
+            path: {
+                program_id: number;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -30985,6 +41271,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workout_voice_coach_api_v1_workout_me__workout_id__voice_coach_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workout_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutVoiceCoachResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -31831,6 +42148,186 @@ export interface operations {
             };
         };
     };
+    get_training_decision_api_v1_exercise_recovery_decision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_guided_task_api_v1_movement_guided_task_get: {
+        parameters: {
+            query?: {
+                domain?: "strength" | "mobility";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidedTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_snapshot_api_v1_environment_bedroom_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BedroomSnapshotIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_current_snapshot_api_v1_environment_bedroom_current_get: {
+        parameters: {
+            query?: {
+                room_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never> | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_snapshot_history_api_v1_environment_bedroom_history_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                room_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_automation_event_api_v1_integrations_home_assistant_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BedroomEventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_withings_oauth_url_api_v1_devices_withings_oauth_authorize_get: {
         parameters: {
             query?: {
@@ -32022,6 +42519,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    compare_devices_api_v1_devices_compare_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_summary_endpoint_api_v1_devices_sources_summary_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -32475,6 +43034,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceSyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    healthkit_import_api_v1_devices_healthkit_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HealthKitImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthKitImportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -33265,6 +43857,26 @@ export interface operations {
             };
         };
     };
+    get_my_fitness_snapshot_api_v1_fitness_snapshot_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitnessSnapshot"];
+                };
+            };
+        };
+    };
     get_night_analysis_api_v1_sleep_spo2_analysis_get: {
         parameters: {
             query: {
@@ -33315,6 +43927,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NightAnalysisOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_longitudinal_api_v1_sleep_spo2_longitudinal_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -33574,6 +44217,26 @@ export interface operations {
             };
         };
     };
+    get_next_best_data_api_v1_twin_me_next_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     invalidate_my_twin_api_v1_twin_me_invalidate_post: {
         parameters: {
             query?: never;
@@ -33597,8 +44260,12 @@ export interface operations {
     get_my_safety_report_api_v1_safety_me_get: {
         parameters: {
             query?: {
-                /** @description 只返回 >= 此严重度的告警 */
+                /** @description 只返回 >= 此严重度的告警 (默认 2=MEDIUM, 过滤 INFO/LOW 噪声) */
                 severity_min?: number;
+                /** @description 最多返回 N 条告警 (按 severity 降序). 剩余进 summary.truncated_count */
+                limit?: number;
+                /** @description 同 rule_id 只保留最高 severity 那条 (防 DDI 多药对刷屏) */
+                dedup_by_rule?: boolean;
             };
             header?: never;
             path?: never;
@@ -33926,6 +44593,181 @@ export interface operations {
             };
         };
     };
+    list_conversations_api_v1_agent_conversations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description 分页偏移(翻页用) */
+                offset?: number;
+                /** @description 按标题模糊过滤 */
+                title_like?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conversation_api_v1_agent_conversations__conversation_id__get: {
+        parameters: {
+            query?: {
+                /** @description 只返回最近 N 天的消息 */
+                days?: number | null;
+            };
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_conversation_api_v1_agent_conversations__conversation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_conversation_title_api_v1_agent_conversations__conversation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__api__agent__ConversationTitleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    conversation_opener_api_v1_agent_conversation_opener_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    conversation_starters_api_v1_agent_conversation_starters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_agent_tools_api_v1_agent_tools_get: {
         parameters: {
             query?: never;
@@ -34089,6 +44931,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_conversation_title_api_v1_openclaw_conversations__conversation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__api__openclaw__ConversationTitleUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -34686,9 +45563,44 @@ export interface operations {
             };
         };
     };
-    get_shared_conversation_api_v1_shared__share_token__get: {
+    create_text_share_api_v1_shared_create_text_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TextShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shared_conversation_api_v1_shared__share_token__get: {
+        parameters: {
+            query?: {
+                count_view?: boolean;
+            };
             header?: never;
             path: {
                 share_token: string;
@@ -35489,6 +46401,37 @@ export interface operations {
             };
         };
     };
+    get_card_api_v1_action_cards__card_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     archive_card_api_v1_action_cards__card_id__delete: {
         parameters: {
             query?: never;
@@ -35604,6 +46547,104 @@ export interface operations {
                 "application/json": components["schemas"]["ActionCardReview"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_card_decision_api_v1_action_cards__card_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CardDecisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_card_push_click_api_v1_action_cards__card_id__click_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_progress_api_v1_action_cards_me_progress_get: {
+        parameters: {
+            query?: {
+                /** @description 时间窗口天数 */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -36853,6 +47894,26 @@ export interface operations {
             };
         };
     };
+    get_my_health_trajectory_api_v1_trajectory_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     ingest_event_api_v1_health_events_ingest_post: {
         parameters: {
             query?: never;
@@ -37156,6 +48217,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_health_summary_api_v1_health_context_me_summary_get: {
+        parameters: {
+            query?: {
+                detail?: string;
+                format?: string;
+                max_chars?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -37486,6 +48580,58 @@ export interface operations {
             };
         };
     };
+    get_treatment_effect_api_v1_personal_models_treatment_effect_get: {
+        parameters: {
+            query?: {
+                /** @description 指定干预周期 id; 省略取最近 active 周期 */
+                cycle_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreatmentEffectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_causal_notes_api_v1_personal_outcome_me_causal_notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_my_timeline_api_v1_personal_outcome_me_timeline_get: {
         parameters: {
             query?: {
@@ -37527,6 +48673,414 @@ export interface operations {
             path: {
                 event_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_scorecard_api_v1_personal_outcome_me_scorecard_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                top_n?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_biomarkers_api_v1_biomarkers_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    my_biomarker_series_api_v1_biomarkers_me__code__series_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_metabolic_profile_api_v1_biomarkers_me_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    start_cycle_api_v1_intervention_cycles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StartCycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    active_cycle_api_v1_intervention_cycles_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_cycle_api_v1_intervention_cycles__cycle_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_cycle_api_v1_intervention_cycles__cycle_id__recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_reports_api_v1_monthly_report_me_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_report_api_v1_monthly_report_me__year___month__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                year: number;
+                month: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_my_report_api_v1_monthly_report_me__year___month__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                year: number;
+                month: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_doctor_report_api_v1_doctor_report_export_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_doctor_feedback_api_v1_doctor_report_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoctorFeedbackIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_feedback_api_v1_doctor_report_feedback_me_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -37782,6 +49336,352 @@ export interface operations {
             };
         };
     };
+    get_knowledge_entity_api_v1_knowledge_entity__entity_type___entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entity_type: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_knowledge_claim_api_v1_knowledge_claim__claim_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_knowledge_claim_feedback_api_v1_knowledge_claim__claim_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_system_knowledge_api_v1_knowledge_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                doc_type?: string | null;
+                entity_type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_knowledge_api_v1_knowledge_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_knowledge_for_twin_api_v1_knowledge_lookup_for_twin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwinLookupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_system_knowledge_lint_report_api_v1_admin_knowledge_lint_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_system_knowledge_coverage_report_api_v1_admin_knowledge_coverage_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_system_knowledge_review_queue_api_v1_admin_knowledge_review_queue_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                reason?: string | null;
+                review_status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_system_knowledge_claim_review_api_v1_admin_knowledge_claim__claim_id__review_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimReviewUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_system_knowledge_operations_dashboard_api_v1_admin_knowledge_operations_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    reindex_system_knowledge_api_v1_admin_knowledge_reindex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_knowledge_stats_api_v1_knowledge_stats_get: {
         parameters: {
             query?: never;
@@ -37967,39 +49867,6 @@ export interface operations {
             };
         };
     };
-    search_knowledge_api_v1_knowledge_search_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SearchQuery"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     ask_question_api_v1_knowledge_ask_post: {
         parameters: {
             query?: never;
@@ -38107,6 +49974,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GeneDrugRulesInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_gene_knowledge_api_v1_knowledge_gene_knowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneKnowledgeInput"];
             };
         };
         responses: {
@@ -38251,6 +50151,40 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    specialist_scorecard_api_v1_specialists__name__scorecard_get: {
+        parameters: {
+            query?: {
+                /** @description 窗口天数 */
+                days?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -38427,6 +50361,38 @@ export interface operations {
     recent_entries_api_v1_clinical_journal_entries_recent_get: {
         parameters: {
             query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    journal_timeline_api_v1_clinical_journal_timeline_get: {
+        parameters: {
+            query?: {
+                /** @description 窗口天数 */
                 days?: number;
             };
             header?: never;
@@ -38772,6 +50738,39 @@ export interface operations {
             };
         };
     };
+    dismiss_api_v1_memory_facts__fact_id__dismiss_post: {
+        parameters: {
+            query?: {
+                reason?: string;
+            };
+            header?: never;
+            path: {
+                fact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     check_contradictions_api_v1_memory_facts_contradictions_check_get: {
         parameters: {
             query: {
@@ -38821,6 +50820,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_opener_memories_api_v1_conversation_memory_opener_get: {
+        parameters: {
+            query?: {
+                /** @description 拉几条 (默认 2, 上限 3) */
+                k?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -39105,6 +51136,698 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_traces_api_v1_reasoning_trace_recent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+                /** @description 过滤: anomaly_rule | llm_arbitration */
+                decision_type?: string | null;
+                /** @description 是否包含已 suppress 的 (info/疲劳) */
+                include_suppressed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trace_detail_api_v1_reasoning_trace__trace_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explain_safety_api_v1_reasoning_trace_safety__audit_id__get: {
+        parameters: {
+            query: {
+                /** @description alert 的 rule_id */
+                rule_id: string;
+            };
+            header?: never;
+            path: {
+                audit_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explain_specialist_api_v1_reasoning_trace_specialist__audit_id__get: {
+        parameters: {
+            query: {
+                /** @description specialist 名字, 如 recovery_coach */
+                specialist: string;
+            };
+            header?: never;
+            path: {
+                audit_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_insight_api_v1_insights_today_get: {
+        parameters: {
+            query?: {
+                /** @description 今日未生成时是否立即触发生成 */
+                generate_if_missing?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recent_insights_api_v1_insights_recent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_feedback_api_v1_insights__insight_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                insight_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_feedback_api_v1_judgment_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JudgmentFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recent_feedback_api_v1_judgment_feedback_recent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                target_type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_client_event_api_v1_client_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_desktop_bootstrap_api_v1_desktop_bootstrap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    create_desktop_import_job_api_v1_desktop_import_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopJobCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_desktop_jobs_api_v1_desktop_jobs_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_desktop_job_api_v1_desktop_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_desktop_job_api_v1_desktop_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_desktop_conversation_trace_api_v1_desktop_traces__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_audio_input_api_v1_ambient_audio_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudioInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AmbientAudioInputResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_visual_input_api_v1_ambient_visual_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisualInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AmbientVisualInputResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_glance_cards_api_v1_ambient_glance_cards_get: {
+        parameters: {
+            query?: {
+                surface?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlanceCardResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_glance_card_api_v1_ambient_glance_cards_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlanceCardCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlanceCardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_hearing_health_tasks_api_v1_ambient_hearing_tasks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HearingHealthTaskResponse"][];
+                };
+            };
+        };
+    };
+    create_hearing_health_task_api_v1_ambient_hearing_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HearingHealthTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HearingHealthTaskEnvelope"];
                 };
             };
             /** @description Validation Error */
@@ -40058,6 +52781,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_reminder_api_v1_reminders__reminder_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reminder_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -41054,6 +53812,57 @@ export interface operations {
             };
         };
     };
+    get_profile_status_api_v1_genetic_profiles__profile_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_genetic_predictions_api_v1_genetic_predictions_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_profile_detail_api_v1_genetic_profiles__profile_id__get: {
         parameters: {
             query?: never;
@@ -41343,6 +54152,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_my_genetic_report_api_v1_genetic_report_me_get: {
+        parameters: {
+            query?: {
+                /** @description 是否调 LLM 生成 Agent 总结 */
+                include_summary?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_snp_detail_endpoint_api_v1_genetic_snp__rsid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rsid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_profile_by_dict_api_v1_genetic_profiles__profile_id__reconcile_post: {
+        parameters: {
+            query?: {
+                /** @description True=只返回预览, False=真删改 */
+                dry_run?: boolean;
+            };
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -42138,6 +55044,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_invitation_api_v1_family_invitation_create_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCodeResponse"];
+                };
+            };
+        };
+    };
+    accept_invitation_api_v1_family_invitation_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
