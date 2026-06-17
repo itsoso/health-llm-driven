@@ -2,6 +2,10 @@
 
 腕上方便管理日常健康:今日状态 + 一键打点(喝水/俯卧撑/跑步/补剂/语音记餐)+ 关键推送(运动/补剂/睡眠/复查)。
 
+Watch App 优先独立展示: iPhone App 登录后通过 WatchConnectivity applicationContext
+把 token 同步到 Watch 本机 Keychain;Watch 刷新今日状态、打点和埋点时优先直连
+`/api/v1`,不要求 iPhone App 前台打开。旧 iPhone relay 保留为 token 未同步或直连失败时的兜底。
+
 ## 结构与「测试边界」
 
 | 目录 | 内容 | 测试 |
@@ -13,7 +17,7 @@
 
 > 设计纪律(对齐 `apps/mac`):**所有可测逻辑放 Core 并 swift test;UI/WC/complication 是声明式薄壳,真机验证**。改 watch 行为时,先在 Core 加逻辑+测试,再在壳里接。
 
-后端契约:`GET /api/v1/watch/summary`(腕上摘要)、打点走已有写端点(`/water/records/quick`、`/daily-health/exercise`、`/diet/voice/parse`)。改后端这些 shape 时,**必须同步** `WatchSummary.swift` + 其 fixture 测试(防静默漂移)。
+后端契约:`GET /api/v1/watch/summary`(腕上摘要)、打点走已有写端点(`/water/records/quick`、`/daily-health/exercise`、`/diet/voice/parse`)。改后端这些 shape 时,**必须同步** `WatchSummary.swift` + 其 fixture 测试(防静默漂移)。Watch 直连请求必须经过 `WatchBackendRequest` 白名单构造,不要在 UI 层手写任意后端 path。
 
 ## 跑逻辑测试(随时,无需设备)
 
@@ -44,8 +48,8 @@ cd ios && xcodebuild -project HealthPilot.xcodeproj -target RevaWatch \
 
 ## 真机集成(只剩设备步骤)
 
-- **激活 bridge**:App 启动时调 `WatchPhoneBridge.shared.activate()`(AppDelegate 或一个极小 Expo module 里一行)。
-- **Capabilities**:watch app + widget + 主 app 加 App Group `group.life.executor.health`(complication 缓存 + token 共享);bridge token 复用 Siri 的 `siri_auth_token`。
+- **激活 bridge**:App 启动时调 `WatchPhoneBridge.shared.activate()`(AppDelegate 或一个极小 Expo module 里一行),登录 token 变化时 `SharedKeychainModule` 会通知 bridge 同步到 Watch。
+- **Capabilities**:watch app + widget + 主 app 加 App Group `group.life.executor.health`(complication 缓存);bridge token 复用 Siri 的 `siri_auth_token`,Watch 本机保存到 Keychain。
 - **真机运行**:装到配对手表跑通(complication 出状态灯、腕上喝水/俯卧撑回写、关键推送)。
 - **发版**:EAS build production(watch app 随 iOS app 一起打包),见 `mobile-testflight-release` skill。
 

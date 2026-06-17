@@ -3,8 +3,9 @@ import Foundation
 import WatchConnectivity
 #endif
 
-/// iPhone 侧 WatchConnectivity 中继(W3)。watch 不持 token、不直接联网;iPhone 收 WC 消息 →
-/// 用 App Group 里的 token 调后端 → 回执给手腕。token 与 Siri extension 共用(同 App Group / key)。
+/// iPhone 侧 WatchConnectivity bridge(W3)。职责:
+/// 1) 把登录 token 通过 applicationContext 同步到 Watch Keychain,让 Watch 可独立联网展示;
+/// 2) 保留旧 relay 路径作为 token 未同步/直连失败时的兜底。token 与 Siri extension 共用。
 ///
 /// 注册:App 启动时调 `WatchPhoneBridge.shared.activate()`(AppDelegate / Expo module 里接一行)。
 /// 消息协议见 watch 侧 WatchConnectivityClient.swift。
@@ -14,6 +15,10 @@ import WatchConnectivity
     private let appGroup = "group.life.executor.health"
     private let tokenKey = "siri_auth_token"          // 与 withIntentsExtension 的 SharedKeychain 一致
     private let apiBase = "https://health.executor.life/api/v1"
+    private let watchTokenKey = "watch_auth_token"
+    private let watchTokenDeletedKey = "watch_auth_token_deleted"
+    private let watchAPIBaseKey = "watch_api_base"
+    private let tokenChangedNotification = Notification.Name("RevaSharedAuthTokenChanged")
     private let allowedQuickRecordRoutes: [String: Set<String>] = [
         "/water/records/quick": ["POST"],
         "/daily-health/exercise": ["POST"],
@@ -54,9 +59,17 @@ import WatchConnectivity
     @objc func activate() {
         #if canImport(WatchConnectivity)
         guard WCSession.isSupported() else { return }
+        NotificationCenter.default.removeObserver(self, name: tokenChangedNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(syncCredentialsToWatch),
+            name: tokenChangedNotification,
+            object: nil
+        )
         let s = WCSession.default
         s.delegate = self
         s.activate()
+        syncCredentialsToWatch()
         #endif
     }
 
@@ -64,8 +77,26 @@ import WatchConnectivity
         UserDefaults(suiteName: appGroup)?.string(forKey: tokenKey)
     }
 
+    /// One-way credential seed. Watch 持 token 后可直接 GET /watch/summary,不再要求 iPhone App 前台接力。
+    @objc func syncCredentialsToWatch() {
+        #if canImport(WatchConnectivity)
+        guard WCSession.isSupported() else { return }
+        let s = WCSession.default
+        guard s.activationState == .activated || s.activationState == .inactive else { return }
+        var context: [String: Any] = [watchAPIBaseKey: apiBase]
+        if let token = token(), !token.isEmpty {
+            context[watchTokenKey] = token
+            context[watchTokenDeletedKey] = false
+        } else {
+            context[watchTokenDeletedKey] = true
+        }
+        try? s.updateApplicationContext(context)
+        #endif
+    }
+
     /// 把 watch 的请求转成后端调用。reply 必形如 {ok:Bool, data?:base64, error?:String}。
     fileprivate func handle(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void) {
+        syncCredentialsToWatch()
         guard let token = token() else {
             reply(["ok": false, "error": "未登录(iPhone 无 token)"]); return
         }
@@ -169,9 +200,15 @@ import WatchConnectivity
 
 #if canImport(WatchConnectivity)
 extension WatchPhoneBridge: WCSessionDelegate {
-    func session(_ s: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
+    func session(_ s: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        syncCredentialsToWatch()
+    }
     func sessionDidBecomeInactive(_ s: WCSession) {}
     func sessionDidDeactivate(_ s: WCSession) { s.activate() }
+
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        syncCredentialsToWatch()
+    }
 
     func session(_ s: WCSession, didReceiveMessage message: [String: Any],
                  replyHandler: @escaping ([String: Any]) -> Void) {

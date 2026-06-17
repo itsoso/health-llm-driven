@@ -61,6 +61,10 @@ final class WatchStore: ObservableObject {
                 if m.contains("401") { return "登录已过期,请在 iPhone 重新登录" }
                 if m.hasPrefix("HTTP") { return "服务器繁忙(\(m)),稍后下拉重试" }
                 return m   // 网络等系统错误原文,直说
+            case .directFailed(let m):
+                return "\(m),稍后下拉重试"
+            case .missingWatchToken:
+                return "请先在 iPhone 登录并同步 Watch,之后手表可独立刷新"
             }
         }
         return "数据解析失败,请下拉重试"
