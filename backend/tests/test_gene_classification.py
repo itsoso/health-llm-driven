@@ -110,6 +110,15 @@ class TestConsumerChipProxyGuardrail:
         assert classify_variant("HLA-B*5801") == ("act", "pharmgkb_1a")
         assert classify_variant("HLA-B*58:01") == ("act", "pharmgkb_1a")
 
+    def test_carbamazepine_hla_tag_snp_is_act_and_proxy(self):
+        # rs1061235 is the consumer-chip tag SNP for HLA-A*31:01 (carbamazepine
+        # SCAR) — the SECOND lethal tier0 HLA allele alongside rs1265181. It must
+        # surface as ACT/pharmgkb_1a AND be flagged as a proxy so the formatter
+        # keeps the "negative ≠ no risk" caveat (it previously did not, leaving
+        # the allopurinol allele guarded but the carbamazepine one bare).
+        assert classify_variant("rs1061235") == ("act", "pharmgkb_1a")
+        assert is_proxy_variant("rs1061235") is True
+
     def test_haplotype_component_is_not_a_proxy_guardrail(self):
         # rs429358 (APOE haplotype component) is NOT in the proxy guardrail set,
         # so it keeps its tier1 evidence grade rather than proxy_uncertain.
