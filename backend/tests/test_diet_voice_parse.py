@@ -93,9 +93,14 @@ def test_degrade_when_llm_empty(db, auth):
     assert draft["needs_confirmation"] is True
 
 
-# ── API(LLM 测试环境不可用 → 降级路径,仍 200)──
-def test_api_voice_parse_degraded_path(client, auth):
+# ── API(显式 mock LLM 空结果 → 降级路径,仍 200)──
+def test_api_voice_parse_degraded_path(client, auth, monkeypatch):
     _, headers = auth
+
+    async def empty_llm_parse(db, user_id, raw_text):
+        return [], None
+
+    monkeypatch.setattr(dvp, "_llm_parse_foods", empty_llm_parse)
     r = client.post("/api/v1/diet/voice/parse", headers=headers,
                     json={"raw_text": "晚饭喝了一瓶啤酒"})   # 关键词「晚饭」→确定性,不看挂钟
     assert r.status_code == 200, r.text

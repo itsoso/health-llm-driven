@@ -240,6 +240,28 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         db.add(rem)
         db.flush()
         return f"smart_reminder:{rem.id}"
+    if wi.kind == "hearing_health_task":
+        # 良性写:确认 → 建一条听力测试/噪音回顾提醒。不诊断,不替代专业听力评估。
+        p = wi.payload or {}
+        rem = SmartReminder(
+            user_id=wi.user_id,
+            title=wi.title,
+            message=wi.description or "建立或更新听力健康基线",
+            remind_at=_parse_dt(p.get("remind_at")) or (datetime.now(timezone.utc) + timedelta(days=7)),
+            priority=p.get("priority") or "normal",
+            status="pending",
+            source="health_assistant",
+            extra_data={
+                "write_intent_id": wi.id,
+                "target_type": wi.target_type,
+                "target_id": wi.target_id,
+                "kind": wi.kind,
+                "task_type": p.get("task_type"),
+            },
+        )
+        db.add(rem)
+        db.flush()
+        return f"smart_reminder:{rem.id}"
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
 

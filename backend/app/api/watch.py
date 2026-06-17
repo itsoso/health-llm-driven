@@ -332,6 +332,29 @@ async def record_symptom(
 
     # ④ 审计(旁路)+ commit 一次性(症状 + 审计)
     _audit_symptom_eval(db, current_user.id, entry.id, alerts, evaluation_failed)
+    try:
+        from app.services.ambient_wearables import create_audio_input_event
+
+        create_audio_input_event(
+            db,
+            current_user.id,
+            intent="symptom",
+            transcript=text,
+            source="apple_watch",
+            device_type="watch",
+            status="processed",
+            target_type="symptom_entry",
+            target_id=entry.id,
+            safety_result={
+                "evaluation_failed": evaluation_failed,
+                "alerts_count": len(alerts),
+                "top_severity": max((int(a.severity) for a in alerts), default=None),
+                "rules_hit": [a.rule_id for a in alerts],
+            },
+            meta={"entry_source": "watch_symptoms"},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[watch.symptoms] audio input event 写入失败(降级): {e}")
     db.commit()
     db.refresh(entry)
 

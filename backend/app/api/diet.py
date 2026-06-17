@@ -478,8 +478,28 @@ async def parse_voice_food_endpoint(
     记忆(常吃中位营养)+ LLM(自由文本→结构化)。LLM 不可用则降级 + 标 needs_confirmation。
     """
     from app.services.diet_voice_parser import parse_voice_food
+    from app.services.ambient_wearables import create_audio_input_event
 
-    return await parse_voice_food(db, current_user.id, request.raw_text, request.meal_type)
+    result = await parse_voice_food(db, current_user.id, request.raw_text, request.meal_type)
+    create_audio_input_event(
+        db,
+        current_user.id,
+        intent="food",
+        transcript=request.raw_text,
+        source=request.source or "voice",
+        device_type=request.device_type or "unknown",
+        confidence=result.get("confidence"),
+        status="pending_confirmation",
+        target_type="diet_voice_draft",
+        meta={
+            "meal_type": result.get("meal_type"),
+            "risk_tags": result.get("risk_tags") or [],
+            "parser_version": result.get("parser_version"),
+            "needs_confirmation": result.get("needs_confirmation"),
+        },
+    )
+    db.commit()
+    return result
 
 
 @router.post("/recognize", response_model=FoodRecognitionResponse)

@@ -175,6 +175,8 @@ class VoiceFoodParseRequest(BaseModel):
     """语音转写文本 → 食物草稿(只解析不写库)。"""
     raw_text: str = Field(..., min_length=1, max_length=1000, description="语音转写文本")
     meal_type: Optional[MealType] = Field(None, description="餐次(不给则按文本/时刻推断)")
+    source: Optional[str] = Field(None, max_length=50, description="语音来源,如 apple_watch/airpods/mobile")
+    device_type: Optional[str] = Field(None, max_length=40, description="设备类型,如 watch/earbuds/mobile")
 
 
 class VoiceFoodDraftItem(BaseModel):

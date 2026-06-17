@@ -150,6 +150,7 @@ from app.api import (
     judgment_feedback,
     client_events,
     desktop,
+    ambient,
 )
 
 api_router = APIRouter()
@@ -305,6 +306,7 @@ api_router.include_router(insights.router)
 api_router.include_router(judgment_feedback.router)
 api_router.include_router(client_events.router)
 api_router.include_router(desktop.router)
+api_router.include_router(ambient.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])
