@@ -86,15 +86,23 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "monitor_labs": ["Omega-3 index (>8%)", "甘油三酯"],
         "priority": 21,
     },
-    # ── COMT V158M (慢型) ──
+    # ── 镁 (主观睡眠/焦虑 或 低镁化验触发, 非基因门控) ──
+    # 旧版按 COMT 慢型基因型推荐 (id=comt_magnesium), 已纠正:COMT 单 SNP 对认知/焦虑
+    # 解释方差<1%、候选基因时代未复现 (见 gene_config.py:224 + 基因解读 first-principles
+    # 文档 Tier DE-EMPHASIZE), 且无 COMT×镁→HRV/睡眠 的基因-环境交互证据。镁的
+    # 副交感/睡眠效应是未选基因人群 RCT 支持的群体主效应 → 不再归因于任何基因型。
     {
-        "id": "comt_magnesium",
-        "gene": "COMT",
-        "pathway": "neurotransmitter",
+        "id": "magnesium_sleep",
+        # gene 故意留空: 镁是群体主效应, 不归因于基因型 (_rule_to_rec → gene=None)
+        "pathway": "sleep_recovery",
         "supplement": "甘氨酸镁 (Mg-Glycinate)",
         "dose": "200-400 mg 元素镁/日",
         "timing": "睡前",
-        "reason": "COMT 慢型儿茶酚胺清除慢，易焦虑/入睡困难。镁协同 GABA、镇静，临床用于焦虑/失眠。",
+        "reason": (
+            "镁参与 GABA 能信号与副交感神经张力调节,对主观睡眠质量与焦虑有一定帮助"
+            "(未选基因人群 RCT 支持的群体主效应,非基因驱动结论)。"
+            "HRV 夜间均值 / PSQI 仅作为 N-of-1 验证终点,不作为基因驱动的预设。"
+        ),
         "monitor_labs": ["主观 PSQI", "HRV 夜间均值"],
         "brands_intl": ["Pure Encapsulations Magnesium Glycinate"],
         "brands_cn": ["甘氨酸镁 (汤臣倍健/Swisse)"],
@@ -248,6 +256,25 @@ def _has_med(twin: HealthTwin, keywords: List[str]) -> bool:
     return any(any(k.lower() in m for k in keywords) for m in meds)
 
 
+# 镁推荐的症状触发关键字 (取代旧 COMT 基因门控) — 主观睡眠 / 焦虑主诉
+_SLEEP_ANXIETY_KEYWORDS = [
+    "失眠", "入睡困难", "睡不着", "睡眠差", "睡眠质量差", "易醒", "多梦", "早醒",
+    "焦虑", "紧张不安", "insomnia", "poor sleep", "anxiety", "anxious",
+]
+
+
+def _has_sleep_or_anxiety_complaint(twin: HealthTwin) -> bool:
+    """主观睡眠/焦虑主诉 — 镁(GABA能/副交感)的症状触发,非基因型驱动."""
+    texts: List[str] = []
+    texts += twin.acute.recent_symptoms or []
+    texts += twin.acute.symptom_texts_all or []
+    texts += twin.mental.recent_journal_themes or []
+    blob = " ".join(t for t in texts if t).lower()
+    if not blob:
+        return False
+    return any(k.lower() in blob for k in _SLEEP_ANXIETY_KEYWORDS)
+
+
 # ─────────────────────────── Specialist ───────────────────────────
 
 
@@ -309,12 +336,14 @@ class SupplementAdvisorSpecialist:
                 rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "fads_epa")
                 recommendations.append(self._rule_to_rec(rule, twin))
 
-            # 5. COMT 慢型
-            hit_comt, _ = _has_snp(twin, "COMT")
-            if hit_comt:
-                rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "comt_magnesium")
+            # 5. 镁 — 症状/化验触发 (非基因门控)
+            #    旧版按 COMT 慢型基因型推荐, 已纠正 (无 COMT×镁→HRV/睡眠 交互证据);
+            #    改由低镁化验或主观睡眠/焦虑主诉触发, 镁的副交感效应是群体主效应。
+            low_mg = _lab_abnormal(twin, ["镁", "magnesium"])
+            if low_mg or _has_sleep_or_anxiety_complaint(twin):
+                rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "magnesium_sleep")
                 rec = self._rule_to_rec(rule, twin)
-                # eGFR < 30 禁镁
+                # eGFR < 30 禁高剂量镁
                 if twin.labs.egfr is not None and twin.labs.egfr < 30:
                     rec["warning"] = "⚠️ eGFR < 30, 镁不宜高剂量 — 建议 100 mg 起步并咨询肾内科。"
                 recommendations.append(rec)

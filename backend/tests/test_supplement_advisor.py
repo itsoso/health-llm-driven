@@ -3,7 +3,9 @@
 覆盖:
 - applies_to: fuel/labs 意图 + 关键字
 - HFE C282Y 纯合 → 硬阻断铁
-- MTHFR + APOE + COMT → 3-4 条推荐
+- MTHFR + APOE → 2-3 条推荐
+- 镁: 主观睡眠/焦虑主诉 或 低镁化验触发 (非 COMT 基因门控)
+- COMT 基因型单独不再触发镁 (纠正:无 COMT×镁→HRV/睡眠 交互证据)
 - eGFR < 30 → 镁降级 warning
 - 华法林 → K2 禁忌, 不进列表
 - statin → CoQ10 触发
@@ -19,6 +21,7 @@ from datetime import datetime
 from app.agents.supplement_advisor import SupplementAdvisorSpecialist
 from app.orchestrator.intent import classify_intent
 from app.twin.schema import (
+    AcuteHealthState,
     GeneticContext,
     HealthTwin,
     LabsContext,
@@ -110,26 +113,56 @@ def test_apoe_e4_triggers_omega3():
     assert "apoe_omega3" in ids
 
 
-def test_comt_slow_triggers_magnesium():
+# ─────────── 镁: 症状/化验触发, 非 COMT 基因门控 ───────────
+
+def test_sleep_complaint_triggers_magnesium():
+    """主观睡眠/焦虑主诉 → 镁 (genotype-independent 群体主效应)."""
+    s = SupplementAdvisorSpecialist()
+    t = _empty_twin()
+    t.acute = AcuteHealthState(recent_symptoms=["最近失眠,入睡困难"])
+    f = s.run(t, {})
+    rec = next(x for x in f.findings if x.get("id") == "magnesium_sleep")
+    # reason 是 genotype-independent 生理依据, 不再归因 COMT 慢代谢
+    assert "COMT" not in rec["reason"]
+    assert "GABA" in rec["reason"] or "副交感" in rec["reason"]
+    assert rec.get("gene") is None
+
+
+def test_low_magnesium_lab_triggers_magnesium():
+    """低镁化验 → 镁 (沿用 VDR/低-VD 的 lab 触发模式)."""
+    s = SupplementAdvisorSpecialist()
+    t = _empty_twin()
+    t.labs = LabsContext(flagged_abnormal=[{"item_name": "血清镁", "value": 0.6}])
+    f = s.run(t, {})
+    ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
+    assert "magnesium_sleep" in ids
+
+
+def test_comt_genotype_alone_does_not_trigger_magnesium():
+    """纠正后的核心行为:COMT 慢型基因型单独不再推荐镁.
+
+    无 COMT×镁→HRV/睡眠 的基因-环境交互证据; COMT 单 SNP 属 DE-EMPHASIZE 层,
+    不驱动补剂结论 (见 gene_config.py:224)。
+    """
     s = SupplementAdvisorSpecialist()
     t = _twin_with_genes([
         {"gene_name": "COMT", "genotype": "GG", "result_label": "慢型"},
     ])
     f = s.run(t, {})
     ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
-    assert "comt_magnesium" in ids
+    assert "magnesium_sleep" not in ids
+    assert "comt_magnesium" not in ids  # 旧 id 也不应残留
 
 
 # ─────────── eGFR 低 → 镁降级 ───────────
 
 def test_low_egfr_downgrades_magnesium():
     s = SupplementAdvisorSpecialist()
-    t = _twin_with_genes([
-        {"gene_name": "COMT", "genotype": "GG", "result_label": "慢型"},
-    ])
+    t = _empty_twin()
+    t.acute = AcuteHealthState(recent_symptoms=["失眠"])
     t.labs = LabsContext(egfr=25)
     f = s.run(t, {})
-    mg_rec = next(x for x in f.findings if x.get("id") == "comt_magnesium")
+    mg_rec = next(x for x in f.findings if x.get("id") == "magnesium_sleep")
     assert "warning" in mg_rec
     assert "肾" in mg_rec["warning"]
 
@@ -176,11 +209,12 @@ def test_over_5_recommendations_trimmed_to_top5():
     t = _twin_with_genes([
         {"gene_name": "MTHFR", "genotype": "TT", "result_label": "reduced"},
         {"gene_name": "APOE", "genotype": "E4/E4", "result_label": "high_risk"},
-        {"gene_name": "COMT", "genotype": "GG", "result_label": "慢型"},
         {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
         {"gene_name": "SOD2", "genotype": "CC", "result_label": "reduced"},
         {"gene_name": "FADS1", "genotype": "TT", "result_label": "reduced"},
     ])
+    # 镁现由症状触发 (非基因), 加一条睡眠主诉让它进入候选池
+    t.acute = AcuteHealthState(recent_symptoms=["失眠"])
     f = s.run(t, {})
     recs = [x for x in f.findings if x.get("type") == "supplement_rec"]
     assert len(recs) <= 5
