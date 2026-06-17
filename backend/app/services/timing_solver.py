@@ -59,6 +59,7 @@ class Item:
     deferrable: bool = True                      # 能否顺延(prescribed 固定项通常 False)
     preference_weight: float = 0.0               # 偏好加权(仅在不违反硬约束时生效)
     fixed_time: Optional[str] = None             # 医嘱固定时点 "HH:MM"(优先于锚点启发式)
+    warning: Optional[str] = None                # 行级警告(如 drug×drug 相互作用;保留排程不删,遵医嘱)
 
 
 @dataclass
@@ -267,9 +268,12 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
         # 即使落在静默窗也保留原时点 —— 绝不把处方剂量或晨起空腹药丢到次日(R4:不漏给药)。
         if it.anchor == ANCHOR_ANYTIME and it.deferrable and _in_quiet(t, ctx.quiet_hours):
             t = qend  # 浮动 nudge 顺延到静默窗结束
-        scheduled.append({"id": it.id, "title": it.title, "domain": it.domain,
-                          "time": _to_hhmm(t), "_min": t, "anchor": it.anchor,
-                          "severity": it.severity, "degraded": ctx.anchors_degraded})
+        entry = {"id": it.id, "title": it.title, "domain": it.domain,
+                 "time": _to_hhmm(t), "_min": t, "anchor": it.anchor,
+                 "severity": it.severity, "degraded": ctx.anchors_degraded}
+        if it.warning:
+            entry["warning"] = it.warning  # 行级相互作用警告(保留排程,遵医嘱)
+        scheduled.append(entry)
 
     # 复查配额:checkup 域按 severity 取前 N,其余顺延
     checkups = sorted([s for s in scheduled if s["domain"] == "checkup"],

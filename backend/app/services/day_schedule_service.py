@@ -63,8 +63,23 @@ def schedule_from_medications(
     forbidden_reasons: Optional[Dict] = None,
     ctx_overrides: Optional[dict] = None,
 ) -> Dict[str, list]:
-    """纯核心:给定 medications + profile(+ 安全硬禁忌)→ 当日时间轴。无 DB。"""
-    items = medications_to_items(meds, forbidden_reasons=forbidden_reasons or {})
+    """纯核心:给定 medications + profile(+ 安全硬禁忌)→ 当日时间轴。无 DB。
+
+    安全 seam(cut 5):跑 DDI/DSI 硬禁忌 → 补剂侧拒排(并入 forbidden_reasons)、处方药侧行警告。
+    """
+    from app.services.schedule_safety_seam import compute_seam
+
+    seam_forbidden, warnings = compute_seam(meds)
+    merged_forbidden = {**(forbidden_reasons or {}), **seam_forbidden}
+    items = medications_to_items(meds, forbidden_reasons=merged_forbidden)
+    if warnings:
+        for it in items:
+            try:
+                mid = int(str(it.id).split(":", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            if mid in warnings:
+                it.warning = warnings[mid]
     ctx = _day_context(profile, overrides=ctx_overrides)
     return solve_day_schedule(items, ctx)
 
