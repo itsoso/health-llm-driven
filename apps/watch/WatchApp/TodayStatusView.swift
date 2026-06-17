@@ -151,23 +151,23 @@ struct TodayStatusView: View {
                     title: store.completing ? "..." : "已做",
                     icon: store.completing ? "hourglass" : "checkmark.circle.fill",
                     color: RevaWatch.greenBright,
-                    disabled: store.completing || store.skipping
+                    disabled: store.completing || store.skipping || store.snoozing
                 ) {
                     Task { await store.completeAction(action) }
                 }
                 miniButton(
-                    title: "稍后",
+                    title: store.snoozing ? "..." : "稍后",
                     icon: "clock",
                     color: RevaWatch.caution,
-                    disabled: store.completing || store.skipping
+                    disabled: store.completing || store.skipping || store.snoozing
                 ) {
-                    store.snoozeAction(action)
+                    Task { await store.snoozeAction(action) }
                 }
                 miniButton(
                     title: store.skipping ? "..." : "跳过",
                     icon: "xmark.circle",
                     color: RevaWatch.ink2,
-                    disabled: store.completing || store.skipping
+                    disabled: store.completing || store.skipping || store.snoozing
                 ) {
                     Task { await store.skipAction(action, reason: "no_time") }
                 }

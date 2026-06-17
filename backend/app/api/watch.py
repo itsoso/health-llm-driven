@@ -11,7 +11,7 @@ import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agents.safety_guardian.engine import evaluate_rules_with_status
@@ -47,6 +47,10 @@ _WRITTEN_BY_SOURCE_MODEL = {
 
 class WatchSkipRequest(BaseModel):
     reason: str | None = "no_time"
+
+
+class WatchSnoozeRequest(BaseModel):
+    minutes: int = Field(30, ge=5, le=240)
 
 
 def _parse_action_id(action_id: str) -> tuple[str, int]:
@@ -135,6 +139,37 @@ async def skip_action(
         "object_id": object_id,
         "status": ev.status,
         "skip_reason": ev.skip_reason,
+    }
+
+
+@router.post("/actions/{action_id}/snooze")
+async def snooze_action(
+    action_id: str,
+    body: WatchSnoozeRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """腕上「稍后」→ 暂停今日协议一段时间,到期后重新进入 pending。"""
+    object_type, object_id = _parse_action_id(action_id)
+
+    if object_type != "health_protocol":
+        raise HTTPException(status_code=400, detail="该来源不支持腕上稍后")
+
+    try:
+        ev = proto_svc.snooze_protocol(db, object_id, current_user.id, minutes=body.minutes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if ev is None:
+        raise HTTPException(status_code=404, detail="协议不存在")
+
+    value = ev.value or {}
+    return {
+        "action_id": action_id,
+        "object_type": object_type,
+        "object_id": object_id,
+        "status": ev.status,
+        "minutes": value.get("minutes", body.minutes),
+        "snoozed_until": value.get("snoozed_until"),
     }
 
 

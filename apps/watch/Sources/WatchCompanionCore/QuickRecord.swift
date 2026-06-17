@@ -95,6 +95,20 @@ public enum QuickRecord {
         )
     }
 
+    /// 「稍后」:把到点项 snooze 一段时间。对齐 POST /watch/actions/{action_id}/snooze。
+    public static func snoozeAction(actionId: String, minutes: Int = 30) throws -> QuickRecordRequest {
+        let id = actionId.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { throw QuickRecordError.missing("action_id") }
+        guard minutes >= 5 && minutes <= 240 else {
+            throw QuickRecordError.outOfRange("稍后时间需在 5–240 分钟")
+        }
+        return QuickRecordRequest(
+            path: "/watch/actions/\(id)/snooze", method: "POST",
+            query: [:], body: ["minutes": String(minutes)],
+            successMessage: "已稍后"
+        )
+    }
+
     /// 语音记一餐:转写文本 → 走解析草稿(/diet/voice/parse),确认后再写库(不在此直接入库)。
     public static func dietVoice(rawText: String) throws -> QuickRecordRequest {
         let t = rawText.trimmingCharacters(in: .whitespaces)

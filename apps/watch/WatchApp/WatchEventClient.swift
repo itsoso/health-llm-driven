@@ -1,7 +1,7 @@
 import Foundation
 
 /// watch action 埋点轻量出口。复用 WatchConnectivity 中继到 /client-events(经 iPhone 携 token)。
-/// 只发本刀两条事件:tile 出现 → watch_action_shown;完成成功 → watch_action_completed。
+/// 覆盖 tile 出现、完成、稍后、跳过等轻量事件。
 /// meta 仅 {action_id, kind, priority_tier}(无症状/用药名等敏感内容,对齐后端白名单/size limit)。
 ///
 /// fire-and-forget:埋点失败绝不阻塞 UI / 不冒泡成用户错误(埋点是旁路,不是业务诚实点)。

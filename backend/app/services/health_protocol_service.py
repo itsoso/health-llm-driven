@@ -4,7 +4,7 @@
 饮水域作参考实现;用药/饮食后续 slice 照搬同一模式。
 """
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import update
@@ -127,12 +127,39 @@ def _today_event(db: Session, protocol_id: int, user_id: int, day: date) -> Opti
     ).order_by(HealthProtocolEvent.created_at.desc()).first()
 
 
+def _snoozed_until(ev: HealthProtocolEvent) -> Optional[datetime]:
+    value = ev.value or {}
+    raw = value.get("snoozed_until")
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
+    except ValueError:
+        return None
+
+
+def _effective_today_status(ev: Optional[HealthProtocolEvent]) -> str:
+    if ev is None:
+        return "pending"
+    if ev.status == "snoozed":
+        until = _snoozed_until(ev)
+        if until is not None and until > datetime.now(UTC):
+            return "snoozed"
+        return "pending"
+    return ev.status
+
+
 def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
     """今日各活跃协议的待办 + 完成态(双轨任一轨完成都算)。"""
     today = date.today()
     out: List[Dict[str, Any]] = []
     for p in list_protocols(db, user_id, active_only=True):
         ev = _today_event(db, p.id, user_id, today)
+        effective_status = _effective_today_status(ev)
+        snoozed_until = _snoozed_until(ev) if ev and effective_status == "snoozed" else None
         out.append({
             "protocol_id": p.id,
             "domain": p.domain,
@@ -144,9 +171,10 @@ def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "is_due_today": _is_due_today(db, p, user_id, today),
             "can_default_complete": p.can_default_complete,
             "manual_track_allowed": p.manual_track_allowed,
-            "today_status": ev.status if ev else "pending",
+            "today_status": effective_status,
             "today_track": ev.track if ev else None,
             "skip_reason": ev.skip_reason if ev else None,
+            "snoozed_until": snoozed_until.isoformat() if snoozed_until else None,
         })
     return out
 
@@ -343,6 +371,21 @@ def _write_domain_record(
         if not p.source_id:   # 补剂需链接到具体补剂定义
             return None
         from app.models.supplement import SupplementRecord
+        # 单补剂单日一条(uq_supprec_supp_date)。用户可能已在补剂页 / NFC 勾过同日打卡 →
+        # 翻成 taken 而非再 INSERT 撞唯一约束(否则协议完成被无辜 500)。读-改-写在协议事件
+        # 门控的同一事务内, 跨请求并发由 DB 唯一约束兜底。
+        rec = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == user_id,
+            SupplementRecord.supplement_id == p.source_id,
+            SupplementRecord.record_date == day,
+        ).first()
+        if rec is not None:
+            rec.taken = True
+            rec.taken_time = datetime.now().time()
+            if not rec.notes:
+                rec.notes = "via protocol"
+            db.flush()
+            return rec.id
         rec = SupplementRecord(
             user_id=user_id, supplement_id=p.source_id, record_date=day,
             taken=True, taken_time=datetime.now().time(), notes="via protocol",
@@ -531,6 +574,34 @@ def skip_protocol(
     db.commit()
     db.refresh(ev)
     logger.info(f"[Protocol] 跳过: user={user_id} protocol={protocol_id} reason={reason}")
+    return ev
+
+
+def snooze_protocol(
+    db: Session, protocol_id: int, user_id: int,
+    minutes: int = 30, day: Optional[date] = None,
+) -> Optional[HealthProtocolEvent]:
+    """稍后今日协议,让 Watch/top_action 暂时不再投影该项。"""
+    p = get_protocol(db, protocol_id, user_id)
+    if not p:
+        return None
+    if minutes < 5 or minutes > 240:
+        raise ValueError("snooze 分钟数需在 5-240 之间")
+    day = day or date.today()
+    ev = _claim_today_event(db, protocol_id, user_id, day)
+    if ev.status in ("completed", "auto_observed"):
+        raise ValueError("已完成的协议不能稍后")
+
+    until = datetime.now(UTC) + timedelta(minutes=minutes)
+    ev.status = "snoozed"
+    ev.track = "protocol"
+    ev.skip_reason = None
+    ev.value = {"minutes": minutes, "snoozed_until": until.isoformat()}
+    db.commit()
+    db.refresh(ev)
+    logger.info(
+        f"[Protocol] 稍后: user={user_id} protocol={protocol_id} minutes={minutes}"
+    )
     return ev
 
 

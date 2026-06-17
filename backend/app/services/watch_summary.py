@@ -90,6 +90,7 @@ def _due_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "title": item.get("title"),
         "kind": item.get("type"),
         "time_window": item.get("time_window"),
+        "source": item.get("source"),
     }
 
 

@@ -18,6 +18,7 @@ final class WatchStore: ObservableObject {
     @Published var symptomSubmitting = false           // 记症状请求在途(禁重复点)
     @Published var completing = false          // 「一键已做」请求在途(禁重复点 + tile 转圈)
     @Published var skipping = false            // 「跳过」请求在途(禁重复点)
+    @Published var snoozing = false            // 「稍后」请求在途(禁重复点)
 
     private let connectivity: WatchConnectivityClient
     private let events: WatchEventClient
@@ -148,12 +149,18 @@ final class WatchStore: ObservableObject {
         }
     }
 
-    func snoozeAction(_ action: WatchTopAction, minutes: Int = 30) {
-        guard action.isCompletable else { return }
-        lastRecordOK = true
-        lastRecordMessage = "已稍后"
-        lastError = nil
-        events.actionSnoozed(action, minutes: minutes)
+    func snoozeAction(_ action: WatchTopAction, minutes: Int = 30) async {
+        guard let actionId = action.actionId,
+              action.isCompletable,
+              !completing,
+              !skipping,
+              !snoozing else { return }
+        snoozing = true
+        defer { snoozing = false }
+        await submit { try QuickRecord.snoozeAction(actionId: actionId, minutes: minutes) }
+        if lastRecordOK == true {
+            events.actionSnoozed(action, minutes: minutes)
+        }
     }
 
     /// tile 曝光埋点(分母)。由 TodayStatusView.onAppear 调,旁路 fire-and-forget。

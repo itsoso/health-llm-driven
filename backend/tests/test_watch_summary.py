@@ -112,6 +112,28 @@ def test_training_protocol_can_be_top_action_for_watch_micro_movement(db, auth, 
     assert s["agenda"]["pending"] == 1
 
 
+def test_due_items_preserve_source_for_watch_completion(db, auth, monkeypatch):
+    """Watch due item 需要 source 才能判定 health_protocol 可一键完成。"""
+    user, _ = auth
+    items = [
+        _protocol("吃药", priority=80, domain="medication"),
+        _protocol("到公司后俯卧撑 12 个", priority=70, domain="training"),
+    ]
+    items[0]["source"]["object_id"] = 7
+    items[1]["source"]["object_id"] = 8
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+
+    s = ws.build_watch_summary(db, user.id)
+
+    by_title = {i["title"]: i for i in s["due_items"]}
+    assert by_title["吃药"]["action_id"] == "agenda-health_protocol-7"
+    assert by_title["吃药"]["source"] == {"object_type": "health_protocol", "object_id": 7}
+    assert by_title["到公司后俯卧撑 12 个"]["source"] == {
+        "object_type": "health_protocol",
+        "object_id": 8,
+    }
+
+
 def test_push_tiering_and_cap(db, auth, monkeypatch):
     user, _ = auth
     items = [

@@ -19,14 +19,14 @@ import WatchConnectivity
         "/daily-health/exercise": ["POST"],
         "/diet/voice/parse": ["POST"],
         "/diet/records": ["POST"],
-        "/client-events": ["POST"],              // watch action 埋点中继(shown/completed/skipped)
+        "/client-events": ["POST"],              // watch action 埋点中继(shown/completed/snoozed/skipped)
         "/watch/symptoms": ["POST"],             // 王牌⑤ 腕上语音记症状 → SafetyGuardian 裁决
     ]
-    // 动态放行:/watch/actions/{action_id}/{complete|skip} 的 POST。前缀+后缀不够——
+    // 动态放行:/watch/actions/{action_id}/{complete|skip|snooze} 的 POST。前缀+后缀不够——
     // 中段必须是「单层合法 action_id」,否则 `/watch/actions/../../admin/x/complete`
     // 也同时满足 prefix+suffix(URLComponents 不折叠 ..)。见下 isWatchActionMutation。
     private let watchActionPrefix = "/watch/actions/"
-    private let watchActionSuffixes = ["/complete", "/skip"]
+    private let watchActionSuffixes = ["/complete", "/skip", "/snooze"]
     // 与后端 _ACTION_ID_RE 同形: agenda-{object_type}-{object_id}。NSString 锚定(^…$),
     // 中段不含 `/`,故天然单层;`.` 仅出现在 \d 之外即拒,`..` 无从构造。
     private let actionIDPattern = "^agenda-[a-z_]+-[0-9]+$"

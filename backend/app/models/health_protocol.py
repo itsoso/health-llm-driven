@@ -77,7 +77,7 @@ class HealthProtocolEvent(Base):
     protocol_id = Column(Integer, ForeignKey("health_protocols.id"), nullable=False)
 
     event_date = Column(Date, nullable=False)          # 归属哪一天(按 cadence 去重)
-    status = Column(String(20), nullable=False)        # completed/skipped/auto_observed
+    status = Column(String(20), nullable=False)        # completed/skipped/snoozed/auto_observed
     track = Column(String(10), nullable=False, default="protocol")  # protocol/manual
     value = Column(JSONB)                              # 手工轨可带实际量;协议轨多为空(用 implied_quantity)
     skip_reason = Column(String(40))                   # R14:no_time/forgot/no_supply/too_tired/wrong_place/too_hard/unwell/social

@@ -12,7 +12,7 @@
 钉「不假装完成」(Rule #1)+ 幂等(防依从灌水)+ 防 IDOR 三条不变量。
 """
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -124,6 +124,55 @@ def test_skip_non_protocol_source_400(client, db):
         "/api/v1/watch/actions/agenda-training_decision-5/skip",
         headers=_headers(user),
         json={"reason": "no_time"},
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_snooze_protocol_action_marks_today_snoozed(client, db):
+    """Watch 稍后按钮 → 后端持久化 snooze,不落领域完成记录。"""
+    user = _mk_user(db)
+    p = _med_protocol(db, user.id)
+
+    r = client.post(
+        f"/api/v1/watch/actions/agenda-health_protocol-{p.id}/snooze",
+        headers=_headers(user),
+        json={"minutes": 45},
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["action_id"] == f"agenda-health_protocol-{p.id}"
+    assert body["status"] == "snoozed"
+    assert body["minutes"] == 45
+    assert body["snoozed_until"]
+    logs = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).all()
+    assert logs == [], "稍后不是完成,不能落 MedicationLog"
+    today = proto_svc.today_status(db, user.id)
+    assert today[0]["today_status"] == "snoozed"
+
+
+def test_expired_snooze_returns_to_pending(db):
+    """snooze 过期后协议重新进入 pending,让 agenda/top_action 可再次投影。"""
+    user = _mk_user(db)
+    p = _med_protocol(db, user.id)
+    ev = proto_svc.snooze_protocol(db, p.id, user.id, minutes=30)
+    ev.value = {
+        "minutes": 30,
+        "snoozed_until": (datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
+    }
+    db.commit()
+
+    today = proto_svc.today_status(db, user.id)
+
+    assert today[0]["today_status"] == "pending"
+
+
+def test_snooze_non_protocol_source_400(client, db):
+    user = _mk_user(db)
+    r = client.post(
+        "/api/v1/watch/actions/agenda-training_decision-5/snooze",
+        headers=_headers(user),
+        json={"minutes": 30},
     )
     assert r.status_code == 400, r.text
 

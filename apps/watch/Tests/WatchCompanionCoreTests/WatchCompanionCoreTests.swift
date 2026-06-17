@@ -344,6 +344,15 @@ final class QuickRecordTests: XCTestCase {
         XCTAssertEqual(r.successMessage, "已跳过")
     }
 
+    func testSnoozeActionBuildsPathAndMinutes() throws {
+        let r = try QuickRecord.snoozeAction(actionId: "agenda-health_protocol-12", minutes: 45)
+        XCTAssertEqual(r.path, "/watch/actions/agenda-health_protocol-12/snooze")
+        XCTAssertEqual(r.method, "POST")
+        XCTAssertTrue(r.query.isEmpty)
+        XCTAssertEqual(r.body["minutes"], "45")
+        XCTAssertEqual(r.successMessage, "已稍后")
+    }
+
     func testSkipActionEmptyIdThrows() {
         XCTAssertThrowsError(try QuickRecord.skipAction(actionId: "   ", reason: "no_time")) { err in
             XCTAssertEqual(err as? QuickRecordError, .missing("action_id"))
