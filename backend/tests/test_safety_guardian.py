@@ -525,6 +525,25 @@ class TestDDIRules:
         ids = _rule_ids(alerts)
         assert "ddi.glp1_gastric_emptying" in ids
         assert "ddi.glp1_hypoglycemia" not in ids
+        alert = next(a for a in alerts if a.rule_id == "ddi.glp1_gastric_emptying")
+        # 不得出现被对抗验证证伪的捏造分钟范围
+        assert "30-70" not in alert.message
+        # 抗凝建议应是「按医嘱监测 INR」而非时间错开
+        assert "INR" in alert.action
+        assert "注射日" not in alert.action or "无关" in alert.action
+        # 替尔泊肽（GIP/GLP-1）才给避孕屏障法提示
+        assert "屏障" in alert.action
+
+    def test_glp1_gastric_emptying_pure_glp1_no_contraceptive_caveat(self):
+        """纯 GLP-1（司美格鲁肽）不降低口服避孕药暴露 → 不得带屏障避孕提示。"""
+        twin = _empty_twin()
+        twin.medication = MedicationState(active_meds=[{"name": "司美格鲁肽"}])
+        alerts = evaluate_safety(twin).alerts
+        alert = next(a for a in alerts if a.rule_id == "ddi.glp1_gastric_emptying")
+        assert "屏障" not in alert.action
+        assert "避孕" not in alert.action
+        # 左甲状腺素的同日间隔 + TSH 监测建议对所有 GLP-1 都给
+        assert "TSH" in alert.action
 
     def test_warfarin_nsaid(self):
         twin = _empty_twin()
@@ -543,6 +562,23 @@ class TestDDIRules:
         alert = next(a for a in alerts if a.rule_id == "ddi.ssri_maoi")
         assert alert.severity == Severity.CRITICAL
         assert alert.requires_medical_attention is True
+        # 非氟西汀 SSRI（舍曲林）→ 洗脱期 ≥2 周，不得提到 5 周
+        assert "2 周" in alert.message
+        assert "5 周" not in alert.message
+
+    def test_ssri_maoi_fluoxetine_five_week_washout(self):
+        """氟西汀（长半衰期 + 去甲氟西汀蓄积）与 MAOI → 洗脱期必须按 ≥5 周给，而非 2 周。"""
+        twin = _empty_twin()
+        twin.medication = MedicationState(
+            active_meds=[{"name": "氟西汀"}, {"name": "苯乙肼"}]
+        )
+        alerts = evaluate_safety(twin).alerts
+        alert = next(a for a in alerts if a.rule_id == "ddi.ssri_maoi")
+        assert alert.severity == Severity.CRITICAL
+        # 氟西汀 → 必须提到 5 周洗脱期
+        assert "5 周" in alert.message
+        # action 仍交回处方医生裁决
+        assert "处方医生" in alert.action
 
     def test_cetirizine_alone_no_alert(self):
         twin = _empty_twin()
@@ -550,6 +586,17 @@ class TestDDIRules:
         alerts = evaluate_safety(twin).alerts
         # 西替利嗪单独使用不该触发任何 DDI
         assert all(not a.rule_id.startswith("ddi.cetirizine") for a in alerts)
+
+    def test_ibuprofen_not_opioid_no_cns_depressant_alert(self):
+        # 布洛芬是 NSAID，不是阿片类——西替利嗪 + 布洛芬不该走阿片中枢抑制逻辑。
+        # 回归保护：曾误把"布洛芬"列进 opioid 别名表。
+        twin = _empty_twin()
+        twin.medication = MedicationState(
+            active_meds=[{"name": "盐酸西替利嗪片"}, {"name": "布洛芬"}]
+        )
+        alerts = evaluate_safety(twin).alerts
+        cns = [a for a in alerts if a.rule_id == "ddi.cetirizine_cns_depressants"]
+        assert cns == []
 
 
 # ─────────────────────── DSI rules ────────────────────────
@@ -693,6 +740,83 @@ class TestPGxRules:
         assert "争议" in aldh2.message
         # 规则严重度不变
         assert aldh2.severity == Severity.MEDIUM
+
+    def _slco1b1_twin(self, genotype, label, drug="辛伐他汀", risk="高风险"):
+        twin = _empty_twin()
+        twin.medication = MedicationState(active_meds=[{"name": drug}])
+        twin.genetic = GeneticContext(
+            has_profile=True,
+            drug_sensitivity=[
+                {
+                    "gene_name": "SLCO1B1",
+                    "genotype": genotype,
+                    "result_label": label,
+                    "risk_level": risk,
+                }
+            ],
+        )
+        return twin
+
+    def _slco1b1_alert(self, twin):
+        return next(
+            a for a in evaluate_safety(twin).alerts
+            if a.rule_id == "pgx.slco1b1_simvastatin"
+        )
+
+    def test_slco1b1_simvastatin_heterozygous_decreased(self):
+        """杂合 T/C（功能降低）→ OR≈1.8，剂量帽 ≤20mg/日 或换药都可。"""
+        a = self._slco1b1_alert(self._slco1b1_twin("CT", "decreased function"))
+        assert a.severity == Severity.HIGH
+        assert a.requires_medical_attention
+        # 表型化倍数，且不再出现旧的 "3-5"
+        assert "1.8" in a.message
+        assert "3-5" not in a.message and "3-5" not in a.action
+        # 杂合可走剂量帽
+        assert "≤20mg" in a.action
+
+    def test_slco1b1_simvastatin_homozygous_poor_no_dose_cap(self):
+        """纯合 C/C（功能差）→ OR≈2.8，CPIC 只换药，不给减量辛伐他汀的后路。"""
+        a = self._slco1b1_alert(self._slco1b1_twin("CC", "poor function"))
+        assert a.severity == Severity.HIGH
+        assert "2.8" in a.message
+        # 纯合不得把 "辛伐他汀 ≤20mg/日" 当安全选项
+        assert "≤20mg" not in a.action
+        assert "替代他汀" in a.action
+
+    def test_slco1b1_simvastatin_star_allele_homozygous_poor(self):
+        """星号等位基因 *5/*5 同样判为纯合 poor，不走剂量帽。"""
+        a = self._slco1b1_alert(self._slco1b1_twin("*5/*5", "功能降低"))
+        assert "2.8" in a.message
+        assert "≤20mg" not in a.action
+
+    def test_slco1b1_genotype_homozygous_overrides_label_decreased(self):
+        """脏数据对抗:label 只标「decreased function」但 genotype 是纯合 CC →
+        必须判 poor(纯合信号优先),绝不被 label 降级成 decreased 拿到 ≤20mg 逃生门。
+        回退到「label 词先判定」的旧逻辑会让这里误出 ≤20mg → 测试红(under-alarm 哨兵)。
+        """
+        a = self._slco1b1_alert(self._slco1b1_twin("CC", "decreased function"))
+        assert "2.8" in a.message
+        assert "≤20mg" not in a.action
+        assert "替代他汀" in a.action
+
+    def test_slco1b1_simvastatin_unknown_zygosity_clinician_determined(self):
+        """无法区分纯合/杂合（仅有变异命名）→ 不把 ≤20mg/日当自行可采用的安全选项。"""
+        a = self._slco1b1_alert(self._slco1b1_twin("c.521T>C", "功能降低"))
+        assert a.severity == Severity.HIGH
+        # 两档倍数都给出
+        assert "1.8" in a.message and "2.8" in a.message
+        # 措辞为「交医生判定」，并明确劝阻自行减量
+        assert "请勿自行" in a.action
+        assert "医生" in a.action
+        assert "3-5" not in a.message and "3-5" not in a.action
+
+    def test_slco1b1_no_simvastatin_no_alert(self):
+        """有 SLCO1B1 风险变异但未在服辛伐他汀 → 不触发。"""
+        twin = self._slco1b1_twin("CC", "poor function", drug="二甲双胍")
+        assert not any(
+            a.rule_id == "pgx.slco1b1_simvastatin"
+            for a in evaluate_safety(twin).alerts
+        )
 
     def test_pgx_no_variant_no_alert(self):
         """基因缺失时 PGx 规则不触发。"""
