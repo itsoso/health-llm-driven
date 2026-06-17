@@ -256,6 +256,12 @@ class GeneticContext(BaseModel):
     # 异步解析: PDF 上传后 1-3 分钟内 has_profile=True 但 total_variants 可能为 0
     # specialist 看到该字段时应回 "解析中, 稍后补充" 而不是 "用户没有基因数据"
     pending_profile_count: int = 0
+    # Phase 1 (基因解读): 每个 variant dict 由 builder._classify_genetic_variants
+    # 注入两维静态分级 (genetic_registry.classify_variant, 不靠 LLM):
+    #   "actionability"  ∈ {act, risk_stratify, de_emphasize}
+    #   "evidence_grade" ∈ {cpic_a, pharmgkb_1a, clinvar_path_confirm,
+    #                        clinvar_likely, gwas_association, proxy_uncertain}
+    # 这是给 dict 加键 (沿用 #205/#199 的加字段方式), 不改分区结构/数量。
     drug_sensitivity: List[Dict[str, Any]] = Field(default_factory=list)
     risk_variants: List[Dict[str, Any]] = Field(default_factory=list)
     protective_variants: List[Dict[str, Any]] = Field(default_factory=list)

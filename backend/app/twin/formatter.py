@@ -55,6 +55,93 @@ def _age_label(freshness_ts: Optional[str], stale_days: int = 7, dead_days: int 
     return f"({age // 365} 年前) ⚠⚠"
 
 
+# Human-readable evidence-grade labels for the gene block (compact, prompt-side).
+_EVIDENCE_GRADE_LABEL = {
+    "cpic_a": "CPIC-A",
+    "pharmgkb_1a": "PharmGKB-1A",
+    "clinvar_path_confirm": "ClinVar致病-需测序确认",
+    "clinvar_likely": "ClinVar likely",
+    "gwas_association": "GWAS弱关联",
+    "proxy_uncertain": "proxy不确定",
+}
+
+
+def _variant_label(v: dict) -> str:
+    name = str(v.get("gene_name") or "?")
+    detail = str(v.get("genotype") or v.get("result_label") or "").strip()
+    return f"{name} {detail}".strip()
+
+
+def _format_genetic_variants_blob(genetic, max_genes: int = 8) -> List[str]:
+    """Evidence-aware gene block (Phase 1 去噪).
+
+    Each variant is annotated with its static (actionability, evidence_grade)
+    injected by builder._classify_genetic_variants. Behaviour per design §3:
+      - act          → 前置/突出 (▲), 带证据级
+      - risk_stratify→ 居中, 带证据级
+      - de_emphasize → 强制前缀 "群体弱关联,个体无预测力,非诊断" (防弱模型当确定结论)
+      - proxy_uncertain → 追加 "阴性不代表无风险" 护栏
+
+    Falls back gracefully if classification keys are absent (treats as de_emphasize).
+    """
+    from app.services.genetic_registry import (
+        DE_EMPHASIZE_PREFIX,
+        PROXY_UNCERTAIN_SUFFIX,
+        classify_variant,
+    )
+
+    g = genetic
+    all_variants: List[dict] = []
+    for bucket in (
+        g.drug_sensitivity,
+        g.risk_variants,
+        g.protective_variants,
+        g.nutrition_variants,
+        g.recovery_variants,
+        g.exercise_variants,
+        g.cognition_variants,
+        g.personality_variants,
+        g.sleep_variants,
+    ):
+        for v in bucket:
+            if isinstance(v, dict):
+                all_variants.append(v)
+
+    act: List[str] = []
+    risk: List[str] = []
+    deemph: List[str] = []
+
+    for v in all_variants[: max_genes * 3]:
+        actionability = v.get("actionability")
+        grade = v.get("evidence_grade")
+        if not actionability or not grade:
+            # builder did not classify (e.g. partial twin) → derive on the fly.
+            key = v.get("rsid") or v.get("gene_name") or ""
+            actionability, grade = classify_variant(str(key))
+
+        grade_label = _EVIDENCE_GRADE_LABEL.get(grade, grade)
+        label = _variant_label(v)
+        proxy = PROXY_UNCERTAIN_SUFFIX if grade == "proxy_uncertain" else ""
+
+        if actionability == "act":
+            act.append(f"▲ {label} ({grade_label}){proxy}")
+        elif actionability == "risk_stratify":
+            risk.append(f"{label} ({grade_label}){proxy}")
+        else:  # de_emphasize
+            deemph.append(f"{label} ({grade_label}){proxy}")
+
+    out: List[str] = []
+    if act:
+        out.append("基因(行动级 ACT,出示给医生/需确认): " + "; ".join(act[:max_genes]))
+    if risk:
+        out.append("基因(背景调阈值 RISK-STRATIFY): " + "; ".join(risk[:max_genes]))
+    if deemph:
+        out.append(
+            f"基因({DE_EMPHASIZE_PREFIX}): " + "; ".join(deemph[:max_genes])
+        )
+    return out
+
+
 def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int = 8) -> str:
     """
     把 Twin 格式化为一段紧凑文本，适合塞进 LLM prompt。
@@ -252,19 +339,8 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         if config_parts:
             lines.append("基因参数: " + ", ".join(config_parts))
     elif twin.genetic.has_profile and twin.genetic.total_variants > 0:
-        # 回退：无 GeneConfig 时仍输出原始变异
-        g = twin.genetic
-        gene_lines: List[str] = []
-        for v in g.drug_sensitivity[:max_genes]:
-            gene_lines.append(f"{v.get('gene_name','?')} {v.get('genotype','')}".strip())
-        if gene_lines:
-            lines.append(f"药物基因: {', '.join(gene_lines)}")
-        risk_lines = [
-            f"{v.get('gene_name','?')} {v.get('result_label','')}".strip()
-            for v in g.risk_variants[:5]
-        ]
-        if risk_lines:
-            lines.append(f"基因风险: {', '.join(risk_lines)}")
+        # 回退：无 GeneConfig 时仍输出原始变异 (Phase 1: evidence-aware 去噪渲染)
+        lines.extend(_format_genetic_variants_blob(twin.genetic, max_genes=max_genes))
 
     # 解析中提示: PDF 上传后 LLM 应回 "解析中, 稍后补充" 而不是 "无数据"
     if twin.genetic.pending_profile_count > 0:
