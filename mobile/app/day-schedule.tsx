@@ -13,6 +13,10 @@ import {
   getTodaySchedule, getWorkHours, updateWorkHours,
   type TodaySchedule, type WorkHours, type ScheduleItem,
 } from '../services/schedule';
+import { logMedication } from '../services/medications';
+
+// 时间轴上可「已服」打卡的域(写依从,走 DB 兜底的 /medication/logs 幂等路径)。
+const CONFIRMABLE = new Set(['medication', 'supplement']);
 
 const DOMAIN_LABEL: Record<string, string> = {
   medication: '药', supplement: '补剂', diet: '饮食',
@@ -48,6 +52,23 @@ export default function DayScheduleScreen() {
       qc.invalidateQueries({ queryKey: ['schedule', 'today'] });
     },
   });
+
+  // 已服打卡:点时间轴上的药/补剂项 → 在其计划时点记一笔已服(幂等,DB 兜底)。
+  const [done, setDone] = useState<Set<string>>(new Set());
+  const [pending, setPending] = useState<string | null>(null);
+  const confirmTaken = async (it: ScheduleItem) => {
+    const mid = Number(it.id.split(':')[1]);
+    if (!mid || done.has(it.id) || pending) return;
+    setPending(it.id);
+    try {
+      await logMedication({ medication_id: mid, taken_time: it.time, status: 'taken' });
+      setDone((p) => new Set(p).add(it.id));
+    } catch {
+      // 写依从失败 → 不标已服(不假装成功);用户可重试
+    } finally {
+      setPending(null);
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.paper }} edges={['top']}>
@@ -104,8 +125,34 @@ export default function DayScheduleScreen() {
                   {it.time}
                 </Text>
                 <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: DOMAIN_COLOR[it.domain] ?? C.ink3 }} />
-                <Text style={{ flex: 1, fontSize: 14, color: C.ink1 }} numberOfLines={1}>{it.title}</Text>
-                <Text style={{ fontSize: 11, color: C.ink2 }}>{DOMAIN_LABEL[it.domain] ?? it.domain}</Text>
+                <Text
+                  style={{ flex: 1, fontSize: 14, color: done.has(it.id) ? C.ink3 : C.ink1,
+                           textDecorationLine: done.has(it.id) ? 'line-through' : 'none' }}
+                  numberOfLines={1}
+                >
+                  {it.title}
+                </Text>
+                {CONFIRMABLE.has(it.domain) ? (
+                  done.has(it.id) ? (
+                    <Text style={{ fontSize: 13, color: C.green500, fontWeight: '700' }}>✓ 已服</Text>
+                  ) : (
+                    <Pressable
+                      onPress={() => confirmTaken(it)}
+                      disabled={pending === it.id}
+                      hitSlop={8}
+                      style={({ pressed }) => [{
+                        borderWidth: 1, borderColor: C.green500, borderRadius: 8,
+                        paddingHorizontal: 10, paddingVertical: 5, opacity: pressed || pending === it.id ? 0.6 : 1,
+                      }]}
+                    >
+                      <Text style={{ fontSize: 12.5, color: C.green500, fontWeight: '600' }}>
+                        {pending === it.id ? '…' : '已服'}
+                      </Text>
+                    </Pressable>
+                  )
+                ) : (
+                  <Text style={{ fontSize: 11, color: C.ink2 }}>{DOMAIN_LABEL[it.domain] ?? it.domain}</Text>
+                )}
               </View>
             ))}
           </View>
