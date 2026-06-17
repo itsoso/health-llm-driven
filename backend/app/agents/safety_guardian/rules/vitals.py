@@ -158,44 +158,116 @@ def rhr_bradycardia(twin: HealthTwin) -> Optional[Alert]:
 # ─────────────────────────── SpO2 ──────────────────────────────────────
 
 
+# 夜间低氧"持续负荷"佐证阈值 —— 单点最低值必须有这两个之一支撑才算真低氧。
+# ODI(氧减指数,每小时 desaturation 次数)轻度 OSA 的临床门槛约 5；
+# below_90% 整夜低于 90% 的时长占比,>=1% 已属可量化负荷。
+_SPO2_ODI_BURDEN = 5.0
+_SPO2_BELOW90_BURDEN = 1.0
+
+
 @register
 def spo2_min_nocturnal_severe(twin: HealthTwin) -> Optional[Alert]:
     """夜间最低 SpO2 < 88% — 比 avg 更能揭示 OSA/严重低氧发作。
 
-    临床上 avg 可能正常但 min 偏低（部分呼吸暂停/REM 期低氧），
-    靠 avg 规则漏过。此规则专看夜间瞬时最低。
+    临床上 avg 可能正常但 min 偏低（部分呼吸暂停/REM 期低氧），靠 avg 规则漏过。
+
+    但"整夜单点最低值"是消费级光电传感器里最易被运动伪影污染的量(抬手/戒指松动
+    一瞬即可掉到 80 多)。因此 CRITICAL/HIGH 只在有"持续负荷"佐证(ODI / below_90%)
+    时才拉;否则降级为 INFO 提示,避免伪影喊狼。决策见 2026-06-17 用户裁决:
+    - 有逐秒佐证且 ODI/below90% 都可忽略 → 判伪影,降级 INFO。
+    - 无逐秒佐证(多设备用户逐秒 SpO2 没进 SpO2Sample,只有日聚合 min)→ 不拉
+      CRITICAL,降级 INFO 提示"可疑低值,建议补逐秒血氧/复测"。
+    - 持续指标在且升高(ODI>=5 或 below90>=1%)→ 保持 CRITICAL/HIGH,真 OSA 不放过。
+    取舍权衡(under-alarm 风险):逐秒数据缺失时持续低氧会被压成 INFO —— 这是用户
+    在"自己腕式/戒指血氧实测可信、单点 min 反复伪报"前提下的明确选择;告警仍产出
+    (不静默丢弃),只是不再以单点伪影制造 CRITICAL。
     """
     min_spo2 = twin.physiological.spo2_min_overnight
     if min_spo2 is None:
         return None
 
     if min_spo2 < 80:
-        severity = Severity.CRITICAL
+        base_severity = Severity.CRITICAL
         tier = "严重低氧（<80%）"
     elif min_spo2 < 85:
-        severity = Severity.CRITICAL
+        base_severity = Severity.CRITICAL
         tier = "明显低氧（<85%）"
     elif min_spo2 < 88:
-        severity = Severity.HIGH
+        base_severity = Severity.HIGH
         tier = "低氧关注（<88%）"
     else:
         return None
 
+    odi = twin.physiological.spo2_odi
+    below90 = twin.physiological.spo2_below_90_pct
+    has_corroboration = odi is not None or below90 is not None
+    sustained_burden = (odi is not None and odi >= _SPO2_ODI_BURDEN) or (
+        below90 is not None and below90 >= _SPO2_BELOW90_BURDEN
+    )
+
+    data_citation = {"spo2_min_overnight": min_spo2}
+    if odi is not None:
+        data_citation["spo2_odi"] = odi
+    if below90 is not None:
+        data_citation["spo2_below_90_pct"] = below90
+
+    if sustained_burden:
+        # 持续低氧负荷被佐证 —— 真信号,保持原严重度。
+        burden_bits = []
+        if odi is not None:
+            burden_bits.append(f"ODI {odi}/h")
+        if below90 is not None:
+            burden_bits.append(f"低于90%时长 {below90}%")
+        burden_txt = "，".join(burden_bits)
+        return Alert(
+            rule_id="vitals.spo2_min_nocturnal_severe",
+            category="vitals",
+            severity=base_severity,
+            title="夜间血氧过低",
+            message=(
+                f"昨夜最低 SpO2 {min_spo2}% — {tier}；整夜氧减负荷异常（{burden_txt}）。"
+                "持续夜间低氧与心血管事件、认知下降、代谢紊乱相关，常见于阻塞性睡眠呼吸暂停。"
+            ),
+            action=(
+                "1-2 周内就诊呼吸/睡眠中心，做多导睡眠图（PSG）或家用监测；"
+                "过渡期生活方式调整：侧卧、抬高床头 30°、避免饮酒、避免睡前服用镇静类药物；"
+                "是否需要药物或器械治疗请由就诊医生评估决定。"
+            ),
+            data_citation=data_citation,
+            requires_medical_attention=base_severity == Severity.CRITICAL,
+        )
+
+    if has_corroboration:
+        # 有逐秒数据,但整夜负荷可忽略 → 单点 dip 判为传感器伪影,降级 INFO。
+        return Alert(
+            rule_id="vitals.spo2_min_nocturnal_severe",
+            category="vitals",
+            severity=Severity.INFO,
+            title="夜间血氧单点偏低（疑似伪影）",
+            message=(
+                f"昨夜出现单点最低 SpO2 {min_spo2}%，但整夜氧减负荷正常"
+                f"（ODI {odi if odi is not None else '—'}/h，低于90%时长 "
+                f"{below90 if below90 is not None else '—'}%），"
+                "符合运动/佩戴伪影特征，非持续性低氧。"
+            ),
+            action="如近期有打鼾加重、晨起头痛或白天嗜睡，再就诊评估；否则无需处理。",
+            data_citation=data_citation,
+            requires_medical_attention=False,
+        )
+
+    # 无逐秒佐证(只有日聚合 min,逐秒 SpO2 未进库)→ 不拉 CRITICAL,降级 INFO 提示复测。
     return Alert(
         rule_id="vitals.spo2_min_nocturnal_severe",
         category="vitals",
-        severity=severity,
-        title="夜间血氧过低",
+        severity=Severity.INFO,
+        title="夜间血氧单点偏低（待确认）",
         message=(
-            f"昨夜最低 SpO2 {min_spo2}% — {tier}。"
-            "持续夜间低氧与心血管事件、认知下降、代谢紊乱相关，常见于阻塞性睡眠呼吸暂停。"
+            f"昨夜单点最低 SpO2 {min_spo2}%，但缺逐秒夜间血氧，无法确认是持续低氧还是"
+            "传感器伪影。消费级腕式/戒指血氧单点最低值易受运动与佩戴影响。"
         ),
-        action=(
-            "1-2 周内就诊呼吸/睡眠中心，做多导睡眠图（PSG）或家用监测；"
-            "过渡期：侧卧、抬高床头 30°、睡前使用异丙托溴铵（遵医嘱）、避免饮酒。"
-        ),
-        data_citation={"spo2_min_overnight": min_spo2},
-        requires_medical_attention=severity == Severity.CRITICAL,
+        action="若关注睡眠呼吸,补充逐秒血氧监测(戒指/手表整夜记录)或家用睡眠监测复测后再判读。",
+        data_citation=data_citation,
+        requires_medical_attention=False,
     )
 
 

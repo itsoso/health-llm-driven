@@ -180,9 +180,11 @@ class TestVitalsRules:
         assert "vitals.spo2_severe_hypoxia" in rule_ids
 
     def test_spo2_min_nocturnal_severe_critical(self):
-        """min < 80% → CRITICAL，独立于 avg。"""
+        """min < 80% + 持续负荷佐证 (ODI/below90) → CRITICAL，独立于 avg。"""
         twin = _empty_twin()
-        twin.physiological = PhysiologicalState(spo2_avg=92.0, spo2_min_overnight=74)
+        twin.physiological = PhysiologicalState(
+            spo2_avg=92.0, spo2_min_overnight=74, spo2_odi=12.0, spo2_below_90_pct=6.0
+        )
         alerts = evaluate_safety(twin).alerts
         found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
         assert found is not None
@@ -190,13 +192,81 @@ class TestVitalsRules:
         assert found.requires_medical_attention is True
 
     def test_spo2_min_nocturnal_high(self):
-        """85 <= min < 88 → HIGH。"""
+        """85 <= min < 88 + 持续负荷佐证 → HIGH。"""
         twin = _empty_twin()
-        twin.physiological = PhysiologicalState(spo2_avg=94.0, spo2_min_overnight=86)
+        twin.physiological = PhysiologicalState(
+            spo2_avg=94.0, spo2_min_overnight=86, spo2_odi=7.0
+        )
         alerts = evaluate_safety(twin).alerts
         found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
         assert found is not None
         assert found.severity == Severity.HIGH
+
+    def test_spo2_min_low_no_corroboration_downgrades_to_info(self):
+        """单点低值但无逐秒佐证 (ODI/below90 全 None) → 不拉 CRITICAL,降级 INFO。
+
+        对抗用例:回退到旧版"只看 spo2_min_overnight"会让这里仍判 CRITICAL → 红。
+        复现锚点用户 Apple Watch/RingConn 96% 但日聚合 min 伪低触发的误报场景。
+        """
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=96.0, spo2_min_overnight=74)
+        alerts = evaluate_safety(twin).alerts
+        found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.INFO
+        assert found.requires_medical_attention is False
+
+    def test_spo2_min_low_corroborated_benign_is_artifact_info(self):
+        """单点低值 + 逐秒佐证显示整夜负荷可忽略 (ODI<5 且 below90<1%) → 判伪影,INFO。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            spo2_avg=96.0, spo2_min_overnight=82, spo2_odi=1.0, spo2_below_90_pct=0.2
+        )
+        alerts = evaluate_safety(twin).alerts
+        found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.INFO
+        assert found.requires_medical_attention is False
+
+    def test_spo2_min_low_corroborated_burden_below90_keeps_critical(self):
+        """below90% 单独达标 (>=1%) 也算持续负荷 → 保持 CRITICAL。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            spo2_avg=91.0, spo2_min_overnight=78, spo2_below_90_pct=3.5
+        )
+        alerts = evaluate_safety(twin).alerts
+        found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.CRITICAL
+
+    def test_spo2_min_odi_exactly_threshold_keeps_severity(self):
+        """边界:ODI 恰好 == 5.0 应算持续负荷(>=),钉住 `>` 误改会静默放过真 OSA。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=92.0, spo2_min_overnight=86, spo2_odi=5.0)
+        found = next((a for a in evaluate_safety(twin).alerts
+                      if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.HIGH
+
+    def test_spo2_min_below90_exactly_threshold_keeps_severity(self):
+        """边界:below_90_pct 恰好 == 1.0 应算持续负荷(>=)。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            spo2_avg=90.0, spo2_min_overnight=78, spo2_below_90_pct=1.0
+        )
+        found = next((a for a in evaluate_safety(twin).alerts
+                      if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.CRITICAL
+
+    def test_spo2_min_exactly_88_no_alert(self):
+        """边界:min 恰好 == 88 是 tier 下沿,`< 88` 应不触发任何分支。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(
+            spo2_avg=95.0, spo2_min_overnight=88, spo2_odi=20.0, spo2_below_90_pct=10.0
+        )
+        rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "vitals.spo2_min_nocturnal_severe" not in rule_ids
 
     def test_spo2_min_above_threshold_no_alert(self):
         twin = _empty_twin()
