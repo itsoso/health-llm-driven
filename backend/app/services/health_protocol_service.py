@@ -252,6 +252,48 @@ def complete_protocol(
     return ev
 
 
+def auto_observe_protocol(
+    db: Session, protocol_id: int, user_id: int,
+    value: Optional[Dict[str, Any]] = None,
+    day: Optional[date] = None,
+    commit: bool = True,
+) -> Optional[HealthProtocolEvent]:
+    """被动设备/可穿戴自动观测到协议完成。
+
+    与用户一键完成不同,这里保留 status=auto_observed,让后续统计能区分
+    "用户显式确认" 与 "设备自动观测"。只在 pending/空事件上写入;用户已跳过时
+    不用低摩擦自动化覆盖手动决定,避免误识别造成假完成。
+    """
+    p = get_protocol(db, protocol_id, user_id)
+    if not p or p.status != "active":
+        return None
+    day = day or date.today()
+    ev = _claim_today_event(db, protocol_id, user_id, day)
+
+    if ev.status in ("completed", "auto_observed"):
+        if commit:
+            db.commit()
+            db.refresh(ev)
+        return ev
+    if ev.status == "skipped":
+        if commit:
+            db.commit()
+            db.refresh(ev)
+        return None
+
+    ev.status = "auto_observed"
+    ev.track = "protocol"
+    ev.skip_reason = None
+    ev.value = value or None
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(ev)
+
+    logger.info(f"[Protocol] 自动观测: user={user_id} protocol={protocol_id} value={ev.value}")
+    return ev
+
+
 def _write_domain_record(
     db: Session, user_id: int, p: HealthProtocol, track: str,
     value: Optional[Dict[str, Any]], day: date,
@@ -291,7 +333,8 @@ def _write_domain_record(
             carbs=m.get("carbs"), fat=m.get("fat"), fiber=m.get("fiber"),
             notes="via protocol",
         )
-        db.add(rec); db.flush()
+        db.add(rec)
+        db.flush()
         return rec.id
     if p.source_model == "supplement_records":
         # 补剂依从:一键已吃 → 落 SupplementRecord(taken=True, taken_time≈now)。
@@ -303,7 +346,8 @@ def _write_domain_record(
             user_id=user_id, supplement_id=p.source_id, record_date=day,
             taken=True, taken_time=datetime.now().time(), notes="via protocol",
         )
-        db.add(rec); db.flush()
+        db.add(rec)
+        db.flush()
         return rec.id
     if p.source_model == "water_records":
         # 协议轨:implied_quantity 的容量为底(一键=喝完整杯);手工轨:value 覆盖实际量。
@@ -317,7 +361,8 @@ def _write_domain_record(
             amount_ml=int(round(float(amount))),
             drink_type="水", notes="via protocol",
         )
-        db.add(rec); db.flush()
+        db.add(rec)
+        db.flush()
         return rec.id
     return None
 

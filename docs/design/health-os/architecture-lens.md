@@ -47,7 +47,7 @@ Codex 的手表后端**质量高、可信**:① 正确规避 `build_twin`(用极
 ## 下一刀(按本透镜的「唯一真缺」)
 
 1. **Write 层 syscall(最高战略,= Enter 键)**:Agent 提出写意图(先「自动加日历/复查提醒」)→ 落「写意图账本」待一键确认 → 跑稳后按权限层(R16 CI 收敛)逐类升级到自治。安全带(SafetyGuardian)是速度上限。
-2. **被动采集闭环**:运动自动检测 → 议程自动打勾(`HealthEvent.confidence + auto_confirm_threshold=0.8` 已存在),把"被动>主动"铁律落满。
+2. **被动采集闭环(已落地 v0)**:高置信度 `HealthEvent` 可通过 `EventSource.config.health_protocol_id` 或唯一被动协议匹配 → 写 `HealthProtocolEvent.status=auto_observed` → Watch 待办自动消失、Timeline 完成数计入;低置信度与跨用户协议不自动闭环。
 3. **手表表面收尾**(Codex 在推):R18★2 nudge 屏 + Smart Stack 卡 + Double-Tap 单手确认。
 4. **freshness 上腕**:watch_summary 标注数据新鲜度(同首页就绪分守卫),昨晚没同步腕上也显示「待同步」而非旧值。
 

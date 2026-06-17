@@ -3,9 +3,10 @@ import logging
 from datetime import datetime, date, timezone
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func as sa_func
+from sqlalchemy import desc, func as sa_func, or_
 
 from app.models.health_event import HealthEvent, EventSource, EventStatus
+from app.models.health_protocol import HealthProtocol
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import WaterIntake
@@ -20,6 +21,18 @@ RECORD_TYPE_MAP = {
     "water": "water_intakes",
     "excretion": "excretion_records",
 }
+
+# 可由可穿戴/设备自动闭环的事件类型 → 协议域。只用于唯一匹配的被动协议;
+# 明确 EventSource.config.health_protocol_id 时优先走配置。
+EVENT_PROTOCOL_DOMAINS = {
+    "exercise": ("training", "activity"),
+    "workout": ("training", "activity"),
+    "activity": ("activity", "training"),
+    "sleep": ("sleep",),
+    "water": ("hydration",),
+}
+
+PROTOCOL_ID_KEYS = ("health_protocol_id", "protocol_id", "auto_observe_protocol_id")
 
 
 class HealthEventService:
@@ -43,6 +56,7 @@ class HealthEventService:
 
         # 2. 查找对应的 EventSource 配置
         auto_threshold = 0.8
+        event_source = None
         if source_device_id:
             event_source = self.db.query(EventSource).filter(
                 EventSource.device_id == source_device_id,
@@ -82,6 +96,7 @@ class HealthEventService:
         # 5. 自动确认 → 立刻写入目标表
         if status == EventStatus.auto_confirmed:
             self._write_to_target(event)
+            self._auto_observe_protocol(event, event_source, auto_threshold)
 
         self.db.commit()
         self.db.refresh(event)
@@ -365,6 +380,121 @@ class HealthEventService:
                             f"as record {record.id}")
         except Exception as e:
             logger.error(f"Failed to write event {event.id} to target: {e}")
+
+    def _auto_observe_protocol(
+        self,
+        event: HealthEvent,
+        event_source: Optional[EventSource],
+        auto_threshold: float,
+    ) -> None:
+        """高置信度设备事件 → 协议 auto_observed。
+
+        这是被动采集闭环:Apple Watch/Garmin/Ring 等事件已被自动确认后,若能
+        明确映射到某个健康协议,则关闭今日待办。映射优先级:
+        1. EventSource.config / raw_data / ai_inference 中显式 protocol id
+        2. event_type 唯一匹配一个 active + passive_device/auto_observed 协议
+        """
+        protocol_id = self._extract_protocol_id(event, event_source)
+        if protocol_id is None:
+            protocol_id = self._single_due_passive_protocol_id(event)
+        if protocol_id is None:
+            return
+
+        from app.services import health_protocol_service as protocol_service
+
+        value = {
+            "observed_from": "health_event",
+            "health_event_id": event.id,
+            "event_type": event.event_type,
+            "source": event.source,
+            "source_device_id": event.source_device_id,
+            "confidence": event.confidence,
+            "auto_confirm_threshold": auto_threshold,
+            "observed_at": event.event_time.isoformat() if event.event_time else None,
+        }
+        observed = protocol_service.auto_observe_protocol(
+            self.db,
+            protocol_id,
+            event.user_id,
+            value=value,
+            day=(event.event_time or datetime.now(timezone.utc)).date(),
+            commit=False,
+        )
+        if observed is None or observed.status != "auto_observed":
+            return
+
+        self.db.flush()
+        if event.target_record_type is None:
+            event.target_record_type = "health_protocol_events"
+            event.target_record_id = observed.id
+        logger.info(
+            "Event %s auto-observed protocol %s as health_protocol_event %s",
+            event.id,
+            protocol_id,
+            observed.id,
+        )
+
+    def _extract_protocol_id(
+        self,
+        event: HealthEvent,
+        event_source: Optional[EventSource],
+    ) -> Optional[int]:
+        """从配置/事件数据中提取显式协议 ID。无效值按无配置处理。"""
+        for payload in (
+            event_source.config if event_source else None,
+            event.raw_data,
+            event.ai_inference,
+        ):
+            protocol_id = self._protocol_id_from_mapping(payload)
+            if protocol_id is not None:
+                return protocol_id
+        return None
+
+    def _protocol_id_from_mapping(self, payload: Optional[dict]) -> Optional[int]:
+        if not isinstance(payload, dict):
+            return None
+        for key in PROTOCOL_ID_KEYS:
+            value = payload.get(key)
+            if value is None:
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                logger.warning("Invalid health protocol id in health event payload: %s=%r", key, value)
+                return None
+        nested = payload.get("health_protocol")
+        if isinstance(nested, dict):
+            try:
+                return int(nested["id"])
+            except (KeyError, TypeError, ValueError):
+                return None
+        return None
+
+    def _single_due_passive_protocol_id(self, event: HealthEvent) -> Optional[int]:
+        """无显式绑定时,仅在唯一匹配时自动闭环,避免把运动误打到多个协议。"""
+        domains = EVENT_PROTOCOL_DOMAINS.get(event.event_type)
+        if not domains:
+            return None
+
+        from app.services import health_protocol_service as protocol_service
+
+        today = (event.event_time or datetime.now(timezone.utc)).date()
+        candidates = self.db.query(HealthProtocol).filter(
+            HealthProtocol.user_id == event.user_id,
+            HealthProtocol.status == "active",
+            HealthProtocol.domain.in_(domains),
+            or_(
+                HealthProtocol.mechanism == "passive_device",
+                HealthProtocol.completion_mode.in_(("auto_observed", "device_synced")),
+            ),
+        ).all()
+        due = [
+            p for p in candidates
+            if protocol_service._is_due_today(self.db, p, event.user_id, today)  # noqa: SLF001
+        ]
+        if len(due) != 1:
+            return None
+        return due[0].id
 
     def _write_weight(self, user_id: int, data: dict) -> WeightRecord:
         record_date = date.fromisoformat(data.get("record_date", date.today().isoformat()))

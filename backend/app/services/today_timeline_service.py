@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -246,10 +246,12 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     agenda_items = agenda.get("items", [])
     items: List[Dict[str, Any]] = [_map_agenda_item(it) for it in agenda_items]
 
-    # past.completed_count 口径:今日 agenda 里已完成的协议数(status=='completed')。
-    # 用 agenda 而非 build_timeline,因为 agenda 直接反映"今天该做且已完成"的协议状态,
+    # past.completed_count 口径:今日 agenda 里已完成/已自动观测的协议数。
+    # 用 agenda 而非 build_timeline,因为 agenda 直接反映"今天该做且已闭环"的协议状态,
     # build_timeline 的事件不区分完成与否。
-    completed_count = sum(1 for it in agenda_items if it.get("status") == "completed")
+    completed_count = sum(
+        1 for it in agenda_items if it.get("status") in ("completed", "auto_observed")
+    )
 
     # 2) 结果归因项(best-effort 增强)
     items.extend(_outcome_items(db, user_id))

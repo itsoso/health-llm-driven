@@ -92,6 +92,33 @@ def test_due_protocol_and_today_workout(client, db, auth_user_and_headers):
     assert any(o["kind"] == "observation" and o["id"].startswith("workout_") for o in obs)
 
 
+def test_auto_observed_protocol_counts_as_completed_not_actionable(client, db, auth_user_and_headers):
+    """可穿戴自动观测完成应计入今日完成数,但不再是可点击待办。"""
+    from app.services import health_protocol_service as proto_svc
+
+    user, h = auth_user_and_headers
+    protocol_id = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "training",
+        "name": "到公司后俯卧撑 20 个",
+        "mechanism": "passive_device",
+        "completion_mode": "auto_observed",
+    }).json()["id"]
+
+    proto_svc.auto_observe_protocol(
+        db,
+        protocol_id,
+        user.id,
+        value={"observed_from": "test"},
+    )
+
+    spine = build_today_spine(db, user.id)
+    row = next(it for it in spine["items"] if it["complete_ref"]
+               and it["complete_ref"]["object_id"] == protocol_id)
+    assert row["status"] == "auto_observed"
+    assert row["can_complete"] is False
+    assert spine["past"]["completed_count"] == 1
+
+
 def test_outcome_best_effort_no_graded_card(db, auth_user_and_headers):
     """无 graded ActionCard 时:不报错,且无 outcome item / proof 不出现。"""
     user, _ = auth_user_and_headers
