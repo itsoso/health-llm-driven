@@ -3,25 +3,61 @@ import SwiftUI
 import WatchKit
 #endif
 
+private enum QuickRecordDialFocus: Hashable {
+    case water
+    case pushups
+    case run
+}
+
 /// 打点屏(Reva 深色面):圆角 tile 按钮一键记录(喝水/运动/语音记餐)。
 /// 校验走 WatchCompanionCore.QuickRecord;成功显绿、失败显 store.lastError(fail loud)。
 struct QuickRecordView: View {
     @ObservedObject var store: WatchStore
+    @State private var waterAmountML = QuickRecordDials.waterML.defaultValue
+    @State private var pushupReps = QuickRecordDials.pushupReps.defaultValue
+    @State private var runDurationMin = QuickRecordDials.runDurationMin.defaultValue
+    @FocusState private var focusedDial: QuickRecordDialFocus?
 
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    waterTile(250)
-                    waterTile(500)
+                adjustableRecordTile(
+                    icon: "drop.fill",
+                    title: "喝水",
+                    value: "\(QuickRecordDials.waterML.intValue(waterAmountML))",
+                    unit: "ml",
+                    amount: $waterAmountML,
+                    spec: QuickRecordDials.waterML,
+                    focus: .water
+                ) {
+                    let ml = QuickRecordDials.waterML.intValue(waterAmountML)
+                    Task { await store.submit { try QuickRecord.water(amountML: ml) } }
                 }
 
-                tile(icon: "figure.strengthtraining.traditional", label: "俯卧撑 +20") {
-                    Task { await store.submit { try QuickRecord.exercise(type: "俯卧撑", reps: 20) } }
+                adjustableRecordTile(
+                    icon: "figure.strengthtraining.traditional",
+                    title: "俯卧撑",
+                    value: "\(QuickRecordDials.pushupReps.intValue(pushupReps))",
+                    unit: "次",
+                    amount: $pushupReps,
+                    spec: QuickRecordDials.pushupReps,
+                    focus: .pushups
+                ) {
+                    let reps = QuickRecordDials.pushupReps.intValue(pushupReps)
+                    Task { await store.submit { try QuickRecord.exercise(type: "俯卧撑", reps: reps) } }
                 }
 
-                tile(icon: "figure.run", label: "跑步 30 分钟") {
-                    Task { await store.submit { try QuickRecord.exercise(type: "跑步", durationMin: 30) } }
+                adjustableRecordTile(
+                    icon: "figure.run",
+                    title: "跑步",
+                    value: "\(QuickRecordDials.runDurationMin.intValue(runDurationMin))",
+                    unit: "分钟",
+                    amount: $runDurationMin,
+                    spec: QuickRecordDials.runDurationMin,
+                    focus: .run
+                ) {
+                    let minutes = QuickRecordDials.runDurationMin.snapped(runDurationMin)
+                    Task { await store.submit { try QuickRecord.exercise(type: "跑步", durationMin: minutes) } }
                 }
 
                 tile(icon: "mic.fill", label: "语音记一餐") {
@@ -82,30 +118,6 @@ struct QuickRecordView: View {
 
     // MARK: - Tiles
 
-    private func waterTile(_ ml: Int) -> some View {
-        Button {
-            Task { await store.submit { try QuickRecord.water(amountML: ml) } }
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "drop.fill")
-                    .font(.title3)
-                    .foregroundStyle(RevaWatch.greenBright)
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text("\(ml)")
-                        .font(RevaWatch.monoNumber(16, weight: .semibold))
-                        .foregroundStyle(RevaWatch.ink1)
-                    Text("ml")
-                        .font(.caption2)
-                        .foregroundStyle(RevaWatch.ink2)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(tileBackground)
-        }
-        .buttonStyle(.plain)
-    }
-
     private func tile(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -122,6 +134,109 @@ struct QuickRecordView: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .background(tileBackground)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func adjustableRecordTile(
+        icon: String,
+        title: String,
+        value: String,
+        unit: String,
+        amount: Binding<Double>,
+        spec: QuickRecordDialSpec,
+        focus: QuickRecordDialFocus,
+        action: @escaping () -> Void
+    ) -> some View {
+        let isFocused = focusedDial == focus
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: icon)
+                    .font(.body)
+                    .foregroundStyle(RevaWatch.greenBright)
+                    .frame(width: 22)
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(RevaWatch.ink1)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(value)
+                        .font(RevaWatch.monoNumber(17, weight: .semibold))
+                        .foregroundStyle(RevaWatch.greenBright)
+                    Text(unit)
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                }
+            }
+
+            HStack(spacing: 8) {
+                dialAdjustButton(systemImage: "minus.circle", focus: focus) {
+                    amount.wrappedValue = spec.snapped(amount.wrappedValue - spec.step)
+                }
+                Button {
+                    focusedDial = focus
+                    amount.wrappedValue = spec.snapped(amount.wrappedValue)
+                    action()
+                } label: {
+                    Label("记录", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(RevaWatch.greenBright)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: RevaWatch.radiusRow, style: .continuous)
+                                .fill(RevaWatch.focusBg)
+                        )
+                }
+                .buttonStyle(.plain)
+                dialAdjustButton(systemImage: "plus.circle", focus: focus) {
+                    amount.wrappedValue = spec.snapped(amount.wrappedValue + spec.step)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                .fill(RevaWatch.focusBg2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                .stroke(isFocused ? RevaWatch.greenBright.opacity(0.75) : RevaWatch.focusLine, lineWidth: 1)
+        )
+        .focusable(true)
+        .focused($focusedDial, equals: focus)
+        .digitalCrownRotation(
+            amount,
+            from: spec.lowerBound,
+            through: spec.upperBound,
+            by: spec.step,
+            sensitivity: .medium,
+            isContinuous: false,
+            isHapticFeedbackEnabled: true
+        )
+    }
+
+    private func dialAdjustButton(
+        systemImage: String,
+        focus: QuickRecordDialFocus,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            focusedDial = focus
+            action()
+        } label: {
+            Image(systemName: systemImage)
+                .font(.caption)
+                .foregroundStyle(RevaWatch.ink2)
+                .frame(width: 32, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: RevaWatch.radiusRow, style: .continuous)
+                        .fill(RevaWatch.focusBg)
+                )
         }
         .buttonStyle(.plain)
     }
