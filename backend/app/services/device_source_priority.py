@@ -29,6 +29,9 @@ from typing import Any, Dict, List, Optional, Sequence
 _RING_FIRST = ["ringconn", "garmin", "apple-watch", "oura", "withings-app", "unknown"]
 _WATCH_FIRST = ["apple-watch", "garmin", "ringconn", "oura", "withings-app", "unknown"]
 _GARMIN_FIRST = ["garmin", "apple-watch", "ringconn", "oura", "withings-app", "unknown"]
+# 静息心率:锚点用户实测采纳 Apple Watch + RingConn(光电稳),Garmin 退作 fallback。
+# 不像血氧那样整源剔除 Garmin —— 只同步 Garmin 的日子仍能拿到 resting HR,不丢值。
+_WATCH_RING_FIRST = ["apple-watch", "ringconn", "garmin", "oura", "withings-app", "unknown"]
 
 # 不在 METRIC_SOURCE_PRIORITY 里的指标用这个 (garmin 优先 → 旧单源用户行为不变).
 DEFAULT_PRIORITY: List[str] = ["garmin", "apple-watch", "ringconn", "oura", "withings-app", "unknown"]
@@ -94,8 +97,9 @@ METRIC_SOURCE_PRIORITY: Dict[str, List[str]] = {
     "avg_heart_rate": _WATCH_FIRST,
     "max_heart_rate": _WATCH_FIRST,
     "min_heart_rate": _WATCH_FIRST,
+    # ── 静息心率 → Apple Watch + RingConn 优先(用户指定),Garmin fallback ──
+    "resting_heart_rate": _WATCH_RING_FIRST,
     # ── Garmin 专有算法 → Garmin 优先 ──
-    "resting_heart_rate": _GARMIN_FIRST,
     "body_battery_charged": _GARMIN_FIRST,
     "body_battery_drained": _GARMIN_FIRST,
     "body_battery_most_charged": _GARMIN_FIRST,

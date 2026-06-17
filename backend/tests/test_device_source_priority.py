@@ -30,9 +30,14 @@ def test_activity_metrics_prefer_watch():
 
 
 def test_garmin_proprietary_prefer_garmin():
-    for metric in ("resting_heart_rate", "body_battery_current", "stress_level",
+    for metric in ("body_battery_current", "stress_level",
                    "training_readiness_score", "training_status", "vo2max_running", "load_ratio"):
         assert priority_for(metric)[0] == "garmin", metric
+
+
+def test_resting_hr_prefers_watch_then_ring_then_garmin():
+    # 用户指定:静息心率采纳 Apple Watch + RingConn,Garmin 退 fallback(不剔除)。
+    assert priority_for("resting_heart_rate")[:3] == ["apple-watch", "ringconn", "garmin"]
 
 
 def test_unknown_metric_uses_default_priority():
@@ -101,12 +106,12 @@ def test_merge_two_sources_overlapping():
     merged = merge_daily_by_priority(rows, ["hrv", "steps", "resting_heart_rate", "sleep_score"])
     assert merged["hrv"] == 52.0                  # ring
     assert merged["steps"] == 8500                # watch
-    assert merged["resting_heart_rate"] == 52     # garmin
+    assert merged["resting_heart_rate"] == 54     # apple-watch(用户指定 AW+RingConn 优先)
     assert merged["sleep_score"] == 85            # ring
     sm = merged["_source_by_metric"]
     assert sm["hrv"] == "ringconn"
     assert sm["steps"] == "apple-watch"
-    assert sm["resting_heart_rate"] == "garmin"
+    assert sm["resting_heart_rate"] == "apple-watch"
     assert sm["sleep_score"] == "ringconn"
 
 
