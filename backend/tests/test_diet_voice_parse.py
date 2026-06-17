@@ -124,3 +124,34 @@ def test_api_voice_parse_rejects_invalid_meal_type(client, auth):
         json={"raw_text": "吃了鸡胸肉", "meal_type": "午餐"},
     )
     assert r.status_code == 422
+
+
+def test_watch_voice_confirm_preserves_ai_audit_fields(client, db, auth):
+    user, headers = auth
+
+    r = client.post(
+        "/api/v1/diet/records",
+        headers=headers,
+        json={
+            "record_date": date.today().isoformat(),
+            "meal_type": "lunch",
+            "food_items": "鸡胸肉 150g, 米饭 1碗",
+            "calories": 480,
+            "protein": 50.7,
+            "carbs": 51.8,
+            "fat": 5.9,
+            "ai_recognized": 1,
+            "ai_confidence": 0.82,
+            "notes": "Watch 语音草稿: 午餐吃了鸡胸肉 150g 和米饭一碗 | parser: rules-v1 | confidence: 0.82",
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ai_recognized"] == 1
+    assert body["ai_confidence"] == 0.82
+
+    record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+    assert record.ai_recognized is True
+    assert record.ai_confidence == 0.82
+    assert "parser: rules-v1" in record.notes

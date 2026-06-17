@@ -79,6 +79,41 @@ def test_daily_plan_downgrades_training_intensity_when_recovery_matrix_is_poor(d
     assert recovery_action["personal_evidence"]["trigger"] == "poor_recovery_matrix"
 
 
+def test_daily_plan_uses_training_gate_red_even_when_raw_readiness_is_high(db, monkeypatch):
+    from app.services import daily_operating_plan as planner
+
+    user = _make_user(db)
+    twin = HealthTwin(
+        meta=TwinMeta(user_id=user.id, generated_at=datetime(2026, 5, 21, 8, 0, 0)),
+        physiological=PhysiologicalState(
+            sleep_score_latest=82,
+            hrv_status="balanced",
+            training_readiness_score=85,
+            last_updated=date.today(),
+        ),
+        freshness=DataFreshness(sleep="today"),
+    )
+    monkeypatch.setattr(planner, "build_twin", lambda _db, _user_id, use_cache=False: twin)
+    monkeypatch.setattr(planner.recovery_decision, "training_decision", lambda _db, _user_id: {
+        "light": "red",
+        "readiness_score": 85,
+        "zone": "hard",
+        "confidence": "medium",
+        "next_action": "今天恢复/休息,暂停高强度",
+        "reasons": ["急性训练负荷偏高", "多设备一致性 62%"],
+    })
+
+    payload = planner.build_daily_operating_plan(db, user.id, plan_date=date.today())
+
+    movement_actions = [action for action in payload["actions"] if action["domain"] == "movement"]
+    assert any(action["action_key"] == "movement.zone2_recovery" for action in movement_actions)
+    assert not any(action["action_key"] == "movement.moderate_activity" for action in movement_actions)
+    recovery_action = next(action for action in movement_actions if action["action_key"] == "movement.zone2_recovery")
+    assert recovery_action["personal_evidence"]["trigger"] == "training_gate_red"
+    assert "暂停高强度" in recovery_action["why"]
+    assert payload["state_summary"]["training_gate"]["light"] == "red"
+
+
 def test_daily_plan_binds_actions_to_active_intervention_cycle(db, monkeypatch):
     from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
     from app.services import daily_operating_plan as planner

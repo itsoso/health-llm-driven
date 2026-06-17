@@ -360,6 +360,8 @@ final class QuickRecordTests: XCTestCase {
         let r = try QuickRecord.dietVoice(rawText: "午餐吃了鸡胸肉")
         XCTAssertEqual(r.path, "/diet/voice/parse")
         XCTAssertEqual(r.body["raw_text"], "午餐吃了鸡胸肉")
+        XCTAssertEqual(r.body["source"], "apple_watch")
+        XCTAssertEqual(r.body["device_type"], "watch")
         XCTAssertEqual(r.resultKind, .draft)
     }
 
@@ -452,7 +454,10 @@ final class QuickRecordTests: XCTestCase {
         XCTAssertEqual(req.body["protein"], "50.7")
         XCTAssertEqual(req.body["carbs"], "51.8")
         XCTAssertEqual(req.body["fat"], "5.9")
-        XCTAssertEqual(req.body["ai_recognized"], "true")
+        XCTAssertEqual(req.body["ai_recognized"], "1")
+        XCTAssertEqual(req.body["ai_confidence"], "0.82")
+        XCTAssertTrue(req.body["notes"]?.contains("parser: rules-v1") ?? false)
+        XCTAssertTrue(req.body["notes"]?.contains("confidence: 0.82") ?? false)
         XCTAssertEqual(draft.summaryLine, "午餐: 鸡胸肉 150g, 米饭 1碗")
     }
 }

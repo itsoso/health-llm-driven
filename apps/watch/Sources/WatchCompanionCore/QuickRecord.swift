@@ -114,7 +114,10 @@ public enum QuickRecord {
         let t = rawText.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { throw QuickRecordError.missing("语音内容") }
         return QuickRecordRequest(
-            path: "/diet/voice/parse", method: "POST", query: [:], body: ["raw_text": t],
+            path: "/diet/voice/parse",
+            method: "POST",
+            query: [:],
+            body: ["raw_text": t, "source": "apple_watch", "device_type": "watch"],
             resultKind: .draft,
             successMessage: "待确认"
         )

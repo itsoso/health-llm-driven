@@ -41,7 +41,8 @@ public struct VoiceFoodDraft: Codable, Equatable, Sendable {
             "record_date": recordDate,
             "meal_type": mealType,
             "food_items": foodLine,
-            "ai_recognized": "true",
+            "ai_recognized": "1",
+            "ai_confidence": Self.formatConfidence(confidence),
             "source": "apple_watch",
         ]
 
@@ -50,7 +51,11 @@ public struct VoiceFoodDraft: Codable, Equatable, Sendable {
         if let value = total(\.carbs) { body["carbs"] = Self.format(value) }
         if let value = total(\.fat) { body["fat"] = Self.format(value) }
 
-        var notes = ["Watch 语音草稿: \(rawText)"]
+        var notes = [
+            "Watch 语音草稿: \(rawText)",
+            "parser: \(parserVersion)",
+            "confidence: \(Self.formatConfidence(confidence))",
+        ]
         if let clarifyingQuestion, !clarifyingQuestion.isEmpty {
             notes.append("待确认: \(clarifyingQuestion)")
         }
@@ -81,6 +86,18 @@ public struct VoiceFoodDraft: Codable, Equatable, Sendable {
             return String(Int(rounded))
         }
         return String(format: "%.1f", rounded)
+    }
+
+    private static func formatConfidence(_ value: Double) -> String {
+        let rounded = (value * 100).rounded() / 100
+        if rounded == rounded.rounded() {
+            return String(Int(rounded))
+        }
+        let oneDecimal = (value * 10).rounded() / 10
+        if rounded == oneDecimal {
+            return String(format: "%.1f", rounded)
+        }
+        return String(format: "%.2f", rounded)
     }
 }
 

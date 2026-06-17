@@ -5,12 +5,14 @@
 用 monkeypatch 注入 agenda.today,纯映射逻辑确定性可测。
 """
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 import app.services.watch_summary as ws
+from app.models.agent_audit_log import AgentAuditLog
 from app.models.daily_health import GarminData
+from app.models.health_protocol import HealthProtocol, HealthProtocolEvent
 from app.models.user import User
 
 
@@ -151,6 +153,72 @@ def test_push_tiering_and_cap(db, auth, monkeypatch):
     assert s["push_items"][0]["tier"] == "P0"          # 逾期复查排首
     assert s["push_items"][0]["kind"] == "checkup"
     assert all(p["tier"] in ("P0", "P1") for p in s["push_items"])
+
+
+def test_medication_watch_nudge_survives_quiet_budget_gate(db, auth, monkeypatch):
+    """用药执行提醒不是普通行为 nudge,不能被静默时段/预算 gate 吞掉。"""
+    user, _ = auth
+    item = _protocol("二甲双胍 0.5g", priority=90, domain="medication")
+    item["source"]["object_id"] = 11
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: False)
+
+    s = ws.build_watch_summary(db, user.id)
+
+    assert [p["title"] for p in s["push_items"]] == ["二甲双胍 0.5g"]
+
+
+def test_recent_too_tired_skip_suppresses_exercise_watch_nudge(db, auth, monkeypatch):
+    """连续失败是系统信号:近期 too_tired/unwell/too_hard 跳过后,运动 nudge 先降噪。"""
+    user, _ = auth
+    protocol = HealthProtocol(
+        user_id=user.id,
+        domain="exercise",
+        name="餐后轻松步行 20 分钟",
+        status="active",
+    )
+    db.add(protocol)
+    db.flush()
+    db.add(HealthProtocolEvent(
+        user_id=user.id,
+        protocol_id=protocol.id,
+        event_date=date.today() - timedelta(days=1),
+        status="skipped",
+        track="protocol",
+        skip_reason="too_tired",
+    ))
+    db.commit()
+
+    item = _protocol("餐后轻松步行 20 分钟", priority=70, domain="exercise")
+    item["source"]["object_id"] = protocol.id
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: True)
+
+    s = ws.build_watch_summary(db, user.id)
+
+    assert s["push_items"] == []
+
+
+def test_exercise_watch_nudge_daily_cap_suppresses_extra_push(db, auth, monkeypatch):
+    user, _ = auth
+    for idx in range(3):
+        db.add(AgentAuditLog(
+            user_id=user.id,
+            agent_type="watch_nudge",
+            action="proactive_trigger",
+            result_summary=f"exercise nudge {idx}",
+            result_detail={"notified": True, "tier": "P1", "kind": "exercise"},
+            created_at=datetime.now(UTC),
+        ))
+    db.commit()
+
+    item = _protocol("下午站立拉伸", priority=60, domain="exercise")
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: True)
+
+    s = ws.build_watch_summary(db, user.id)
+
+    assert s["push_items"] == []
 
 
 def test_no_training_defaults_gray(db, auth, monkeypatch):

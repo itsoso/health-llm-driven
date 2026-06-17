@@ -22,6 +22,7 @@ from app.models.symptom_entry import SymptomEntry
 from app.models.user import User
 from app.services import agenda_service
 from app.services import health_protocol_service as proto_svc
+from app.services import workday_health_scheduler
 from app.services.watch_summary import build_watch_summary
 from app.twin import builder
 from app.twin.schema import HealthTwin, TwinMeta
@@ -71,6 +72,19 @@ async def watch_summary(
     打点入口 + 该推到手腕的关键信息(运动/补剂/睡眠/复查)。
     """
     return build_watch_summary(db, current_user.id)
+
+
+@router.post("/workday/generate")
+async def generate_workday_plan(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """显式生成/刷新今天的工作日微运动协议。
+
+    v0 不接位置/日历;调用方可以是 Watch 打开、Mobile 到公司事件或后续定时任务。
+    幂等:同一 slot 不重复创建协议。
+    """
+    return workday_health_scheduler.generate_today(db, current_user.id)
 
 
 @router.post("/actions/{action_id}/complete")

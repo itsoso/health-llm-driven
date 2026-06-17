@@ -14,7 +14,9 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.agent_audit_log import AgentAuditLog
 from app.models.daily_health import GarminData
+from app.models.health_protocol import HealthProtocolEvent
 from app.models.user import GarminCredential
 from app.services import agenda_service, proactive_coordinator
 from app.services.action_ranker import rank_agenda_actions
@@ -39,6 +41,8 @@ _LIGHT_HEADLINE = {
     "red": "今日建议以休息为主",
 }
 _PUSH_CAP = 3   # 手腕小屏:最多 3 条关键推送(对齐 R15 稀缺中断预算)
+_WATCH_BEHAVIOR_NUDGE_CAPS = {"exercise": 3, "training": 3, "activity": 3}
+_WATCH_SKIP_DOWNRANK_REASONS = {"too_tired", "too_hard", "unwell"}
 
 
 def _push_tier(item: Dict[str, Any]) -> Optional[str]:
@@ -113,6 +117,51 @@ def _is_exercise_behavior_nudge(item: Dict[str, Any]) -> bool:
     )
 
 
+def _is_required_execution_nudge(item: Dict[str, Any]) -> bool:
+    return item.get("status") == "pending" and item.get("type") == "medication"
+
+
+def _watch_behavior_nudges_sent_today(db: Session, user_id: int, kind: str) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    rows = db.query(AgentAuditLog.result_detail).filter(
+        AgentAuditLog.user_id == user_id,
+        AgentAuditLog.action == "proactive_trigger",
+        AgentAuditLog.created_at >= cutoff,
+    ).all()
+    count = 0
+    for row in rows:
+        detail = row[0] or {}
+        if not detail.get("notified"):
+            continue
+        if detail.get("kind") == kind or detail.get("domain") == kind:
+            count += 1
+    return count
+
+
+def _watch_behavior_nudge_cap_reached(db: Session, user_id: int, kind: str) -> bool:
+    cap = _WATCH_BEHAVIOR_NUDGE_CAPS.get(kind)
+    if not cap:
+        return False
+    return _watch_behavior_nudges_sent_today(db, user_id, kind) >= cap
+
+
+def _recent_behavior_skip_downranks(db: Session, user_id: int, item: Dict[str, Any]) -> bool:
+    src = item.get("source") or {}
+    if src.get("object_type") != "health_protocol":
+        return False
+    protocol_id = src.get("object_id")
+    if protocol_id is None:
+        return False
+    since = get_user_today(db, user_id) - timedelta(days=7)
+    return db.query(HealthProtocolEvent.id).filter(
+        HealthProtocolEvent.user_id == user_id,
+        HealthProtocolEvent.protocol_id == protocol_id,
+        HealthProtocolEvent.status == "skipped",
+        HealthProtocolEvent.event_date >= since,
+        HealthProtocolEvent.skip_reason.in_(_WATCH_SKIP_DOWNRANK_REASONS),
+    ).first() is not None
+
+
 def _has_active_critical_safety(db: Session, user_id: int) -> bool:
     """是否有近期未确认 critical 安全信号。只查已落库证据,不在摘要路径跑 SafetyGuardian。"""
     today = get_user_today(db, user_id)
@@ -158,8 +207,15 @@ def _has_active_critical_safety(db: Session, user_id: int) -> bool:
 def _can_include_push(db: Session, user_id: int, item: Dict[str, Any], tier: str) -> bool:
     if tier == "P0":
         return True
+    if _is_required_execution_nudge(item):
+        return True
     if _is_exercise_behavior_nudge(item) and _has_active_critical_safety(db, user_id):
         return False
+    if _is_exercise_behavior_nudge(item):
+        if _recent_behavior_skip_downranks(db, user_id, item):
+            return False
+        if _watch_behavior_nudge_cap_reached(db, user_id, item.get("type") or ""):
+            return False
     return proactive_coordinator.can_notify_proactively(db, user_id, tier=tier)
 
 

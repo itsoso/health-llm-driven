@@ -99,8 +99,11 @@ def create_diet_record(
             carbs=record_dict.get('carbs'),
             fat=record_dict.get('fat'),
             fiber=record_dict.get('fiber'),
+            alcohol_units=record_dict.get('alcohol_units'),
             notes=record_dict.get('notes'),
             image_url=image_url,
+            ai_recognized=bool(record_dict.get('ai_recognized')),
+            ai_confidence=record_dict.get('ai_confidence'),
             health_tips=record_dict.get('health_tips'),
         )
         db.add(db_record)

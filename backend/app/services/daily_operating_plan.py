@@ -16,6 +16,7 @@ from app.models.intervention_event import InterventionEvent
 from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
 from app.services.advice_guard import AdviceCandidate, AdviceGuardError, guard_and_record_advice
 from app.services.intervention_cycle_service import get_active_cycle
+from app.services import recovery_decision
 from app.services.personal_evidence_matrix import (
     build_personal_evidence_matrix,
     compact_personal_evidence_matrix,
@@ -405,6 +406,37 @@ def _recovery_movement_action(*, trigger: str, guardrail: str | None = None) -> 
     ) | {"personal_evidence": {"trigger": trigger}}
 
 
+def _safe_training_gate(db: Session, user_id: int) -> Dict[str, Any] | None:
+    try:
+        gate = recovery_decision.training_decision(db, user_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[daily_plan] training gate unavailable user=%s: %s", user_id, exc)
+        return None
+    if not isinstance(gate, dict):
+        return None
+    conf_score = gate.get("confidence_score")
+    has_signal = (
+        gate.get("light") in {"green", "yellow", "red"}
+        and (
+            gate.get("light") == "red"
+            or (
+                gate.get("readiness_score") is not None
+                and (conf_score is None or float(conf_score) >= 0.5)
+            )
+        )
+    )
+    return gate if has_signal else None
+
+
+def _training_gate_guardrail(gate: Dict[str, Any]) -> str:
+    parts = []
+    next_action = gate.get("next_action")
+    if next_action:
+        parts.append(str(next_action))
+    parts.extend(str(r) for r in (gate.get("reasons") or [])[:3] if r)
+    return "；".join(parts) or "训练门控建议今天降低强度,优先恢复和低冲击活动。"
+
+
 def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None) -> Dict[str, Any]:
     """构建并缓存当天 Daily Operating Plan.
 
@@ -422,6 +454,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
     acute = getattr(twin, "acute", None)
     acute_rest = bool(getattr(acute, "should_rest_from_training", False))
     acute_guardrail = getattr(acute, "training_guardrail", None) or "当前有急性不适/生病状态，今天不要求完成运动目标，优先休息、补水和睡眠。"
+    training_gate = _safe_training_gate(db, user_id)
 
     protein_target = round((body.weight_kg or 70) * 1.6)
     actions: List[Dict[str, Any]] = []
@@ -458,7 +491,11 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         claim_boundary="蛋白目标按体重估算, 不替代医生或营养师针对肾病、孕产等特殊情况的建议。",
     ))
 
-    readiness = twin.physiological.training_readiness_score
+    readiness = (
+        training_gate.get("readiness_score")
+        if training_gate and training_gate.get("readiness_score") is not None
+        else twin.physiological.training_readiness_score
+    )
     if acute_rest:
         actions.append(_action(
             "movement",
@@ -472,6 +509,16 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
             evidence_tier="safety_guardrail",
             confidence="high",
             claim_boundary="急性病或疑似感染期的活动建议用于健康管理安全兜底；如有发热、胸痛、气促或症状加重，应及时就医。",
+        ))
+    elif training_gate and training_gate.get("light") == "red":
+        actions.append(_recovery_movement_action(
+            trigger="training_gate_red",
+            guardrail=_training_gate_guardrail(training_gate),
+        ))
+    elif training_gate and training_gate.get("light") == "yellow":
+        actions.append(_recovery_movement_action(
+            trigger="training_gate_yellow",
+            guardrail=_training_gate_guardrail(training_gate),
         ))
     elif readiness is not None and readiness < 50:
         actions.append(_recovery_movement_action(trigger="training_readiness_score"))
@@ -535,6 +582,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         "blood_pressure": bp,
         "sleep_score": twin.physiological.sleep_score_latest,
         "training_readiness_score": readiness,
+        **({"training_gate": training_gate} if training_gate else {}),
         "acute": {
             "has_active_illness": bool(getattr(acute, "has_active_illness", False)),
             "illness_names": list(getattr(acute, "illness_names", []) or []),
