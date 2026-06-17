@@ -153,6 +153,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/location' as any)} />
           <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
+          <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
+            onPress={() => router.push('/rokid-health' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
             onPress={() => router.push('/device-sources' as any)} />
         </View>

@@ -451,6 +451,8 @@ After getting official sample:
 
 ### Task 5: Rokid Health Mode UI
 
+Status: implemented for Mobile P0 control surface.
+
 Add one Mobile screen:
 
 - Bridge status
@@ -461,6 +463,20 @@ Add one Mobile screen:
 - Test capture actions for food, supplement, medication
 
 Do not add a marketing page.
+
+Implemented files:
+
+- `mobile/app/rokid-health.tsx`
+- `mobile/app/__tests__/rokid-health.test.tsx`
+- `mobile/app/settings.tsx`
+- `mobile/app/__tests__/settings.test.tsx`
+
+Verification:
+
+```bash
+cd mobile
+npm test -- --runTestsByPath app/__tests__/settings.test.tsx app/__tests__/rokid-health.test.tsx
+```
 
 ## 7. Risks And Boundaries
 
@@ -494,6 +510,7 @@ P0 bridge ready:
 - iOS module compiles without linking Rokid Pod by default.
 - iOS Pod can be linked in a compatible Swift toolchain or after Rokid republishes the framework.
 - Mobile screen can show status and open Hi Rokid.
+- Settings contains a Mobile entry into Rokid Health Mode.
 
 P1 SDK ready:
 

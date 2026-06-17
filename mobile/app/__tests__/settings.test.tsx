@@ -103,4 +103,12 @@ describe('SettingsScreen', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/location');
   });
+
+  it('opens the Rokid health mode from settings', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('Rokid 眼镜健康模式'));
+
+    expect(mockPush).toHaveBeenCalledWith('/rokid-health');
+  });
 });
