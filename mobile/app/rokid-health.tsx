@@ -16,17 +16,27 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   getRokidIntegrationStatus,
+  takeRokidPhotoBase64,
   type RokidIntegrationStatus,
 } from '../modules/rokid-bridge';
 import {
   listRokidGlanceCards,
   openRokidCompanionIfAvailable,
+  submitRokidVisualInput,
+  type RokidVisualIntent,
 } from '../services/rokidAmbient';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 type PrivacyMode = 'private' | 'workplace' | 'public';
 type OpenState = 'idle' | 'opening' | 'opened' | 'unavailable' | 'failed';
+type CaptureStatus = 'idle' | 'capturing' | 'submitted' | 'failed';
+
+type CaptureState = {
+  status: CaptureStatus;
+  actionTitle?: string;
+  message?: string;
+};
 
 type RokidGlanceCard = {
   id?: string | number;
@@ -44,10 +54,15 @@ const PRIVACY_MODES: Array<{ key: PrivacyMode; label: string; description: strin
   { key: 'public', label: '公共', description: '默认不保留原图和原音频' },
 ];
 
-const CAPTURE_ACTIONS = [
-  { icon: 'fast-food-outline', title: '食物视觉记录', detail: '拍菜单 / 餐盘后生成饮食草稿' },
-  { icon: 'nutrition-outline', title: '补剂标签扫描', detail: 'OCR 后进入补剂待确认队列' },
-  { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药' },
+const CAPTURE_ACTIONS: Array<{
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  detail: string;
+  intent: RokidVisualIntent;
+}> = [
+  { icon: 'fast-food-outline', title: '食物视觉记录', detail: '拍菜单 / 餐盘后生成饮食草稿', intent: 'food_scan' },
+  { icon: 'nutrition-outline', title: '补剂标签扫描', detail: 'OCR 后进入补剂待确认队列', intent: 'supplement_scan' },
+  { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药', intent: 'medication_scan' },
 ] as const;
 
 function statusLabel(status?: RokidIntegrationStatus) {
@@ -69,6 +84,16 @@ function cardTitle(card: RokidGlanceCard) {
   return card.title || card.action_text || card.text || card.summary || `GlanceCard ${card.id ?? ''}`.trim();
 }
 
+function readString(result: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = result[key];
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 export default function RokidHealthScreen() {
   const router = useRouter();
   const { c, s } = useTheme();
@@ -76,6 +101,7 @@ export default function RokidHealthScreen() {
   const txt = useMemo(() => createTxt(c), [c]);
   const [privacyMode, setPrivacyMode] = useState<PrivacyMode>('workplace');
   const [openState, setOpenState] = useState<OpenState>('idle');
+  const [captureState, setCaptureState] = useState<CaptureState>({ status: 'idle' });
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -108,6 +134,43 @@ export default function RokidHealthScreen() {
       await statusQuery.refetch();
     } catch {
       setOpenState('failed');
+    }
+  };
+
+  const handleVisualCapture = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
+    setCaptureState({ status: 'capturing', actionTitle: action.title, message: `${action.title}提交中...` });
+    try {
+      const captureResult = await takeRokidPhotoBase64({ width: 1024, height: 768, quality: 80 });
+      if (captureResult.ok === false) {
+        throw new Error(
+          typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed',
+        );
+      }
+
+      await submitRokidVisualInput({
+        intent: action.intent,
+        imageUri: readString(captureResult, ['imageUri', 'image_uri', 'uri', 'localUri', 'path']),
+        imageSha256: readString(captureResult, ['imageSha256', 'image_sha256', 'sha256']),
+        privacyClass: 'health_l3',
+        meta: {
+          privacy_mode: privacyMode,
+          source_surface: 'rokid_health_mode',
+          raw_media_retained: false,
+          manual_confirm_required: true,
+        },
+      });
+
+      setCaptureState({
+        status: 'submitted',
+        actionTitle: action.title,
+        message: `已提交${action.title}草稿`,
+      });
+    } catch (error) {
+      setCaptureState({
+        status: 'failed',
+        actionTitle: action.title,
+        message: `${action.title}失败: ${error instanceof Error ? error.message : 'capture_failed'}`,
+      });
     }
   };
 
@@ -234,9 +297,20 @@ export default function RokidHealthScreen() {
 
         <View style={styles.panel}>
           <Text style={txt.sectionTitle}>捕获动作</Text>
-          <Text style={txt.sectionHint}>真实 SDK 未链接前, 这里只展示 Reva 对眼镜入口的安全合同。</Text>
+          <Text style={txt.sectionHint}>每次点击只触发一次拍照, 生成待确认草稿; 不连续录音、不后台拍摄。</Text>
           {CAPTURE_ACTIONS.map((action) => (
-            <View key={action.title} style={styles.captureRow}>
+            <Pressable
+              key={action.title}
+              onPress={() => handleVisualCapture(action)}
+              disabled={captureState.status === 'capturing'}
+              style={({ pressed }) => [
+                styles.captureRow,
+                pressed && styles.pressed,
+                captureState.status === 'capturing' && styles.disabledButton,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`主动触发 ${action.title}`}
+            >
               <View style={styles.captureIcon}>
                 <Ionicons name={action.icon} size={18} color={c.brand} />
               </View>
@@ -244,14 +318,27 @@ export default function RokidHealthScreen() {
                 <Text style={txt.captureTitle}>{action.title}</Text>
                 <Text style={txt.captureDetail}>{action.detail}</Text>
               </View>
-              <Text style={txt.captureStatus}>待 SDK 真机</Text>
-            </View>
+              <Text style={txt.captureStatus}>
+                {captureState.status === 'capturing' && captureState.actionTitle === action.title ? '提交中' : '主动触发'}
+              </Text>
+            </Pressable>
           ))}
+          {captureState.message ? (
+            <Text style={[
+              txt.captureMessage,
+              captureState.status === 'submitted' ? { color: s.success.solid } : null,
+              captureState.status === 'failed' ? { color: s.warning.solid } : null,
+            ]}>
+              {captureState.message}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.panel}>
           <Text style={txt.sectionTitle}>最近捕获</Text>
-          <Text style={txt.empty}>等待主动触发。不会连续录音或后台拍摄。</Text>
+          <Text style={txt.empty}>
+            {captureState.message ? `最近状态: ${captureState.message}` : '等待主动触发。不会连续录音或后台拍摄。'}
+          </Text>
           {status?.installedPackage ? (
             <Text style={txt.technical}>Hi Rokid package: {status.installedPackage}</Text>
           ) : null}
@@ -437,5 +524,6 @@ const createTxt = (c: ColorPalette) => ({
   captureTitle: { fontSize: 14, fontWeight: '700', color: c.labelPrimary } as TextStyle,
   captureDetail: { fontSize: 12, color: c.labelSecondary, lineHeight: 17, marginTop: 2 } as TextStyle,
   captureStatus: { fontSize: 11, color: c.labelTertiary, fontWeight: '800' } as TextStyle,
+  captureMessage: { fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: spacing.sm } as TextStyle,
   technical: { fontSize: 11, color: c.labelTertiary, marginTop: spacing.sm, lineHeight: 16 } as TextStyle,
 });

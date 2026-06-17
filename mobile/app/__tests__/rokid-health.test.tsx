@@ -4,8 +4,10 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
 const mockGetRokidIntegrationStatus = jest.fn();
+const mockTakeRokidPhotoBase64 = jest.fn();
 const mockListRokidGlanceCards = jest.fn();
 const mockOpenRokidCompanionIfAvailable = jest.fn();
+const mockSubmitRokidVisualInput = jest.fn();
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -14,11 +16,13 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../modules/rokid-bridge', () => ({
   getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
+  takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
 }));
 
 jest.mock('../../services/rokidAmbient', () => ({
   listRokidGlanceCards: (...args: any[]) => mockListRokidGlanceCards(...args),
   openRokidCompanionIfAvailable: (...args: any[]) => mockOpenRokidCompanionIfAvailable(...args),
+  submitRokidVisualInput: (...args: any[]) => mockSubmitRokidVisualInput(...args),
 }));
 
 import RokidHealthScreen from '../rokid-health';
@@ -55,6 +59,12 @@ describe('RokidHealthScreen', () => {
       opened: true,
       status: { canOpenHiRokid: true },
     });
+    mockTakeRokidPhotoBase64.mockResolvedValue({
+      ok: true,
+      imageUri: 'private://rokid/meal-001.jpg',
+      imageSha256: 'sha256-meal-001',
+    });
+    mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
   });
 
   it('shows bridge status, privacy boundaries, and pending Rokid glance cards', async () => {
@@ -76,6 +86,37 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(mockOpenRokidCompanionIfAvailable).toHaveBeenCalledTimes(1);
       expect(screen.getByText('已请求打开 Hi Rokid')).toBeTruthy();
+    });
+  });
+
+  it('submits an explicit food photo capture as an ambient visual draft', async () => {
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('主动触发 食物视觉记录')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+
+    await waitFor(() => {
+      expect(mockTakeRokidPhotoBase64).toHaveBeenCalledWith({
+        width: 1024,
+        height: 768,
+        quality: 80,
+      });
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith({
+        intent: 'food_scan',
+        imageUri: 'private://rokid/meal-001.jpg',
+        imageSha256: 'sha256-meal-001',
+        privacyClass: 'health_l3',
+        meta: {
+          privacy_mode: 'workplace',
+          source_surface: 'rokid_health_mode',
+          raw_media_retained: false,
+          manual_confirm_required: true,
+        },
+      });
+      expect(screen.getByText('已提交食物视觉记录草稿')).toBeTruthy();
     });
   });
 });

@@ -460,9 +460,21 @@ Add one Mobile screen:
 - SDK linked/class probe
 - Last capture state
 - Privacy mode: private / workplace / public
-- Test capture actions for food, supplement, medication
+- Explicit one-shot capture actions for food, supplement, medication
 
 Do not add a marketing page.
+
+Capture behavior:
+
+- User must tap a capture action; no background camera, continuous camera, or continuous microphone.
+- Each action calls `takeRokidPhotoBase64({ width: 1024, height: 768, quality: 80 })` once through the JS facade.
+- Successful food / supplement / medication captures create `/ambient/visual-inputs` drafts with:
+  - `intent=food_scan | supplement_scan | medication_scan`
+  - `privacy_class=health_l3`
+  - `meta.privacy_mode`
+  - `meta.raw_media_retained=false`
+  - `meta.manual_confirm_required=true`
+- The page shows last capture state locally; formal diet, medication, or supplement records still require later confirmation.
 
 Implemented files:
 
