@@ -1194,6 +1194,7 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         twin.genetic.recovery_variants = gen.get("recovery_variants", [])
         twin.genetic.exercise_variants = gen.get("exercise_variants", [])
         twin.genetic.nutrition_variants = gen.get("nutrition_variants", [])
+        _classify_genetic_variants(twin.genetic)
         sources.add("genetic")
 
     # — Pending genetic profiles (PDF 解析中: profile 已建但 variant 尚未抽完)
@@ -1217,6 +1218,42 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
 
     # — PhenoAge (Levine 2018): labs 9 项 + 实足年龄齐才算; 任一缺失 → 留 None,不猜算
     _fill_phenoage(db, user_id, twin)
+
+
+def _classify_genetic_variants(genetic: GeneticContext) -> None:
+    """Phase 1: tag each variant dict with (actionability, evidence_grade).
+
+    Pure static lookup via genetic_registry.classify_variant — no LLM, no DB.
+    Resolves by rsid first, falling back to gene_name. Idempotent: re-running
+    overwrites the same two keys. Never raises (classification is best-effort
+    metadata; a missing import must not break Twin build).
+    """
+    try:
+        from app.services.genetic_registry import classify_variant
+    except Exception:  # noqa: BLE001
+        return
+
+    variant_lists = (
+        genetic.drug_sensitivity,
+        genetic.risk_variants,
+        genetic.protective_variants,
+        genetic.cognition_variants,
+        genetic.personality_variants,
+        genetic.sleep_variants,
+        genetic.recovery_variants,
+        genetic.exercise_variants,
+        genetic.nutrition_variants,
+    )
+    for variants in variant_lists:
+        for v in variants:
+            if not isinstance(v, dict):
+                continue
+            key = v.get("rsid") or v.get("gene_name") or ""
+            actionability, evidence_grade = classify_variant(
+                str(key), gene_name=v.get("gene_name")
+            )
+            v["actionability"] = actionability
+            v["evidence_grade"] = evidence_grade
 
 
 def _fill_phenoage(db: Session, user_id: int, twin: HealthTwin) -> None:

@@ -900,6 +900,159 @@ class TestTwinFormatter:
         assert "压力" not in text  # 没设值就不该出现
 
 
+# ─────────── 单元：基因证据分级 (Phase 1) ──────────
+
+
+class TestGeneticVariantClassification:
+    """builder 给每条 variant dict 注入 (actionability, evidence_grade)。"""
+
+    def _fresh_twin(self) -> HealthTwin:
+        return HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+
+    def _classified_twin(self) -> HealthTwin:
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 4
+        twin.genetic.drug_sensitivity = [
+            {"gene_name": "CYP2C19", "genotype": "*2/*2", "rsid": "rs4244285"},
+        ]
+        twin.genetic.risk_variants = [
+            {"gene_name": "APOE", "result_label": "e3/e4", "rsid": "rs429358"},
+            {"gene_name": "FTO", "result_label": "AA risk", "rsid": "rs9939609"},
+        ]
+        twin.genetic.nutrition_variants = [
+            {"gene_name": "ALDH2", "genotype": "GA", "rsid": "rs671"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        return twin
+
+    def test_builder_injects_two_dim_fields_on_each_variant(self):
+        twin = self._classified_twin()
+        drug = twin.genetic.drug_sensitivity[0]
+        assert drug["actionability"] == "act"
+        assert drug["evidence_grade"] == "cpic_a"
+
+        apoe = twin.genetic.risk_variants[0]
+        assert apoe["actionability"] == "risk_stratify"
+        assert apoe["evidence_grade"] == "clinvar_likely"
+
+        fto = twin.genetic.risk_variants[1]
+        assert fto["actionability"] == "de_emphasize"
+        assert fto["evidence_grade"] == "gwas_association"
+
+    def test_partition_still_has_genetic_keys(self):
+        # 加字段不改分区结构: genetic 分区仍存在且字段类型不变。
+        twin = self._classified_twin()
+        assert isinstance(twin.genetic.drug_sensitivity, list)
+        assert isinstance(twin.genetic.drug_sensitivity[0], dict)
+
+    def test_formatter_de_emphasize_forces_disclaimer_prefix(self):
+        from app.services.genetic_registry import DE_EMPHASIZE_PREFIX
+
+        twin = self._classified_twin()
+        text = twin_to_prompt_blob(twin)
+        # de_emphasize variant (FTO) 必须带强制前缀
+        assert DE_EMPHASIZE_PREFIX in text
+        assert "群体弱关联,个体无预测力,非诊断" in text
+
+    def test_formatter_act_variant_is_highlighted(self):
+        twin = self._classified_twin()
+        text = twin_to_prompt_blob(twin)
+        # act 级前置/突出: ▲ 标记 + 行动级 header
+        assert "行动级 ACT" in text
+        assert "▲ CYP2C19" in text
+        assert "CPIC-A" in text
+
+    def test_formatter_risk_stratify_variant_is_centered(self):
+        twin = self._classified_twin()
+        text = twin_to_prompt_blob(twin)
+        assert "背景调阈值 RISK-STRATIFY" in text
+        assert "APOE" in text
+
+    def test_formatter_falls_back_to_classify_when_keys_absent(self):
+        # 未经 builder 分类 (e.g. 部分 twin) 时, formatter 仍按 rsid/gene 现算分级。
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.risk_variants = [{"gene_name": "FTO", "result_label": "AA"}]
+        text = twin_to_prompt_blob(twin)
+        assert "群体弱关联" in text  # FTO → de_emphasize 仍出前缀
+
+    def test_formatter_proxy_locus_shows_guardrail(self):
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        # rs5030655 = CYP2D6 indel proxy → act actionability, proxy_uncertain grade
+        twin.genetic.drug_sensitivity = [
+            {"gene_name": "CYP2D6", "genotype": "del", "rsid": "rs5030655"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        assert twin.genetic.drug_sensitivity[0]["evidence_grade"] == "proxy_uncertain"
+        text = twin_to_prompt_blob(twin)
+        assert "阴性不代表无风险" in text
+
+    def test_formatter_hla_proxy_promoted_still_shows_guardrail(self):
+        # 安全回归: rs1265181 (HLA-B*58:01, 别嘌醇 SJS/TEN) 提级到 act+pharmgkb_1a
+        # 后, formatter 仍须保留 "阴性不代表无风险" proxy 护栏 (走 is_proxy_variant)。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.drug_sensitivity = [
+            {"gene_name": "HLA-B*5801", "genotype": "+", "rsid": "rs1265181"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.drug_sensitivity[0]
+        assert v["actionability"] == "act"
+        assert v["evidence_grade"] == "pharmgkb_1a"
+        text = twin_to_prompt_blob(twin)
+        assert "行动级 ACT" in text
+        assert "阴性不代表无风险" in text  # proxy 护栏未丢
+
+    def test_formatter_brca_act_gets_founder_variant_footnote(self):
+        # 建议 1: BRCA (act + clinvar_path_confirm) 即使非 proxy rsid, 也强制追加
+        # "消费级芯片仅覆盖部分创始变异, 阴性不代表无风险" 语义 (doc §3)。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.risk_variants = [
+            {"gene_name": "BRCA1", "result_label": "致病变异", "rsid": "rs80357906"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.risk_variants[0]
+        assert v["actionability"] == "act"
+        assert v["evidence_grade"] == "clinvar_path_confirm"
+        text = twin_to_prompt_blob(twin)
+        assert "仅覆盖部分创始变异" in text
+        assert "阴性不代表无风险" in text
+
+    def test_formatter_hfe_risk_stratify_gets_referral(self):
+        # 建议 2: HFE 留 risk_stratify (tier 不动), 但 formatter 追加专科转诊 +
+        # 临床级测序确认 (补回 doc §3 的转诊框架)。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.risk_variants = [
+            {"gene_name": "HFE", "result_label": "C282Y 纯合", "rsid": "rs1800562"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.risk_variants[0]
+        assert v["actionability"] == "risk_stratify"
+        text = twin_to_prompt_blob(twin)
+        assert "RISK-STRATIFY" in text
+        assert "建议专科就诊" in text
+        assert "临床级测序确认" in text
+
+
 class TestAgeLabel:
     def test_none_returns_empty(self):
         from app.twin.formatter import _age_label
