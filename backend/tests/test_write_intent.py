@@ -4,11 +4,22 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.models.blood_pressure import BloodPressureRecord
 from app.models.health_problem import HealthProblem
+from app.models.intervention_cycle import InterventionCycle
 from app.models.smart_reminder import SmartReminder
 from app.models.user import User
+from app.models.weight import WeightRecord
 from app.models.write_intent import WriteIntent
 from app.services import write_intent_service as svc
+
+
+def _active_cycle(db, user_id):
+    c = InterventionCycle(user_id=user_id, cycle_type="metabolic_90d", status="active", start_date=date.today())
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c
 
 
 def _mk_user(db) -> User:
@@ -126,3 +137,49 @@ def test_unknown_kind_fails_loud_and_stays_pending(db):
     # 执行失败整体回滚 → 状态退回 pending,绝不假装成功
     db.expire_all()
     assert db.query(WriteIntent).get(wi.id).status == "pending"
+
+
+# ─────────────────── measurement_prompt syscall (Phase 1) ───────────────────
+
+def test_measurement_prompt_needs_active_cycle(db):
+    u = _mk_user(db)
+    assert svc.generate_measurement_prompts(db, u.id) == 0  # 无周期不提
+    _active_cycle(db, u.id)
+    assert svc.generate_measurement_prompts(db, u.id) == 2  # bp + 体重 各一
+    kinds = [it["kind"] for it in svc.list_pending(db, u.id)]
+    assert kinds.count("measurement_prompt") == 2
+
+
+def test_measurement_prompt_skips_metric_measured_today(db):
+    u = _mk_user(db)
+    _active_cycle(db, u.id)
+    from app.utils.timezone import get_china_today
+    db.add(BloodPressureRecord(user_id=u.id, record_date=get_china_today(), systolic=120, diastolic=80))
+    db.commit()
+    svc.generate_measurement_prompts(db, u.id)
+    titles = [it["title"] for it in svc.list_pending(db, u.id) if it["kind"] == "measurement_prompt"]
+    assert any("体重" in t for t in titles)        # 体重今天没测 → 提
+    assert not any("血压" in t for t in titles)     # 血压今天已测 → 不提
+
+
+def test_measurement_prompt_no_same_day_renag(db):
+    u = _mk_user(db)
+    _active_cycle(db, u.id)
+    assert svc.generate_measurement_prompts(db, u.id) == 2
+    # 用户全部忽略 → 同日再跑不重复 nag
+    for it in svc.list_pending(db, u.id):
+        if it["kind"] == "measurement_prompt":
+            svc.dismiss(db, u.id, it["id"])
+    assert svc.generate_measurement_prompts(db, u.id) == 0
+
+
+def test_confirm_measurement_prompt_creates_reminder(db):
+    u = _mk_user(db)
+    wi = svc.propose(db, u.id, kind="measurement_prompt", title="今天还没测血压",
+                     description="现在测一下血压", source="measurement_gap",
+                     target_type="measurement_bp", target_id=None, payload={"metric": "bp"})
+    res = svc.confirm(db, u.id, wi.id)
+    assert res["status"] == "executed"
+    assert res["executed_ref"].startswith("smart_reminder:")
+    rems = db.query(SmartReminder).filter(SmartReminder.user_id == u.id).all()
+    assert len(rems) == 1 and "血压" in (rems[0].title or "")

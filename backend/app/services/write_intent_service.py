@@ -198,6 +198,27 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         db.add(rem)
         db.flush()
         return f"smart_reminder:{rem.id}"
+    if wi.kind == "measurement_prompt":
+        # 良性写:确认 → 建一条「今天测量并记录」的提醒(不改药/不开方/不诊断)。
+        p = wi.payload or {}
+        rem = SmartReminder(
+            user_id=wi.user_id,
+            title=wi.title,
+            message=wi.description or "记得测量并记录",
+            remind_at=_parse_dt(p.get("remind_at")) or (datetime.now(timezone.utc) + timedelta(hours=1)),
+            priority="normal",
+            status="pending",
+            source="health_assistant",
+            extra_data={
+                "write_intent_id": wi.id,
+                "target_type": wi.target_type,
+                "kind": wi.kind,
+                "metric": p.get("metric"),
+            },
+        )
+        db.add(rem)
+        db.flush()
+        return f"smart_reminder:{rem.id}"
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
 
@@ -229,6 +250,74 @@ def generate_followup_recall(db: Session, user_id: int, within_days: int = 14) -
                 "what_to_check": f.get("what_to_check"),
                 "next_due": f.get("next_due"),
             },
+            commit=False,
+        )
+        if wi is not None:
+            created += 1
+    db.commit()
+    return created
+
+
+def generate_measurement_prompts(db: Session, user_id: int) -> int:
+    """测量缺口提议:有进行中干预周期 + 今天还没测 BP/体重 → 提议「现在测一下」(良性提醒)。
+
+    只在有 active cycle 时提(闭环上下文,喂快反馈指标),不打扰无周期用户。同一 metric 今天
+    已提过(任何状态)→ 不再提,防同日反复 nag。返回新建提议数。
+    """
+    from app.services.intervention_cycle_service import get_active_cycle
+    from app.models.blood_pressure import BloodPressureRecord
+    from app.models.weight import WeightRecord
+    from app.utils.timezone import get_china_today
+
+    if get_active_cycle(db, user_id) is None:
+        return 0
+
+    # 用北京日历日:BP/体重 record_date 按北京时写入(全仓 record_date==today 都用 get_china_today)。
+    today = get_china_today()
+    _beijing = timezone(timedelta(hours=8))
+    specs = [
+        ("bp", "血压", BloodPressureRecord),
+        ("weight", "体重", WeightRecord),
+    ]
+    created = 0
+    for metric, label, model in specs:
+        target_type = f"measurement_{metric}"
+        # 今天已有该测量记录 → 不必提
+        has_today = (
+            db.query(model.id)
+            .filter(model.user_id == user_id, model.record_date == today)
+            .first()
+            is not None
+        )
+        if has_today:
+            continue
+        # 今天已提过(任何状态)→ 不重复 nag(按存储时间的日历日比对,tz 安全)
+        last = (
+            db.query(WriteIntent)
+            .filter(
+                WriteIntent.user_id == user_id,
+                WriteIntent.kind == "measurement_prompt",
+                WriteIntent.target_type == target_type,
+            )
+            .order_by(WriteIntent.created_at.desc())
+            .first()
+        )
+        if last is not None and last.created_at is not None:
+            ca = last.created_at
+            if ca.tzinfo is None:  # SQLite 存的是 naive UTC;PG 为 tz-aware
+                ca = ca.replace(tzinfo=timezone.utc)
+            if ca.astimezone(_beijing).date() == today:  # 同北京日历日已提过 → 不重复 nag
+                continue
+        wi = propose(
+            db,
+            user_id,
+            kind="measurement_prompt",
+            title=f"今天还没测{label}",
+            description=f"现在测一下{label},几十秒——给进行中的干预周期补上今天的数据。",
+            source="measurement_gap",
+            target_type=target_type,
+            target_id=None,
+            payload={"metric": metric},
             commit=False,
         )
         if wi is not None:

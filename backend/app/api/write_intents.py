@@ -30,6 +30,11 @@ async def list_write_intents(
     except Exception as e:  # 生成器失败不该阻塞读列表(已有 pending 仍要能看)
         logger.warning(f"[write-intents] followup 生成失败(降级,仍返回现有): {e}")
         db.rollback()
+    try:
+        svc.generate_measurement_prompts(db, current_user.id)
+    except Exception as e:  # 各生成器相互独立,一个挂不连累另一个 / 不阻塞读
+        logger.warning(f"[write-intents] measurement 生成失败(降级,仍返回现有): {e}")
+        db.rollback()
     return {"items": svc.list_pending(db, current_user.id)}
 
 
