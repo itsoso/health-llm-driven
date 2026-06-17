@@ -78,3 +78,32 @@ export async function recheckCycle(cycleId: number): Promise<InterventionCycle> 
   const { data } = await api.post(`/intervention-cycles/${cycleId}/recheck`);
   return data.cycle;
 }
+
+// 干预效应估计 (N-of-1)。后端 app/api/personal_models.py GET /personal-models/treatment-effect。
+// 注意: 该端点尚未进 api.generated.ts(契约漂移待补 CI 闸),此处手写镜像后端 schema;
+// 前端只渲染 display_label / message(强制 hedge),绝不渲染裸 verdict。
+export interface TreatmentEffectItem {
+  metric_code: string;
+  unit: string | null;
+  observed_delta: number | null;
+  posterior_effect: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+  ci_level: number;
+  confidence: string;
+  verdict: string;       // 仅内部逻辑,前端不直接展示
+  display_label: string; // 合规措辞,直显
+  evidence_tier: string;
+  requires_clinician: boolean;
+  message: string;
+  model_version: string;
+}
+
+export interface TreatmentEffectResponse {
+  estimates: TreatmentEffectItem[];
+}
+
+export async function getTreatmentEffect(cycleId: number): Promise<TreatmentEffectResponse> {
+  const { data } = await api.get('/personal-models/treatment-effect', { params: { cycle_id: cycleId } });
+  return data;
+}

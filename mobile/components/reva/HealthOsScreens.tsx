@@ -7,7 +7,7 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { revaColors as C, type RevaStatus } from '../../constants/revaTheme';
 import { Button, Card, Chip, DayProgress, Icon, LabRow, MetricTile, SectionLabel, TopBar } from './RevaKit';
-import { useActiveCycle, useMetabolicProfile, useRecheckCycle, useStartCycle } from '../../hooks/useHealthOs';
+import { useActiveCycle, useMetabolicProfile, useRecheckCycle, useStartCycle, useTreatmentEffect } from '../../hooks/useHealthOs';
 import type { BiomarkerObs, OutcomeMetric } from '../../services/healthOs';
 
 const body = { padding: 16, paddingBottom: 32, gap: 22 } as const;
@@ -151,6 +151,9 @@ export function InterventionCycleView() {
   const { data: cycle, isLoading } = useActiveCycle();
   const start = useStartCycle();
   const recheck = useRecheckCycle();
+  const router = useRouter();
+  // 裁决只在已复查时拉(零复查周期不空跑);hooks 须在早返回前无条件调用。
+  const effect = useTreatmentEffect(cycle?.id, cycle?.latest_snapshot_id != null);
   if (isLoading) return <Loading />;
 
   if (!cycle) {
@@ -210,6 +213,30 @@ export function InterventionCycleView() {
           </Card>
         </View>
 
+        {rechecked && (effect.data?.estimates?.length ?? 0) > 0 ? (
+          <View>
+            <SectionLabel>本次复查解读</SectionLabel>
+            <Card>
+              {effect.data!.estimates.map((e, i) => {
+                const name = cycle.outcomes.find((o) => o.metric_code === e.metric_code)?.display ?? e.metric_code;
+                return (
+                  <View key={e.metric_code} style={{ marginTop: i ? 14 : 0 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <Text style={{ fontFamily: 'NotoSansSC', fontWeight: '700', fontSize: 14, color: C.ink1 }}>{name}</Text>
+                      <Chip status="info">{e.display_label}</Chip>
+                      {e.requires_clinician ? <Chip status="caution">需医生评估</Chip> : null}
+                    </View>
+                    <Text style={{ fontSize: 12.5, lineHeight: 18, color: C.ink2, marginTop: 5 }}>{e.message}</Text>
+                  </View>
+                );
+              })}
+              <Text style={{ fontSize: 11, lineHeight: 16, color: C.ink3, marginTop: 14 }}>
+                基于你自己的复测数据估计「对你的效应」,相关非因果、非诊断;处方/激素类指标须由医生判断。
+              </Text>
+            </Card>
+          </View>
+        ) : null}
+
         {cycle.stop_conditions?.length ? (
           <View>
             <SectionLabel>停止 / 升级条件</SectionLabel>
@@ -224,9 +251,15 @@ export function InterventionCycleView() {
           </View>
         ) : null}
 
-        <Button full variant="secondary" icon="refresh-cw" onPress={() => recheck.mutate(cycle.id)}>
-          {recheck.isPending ? '正在复查…' : rechecked ? '重新复查' : '记录复查 (导入新体检后)'}
-        </Button>
+        <View style={{ gap: 10 }}>
+          {/* L2: 复查前先把新化验导入(OCR→medical_indicators,复查端点会归一进 biomarker) */}
+          <Button full variant="secondary" icon="camera" onPress={() => router.push('/medical-exams' as any)}>
+            拍照录入新化验
+          </Button>
+          <Button full icon="refresh-cw" onPress={() => recheck.mutate(cycle.id)}>
+            {recheck.isPending ? '正在复查…' : rechecked ? '重新复查' : '记录复查'}
+          </Button>
+        </View>
       </ScrollView>
     </>
   );
