@@ -120,7 +120,11 @@ final class WatchStore: ObservableObject {
     /// 「一键已做」:把到点项标记完成。仅可完成项(有 action_id 且 health_protocol 域)调用。
     /// 走与 submit 同一 fail-loud 链路;完成确认成功(lastRecordOK==true)后才发 completed 埋点。
     func completeAction(_ action: WatchTopAction) async {
-        guard let actionId = action.actionId, action.isCompletable, !completing else { return }
+        guard let actionId = action.actionId,
+              action.isCompletable,
+              !completing,
+              !skipping,
+              !snoozing else { return }
         completing = true
         defer { completing = false }
         await submit { try QuickRecord.completeAction(actionId: actionId) }
@@ -130,7 +134,11 @@ final class WatchStore: ObservableObject {
     }
 
     func completeDueItem(_ item: WatchDueItem) async {
-        guard let actionId = item.actionId, item.isCompletable, !completing else { return }
+        guard let actionId = item.actionId,
+              item.isCompletable,
+              !completing,
+              !skipping,
+              !snoozing else { return }
         completing = true
         defer { completing = false }
         await submit { try QuickRecord.completeAction(actionId: actionId) }
@@ -140,12 +148,30 @@ final class WatchStore: ObservableObject {
     }
 
     func skipAction(_ action: WatchTopAction, reason: String = "no_time") async {
-        guard let actionId = action.actionId, action.isCompletable, !skipping else { return }
+        guard let actionId = action.actionId,
+              action.isCompletable,
+              !completing,
+              !skipping,
+              !snoozing else { return }
         skipping = true
         defer { skipping = false }
         await submit { try QuickRecord.skipAction(actionId: actionId, reason: reason) }
         if lastRecordOK == true {
             events.actionSkipped(action, reason: reason)
+        }
+    }
+
+    func skipDueItem(_ item: WatchDueItem, reason: String = "no_time") async {
+        guard let actionId = item.actionId,
+              item.isCompletable,
+              !completing,
+              !skipping,
+              !snoozing else { return }
+        skipping = true
+        defer { skipping = false }
+        await submit { try QuickRecord.skipAction(actionId: actionId, reason: reason) }
+        if lastRecordOK == true {
+            events.actionSkipped(actionId: actionId, kind: item.kind, reason: reason)
         }
     }
 
@@ -160,6 +186,20 @@ final class WatchStore: ObservableObject {
         await submit { try QuickRecord.snoozeAction(actionId: actionId, minutes: minutes) }
         if lastRecordOK == true {
             events.actionSnoozed(action, minutes: minutes)
+        }
+    }
+
+    func snoozeDueItem(_ item: WatchDueItem, minutes: Int = 30) async {
+        guard let actionId = item.actionId,
+              item.isCompletable,
+              !completing,
+              !skipping,
+              !snoozing else { return }
+        snoozing = true
+        defer { snoozing = false }
+        await submit { try QuickRecord.snoozeAction(actionId: actionId, minutes: minutes) }
+        if lastRecordOK == true {
+            events.actionSnoozed(actionId: actionId, kind: item.kind, minutes: minutes)
         }
     }
 

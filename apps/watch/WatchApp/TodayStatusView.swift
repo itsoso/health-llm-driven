@@ -300,16 +300,33 @@ struct TodayStatusView: View {
             }
             Spacer(minLength: 4)
             if item.isCompletable {
-                Button {
-                    Task { await store.completeDueItem(item) }
-                } label: {
-                    Image(systemName: store.completing ? "hourglass" : "checkmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(RevaWatch.greenBright)
-                        .frame(width: 28, height: 28)
+                let disabled = store.completing || store.skipping || store.snoozing
+                HStack(spacing: 2) {
+                    dueActionButton(
+                        systemImage: store.completing ? "hourglass" : "checkmark.circle",
+                        accessibilityLabel: "已做",
+                        color: RevaWatch.greenBright,
+                        disabled: disabled
+                    ) {
+                        Task { await store.completeDueItem(item) }
+                    }
+                    dueActionButton(
+                        systemImage: store.snoozing ? "hourglass" : "clock",
+                        accessibilityLabel: "稍后",
+                        color: RevaWatch.caution,
+                        disabled: disabled
+                    ) {
+                        Task { await store.snoozeDueItem(item) }
+                    }
+                    dueActionButton(
+                        systemImage: store.skipping ? "hourglass" : "xmark.circle",
+                        accessibilityLabel: "跳过",
+                        color: RevaWatch.ink2,
+                        disabled: disabled
+                    ) {
+                        Task { await store.skipDueItem(item, reason: "no_time") }
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(store.completing)
             }
         }
         .padding(.horizontal, 10)
@@ -322,6 +339,27 @@ struct TodayStatusView: View {
             RoundedRectangle(cornerRadius: RevaWatch.radiusRow, style: .continuous)
                 .stroke(RevaWatch.focusLine, lineWidth: 1)
         )
+    }
+
+    private func dueActionButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        color: Color,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+        } label: {
+            Image(systemName: systemImage)
+                .font(.caption)
+                .foregroundStyle(color)
+                .frame(width: 26, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .disabled(disabled)
     }
 
     // MARK: - Pending count

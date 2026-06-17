@@ -44,7 +44,11 @@ final class WatchEventClient {
 
     func actionSnoozed(_ action: WatchTopAction, minutes: Int) {
         guard let id = action.actionId, !id.isEmpty else { return }
-        var meta = Self.meta(actionId: id, kind: action.kind, priorityTier: action.priorityTier)
+        actionSnoozed(actionId: id, kind: action.kind, priorityTier: action.priorityTier, minutes: minutes)
+    }
+
+    func actionSnoozed(actionId: String, kind: String, priorityTier: String? = nil, minutes: Int) {
+        var meta = Self.meta(actionId: actionId, kind: kind, priorityTier: priorityTier)
         meta["minutes"] = String(minutes)
         emit("watch_action_snoozed", meta)
     }
