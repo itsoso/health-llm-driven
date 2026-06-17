@@ -111,6 +111,10 @@ class UserProfileBase(BaseModel):
     work_start_time: Optional[str] = Field(None, description="上班时间 HH:MM(时点日程避开工作窗)")
     work_end_time: Optional[str] = Field(None, description="下班时间 HH:MM")
 
+    # 锻炼时点偏好(时点日程据此排锻炼块)
+    workout_pref_window: Optional[str] = Field(None, description="锻炼偏好时段 morning/midday/evening/any(空=不排锻炼块)")
+    workout_target_minutes: Optional[int] = Field(None, ge=10, le=240, description="目标锻炼时长(分钟),缺省 40")
+
     # 地理位置
     city: Optional[str] = Field(None, description="所在城市")
     timezone: str = Field("Asia/Shanghai", description="时区")
@@ -168,6 +172,8 @@ class UserProfileUpdate(BaseModel):
     sitting_hours_per_day: Optional[float] = None
     work_start_time: Optional[str] = None
     work_end_time: Optional[str] = None
+    workout_pref_window: Optional[str] = None
+    workout_target_minutes: Optional[int] = Field(None, ge=10, le=240)
     city: Optional[str] = None
     timezone: Optional[str] = None
     devices: Optional[List[str]] = None

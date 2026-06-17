@@ -75,6 +75,8 @@ def build_profile_response(profile: UserProfile) -> UserProfileResponse:
         sitting_hours_per_day=profile.sitting_hours_per_day,
         work_start_time=profile.work_start_time,
         work_end_time=profile.work_end_time,
+        workout_pref_window=profile.workout_pref_window,
+        workout_target_minutes=profile.workout_target_minutes,
         city=profile.city,
         timezone=profile.timezone or "Asia/Shanghai",
         devices=parse_json_field(profile.devices, []),

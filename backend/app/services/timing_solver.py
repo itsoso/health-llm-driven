@@ -168,6 +168,49 @@ def _meal(ctx: DayContext, ref: str) -> int:
     return _to_min(ctx.meals.get(ref, ctx.meals.get("breakfast", "07:30")))
 
 
+# ── 锻炼时点选择(cut 7)──────────────────────────────────────────────────
+# 纯函数:给定作息/工作窗/忙碌块 + 偏好时段 + 时长 → 锻炼起点(分钟);找不到空档→None。
+# 硬边界:锻炼整段须落在偏好窗内且 ≤ 睡前 2h 结束(高强度近睡影响睡眠);避开工作窗 + 日历忙碌块 +
+# 餐后 60min(刚吃完不剧烈运动)。本函数只选「起点」,readiness 门控(Red→休息)由 solver Step 0 负责。
+def pick_workout_start(ctx: DayContext, pref_window: str, duration_min: int) -> Optional[int]:
+    wake, sleep = _to_min(ctx.wake), _to_min(ctx.sleep)
+    earliest = wake + 60                 # 起床 1h 后才安排(留出晨间/早餐)
+    latest_end = sleep - 120             # 锻炼结束须 ≥ 睡前 2h
+    # 偏好窗给「粗」边界,精细错峰(避餐 ±60min、避工作/忙碌块)交给下方迭代。
+    windows = {
+        "morning": (earliest, 11 * 60 + 30),
+        "midday": (11 * 60 + 30, 15 * 60),
+        "evening": (16 * 60 + 30, latest_end),
+        "any": (earliest, latest_end),
+    }
+    lo, hi = windows.get(pref_window or "any", (earliest, latest_end))
+    lo = max(lo, earliest)
+    hi_start = min(hi, latest_end) - duration_min  # 起点上界:留时长在窗内 + 睡前 2h 收口
+    if hi_start < lo:                    # 偏好窗太窄(早睡/长时长)→ 回退全天可用窗
+        lo, hi_start = earliest, latest_end - duration_min
+    if hi_start < lo:                    # 全天都放不下(如极早睡)→ 当日不排
+        return None
+
+    blocks = _block_minutes(ctx)
+    meals = sorted({_meal(ctx, "breakfast"), _meal(ctx, "lunch"), _meal(ctx, "dinner")})
+    t = lo
+    # 迭代收敛:推出忙碌块 → 与任一餐 ±60min 内或整段跨餐 → 推到餐后 60min → 整段避忙碌块。
+    for _ in range(8):
+        nt = _push_free(t, blocks)
+        for m in meals:
+            if (m - 60 < nt < m + 60) or (nt <= m < nt + duration_min):
+                nt = max(nt, m + 60)
+        for bs, be in blocks:            # 整段 [nt, nt+dur) 与某忙碌块重叠 → 推到块尾
+            if nt < be and bs < nt + duration_min:
+                nt = max(nt, be)
+        if nt == t:
+            break
+        t = nt
+    if t > hi_start:                     # 推完已越过上界 → 当日无合适空档
+        return None
+    return t
+
+
 # ── 主求解(纯函数)────────────────────────────────────────────────────────
 def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
     """求解当日时间轴。返回 {scheduled, rejected, deferred},均为可审计 dict 列表。

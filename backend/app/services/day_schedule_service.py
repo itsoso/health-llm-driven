@@ -19,7 +19,20 @@ HealthTwin 上跑规则 → 把命中的物质名映射回 med.id)—— 是独�
 from typing import Dict, List, Optional
 
 from app.services.timing_adapter import medications_to_items
-from app.services.timing_solver import DayContext, solve_day_schedule
+from app.services.timing_solver import (
+    RED,
+    DayContext,
+    Item,
+    _to_hhmm,
+    pick_workout_start,
+    solve_day_schedule,
+)
+
+DEFAULT_WORKOUT_MINUTES = 40  # 用户未设 workout_target_minutes 时的缺省锻炼时长
+
+# Garmin training_readiness_level → solver readiness 灯。仅「poor」判 Red(剔锻炼→休息);
+# 其余(含缺值)留 gray/不门控——保守:只有明确低恢复才劝休息,不无信号瞎拦。
+_READINESS_LEVEL_TO_ZONE = {"poor": RED}
 
 
 def _day_context(profile=None, *, overrides: Optional[dict] = None) -> DayContext:
@@ -81,7 +94,59 @@ def schedule_from_medications(
             if mid in warnings:
                 it.warning = warnings[mid]
     ctx = _day_context(profile, overrides=ctx_overrides)
+
+    # 锻炼时点(cut 7):有偏好窗 → 在空档(避工作窗/忙碌块/餐后/睡前2h)排一个锻炼块。
+    workout = _maybe_workout_item(profile, ctx)
+    if workout is not None:
+        items.append(workout)
+
     return solve_day_schedule(items, ctx)
+
+
+def _maybe_workout_item(profile, ctx: DayContext) -> Optional[Item]:
+    """据 profile 偏好选锻炼起点,设 ctx.workout_start(对齐围训练营养),返回 movement Item。
+
+    - 无偏好窗 → None(不排锻炼)。
+    - 当日无合适空档 → None(MVP 不强塞)。
+    - readiness=Red → 仍返回 Item(requires_strength)让 solver 剔为「改拉伸/休息」,且不设
+      ctx.workout_start(锻炼会被剔,围训练营养不应锚到不存在的锻炼)。
+    """
+    pref = getattr(profile, "workout_pref_window", None) if profile else None
+    if not pref:
+        return None
+    dur = (getattr(profile, "workout_target_minutes", None) if profile else None) or DEFAULT_WORKOUT_MINUTES
+    start = pick_workout_start(ctx, pref, dur)
+    if start is None:
+        return None
+    if ctx.readiness != RED:
+        ctx.workout_start = _to_hhmm(start)
+    return Item(
+        id="workout:today",
+        domain="movement",
+        title=f"锻炼 {dur} 分钟",
+        fixed_time=_to_hhmm(start),
+        requires_strength=True,  # Red 下由 solver Step 0 剔除为「改拉伸/休息」
+        deferrable=False,
+        severity=55,
+    )
+
+
+def _latest_readiness_zone(db, user_id: int) -> Optional[str]:
+    """最近一条带 training_readiness_level 的 garmin 行 → solver readiness 灯(仅 poor→Red)。"""
+    from app.models.daily_health import GarminData
+
+    row = (
+        db.query(GarminData.training_readiness_level)
+        .filter(
+            GarminData.user_id == user_id,
+            GarminData.training_readiness_level.isnot(None),
+        )
+        .order_by(GarminData.record_date.desc())
+        .first()
+    )
+    if not row or not row[0]:
+        return None
+    return _READINESS_LEVEL_TO_ZONE.get(str(row[0]).strip().lower())
 
 
 def build_day_schedule(
@@ -111,6 +176,17 @@ def build_day_schedule(
             overrides["busy"] = today_busy_blocks(db, user_id)
         except Exception:  # 忙碌块读取失败 → 退化为不避会议,不让它炸掉整条排程
             pass
+
+    # 锻炼 readiness 门控(cut 7):取最近一条有 training_readiness_level 的 garmin 行 → 灯。
+    # 失败/无信号 → 不门控(留 gray),保守只在明确低恢复(poor→Red)时劝休息。
+    if "readiness" not in overrides:
+        try:
+            zone = _latest_readiness_zone(db, user_id)
+            if zone:
+                overrides["readiness"] = zone
+        except Exception:
+            pass
+
     return schedule_from_medications(
         meds, profile=profile, forbidden_reasons=forbidden_reasons, ctx_overrides=overrides
     )
