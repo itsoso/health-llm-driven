@@ -71,14 +71,32 @@ function ActiveStrip({ cycle, onPress }: { cycle: InterventionCycle; onPress: ()
           <Text style={styles.metricLabel} numberOfLines={1}>
             {outcome.display}
           </Text>
-          <Text style={styles.metricValue}>
-            {fmt(outcome.baseline_value)}
-            <Text style={styles.arrow}>{'  →  '}</Text>
-            <Text style={improving ? styles.target : styles.metricValue}>
-              {fmt(outcome.target_value)}
-              {outcome.unit ? ` ${outcome.unit}` : ''}
+          {/* 复查后显示 baseline → 最新值(真实进展);未复查则 baseline → 目标(待达成)。
+              目标/达标作为右侧小字参考,不再把目标当成"现值"误导。 */}
+          {outcome.latest_value != null ? (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.metricValue}>
+                {fmt(outcome.baseline_value)}
+                <Text style={styles.arrow}>{'  →  '}</Text>
+                <Text style={improving ? styles.target : styles.metricValue}>
+                  {fmt(outcome.latest_value)}
+                  {outcome.unit ? ` ${outcome.unit}` : ''}
+                </Text>
+              </Text>
+              <Text style={styles.goalSub}>
+                {outcome.status === 'met' ? '已达标' : `目标 ${fmt(outcome.target_value)}`}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.metricValue}>
+              {fmt(outcome.baseline_value)}
+              <Text style={styles.arrow}>{'  →  '}</Text>
+              <Text style={styles.target}>
+                {fmt(outcome.target_value)}
+                {outcome.unit ? ` ${outcome.unit}` : ''}
+              </Text>
             </Text>
-          </Text>
+          )}
         </View>
       ) : (
         <Text style={styles.idleSub}>先锁定体检基线,再追踪复查变化</Text>
@@ -120,6 +138,7 @@ const styles = StyleSheet.create({
   metricValue: { fontFamily: 'IBMPlexMono', fontSize: 15, fontWeight: '500', color: C.ink1 },
   arrow: { fontFamily: 'IBMPlexMono', color: C.ink3 },
   target: { fontFamily: 'IBMPlexMono', fontSize: 15, fontWeight: '500', color: revaSemantic.normal.fg },
+  goalSub: { fontFamily: 'IBMPlexMono', fontSize: 11, color: C.ink3, marginTop: 2 },
   idleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   idleIcon: {
     width: 34,

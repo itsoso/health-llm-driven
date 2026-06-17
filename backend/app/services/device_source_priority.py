@@ -133,6 +133,25 @@ def _row_value(row: Any, metric: str) -> Any:
     return getattr(row, metric, None)
 
 
+# 合理性区间(分钟):超出 → 视为坏读,跳过该源,落到下一优先级源。
+# 防单源异常值污染合并(实测:某夜 RingConn total_sleep=964min=16h,疑似两段睡眠/重复
+# 被叠加;旧逻辑直接采纳 → 首页显示 16.1h)。只给易叠加/坏读的睡眠时长设界。
+_PLAUSIBLE_RANGE: Dict[str, tuple[float, float]] = {
+    "total_sleep_duration": (60.0, 840.0),   # 1–14 h
+    "deep_sleep_duration": (0.0, 360.0),     # 0–6 h
+}
+
+
+def _plausible(metric: str, v: Any) -> bool:
+    rng = _PLAUSIBLE_RANGE.get(metric)
+    if rng is None or v is None:
+        return True
+    try:
+        return rng[0] <= float(v) <= rng[1]
+    except (TypeError, ValueError):
+        return True
+
+
 def pick_value(rows: Sequence[Any], metric: str) -> tuple[Any, Optional[str]]:
     """单指标按优先级挑值. 返回 (value, winning_source); 全 None → (None, None).
 
@@ -159,12 +178,12 @@ def pick_value(rows: Sequence[Any], metric: str) -> tuple[Any, Optional[str]]:
         for row in rows:
             if _row_source(row) == src:
                 v = _row_value(row, metric)
-                if v is not None:
+                if v is not None and _plausible(metric, v):
                     return v, src
     # 优先级表外的源 (含 'unknown' 之外的任意 sourceName) — last resort.
     for row in rows:
         v = _row_value(row, metric)
-        if v is not None:
+        if v is not None and _plausible(metric, v):
             return v, _row_source(row)
     return None, None
 

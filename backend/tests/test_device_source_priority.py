@@ -129,10 +129,31 @@ def test_merge_empty():
 
 def test_merge_default_metrics_covers_all_priority_keys():
     # 用 ringconn(任何指标都不被排除)→ 每个 priority key 都能解析;garmin 血氧已整源剔除。
-    rows = [_Row(data_source="ringconn", **{k: 1 for k in METRIC_SOURCE_PRIORITY})]
+    # 睡眠时长有合理性区间(防 16h 叠加),用区间内的值;其余指标用 1 占位。
+    vals = {k: 1 for k in METRIC_SOURCE_PRIORITY}
+    vals["total_sleep_duration"] = 400  # 6.7h,合理性区间内
+    vals["deep_sleep_duration"] = 90
+    rows = [_Row(data_source="ringconn", **vals)]
     merged = merge_daily_by_priority(rows)
     for k in METRIC_SOURCE_PRIORITY:
-        assert merged[k] == 1
+        assert merged[k] == vals[k]
+
+
+def test_sleep_implausible_value_skipped_falls_to_next_source():
+    """某源睡眠时长不合理(16h,疑似两段叠加)→ 跳过,落到下一优先级源的合理值。"""
+    rows = [
+        _Row(data_source="ringconn", total_sleep_duration=964),  # 16h,不合理
+        _Row(data_source="apple-watch", total_sleep_duration=428),  # 7.1h,合理
+    ]
+    v, src = pick_value(rows, "total_sleep_duration")
+    assert v == 428 and src == "apple-watch"
+    # 合理值时 ringconn 仍按优先级胜出
+    rows2 = [
+        _Row(data_source="ringconn", total_sleep_duration=487),
+        _Row(data_source="apple-watch", total_sleep_duration=428),
+    ]
+    v2, src2 = pick_value(rows2, "total_sleep_duration")
+    assert v2 == 487 and src2 == "ringconn"
 
 
 def test_merge_accepts_dict_rows():
