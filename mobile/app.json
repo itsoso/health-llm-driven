@@ -21,6 +21,12 @@
       },
       "infoPlist": {
         "CFBundleDisplayName": "健康助理",
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ],
         "NSFaceIDUsageDescription": "使用 Face ID 保护您的健康数据",
         "NSSiriUsageDescription": "使用 Siri 语音快速记录或分析健康数据",
         "NSPhotoLibraryUsageDescription": "选择图片发送给 AI 助手分析",
