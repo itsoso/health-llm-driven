@@ -18,6 +18,7 @@ from app.models.intervention_cycle import InterventionCycle
 from app.biomarkers import get_definition
 from app.twin.builder import build_twin
 from app.services import intervention_cycle_service as ics
+from app.services.biomarker_sync import sync_indicators_to_biomarkers
 
 router = APIRouter(prefix="/intervention-cycles", tags=["intervention-cycles"])
 
@@ -110,6 +111,11 @@ def recheck_cycle(
 ):
     """复查: 用最新 Twin + biomarker 重算每个指标的 delta/status。"""
     c = _get_owned_cycle(db, current_user.id, cycle_id)
+    # 复查前先把 OCR/手录入库的 medical_indicators 归一进 biomarker_observations:
+    # record_recheck 只读 biomarker,不先同步则 latest_value 仍是旧值 —— 用户刚传完化验、
+    # 点「复查」却看到没变化(假装成功型坑)。失败不吞,让调用方感知,绝不在可能过期的
+    # 数据上给出复查裁决。
+    sync_indicators_to_biomarkers(db, current_user.id)
     twin = build_twin(db, current_user.id)
     c = ics.record_recheck(db, c, twin)
     return {"cycle": _cycle_dict(c)}
