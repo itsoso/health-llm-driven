@@ -55,6 +55,8 @@ def _push_tier(item: Dict[str, Any]) -> Optional[str]:
         return "P1"                      # 用药待办
     if t == "exercise" and st == "pending":
         return "P1"                      # 餐后散步 / 微运动 nudge
+    if t == "movement" and st == "pending":
+        return "P1"                      # timing-solver 当日锻炼块(cut 6)
     return None
 
 
@@ -106,9 +108,13 @@ def _push_view(item: Dict[str, Any], tier: str) -> Dict[str, Any]:
 
 def _is_exercise_behavior_nudge(item: Dict[str, Any]) -> bool:
     src = item.get("source") or {}
+    if item.get("status") != "pending":
+        return False
+    # timing-solver 锻炼块(cut 6)同属运动行为 nudge:critical 安全信号活跃时不该催「去锻炼」。
+    if src.get("object_type") == "day_schedule_workout":
+        return True
     return (
-        item.get("status") == "pending"
-        and item.get("type") in ("exercise", "training", "activity")
+        item.get("type") in ("exercise", "training", "activity")
         and src.get("object_type") == "health_protocol"
     )
 
@@ -227,8 +233,8 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
 
     actionable = [
         i for i in items
-        if (i.get("source") or {}).get("object_type") == "health_protocol"
-        and i.get("status") == "pending"
+        if i.get("status") == "pending"
+        and (i.get("source") or {}).get("object_type") in ("health_protocol", "day_schedule_workout")
     ]
     ranked_actions = rank_agenda_actions(actionable)
     top_action = _action_view(ranked_actions[0]) if ranked_actions else None

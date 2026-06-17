@@ -143,6 +143,74 @@ def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
     return items
 
 
+def _bucket(hhmm: str | None) -> str:
+    """HH:MM → 时间窗桶(对齐 _TW_ORDER)。"""
+    if not hhmm:
+        return "anytime"
+    try:
+        h = int(hhmm.split(":")[0])
+    except (ValueError, AttributeError):
+        return "anytime"
+    if h < 11:
+        return "morning"
+    if h < 13:
+        return "noon"
+    if h < 17:
+        return "afternoon"
+    if h < 21:
+        return "evening"
+    return "bedtime"
+
+
+def _day_schedule_workout_item(db: Session, user_id: int) -> Dict[str, Any] | None:
+    """timing-solver 当日锻炼块投影成 agenda 项(cut 6)。
+
+    锻炼是 solver 独有产出(非 HealthProtocol),投影到 agenda 不重复 source:
+    - 排上 → pending movement 项(带 solver 求解的精确 `time`)。
+    - readiness=Red 被剔 → info 「改拉伸/休息」项(带 reason)。
+    仅当用户设了 workout_pref_window 才求解(省掉无偏好用户的整次 solve)。
+    """
+    from app.models.user_profile import UserProfile
+
+    pref = (
+        db.query(UserProfile.workout_pref_window)
+        .filter(UserProfile.user_id == user_id)
+        .scalar()
+    )
+    if not pref:
+        return None
+    try:
+        from app.services.day_schedule_service import build_day_schedule
+        sched = build_day_schedule(db, user_id)
+    except Exception:  # 排程失败不应清空整条 agenda;记日志,锻炼项缺省
+        logger.warning("agenda: day-schedule build failed for user %s", user_id, exc_info=True)
+        return None
+
+    w = next((s for s in sched.get("scheduled", []) if s.get("id") == "workout:today"), None)
+    if w:
+        return _agenda_item(
+            type="movement",
+            title=w.get("title") or "锻炼",
+            status="pending",
+            time=w.get("time"),
+            time_window=_bucket(w.get("time")),
+            priority=55,
+            source={"object_type": "day_schedule_workout", "object_id": user_id},
+        )
+    r = next((x for x in sched.get("rejected", []) if x.get("id") == "workout:today"), None)
+    if r:
+        return _agenda_item(
+            type="movement",
+            title=r.get("title") or "锻炼",
+            status="info",
+            detail=r.get("reason"),
+            time_window="anytime",
+            priority=40,
+            source={"object_type": "day_schedule_workout", "object_id": user_id},
+        )
+    return None
+
+
 def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str, Any]:
     """今日统一议程:协议待办 + 近 N 天到期复查。按优先级(高在前)+ 时间窗排序。"""
     items: List[Dict[str, Any]] = []
@@ -165,6 +233,11 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     ti = _training_item(db, user_id)
     if ti is not None:
         items.append(ti)
+
+    # 2.5) timing-solver 当日锻炼块(cut 6)→ 带精确时点的 movement 项 / Red 休息项
+    wk = _day_schedule_workout_item(db, user_id)
+    if wk is not None:
+        items.append(wk)
 
     # 3) 跨源数据质量(设备读数冲突)→ data_quality 提示
     dq = _data_quality_item(db, user_id)
