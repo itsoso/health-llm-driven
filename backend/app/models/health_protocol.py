@@ -23,7 +23,7 @@ from app.database import Base
 # 域:覆盖 PRD §5 双轨表的环节
 PROTOCOL_DOMAINS = (
     "hydration", "diet", "sleep", "training", "medication",
-    "supplement", "measurement", "mood", "activity", "checkup",
+    "supplement", "measurement", "mood", "activity", "exercise", "checkup",
 )
 # 机制:量为何隐式
 PROTOCOL_MECHANISMS = ("fixed_container", "pre_commit", "passive_device", "environment_default")

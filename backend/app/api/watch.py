@@ -41,6 +41,7 @@ _WRITTEN_BY_SOURCE_MODEL = {
     "supplement_records": "supplement_record",
     "diet_records": "diet_record",
     "water_records": "water_record",
+    "exercise_records": "exercise_record",
 }
 
 

@@ -106,12 +106,13 @@ def _is_due_today(db: Session, p: HealthProtocol, user_id: int, today: date) -> 
 
     - daily / per_meal_slot:每天到期(完成态由 today_status 单独反映)
     - weekly/monthly/quarterly/annual:本周期内未完成才到期(完成后掉出,下周期再现)
-    - event_triggered:不上日历(由事件触发,非每日投影)→ 不到期
+    - event_triggered:默认不上日历;若带 implied_quantity.trigger_date,则只在触发当天到期
     - 未知 cadence:退回 daily 行为(安全,不漏)
     """
     cadence = p.cadence or "daily"
     if cadence == "event_triggered":
-        return False
+        implied = p.implied_quantity or {}
+        return implied.get("trigger_date") == today.isoformat()
     since = _period_start(cadence, today)
     if since is None:
         return True  # daily / per_meal_slot / 未知
@@ -364,6 +365,22 @@ def _write_domain_record(
         db.add(rec)
         db.flush()
         return rec.id
+    if p.source_model == "exercise_records":
+        # 餐后散步 / 微运动协议:完成必须落真实 ExerciseRecord,避免"假完成"。
+        from app.models.daily_health import ExerciseRecord
+        v = {**(p.implied_quantity or {}), **(value or {})}
+        duration = v.get("duration_min") or v.get("duration")
+        rec = ExerciseRecord(
+            user_id=user_id,
+            record_date=day,
+            exercise_type=v.get("exercise_type") or "walk",
+            duration=int(round(float(duration))) if duration is not None else None,
+            intensity=v.get("intensity") or "easy",
+            notes=v.get("notes") or "via protocol: 餐后散步",
+        )
+        db.add(rec)
+        db.flush()
+        return rec.id
     return None
 
 
@@ -414,6 +431,83 @@ def create_protocol_for_meal_template(
         "completion_mode": "one_tap",
         "can_default_complete": False,           # 进食需显式确认(只有饮水默认完成)
         "source_model": "diet_records",
+    })
+
+
+POSTMEAL_WALK_MEAL_TYPES = {"lunch", "dinner"}
+
+
+def postmeal_window(meal_type: str, meal_time: Any = None) -> str:
+    """餐后散步协议的腕上时间窗。meal_type 使用 /diet/records 的英文枚举。"""
+    meal = str(getattr(meal_type, "value", meal_type) or "").lower()
+    if meal == "lunch":
+        # 有明确较早午餐时间时可贴近 noon;默认下午更稳,避免午休前过早打扰。
+        try:
+            if meal_time is not None and int(getattr(meal_time, "hour", 99)) <= 12:
+                return "noon"
+        except Exception:  # noqa: BLE001
+            pass
+        return "afternoon"
+    if meal == "dinner":
+        return "evening"
+    if meal == "breakfast":
+        return "morning"
+    return "anytime"
+
+
+def create_postmeal_walk_protocol(
+    db: Session,
+    user_id: int,
+    *,
+    record_date: date,
+    meal_type: str,
+    meal_time: Any = None,
+    diet_record_id: Optional[int] = None,
+) -> Optional[HealthProtocol]:
+    """午/晚餐后创建一次性 walk 协议。
+
+    幂等:同一用户同一日期同一餐次最多一条;早餐/加餐不触发。
+    """
+    meal = str(getattr(meal_type, "value", meal_type) or "").lower()
+    if meal not in POSTMEAL_WALK_MEAL_TYPES:
+        return None
+
+    trigger_date = record_date.isoformat()
+    existing = db.query(HealthProtocol).filter(
+        HealthProtocol.user_id == user_id,
+        HealthProtocol.status == "active",
+        HealthProtocol.domain == "exercise",
+        HealthProtocol.cadence == "event_triggered",
+        HealthProtocol.source_model == "exercise_records",
+    ).all()
+    for p in existing:
+        implied = p.implied_quantity or {}
+        if (
+            implied.get("trigger_date") == trigger_date
+            and implied.get("trigger_meal_type") == meal
+            and implied.get("exercise_type") == "walk"
+        ):
+            return None
+
+    return create_protocol(db, user_id, {
+        "domain": "exercise",
+        "name": "餐后轻松步行 20 分钟",
+        "mechanism": "pre_commit",
+        "implied_quantity": {
+            "exercise_type": "walk",
+            "duration_min": 20,
+            "intensity": "easy",
+            "trigger_date": trigger_date,
+            "trigger_meal_type": meal,
+            "source_diet_record_id": diet_record_id,
+        },
+        "cadence": "event_triggered",
+        "time_window": postmeal_window(meal, meal_time),
+        "completion_mode": "one_tap",
+        "can_default_complete": False,
+        "manual_track_allowed": True,
+        "source_model": "exercise_records",
+        "source_id": diet_record_id,
     })
 
 

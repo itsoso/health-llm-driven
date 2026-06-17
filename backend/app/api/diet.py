@@ -2,9 +2,9 @@
 import os
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import desc
 from typing import List, Optional
 from datetime import date, timedelta, datetime, time
 
@@ -108,6 +108,25 @@ def create_diet_record(
         db.refresh(db_record)
 
         logger.info(f"饮食记录创建成功: id={db_record.id}")
+        try:
+            from app.services import health_protocol_service as protocol_service
+
+            protocol_service.create_postmeal_walk_protocol(
+                db,
+                current_user.id,
+                record_date=db_record.record_date,
+                meal_type=meal_type_value,
+                meal_time=record.meal_time,
+                diet_record_id=db_record.id,
+            )
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning(
+                "餐后散步协议创建失败,不阻塞饮食记录: user_id=%s diet_record_id=%s error=%s",
+                current_user.id,
+                db_record.id,
+                e,
+            )
         return _convert_to_response(db_record)
 
     except Exception as e:

@@ -8,7 +8,7 @@
 
 只读投影,不写库、不绕过 Safety Guardian(critical 告警仍走告警通道);headline/push 措辞不诊断不开方。
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_health import GarminData
 from app.models.user import GarminCredential
-from app.services import agenda_service
+from app.services import agenda_service, proactive_coordinator
 from app.services.action_ranker import rank_agenda_actions
 from app.utils.timezone import get_user_today
 
@@ -53,6 +53,8 @@ def _push_tier(item: Dict[str, Any]) -> Optional[str]:
         return "P1"                      # 协议自纠偏
     if t == "medication" and st == "pending":
         return "P1"                      # 用药待办
+    if t == "exercise" and st == "pending":
+        return "P1"                      # 餐后散步 / 微运动 nudge
     return None
 
 
@@ -99,6 +101,65 @@ def _push_view(item: Dict[str, Any], tier: str) -> Dict[str, Any]:
         "kind": item.get("type"),
         "source": item.get("source"),
     }
+
+
+def _is_exercise_behavior_nudge(item: Dict[str, Any]) -> bool:
+    src = item.get("source") or {}
+    return (
+        item.get("status") == "pending"
+        and item.get("type") in ("exercise", "training", "activity")
+        and src.get("object_type") == "health_protocol"
+    )
+
+
+def _has_active_critical_safety(db: Session, user_id: int) -> bool:
+    """是否有近期未确认 critical 安全信号。只查已落库证据,不在摘要路径跑 SafetyGuardian。"""
+    today = get_user_today(db, user_id)
+    try:
+        from app.models.anomaly_alert import AnomalyAlert
+
+        if db.query(AnomalyAlert.id).filter(
+            AnomalyAlert.user_id == user_id,
+            AnomalyAlert.severity == "critical",
+            AnomalyAlert.detection_date >= today - timedelta(days=1),
+            AnomalyAlert.acknowledged.is_(False),
+            AnomalyAlert.is_suppressed.is_(False),
+        ).first():
+            return True
+    except Exception:
+        # 安全门查询失败时不静默给运动 nudge;后续 AgentAuditLog 还会再查一次。
+        return True
+
+    try:
+        from app.agents.safety_guardian.schema import Severity
+        from app.models.agent_audit_log import AgentAuditLog
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        rows = db.query(AgentAuditLog.result_detail).filter(
+            AgentAuditLog.user_id == user_id,
+            AgentAuditLog.agent_type == "safety_guardian",
+            AgentAuditLog.action == "evaluate",
+            AgentAuditLog.created_at >= cutoff,
+        ).order_by(AgentAuditLog.created_at.desc()).limit(20).all()
+        for row in rows:
+            detail = row[0] or {}
+            try:
+                if int(detail.get("top_severity") or 0) >= int(Severity.CRITICAL):
+                    return True
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        # 已查过 AnomalyAlert;审计查询失败不应让普通摘要整体失败。
+        return False
+    return False
+
+
+def _can_include_push(db: Session, user_id: int, item: Dict[str, Any], tier: str) -> bool:
+    if tier == "P0":
+        return True
+    if _is_exercise_behavior_nudge(item) and _has_active_critical_safety(db, user_id):
+        return False
+    return proactive_coordinator.can_notify_proactively(db, user_id, tier=tier)
 
 
 def _iso_datetime(dt: datetime | None) -> str | None:
@@ -182,7 +243,7 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     push: List[Dict[str, Any]] = []
     for i in items:
         tier = _push_tier(i)
-        if tier:
+        if tier and _can_include_push(db, user_id, i, tier):
             push.append(_push_view(i, tier))
     push.sort(key=lambda x: 0 if x["tier"] == "P0" else 1)
     push = push[:_PUSH_CAP]

@@ -37,6 +37,7 @@
 | **腕上语音记症状 → SafetyGuardian** | 059e9961 | 一句话报症状 → SymptomEntry 进时间线 → 确定性裁决(R4 不诊断、critical 真命中才升级、评估失败 fail-loud 注入就医 advisory) | POST `/watch/symptoms` |
 | **静息 HR 漂移哨兵** | fb3aedc2 | 被动:偏离个人基线 → 归因候选进 agenda(措辞红线:只说偏离不说病因) | `baseline_deviation_sentinel.py` |
 | **top action 杠杆排序** | e2863b37 | 按 上游性/可执行/频次/可验证 排 top_action + leverage_score/priority_tier | `action_ranker.py` |
+| **餐后散步窗 JITAI** | 本轮 | 记午/晚餐 → 一次性 walk 协议进 Watch due list / P1 push;critical 安全信号抑制运动 nudge;腕上完成落 ExerciseRecord | `diet.py` · `health_protocol_service.py` · `watch_summary.py` |
 
 **后端 watch API**:`GET /watch/summary`(状态灯+top_action+due_items+quick_actions+push_items,R15 推送≤3)· POST `/watch/actions/{id}/complete|skip` · POST `/watch/symptoms`。腕上不持 token,经 iPhone bridge 中继;user_id 一律取自 token(不信任客户端,IDOR 安全)。
 
@@ -48,7 +49,7 @@ Codex 的手表后端**质量高、可信**:① 正确规避 `build_twin`(用极
 
 1. **Write 层 syscall(最高战略,= Enter 键)**:Agent 提出写意图(先「自动加日历/复查提醒」)→ 落「写意图账本」待一键确认 → 跑稳后按权限层(R16 CI 收敛)逐类升级到自治。安全带(SafetyGuardian)是速度上限。
 2. **被动采集闭环(已落地 v0)**:高置信度 `HealthEvent` 可通过 `EventSource.config.health_protocol_id` 或唯一被动协议匹配 → 写 `HealthProtocolEvent.status=auto_observed` → Watch 待办自动消失、Timeline 完成数计入;低置信度与跨用户协议不自动闭环。
-3. **手表表面收尾**(Codex 在推):R18★2 nudge 屏 + Smart Stack 卡 + Double-Tap 单手确认。
+3. **手表表面收尾**(Codex 在推):R18★2 nudge 屏 + Smart Stack 卡 + Double-Tap 单手确认;餐后散步窗 JITAI v0 已先用 due list + P1 push 打通后端闭环。
 4. **freshness 上腕**:watch_summary 标注数据新鲜度(同首页就绪分守卫),昨晚没同步腕上也显示「待同步」而非旧值。
 
 > 分工建议(并发):**手表表面归 Codex,Write 层 / 后端内核归本线**,减少同文件冲突。
