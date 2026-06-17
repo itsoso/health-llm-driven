@@ -41,6 +41,7 @@ import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
 import RevaHeroCard from '../../components/home/RevaHeroCard';
+import WriteIntentCard from '../../components/home/WriteIntentCard';
 import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
 import RevaCycleStrip from '../../components/home/RevaCycleStrip';
 import RevaWeatherRow from '../../components/home/RevaWeatherRow';
@@ -251,6 +252,9 @@ export default function TodayScreen() {
           actionLever={actionLeverLabel}
           onPressAction={onHeroAction}
         />
+
+        {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
+        <WriteIntentCard />
 
         {/* 3 · 天气 + 空气(前置:环境是重要日常信息,含 PM2.5) */}
         <RevaWeatherRow />
