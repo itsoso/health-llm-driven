@@ -995,6 +995,63 @@ class TestGeneticVariantClassification:
         text = twin_to_prompt_blob(twin)
         assert "阴性不代表无风险" in text
 
+    def test_formatter_hla_proxy_promoted_still_shows_guardrail(self):
+        # 安全回归: rs1265181 (HLA-B*58:01, 别嘌醇 SJS/TEN) 提级到 act+pharmgkb_1a
+        # 后, formatter 仍须保留 "阴性不代表无风险" proxy 护栏 (走 is_proxy_variant)。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.drug_sensitivity = [
+            {"gene_name": "HLA-B*5801", "genotype": "+", "rsid": "rs1265181"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.drug_sensitivity[0]
+        assert v["actionability"] == "act"
+        assert v["evidence_grade"] == "pharmgkb_1a"
+        text = twin_to_prompt_blob(twin)
+        assert "行动级 ACT" in text
+        assert "阴性不代表无风险" in text  # proxy 护栏未丢
+
+    def test_formatter_brca_act_gets_founder_variant_footnote(self):
+        # 建议 1: BRCA (act + clinvar_path_confirm) 即使非 proxy rsid, 也强制追加
+        # "消费级芯片仅覆盖部分创始变异, 阴性不代表无风险" 语义 (doc §3)。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.risk_variants = [
+            {"gene_name": "BRCA1", "result_label": "致病变异", "rsid": "rs80357906"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.risk_variants[0]
+        assert v["actionability"] == "act"
+        assert v["evidence_grade"] == "clinvar_path_confirm"
+        text = twin_to_prompt_blob(twin)
+        assert "仅覆盖部分创始变异" in text
+        assert "阴性不代表无风险" in text
+
+    def test_formatter_hfe_risk_stratify_gets_referral(self):
+        # 建议 2: HFE 留 risk_stratify (tier 不动), 但 formatter 追加专科转诊 +
+        # 临床级测序确认 (补回 doc §3 的转诊框架)。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.risk_variants = [
+            {"gene_name": "HFE", "result_label": "C282Y 纯合", "rsid": "rs1800562"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.risk_variants[0]
+        assert v["actionability"] == "risk_stratify"
+        text = twin_to_prompt_blob(twin)
+        assert "RISK-STRATIFY" in text
+        assert "建议专科就诊" in text
+        assert "临床级测序确认" in text
+
 
 class TestAgeLabel:
     def test_none_returns_empty(self):

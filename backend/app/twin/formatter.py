@@ -80,7 +80,10 @@ def _format_genetic_variants_blob(genetic, max_genes: int = 8) -> List[str]:
       - act          → 前置/突出 (▲), 带证据级
       - risk_stratify→ 居中, 带证据级
       - de_emphasize → 强制前缀 "群体弱关联,个体无预测力,非诊断" (防弱模型当确定结论)
-      - proxy_uncertain → 追加 "阴性不代表无风险" 护栏
+      - proxy_uncertain / proxy locus → 追加 "阴性不代表无风险" 护栏
+        (HLA tag SNP 即使提级到 pharmgkb_1a, proxy 护栏仍保留)
+      - act + clinvar_path_confirm (BRCA 等) → 追加创始变异覆盖护栏 (建议1)
+      - risk_stratify + 高外显单基因病 (HFE) → 追加专科转诊 + 测序确认 (建议2)
 
     Falls back gracefully if classification keys are absent (treats as de_emphasize).
     """
@@ -88,7 +91,17 @@ def _format_genetic_variants_blob(genetic, max_genes: int = 8) -> List[str]:
         DE_EMPHASIZE_PREFIX,
         PROXY_UNCERTAIN_SUFFIX,
         classify_variant,
+        is_proxy_variant,
     )
+
+    # 建议 1: 单基因高危确认级 act 项(BRCA 等,evidence_grade=clinvar_path_confirm)
+    # 即便不是 proxy rsid,消费级芯片也只覆盖部分创始变异 → 阴性不能当无风险。
+    # doc §3 点名 BRCA 最该挂这条护栏。
+    CONFIRM_ONLY_SUFFIX = "(消费级芯片仅覆盖部分创始变异,阴性不代表无风险,需临床级测序确认)"
+    # 建议 2: 高外显单基因病的 risk_stratify 项(HFE 留 tier1 不动,但补回 doc §3 的
+    # 转诊框架)→ 追加专科 + 临床级测序确认一句。小白名单,只点高外显单基因病基因。
+    REFERRAL_SUFFIX = "(高外显单基因病,建议专科就诊 + 临床级测序确认)"
+    _REFERRAL_GENES = frozenset({"HFE"})
 
     g = genetic
     all_variants: List[dict] = []
@@ -114,21 +127,35 @@ def _format_genetic_variants_blob(genetic, max_genes: int = 8) -> List[str]:
     for v in all_variants[: max_genes * 3]:
         actionability = v.get("actionability")
         grade = v.get("evidence_grade")
+        key = v.get("rsid") or v.get("gene_name") or ""
         if not actionability or not grade:
             # builder did not classify (e.g. partial twin) → derive on the fly.
-            key = v.get("rsid") or v.get("gene_name") or ""
-            actionability, grade = classify_variant(str(key))
+            actionability, grade = classify_variant(
+                str(key), gene_name=v.get("gene_name")
+            )
 
+        gene_norm = str(v.get("gene_name") or "").strip().upper()
         grade_label = _EVIDENCE_GRADE_LABEL.get(grade, grade)
         label = _variant_label(v)
-        proxy = PROXY_UNCERTAIN_SUFFIX if grade == "proxy_uncertain" else ""
+
+        # proxy 护栏:grade=proxy_uncertain 或 locus 本身是 proxy(HLA tag SNP 被
+        # 提级到 pharmgkb_1a 后 grade 不再是 proxy_uncertain,但"阴性≠无风险"仍成立)。
+        suffix = ""
+        if grade == "proxy_uncertain" or is_proxy_variant(str(key)):
+            suffix = PROXY_UNCERTAIN_SUFFIX
+        # 建议 1: BRCA 等单基因高危确认级 act 项,强制创始变异覆盖护栏。
+        elif actionability == "act" and grade == "clinvar_path_confirm":
+            suffix = CONFIRM_ONLY_SUFFIX
+        # 建议 2: HFE 等高外显单基因病 risk_stratify 项,追加转诊 + 测序确认。
+        elif actionability == "risk_stratify" and gene_norm in _REFERRAL_GENES:
+            suffix = REFERRAL_SUFFIX
 
         if actionability == "act":
-            act.append(f"▲ {label} ({grade_label}){proxy}")
+            act.append(f"▲ {label} ({grade_label}){suffix}")
         elif actionability == "risk_stratify":
-            risk.append(f"{label} ({grade_label}){proxy}")
+            risk.append(f"{label} ({grade_label}){suffix}")
         else:  # de_emphasize
-            deemph.append(f"{label} ({grade_label}){proxy}")
+            deemph.append(f"{label} ({grade_label}){suffix}")
 
     out: List[str] = []
     if act:

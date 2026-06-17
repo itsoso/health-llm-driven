@@ -1249,7 +1249,9 @@ def _classify_genetic_variants(genetic: GeneticContext) -> None:
             if not isinstance(v, dict):
                 continue
             key = v.get("rsid") or v.get("gene_name") or ""
-            actionability, evidence_grade = classify_variant(str(key))
+            actionability, evidence_grade = classify_variant(
+                str(key), gene_name=v.get("gene_name")
+            )
             v["actionability"] = actionability
             v["evidence_grade"] = evidence_grade
 

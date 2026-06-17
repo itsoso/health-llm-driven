@@ -10,6 +10,7 @@ from app.services.genetic_registry import (
     DE_EMPHASIZE_PREFIX,
     PROXY_UNCERTAIN_SUFFIX,
     classify_variant,
+    is_proxy_variant,
 )
 
 
@@ -82,9 +83,32 @@ class TestConsumerChipProxyGuardrail:
         # actionability is preserved from the underlying tier (CYP2D6 = act)
         assert action == "act"
 
-    def test_hla_proxy_marker_is_proxy_uncertain(self):
-        _action, grade = classify_variant("rs1265181")  # hla_proxy_marker
-        assert grade == "proxy_uncertain"
+    def test_hla_proxy_marker_keeps_act_and_pharmgkb_grade(self):
+        # ADVERSARIAL REGRESSION (safety blocker): rs1265181 is the HLA-B*58:01
+        # tag SNP for allopurinol SJS/TEN — a LETHAL pharmacogenomic allele.
+        # KNOWN_SNPS spells the gene `HLA-B*5801` (no colon) while the tier0 table
+        # uses `HLA-B*58:01`; the colon mismatch previously dropped it to the
+        # de_emphasize default. The earlier test discarded actionability and so
+        # "stayed green while masking the danger". We now assert the full tuple
+        # against the REGISTRY's real spelling, not the idealized colon name.
+        action, grade = classify_variant("rs1265181")  # hla_proxy_marker
+        assert action == "act", (
+            "rs1265181 (HLA-B*58:01, allopurinol SJS/TEN) must be ACT, not "
+            f"de_emphasize — got {action!r}"
+        )
+        # HLA carries FDA-label / PharmGKB-1A weight; the proxy 'negative ≠ no
+        # risk' caveat is preserved by is_proxy_variant for the formatter, so the
+        # grade itself must NOT be softened to proxy_uncertain for a lethal allele.
+        assert grade == "pharmgkb_1a"
+        assert is_proxy_variant("rs1265181") is True
+
+    def test_hla_no_colon_and_colon_forms_align_to_act(self):
+        # The normalizer must align BOTH spellings of every HLA star-allele to the
+        # same tier0 entry — not a single hard-coded id.
+        assert classify_variant("HLA-B*5801")[0] == "act"
+        assert classify_variant("HLA-B*58:01")[0] == "act"
+        assert classify_variant("HLA-B*5801") == ("act", "pharmgkb_1a")
+        assert classify_variant("HLA-B*58:01") == ("act", "pharmgkb_1a")
 
     def test_haplotype_component_is_not_a_proxy_guardrail(self):
         # rs429358 (APOE haplotype component) is NOT in the proxy guardrail set,

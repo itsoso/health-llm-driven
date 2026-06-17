@@ -7,6 +7,7 @@ from this module instead of reaching into the API router.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, Optional
 
 
@@ -88,19 +89,55 @@ def _gene_to_tier() -> Dict[str, str]:
     return mapping
 
 
+# HLA star-allele forms drift between sources: KNOWN_SNPS stores `HLA-B*5801`
+# (no colon) while TIER_DEFINITIONS / PharmGKB use `HLA-B*58:01` (colon-delimited
+# field:allele). Without canonicalization the gene→tier lookup misses and a
+# lethal pharmacogenomic allele (HLA-B*58:01 → allopurinol SJS/TEN) silently
+# falls through to the de_emphasize default. Normalize ALL HLA star-alleles, not
+# just one hard-coded id, so every chip vendor spelling maps to one tier key.
+#
+# Canonical form: 4 trailing digits after `*` become `NN:NN` (e.g. *5801→*58:01,
+# *1502→*15:02, *3101→*31:01, *5701→*57:01). Already-colon'd or non-4-digit
+# allele strings (e.g. HLA-DQ8, HLA-DRB1*04) are left untouched.
+_HLA_NO_COLON_RE = re.compile(r"^(HLA-[A-Z0-9]+)\*(\d{2})(\d{2})$")
+
+
+def _normalize_hla_allele(gene: str) -> str:
+    m = _HLA_NO_COLON_RE.match(gene)
+    if m:
+        return f"{m.group(1)}*{m.group(2)}:{m.group(3)}"
+    return gene
+
+
 def _norm_gene(value: Any) -> str:
-    return str(value or "").strip().upper()
+    return _normalize_hla_allele(str(value or "").strip().upper())
 
 
-def _resolve_gene(rsid_or_gene: str) -> str:
-    """Resolve an rsid to its gene symbol, or pass through a gene name."""
+def _looks_like_rsid(value: str) -> bool:
+    return value[:2].lower() == "rs" and value[2:].isdigit()
+
+
+def _resolve_gene(rsid_or_gene: str, gene_name: Optional[str] = None) -> str:
+    """Resolve an rsid to its gene symbol, or pass through a gene name.
+
+    When the primary key is an rsid that is NOT in KNOWN_SNPS (e.g. a
+    sequencing-confirmed BRCA/HFE variant whose rsid never appears on the
+    consumer chip), fall back to the explicit gene_name rather than treating the
+    raw rsid string as a gene symbol — otherwise a confirmed BRCA1 variant would
+    silently classify as the de_emphasize default.
+    """
     key = str(rsid_or_gene or "").strip()
     if not key:
-        return ""
+        return _norm_gene(gene_name) if gene_name else ""
     # rsid path
     snp = KNOWN_SNPS.get(key) or KNOWN_SNPS.get(key.lower())
     if snp:
         return _norm_gene(snp.get("gene"))
+    # Unknown rsid → do not mistake it for a gene symbol; use gene_name fallback.
+    if _looks_like_rsid(key):
+        if gene_name:
+            return _norm_gene(gene_name)
+        return ""
     return _norm_gene(key)
 
 
@@ -109,27 +146,54 @@ def _variant_type_for(rsid_or_gene: str) -> Optional[str]:
     return _VARIANT_TYPES.get(key)
 
 
-def classify_variant(rsid_or_gene: str) -> tuple[Actionability, EvidenceGrade]:
+def is_proxy_variant(rsid_or_gene: str) -> bool:
+    """True if this locus is a consumer-chip proxy (indel / structural / HLA tag).
+
+    The formatter uses this to keep the "negative ≠ no risk" caveat on proxy
+    loci even when the (actionability, evidence_grade) was promoted above
+    proxy_uncertain — e.g. tier0 HLA pharmgkb_1a alleles.
+    """
+    return _variant_type_for(rsid_or_gene) in _PROXY_VARIANT_TYPES
+
+
+def classify_variant(
+    rsid_or_gene: str, gene_name: Optional[str] = None
+) -> tuple[Actionability, EvidenceGrade]:
     """Statically map an rsid OR gene symbol to (actionability, evidence_grade).
 
     Pure, deterministic, table-driven — never asks an LLM. Tier membership comes
     from gene_knowledge_audit.TIER_DEFINITIONS so the two systems can't drift.
 
+    `gene_name` is an optional fallback used when the primary key is an rsid that
+    is not on the consumer chip (KNOWN_SNPS) — e.g. a sequencing-confirmed
+    BRCA/HFE variant — so it still resolves to the right tier instead of the
+    de_emphasize default.
+
     Consumer-chip proxy loci (indel/structural/HLA-proxy in _VARIANT_TYPES) are
     forced to evidence_grade=proxy_uncertain regardless of tier — a "negative" on
-    a genotyping proxy never means "no risk".
+    a genotyping proxy never means "no risk". The sole exception is tier0 HLA
+    pharmacogenomic alleles, which keep their pharmgkb_1a grade (a lethal allele
+    must not be softened); their proxy caveat is surfaced via is_proxy_variant.
     """
-    gene = _resolve_gene(rsid_or_gene)
+    gene = _resolve_gene(rsid_or_gene, gene_name)
     tier = _gene_to_tier().get(gene)
     actionability = _TIER_ACTIONABILITY.get(tier or "", _DEFAULT_CLASSIFICATION[0])
+    is_proxy = _variant_type_for(rsid_or_gene) in _PROXY_VARIANT_TYPES
+
+    # Tier0 HLA pharmacogenomic alleles (HLA-B*58:01 / HLA-B*15:02 / HLA-A*31:01)
+    # are FDA-label / PharmGKB-1A drug-safety red lines. Even though the chip
+    # carries them as proxy tag SNPs, the grade must NOT be softened to
+    # proxy_uncertain — that is exactly what masked a lethal allele as noise.
+    # The proxy "negative ≠ no risk" caveat for these is surfaced by the
+    # formatter (is_proxy_variant) instead, so it isn't lost.
+    if tier == "tier0_pharmacogenomics" and gene in _TIER0_PHARMGKB_GENES:
+        return "act", "pharmgkb_1a"
 
     # Consumer-chip hard guardrail: proxy genotyping cannot confirm/exclude.
-    if _variant_type_for(rsid_or_gene) in _PROXY_VARIANT_TYPES:
+    if is_proxy:
         return actionability, "proxy_uncertain"
 
     if tier == "tier0_pharmacogenomics":
-        if gene in _TIER0_PHARMGKB_GENES:
-            return "act", "pharmgkb_1a"
         return "act", "cpic_a"
     if tier == "tierx_confirmation_only":
         return "act", "clinvar_path_confirm"
