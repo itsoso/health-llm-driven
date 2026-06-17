@@ -597,52 +597,10 @@ struct AgentChatView: View {
     /// WKWebView 渲染的滚动对话区(自带滚动 + 自动滚底 + 文本选择)。
     private var transcriptWebView: some View {
         ChatTranscriptWebView(
-            messages: renderedMessages,
+            messages: viewModel.renderedTranscript(),
             fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
             onCopy: { id in handleWebCopy(messageID: id) }
         )
-    }
-
-    /// 把 viewModel 的消息转成 WebView 喂入的安全 HTML 信封。
-    /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
-    private var renderedMessages: [ChatTranscriptHTML.RenderedMessage] {
-        let lastID = viewModel.messages.last?.id
-        return viewModel.messages.map { message in
-            let isStreamingThis = viewModel.isStreaming && message.id == lastID && message.role == .assistant
-            let content = viewModel.displayContent(for: message)
-            let bodyHTML: String
-            if message.role == .user {
-                // 用户消息纯文本:转义 + 换行保留(<br/>),不解析 markdown。
-                bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
-            } else if isStreamingThis {
-                // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
-                bodyHTML = "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
-            } else {
-                bodyHTML = ChatTranscriptHTML.renderMessageBody(markdown: content)
-            }
-            let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
-            // meta footer 仅给「非流式的助手消息」生成(流式完成后才有 done 的 meta)。
-            let footerHTML: String
-            if message.role == .assistant && !isStreamingThis && message.hasMeta {
-                footerHTML = ChatTranscriptHTML.metaFooterHTML(
-                    model: message.model,
-                    elapsedMs: message.elapsedMs,
-                    llmRounds: message.llmRounds,
-                    sourcesUsed: message.sourcesUsed,
-                    toolsUsed: message.toolsUsed
-                )
-            } else {
-                footerHTML = ""
-            }
-            return ChatTranscriptHTML.RenderedMessage(
-                id: message.id.uuidString,
-                role: message.role == .user ? "user" : "assistant",
-                bodyHTML: bodyHTML,
-                isStreaming: isStreamingThis,
-                showCopy: showCopy,
-                footerHTML: footerHTML
-            )
-        }
     }
 
     /// JS 复制按钮回调:按 messageID 找回原文写 NSPasteboard(原生剪贴板,非 WebView 内复制)。

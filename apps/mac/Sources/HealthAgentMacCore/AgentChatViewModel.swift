@@ -525,6 +525,17 @@ public final class AgentChatViewModel {
     public var toolActivities: [AgentToolActivity] = []
     public var proposedActions: [AgentProposedAction] = []
 
+    // MARK: transcript 渲染缓存(按键热点)
+    // composer 的 draft 是 View 的 @State,每次按键都重算 AgentChatView.body。旧实现里
+    // `renderedMessages` 是计算属性,会对每条助手消息重跑一次 markdown→HTML 解析(O(n) 每键),
+    // 一旦对话里有长回复,打字就卡。这里按内容(messages/isStreaming/proposedActions)做缓存:
+    // 内容没变就直接返回上次结果,打字命中缓存、零重渲。@ObservationIgnored 确保写缓存不触发
+    // Observation 失效(否则会在 body 求值里改观察态 → 重渲循环)。
+    @ObservationIgnored private var _transcriptCache: [ChatTranscriptHTML.RenderedMessage] = []
+    @ObservationIgnored private var _transcriptCacheMessages: [AgentChatMessage] = []
+    @ObservationIgnored private var _transcriptCacheStreaming = false
+    @ObservationIgnored private var _transcriptCacheProposed: [AgentProposedAction] = []
+
     /// Set when the backend history list/detail fetch fell back to the local
     /// cache (offline / 401 / server error). The UI surfaces this so a stale
     /// local view is never silently presented as authoritative. nil = backend
@@ -1035,6 +1046,59 @@ public final class AgentChatViewModel {
 
     public func proposedActions(for message: AgentChatMessage) -> [AgentProposedAction] {
         proposedActions.filter { $0.messageID == message.id && $0.status != .dismissed }
+    }
+
+    /// WebView transcript 喂入的安全 HTML 信封(带内容缓存,见上面缓存字段说明)。
+    /// 在 View.body 里调用:读 messages/isStreaming/proposedActions 建立 Observation 依赖,
+    /// 这三者真正变化才重渲;打字(只改 View 的 draft)命中缓存,不再每键重 parse markdown。
+    /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
+    public func renderedTranscript() -> [ChatTranscriptHTML.RenderedMessage] {
+        if isStreaming == _transcriptCacheStreaming
+            && messages == _transcriptCacheMessages
+            && proposedActions == _transcriptCacheProposed {
+            return _transcriptCache
+        }
+        let lastID = messages.last?.id
+        let rendered = messages.map { message -> ChatTranscriptHTML.RenderedMessage in
+            let isStreamingThis = isStreaming && message.id == lastID && message.role == .assistant
+            let content = displayContent(for: message)
+            let bodyHTML: String
+            if message.role == .user {
+                // 用户消息纯文本:转义 + 换行保留,不解析 markdown。
+                bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
+            } else if isStreamingThis {
+                // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
+                bodyHTML = "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+            } else {
+                bodyHTML = ChatTranscriptHTML.renderMessageBody(markdown: content)
+            }
+            let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
+            let footerHTML: String
+            if message.role == .assistant && !isStreamingThis && message.hasMeta {
+                footerHTML = ChatTranscriptHTML.metaFooterHTML(
+                    model: message.model,
+                    elapsedMs: message.elapsedMs,
+                    llmRounds: message.llmRounds,
+                    sourcesUsed: message.sourcesUsed,
+                    toolsUsed: message.toolsUsed
+                )
+            } else {
+                footerHTML = ""
+            }
+            return ChatTranscriptHTML.RenderedMessage(
+                id: message.id.uuidString,
+                role: message.role == .user ? "user" : "assistant",
+                bodyHTML: bodyHTML,
+                isStreaming: isStreamingThis,
+                showCopy: showCopy,
+                footerHTML: footerHTML
+            )
+        }
+        _transcriptCacheMessages = messages
+        _transcriptCacheStreaming = isStreaming
+        _transcriptCacheProposed = proposedActions
+        _transcriptCache = rendered
+        return rendered
     }
 
     public func dismissProposedAction(_ action: AgentProposedAction) {

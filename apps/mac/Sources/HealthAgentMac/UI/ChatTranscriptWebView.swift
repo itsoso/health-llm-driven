@@ -61,6 +61,8 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         private var pendingFontScale: Double = 1
         private var lastSyncedIDs: [String] = []
         private var lastSyncedFontScale: Double = -1
+        // 已同步进 DOM 的整组消息;用于「内容未变就别重推」的闸(见 apply)。
+        private var lastSyncedMessages: [ChatTranscriptHTML.RenderedMessage] = []
 
         init(onCopy: @escaping (String) -> Void) {
             self.onCopy = onCopy
@@ -94,6 +96,13 @@ struct ChatTranscriptWebView: NSViewRepresentable {
                 webView.evaluateJavaScript("window.chat.setFontScale(\(fontScale));", completionHandler: nil)
             }
 
+            // 内容未变就别重推:打字只改 composer 的 draft → 父 body 重算 → updateNSView 被白调,
+            // 没这道闸的话每次按键都会 evaluateJavaScript 重发最后一条(含富文本)→ 输入框卡顿。
+            // RenderedMessage 是 Equatable,流式时最后一条内容会变 → 不命中 → 正常增量推。
+            if messages == lastSyncedMessages {
+                return
+            }
+
             let ids = messages.map(\.id)
             let isAppendOrUpdateLast =
                 !lastSyncedIDs.isEmpty &&
@@ -108,6 +117,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
                 webView.evaluateJavaScript("window.chat.setMessages(\(json));", completionHandler: nil)
             }
             lastSyncedIDs = ids
+            lastSyncedMessages = messages
         }
 
         // MARK: WKScriptMessageHandler
@@ -118,6 +128,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
                 isReady = true
                 lastSyncedIDs = []
                 lastSyncedFontScale = -1
+                lastSyncedMessages = []
                 apply(messages: pendingMessages, fontScale: pendingFontScale)
             case "copy":
                 if let id = message.body as? String {
