@@ -124,7 +124,12 @@ from app.models.bedroom_environment import (
     BedroomAutomationEvent,
     BedroomEnvironmentSnapshot,
 )
-from app.models.ambient_wearable import AudioInputEvent, HearingHealthTask
+from app.models.ambient_wearable import (
+    AudioInputEvent,
+    GlanceCard,
+    HearingHealthTask,
+    VisualInputEvent,
+)
 
 __all__ = [
     "User",
@@ -140,6 +145,8 @@ __all__ = [
     "BedroomAutomationEvent",
     "AudioInputEvent",
     "HearingHealthTask",
+    "VisualInputEvent",
+    "GlanceCard",
     "DiseaseRecord",
     "GarminData",
     "ExerciseRecord",

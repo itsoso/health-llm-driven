@@ -105,6 +105,93 @@ def test_ambient_audio_input_routes_food_to_existing_draft_endpoint(client, db):
     }
 
 
+def test_rokid_visual_food_scan_records_visual_input_event(client, db):
+    from app.models.ambient_wearable import VisualInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/visual-inputs",
+        headers=headers,
+        json={
+            "intent": "food_scan",
+            "source": "rokid_glasses",
+            "device_type": "glasses",
+            "image_uri": "private://rokid/meal-001.jpg",
+            "ocr_text": "牛肉面",
+            "recognition_result": {
+                "foods": [{"name": "牛肉面", "quantity": 1, "unit": "碗"}],
+                "confidence": 0.76,
+            },
+            "confidence": 0.76,
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(VisualInputEvent).filter(VisualInputEvent.user_id == user.id).one()
+    assert body["event"]["id"] == event.id
+    assert event.intent == "food_scan"
+    assert event.source == "rokid_glasses"
+    assert event.device_type == "glasses"
+    assert event.status == "pending_confirmation"
+    assert event.privacy_class == "health_l3"
+    assert event.ocr_text == "牛肉面"
+    assert event.recognition_result["foods"][0]["name"] == "牛肉面"
+    assert body["recommended_next_action"] == {
+        "type": "confirm_food_draft",
+        "method": "POST",
+        "path": "/diet/records",
+    }
+
+
+def test_rokid_glance_cards_are_short_lived_and_user_scoped(client, db):
+    from app.models.ambient_wearable import GlanceCard
+
+    user, headers = _auth(db)
+    other_user, _ = _auth(db)
+    db.add(
+        GlanceCard(
+            user_id=other_user.id,
+            surface="rokid_glasses",
+            card_type="action_prompt",
+            title="别人的卡片",
+            body="不应该出现在当前用户列表",
+        )
+    )
+    db.commit()
+
+    create = client.post(
+        "/api/v1/ambient/glance-cards",
+        headers=headers,
+        json={
+            "surface": "rokid_glasses",
+            "card_type": "action_prompt",
+            "title": "补水",
+            "body": "现在喝水 300ml",
+            "priority": "normal",
+            "action": {
+                "label": "已完成",
+                "kind": "client_event",
+                "path": "/client-events",
+            },
+            "target_type": "health_agenda_item",
+            "target_id": 42,
+        },
+    )
+
+    assert create.status_code == 201, create.text
+    created = create.json()
+    assert created["surface"] == "rokid_glasses"
+    assert len(created["title"]) <= 40
+    assert len(created["body"]) <= 120
+
+    listed = client.get("/api/v1/ambient/glance-cards?surface=rokid_glasses", headers=headers)
+    assert listed.status_code == 200, listed.text
+    cards = listed.json()
+    assert [card["id"] for card in cards] == [created["id"]]
+
+
 def test_hearing_health_task_creates_idempotent_manual_confirm_write_intent(client, db):
     from app.models.ambient_wearable import HearingHealthTask
 

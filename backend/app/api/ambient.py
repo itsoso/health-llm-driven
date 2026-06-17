@@ -12,11 +12,16 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.ambient import (
     AmbientAudioInputResponse,
+    AmbientVisualInputResponse,
     AudioInputCreate,
     AudioInputEventResponse,
+    GlanceCardCreate,
+    GlanceCardResponse,
     HearingHealthTaskCreate,
     HearingHealthTaskEnvelope,
     HearingHealthTaskResponse,
+    VisualInputCreate,
+    VisualInputEventResponse,
 )
 from app.services import ambient_wearables as svc
 
@@ -51,6 +56,78 @@ def create_audio_input(
         event=AudioInputEventResponse.model_validate(event),
         recommended_next_action=svc.audio_next_action(body.intent),
     )
+
+
+@router.post(
+    "/visual-inputs",
+    response_model=AmbientVisualInputResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_visual_input(
+    body: VisualInputCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    event = svc.create_visual_input_event(
+        db,
+        current_user.id,
+        intent=body.intent,
+        source=body.source,
+        device_type=body.device_type,
+        image_uri=body.image_uri,
+        image_sha256=body.image_sha256,
+        ocr_text=body.ocr_text,
+        recognition_result=body.recognition_result,
+        confidence=body.confidence,
+        captured_at=body.captured_at,
+        privacy_class=body.privacy_class,
+        meta=body.meta,
+    )
+    db.commit()
+    db.refresh(event)
+    return AmbientVisualInputResponse(
+        event=VisualInputEventResponse.model_validate(event),
+        recommended_next_action=svc.visual_next_action(body.intent),
+    )
+
+
+@router.post(
+    "/glance-cards",
+    response_model=GlanceCardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_glance_card(
+    body: GlanceCardCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    card = svc.create_glance_card(
+        db,
+        current_user.id,
+        surface=body.surface,
+        card_type=body.card_type,
+        title=body.title,
+        body=body.body,
+        priority=body.priority,
+        action=body.action,
+        target_type=body.target_type,
+        target_id=body.target_id,
+        expires_at=body.expires_at,
+        meta=body.meta,
+    )
+    db.commit()
+    db.refresh(card)
+    return GlanceCardResponse.model_validate(card)
+
+
+@router.get("/glance-cards", response_model=list[GlanceCardResponse])
+def list_glance_cards(
+    surface: str | None = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    cards = svc.list_active_glance_cards(db, current_user.id, surface=surface)
+    return [GlanceCardResponse.model_validate(card) for card in cards]
 
 
 @router.post("/hearing/tasks", response_model=HearingHealthTaskEnvelope)

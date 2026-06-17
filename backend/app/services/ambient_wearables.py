@@ -5,7 +5,12 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.ambient_wearable import AudioInputEvent, HearingHealthTask
+from app.models.ambient_wearable import (
+    AudioInputEvent,
+    GlanceCard,
+    HearingHealthTask,
+    VisualInputEvent,
+)
 from app.models.write_intent import WriteIntent
 from app.services import write_intent_service
 
@@ -15,6 +20,16 @@ def audio_next_action(intent: str) -> Optional[Dict[str, str]]:
         return {"type": "parse_food_draft", "method": "POST", "path": "/diet/voice/parse"}
     if intent == "symptom":
         return {"type": "evaluate_symptom", "method": "POST", "path": "/watch/symptoms"}
+    return None
+
+
+def visual_next_action(intent: str) -> Optional[Dict[str, str]]:
+    if intent == "food_scan":
+        return {"type": "confirm_food_draft", "method": "POST", "path": "/diet/records"}
+    if intent == "medication_scan":
+        return {"type": "review_medication_label", "method": "POST", "path": "/medications"}
+    if intent == "supplement_scan":
+        return {"type": "review_supplement_label", "method": "POST", "path": "/supplements"}
     return None
 
 
@@ -57,6 +72,106 @@ def create_audio_input_event(
     if flush:
         db.flush()
     return event
+
+
+def create_visual_input_event(
+    db: Session,
+    user_id: int,
+    *,
+    intent: str,
+    source: str = "rokid_glasses",
+    device_type: str = "glasses",
+    image_uri: Optional[str] = None,
+    image_sha256: Optional[str] = None,
+    ocr_text: Optional[str] = None,
+    recognition_result: Optional[Dict[str, Any]] = None,
+    confidence: Optional[float] = None,
+    captured_at: Optional[datetime] = None,
+    status: str = "pending_confirmation",
+    privacy_class: str = "health_l3",
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    write_intent_id: Optional[int] = None,
+    safety_result: Optional[Dict[str, Any]] = None,
+    meta: Optional[Dict[str, Any]] = None,
+    flush: bool = True,
+) -> VisualInputEvent:
+    event = VisualInputEvent(
+        user_id=user_id,
+        intent=intent,
+        source=source,
+        device_type=device_type,
+        image_uri=image_uri,
+        image_sha256=image_sha256,
+        ocr_text=(ocr_text or "").strip() or None,
+        recognition_result=recognition_result,
+        confidence=confidence,
+        captured_at=captured_at or datetime.now(timezone.utc),
+        status=status,
+        privacy_class=privacy_class,
+        target_type=target_type,
+        target_id=target_id,
+        write_intent_id=write_intent_id,
+        safety_result=safety_result,
+        meta=meta,
+    )
+    db.add(event)
+    if flush:
+        db.flush()
+    return event
+
+
+def create_glance_card(
+    db: Session,
+    user_id: int,
+    *,
+    surface: str = "rokid_glasses",
+    card_type: str = "action_prompt",
+    title: str,
+    body: str,
+    priority: str = "normal",
+    action: Optional[Dict[str, Any]] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    expires_at: Optional[datetime] = None,
+    meta: Optional[Dict[str, Any]] = None,
+    flush: bool = True,
+) -> GlanceCard:
+    card = GlanceCard(
+        user_id=user_id,
+        surface=surface,
+        card_type=card_type,
+        title=title.strip(),
+        body=body.strip(),
+        priority=priority,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        expires_at=expires_at,
+        meta=meta,
+    )
+    db.add(card)
+    if flush:
+        db.flush()
+    return card
+
+
+def list_active_glance_cards(
+    db: Session,
+    user_id: int,
+    *,
+    surface: Optional[str] = None,
+    limit: int = 50,
+) -> list[GlanceCard]:
+    now = datetime.now(timezone.utc)
+    query = db.query(GlanceCard).filter(
+        GlanceCard.user_id == user_id,
+        GlanceCard.status == "active",
+    )
+    if surface:
+        query = query.filter(GlanceCard.surface == surface)
+    query = query.filter((GlanceCard.expires_at.is_(None)) | (GlanceCard.expires_at > now))
+    return query.order_by(GlanceCard.created_at.desc()).limit(limit).all()
 
 
 def _hearing_title(task_type: str) -> str:

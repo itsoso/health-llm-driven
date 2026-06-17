@@ -88,3 +88,84 @@ class HearingHealthTask(Base):
         Index("idx_hearing_tasks_user_status", "user_id", "status"),
         Index("idx_hearing_tasks_user_type_status", "user_id", "task_type", "status"),
     )
+
+
+class VisualInputEvent(Base):
+    """A first-person visual capture or OCR result from Rokid-style glasses."""
+
+    __tablename__ = "visual_input_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    captured_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+    device_type = Column(String(40), nullable=False, default="glasses")
+    source = Column(String(50), nullable=False, default="rokid_glasses")
+    intent = Column(String(40), nullable=False, index=True)
+
+    image_uri = Column(Text, nullable=True)
+    image_sha256 = Column(String(64), nullable=True)
+    ocr_text = Column(Text, nullable=True)
+    recognition_result = Column(JSONColumn, nullable=True)
+    confidence = Column(Float, nullable=True)
+
+    status = Column(String(30), nullable=False, default="pending_confirmation", index=True)
+    privacy_class = Column(String(30), nullable=False, default="health_l3")
+
+    write_intent_id = Column(Integer, ForeignKey("write_intents.id"), nullable=True, index=True)
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    safety_result = Column(JSONColumn, nullable=True)
+    meta = Column(JSONColumn, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        Index("idx_visual_input_user_captured", "user_id", "captured_at"),
+        Index("idx_visual_input_user_intent", "user_id", "intent"),
+    )
+
+
+class GlanceCard(Base):
+    """A short-lived, glanceable action prompt for glasses or other surfaces."""
+
+    __tablename__ = "glance_cards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    surface = Column(String(40), nullable=False, default="rokid_glasses", index=True)
+    card_type = Column(String(40), nullable=False, default="action_prompt", index=True)
+    title = Column(String(80), nullable=False)
+    body = Column(Text, nullable=False)
+    priority = Column(String(20), nullable=False, default="normal")
+    status = Column(String(20), nullable=False, default="active", index=True)
+    action = Column(JSONColumn, nullable=True)
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    displayed_at = Column(DateTime(timezone=True), nullable=True)
+    dismissed_at = Column(DateTime(timezone=True), nullable=True)
+    meta = Column(JSONColumn, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        Index("idx_glance_cards_user_surface_status", "user_id", "surface", "status"),
+        Index("idx_glance_cards_user_expires", "user_id", "expires_at"),
+    )
