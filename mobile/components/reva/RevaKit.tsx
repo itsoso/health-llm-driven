@@ -220,7 +220,7 @@ export function TrendChart({ series, target, w = 320, h = 150 }: { series: { t: 
   );
 }
 
-export function PlanItem({ icon, title, sub, tag, done, onToggle, last, titleLines, subLines }: { icon: string; title: string; sub?: string; tag?: string; done?: boolean; onToggle?: () => void; last?: boolean; titleLines?: number; subLines?: number }) {
+export function PlanItem({ icon, title, sub, tag, done, onToggle, last, titleLines, subLines, trailing = 'check' }: { icon: string; title: string; sub?: string; tag?: string; done?: boolean; onToggle?: () => void; last?: boolean; titleLines?: number; subLines?: number; trailing?: 'check' | 'chevron' }) {
   return (
     <Pressable onPress={onToggle} style={[k.rowItem, last && { borderBottomWidth: 0 }]}>
       <View style={[k.rowIcon, { backgroundColor: done ? C.green50 : C.paper2 }]}>
@@ -231,9 +231,13 @@ export function PlanItem({ icon, title, sub, tag, done, onToggle, last, titleLin
         {sub ? <Text numberOfLines={subLines} style={{ fontSize: 12.5, color: C.ink3 }}>{sub}</Text> : null}
       </View>
       {tag && !done ? <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 11, color: C.ink3 }}>{tag}</Text> : null}
-      <View style={[k.check, { borderWidth: done ? 0 : 2, borderColor: C.lineStrong, backgroundColor: done ? C.green500 : 'transparent' }]}>
-        {done ? <Icon name="check" size={15} color="#fff" /> : null}
-      </View>
+      {trailing === 'chevron' ? (
+        <Icon name="chevron-right" size={20} color={C.ink3} />
+      ) : (
+        <View style={[k.check, { borderWidth: done ? 0 : 2, borderColor: C.lineStrong, backgroundColor: done ? C.green500 : 'transparent' }]}>
+          {done ? <Icon name="check" size={15} color="#fff" /> : null}
+        </View>
+      )}
     </Pressable>
   );
 }

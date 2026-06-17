@@ -182,12 +182,18 @@ export default function RevaTimelineStrip() {
           const last = i === visible.length - 1 && hidden === 0;
           const completable = Boolean(item.can_complete && item.complete_ref && !done);
           const isOpen = openIds.has(item.id);
-          // 信息行(无打卡、无深链)点开展开全文;有深链则跳转;可打卡则打卡。
+          // 设备核对类信息行 → 跳设备一致性页(可操作);其余信息行 → 展开全文。
+          const deviceLink = /设备|待核对/.test(`${item.title} ${item.subtitle ?? ''}`)
+            ? '/device-sources'
+            : null;
+          // 可打卡→打卡;有深链→跳转;设备核对→设备页;否则点开展开全文。
           const onToggle = completable
             ? () => onComplete(item)
             : item.deep_link
               ? () => openDeepLink(item.deep_link)
-              : () => toggleOpen(item.id);
+              : deviceLink
+                ? () => router.push(deviceLink as any)
+                : () => toggleOpen(item.id);
           return (
             <View key={item.id}>
               <PlanItem
@@ -197,6 +203,7 @@ export default function RevaTimelineStrip() {
                 sub={isOpen ? item.subtitle ?? undefined : shortSubtitle(item.subtitle)}
                 subLines={isOpen ? undefined : 1}
                 done={done}
+                trailing={completable ? 'check' : 'chevron'}
                 last={last && !(isRisk(item) || domain || completable)}
                 onToggle={onToggle}
               />
