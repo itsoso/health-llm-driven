@@ -94,3 +94,28 @@ def test_anytime_chelators_keep_interval():
     out = solve_day_schedule([ca, fe], DayContext(wake="07:00", quiet_hours=("22:00", "08:30")))
     t = {s["id"]: _to_min(s["time"]) for s in out["scheduled"]}
     assert abs(t["ca"] - t["fe"]) >= 120, f"anytime 螯合间隔不足 2h: {out['scheduled']}"
+
+
+def test_anytime_items_avoid_busy_block():
+    # 日历忙碌块 12:00–13:00(无工作窗)→ 浮动项避开。
+    ctx = DayContext(wake="07:00", quiet_hours=("22:00", "08:30"), busy=[("12:00", "13:00")])
+    out = solve_day_schedule(_floats(8), ctx)
+    for s in out["scheduled"]:
+        assert not ("12:00" <= s["time"] < "13:00"), f"{s['id']} 落进忙碌块 {s['time']}"
+
+
+def test_busy_and_work_blocks_both_avoided():
+    ctx = DayContext(wake="07:00", quiet_hours=("22:00", "08:30"),
+                     work_start="09:00", work_end="12:00", is_workday=True, busy=[("13:00", "14:00")])
+    out = solve_day_schedule(_floats(10), ctx)
+    for s in out["scheduled"]:
+        t = s["time"]
+        assert not ("09:00" <= t < "12:00"), f"工作窗内: {t}"
+        assert not ("13:00" <= t < "14:00"), f"忙碌块内: {t}"
+
+
+def test_dirty_busy_block_skipped_not_crash():
+    # 脏忙碌块(end<=start / 非法)跳过,不炸求解。
+    ctx = DayContext(wake="07:00", busy=[("18:00", "09:00"), ("bad", "x")])
+    out = solve_day_schedule(_floats(2), ctx)
+    assert len(out["scheduled"]) == 2

@@ -75,6 +75,7 @@ class DayContext:
     work_start: Optional[str] = None             # 上班 "09:00"(None=未设;不约束)
     work_end: Optional[str] = None               # 下班 "18:00"
     is_workday: bool = True                       # 今天是否工作日(周末/休假→不避工作窗)
+    busy: List[Tuple[str, str]] = field(default_factory=list)  # 日历忙碌块 [(start,end)],浮动项避开(CalDAV 源)
 
 
 # ── 时间工具(分钟制,跨午夜安全)───────────────────────────────────────────
@@ -105,6 +106,35 @@ def _in_work(minutes: int, ctx: DayContext) -> bool:
     if ws >= we:  # 跨午夜/异常 → 不约束(避免误把全天当工作窗)
         return False
     return ws <= (minutes % (24 * 60)) < we
+
+
+def _block_minutes(ctx: DayContext) -> List[Tuple[int, int]]:
+    """当日所有「忙碌块」(工作窗 + 日历忙碌)归一成 [(start_min,end_min)] 升序。跨午夜/异常块跳过。"""
+    blocks: List[Tuple[int, int]] = []
+    if ctx.is_workday and ctx.work_start and ctx.work_end:
+        ws, we = _to_min(ctx.work_start), _to_min(ctx.work_end)
+        if ws < we:
+            blocks.append((ws, we))
+    for pair in (ctx.busy or []):
+        try:
+            bs, be = _to_min(pair[0]), _to_min(pair[1])
+        except (ValueError, AttributeError, IndexError, TypeError):
+            continue  # 脏忙碌块跳过,不让坏数据炸掉整条求解
+        if bs < be:
+            blocks.append((bs, be))
+    return sorted(blocks)
+
+
+def _push_free(t: int, blocks: List[Tuple[int, int]]) -> int:
+    """若 t 落在任一忙碌块内 → 推到块尾;迭代处理相邻/重叠块,直到落进空档。"""
+    moved = True
+    while moved:
+        moved = False
+        for bs, be in blocks:
+            if bs <= t < be:
+                t = be
+                moved = True
+    return t
 
 
 # ── 锚点落桩(Step 1)─────────────────────────────────────────────────────
@@ -213,11 +243,10 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
     # 工作日避开工作窗:浮动主动 nudge 落在上班时段 → 顺延到下班后(不打扰工作);
     # 上班前的空档(起床~上班)仍可用。锚点项(空腹/餐前/睡前/医嘱固定)不受此约束。
     fallback = max(_to_min(ctx.wake) + 60, _to_min(ctx.quiet_hours[1]))
-    work_end_min = _to_min(ctx.work_end) if (ctx.work_end and ctx.is_workday) else None
+    blocks = _block_minutes(ctx)  # 工作窗 + 日历忙碌块,统一回避
     for it in order:
         if placed[it.id] is None:
-            if work_end_min is not None and _in_work(fallback, ctx):
-                fallback = work_end_min  # 落在上班时段 → 挪到下班后
+            fallback = _push_free(fallback, blocks)  # 落在忙碌块 → 推到块尾(空档)
             placed[it.id] = fallback
             fallback += 30  # 错开,避免堆叠
 
