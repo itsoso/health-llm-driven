@@ -84,6 +84,7 @@ ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
 为什么默认不直接链接 iOS Pod:
 
 - 官方 iOS SDK 通过 CocoaPods 分发: `RGCxrClient 1.0.1` 依赖 `RGCoreKit 0.0.2`。
+- 官方搜索索引和社区反馈显示有 `RGCxrClient 1.0.2` / `ios_cxr_l_sample` 路径, 但公共 CocoaPods trunk 当前只暴露 `RGCxrClient 1.0.1`; 1.0.2 需要 Rokid specs repo 或正式 SDK 包。
 - 本机 Xcode/Swift 工具链可以拉取 Pod, 但公开二进制 framework 是由 Rokid 的 Swift 6.2.4 工具链构建, 当前本机 Swift 6.3.2 无法导入该二进制模块。
 - 因此 Reva 主工程默认保持可构建; 真正链接 iOS SDK 需要在兼容工具链或 Rokid 重新发布二进制后开启。
 
@@ -101,6 +102,33 @@ SENTRY_DISABLE_AUTO_UPLOAD=true xcodebuild \
   build
 ```
 
+推荐使用可重复 probe 脚本:
+
+```bash
+# 只检查 CocoaPods 是否能看到候选版本
+ROKID_IOS_CLIENT_VERSION=1.0.2 \
+ROKID_IOS_CHECK_SPEC_ONLY=1 \
+scripts/rokid-ios-compat-probe.sh
+
+# 如果 Rokid 提供了 specs repo, 先注入 repo 再跑完整设备构建
+ROKID_IOS_SPECS_REPO=<rokid-specs-git-url> \
+ROKID_IOS_CLIENT_VERSION=1.0.2 \
+scripts/rokid-ios-compat-probe.sh
+
+# 模拟器构建排除 device-only Rokid SDK
+ROKID_IOS_SIMULATOR=1 \
+ROKID_IOS_CLIENT_VERSION=1.0.2 \
+scripts/rokid-ios-compat-probe.sh --skip-build
+```
+
+脚本会:
+
+- 可选添加/更新 Rokid CocoaPods specs repo。
+- 检查 `RGCxrClient` 指定版本是否可见。
+- 用 `ROKID_IOS_CLIENT_VERSION` 让 `RokidBridge.podspec` 链接指定版本。
+- 可选用 `ROKID_IOS_SIMULATOR=1` 排除 device-only SDK。
+- 运行 `xcodebuild` 并识别 Swift binary/module compatibility 失败。
+
 ## 2. External SDK Facts
 
 已验证:
@@ -112,6 +140,7 @@ SENTRY_DISABLE_AUTO_UPLOAD=true xcodebuild \
 - Rokid YodaOS-Sprite 文档显示 iOS SDK 通过 CocoaPods 使用 `RGCxrClient`。
 - App Store 可找到 Hi Rokid companion app。
 - CocoaPods `RGCxrClient 1.0.1` 依赖 `RGCoreKit 0.0.2`。
+- GitHub 上已有 React Native + iOS Swift bridge 示例直接使用 `RGCxrClient` / `RGCoreKit`; 它证明 RN 上层 + iOS 原生薄 bridge 形态可行, 但仍无法绕过原生 Swift binary compatibility。
 - `RGCxrClient` Swift interface 暴露的关键能力包括:
   - `CxrClient.shared.auth.authenticate(...)`
   - `openCustomView(...)`
@@ -148,6 +177,7 @@ SENTRY_DISABLE_AUTO_UPLOAD=true xcodebuild \
 - [Rokid Academy](https://global.rokid.com/pages/academy)
 - [CocoaPods RGCxrClient](https://cocoapods.org/pods/RGCxrClient)
 - [CocoaPods RGCoreKit](https://cocoapods.org/pods/RGCoreKit)
+- [SeeMemory-RN Rokid iOS bridge example](https://github.com/YuChanGongzhu/SeeMemory-RN/blob/b48cf139aa50875cdcab2fff7bdf31544fb67dec/ios/LocalPods/RTNRokidModule/RTNRokidModule.swift)
 
 公开页面和旧文档只能确认方向, 不能替代 SDK 正式文档。落地前仍需向 Rokid 获取:
 
@@ -352,6 +382,7 @@ Status: implemented for Android scaffold and iOS opt-in SDK scaffold.
 - Create: `mobile/modules/rokid-bridge/ios/RokidBridge.podspec`
 - Create: `mobile/modules/rokid-bridge/ios/RokidBridgeModule.swift`
 - Create: `mobile/modules/rokid-bridge/ios/RokidBridgeAppDelegateSubscriber.swift`
+- Create: `scripts/rokid-ios-compat-probe.sh`
 - Update: `mobile/app.config.ts`
 
 **Verification:**

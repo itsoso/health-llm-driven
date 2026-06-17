@@ -27,7 +27,7 @@ public class RokidBridgeModule: Module {
         "mode": "sdk_probe",
         "sdkLinked": sdkLinked(),
         "iosSdkDependencyMode": sdkDependencyMode(),
-        "iosSdkCompatibility": "RGCxrClient 1.0.1 requires a Swift toolchain compatible with Rokid's binary framework",
+        "iosSdkCompatibility": "RGCxrClient is opt-in; set ROKID_IOS_CLIENT_VERSION and use a Swift toolchain compatible with Rokid's binary framework",
         "callbackScheme": callbackScheme,
         "querySchemes": querySchemes,
         "sdkClassProbe": sdkClassProbe(),
@@ -184,6 +184,10 @@ public class RokidBridgeModule: Module {
   private func sdkDependencyMode() -> String {
     #if canImport(RGCxrClient)
     return "linked"
+    #elseif ROKID_IOS_SIMULATOR_EXCLUDED
+    return "simulator_excluded"
+    #elseif ROKID_IOS_SDK_REQUESTED
+    return "requested_but_unlinked"
     #else
     return "opt_in_disabled"
     #endif

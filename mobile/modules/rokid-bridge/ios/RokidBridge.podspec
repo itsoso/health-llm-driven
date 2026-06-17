@@ -2,6 +2,12 @@ Pod::Spec.new do |s|
   rokid_ios_sdk_enabled = ['1', 'true', 'yes'].include?(
     (ENV['ROKID_IOS_SDK_ENABLED'] || ENV['ROKID_SDK_ENABLED']).to_s.downcase
   )
+  rokid_ios_simulator = ['1', 'true', 'yes'].include?(
+    ENV['ROKID_IOS_SIMULATOR'].to_s.downcase
+  )
+  rokid_ios_client_version = ENV['ROKID_IOS_CLIENT_VERSION'].to_s.strip
+  rokid_ios_client_version = '1.0.1' if rokid_ios_client_version.empty?
+  swift_flags = ['$(inherited)']
 
   s.name           = 'RokidBridge'
   s.version        = '0.1.0'
@@ -15,14 +21,18 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  if rokid_ios_sdk_enabled
-    s.dependency 'RGCxrClient', '1.0.1'
+  if rokid_ios_sdk_enabled && !rokid_ios_simulator
+    s.dependency 'RGCxrClient', rokid_ios_client_version
+    swift_flags << '-D' << 'ROKID_IOS_SDK_REQUESTED'
+  elsif rokid_ios_sdk_enabled && rokid_ios_simulator
+    swift_flags << '-D' << 'ROKID_IOS_SIMULATOR_EXCLUDED'
   end
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'SWIFT_COMPILATION_MODE' => 'wholemodule',
-    'APPLICATION_EXTENSION_API_ONLY' => 'NO'
+    'APPLICATION_EXTENSION_API_ONLY' => 'NO',
+    'OTHER_SWIFT_FLAGS' => swift_flags.join(' ')
   }
 
   s.source_files = "**/*.{h,m,mm,swift}"

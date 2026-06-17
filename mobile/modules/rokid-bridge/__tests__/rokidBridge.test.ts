@@ -30,6 +30,7 @@ describe('rokid-bridge JS facade', () => {
         clientM: 'com.rokid.cxr:client-m:1.2.2',
         clientL: 'com.rokid.cxr:client-l:1.0.3',
         iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
         iosCore: 'RGCoreKit:0.0.2',
       },
     });
@@ -60,6 +61,7 @@ describe('rokid-bridge JS facade', () => {
         clientM: 'com.rokid.cxr:client-m:1.2.2',
         clientL: 'com.rokid.cxr:client-l:1.0.3',
         iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
         iosCore: 'RGCoreKit:0.0.2',
       },
     });
@@ -118,6 +120,7 @@ describe('rokid-bridge JS facade', () => {
         clientM: 'com.rokid.cxr:client-m:1.2.2',
         clientL: 'com.rokid.cxr:client-l:1.0.3',
         iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
         iosCore: 'RGCoreKit:0.0.2',
       },
     });
