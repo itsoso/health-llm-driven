@@ -36,6 +36,10 @@ RequirementAdmission:
   target_surface:
   source_of_truth:
   safety_level:
+  prescription_or_causal_verdict:
+  autonomy_tier:
+  evidence_provenance:
+  claim_hedging:
   verification_window:
   success_metric:
   added_user_burden:
@@ -72,6 +76,7 @@ Good non-goals remove ambiguity:
 | `InterventionCycle` | |
 | `HealthTwin` | |
 | `ExecutionEvent` | |
+| `WriteIntent` | |
 
 Remove rows that do not apply.
 

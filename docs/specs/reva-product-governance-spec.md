@@ -24,9 +24,11 @@ When instructions conflict, use this order:
 3. This document for product scope, requirement admission, surface ownership,
    and product evolution.
 4. `docs/prd/reva-personal-health-os-prd.md` for the global product blueprint.
-5. Focused PDDs or feature specs for local product decisions.
-6. Current implementation, tests, and live behavior.
-7. Archived docs only as historical evidence. Archived root docs are not current
+5. `docs/design/health-os/*` (`os-design`, `architecture-lens`,
+   `planning-methodology`) for OS architecture and planning methodology.
+6. Focused PDDs or feature specs for local product decisions.
+7. Current implementation, tests, and live behavior.
+8. Archived docs only as historical evidence. Archived root docs are not current
    authority.
 
 This document must not be used to weaken `AGENTS.md`, security rules, privacy
@@ -140,6 +142,7 @@ Every new product requirement must map to at least one first-class object.
 | `InterventionCycle` | Baseline, target, action, verification window, outcome review | 8-12 week cycles, outcome metrics, retest |
 | `HealthTwin` | Current semantic state and uncertainty | twin schema, builder, snapshots |
 | `ExecutionEvent` | Completed, skipped, delayed, adjusted, auto-observed, confirmed | client events, audit, adherence logs |
+| `WriteIntent` | Proposed write-back action with graduated autonomy: propose, confirm, execute | write_intent model/service, `autonomy_tier`, Write-layer syscalls |
 
 If a requirement cannot be mapped to these objects, the agent must do one of:
 
@@ -181,6 +184,10 @@ These are hard product rules.
 7. Medical boundaries are explicit.
    Reva does not prescribe, diagnose, replace emergency triage, autonomously
    change medication dose, or tell users they are fine when red flags exist.
+   It must not output a per-user "this worked / this is worsening" causal verdict
+   on prescription- or hormone-confounded metrics (LDL, HbA1c, blood pressure,
+   TSH, etc.); those are downgraded to clinician_review. Genotype must not drive a
+   specific personalized dose.
 
 8. Failure is a system signal.
    Missed actions should capture reasons such as too tired, forgot, not enough
@@ -195,6 +202,21 @@ These are hard product rules.
     If a new feature supersedes an old page, report, mode, or workflow, the
     spec must say whether the old one is kept, deprecated, hidden, merged, or
     deleted.
+
+11. Write autonomy is earned, not default.
+    Any action that writes back on the user's behalf (reminders, calendar,
+    protocol changes, adherence) runs at an explicit autonomy tier. New write
+    paths default to `manual_confirm`. Elevation to `shadow` or `auto` requires a
+    stated condition (e.g. N-of-1 verification convergence) plus a runtime
+    allowlist; clinical / dose / prescription writes are capped at
+    `manual_confirm` permanently. Quiet hours throttle proactive nudges, never
+    prescribed doses.
+
+12. Health claims are sourced and hedged.
+    Any user-facing health claim states its evidence basis (guideline,
+    pharmacology, or the user's own clinician order) and defaults to advisory
+    wording (suggest / consider / per your clinician), not absolute rules.
+    Specific timing/dose numbers are defaults to confirm, not personalized orders.
 
 ## 7. Surface Ownership
 
@@ -230,6 +252,10 @@ RequirementAdmission:
   target_surface:
   source_of_truth:
   safety_level: none | low | medical_boundary | red_flag | privacy_sensitive
+  prescription_or_causal_verdict: none | clinician_review_downgraded
+  autonomy_tier: none | manual_confirm | shadow | auto
+  evidence_provenance:
+  claim_hedging: n/a | hedged | absolute_disallowed
   verification_window:
   success_metric:
   added_user_burden:
@@ -318,6 +344,19 @@ Verification: <commands or product metric>
 ```
 
 Agents should keep this concise. Do not turn every small fix into a ceremony.
+
+### 9.5 Multi-Agent Coordination
+
+Multiple coding/planning agents work in this repo concurrently. Before starting
+non-trivial product work:
+
+- check `main` and open PRs for in-flight or superseding work;
+- check `docs/specs/active/` for an existing spec on the same area;
+- do not build dependencies on another agent's uncommitted working-tree WIP;
+- for stateful multi-file edits, prefer an isolated git worktree;
+- commit only your own files; never sweep another agent's unrelated changes.
+
+The goal is to avoid duplicate, colliding, or soon-superseded work.
 
 ## 10. Model-Agnostic Prompt Block
 
