@@ -82,3 +82,15 @@ def test_profile_put_accepts_work_hours_roundtrip(client, db, auth_user_and_head
     assert r.json()["work_start_time"] == "09:00" and r.json()["work_end_time"] == "18:00"
     g = client.get("/api/v1/profile/me", headers=headers)
     assert g.json()["work_start_time"] == "09:00" and g.json()["work_end_time"] == "18:00"
+
+
+def test_anytime_chelators_keep_interval():
+    # 两个「随时」螯合项(钙×铁,间隔 2h)即便都无锚点,也须 ≥2h(此前只 +30 错开)。
+    from app.services.timing_solver import _to_min
+    ca = Item(id="ca", domain="supplement", title="钙", anchor=ANCHOR_ANYTIME, deferrable=True,
+              interval_constraints=[("fe", 2.0)])
+    fe = Item(id="fe", domain="supplement", title="铁", anchor=ANCHOR_ANYTIME, deferrable=True,
+              interval_constraints=[("ca", 2.0)])
+    out = solve_day_schedule([ca, fe], DayContext(wake="07:00", quiet_hours=("22:00", "08:30")))
+    t = {s["id"]: _to_min(s["time"]) for s in out["scheduled"]}
+    assert abs(t["ca"] - t["fe"]) >= 120, f"anytime 螯合间隔不足 2h: {out['scheduled']}"

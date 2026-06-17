@@ -180,29 +180,34 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
     # 更长间隔先满足
     constraints.sort(key=lambda c: -c[2])
 
-    for _pass in range(4):  # 迭代收敛(项数小,固定几轮足够)
-        moved = False
-        for a_id, b_id, gap_min in constraints:
-            ta, tb = placed.get(a_id), placed.get(b_id)
-            if ta is None or tb is None:
-                continue
-            if abs(ta - tb) >= gap_min:
-                continue
-            # 违反:让「让步方」后移。让步方 = tier 更低(severity 低/可顺延/偏好)者
-            ia, ib = by_id[a_id], by_id[b_id]
-            yielder, fixed = (ia, tb) if tier_key(ia) > tier_key(ib) else (ib, ta)
-            if not yielder.deferrable:
-                # 两个都不可顺延且冲突 → 标记冲突(让步给安全侧:把可调的那个尽量推)
-                other = ib if yielder is ia else ia
-                if other.deferrable:
-                    yielder = other
-                else:
-                    continue  # 双固定冲突:留给上层(医嘱)处理,不强行改
-            # 把让步方推到「远侧」:本就在 fixed 之后→further after;在之前→further before
-            placed[yielder.id] = (fixed + int(gap_min)) if placed[yielder.id] >= fixed else (fixed - int(gap_min))
-            moved = True
-        if not moved:
-            break
+    def _satisfy_intervals() -> None:
+        """迭代收敛间隔约束(钙×铁≥2h、钙/铁×左甲状腺素≥4h…)。让步方=tier 更低者后移。
+        仅对已落桩(非 None)的项生效 —— 故 anytime 项须先在 fill 里拿到时点再跑本函数。"""
+        for _pass in range(4):  # 迭代收敛(项数小,固定几轮足够)
+            moved = False
+            for a_id, b_id, gap_min in constraints:
+                ta, tb = placed.get(a_id), placed.get(b_id)
+                if ta is None or tb is None:
+                    continue
+                if abs(ta - tb) >= gap_min:
+                    continue
+                # 违反:让「让步方」后移。让步方 = tier 更低(severity 低/可顺延/偏好)者
+                ia, ib = by_id[a_id], by_id[b_id]
+                yielder, fixed = (ia, tb) if tier_key(ia) > tier_key(ib) else (ib, ta)
+                if not yielder.deferrable:
+                    # 两个都不可顺延且冲突 → 标记冲突(让步给安全侧:把可调的那个尽量推)
+                    other = ib if yielder is ia else ia
+                    if other.deferrable:
+                        yielder = other
+                    else:
+                        continue  # 双固定冲突:留给上层(医嘱)处理,不强行改
+                # 把让步方推到「远侧」:本就在 fixed 之后→further after;在之前→further before
+                placed[yielder.id] = (fixed + int(gap_min)) if placed[yielder.id] >= fixed else (fixed - int(gap_min))
+                moved = True
+            if not moved:
+                break
+
+    _satisfy_intervals()  # 第一轮:已落桩的锚点/固定项之间的间隔
 
     # ── anytime 项填空隙(锚点为 None 的)—— 从「起床+1h 或静默窗结束」较晚者起,错开 ──
     # 工作日避开工作窗:浮动主动 nudge 落在上班时段 → 顺延到下班后(不打扰工作);
@@ -215,6 +220,11 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
                 fallback = work_end_min  # 落在上班时段 → 挪到下班后
             placed[it.id] = fallback
             fallback += 30  # 错开,避免堆叠
+
+    # 第二轮:anytime 项已落桩 → 补跑间隔约束,让两个「随时」螯合项(钙×铁)也守 ≥2h
+    # (此前都是 None 被第一轮跳过,只在 fill 里 +30 错开)。螯合间隔(layer 4)优先级高于
+    # 工作窗回避(layer 8),故被推动的 anytime 项即便落回工作时段也以安全间隔为先。
+    _satisfy_intervals()
 
     # ── Step 7 静默窗 + 复查配额 ───────────────────────────────────────
     scheduled: List[dict] = []
