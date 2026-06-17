@@ -119,15 +119,28 @@ scripts/rokid-ios-compat-probe.sh
 ROKID_IOS_SIMULATOR=1 \
 ROKID_IOS_CLIENT_VERSION=1.0.2 \
 scripts/rokid-ios-compat-probe.sh --skip-build
+
+# 检查公开 iOS framework 的 Objective-C runtime 暴露面
+ROKID_IOS_CLIENT_VERSION=1.0.1 \
+scripts/rokid-ios-compat-probe.sh --inspect-framework --check-spec-only
 ```
 
 脚本会:
 
 - 可选添加/更新 Rokid CocoaPods specs repo。
 - 检查 `RGCxrClient` 指定版本是否可见。
+- 可选下载 `RGCxrClient.framework` 并检查 `RGCxrClient-Swift.h` 暴露的 Objective-C API。
 - 用 `ROKID_IOS_CLIENT_VERSION` 让 `RokidBridge.podspec` 链接指定版本。
 - 可选用 `ROKID_IOS_SIMULATOR=1` 排除 device-only SDK。
 - 运行 `xcodebuild` 并识别 Swift binary/module compatibility 失败。
+
+iOS dynamic bridge 结论:
+
+- 已检查公开 `RGCxrClient 1.0.1` framework 包内的 `RGCxrClient-Swift.h`。
+- Objective-C 头文件只暴露了 `RGCxrClientBLE` 等极少量 BLE 相关入口; `CxrClient`、`RGCxrClientAuthManager`、`openCustomView`、`takePhotoWithData`、`startRecord` 没有暴露到 Objective-C header。
+- 同一个 framework 的 Swift interface 里能看到这些核心 CXR-L API, 说明它们是 Swift-only surface。
+- 因此 Reva 不能通过把 bridge 改成 Objective-C selector/runtime 调用来绕过当前 Swift module import 问题。真实 iOS 能力仍然需要 Rokid 发布兼容当前 Xcode 的二进制、提供可用的 private specs repo/SDK 包, 或使用匹配 Rokid Swift 6.2.4 的构建工具链。
+- 短期策略: Android-first 接入真实 SDK; iOS 保持 companion app deep link、状态展示和可构建 scaffold, 等 Rokid iOS binary compatibility 解决后再打开真实 SDK。
 
 ## 2. External SDK Facts
 
@@ -141,6 +154,7 @@ scripts/rokid-ios-compat-probe.sh --skip-build
 - App Store 可找到 Hi Rokid companion app。
 - CocoaPods `RGCxrClient 1.0.1` 依赖 `RGCoreKit 0.0.2`。
 - GitHub 上已有 React Native + iOS Swift bridge 示例直接使用 `RGCxrClient` / `RGCoreKit`; 它证明 RN 上层 + iOS 原生薄 bridge 形态可行, 但仍无法绕过原生 Swift binary compatibility。
+- `RGCxrClient 1.0.1` 的 Objective-C generated header 未暴露 CXR-L 核心 API, 所以 runtime/selector 方案不可作为 Swift import 失败的替代路径。
 - `RGCxrClient` Swift interface 暴露的关键能力包括:
   - `CxrClient.shared.auth.authenticate(...)`
   - `openCustomView(...)`

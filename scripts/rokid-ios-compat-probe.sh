@@ -15,11 +15,18 @@ SKIP_BUILD="${ROKID_IOS_SKIP_BUILD:-0}"
 CHECK_SPEC_ONLY="${ROKID_IOS_CHECK_SPEC_ONLY:-0}"
 DRY_RUN="${ROKID_IOS_DRY_RUN:-0}"
 LOG_PATH="${ROKID_IOS_LOG_PATH:-"/tmp/reva-rokid-ios-compat-${CLIENT_VERSION//[^A-Za-z0-9_.-]/_}.log"}"
+INSPECT_FRAMEWORK="${ROKID_IOS_INSPECT_FRAMEWORK:-0}"
+DEFAULT_FRAMEWORK_ZIP_URL=""
+if [[ "$CLIENT_VERSION" == "1.0.1" ]]; then
+  DEFAULT_FRAMEWORK_ZIP_URL="https://rokid-ota.oss-cn-hangzhou.aliyuncs.com/toB/Rokid_Glass/SDK/CXR-L%28iOS%29/release/RGCxrClient_1.0.1_0401.framework.zip"
+fi
+FRAMEWORK_ZIP_URL="${ROKID_IOS_FRAMEWORK_ZIP_URL:-"$DEFAULT_FRAMEWORK_ZIP_URL"}"
+INSPECT_DIR="${ROKID_IOS_INSPECT_DIR:-"/tmp/reva-rokid-ios-framework-${CLIENT_VERSION//[^A-Za-z0-9_.-]/_}"}"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/rokid-ios-compat-probe.sh [--dry-run] [--check-spec-only] [--skip-build]
+  scripts/rokid-ios-compat-probe.sh [--dry-run] [--check-spec-only] [--skip-build] [--inspect-framework]
 
 Environment:
   ROKID_IOS_CLIENT_VERSION    RGCxrClient version to probe. Default: 1.0.2
@@ -29,6 +36,8 @@ Environment:
   ROKID_IOS_DESTINATION       Xcode destination. Default: generic/platform=iOS
   ROKID_IOS_SKIP_BUILD        Set 1 to stop after pod install.
   ROKID_IOS_CHECK_SPEC_ONLY   Set 1 to only verify the podspec is visible.
+  ROKID_IOS_INSPECT_FRAMEWORK Set 1 to inspect the binary framework Objective-C surface.
+  ROKID_IOS_FRAMEWORK_ZIP_URL Optional direct RGCxrClient framework zip URL for inspection.
 USAGE
 }
 
@@ -42,6 +51,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-build)
       SKIP_BUILD=1
+      ;;
+    --inspect-framework)
+      INSPECT_FRAMEWORK=1
       ;;
     --help|-h)
       usage
@@ -75,8 +87,82 @@ run() {
   "$@"
 }
 
+header_has_symbol() {
+  local header="$1"
+  local symbol="$2"
+  grep -Eq "(^|[^[:alnum:]_])${symbol}([^[:alnum:]_]|$)" "$header"
+}
+
+inspect_framework_surface() {
+  if [[ -z "$FRAMEWORK_ZIP_URL" ]]; then
+    echo "No framework zip URL is known for RGCxrClient $CLIENT_VERSION." >&2
+    echo "Set ROKID_IOS_FRAMEWORK_ZIP_URL to a Rokid-provided RGCxrClient framework zip." >&2
+    exit 67
+  fi
+
+  require_command curl
+  require_command unzip
+
+  local zip_path="$INSPECT_DIR/RGCxrClient.framework.zip"
+  local framework_dir="$INSPECT_DIR/RGCxrClient.framework"
+  local header="$framework_dir/Headers/RGCxrClient-Swift.h"
+  local swift_interface="$framework_dir/Modules/RGCxrClient.swiftmodule/arm64-apple-ios.swiftinterface"
+
+  log "framework_zip=$FRAMEWORK_ZIP_URL"
+  log "inspect_dir=$INSPECT_DIR"
+  run rm -rf "$INSPECT_DIR"
+  run mkdir -p "$INSPECT_DIR"
+  run curl -fL "$FRAMEWORK_ZIP_URL" -o "$zip_path"
+  run unzip -q "$zip_path" -d "$INSPECT_DIR"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$header" ]]; then
+    echo "RGCxrClient Swift Objective-C header not found: $header" >&2
+    exit 68
+  fi
+
+  local objc_classes
+  objc_classes="$(grep -E '^@interface ' "$header" | awk '{print $2}' | sort -u | paste -sd ',' -)"
+  if [[ -z "$objc_classes" ]]; then
+    objc_classes="(none)"
+  fi
+
+  log "objc_header_classes=$objc_classes"
+  for symbol in RGCxrClientBLE CxrClient RGCxrClientAuthManager openCustomView takePhotoWithData startRecord; do
+    if header_has_symbol "$header" "$symbol"; then
+      log "objc_header_has_${symbol}=yes"
+    else
+      log "objc_header_has_${symbol}=no"
+    fi
+  done
+
+  if [[ -f "$swift_interface" ]]; then
+    for symbol in CxrClient RGCxrClientAuthManager openCustomView takePhotoWithData startRecord; do
+      if grep -q "$symbol" "$swift_interface"; then
+        log "swift_interface_has_${symbol}=yes"
+      else
+        log "swift_interface_has_${symbol}=no"
+      fi
+    done
+  else
+    log "swift_interface=missing"
+  fi
+
+  if ! header_has_symbol "$header" "CxrClient" &&
+     ! header_has_symbol "$header" "RGCxrClientAuthManager" &&
+     ! header_has_symbol "$header" "openCustomView" &&
+     ! header_has_symbol "$header" "takePhotoWithData"; then
+    log "dynamic_objc_bridge=not_viable"
+    log "reason=core CXR-L APIs are Swift-only and are not exported through RGCxrClient-Swift.h"
+  else
+    log "dynamic_objc_bridge=maybe_viable"
+  fi
+}
+
 require_command pod
-require_command xcodebuild
 
 log "project=$IOS_DIR"
 log "client=RGCxrClient $CLIENT_VERSION"
@@ -109,6 +195,10 @@ else
   log "+ pod spec cat RGCxrClient --version=$CLIENT_VERSION"
 fi
 
+if [[ "$INSPECT_FRAMEWORK" == "1" ]]; then
+  inspect_framework_surface
+fi
+
 if [[ "$CHECK_SPEC_ONLY" == "1" ]]; then
   log "spec check complete"
   exit 0
@@ -127,6 +217,8 @@ if [[ "$SKIP_BUILD" == "1" ]]; then
   log "pod install complete; build skipped"
   exit 0
 fi
+
+require_command xcodebuild
 
 log "writing xcodebuild log to $LOG_PATH"
 if [[ "$DRY_RUN" == "1" ]]; then
