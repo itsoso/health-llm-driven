@@ -19,25 +19,26 @@ import WatchConnectivity
         "/daily-health/exercise": ["POST"],
         "/diet/voice/parse": ["POST"],
         "/diet/records": ["POST"],
-        "/client-events": ["POST"],              // watch action 埋点中继(shown/completed)
+        "/client-events": ["POST"],              // watch action 埋点中继(shown/completed/skipped)
         "/watch/symptoms": ["POST"],             // 王牌⑤ 腕上语音记症状 → SafetyGuardian 裁决
     ]
-    // 动态放行:/watch/actions/{action_id}/complete 的 POST。前缀+后缀不够——
+    // 动态放行:/watch/actions/{action_id}/{complete|skip} 的 POST。前缀+后缀不够——
     // 中段必须是「单层合法 action_id」,否则 `/watch/actions/../../admin/x/complete`
-    // 也同时满足 prefix+suffix(URLComponents 不折叠 ..)。见下 isWatchActionComplete。
+    // 也同时满足 prefix+suffix(URLComponents 不折叠 ..)。见下 isWatchActionMutation。
     private let watchActionPrefix = "/watch/actions/"
-    private let watchActionSuffix = "/complete"
+    private let watchActionSuffixes = ["/complete", "/skip"]
     // 与后端 _ACTION_ID_RE 同形: agenda-{object_type}-{object_id}。NSString 锚定(^…$),
     // 中段不含 `/`,故天然单层;`.` 仅出现在 \d 之外即拒,`..` 无从构造。
     private let actionIDPattern = "^agenda-[a-z_]+-[0-9]+$"
 
-    /// /watch/actions/{action_id}/complete 的 POST 才放行,且 {action_id} 须是合法单层 id。
-    private func isWatchActionComplete(path: String, method: String) -> Bool {
+    /// /watch/actions/{action_id}/{complete|skip} 的 POST 才放行,且 {action_id} 须是合法单层 id。
+    private func isWatchActionMutation(path: String, method: String) -> Bool {
         guard method == "POST" else { return false }
         // 纵深防御:任何 .. 直接拒(即便正则已挡,留显式断言便于 review)。
         guard !path.contains("..") else { return false }
-        guard path.hasPrefix(watchActionPrefix), path.hasSuffix(watchActionSuffix) else { return false }
-        let mid = String(path.dropFirst(watchActionPrefix.count).dropLast(watchActionSuffix.count))
+        guard path.hasPrefix(watchActionPrefix),
+              let suffix = watchActionSuffixes.first(where: { path.hasSuffix($0) }) else { return false }
+        let mid = String(path.dropFirst(watchActionPrefix.count).dropLast(suffix.count))
         // mid 必须就是一个 action_id:不含 `/`(单层)且匹配后端同形正则。
         guard !mid.contains("/") else { return false }
         return mid.range(of: actionIDPattern, options: .regularExpression) != nil
@@ -46,7 +47,7 @@ import WatchConnectivity
     /// 是否放行该 (path, method)。先查精确白名单,再查受限动态规则。其余一律拒。
     private func isRouteAllowed(path: String, method: String) -> Bool {
         if allowedQuickRecordRoutes[path]?.contains(method) == true { return true }
-        if isWatchActionComplete(path: path, method: method) { return true }
+        if isWatchActionMutation(path: path, method: method) { return true }
         return false
     }
 

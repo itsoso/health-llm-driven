@@ -13,6 +13,7 @@ public enum QuickRecordError: Error, Equatable, Sendable {
 public enum QuickRecordResultKind: String, Equatable, Sendable {
     case saved
     case draft
+    case symptom
 }
 
 public struct QuickRecordRequest: Equatable, Sendable {
@@ -102,6 +103,22 @@ public enum QuickRecord {
             path: "/diet/voice/parse", method: "POST", query: [:], body: ["raw_text": t],
             resultKind: .draft,
             successMessage: "待确认"
+        )
+    }
+
+    /// 语音记症状:转写文本 → /watch/symptoms。后端落 SymptomEntry + SafetyGuardian 确定性裁决。
+    public static func symptom(text: String) throws -> QuickRecordRequest {
+        try symptomVoice(rawText: text)
+    }
+
+    /// 语音记症状:腕上安全输入独立结果类型,不能复用饮食草稿链路。
+    public static func symptomVoice(rawText: String) throws -> QuickRecordRequest {
+        let t = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { throw QuickRecordError.missing("语音内容") }
+        return QuickRecordRequest(
+            path: "/watch/symptoms", method: "POST", query: [:], body: ["text": t],
+            resultKind: .symptom,
+            successMessage: "症状已记录"
         )
     }
 }

@@ -256,6 +256,22 @@ final class QuickRecordTests: XCTestCase {
         XCTAssertThrowsError(try QuickRecord.dietVoice(rawText: "   "))
     }
 
+    func testSymptomVoiceBuildsSafetyRequest() throws {
+        let r = try QuickRecord.symptomVoice(rawText: "胸口闷,有点喘")
+        XCTAssertEqual(r.path, "/watch/symptoms")
+        XCTAssertEqual(r.method, "POST")
+        XCTAssertTrue(r.query.isEmpty)
+        XCTAssertEqual(r.body["text"], "胸口闷,有点喘")
+        XCTAssertEqual(r.resultKind, .symptom)
+        XCTAssertEqual(r.successMessage, "症状已记录")
+    }
+
+    func testSymptomVoiceEmptyThrows() {
+        XCTAssertThrowsError(try QuickRecord.symptomVoice(rawText: "   ")) { err in
+            XCTAssertEqual(err as? QuickRecordError, .missing("语音内容"))
+        }
+    }
+
     func testCompleteActionBuildsPath() throws {
         let r = try QuickRecord.completeAction(actionId: "agenda-health_protocol-12")
         XCTAssertEqual(r.path, "/watch/actions/agenda-health_protocol-12/complete")
@@ -318,5 +334,200 @@ final class QuickRecordTests: XCTestCase {
         XCTAssertEqual(req.body["fat"], "5.9")
         XCTAssertEqual(req.body["ai_recognized"], "true")
         XCTAssertEqual(draft.summaryLine, "午餐: 鸡胸肉 150g, 米饭 1碗")
+    }
+}
+
+final class SymptomEvalResultTests: XCTestCase {
+    func testDecodeCriticalAlertUsesCriticalBannerAndStrongHaptic() throws {
+        let data = Data("""
+        {
+          "symptom_id": 42,
+          "alerts": [
+            {
+              "severity": {"value": 4, "label": "urgent", "label_zh": "紧急"},
+              "title": "胸痛伴呼吸困难需要尽快处理",
+              "action": "立即联系急救或前往急诊",
+              "data_citation": "用户腕上语音记录"
+            }
+          ],
+          "message": "已记录症状并完成安全评估"
+        }
+        """.utf8)
+
+        let result = try SymptomEvalResult.decode(data)
+
+        XCTAssertEqual(result.symptomId, 42)
+        XCTAssertEqual(result.alerts.count, 1)
+        XCTAssertEqual(result.alerts.first?.severity.value, 4)
+        XCTAssertEqual(result.alerts.first?.severity.labelZh, "紧急")
+        XCTAssertEqual(result.displayBanner.tone, .critical)
+        XCTAssertEqual(result.displayBanner.title, "胸痛伴呼吸困难需要尽快处理")
+        XCTAssertEqual(result.displayBanner.action, "立即联系急救或前往急诊")
+        XCTAssertEqual(result.hapticKind, .strong)
+        XCTAssertFalse(result.isReassuringSafe)
+        XCTAssertFalse(result.evaluationFailed)
+    }
+
+    func testDecodeEvaluationFailureWithoutAlertStillUsesCautionBanner() throws {
+        let data = Data("""
+        {
+          "symptom_id": 43,
+          "alerts": [],
+          "evaluation_failed": true,
+          "message": "症状已记录,但安全评估暂不可用"
+        }
+        """.utf8)
+
+        let result = try SymptomEvalResult.decode(data)
+
+        XCTAssertEqual(result.symptomId, 43)
+        XCTAssertTrue(result.alerts.isEmpty)
+        XCTAssertEqual(result.displayBanner.tone, .caution)
+        XCTAssertEqual(result.displayBanner.title, "安全评估未完成")
+        XCTAssertEqual(result.displayBanner.action, "症状已记录,但安全评估暂不可用")
+        XCTAssertEqual(result.hapticKind, .notify)
+        XCTAssertFalse(result.isReassuringSafe)
+        XCTAssertTrue(result.evaluationFailed)
+    }
+
+    // MARK: - 后端真实契约的 critical fixture(QA 实测 shape:label=="critical")
+
+    /// 对齐 backend Severity.label:CRITICAL→"critical"/"紧急"。alerts 非空且无 evaluation_failed
+    /// → 三态①(取 alerts[0] 渲染)。critical 必 isCritical + 强震 + 绝不 reassuring。
+    func testCriticalWithRealBackendLabel() throws {
+        let data = Data("""
+        {
+          "symptom_id": 1,
+          "alerts": [
+            {
+              "severity": {"value": 4, "label": "critical", "label_zh": "紧急"},
+              "title": "可疑急性心脏事件",
+              "action": "立即停止活动,拨打 120 或前往最近急诊。",
+              "data_citation": {}
+            }
+          ],
+          "message": "已记录症状,并触发安全提醒,请查看。"
+        }
+        """.utf8)
+        let r = try SymptomEvalResult.decode(data)
+        XCTAssertEqual(r.symptomId, 1)
+        // severity 嵌套对象逐字段解析
+        XCTAssertEqual(r.topAlert?.severity.value, 4)
+        XCTAssertEqual(r.topAlert?.severity.label, "critical")
+        XCTAssertEqual(r.topAlert?.severity.labelZh, "紧急")
+        XCTAssertEqual(r.topAlert?.title, "可疑急性心脏事件")
+        XCTAssertEqual(r.topAlert?.action, "立即停止活动,拨打 120 或前往最近急诊。")
+        XCTAssertTrue(r.isCritical)
+        XCTAssertEqual(r.hapticKind, .strong)
+        XCTAssertFalse(r.isReassuringSafe, "critical 绝不 reassuring")
+        XCTAssertFalse(r.evaluationFailed)
+        XCTAssertEqual(r.displayBanner.tone, .critical)
+    }
+
+    /// 三态②:alerts:[] 且无 evaluation_failed → 真·无告警 = 安全。唯一可点绿灯分支。
+    func testGenuineNoAlertIsReassuringSafe() throws {
+        let data = Data("""
+        {"symptom_id": 7, "alerts": [], "message": "已记录症状,未触发安全规则。"}
+        """.utf8)
+        let r = try SymptomEvalResult.decode(data)
+        XCTAssertTrue(r.alerts.isEmpty)
+        XCTAssertFalse(r.evaluationFailed, "成功分支后端不带 evaluation_failed 键 → 默认 false")
+        XCTAssertTrue(r.isReassuringSafe)
+        XCTAssertEqual(r.displayBanner.tone, .safe)
+        XCTAssertEqual(r.hapticKind, .click)
+        XCTAssertFalse(r.isCritical)
+    }
+
+    /// 三态③ 实际形态:后端 evaluation_failed 时注入一条 HIGH advisory → alerts 非空 + flag true。
+    /// 关键:**有 alert 但评估未完成 → 绝不 reassoring,banner 用 caution(橙)不退成普通 high。**
+    func testEvaluationFailedWithInjectedHighAdvisoryNeverReassuring() throws {
+        let data = Data("""
+        {
+          "symptom_id": 9,
+          "alerts": [
+            {
+              "severity": {"value": 3, "label": "high", "label_zh": "警告"},
+              "title": "安全评估未完成",
+              "action": "本次未能完成自动安全筛查,请勿据此判断为安全;如有不适请及时就医,情况紧急请拨打 120。",
+              "data_citation": {"reason": "rule_engine_partial_or_total_failure"}
+            }
+          ],
+          "evaluation_failed": true,
+          "message": "症状已记录,但本次自动安全评估未能完成。"
+        }
+        """.utf8)
+        let r = try SymptomEvalResult.decode(data)
+        XCTAssertEqual(r.alerts.count, 1)
+        XCTAssertTrue(r.evaluationFailed)
+        XCTAssertFalse(r.isReassuringSafe, "评估未完成即便有/无 alert 都绝不 reassuring")
+        XCTAssertFalse(r.isCritical)
+        XCTAssertEqual(r.displayBanner.tone, .caution, "评估未完成的 HIGH advisory 用 caution(橙),不退成普通 high")
+        XCTAssertEqual(r.displayBanner.title, "安全评估未完成")
+        XCTAssertEqual(r.hapticKind, .notify)
+    }
+
+    /// 对抗用例:evaluation_failed==true 即使恰好 alerts 为空,也绝不 reassuring(UI 不漏报最后一闸)。
+    func testEvaluationFailedEmptyAlertsStillNotReassuring() throws {
+        let data = Data("""
+        {"symptom_id": 11, "alerts": [], "evaluation_failed": true}
+        """.utf8)
+        let r = try SymptomEvalResult.decode(data)
+        XCTAssertTrue(r.alerts.isEmpty)
+        XCTAssertFalse(r.isReassuringSafe)
+        XCTAssertNotEqual(r.displayBanner.tone, .safe, "evaluation_failed 绝不渲成 safe(绿)")
+    }
+
+    /// 普通(非急症)告警:alerts 非空、评估完成 → high 档,not reassuring,不强震。
+    func testNonCriticalAlertIsHighNotReassuring() throws {
+        let data = Data("""
+        {
+          "symptom_id": 5,
+          "alerts": [
+            {"severity": {"value": 3, "label": "high", "label_zh": "警告"},
+             "title": "症状值得关注", "action": "若持续或加重请就医", "data_citation": {}}
+          ],
+          "message": "已记录症状,并触发安全提醒,请查看。"
+        }
+        """.utf8)
+        let r = try SymptomEvalResult.decode(data)
+        XCTAssertFalse(r.isCritical)
+        XCTAssertFalse(r.isReassuringSafe)
+        XCTAssertEqual(r.displayBanner.tone, .high)
+        XCTAssertEqual(r.hapticKind, .notify)
+    }
+}
+
+final class SymptomBuilderTests: XCTestCase {
+    func testSymptomBuildsPathMethodBody() throws {
+        let r = try QuickRecord.symptom(text: "胸口闷,左手发麻")
+        XCTAssertEqual(r.path, "/watch/symptoms")
+        XCTAssertEqual(r.method, "POST")
+        XCTAssertTrue(r.query.isEmpty)
+        XCTAssertEqual(r.body["text"], "胸口闷,左手发麻")
+        XCTAssertEqual(r.resultKind, .symptom)
+    }
+
+    func testSymptomTrimsWhitespace() throws {
+        let r = try QuickRecord.symptom(text: "  头很晕  ")
+        XCTAssertEqual(r.body["text"], "头很晕", "前后空白被裁剪,不发脏文本")
+    }
+
+    func testSymptomEmptyThrows() {
+        XCTAssertThrowsError(try QuickRecord.symptom(text: "")) { err in
+            XCTAssertEqual(err as? QuickRecordError, .missing("语音内容"))
+        }
+    }
+
+    func testSymptomWhitespaceOnlyThrows() {
+        // 纯空白(含换行)→ fail-loud,绝不静默发空 → 后端会 400,但腕上先拦。
+        XCTAssertThrowsError(try QuickRecord.symptom(text: "  \n\t ")) { err in
+            XCTAssertEqual(err as? QuickRecordError, .missing("语音内容"))
+        }
+    }
+
+    func testSymptomVoiceAliasMatchesSymptom() throws {
+        let a = try QuickRecord.symptom(text: "恶心想吐")
+        let b = try QuickRecord.symptomVoice(rawText: "恶心想吐")
+        XCTAssertEqual(a, b, "symptom(text:) 与 symptomVoice(rawText:) 同构")
     }
 }

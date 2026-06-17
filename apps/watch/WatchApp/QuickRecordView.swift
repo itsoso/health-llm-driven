@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(WatchKit)
+import WatchKit
+#endif
 
 /// 打点屏(Reva 深色面):圆角 tile 按钮一键记录(喝水/运动/语音记餐)。
 /// 校验走 WatchCompanionCore.QuickRecord;成功显绿、失败显 store.lastError(fail loud)。
@@ -29,8 +32,24 @@ struct QuickRecordView: View {
                     }
                 }
 
+                tile(icon: "waveform.path.ecg", label: store.symptomSubmitting ? "记录中..." : "语音记症状") {
+                    Task {
+                        guard !store.symptomSubmitting else { return }
+                        let text = await dictate()
+                        guard let text, !text.isEmpty else { return }
+                        await store.submitSymptom(rawText: text)
+                        if let result = store.symptomResult {
+                            playSymptomHaptic(result.hapticKind)
+                        }
+                    }
+                }
+
                 if let draft = store.pendingDietDraft {
                     dietDraftPanel(draft)
+                }
+
+                if let result = store.symptomResult {
+                    symptomSafetyPanel(result)
                 }
 
                 statusLine
@@ -141,6 +160,148 @@ struct QuickRecordView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tileBackground)
+    }
+
+    /// 安全裁决面板。**tone 完全由 Core.displayBanner 决定,View 不自判绿灯。**
+    /// critical → 红底大字 + 大「拨打 120」行;评估未完成(caution)→ 橙底,绝不绿;
+    /// 仅 isReassuringSafe(=tone .safe)才中性绿调。
+    @ViewBuilder
+    private func symptomSafetyPanel(_ result: SymptomEvalResult) -> some View {
+        let banner = result.displayBanner
+        let tone = banner.tone
+        let isCrit = result.isCritical
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: symptomIcon(for: tone))
+                    .font(isCrit ? .body : .caption)
+                    .foregroundStyle(symptomColor(for: tone))
+                Text(symptomToneLabel(for: tone))
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(symptomColor(for: tone))
+                Spacer(minLength: 0)
+                Button {
+                    store.clearSymptomResult()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                        .frame(width: 24, height: 22)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text(banner.title)
+                .font(isCrit ? .headline : .caption)
+                .fontWeight(isCrit ? .bold : .semibold)
+                .foregroundStyle(tone == .safe ? RevaWatch.ink1 : symptomColor(for: tone))
+                .lineLimit(isCrit ? 3 : 2)
+
+            if let action = banner.action, !action.isEmpty {
+                Text(action)
+                    .font(isCrit ? .caption : .caption2)
+                    .foregroundStyle(RevaWatch.ink1)
+                    .lineLimit(isCrit ? 6 : 4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // critical 冗余强调「拨打 120」立成大动作行,不依赖用户读完长句。
+            if isCrit {
+                Label("情况紧急请拨打 120", systemImage: "phone.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: RevaWatch.radiusRow, style: .continuous)
+                            .fill(RevaWatch.risk)
+                    )
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(symptomPanelBackground(for: tone))
+    }
+
+    private func symptomPanelBackground(for tone: SymptomBanner.Tone) -> some View {
+        RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+            .fill(symptomPanelFill(for: tone))
+            .overlay(
+                RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                    .stroke(symptomPanelStroke(for: tone), lineWidth: tone == .critical ? 2 : 1)
+            )
+    }
+
+    private func symptomPanelStroke(for tone: SymptomBanner.Tone) -> Color {
+        switch tone {
+        case .critical:
+            return RevaWatch.risk
+        case .high, .caution:
+            return RevaWatch.caution
+        case .safe:
+            return RevaWatch.focusLine
+        }
+    }
+
+    private func symptomPanelFill(for tone: SymptomBanner.Tone) -> Color {
+        switch tone {
+        case .critical:
+            return RevaWatch.risk.opacity(0.16)
+        case .high, .caution:
+            return RevaWatch.caution.opacity(0.12)
+        case .safe:
+            return RevaWatch.focusBg2
+        }
+    }
+
+    private func symptomColor(for tone: SymptomBanner.Tone) -> Color {
+        switch tone {
+        case .critical:
+            return RevaWatch.risk
+        case .high, .caution:
+            return RevaWatch.caution
+        case .safe:
+            return RevaWatch.normal
+        }
+    }
+
+    private func symptomIcon(for tone: SymptomBanner.Tone) -> String {
+        switch tone {
+        case .critical:
+            return "cross.case.fill"
+        case .high, .caution:
+            return "exclamationmark.triangle.fill"
+        case .safe:
+            return "checkmark.circle.fill"
+        }
+    }
+
+    private func symptomToneLabel(for tone: SymptomBanner.Tone) -> String {
+        switch tone {
+        case .critical:
+            return "需要立即关注"
+        case .high:
+            return "安全提醒"
+        case .caution:
+            return "需复核"
+        case .safe:
+            return "已记录"
+        }
+    }
+
+    private func playSymptomHaptic(_ haptic: SymptomHaptic) {
+        #if canImport(WatchKit)
+        let type: WKHapticType
+        switch haptic {
+        case .strong:
+            type = .failure
+        case .notify:
+            type = .notification
+        case .click:
+            type = .click
+        }
+        WKInterfaceDevice.current().play(type)
+        #endif
     }
 
     private var tileBackground: some View {

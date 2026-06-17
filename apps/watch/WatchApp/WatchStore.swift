@@ -14,6 +14,8 @@ final class WatchStore: ObservableObject {
     @Published var lastRecordOK: Bool?
     @Published var lastRecordMessage: String?
     @Published var pendingDietDraft: VoiceFoodDraft?
+    @Published var symptomResult: SymptomEvalResult?   // 最近一次语音记症状的安全裁决(供 QuickRecordView 渲染)
+    @Published var symptomSubmitting = false           // 记症状请求在途(禁重复点)
     @Published var completing = false          // 「一键已做」请求在途(禁重复点 + tile 转圈)
     @Published var skipping = false            // 「跳过」请求在途(禁重复点)
 
@@ -76,6 +78,13 @@ final class WatchStore: ObservableObject {
                 guard let data else { throw WatchStoreError.missingDraftData }
                 pendingDietDraft = try VoiceFoodDraft.decode(data)
                 lastRecordMessage = "请确认饮食草稿"
+            case .symptom:
+                // 安全裁决:必须解出 SymptomEvalResult 才算成功;解不出 fail loud。
+                // 不在此点绿灯(lastRecordOK)——安全态由 SymptomEvalResult 计算属性决定,
+                // 普通 submit 链路不参与症状的安全渲染(View 走 submitSymptom)。
+                guard let data else { throw WatchStoreError.missingDraftData }
+                symptomResult = try SymptomEvalResult.decode(data)
+                lastRecordMessage = nil
             case .saved:
                 if req.path == "/diet/records" {
                     pendingDietDraft = nil
@@ -94,6 +103,17 @@ final class WatchStore: ObservableObject {
             lastRecordOK = false
             lastError = "记录失败,请重试"
         }
+    }
+
+    /// 语音记症状:校验 → 中继 → 解 SymptomEvalResult → 暴露给 QuickRecordView 渲染安全裁决。
+    /// 走统一 submit 链路(.symptom 分支),失败 fail loud(lastError);安全态不在此判定,
+    /// 由 SymptomEvalResult 计算属性决定。提交前清掉上一条结果,避免失败时残留旧裁决误导。
+    func submitSymptom(rawText: String) async {
+        guard !symptomSubmitting else { return }
+        symptomSubmitting = true
+        defer { symptomSubmitting = false }
+        symptomResult = nil
+        await submit { try QuickRecord.symptomVoice(rawText: rawText) }
     }
 
     /// 「一键已做」:把到点项标记完成。仅可完成项(有 action_id 且 health_protocol 域)调用。
@@ -148,6 +168,13 @@ final class WatchStore: ObservableObject {
 
     func clearDietDraft() {
         pendingDietDraft = nil
+        lastRecordOK = nil
+        lastRecordMessage = nil
+        lastError = nil
+    }
+
+    func clearSymptomResult() {
+        symptomResult = nil
         lastRecordOK = nil
         lastRecordMessage = nil
         lastError = nil
