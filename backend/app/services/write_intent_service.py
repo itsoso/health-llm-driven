@@ -219,6 +219,27 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         db.add(rem)
         db.flush()
         return f"smart_reminder:{rem.id}"
+    if wi.kind == "recheck_due":
+        # 良性写:确认 → 建一条「该复查了,记录复查」的提醒(不改药/不开方/不诊断)。
+        p = wi.payload or {}
+        rem = SmartReminder(
+            user_id=wi.user_id,
+            title=wi.title,
+            message=wi.description or "该复查了,记录一次复查",
+            remind_at=_parse_dt(p.get("remind_at")) or _remind_at_for(p.get("planned_end_date"), p.get("overdue", False)),
+            priority="normal",
+            status="pending",
+            source="health_assistant",
+            extra_data={
+                "write_intent_id": wi.id,
+                "target_type": wi.target_type,
+                "target_id": wi.target_id,
+                "kind": wi.kind,
+            },
+        )
+        db.add(rem)
+        db.flush()
+        return f"smart_reminder:{rem.id}"
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
 
@@ -324,3 +345,70 @@ def generate_measurement_prompts(db: Session, user_id: int) -> int:
             created += 1
     db.commit()
     return created
+
+
+def generate_recheck_due(db: Session, user_id: int, within_days: int = 7) -> int:
+    """复测窗口到点:active 周期临近/逾期 planned_end_date 且尚未复查 → 提议「该复查了·记录复查」。
+
+    只催**首次**复查(latest_snapshot_id 为空时);用户复查过一次即停,不长期 nag。
+    同周期当天已提过(任何状态)→ 不重复。日历日用北京时。返回新建提议数。
+    """
+    from app.services.intervention_cycle_service import get_active_cycle
+    from app.utils.timezone import get_china_today
+
+    cycle = get_active_cycle(db, user_id)
+    if cycle is None or cycle.planned_end_date is None:
+        return 0
+    if cycle.latest_snapshot_id is not None:
+        return 0  # 已复查过 → 不再催首次复查
+
+    today = get_china_today()
+    days_left = (cycle.planned_end_date - today).days
+    if days_left > within_days:
+        return 0  # 还没到复测窗口
+
+    _beijing = timezone(timedelta(hours=8))
+    last = (
+        db.query(WriteIntent)
+        .filter(
+            WriteIntent.user_id == user_id,
+            WriteIntent.kind == "recheck_due",
+            WriteIntent.target_type == "intervention_cycle",
+            WriteIntent.target_id == cycle.id,
+        )
+        .order_by(WriteIntent.created_at.desc())
+        .first()
+    )
+    if last is not None and last.created_at is not None:
+        ca = last.created_at
+        if ca.tzinfo is None:
+            ca = ca.replace(tzinfo=timezone.utc)
+        if ca.astimezone(_beijing).date() == today:  # 同北京日历日已提过 → 不重复
+            return 0
+
+    overdue = days_left < 0
+    title = "复查已逾期" if overdue else "该复查了"
+    description = (
+        f"干预周期已过复查日 {abs(days_left)} 天——记录一次复查,看看对你有没有效。"
+        if overdue
+        else "干预周期到复测窗口了——记录一次复查,看看对你有没有效。"
+    )
+    wi = propose(
+        db,
+        user_id,
+        kind="recheck_due",
+        title=title,
+        description=description,
+        source="recheck_window",
+        target_type="intervention_cycle",
+        target_id=cycle.id,
+        payload={
+            "planned_end_date": cycle.planned_end_date.isoformat(),
+            "overdue": overdue,
+            "days_left": days_left,
+            "cycle_id": cycle.id,
+        },
+        commit=False,
+    )
+    db.commit()
+    return 1 if wi is not None else 0

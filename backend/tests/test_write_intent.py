@@ -183,3 +183,68 @@ def test_confirm_measurement_prompt_creates_reminder(db):
     assert res["executed_ref"].startswith("smart_reminder:")
     rems = db.query(SmartReminder).filter(SmartReminder.user_id == u.id).all()
     assert len(rems) == 1 and "血压" in (rems[0].title or "")
+
+
+# ─────────────────── recheck_due syscall (Phase 1) ───────────────────
+
+def _cycle_ending(db, user_id, *, days_from_today, rechecked=False):
+    from app.utils.timezone import get_china_today
+    end = get_china_today() + timedelta(days=days_from_today)
+    c = InterventionCycle(
+        user_id=user_id, cycle_type="metabolic_90d", status="active",
+        start_date=end - timedelta(days=90), planned_end_date=end,
+    )
+    if rechecked:
+        c.latest_snapshot_id = 1
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+def test_recheck_due_proposed_within_window(db):
+    u = _mk_user(db)
+    _cycle_ending(db, u.id, days_from_today=3)  # 3 天后到复查日
+    assert svc.generate_recheck_due(db, u.id) == 1
+    items = [it for it in svc.list_pending(db, u.id) if it["kind"] == "recheck_due"]
+    assert len(items) == 1 and items[0]["title"] == "该复查了"
+
+
+def test_recheck_due_not_proposed_when_far(db):
+    u = _mk_user(db)
+    _cycle_ending(db, u.id, days_from_today=30)  # 还早
+    assert svc.generate_recheck_due(db, u.id) == 0
+
+
+def test_recheck_due_skipped_when_already_rechecked(db):
+    u = _mk_user(db)
+    _cycle_ending(db, u.id, days_from_today=2, rechecked=True)  # 已复查 → 不再催首次
+    assert svc.generate_recheck_due(db, u.id) == 0
+
+
+def test_recheck_due_overdue_wording(db):
+    u = _mk_user(db)
+    _cycle_ending(db, u.id, days_from_today=-2)  # 逾期 2 天
+    assert svc.generate_recheck_due(db, u.id) == 1
+    it = [x for x in svc.list_pending(db, u.id) if x["kind"] == "recheck_due"][0]
+    assert it["title"] == "复查已逾期"
+
+
+def test_recheck_due_no_same_day_renag(db):
+    u = _mk_user(db)
+    _cycle_ending(db, u.id, days_from_today=1)
+    assert svc.generate_recheck_due(db, u.id) == 1
+    for it in svc.list_pending(db, u.id):
+        if it["kind"] == "recheck_due":
+            svc.dismiss(db, u.id, it["id"])
+    assert svc.generate_recheck_due(db, u.id) == 0  # 同日忽略后不重复
+
+
+def test_confirm_recheck_due_creates_reminder(db):
+    u = _mk_user(db)
+    c = _cycle_ending(db, u.id, days_from_today=0)
+    svc.generate_recheck_due(db, u.id)
+    wi_id = [x for x in svc.list_pending(db, u.id) if x["kind"] == "recheck_due"][0]["id"]
+    res = svc.confirm(db, u.id, wi_id)
+    assert res["status"] == "executed" and res["executed_ref"].startswith("smart_reminder:")
+    assert db.query(SmartReminder).filter(SmartReminder.user_id == u.id).count() == 1
