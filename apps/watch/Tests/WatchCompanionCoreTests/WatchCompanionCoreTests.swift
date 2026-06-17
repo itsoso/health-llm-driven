@@ -590,6 +590,59 @@ final class SymptomEvalResultTests: XCTestCase {
     }
 }
 
+final class WatchBackendRequestTests: XCTestCase {
+    func testSummaryRequestUsesBearerTokenAndApiV1Path() throws {
+        let req = try WatchBackendRequest.summary(apiBase: "https://example.test/api/v1", token: "tok")
+
+        XCTAssertEqual(req.url?.absoluteString, "https://example.test/api/v1/watch/summary")
+        XCTAssertEqual(req.httpMethod, "GET")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
+    }
+
+    func testQuickRecordRejectsPathTraversal() throws {
+        let req = QuickRecordRequest(
+            path: "/watch/actions/../../admin/x/complete",
+            method: "POST",
+            query: [:],
+            body: [:]
+        )
+
+        XCTAssertThrowsError(try WatchBackendRequest.quickRecord(req, apiBase: "https://example.test/api/v1", token: "tok")) { err in
+            XCTAssertEqual(err as? WatchBackendRequest.Error, .routeNotAllowed)
+        }
+    }
+
+    func testQuickRecordAllowsWatchActionMutation() throws {
+        let quick = try QuickRecord.snoozeAction(actionId: "agenda-health_protocol-12", minutes: 45)
+
+        let req = try WatchBackendRequest.quickRecord(quick, apiBase: "https://example.test/api/v1", token: "tok")
+
+        XCTAssertEqual(req.url?.absoluteString, "https://example.test/api/v1/watch/actions/agenda-health_protocol-12/snooze")
+        XCTAssertEqual(req.httpMethod, "POST")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
+        let body = try XCTUnwrap(req.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(json["minutes"], "45")
+    }
+
+    func testEventRequestBuildsClientEventEnvelope() throws {
+        let req = try WatchBackendRequest.event(
+            name: "watch_action_shown",
+            meta: ["action_id": "agenda-health_protocol-12"],
+            apiBase: "https://example.test/api/v1",
+            token: "tok"
+        )
+
+        XCTAssertEqual(req.url?.absoluteString, "https://example.test/api/v1/client-events")
+        XCTAssertEqual(req.httpMethod, "POST")
+        let body = try XCTUnwrap(req.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["event_name"] as? String, "watch_action_shown")
+        XCTAssertEqual((json["meta"] as? [String: String])?["action_id"], "agenda-health_protocol-12")
+    }
+}
+
 final class SymptomBuilderTests: XCTestCase {
     func testSymptomBuildsPathMethodBody() throws {
         let r = try QuickRecord.symptom(text: "胸口闷,左手发麻")

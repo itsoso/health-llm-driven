@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import Foundation
 import Security
 
 public class SharedKeychainModule: Module {
@@ -6,6 +7,7 @@ public class SharedKeychainModule: Module {
     private static let appGroup = "group.life.executor.health"
     private static let tokenKey = "siri_auth_token"
     private static let markerKey = "siri_debug_marker"
+    private static let tokenChangedNotification = Notification.Name("RevaSharedAuthTokenChanged")
 
     public func definition() -> ModuleDefinition {
         Name("SharedKeychain")
@@ -38,6 +40,7 @@ public class SharedKeychainModule: Module {
             if keychainStatus == errSecSuccess {
                 anySuccess = true
             }
+            NotificationCenter.default.post(name: SharedKeychainModule.tokenChangedNotification, object: nil)
 
             return anySuccess ? 0 : Int(keychainStatus)
         }
@@ -54,6 +57,7 @@ public class SharedKeychainModule: Module {
                 kSecAttrAccessGroup as String: SharedKeychainModule.appGroup,
             ]
             SecItemDelete(query as CFDictionary)
+            NotificationCenter.default.post(name: SharedKeychainModule.tokenChangedNotification, object: nil)
         }
 
         /// 诊断: 主 App 读回自己写到 App Group UserDefaults 的 marker 和 token。
