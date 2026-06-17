@@ -40,6 +40,11 @@ async def list_write_intents(
     except Exception as e:
         logger.warning(f"[write-intents] recheck-due 生成失败(降级,仍返回现有): {e}")
         db.rollback()
+    try:
+        svc.generate_adherence_nudge(db, current_user.id)
+    except Exception as e:
+        logger.warning(f"[write-intents] adherence 生成失败(降级,仍返回现有): {e}")
+        db.rollback()
     return {"items": svc.list_pending(db, current_user.id)}
 
 
