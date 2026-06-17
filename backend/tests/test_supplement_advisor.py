@@ -250,9 +250,9 @@ def test_run_catches_internal_exception():
     assert f.raw.get("disclaimer")
 
 
-# ─────────── ProposedCard (12 周) ───────────
+# ─────────── ProposedCard (复测窗按指标动力学) ───────────
 
-def test_proposed_card_12_weeks_with_mthfr():
+def test_proposed_card_verification_window_matches_metric_kinetics():
     s = SupplementAdvisorSpecialist()
     t = _twin_with_genes([
         {"gene_name": "MTHFR", "genotype": "TT", "result_label": "reduced"},
@@ -260,7 +260,8 @@ def test_proposed_card_12_weeks_with_mthfr():
     f = s.run(t, {})
     assert len(f.proposed_cards) == 1
     card = f.proposed_cards[0]
-    assert card.verification_days == 84
+    # Hcy 响应动力学 4-8 周 → 56 天 (不再统一 84 天，见 METRIC_VERIFICATION_DAYS)
+    assert card.verification_days == 56
     assert card.card_type == "plan"
     assert card.metric_key == "hcy"
     assert "免责" in card.content or "参考" in card.content
@@ -299,8 +300,8 @@ def test_summary_flags_blocks():
 # ─────────── 肾结石 + VDR → 自动降 VD 剂量 (memory bug 修复 2026-05-12) ───────────
 
 def test_kidney_stone_history_downscales_vitamin_d():
-    """memory feedback: itsoso 肾结石 3mm 史 + VDR + 5000IU 长期有钙沉积风险.
-    应自动降 dose 到 1000 IU + warning."""
+    """memory feedback: 肾结石史 + VDR 高剂量 VD 有钙沉积风险.
+    R4 改动后: 不写具体处方剂量, 而是给"须由医生降量"的安全提示 + 仍不加 K2."""
     from app.twin.schema import ChronicConditionState
     s = SupplementAdvisorSpecialist()
     t = _twin_with_genes([
@@ -310,15 +311,17 @@ def test_kidney_stone_history_downscales_vitamin_d():
     f = s.run(t, {})
     d_rec = next((x for x in f.findings if x.get("id") == "vdr_vitamin_d"), None)
     assert d_rec is not None
-    assert "1000 IU" in d_rec["dose"]
     assert "肾结石" in d_rec.get("warning", "")
+    # R4: warning 不得写"建议 X IU/日"这种处方式起始剂量
+    assert "IU/日" not in d_rec.get("warning", "")
+    assert "由医生" in d_rec["warning"]
     # 肾结石史也不加 K2
     ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
     assert "vdr_vitamin_k2" not in ids
 
 
-def test_no_kidney_stone_keeps_normal_vitamin_d_dose():
-    """不带肾结石史 → dose 维持 2000-4000 IU + 加 K2."""
+def test_no_kidney_stone_keeps_k2_and_nonprescriptive_d_dose():
+    """不带肾结石史 → 仍加 K2; VD dose 为去基因门控的非处方指引 (无具体处方剂量)."""
     s = SupplementAdvisorSpecialist()
     t = _twin_with_genes([
         {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
@@ -326,7 +329,124 @@ def test_no_kidney_stone_keeps_normal_vitamin_d_dose():
     f = s.run(t, {})
     d_rec = next((x for x in f.findings if x.get("id") == "vdr_vitamin_d"), None)
     assert d_rec is not None
-    assert "2000-4000 IU" in d_rec["dose"]
     assert "肾结石" not in d_rec.get("warning", "")
+    # dose 不携带具体处方剂量, 而是"由医生确定"
+    assert "由医生" in d_rec["dose"]
+    assert "2000-4000 IU" not in d_rec["dose"]
     ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
     assert "vdr_vitamin_k2" in ids
+
+
+# ─────────── R4 合规: 基因型→个体化具体剂量 = 开方越界 (对抗验证 2026-06-17) ───────────
+
+# 开方式措辞: "基因型 X 携带者 → 服用 Y mg/日" 这种把基因型直接键到具体剂量的句式。
+# dose 字段一律去基因门控; 具体数字只允许出现在 dose_reference 且带"须医生确认"标注。
+import re
+
+# 形如 "400-800 µg/日" / "2000-4000 IU/日" / "100-200 mg/日" 的裸处方剂量
+_PRESCRIPTIVE_DOSE = re.compile(
+    r"\d+\s*[-–~]\s*\d+\s*(µg|μg|ug|mg|g|IU|iu)\s*/?\s*日?"
+)
+
+
+def _all_recs(twin):
+    s = SupplementAdvisorSpecialist()
+    f = s.run(twin, {})
+    return [x for x in f.findings if x.get("type") == "supplement_rec"]
+
+
+def test_dose_field_never_carries_prescriptive_genotype_dose():
+    """断言: 任何基因门控的 rec, 其 dose 字段都不含"具体剂量数值"开方式措辞,
+    且必含"遵医嘱 / 已确认方案 / 由医生"之类去处方化措辞。"""
+    # 触发所有基因门控规则
+    t = _twin_with_genes([
+        {"gene_name": "MTHFR", "genotype": "TT", "result_label": "reduced"},
+        {"gene_name": "APOE", "genotype": "E4/E4", "result_label": "high_risk"},
+        {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
+        {"gene_name": "SOD2", "genotype": "CC", "result_label": "reduced"},
+    ])
+    from app.twin.schema import AcuteHealthState
+    t.acute = AcuteHealthState(recent_symptoms=["失眠"])  # 触发镁
+    recs = _all_recs(t)
+    assert recs, "应至少命中若干基因门控推荐"
+    for r in recs:
+        gene = r.get("gene")
+        dose = r["dose"]
+        # dose 不得含裸处方剂量范围
+        assert not _PRESCRIPTIVE_DOSE.search(dose), (
+            f"rec {r['id']} 的 dose 含开方式剂量: {dose!r}"
+        )
+        # 去处方化措辞必须存在
+        assert any(k in dose for k in ("遵医嘱", "已确认方案", "由医生")), (
+            f"rec {r['id']} 的 dose 缺去处方化措辞: {dose!r}"
+        )
+        # 若是基因门控 rec, reason 不得出现"基因型 → 必须/需要服用具体剂量"的硬开方句
+        if gene:
+            assert "您需要" not in r["reason"] and "你需要" not in r["reason"]
+
+
+def test_mthfr_dose_is_nonprescriptive_with_labeled_reference():
+    """MTHFR: dose 去基因门控; 具体范围只在 dose_reference 且带"须医生确认"+UL 标注。"""
+    s = SupplementAdvisorSpecialist()
+    t = _twin_with_genes([
+        {"gene_name": "MTHFR", "genotype": "TT", "result_label": "reduced"},
+    ])
+    f = s.run(t, {})
+    mf = next(x for x in f.findings if x.get("id") == "mthfr_methylfolate")
+    assert "遵医嘱" in mf["dose"] or "已确认方案" in mf["dose"]
+    assert not _PRESCRIPTIVE_DOSE.search(mf["dose"])
+    ref = mf.get("dose_reference") or ""
+    assert "须医生确认" in ref or "非按你基因型" in ref
+    assert "UL" in ref  # 保留 UL 上限信息
+
+
+def test_vdr_vitamin_d_not_genotype_driven_dose():
+    """VDR: 主流指南不推荐基因导向给药; dose 明确"由医生确定，不由基因型单独驱动"。"""
+    s = SupplementAdvisorSpecialist()
+    t = _twin_with_genes([
+        {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
+    ])
+    f = s.run(t, {})
+    vd = next(x for x in f.findings if x.get("id") == "vdr_vitamin_d")
+    assert "由医生" in vd["dose"]
+    assert "不由基因型单独驱动" in vd["dose"]
+    assert not _PRESCRIPTIVE_DOSE.search(vd["dose"])
+    # reason 不得再出现"需较高目标血清浓度 (40-60 ng/mL)"这种基因驱动目标
+    assert "40-60 ng/mL" not in vd["reason"]
+
+
+# ─────────── UL 安全上限护栏 (此前是死代码, 现已接入并验证) ───────────
+
+def test_ul_guardrail_clamps_over_ul_reference():
+    """超 UL 的参考范围上限 → 封顶到 UL + 警告 (直接测护栏函数)."""
+    from app.agents.supplement_advisor.advisor import _apply_ul_guardrail, UL_LIMITS
+    ul = UL_LIMITS["维生素 D3"]  # 4000
+    ceiling, warning = _apply_ul_guardrail("维生素 D3", ul + 5000)
+    assert ceiling == ul
+    assert warning is not None
+    assert "UL" in warning and str(ul) in warning
+
+
+def test_ul_guardrail_within_limit_no_warning():
+    """参考上限 ≤ UL → 不警告, 但仍回传 UL 天花板供展示."""
+    from app.agents.supplement_advisor.advisor import _apply_ul_guardrail, UL_LIMITS
+    ceiling, warning = _apply_ul_guardrail("维生素 D3", 4000)
+    assert ceiling == UL_LIMITS["维生素 D3"]
+    assert warning is None
+
+
+def test_ul_guardrail_unknown_key_noop():
+    from app.agents.supplement_advisor.advisor import _apply_ul_guardrail
+    assert _apply_ul_guardrail("不存在的补剂", 999) == (None, None)
+    assert _apply_ul_guardrail(None, 100) == (None, None)
+
+
+def test_rec_surfaces_ul_ceiling():
+    """每条有 UL 键的 rec 都把 UL 天花板暴露给下游 (护栏生效的可观测证据)."""
+    s = SupplementAdvisorSpecialist()
+    t = _twin_with_genes([
+        {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
+    ])
+    f = s.run(t, {})
+    vd = next(x for x in f.findings if x.get("id") == "vdr_vitamin_d")
+    assert vd.get("ul_ceiling") == 4000

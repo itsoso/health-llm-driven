@@ -7,10 +7,16 @@ Supplement Advisor —— 基因 + 化验驱动的补剂推荐 specialist.
 3. 硬阻断规则（HFE C282Y 纯合 → 禁铁；孕期 → 禁视黄醇 VitA）
 4. 产生 ProposedCard 作为 N-of-1 12 周试验方案（评 Hcy / ApoB / 25-OH-D / HRV）
 
-合规措辞：
+合规措辞 (R4 红线: 不开方 / 不调量):
 - 所有字段带 `disclaimer` 标明"健康参考信息"
 - summary 用"建议讨论" / "可考虑"而非"您需要"
-- 超 UL 剂量自动降级 + 加 warning 标记
+- **`dose` 字段不携带"基因型→具体剂量"的开方式数值** —— 一律是去基因门控的
+  "可考虑补充 X，剂量遵医嘱 / 已确认方案"。具体数字只出现在 `dose_reference`，且
+  明确标注为"指南衍生的一般参考范围，非按你基因型的个体化处方，须医生确认"。
+  (对抗验证 2026-06-17: MTHFR→5-MTHF 剂量 / VDR→VD3 剂量被判 prescribes_or_diagnoses
+   越界; 主流指南 IOM / Endocrine Society 不推荐基因导向给药。见
+   docs/design/health-os/planning-methodology.md §7。)
+- 超 UL 剂量自动封顶 + 加 warning 标记 (`_apply_ul_guardrail`，对参考范围上限生效)
 """
 
 from __future__ import annotations
@@ -26,11 +32,39 @@ logger = logging.getLogger(__name__)
 
 DISCLAIMER = "健康参考信息，非医疗诊断。剂量与是否服用建议与医生讨论。"
 
+# ─────────────────────── 复测窗 = 指标生物响应动力学 ───────────────────────
+# planning-methodology.md §原则 2/3: 复测窗须按所选指标的响应动力学分别设定，
+# 不能对所有补剂统一 84 天 —— 测得太早会把"还没起效"误读成"无效"。
+# 取每种指标响应区间偏保守(偏长)的一端，确保到期时生物效应已充分显现。
+#   hcy        同型半胱氨酸 4-8 周   → 56 天
+#   ldl        血脂/ApoB   4-12 周   → 84 天
+#   vitamin_d  25(OH)D     8-12 周   → 84 天
+#   b12        钴胺素      ~数周      → 56 天
+#   ferritin   铁蛋白      数月       → 120 天
+#   custom     未知指标    保守默认    → 84 天
+METRIC_VERIFICATION_DAYS: Dict[str, int] = {
+    "hcy": 56,
+    "ldl": 84,
+    "vitamin_d": 84,
+    "b12": 56,
+    "ferritin": 120,
+    "custom": 84,
+}
+DEFAULT_VERIFICATION_DAYS = 84
+
 # ─────────────────────────── SNP → 补剂映射 ───────────────────────────
 # 每条规则 schema:
-#   gene / variant / check(func: twin → bool) / supplement / dose / timing /
-#   reason / monitor_labs / priority / contraindications
-# priority 越低越先展示，但 "safety critical" 优先级可盖过
+#   gene / pathway / supplement / dose / dose_reference / ref_upper / ul_key /
+#   timing / reason / monitor_labs / priority / contraindications
+# priority 越低越先展示，但 "safety critical" 优先级可盖过。
+#
+# R4 红线 (不开方 / 不调量):
+#   `dose`          —— 去基因门控的非处方指引 ("可考虑补充 X，剂量遵医嘱 / 已确认方案")，
+#                      **绝不**携带"基因型→具体剂量"的数值。这是展示给用户的字段。
+#   `dose_reference`—— 指南衍生的一般参考范围 (带显式"非按你基因型的个体化处方，须医生确认"
+#                      标注)，仅作上下文，不作处方。
+#   `ref_upper`/`ul_key` —— 参考范围上限数值 + UL_LIMITS 键，喂 `_apply_ul_guardrail`
+#                      做安全上限封顶 (超 UL → 警告 + 封顶)。
 
 SUPPLEMENT_RULES: List[Dict[str, Any]] = [
     # ── Methylation pathway (MTHFR) ──
@@ -39,9 +73,16 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "gene": "MTHFR",
         "pathway": "methylation",
         "supplement": "5-MTHF (活性叶酸)",
-        "dose": "400-800 µg/日",
-        "timing": "早餐后",
-        "reason": "MTHFR C677T 携带者合成叶酸转化效率降低 30-70%，直接补活性 5-MTHF 绕过代谢瓶颈。",
+        # 去基因门控: 不由基因型驱动具体剂量 (对抗验证判越界, 见 §7)
+        "dose": "可考虑补充活性 5-MTHF；具体剂量遵医嘱 / 已确认方案，不由基因型单独驱动。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 400–800 µg/日（非按你基因型的个体化处方，须医生确认）；"
+            "5-MTHF / 叶酸合计 ≤ 安全上限 UL 1000 µg/日。"
+        ),
+        "ref_upper": 800,
+        "ul_key": "5-MTHF",
+        "timing": "早餐后 (循证默认，可与医生确认)",
+        "reason": "MTHFR C677T 携带者合成叶酸转化效率可能降低，活性 5-MTHF 绕过该代谢步骤；是否补充与剂量由医生按 Hcy / 叶酸基线决定。",
         "monitor_labs": ["同型半胱氨酸 (Hcy)", "血清叶酸"],
         "brands_intl": ["Thorne 5-MTHF 1mg", "Pure Encapsulations Folate 400"],
         "brands_cn": ["活性叶酸 Metafolin"],
@@ -53,9 +94,14 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "gene": "MTHFR",
         "pathway": "methylation",
         "supplement": "甲钴胺 (Methylcobalamin)",
-        "dose": "500-1000 µg/日",
-        "timing": "早餐后",
-        "reason": "甲基化周期需要 B12 协同，单补叶酸不够。甲钴胺是活性形式。",
+        "dose": "可考虑补充甲钴胺；具体剂量遵医嘱 / 已确认方案。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 500–1000 µg/日（非按基因型的个体化处方，须医生确认）。"
+        ),
+        "ref_upper": 1000,
+        "ul_key": "甲钴胺",
+        "timing": "早餐后 (循证默认)",
+        "reason": "甲基化周期需要 B12 协同，甲钴胺是活性形式；是否补充与剂量由医生按 B12 / MMA 基线决定。",
         "monitor_labs": ["血清 B12", "MMA (甲基丙二酸)"],
         "priority": 11,
     },
@@ -65,9 +111,14 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "gene": "APOE",
         "pathway": "cardiovascular",
         "supplement": "Omega-3 (EPA+DHA)",
-        "dose": "EPA+DHA 合计 1-2 g/日",
+        "dose": "可考虑补充 Omega-3；具体剂量遵医嘱 / 已确认方案。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 EPA+DHA 合计 1–2 g/日（须医生确认；抗凝者需监测出血风险）。"
+        ),
+        "ref_upper": 2000,
+        "ul_key": "Omega-3",
         "timing": "随正餐 (含脂肪)",
-        "reason": "APOE ε4 携带者对饱和脂肪敏感、心血管和 AD 风险升高。Omega-3 降低 ApoB/TG、抗炎。",
+        "reason": "APOE ε4 携带者心血管 / AD 风险升高，Omega-3 与降 ApoB/TG、抗炎相关；是否补充与剂量由医生决定。",
         "monitor_labs": ["ApoB", "LDL-C", "甘油三酯"],
         "brands_intl": ["Nordic Naturals Ultimate Omega"],
         "brands_cn": ["星鲨鱼油"],
@@ -80,9 +131,14 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "gene": "FADS1",
         "pathway": "fatty_acid",
         "supplement": "高 EPA 鱼油 (直接 EPA/DHA)",
-        "dose": "EPA ≥ 500 mg/日",
+        "dose": "可考虑补充直接 EPA/DHA；具体剂量遵医嘱 / 已确认方案。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 EPA ≥ 500 mg/日（须医生确认）。"
+        ),
+        "ref_upper": 500,
+        "ul_key": "Omega-3",
         "timing": "随正餐",
-        "reason": "FADS1/2 慢型 ALA→EPA 转化率仅 5-10%，纯植物来源不够，必须直接补 EPA/DHA。",
+        "reason": "FADS1/2 慢型 ALA→EPA 转化率较低，纯植物来源可能不足，直接补 EPA/DHA 更直接；剂量由医生决定。",
         "monitor_labs": ["Omega-3 index (>8%)", "甘油三酯"],
         "priority": 21,
     },
@@ -96,7 +152,12 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         # gene 故意留空: 镁是群体主效应, 不归因于基因型 (_rule_to_rec → gene=None)
         "pathway": "sleep_recovery",
         "supplement": "甘氨酸镁 (Mg-Glycinate)",
-        "dose": "200-400 mg 元素镁/日",
+        "dose": "可考虑补充甘氨酸镁；具体剂量遵医嘱 / 已确认方案。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 200–400 mg 元素镁/日（须医生确认；肾功能不全需减量）。"
+        ),
+        "ref_upper": 400,
+        "ul_key": "甘氨酸镁",
         "timing": "睡前",
         "reason": (
             "镁参与 GABA 能信号与副交感神经张力调节,对主观睡眠质量与焦虑有一定帮助"
@@ -110,18 +171,32 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "contraindications": ["eGFR < 30 (肾功能不全禁高剂量镁)"],
     },
     # ── VDR FokI + 低 25-OH-D ──
+    # 主流指南 (IOM / Endocrine Society) 不推荐基因导向的维生素 D 给药 ——
+    # 是否补充 / 剂量 / 目标浓度由医生按 25-OH-D 基线 / 肾功能 / 结石史确定, 不由基因型驱动。
     {
         "id": "vdr_vitamin_d",
         "gene": "VDR",
         "pathway": "bone_immune",
         "supplement": "维生素 D3",
-        "dose": "2000-4000 IU/日（根据 25-OH-D 基线调整）",
+        "dose": (
+            "维生素 D 是否补充、剂量与目标浓度由医生按 25-OH-D 基线 / 肾功能 / 结石史确定，"
+            "不由基因型单独驱动。"
+        ),
+        "dose_reference": (
+            "成人安全上限 UL 4000 IU/日（IOM）；主流指南（IOM / Endocrine Society）"
+            "不推荐基因导向给药，目标浓度个体化由医生确定。"
+        ),
+        "ref_upper": 4000,
+        "ul_key": "维生素 D3",
         "timing": "随正餐 (脂溶性)",
-        "reason": "VDR FokI 风险型维生素 D 受体效率低，需较高目标血清浓度 (40-60 ng/mL)。",
-        "monitor_labs": ["25-OH-D (目标 40-60 ng/mL)"],
+        "reason": (
+            "VDR FokI 多态可能影响维生素 D 受体信号，但主流指南不推荐按基因型导向补充；"
+            "是否补充与目标浓度由医生按 25-OH-D 基线决定。"
+        ),
+        "monitor_labs": ["25-OH-D（目标浓度由医生个体化确定）"],
         "priority": 31,
         "contraindications": [
-            "肾结石史或高钙血症 → 减量至 1000 IU 并监测血钙",
+            "肾结石史或高钙血症 → 须由医生进一步降量并监测血钙",
             "Sarcoidosis / 活动性结核 → 禁补",
         ],
     },
@@ -130,12 +205,17 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "gene": "VDR",
         "pathway": "bone",
         "supplement": "维生素 K2 (MK-7)",
-        "dose": "90-180 µg/日",
+        "dose": "可考虑与 D3 协同补充 K2；具体剂量遵医嘱 / 已确认方案。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 90–180 µg/日（须医生确认；华法林者禁用）。"
+        ),
+        "ref_upper": 180,
+        "ul_key": "维生素 K2",
         "timing": "随含脂肪餐",
-        "reason": "与 D3 协同：D3 促吸钙，K2 导钙入骨。单补 D3 不配 K2 有软组织钙化风险。",
+        "reason": "与 D3 协同：D3 促吸钙，K2 导钙入骨；单补 D3 不配 K2 有软组织钙化风险。",
         "monitor_labs": [],
         "priority": 32,
-        "contraindications": ["华法林 (K 拮抗抗凝药) — 绝对禁忌"],
+        "contraindications": ["华法林 (K 拮抗抗凝药) — 需重点管理的高风险相互作用，须医生监督 INR"],
     },
     # ── SOD2 / GPX1 抗氧化能力降 ──
     {
@@ -143,13 +223,19 @@ SUPPLEMENT_RULES: List[Dict[str, Any]] = [
         "gene": "SOD2",
         "pathway": "antioxidant",
         "supplement": "CoQ10 (Ubiquinol)",
-        "dose": "100-200 mg/日",
+        "dose": "可考虑补充 CoQ10；具体剂量遵医嘱 / 已确认方案。",
+        "dose_reference": (
+            "指南衍生的一般参考范围 100–200 mg/日（须医生确认）。"
+        ),
+        "ref_upper": 200,
+        "ul_key": "CoQ10",
         "timing": "早餐 (脂溶)",
-        "reason": "SOD2 T 型线粒体抗氧化能力弱；服用 statin 者 CoQ10 内源性合成受抑。",
+        "reason": "SOD2 T 型线粒体抗氧化能力可能偏弱；服用 statin 者 CoQ10 内源性合成受抑。",
         "monitor_labs": ["HRV 夜间均值"],
         "priority": 40,
     },
     # ── HFE C282Y 纯合 → 硬阻断铁 ──
+    # 注: 这是"禁用"安全阻断 (与开方相反)，dose="禁用" 不属 prescribes_or_diagnoses。
     {
         "id": "hfe_iron_BLOCK",
         "gene": "HFE",
@@ -178,6 +264,30 @@ UL_LIMITS = {
     "甘氨酸镁": 800,             # mg elemental mg
     "维生素 K2": 300,            # µg
 }
+
+
+def _apply_ul_guardrail(
+    ul_key: Optional[str], ref_upper: Optional[float]
+) -> Tuple[Optional[float], Optional[str]]:
+    """对"参考范围上限"做安全上限 (UL) 封顶。
+
+    这是真护栏 (历史上 UL_LIMITS 是死代码，从未被消费 —— 现接入 `_rule_to_rec`)。
+    返回 (封顶后的安全上限值, 警告文案)。
+    - ul_key 不在 UL_LIMITS 或 ref_upper 缺失 → (None, None) 不干预。
+    - ref_upper 超 UL → 返回 (UL, 警告) ：把展示上限压到 UL，并提示不可超过。
+    - ref_upper ≤ UL → 返回 (UL, None) ：仅回传 UL 作为天花板供展示，不警告。
+    """
+    if not ul_key or ref_upper is None:
+        return None, None
+    ul = UL_LIMITS.get(ul_key)
+    if ul is None:
+        return None, None
+    if ref_upper > ul:
+        return ul, (
+            f"⚠️ 参考范围上限 {ref_upper} 超安全上限 UL {ul}（{ul_key}）→ "
+            f"已按 UL 封顶，任何情况下不可超过 {ul}，且须遵医嘱。"
+        )
+    return ul, None
 
 
 # ─────────────────────────── 辅助函数 ───────────────────────────
@@ -361,10 +471,10 @@ class SupplementAdvisorSpecialist:
                     for cond in conditions
                 )
                 if has_kidney_stone:
-                    rec_d["dose"] = "1000 IU/日 (因肾结石史降量)"
+                    # 不写具体处方剂量 (R4): 仅做"须由医生进一步降量"的安全提示
                     rec_d["warning"] = (
-                        "⚠️ 你有肾结石病史, 高剂量 VD 增加钙沉积风险 → "
-                        "建议起始 1000 IU/日, 复查 25-OH-D 与血钙后再调整"
+                        "⚠️ 你有肾结石病史, 高剂量维生素 D 增加钙沉积风险 → "
+                        "是否补充及剂量须由医生按血钙 / 25-OH-D 确定（通常更趋保守），不可自行加量。"
                     )
                 if _has_med(twin, ["华法林", "warfarin"]):
                     if not has_kidney_stone:
@@ -474,8 +584,10 @@ class SupplementAdvisorSpecialist:
                     title=f"12 周补剂试验：{top['supplement']}",
                     content=(
                         f"## N-of-1 补剂小试验\n\n"
-                        f"**补剂**：{top['supplement']}（{top['dose']}，{top['timing']}）\n"
-                        f"**科学依据**：{top['reason']}\n\n"
+                        f"**补剂**：{top['supplement']}（{top['timing']}）\n"
+                        f"**剂量**：{top['dose']}\n"
+                        + (f"**剂量参考**：{top['dose_reference']}\n" if top.get("dose_reference") else "")
+                        + f"**科学依据**：{top['reason']}\n\n"
                         f"### 验证指标\n"
                         f"- 第 0 / 12 周各查 1 次：{', '.join(monitor_labs) if monitor_labs else '相关指标'}\n"
                         f"- 当前 baseline: {baseline_str or '未测 (建议先做基线化验)'}\n"
@@ -485,7 +597,9 @@ class SupplementAdvisorSpecialist:
                     metric_key=metric_key,
                     baseline_value=baseline_str or "0",  # 0 让 verify 标 inconclusive 而非异常
                     target_value=target_str,
-                    verification_days=84,  # 12 周
+                    verification_days=METRIC_VERIFICATION_DAYS.get(
+                        metric_key, DEFAULT_VERIFICATION_DAYS
+                    ),  # 按指标响应动力学，不再统一 84 天
                     card_type="plan",
                     priority=30,
                     evidence_level=evidence,
@@ -526,7 +640,9 @@ class SupplementAdvisorSpecialist:
             "gene": rule.get("gene"),
             "pathway": rule.get("pathway"),
             "supplement": rule["supplement"],
+            # dose 是去基因门控的非处方指引; 具体数字只在 dose_reference (带"须医生确认"标注)
             "dose": rule["dose"],
+            "dose_reference": rule.get("dose_reference"),
             "timing": rule["timing"],
             "reason": rule["reason"],
             "monitor_labs": rule.get("monitor_labs", []),
@@ -536,4 +652,11 @@ class SupplementAdvisorSpecialist:
             "priority": rule.get("priority", 50),
             "disclaimer": DISCLAIMER,
         }
+        # UL 安全上限护栏 (对参考范围上限生效, 超 UL → 封顶 + 警告)
+        ul_ceiling, ul_warning = _apply_ul_guardrail(rule.get("ul_key"), rule.get("ref_upper"))
+        if ul_ceiling is not None:
+            rec["ul_ceiling"] = ul_ceiling
+        if ul_warning:
+            # 不覆盖既有 warning (如肾结石/eGFR), 追加
+            rec["warning"] = (rec.get("warning", "") + " " + ul_warning).strip()
         return rec
