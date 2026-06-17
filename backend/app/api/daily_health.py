@@ -95,6 +95,51 @@ def get_user_garmin_data(
     return data_list
 
 
+def _merge_garmin_rows_by_date(rows: List[GarminData]) -> List[GarminDataResponse]:
+    """把多源 GarminData 行按 record_date 合并成「每天一行」的响应。
+
+    同一天可能有 apple-watch / garmin / ringconn / oura 多行;逐指标走
+    device_source_priority.merge_daily_by_priority 取最高优先级的**非空**值。非合并字段
+    (id / 睡眠起止 / hrv_status 等) 取该天「非空指标最多」的那行做代表。单源天原样返回
+    (back-compat: 旧 garmin-only 用户行为不变)。输入需已按 record_date 降序。
+
+    不合并的话客户端读 days[0] 会落到某个单源行(如 garmin 行 steps 为空)→ 首页步数/
+    活动/卡路里 显示 0,而其实 apple-watch 行有真实步数(field-drift bug)。
+    """
+    from app.services.device_source_priority import (
+        METRIC_SOURCE_PRIORITY,
+        merge_daily_by_priority,
+    )
+
+    by_date: dict = {}
+    order: List[date] = []
+    for r in rows:
+        if r.record_date not in by_date:
+            by_date[r.record_date] = []
+            order.append(r.record_date)
+        by_date[r.record_date].append(r)
+
+    def _richness(row: GarminData) -> int:
+        return sum(1 for m in METRIC_SOURCE_PRIORITY if getattr(row, m, None) is not None)
+
+    out: List[GarminDataResponse] = []
+    for d in order:
+        group = by_date[d]
+        if len(group) == 1:
+            out.append(GarminDataResponse.model_validate(group[0]))
+            continue
+        merged = merge_daily_by_priority(group)
+        rep = max(group, key=_richness)  # 代表行: 非合并字段 + id 从最丰富的源取
+        base = GarminDataResponse.model_validate(rep).model_dump()
+        for k, v in merged.items():
+            if k == "_source_by_metric":
+                continue
+            if k in base:
+                base[k] = v
+        out.append(GarminDataResponse.model_validate(base))
+    return out
+
+
 @router.get("/garmin/me", response_model=List[GarminDataResponse])
 def get_my_garmin_data(
     start_date: date = None,
@@ -104,7 +149,12 @@ def get_my_garmin_data(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的Garmin数据（需要登录）"""
+    """获取当前用户的Garmin数据（需要登录）。
+
+    多源合并: 同一 record_date 跨 apple-watch / garmin / ringconn 多行 → 合成每天一行
+    (见 _merge_garmin_rows_by_date)。skip/limit 按「合并后的天数」生效;两个真实调用方
+    (mobile dashboard / web) 都传 date range、不传 skip/limit。
+    """
     logger.info(f"[Overview API] 用户 {current_user.id} 请求 Garmin 数据, start_date={start_date}, end_date={end_date}")
 
     query = db.query(GarminData).filter(GarminData.user_id == current_user.id)
@@ -114,14 +164,22 @@ def get_my_garmin_data(
     if end_date:
         query = query.filter(GarminData.record_date <= end_date)
 
-    data_list = query.order_by(GarminData.record_date.desc()).offset(skip).limit(limit).all()
+    query = query.order_by(GarminData.record_date.desc(), GarminData.id.desc())
 
-    logger.info(f"[Overview API] 用户 {current_user.id} 查询到 {len(data_list)} 条记录")
-    if data_list:
-        first = data_list[0]
-        logger.info(f"[Overview API] 最新记录: date={first.record_date}, sleep_score={first.sleep_score}, steps={first.steps}, resting_hr={first.resting_heart_rate}")
+    # date range 调用取全量再按天合并;无 range 的旧调用兜底限量(每天最多约 5 源 → ×8 够凑 limit 天)。
+    raw_rows = query.all() if (start_date or end_date) else query.limit(max(limit, 1) * 8).all()
 
-    return data_list
+    merged = _merge_garmin_rows_by_date(raw_rows)
+    result = merged[skip: skip + limit]
+
+    logger.info(
+        f"[Overview API] 用户 {current_user.id} {len(raw_rows)} 原始行 → {len(merged)} 天 (返回 {len(result)})"
+    )
+    if result:
+        first = result[0]
+        logger.info(f"[Overview API] 最新(合并): date={first.record_date}, sleep_score={first.sleep_score}, steps={first.steps}, resting_hr={first.resting_heart_rate}")
+
+    return result
 
 
 # 锻炼记录
