@@ -202,6 +202,42 @@ class TestBuilderWithPartialData:
         assert "黑便/呕血" in conds
         assert twin.acute.problem_red_lines[0].action == "立即就医/急诊"
 
+    def test_fill_red_lines_default_swallows_keeps_build_resilient(self, db, monkeypatch):
+        """默认 raise_on_error=False:填充崩 → 只 log warning、正常返回,不阻塞 Twin 构建。
+
+        这是 build_twin 主流程的契约(通用报告要韧性)。改 helper 加参数后,默认行为
+        必须零变化 —— 红线填充失败不该让整个 Twin 构建炸。
+        """
+        from app.twin.builder import _fill_problem_red_lines
+        from app.twin.schema import HealthTwin, TwinMeta
+        from app.services import health_problem_service
+
+        monkeypatch.setattr(
+            health_problem_service, "list_problems",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.now(timezone.utc)))
+        sources: set = set()
+        # 默认不抛:正常返回
+        _fill_problem_red_lines(db, 1, twin, sources)
+        assert twin.acute.problem_red_lines == []  # 留空(降级)
+        assert "problem_red_lines" not in sources
+
+    def test_fill_red_lines_raise_on_error_propagates(self, db, monkeypatch):
+        """raise_on_error=True:填充崩 → 不吞、向上抛(安全关键路径用,调用方感知不完整)。"""
+        import pytest as _pytest
+        from app.twin.builder import _fill_problem_red_lines
+        from app.twin.schema import HealthTwin, TwinMeta
+        from app.services import health_problem_service
+
+        monkeypatch.setattr(
+            health_problem_service, "list_problems",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.now(timezone.utc)))
+        with _pytest.raises(RuntimeError):
+            _fill_problem_red_lines(db, 1, twin, set(), raise_on_error=True)
+
     def test_cross_source_confidence_back_filled(self, monkeypatch):
         """R3 回灌:多源用户 → device_agreement_index + divergent_metrics 写进 physiological。"""
         from app.twin.builder import _fill_cross_source

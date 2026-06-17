@@ -20,6 +20,7 @@ import WatchConnectivity
         "/diet/voice/parse": ["POST"],
         "/diet/records": ["POST"],
         "/client-events": ["POST"],              // watch action 埋点中继(shown/completed)
+        "/watch/symptoms": ["POST"],             // 王牌⑤ 腕上语音记症状 → SafetyGuardian 裁决
     ]
     // 动态放行:/watch/actions/{action_id}/complete 的 POST。前缀+后缀不够——
     // 中段必须是「单层合法 action_id」,否则 `/watch/actions/../../admin/x/complete`

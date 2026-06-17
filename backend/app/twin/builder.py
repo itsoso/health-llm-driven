@@ -500,11 +500,25 @@ def _fill_acute_health(db: Session, user_id: int, twin: HealthTwin, sources: Set
         logger.warning(f"[twin] acute_health 失败: {e}")
 
 
-def _fill_problem_red_lines(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+def _fill_problem_red_lines(
+    db: Session,
+    user_id: int,
+    twin: HealthTwin,
+    sources: Set[str],
+    raise_on_error: bool = False,
+) -> None:
     """把 active HealthProblem 的个性化红线投影到 acute 分区,供 safety 规则消费。
 
     独立于 _fill_acute_health(它无症状即早返回);红线即使当下无症状也要在 Twin 里,
-    安全规则才能在症状出现时拿来匹配。失败降级(不阻塞 Twin 构建)。
+    安全规则才能在症状出现时拿来匹配。
+
+    失败语义二选一:
+    - `raise_on_error=False`(默认)—— 失败降级,只 log warning 后正常返回,不阻塞
+      Twin 构建。`build_twin` 主流程走这条:红线只是 Twin 的一个分区,填不上不该
+      让整个 Twin 构建失败(通用报告仍要韧性)。
+    - `raise_on_error=True` —— **不吞,向上抛**。安全关键路径(如腕上症状裁决)走这条:
+      红线没填全 = 个性化安全筛查不完整,调用方必须能感知,绝不能静默留空 → 早返回
+      → 看似绿灯(under-alarm = 医疗危险)。
     """
     try:
         from app.services import health_problem_service as prob_svc
@@ -530,6 +544,9 @@ def _fill_problem_red_lines(db: Session, user_id: int, twin: HealthTwin, sources
             sources.add("problem_red_lines")
     except Exception as e:
         logger.warning(f"[twin] problem_red_lines 失败: {e}")
+        if raise_on_error:
+            # 安全关键路径:不吞,让调用方把「红线未填全」当作安全筛查不完整处理。
+            raise
 
 
 def _fill_cross_source(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
