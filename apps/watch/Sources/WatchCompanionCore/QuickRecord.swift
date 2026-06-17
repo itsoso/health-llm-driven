@@ -81,6 +81,19 @@ public enum QuickRecord {
         )
     }
 
+    /// 「跳过」:把到点项标记 skipped。reason 对齐后端 SKIP_REASONS,默认由 UI 传入 no_time/too_tired 等。
+    public static func skipAction(actionId: String, reason: String) throws -> QuickRecordRequest {
+        let id = actionId.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { throw QuickRecordError.missing("action_id") }
+        let r = reason.trimmingCharacters(in: .whitespaces)
+        guard !r.isEmpty else { throw QuickRecordError.missing("skip_reason") }
+        return QuickRecordRequest(
+            path: "/watch/actions/\(id)/skip", method: "POST",
+            query: [:], body: ["reason": r],
+            successMessage: "已跳过"
+        )
+    }
+
     /// 语音记一餐:转写文本 → 走解析草稿(/diet/voice/parse),确认后再写库(不在此直接入库)。
     public static func dietVoice(rawText: String) throws -> QuickRecordRequest {
         let t = rawText.trimmingCharacters(in: .whitespaces)

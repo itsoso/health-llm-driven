@@ -92,6 +92,28 @@ public struct WatchTopAction: Codable, Sendable {
     }
 }
 
+public struct WatchDueItem: Codable, Sendable, Identifiable {
+    public let title: String
+    public let kind: String
+    public let timeWindow: String?
+    public let source: WatchSource?
+    public let actionId: String?
+
+    public var id: String { actionId ?? "\(kind)-\(title)-\(timeWindow ?? "anytime")" }
+
+    public var isCompletable: Bool {
+        guard let id = actionId, !id.isEmpty else { return false }
+        guard source?.objectType == "health_protocol" else { return false }
+        return watchCompletableKinds.contains(kind)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case title, kind, source
+        case timeWindow = "time_window"
+        case actionId = "action_id"
+    }
+}
+
 public struct WatchAgendaCount: Codable, Sendable {
     public let total: Int
     public let pending: Int
@@ -118,6 +140,7 @@ public struct WatchPushItem: Codable, Sendable, Identifiable {
 public struct WatchSummary: Codable, Sendable {
     public let status: WatchStatus
     public let topAction: WatchTopAction?
+    public let dueItems: [WatchDueItem]
     public let agenda: WatchAgendaCount
     public let quickActions: [WatchQuickAction]
     public let pushItems: [WatchPushItem]
@@ -125,8 +148,35 @@ public struct WatchSummary: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case status, agenda
         case topAction = "top_action"
+        case dueItems = "due_items"
         case quickActions = "quick_actions"
         case pushItems = "push_items"
+    }
+
+    public init(
+        status: WatchStatus,
+        topAction: WatchTopAction?,
+        dueItems: [WatchDueItem] = [],
+        agenda: WatchAgendaCount,
+        quickActions: [WatchQuickAction],
+        pushItems: [WatchPushItem]
+    ) {
+        self.status = status
+        self.topAction = topAction
+        self.dueItems = dueItems
+        self.agenda = agenda
+        self.quickActions = quickActions
+        self.pushItems = pushItems
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.status = try c.decode(WatchStatus.self, forKey: .status)
+        self.topAction = try c.decodeIfPresent(WatchTopAction.self, forKey: .topAction)
+        self.dueItems = try c.decodeIfPresent([WatchDueItem].self, forKey: .dueItems) ?? []
+        self.agenda = try c.decode(WatchAgendaCount.self, forKey: .agenda)
+        self.quickActions = try c.decode([WatchQuickAction].self, forKey: .quickActions)
+        self.pushItems = try c.decode([WatchPushItem].self, forKey: .pushItems)
     }
 
     /// 解码 `/watch/summary` JSON。容错:quick_actions 里缺字段的项跳过(由后端契约保证齐全;

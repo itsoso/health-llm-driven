@@ -71,12 +71,14 @@ struct QuickRecordView: View {
                 Image(systemName: "drop.fill")
                     .font(.title3)
                     .foregroundStyle(RevaWatch.greenBright)
-                Text("\(ml)")
-                    .font(RevaWatch.monoNumber(16, weight: .semibold))
-                    .foregroundStyle(RevaWatch.ink1)
-                + Text(" ml")
-                    .font(.caption2)
-                    .foregroundStyle(RevaWatch.ink2)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text("\(ml)")
+                        .font(RevaWatch.monoNumber(16, weight: .semibold))
+                        .foregroundStyle(RevaWatch.ink1)
+                    Text("ml")
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)

@@ -34,8 +34,30 @@ final class WatchEventClient {
     /// 完成成功后上报(分子)。无 action_id 不发。
     func actionCompleted(_ action: WatchTopAction) {
         guard let id = action.actionId, !id.isEmpty else { return }
+        actionCompleted(actionId: id, kind: action.kind, priorityTier: action.priorityTier)
+    }
+
+    func actionCompleted(actionId: String, kind: String, priorityTier: String? = nil) {
         emit("watch_action_completed",
-             Self.meta(actionId: id, kind: action.kind, priorityTier: action.priorityTier))
+             Self.meta(actionId: actionId, kind: kind, priorityTier: priorityTier))
+    }
+
+    func actionSnoozed(_ action: WatchTopAction, minutes: Int) {
+        guard let id = action.actionId, !id.isEmpty else { return }
+        var meta = Self.meta(actionId: id, kind: action.kind, priorityTier: action.priorityTier)
+        meta["minutes"] = String(minutes)
+        emit("watch_action_snoozed", meta)
+    }
+
+    func actionSkipped(_ action: WatchTopAction, reason: String) {
+        guard let id = action.actionId, !id.isEmpty else { return }
+        actionSkipped(actionId: id, kind: action.kind, priorityTier: action.priorityTier, reason: reason)
+    }
+
+    func actionSkipped(actionId: String, kind: String, priorityTier: String? = nil, reason: String) {
+        var meta = Self.meta(actionId: actionId, kind: kind, priorityTier: priorityTier)
+        meta["reason"] = reason
+        emit("watch_action_skipped", meta)
     }
 
     private func emit(_ name: String, _ meta: [String: String]) {

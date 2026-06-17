@@ -15,14 +15,15 @@ final class WatchStore: ObservableObject {
     @Published var lastRecordMessage: String?
     @Published var pendingDietDraft: VoiceFoodDraft?
     @Published var completing = false          // 「一键已做」请求在途(禁重复点 + tile 转圈)
+    @Published var skipping = false            // 「跳过」请求在途(禁重复点)
 
     private let connectivity: WatchConnectivityClient
     private let events: WatchEventClient
 
     init(connectivity: WatchConnectivityClient = .shared,
-         events: WatchEventClient = .shared) {
+         events: WatchEventClient? = nil) {
         self.connectivity = connectivity
-        self.events = events
+        self.events = events ?? WatchEventClient.shared
     }
 
     var complication: ComplicationState? {
@@ -105,6 +106,34 @@ final class WatchStore: ObservableObject {
         if lastRecordOK == true {
             events.actionCompleted(action)
         }
+    }
+
+    func completeDueItem(_ item: WatchDueItem) async {
+        guard let actionId = item.actionId, item.isCompletable, !completing else { return }
+        completing = true
+        defer { completing = false }
+        await submit { try QuickRecord.completeAction(actionId: actionId) }
+        if lastRecordOK == true {
+            events.actionCompleted(actionId: actionId, kind: item.kind)
+        }
+    }
+
+    func skipAction(_ action: WatchTopAction, reason: String = "no_time") async {
+        guard let actionId = action.actionId, action.isCompletable, !skipping else { return }
+        skipping = true
+        defer { skipping = false }
+        await submit { try QuickRecord.skipAction(actionId: actionId, reason: reason) }
+        if lastRecordOK == true {
+            events.actionSkipped(action, reason: reason)
+        }
+    }
+
+    func snoozeAction(_ action: WatchTopAction, minutes: Int = 30) {
+        guard action.isCompletable else { return }
+        lastRecordOK = true
+        lastRecordMessage = "已稍后"
+        lastError = nil
+        events.actionSnoozed(action, minutes: minutes)
     }
 
     /// tile 曝光埋点(分母)。由 TodayStatusView.onAppear 调,旁路 fire-and-forget。

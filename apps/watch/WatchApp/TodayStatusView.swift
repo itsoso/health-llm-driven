@@ -21,6 +21,8 @@ struct TodayStatusView: View {
                     topActionRow(action)
                 }
 
+                dueItemsSection
+
                 if let ag = store.summary?.agenda, ag.pending > 0 {
                     pendingRow(ag.pending)
                 }
@@ -115,46 +117,74 @@ struct TodayStatusView: View {
     }
 
     private func completableTile(_ action: WatchTopAction) -> some View {
-        Button {
-            Task { await store.completeAction(action) }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: store.completing ? "hourglass" : "checkmark.circle")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: iconName(for: action.kind))
                     .font(.footnote)
                     .foregroundStyle(RevaWatch.greenBright)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(action.title)
+                        .font(.body)
+                        .foregroundStyle(RevaWatch.ink1)
+                        .fixedSize(horizontal: false, vertical: true)
+                    actionMetaLine(action)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 6) {
+                miniButton(
+                    title: store.completing ? "..." : "已做",
+                    icon: store.completing ? "hourglass" : "checkmark.circle.fill",
+                    color: RevaWatch.greenBright,
+                    disabled: store.completing || store.skipping
+                ) {
+                    Task { await store.completeAction(action) }
+                }
+                miniButton(
+                    title: "稍后",
+                    icon: "clock",
+                    color: RevaWatch.caution,
+                    disabled: store.completing || store.skipping
+                ) {
+                    store.snoozeAction(action)
+                }
+                miniButton(
+                    title: store.skipping ? "..." : "跳过",
+                    icon: "xmark.circle",
+                    color: RevaWatch.ink2,
+                    disabled: store.completing || store.skipping
+                ) {
+                    Task { await store.skipAction(action, reason: "no_time") }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                .fill(RevaWatch.focusBg2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
+                .stroke(RevaWatch.greenBright.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    private func readonlyActionTile(_ action: WatchTopAction) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: iconName(for: action.kind))
+                .font(.footnote)
+                .foregroundStyle(RevaWatch.greenBright)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(action.title)
                     .font(.body)
                     .foregroundStyle(RevaWatch.ink1)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                Text("已做")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(RevaWatch.greenBright)
+                actionMetaLine(action)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
-                    .fill(RevaWatch.focusBg2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
-                    .stroke(RevaWatch.greenBright.opacity(0.5), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(store.completing)
-    }
-
-    private func readonlyActionTile(_ action: WatchTopAction) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "target")
-                .font(.footnote)
-                .foregroundStyle(RevaWatch.greenBright)
-            Text(action.title)
-                .font(.body)
-                .foregroundStyle(RevaWatch.ink1)
-                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Image(systemName: "chevron.right")
                 .font(.caption2)
@@ -169,6 +199,115 @@ struct TodayStatusView: View {
         .overlay(
             RoundedRectangle(cornerRadius: RevaWatch.radiusTile, style: .continuous)
                 .stroke(RevaWatch.focusLine, lineWidth: 1)
+            )
+    }
+
+    @ViewBuilder
+    private func actionMetaLine(_ action: WatchTopAction) -> some View {
+        let window = timeWindowLabel(action.timeWindow)
+        let rationale = action.rationaleShort
+        if window != nil || rationale != nil {
+            VStack(alignment: .leading, spacing: 2) {
+                if let window {
+                    Label(window, systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                }
+                if let rationale, !rationale.isEmpty {
+                    Text(rationale)
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
+
+    private func miniButton(
+        title: String,
+        icon: String,
+        color: Color,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(RevaWatch.focusBg)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+
+    // MARK: - Due items
+
+    @ViewBuilder
+    private var dueItemsSection: some View {
+        let topId = store.summary?.topAction?.actionId
+        let items = (store.summary?.dueItems ?? [])
+            .filter { $0.actionId != topId }
+            .prefix(3)
+
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("接下来")
+                    .font(.caption2)
+                    .foregroundStyle(RevaWatch.ink2)
+                ForEach(Array(items)) { item in
+                    dueItemRow(item)
+                }
+            }
+        }
+    }
+
+    private func dueItemRow(_ item: WatchDueItem) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: iconName(for: item.kind))
+                .font(.caption)
+                .foregroundStyle(RevaWatch.ink2)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption)
+                    .foregroundStyle(RevaWatch.ink1)
+                    .lineLimit(2)
+                if let window = timeWindowLabel(item.timeWindow) {
+                    Text(window)
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                }
+            }
+            Spacer(minLength: 4)
+            if item.isCompletable {
+                Button {
+                    Task { await store.completeDueItem(item) }
+                } label: {
+                    Image(systemName: store.completing ? "hourglass" : "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(RevaWatch.greenBright)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.completing)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusRow, style: .continuous)
+                .fill(RevaWatch.focusBg2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: RevaWatch.radiusRow, style: .continuous)
+                .stroke(RevaWatch.focusLine, lineWidth: 1)
         )
     }
 
@@ -179,15 +318,45 @@ struct TodayStatusView: View {
             Image(systemName: "checklist")
                 .font(.caption2)
                 .foregroundStyle(RevaWatch.ink2)
-            Text("待打点 ")
+            Text("待打点")
                 .font(.caption)
                 .foregroundStyle(RevaWatch.ink2)
-            + Text("\(pending)")
+            Text("\(pending)")
                 .font(RevaWatch.monoNumber(13, weight: .semibold))
                 .foregroundStyle(RevaWatch.ink1)
-            + Text(" 项")
+            Text("项")
                 .font(.caption)
                 .foregroundStyle(RevaWatch.ink2)
+        }
+    }
+
+    private func timeWindowLabel(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        switch value {
+        case "morning": return "上午"
+        case "noon": return "午间"
+        case "afternoon": return "下午"
+        case "evening": return "晚间"
+        case "bedtime": return "睡前"
+        case "anytime": return "任意时间"
+        default: return value
+        }
+    }
+
+    private func iconName(for kind: String) -> String {
+        switch kind {
+        case "training", "activity", "exercise":
+            return "figure.strengthtraining.traditional"
+        case "medication":
+            return "pills.fill"
+        case "supplement":
+            return "leaf.fill"
+        case "hydration":
+            return "drop.fill"
+        case "diet":
+            return "fork.knife"
+        default:
+            return "target"
         }
     }
 }

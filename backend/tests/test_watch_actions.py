@@ -98,6 +98,36 @@ def test_idempotent_double_post_one_log(client, db):
     assert len(logs) == 1, f"幂等被破坏:写了 {len(logs)} 条,依从被灌水"
 
 
+def test_skip_protocol_action_marks_today_skipped(client, db):
+    """Watch 跳过按钮 → 只写协议事件,不落用药/补剂等领域完成记录。"""
+    user = _mk_user(db)
+    p = _med_protocol(db, user.id)
+
+    r = client.post(
+        f"/api/v1/watch/actions/agenda-health_protocol-{p.id}/skip",
+        headers=_headers(user),
+        json={"reason": "too_tired"},
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["action_id"] == f"agenda-health_protocol-{p.id}"
+    assert body["status"] == "skipped"
+    assert body["skip_reason"] == "too_tired"
+    logs = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).all()
+    assert logs == [], "跳过不是完成,不能落 MedicationLog"
+
+
+def test_skip_non_protocol_source_400(client, db):
+    user = _mk_user(db)
+    r = client.post(
+        "/api/v1/watch/actions/agenda-training_decision-5/skip",
+        headers=_headers(user),
+        json={"reason": "no_time"},
+    )
+    assert r.status_code == 400, r.text
+
+
 # ── 3) IDOR:A token 完成 B 协议 → 404 且 B 未变 ───────────────────────
 def test_idor_a_cannot_complete_b_protocol(client, db):
     user_a = _mk_user(db)

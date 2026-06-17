@@ -12,6 +12,11 @@ final class WatchSummaryTests: XCTestCase {
                      "verification_window_days": 7, "safety_status": "allowed",
                      "source": {"object_type": "health_protocol", "object_id": 12}},
       "agenda": {"total": 4, "pending": 2},
+      "due_items": [
+        {"title": "到公司后俯卧撑 12 个", "kind": "training", "time_window": "morning",
+         "action_id": "agenda-health_protocol-8",
+         "source": {"object_type": "health_protocol", "object_id": 8}}
+      ],
       "quick_actions": [
         {"kind": "water", "label": "喝水", "endpoint": "/water/records/quick", "method": "POST"},
         {"kind": "exercise", "label": "运动", "endpoint": "/daily-health/exercise", "method": "POST"}
@@ -35,6 +40,9 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.topAction?.verificationWindowDays, 7)
         XCTAssertEqual(s.topAction?.safetyStatus, "allowed")
         XCTAssertEqual(s.agenda.pending, 2)
+        XCTAssertEqual(s.dueItems.count, 1)
+        XCTAssertEqual(s.dueItems.first?.actionId, "agenda-health_protocol-8")
+        XCTAssertEqual(s.dueItems.first?.isCompletable, true)
         XCTAssertEqual(s.quickActions.count, 2)
         XCTAssertEqual(s.pushItems.first?.tier, "P1")
         XCTAssertFalse(s.pushItems.first!.isUrgent)
@@ -94,12 +102,24 @@ final class WatchSummaryTests: XCTestCase {
         let data = Data("""
         {"status":{"light":"gray","readiness_score":null,"headline":"今日暂无待办"},
          "top_action":null,"agenda":{"total":0,"pending":0},
+         "due_items":[],
          "quick_actions":[],"push_items":[],"generated_at":"x"}
         """.utf8)
         let s = try WatchSummary.decode(data)
         XCTAssertNil(s.topAction)
+        XCTAssertTrue(s.dueItems.isEmpty)
         XCTAssertNil(s.status.readinessScore)
         XCTAssertTrue(s.pushItems.isEmpty)
+    }
+
+    func testDueItemsDefaultToEmptyForOldSummaryPayloads() throws {
+        let data = Data("""
+        {"status":{"light":"gray","readiness_score":null,"headline":"今日暂无待办"},
+         "top_action":null,"agenda":{"total":0,"pending":0},
+         "quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+        XCTAssertTrue(s.dueItems.isEmpty)
     }
 }
 
@@ -108,6 +128,7 @@ final class ComplicationStateTests: XCTestCase {
         WatchSummary(
             status: WatchStatus(light: light, readinessScore: score, headline: "h"),
             topAction: nil,
+            dueItems: [],
             agenda: WatchAgendaCount(total: 0, pending: 0),
             quickActions: [],
             pushItems: push
@@ -155,6 +176,7 @@ final class ComplicationStateTests: XCTestCase {
         WatchSummary(
             status: WatchStatus(light: light, readinessScore: 70, headline: "h"),
             topAction: WatchTopAction(title: action, kind: "hydration", timeWindow: "morning", source: nil),
+            dueItems: [],
             agenda: WatchAgendaCount(total: pending, pending: pending),
             quickActions: [],
             pushItems: push
@@ -245,6 +267,21 @@ final class QuickRecordTests: XCTestCase {
 
     func testCompleteActionEmptyIdThrows() {
         XCTAssertThrowsError(try QuickRecord.completeAction(actionId: "   ")) { err in
+            XCTAssertEqual(err as? QuickRecordError, .missing("action_id"))
+        }
+    }
+
+    func testSkipActionBuildsPathAndReason() throws {
+        let r = try QuickRecord.skipAction(actionId: "agenda-health_protocol-12", reason: "too_tired")
+        XCTAssertEqual(r.path, "/watch/actions/agenda-health_protocol-12/skip")
+        XCTAssertEqual(r.method, "POST")
+        XCTAssertTrue(r.query.isEmpty)
+        XCTAssertEqual(r.body["reason"], "too_tired")
+        XCTAssertEqual(r.successMessage, "已跳过")
+    }
+
+    func testSkipActionEmptyIdThrows() {
+        XCTAssertThrowsError(try QuickRecord.skipAction(actionId: "   ", reason: "no_time")) { err in
             XCTAssertEqual(err as? QuickRecordError, .missing("action_id"))
         }
     }

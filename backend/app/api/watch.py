@@ -44,6 +44,17 @@ _WRITTEN_BY_SOURCE_MODEL = {
 }
 
 
+class WatchSkipRequest(BaseModel):
+    reason: str | None = "no_time"
+
+
+def _parse_action_id(action_id: str) -> tuple[str, int]:
+    m = _ACTION_ID_RE.match(action_id)
+    if not m:
+        raise HTTPException(status_code=400, detail="action_id 格式非法")
+    return m.group("ot"), int(m.group("oid"))
+
+
 @router.get("/summary")
 async def watch_summary(
     current_user: User = Depends(get_current_user_required),
@@ -71,11 +82,7 @@ async def complete_action(
     - 幂等:首次「非完成→完成」才落领域记录;重复 POST 不重复写。
     - 请求内禁 build_twin(本端点只操作协议/领域表)。
     """
-    m = _ACTION_ID_RE.match(action_id)
-    if not m:
-        raise HTTPException(status_code=400, detail="action_id 格式非法")
-    object_type = m.group("ot")
-    object_id = int(m.group("oid"))
+    object_type, object_id = _parse_action_id(action_id)
 
     if object_type != "health_protocol":
         raise HTTPException(status_code=400, detail="该来源不支持腕上完成")
@@ -98,6 +105,35 @@ async def complete_action(
         "object_id": result["object_id"],
         "status": "completed",
         "written": written,
+    }
+
+
+@router.post("/actions/{action_id}/skip")
+async def skip_action(
+    action_id: str,
+    body: WatchSkipRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """腕上「跳过」→ 标记今日协议 skipped,不写领域完成记录。"""
+    object_type, object_id = _parse_action_id(action_id)
+
+    if object_type != "health_protocol":
+        raise HTTPException(status_code=400, detail="该来源不支持腕上跳过")
+
+    try:
+        ev = proto_svc.skip_protocol(db, object_id, current_user.id, reason=body.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if ev is None:
+        raise HTTPException(status_code=404, detail="协议不存在")
+
+    return {
+        "action_id": action_id,
+        "object_type": object_type,
+        "object_id": object_id,
+        "status": ev.status,
+        "skip_reason": ev.skip_reason,
     }
 
 
