@@ -34,6 +34,13 @@ def _day_context(profile=None, *, overrides: Optional[dict] = None) -> DayContex
             ctx.meals = {**ctx.meals, "breakfast": _add_min(wake, 30)}
     if sleep:
         ctx.sleep = sleep
+    # 工作时间窗:浮动 nudge 避开上班时段(锚点药/补剂/餐不受影响,见 timing_solver)。
+    work_start = getattr(profile, "work_start_time", None) if profile else None
+    work_end = getattr(profile, "work_end_time", None) if profile else None
+    if work_start:
+        ctx.work_start = work_start
+    if work_end:
+        ctx.work_end = work_end
     for k, v in (overrides or {}).items():
         setattr(ctx, k, v)
     return ctx

@@ -79,6 +79,7 @@ from app.api import (
     agenda,
     watch,
     write_intents,
+    schedule,
     health_program,
     womens_health,
     vision,
@@ -226,6 +227,7 @@ api_router.include_router(health_problem.router)
 api_router.include_router(agenda.router)
 api_router.include_router(watch.router)
 api_router.include_router(write_intents.router)
+api_router.include_router(schedule.router)
 api_router.include_router(health_program.router)
 
 # ── Exercise & Activity ────────────────────────────────────────────

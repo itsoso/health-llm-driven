@@ -59,6 +59,8 @@ class UserProfile(Base):
     work_type = Column(String(50), nullable=True)  # office/remote/physical/mixed
     work_hours_per_day = Column(Float, nullable=True)  # 每天工作时长
     sitting_hours_per_day = Column(Float, nullable=True)  # 久坐时长
+    work_start_time = Column(String(10), nullable=True)  # 上班 "09:00"(时点日程避开工作窗用)
+    work_end_time = Column(String(10), nullable=True)  # 下班 "18:00"
 
     # === 地理位置（用于天气/空气质量） ===
     city = Column(String(100), nullable=True)  # 所在城市

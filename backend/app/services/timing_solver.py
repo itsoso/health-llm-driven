@@ -72,6 +72,9 @@ class DayContext:
     quiet_hours: Tuple[str, str] = ("22:00", "08:30")
     daily_recheck_cap: int = 2
     anchors_degraded: bool = False               # 餐点是默认值(无真实打卡)→ 文案标降级
+    work_start: Optional[str] = None             # 上班 "09:00"(None=未设;不约束)
+    work_end: Optional[str] = None               # 下班 "18:00"
+    is_workday: bool = True                       # 今天是否工作日(周末/休假→不避工作窗)
 
 
 # ── 时间工具(分钟制,跨午夜安全)───────────────────────────────────────────
@@ -92,6 +95,16 @@ def _in_quiet(minutes: int, quiet: Tuple[str, str]) -> bool:
     if start <= end:
         return start <= minutes < end
     return minutes >= start or minutes < end  # 跨午夜
+
+
+def _in_work(minutes: int, ctx: DayContext) -> bool:
+    """是否落在工作窗内(仅工作日且上下班都已设;常规白班,不约束夜班/异常)。"""
+    if not ctx.is_workday or not ctx.work_start or not ctx.work_end:
+        return False
+    ws, we = _to_min(ctx.work_start), _to_min(ctx.work_end)
+    if ws >= we:  # 跨午夜/异常 → 不约束(避免误把全天当工作窗)
+        return False
+    return ws <= (minutes % (24 * 60)) < we
 
 
 # ── 锚点落桩(Step 1)─────────────────────────────────────────────────────
@@ -192,9 +205,14 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
             break
 
     # ── anytime 项填空隙(锚点为 None 的)—— 从「起床+1h 或静默窗结束」较晚者起,错开 ──
+    # 工作日避开工作窗:浮动主动 nudge 落在上班时段 → 顺延到下班后(不打扰工作);
+    # 上班前的空档(起床~上班)仍可用。锚点项(空腹/餐前/睡前/医嘱固定)不受此约束。
     fallback = max(_to_min(ctx.wake) + 60, _to_min(ctx.quiet_hours[1]))
+    work_end_min = _to_min(ctx.work_end) if (ctx.work_end and ctx.is_workday) else None
     for it in order:
         if placed[it.id] is None:
+            if work_end_min is not None and _in_work(fallback, ctx):
+                fallback = work_end_min  # 落在上班时段 → 挪到下班后
             placed[it.id] = fallback
             fallback += 30  # 错开,避免堆叠
 
