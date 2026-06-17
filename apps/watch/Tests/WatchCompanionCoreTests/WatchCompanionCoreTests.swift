@@ -32,6 +32,7 @@ final class WatchSummaryTests: XCTestCase {
         let s = try WatchSummary.decode(json)
         XCTAssertEqual(s.status.light, .green)
         XCTAssertEqual(s.status.readinessScore, 78)
+        XCTAssertNil(s.status.freshness)
         XCTAssertEqual(s.topAction?.kind, "hydration")
         XCTAssertEqual(s.topAction?.source?.objectId, 12)
         XCTAssertEqual(s.topAction?.priorityTier, "P2")
@@ -121,6 +122,25 @@ final class WatchSummaryTests: XCTestCase {
         let s = try WatchSummary.decode(data)
         XCTAssertTrue(s.dueItems.isEmpty)
     }
+
+    func testDecodeStatusFreshness() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":78,"headline":"h",
+          "freshness":{"state":"stale","label":"数据偏旧 2 天","latest_date":"2026-06-15",
+                       "age_days":2,"last_sync_at":"2026-06-15T22:00:00+00:00"}},
+         "top_action":null,"agenda":{"total":0,"pending":0},
+         "quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(s.status.freshness?.state, .stale)
+        XCTAssertEqual(s.status.freshness?.label, "数据偏旧 2 天")
+        XCTAssertEqual(s.status.freshness?.latestDate, "2026-06-15")
+        XCTAssertEqual(s.status.freshness?.ageDays, 2)
+        XCTAssertEqual(s.status.freshness?.lastSyncAt, "2026-06-15T22:00:00+00:00")
+        XCTAssertFalse(s.status.freshness?.isFresh ?? true)
+    }
 }
 
 final class ComplicationStateTests: XCTestCase {
@@ -160,6 +180,34 @@ final class ComplicationStateTests: XCTestCase {
         let st = ComplicationState.from(summary(light: .red, score: nil, push: []))
         XCTAssertEqual(st.tone, .red)
         XCTAssertEqual(st.shortText, "宜休息")
+    }
+
+    func testStaleFreshnessSuppressesReadinessFallback() {
+        let s = WatchSummary(
+            status: WatchStatus(
+                light: .green,
+                readinessScore: 78,
+                headline: "h",
+                freshness: WatchFreshness(
+                    state: .stale,
+                    label: "数据偏旧 2 天",
+                    latestDate: "2026-06-15",
+                    ageDays: 2,
+                    lastSyncAt: nil
+                )
+            ),
+            topAction: nil,
+            dueItems: [],
+            agenda: WatchAgendaCount(total: 0, pending: 0),
+            quickActions: [],
+            pushItems: []
+        )
+
+        let st = ComplicationState.from(s)
+
+        XCTAssertEqual(st.tone, .gray)
+        XCTAssertEqual(st.shortText, "待同步")
+        XCTAssertEqual(st.fullText, "数据偏旧 2 天")
     }
 
     func testLongTitleShortened() {

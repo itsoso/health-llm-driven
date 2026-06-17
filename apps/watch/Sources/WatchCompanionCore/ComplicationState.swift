@@ -42,6 +42,15 @@ public struct ComplicationState: Sendable, Equatable {
             )
         }
 
+        if let freshness = summary.status.freshness, !freshness.isFresh {
+            return ComplicationState(
+                tone: freshness.state == .error ? .red : .gray,
+                shortText: freshness.shortText,
+                fullText: freshness.label,
+                urgentBadge: 0
+            )
+        }
+
         // 无 P0、无待办 → 回退显示恢复状态
         let short: String
         if let score = summary.status.readinessScore, score > 0 {

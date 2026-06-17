@@ -49,7 +49,9 @@ struct TodayStatusView: View {
 
     private var readinessHeader: some View {
         let tone = store.summary?.status.light ?? .gray
-        let score = store.summary?.status.readinessScore
+        let freshness = store.summary?.status.freshness
+        let isFresh = freshness?.isFresh ?? true
+        let score = isFresh ? store.summary?.status.readinessScore : nil
         return HStack(spacing: 14) {
             readinessRing(tone: tone, score: score)
             VStack(alignment: .leading, spacing: 4) {
@@ -66,13 +68,24 @@ struct TodayStatusView: View {
                         .font(RevaWatch.monoNumber(30, weight: .semibold))
                         .foregroundStyle(RevaWatch.greenBright)
                 } else {
-                    Text("待同步")
+                    Text(freshness?.shortText ?? "待同步")
                         .font(.footnote)
                         .foregroundStyle(RevaWatch.ink2)
+                }
+                if let freshness, !freshness.isFresh {
+                    freshnessBadge(freshness)
                 }
             }
             Spacer(minLength: 0)
         }
+    }
+
+    private func freshnessBadge(_ freshness: WatchFreshness) -> some View {
+        Label(freshness.label, systemImage: freshnessIcon(for: freshness.state))
+            .font(.caption2)
+            .foregroundStyle(freshnessColor(for: freshness.state))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
     }
 
     private func readinessRing(tone: ComplicationTone, score: Int?) -> some View {
@@ -327,6 +340,28 @@ struct TodayStatusView: View {
             Text("项")
                 .font(.caption)
                 .foregroundStyle(RevaWatch.ink2)
+        }
+    }
+
+    private func freshnessIcon(for state: WatchFreshnessState) -> String {
+        switch state {
+        case .fresh:
+            return "checkmark.circle"
+        case .error:
+            return "exclamationmark.triangle.fill"
+        case .stale, .missing, .unknown:
+            return "arrow.clockwise.circle"
+        }
+    }
+
+    private func freshnessColor(for state: WatchFreshnessState) -> Color {
+        switch state {
+        case .fresh:
+            return RevaWatch.normal
+        case .error:
+            return RevaWatch.risk
+        case .stale, .missing, .unknown:
+            return RevaWatch.caution
         }
     }
 

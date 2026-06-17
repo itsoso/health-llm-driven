@@ -17,15 +17,86 @@ public struct WatchSource: Codable, Sendable, Equatable {
     }
 }
 
+public enum WatchFreshnessState: String, Codable, Sendable, Equatable {
+    case fresh
+    case stale
+    case missing
+    case error
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = WatchFreshnessState(rawValue: raw) ?? .unknown
+    }
+}
+
+public struct WatchFreshness: Codable, Sendable, Equatable {
+    public let state: WatchFreshnessState
+    public let label: String
+    public let latestDate: String?
+    public let ageDays: Int?
+    public let lastSyncAt: String?
+
+    public init(
+        state: WatchFreshnessState,
+        label: String,
+        latestDate: String?,
+        ageDays: Int?,
+        lastSyncAt: String?
+    ) {
+        self.state = state
+        self.label = label
+        self.latestDate = latestDate
+        self.ageDays = ageDays
+        self.lastSyncAt = lastSyncAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case state, label
+        case latestDate = "latest_date"
+        case ageDays = "age_days"
+        case lastSyncAt = "last_sync_at"
+    }
+
+    public var isFresh: Bool {
+        state == .fresh
+    }
+
+    public var shortText: String {
+        switch state {
+        case .fresh:
+            return "已同步"
+        case .error:
+            return "同步异常"
+        case .stale, .missing, .unknown:
+            return "待同步"
+        }
+    }
+}
+
 public struct WatchStatus: Codable, Sendable {
     public let light: ComplicationTone
     public let readinessScore: Int?
     public let headline: String
+    public let freshness: WatchFreshness?
+
+    public init(
+        light: ComplicationTone,
+        readinessScore: Int?,
+        headline: String,
+        freshness: WatchFreshness? = nil
+    ) {
+        self.light = light
+        self.readinessScore = readinessScore
+        self.headline = headline
+        self.freshness = freshness
+    }
 
     enum CodingKeys: String, CodingKey {
         case light
         case readinessScore = "readiness_score"
         case headline
+        case freshness
     }
 }
 

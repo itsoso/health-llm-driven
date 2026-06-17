@@ -11,10 +11,14 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.daily_health import GarminData
+from app.models.user import GarminCredential
 from app.services import agenda_service
 from app.services.action_ranker import rank_agenda_actions
+from app.utils.timezone import get_user_today
 
 # 打点入口目录(canonical):watch 据此渲染按钮,endpoint 指向已有写接口。
 # value 由 watch 端补(喝水 ml / 运动 reps 等);diet_voice 走语音解析草稿流。
@@ -97,6 +101,59 @@ def _push_view(item: Dict[str, Any], tier: str) -> Dict[str, Any]:
     }
 
 
+def _iso_datetime(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+def _wearable_freshness(db: Session, user_id: int) -> Dict[str, Any]:
+    """腕上状态用的数据新鲜度。只暴露同步状态,不暴露凭据/错误原文。"""
+    today = get_user_today(db, user_id)
+    latest_date = (
+        db.query(func.max(GarminData.record_date))
+        .filter(GarminData.user_id == user_id)
+        .scalar()
+    )
+    cred = (
+        db.query(GarminCredential)
+        .filter(GarminCredential.user_id == user_id)
+        .first()
+    )
+
+    age_days = (today - latest_date).days if latest_date else None
+    last_sync_at = _iso_datetime(cred.last_sync_at if cred else None)
+
+    state = "missing"
+    label = "待同步"
+
+    if cred and (not cred.credentials_valid or (cred.error_count or 0) >= 3):
+        state = "error"
+        label = "同步异常"
+    elif latest_date is None:
+        state = "missing"
+        label = "待同步"
+    elif age_days is not None and age_days <= 0:
+        state = "fresh"
+        label = "今日已同步"
+    elif age_days == 1:
+        state = "stale"
+        label = "数据偏旧 1 天"
+    else:
+        state = "stale"
+        label = f"数据偏旧 {age_days} 天"
+
+    return {
+        "state": state,
+        "label": label,
+        "latest_date": latest_date.isoformat() if latest_date else None,
+        "age_days": age_days,
+        "last_sync_at": last_sync_at,
+    }
+
+
 def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     """腕上摘要(只读投影 agenda.today)。"""
     agenda = agenda_service.today(db, user_id)
@@ -131,7 +188,12 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     push = push[:_PUSH_CAP]
 
     return {
-        "status": {"light": light, "readiness_score": readiness, "headline": headline},
+        "status": {
+            "light": light,
+            "readiness_score": readiness,
+            "headline": headline,
+            "freshness": _wearable_freshness(db, user_id),
+        },
         "top_action": top_action,
         "due_items": due_items,
         "agenda": {"total": agenda.get("count", 0), "pending": len(actionable)},

@@ -5,10 +5,12 @@
 用 monkeypatch 注入 agenda.today,纯映射逻辑确定性可测。
 """
 import uuid
+from datetime import date, timedelta
 
 import pytest
 
 import app.services.watch_summary as ws
+from app.models.daily_health import GarminData
 from app.models.user import User
 
 
@@ -41,6 +43,42 @@ def test_status_light_and_headline_from_training(db, auth, monkeypatch):
     assert s["status"]["light"] == "red"
     assert s["status"]["readiness_score"] == 40
     assert "休息" in s["status"]["headline"]
+
+
+def test_status_freshness_marks_old_wearable_data_stale(db, auth, monkeypatch):
+    user, _ = auth
+    old_date = date.today() - timedelta(days=2)
+    db.add(GarminData(
+        user_id=user.id,
+        record_date=old_date,
+        data_source="apple-watch",
+        training_readiness_score=68,
+    ))
+    db.commit()
+    items = [{"type": "training", "title": "今日训练", "status": "info", "light": "green",
+              "readiness_score": 68, "source": {"object_type": "training_decision", "object_id": user.id}}]
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+
+    s = ws.build_watch_summary(db, user.id)
+
+    freshness = s["status"]["freshness"]
+    assert freshness["state"] == "stale"
+    assert freshness["latest_date"] == old_date.isoformat()
+    assert freshness["age_days"] >= 2
+    assert "偏旧" in freshness["label"]
+
+
+def test_status_freshness_missing_without_wearable_data(db, auth, monkeypatch):
+    user, _ = auth
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([]))
+
+    s = ws.build_watch_summary(db, user.id)
+
+    freshness = s["status"]["freshness"]
+    assert freshness["state"] == "missing"
+    assert freshness["latest_date"] is None
+    assert freshness["age_days"] is None
+    assert "待同步" in freshness["label"]
 
 
 def test_top_action_is_highest_priority_pending(db, auth, monkeypatch):
