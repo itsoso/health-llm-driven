@@ -672,7 +672,7 @@ class TestBuilderWithPartialData:
 
     def test_physiological_merges_latest_date_multi_source(self, db):
         """同一最新日期下,Apple Watch + RingConn + Garmin 三行 → twin.physiological
-        按 per-metric 优先级合并 (hrv→ring, resting_hr→garmin, steps→watch)。
+        按 per-metric 优先级合并 (hrv→ring, resting_hr→apple-watch, steps→watch)。
         """
         from app.models.user import User
         from app.models.daily_health import GarminData
@@ -709,12 +709,12 @@ class TestBuilderWithPartialData:
         twin = build_twin(db, user_id=user.id, use_cache=False)
         p = twin.physiological
         assert p.hrv_latest == 52.0          # ringconn 优先
-        assert p.resting_hr == 52            # garmin 优先
+        assert p.resting_hr == 54            # apple-watch 优先(用户指定 RHR 源)
         assert p.steps_today == 8500         # apple-watch 优先
         assert p.sleep_score_latest == 85    # ringconn 优先
         # field_sources 暴露每指标中标源,便于 LLM source-aware
         assert p.field_sources.get("hrv") == "ringconn"
-        assert p.field_sources.get("resting_heart_rate") == "garmin"
+        assert p.field_sources.get("resting_heart_rate") == "apple-watch"
 
     def test_physiological_single_garmin_row_back_compat(self, db):
         """旧 garmin-only 单行用户 → 合并结果 == 该行 (additive 不破坏)."""

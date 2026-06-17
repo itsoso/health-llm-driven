@@ -49,16 +49,16 @@ def test_merge_field_sleep_prefers_ring():
     assert s == "ringconn"
 
 
-def test_merge_field_resting_hr_prefers_garmin():
-    """静息心率 — Garmin 专有算法优先."""
+def test_merge_field_resting_hr_prefers_apple_watch():
+    """静息心率 — Apple Watch + RingConn 优先(用户指定,Garmin 仅 fallback)."""
     rows = [
         _Row(data_source="ringconn", resting_heart_rate=55),
-        _Row(data_source="garmin", resting_heart_rate=52),  # 优先
-        _Row(data_source="apple-watch", resting_heart_rate=54),
+        _Row(data_source="garmin", resting_heart_rate=52),
+        _Row(data_source="apple-watch", resting_heart_rate=54),  # 优先
     ]
     v, s = merge_field(rows, "resting_heart_rate")
-    assert v == 52
-    assert s == "garmin"
+    assert v == 54
+    assert s == "apple-watch"
 
 
 def test_merge_field_falls_back_to_lower_priority_when_top_missing():
