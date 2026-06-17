@@ -123,7 +123,8 @@ def dsi_omega3_anticoagulant(twin: HealthTwin) -> Optional[Alert]:
         ),
         action=(
             "日常剂量（≤2g/日 EPA+DHA）通常安全；"
-            "术前 1 周停用鱼油；"
+            "术前一般无需常规停用鱼油（2018 多国 RCT n=1516 与 2020 SPAQI 共识：鱼油不增加围手术期出血，"
+            "鱼油组输血量反而更低），是否暂停由手术团队最终决定；"
             "华法林使用者定期监测 INR；出现皮下瘀斑、牙龈出血、黑便及时就医。"
         ),
         data_citation={"omega3": omega, "concomitant": concomitant},
