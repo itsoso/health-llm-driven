@@ -282,6 +282,23 @@ final class ComplicationStateTests: XCTestCase {
 }
 
 final class QuickRecordTests: XCTestCase {
+    func testDialSpecSnapsAndClampsValues() {
+        XCTAssertEqual(QuickRecordDials.waterML.snapped(276), 300)
+        XCTAssertEqual(QuickRecordDials.waterML.snapped(20), 100)
+        XCTAssertEqual(QuickRecordDials.waterML.snapped(1200), 1000)
+        XCTAssertEqual(QuickRecordDials.runDurationMin.snapped(33), 35)
+    }
+
+    func testDialDefaultsBuildValidQuickRecordRequests() throws {
+        let waterML = QuickRecordDials.waterML.intValue()
+        let reps = QuickRecordDials.pushupReps.intValue()
+        let duration = QuickRecordDials.runDurationMin.snapped()
+
+        XCTAssertEqual(try QuickRecord.water(amountML: waterML).query["amount"], "250")
+        XCTAssertEqual(try QuickRecord.exercise(type: "俯卧撑", reps: reps).body["reps"], "20")
+        XCTAssertEqual(try QuickRecord.exercise(type: "跑步", durationMin: duration).body["duration_min"], "30.0")
+    }
+
     func testWaterValid() throws {
         let r = try QuickRecord.water(amountML: 500)
         XCTAssertEqual(r.path, "/water/records/quick")
