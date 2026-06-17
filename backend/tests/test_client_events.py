@@ -119,6 +119,7 @@ def test_client_events_stats_empty(db):
     ("quick_record_logged", {"kind": "weight"}),
     ("quick_record_logged", {"kind": "bp"}),
     ("quick_record_logged", {"kind": "medication"}),
+    ("verified_loop", {"cycle_id": 7, "verdict_count": 2, "total": 3}),
 ])
 def test_phase_0_4_new_events_accepted(client, db, auth_user_and_headers, event_name, meta):
     """Phase 0.4 新增的 5 种事件名 + 各自 meta 应被白名单接受."""

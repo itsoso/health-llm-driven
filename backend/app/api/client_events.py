@@ -43,6 +43,8 @@ _ALLOWED_EVENTS = frozenset({
     "watch_action_snoozed",       # meta: { action_id, kind, priority_tier, minutes? }
     "watch_action_skipped",       # meta: { action_id, kind, priority_tier, reason? }
     "watch_action_failed",        # meta: { action_id, kind, priority_tier, error? }
+    # N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数 (verified closed loops)
+    "verified_loop",              # meta: { cycle_id, verdict_count, total } 复查产出 ≥1 个非 pending 裁决
 })
 
 

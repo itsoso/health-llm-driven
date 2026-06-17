@@ -21,7 +21,9 @@ export type ClientEventName =
   | 'watch_action_completed'
   | 'watch_action_snoozed'
   | 'watch_action_skipped'
-  | 'watch_action_failed';
+  | 'watch_action_failed'
+  // N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数
+  | 'verified_loop';              // meta: { cycle_id, verdict_count, total } 复查产出 ≥1 非 pending 裁决
 
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.
