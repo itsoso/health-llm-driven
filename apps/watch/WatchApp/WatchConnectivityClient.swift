@@ -126,7 +126,12 @@ final class WatchConnectivityClient: NSObject {
     }
 
     private static func mappedDirectError(_ error: Error?) -> Error? {
-        guard let direct = error as? WatchDirectAPIClient.DirectError else { return nil }
+        if let url = error as? URLError {
+            return WCError.directFailed("手表网络不可用(\(url.localizedDescription))")
+        }
+        guard let direct = error as? WatchDirectAPIClient.DirectError else {
+            return error == nil ? nil : WCError.directFailed("手表网络请求失败")
+        }
         switch direct {
         case .missingToken:
             return WCError.missingWatchToken

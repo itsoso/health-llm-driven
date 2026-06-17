@@ -4,8 +4,8 @@ import SwiftUI
 import WidgetKit
 #endif
 
-/// 腕上状态容器:经 WatchConnectivity 向 iPhone 取 WatchSummary、发打点请求。
-/// iPhone 持 token + 转发后端(watch 不直接联网、不持 token)。
+/// 腕上状态容器:优先用 Watch 本机 token 直连后端;旧 WatchConnectivity relay 兜底。
+/// 启动时先展示上次成功摘要缓存,再异步刷新,避免独立打开 Watch 时空白等待。
 @MainActor
 final class WatchStore: ObservableObject {
     @Published var summary: WatchSummary?
@@ -22,11 +22,15 @@ final class WatchStore: ObservableObject {
 
     private let connectivity: WatchConnectivityClient
     private let events: WatchEventClient
+    private let summaryCache: WatchSummaryCache
 
     init(connectivity: WatchConnectivityClient = .shared,
-         events: WatchEventClient? = nil) {
+         events: WatchEventClient? = nil,
+         summaryCache: WatchSummaryCache = WatchSummaryCache()) {
         self.connectivity = connectivity
         self.events = events ?? WatchEventClient.shared
+        self.summaryCache = summaryCache
+        self.summary = summaryCache.load()
     }
 
     var complication: ComplicationState? {
@@ -41,6 +45,7 @@ final class WatchStore: ObservableObject {
             let data = try await connectivity.fetchSummary()
             let decoded = try WatchSummary.decode(data)
             summary = decoded
+            summaryCache.save(decoded)
             ComplicationCache.save(ComplicationState.from(decoded))
             reloadComplicationTimelines()
         } catch {
