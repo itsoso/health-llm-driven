@@ -1,0 +1,57 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'life.executor.health'
+version = '0.1.0'
+
+def rokidSdkEnabled = (
+  findProperty('rokid.sdk.enabled')
+    ?: System.getenv('ROKID_SDK_ENABLED')
+    ?: 'false'
+).toString().toBoolean()
+
+repositories {
+  maven {
+    url 'https://maven.rokid.com/repository/maven-public/'
+  }
+}
+
+android {
+  namespace 'life.executor.health.rokidbridge'
+
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  buildTypes {
+    buildTypes.each {
+      it.buildConfigField 'boolean', 'ROKID_SDK_LINKED', rokidSdkEnabled.toString()
+      it.buildConfigField 'String', 'ROKID_CLIENT_M_ARTIFACT', '"com.rokid.cxr:client-m:1.2.2"'
+      it.buildConfigField 'String', 'ROKID_CLIENT_L_ARTIFACT', '"com.rokid.cxr:client-l:1.0.3"'
+    }
+  }
+}
+
+afterEvaluate {
+  def appMinSdk = rootProject.ext.has('minSdkVersion') ? rootProject.ext.minSdkVersion as Integer : 24
+  if (rokidSdkEnabled && appMinSdk < 28) {
+    throw new GradleException(
+      'Rokid CXR SDK AARs require Android minSdkVersion >= 28. ' +
+      'Raise the Android app minSdk before building with -Prokid.sdk.enabled=true.'
+    )
+  }
+}
+
+dependencies {
+  if (rokidSdkEnabled) {
+    implementation 'com.rokid.cxr:client-m:1.2.2'
+    implementation 'com.rokid.cxr:client-l:1.0.3'
+  }
+}
