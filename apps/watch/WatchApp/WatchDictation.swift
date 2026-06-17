@@ -5,6 +5,7 @@ import WatchKit
 
 /// 腕上语音听写(记一餐用)。封装 WKExtension 的 presentTextInputController 语音转写。
 enum WatchDictation {
+    @MainActor
     static func present() async -> String? {
         #if canImport(WatchKit)
         await withCheckedContinuation { cont in

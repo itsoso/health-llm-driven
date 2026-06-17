@@ -123,6 +123,25 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertTrue(s.dueItems.isEmpty)
     }
 
+    func testDueItemNonProtocolSourceIsNotCompletableEvenWithActionId() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":null,
+         "agenda":{"total":1,"pending":1},
+         "due_items":[
+           {"title":"下午复查胃镜报告","kind":"checkup","time_window":"afternoon",
+            "action_id":"agenda-checkup-4",
+            "source":{"object_type":"checkup","object_id":4}}
+         ],
+         "quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(s.dueItems.first?.actionId, "agenda-checkup-4")
+        XCTAssertEqual(s.dueItems.first?.isCompletable, false, "非 health_protocol 来源不可腕上完成/稍后/跳过")
+    }
+
     func testDecodeStatusFreshness() throws {
         let data = Data("""
         {"status":{"light":"green","readiness_score":78,"headline":"h",
