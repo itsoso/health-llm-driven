@@ -1,5 +1,5 @@
 """用药管理模型"""
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Text, Boolean, JSON, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Text, Boolean, JSON, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -68,7 +68,18 @@ class MedicationLog(Base):
 
     __table_args__ = (
         Index("ix_medication_logs_user_date", "user_id", "taken_date"),
-        Index("ix_medication_logs_med_date", "medication_id", "taken_date"),
+        # 依从写回幂等(DB 兜底,与 complete_protocol 同标准):每 (药, 日期, 时点) 一条记录。
+        # 腕上一键 /take 写「今日按日标记」(taken_time=NULL);无 DB 约束时并发双击 / 重试两条
+        # INSERT 都过 → 同一剂落 2 条 → get_adherence_stats 计数虚高 → 经 twin.medication
+        # .adherence_7d_pct 喂给 DDI/PGx/SafetyGuardian 当「确实在服」误证。
+        # COALESCE(taken_time,'') 把 NULL 折叠成同一槽,故两条 NULL-time 行互撞去重;而
+        # times_per_day>1 的多剂(08:00 / 20:00 不同 taken_time)是不同槽,正常并存(不误伤)。
+        # 旧 ix_medication_logs_med_date 是本唯一索引的前缀,冗余 → 删。
+        # 配对迁移见 migrations/managed/20260617_120000_add_medication_log_unique.*.sql。
+        Index(
+            "uq_medlog_med_date_time", "medication_id", "taken_date",
+            text("COALESCE(taken_time, '')"), unique=True,
+        ),
     )
 
 

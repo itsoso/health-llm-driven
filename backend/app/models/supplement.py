@@ -1,5 +1,5 @@
 """补剂管理模型"""
-from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Text, Boolean, Time, Numeric, JSON, Index
+from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Text, Boolean, Time, Numeric, JSON, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -93,6 +93,13 @@ class SupplementRecord(Base):
     __tablename__ = "supplement_records"
     __table_args__ = (
         Index("idx_supplement_records_user_date", "user_id", "record_date", "taken"),
+        # 依从写回幂等(DB 兜底,与 complete_protocol 同标准):每 (补剂定义, 日期) 一条打卡。
+        # 所有写入路径(supplements /records、/records/batch、quick_record、nfc、协议补剂分支)
+        # 语义都是「某补剂某天是否已服」的单条 toggle —— 无约束时并发读-改-写会落多条 taken,
+        # 虚高补剂依从,污染 supplement / DDI 推断。supplement_id FK 已是用户域,
+        # (supplement_id, record_date) 即足够唯一。
+        # 配对迁移见 migrations/managed/20260617_120100_add_supplement_record_unique.*.sql。
+        UniqueConstraint("supplement_id", "record_date", name="uq_supprec_supp_date"),
     )
 
     id = Column(Integer, primary_key=True, index=True)

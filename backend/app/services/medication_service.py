@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
+from sqlalchemy.exc import IntegrityError
 
 from app.models.medication import Medication, MedicationLog, medication_timing_label
 
@@ -154,6 +155,11 @@ class MedicationService:
         commit=False:只 flush(拿到 id),把提交权交还调用方 —— 协议完成路径
         (complete_protocol)用它把领域写并入终态事件的一次性 commit,避免中途
         提交半成品 event 破坏原子性(S2)。
+
+        幂等(commit=True 路径):同 (药, 日期, 时点) 已存在(并发重复点击 / 重试)→ 唯一索引
+        uq_medlog_med_date_time 让第二条 INSERT 撞 IntegrityError → 回滚重读返回既有行,不静默
+        落第二条虚高依从(否则经 twin.medication.adherence_7d_pct 误证给 DDI/PGx/SafetyGuardian)。
+        commit=False(协议路径)由 complete_protocol 的事件门控保证至多一次领域写,这里只 flush。
         """
         logger.info(f"[Medication] 记录服药: user={user_id}, med={medication_id}, status={status}")
 
@@ -169,7 +175,24 @@ class MedicationService:
         )
         db.add(log)
         if commit:
-            db.commit()
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                q = db.query(MedicationLog).filter(
+                    MedicationLog.user_id == user_id,
+                    MedicationLog.medication_id == medication_id,
+                    MedicationLog.taken_date == log.taken_date,
+                )
+                # taken_time 是唯一槽的一部分(NULL 折叠成 ''),按值精确回查既有行。
+                if taken_time is None:
+                    q = q.filter(MedicationLog.taken_time.is_(None))
+                else:
+                    q = q.filter(MedicationLog.taken_time == taken_time)
+                existing = q.order_by(MedicationLog.id.desc()).first()
+                if existing is None:  # 撞唯一约束却查不到 → 反常, fail loud
+                    raise
+                return existing
             db.refresh(log)
         else:
             db.flush()

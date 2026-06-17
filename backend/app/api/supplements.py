@@ -1,6 +1,7 @@
 """补剂管理 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any
 from datetime import date, timedelta
 from pydantic import BaseModel
@@ -161,7 +162,25 @@ def create_supplement_record(
     record_data["user_id"] = user_id
     db_record = SupplementRecord(**record_data)
     db.add(db_record)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 依从写回幂等:并发另一个请求已为 (补剂, 日期) 落行(uq_supprec_supp_date)→ 回滚
+        # 重读, 把本次 toggle 合并写到既有行, 不静默落第二条虚高依从。
+        db.rollback()
+        existing = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == user_id,
+            SupplementRecord.supplement_id == record.supplement_id,
+            SupplementRecord.record_date == record.record_date,
+        ).first()
+        if existing is None:  # 撞唯一约束却查不到 → 反常, fail loud
+            raise
+        existing.taken = record.taken
+        existing.taken_time = record.taken_time
+        existing.notes = record.notes
+        db.commit()
+        db.refresh(existing)
+        return existing
     db.refresh(db_record)
     return db_record
 
