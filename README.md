@@ -218,6 +218,7 @@ Current docs live under `docs/`.
 | Document | Purpose |
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Current system architecture |
+| [`docs/specs/reva-product-governance-spec.md`](docs/specs/reva-product-governance-spec.md) | Product-scope constitution and requirement admission gate |
 | [`docs/prd/reva-personal-health-os-prd.md`](docs/prd/reva-personal-health-os-prd.md) | Canonical product PRD |
 | [`docs/prd/2026-06-16-health-leverage-action-os-pdd.md`](docs/prd/2026-06-16-health-leverage-action-os-pdd.md) | Leverage action OS product layer |
 | [`docs/HARNESS.md`](docs/HARNESS.md) | Product LLM harness methodology |

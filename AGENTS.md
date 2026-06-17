@@ -2,7 +2,7 @@
 
 > executor.life 项目 AI Agent 必须遵循的开发规则和安全准则
 >
-> **本文件定位 = 硬规则裁判**(安全/日志/测试/性能/隐私/提交/部署/DB)。它是「编码 agent 操作工具架」的规则层 —— 工具架的整体设计(导航 / 验证闸门 / 经验沉淀)见 `docs/design-agent-operating-harness.md`;产品里健康 agent 的 LLM 方法论见 `docs/HARNESS.md`(与本文件互不重述)。
+> **本文件定位 = 硬规则裁判**(安全/日志/测试/性能/隐私/提交/部署/DB)。它是「编码 agent 操作工具架」的规则层 —— 工具架的整体设计(导航 / 验证闸门 / 经验沉淀)见 `docs/design-agent-operating-harness.md`;产品里健康 agent 的 LLM 方法论见 `docs/HARNESS.md`(与本文件互不重述);产品范围与需求演进约束见 `docs/specs/reva-product-governance-spec.md`。
 
 ## 1. 安全规范 🔒
 
@@ -595,6 +595,12 @@ class ExampleModel(Base):
 - 完成代码修改后，默认执行必要验证、`git commit`、`git push`。
 - 需要上线的改动，按项目规范通过根目录 `deploy.sh` 部署并验证。
 - Mobile 端纯 JS/TS/UI 改动优先使用 `scripts/mobile-ota.sh production "<message>"` 热更新；涉及 native 配置、依赖、EAS profile、SDK 或 TestFlight 新包时再使用 EAS build / submit。
+
+## 11. 产品治理 Spec
+
+- 涉及产品定位、需求演进、新用户行为、跨端职责、Health OS 对象、安全边界或验证闭环的任务，必须先按 [`docs/specs/reva-product-governance-spec.md`](docs/specs/reva-product-governance-spec.md) 做需求准入判断。
+- 本文件和 `docs/governance/*` 仍然裁决工程安全、测试、部署、隐私、DB、日志和提交规则；产品治理 Spec 只裁决“该不该做、落到哪个产品对象、在哪个 surface 做、如何验证”。
+- 新增非平凡产品行为时，优先使用 [`docs/specs/templates/feature-spec-template.md`](docs/specs/templates/feature-spec-template.md) 创建或更新 Feature Spec。
 
 <skills_system priority="1">
 

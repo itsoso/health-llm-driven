@@ -10,6 +10,7 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 |---|---|
 | 项目结构 / 命令 / 架构总览 / Multi-Agent 系统 | 本文件 |
 | 安全 / 日志 / 测试 / 隐私 / 部署 / DB / 提交规范的硬约束 | `AGENTS.md` (992 行) |
+| 产品范围 / 需求演进 / 一等对象准入 Gate / Claude-Codex-Qwen-GLM-Kimi-Gemini-Grok 通用遵循协议 | `docs/specs/reva-product-governance-spec.md` |
 | LLM Harness 设计（source-aware fast path / verification before write / tool schema / memory 4-stage / streaming） | `docs/HARNESS.md` |
 | 编码 agent 如何在本仓库导航 / 验证 / 沉淀经验（**操作工具架**,≠ 上面那条产品 HARNESS.md） | `docs/design-agent-operating-harness.md` |
 | iOS / Expo 工作流通用经验（Metro / dev-client / EAS 异步双通道） | `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md` |
@@ -17,6 +18,8 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 | 新功能起步（四问 + ASCII 数据流） | `~/work/personal/PRACTICES/feature-plan.md` |
 
 > **README.md 关于移动端的描述已过时**（仍写 Capacitor），以本文件 §"移动端构建方向" 为准。
+>
+> 涉及产品定位或新需求时，先读 `docs/specs/reva-product-governance-spec.md`。`AGENTS.md` 管工程硬规则；该 Spec 管产品范围、需求准入和跨模型遵循协议。
 >
 > **三个 "harness" 别混**：① `docs/HARNESS.md` 是**产品** LLM 方法论(健康 agent 怎么造);② `docs/design-agent-operating-harness.md` 是**编码 agent 操作工具架**(本文件 + `AGENTS.md` 就是它的入口);③ 下面这条 §"代理团队 Harness" 是 **Claude Code 开发代理团队**(`.claude/agents/` + `.claude/skills/`)。
 
