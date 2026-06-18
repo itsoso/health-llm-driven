@@ -17,7 +17,7 @@ import {
   getCalendarEvents, listCalendarSources, syncCalendar,
   type CalendarEvent, type CalendarSource,
 } from '../services/calendar';
-import { getTodaySchedule, type ScheduleItem, type TodaySchedule } from '../services/schedule';
+import { getTodaySchedule, formatPrescription, type ScheduleItem, type TodaySchedule } from '../services/schedule';
 import DayTimeline, { type TimelineEntry } from '../components/calendar/DayTimeline';
 import {
   clampDayMinute, hhmmToMinutes, isoToMinutesOfDay,
@@ -139,13 +139,14 @@ export default function CalendarScreen() {
         const dur = it.prescription?.duration_min; // 仅 movement 有真实时长
         const isPoint = POINT_DOMAINS.has(it.domain) && !dur;
         const span = dur ?? (isPoint ? MARKER_MIN : DEFAULT_BLOCK_MIN);
+        const { primary } = formatPrescription(it.domain, it.prescription);
         entries.push({
           key,
           startMin: clampDayMinute(startMin),
           endMin: clampDayMinute(startMin + span),
           title: it.title,
           timeLabel: dur ? `${it.time}–${hhmmFromMin(startMin + dur)}` : it.time,
-          subtitle: it.prescription?.guidance || (DOMAIN_LABEL[it.domain] ?? it.domain),
+          subtitle: primary || (DOMAIN_LABEL[it.domain] ?? it.domain),
           color: DOMAIN_COLOR[it.domain] ?? C.ink3,
           isPoint,
         });
@@ -310,16 +311,16 @@ function RowDetail({ row }: { row: Row }) {
       </>
     );
   }
-  const p = row.it.prescription;
+  const { primary, geneNote } = formatPrescription(row.it.domain, row.it.prescription);
   return (
     <>
       <DetailLine label="类型" value={DOMAIN_LABEL[row.it.domain] ?? row.it.domain} />
       <DetailLine label="时点" value={row.it.time} />
       {row.it.anchor ? <DetailLine label="锚点" value={row.it.anchor} /> : null}
-      {p ? (
+      {primary || geneNote ? (
         <Text style={{ fontSize: 12.5, color: C.ink2, lineHeight: 18, marginTop: 4 }}>
-          {[p.rpe ? `RPE ${p.rpe}` : null, p.guidance].filter(Boolean).join(' · ')}
-          {p.gene_note ? `\n${p.gene_note}` : ''}
+          {primary}
+          {geneNote ? `${primary ? '\n' : ''}${geneNote}` : ''}
         </Text>
       ) : null}
       {row.it.warning ? (

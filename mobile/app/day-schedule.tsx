@@ -10,7 +10,7 @@ import { Stack } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { revaColors as C } from '../constants/revaTheme';
 import {
-  getTodaySchedule, getWorkHours, updateWorkHours,
+  getTodaySchedule, getWorkHours, updateWorkHours, formatPrescription,
   type TodaySchedule, type WorkHours, type ScheduleItem,
 } from '../services/schedule';
 import { logMedication } from '../services/medications';
@@ -133,15 +133,16 @@ export default function DayScheduleScreen() {
                   >
                     {it.title}
                   </Text>
-                  {it.prescription ? (
-                    <Text style={{ fontSize: 11.5, color: C.ink2, marginTop: 2, lineHeight: 16 }} numberOfLines={3}>
-                      {[
-                        it.prescription.rpe ? `RPE ${it.prescription.rpe}` : null,
-                        it.prescription.guidance,
-                      ].filter(Boolean).join(' · ')}
-                      {it.prescription.gene_note ? `\n${it.prescription.gene_note}` : ''}
-                    </Text>
-                  ) : null}
+                  {(() => {
+                    const { primary, geneNote } = formatPrescription(it.domain, it.prescription);
+                    if (!primary && !geneNote) return null;
+                    return (
+                      <Text style={{ fontSize: 11.5, color: C.ink2, marginTop: 2, lineHeight: 16 }} numberOfLines={3}>
+                        {primary}
+                        {geneNote ? `${primary ? '\n' : ''}${geneNote}` : ''}
+                      </Text>
+                    );
+                  })()}
                 </View>
                 {CONFIRMABLE.has(it.domain) ? (
                   done.has(it.id) ? (
