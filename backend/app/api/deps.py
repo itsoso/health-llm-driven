@@ -127,10 +127,16 @@ def tenant_scope(
     RLS policy 在 DB 层强制行级隔离, 应用层 WHERE user_id 仍保留作双保险。
     """
     token = set_current_tenant(user.id)
-    # 当前已开事务(auth 查询所开)显式补设 app.user_id;set_config 可参数化、local=true 同事务有效。
+    # 主路径:把租户写到 session.info —— after_begin 直接从 session 拿,跨 commit 持续,
+    # 不依赖 contextvar 跨 context 传播(生产实测 contextvar 传不到 post-commit 事务的
+    # after_begin → audit/raw 写被 RLS 拦 500)。
+    db.info["app_user_id"] = int(user.id)
+    # 当前已开事务(auth 查询所开,after_begin 当时还没租户)显式补设一次;
+    # set_config 可参数化、local=true 同事务有效。后续事务由 after_begin + session.info 接力。
     if db.bind is not None and db.bind.dialect.name == "postgresql":
         db.execute(text("SELECT set_config('app.user_id', :uid, true)"), {"uid": str(int(user.id))})
     try:
         yield user
     finally:
+        db.info.pop("app_user_id", None)
         reset_current_tenant(token)

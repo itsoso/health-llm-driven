@@ -256,3 +256,46 @@ def test_rls_row_isolation_postgres():
             conn.commit()
     finally:
         eng.dispose()
+
+
+# ── after_begin 监听器:租户来源优先 session.info(修复 contextvar 不跨 context 的 prod 500)──
+
+def _fake_listener_call(session_info, contextvar_val):
+    """跑 _set_rls_tenant,捕获它对 postgres 连接执行的 SET LOCAL。"""
+    from app import database
+    captured = []
+
+    class _Conn:
+        class dialect:
+            name = "postgresql"
+        def exec_driver_sql(self, sql):
+            captured.append(sql)
+
+    class _Sess:
+        info = session_info
+
+    # 直接用 ContextVar token set/reset,确保每次都设确定值(含 None),无跨测试泄漏
+    tok = database.current_tenant_id.set(contextvar_val)
+    try:
+        database._set_rls_tenant(_Sess(), None, _Conn())
+    finally:
+        database.current_tenant_id.reset(tok)
+    return captured
+
+
+def test_after_begin_prefers_session_info():
+    # session.info 有租户 → 用它(即使 contextvar 没值)。这是 prod RLS 500 的根因修复。
+    assert _fake_listener_call({"app_user_id": 7}, None) == ["SET LOCAL app.user_id = '7'"]
+
+
+def test_after_begin_session_info_wins_over_contextvar():
+    assert _fake_listener_call({"app_user_id": 7}, 99) == ["SET LOCAL app.user_id = '7'"]
+
+
+def test_after_begin_falls_back_to_contextvar():
+    assert _fake_listener_call({}, 5) == ["SET LOCAL app.user_id = '5'"]
+
+
+def test_after_begin_no_tenant_no_set():
+    # 都没设 → 不 SET(RLS fail-closed,current_setting 返回 NULL → 0 行)
+    assert _fake_listener_call({}, None) == []

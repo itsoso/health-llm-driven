@@ -74,10 +74,19 @@ def _set_rls_tenant(session, transaction, connection):
     after_begin 保证每个事务 (含 commit 后开启的新事务) 都重设, 同时避免连接池里
     残留上一个请求的租户值。SQLite 无 RLS, 跳过。漏设时 policy 的 current_setting
     返回 NULL → 0 行 (fail-closed, 全拒而非泄漏)。
+
+    租户来源优先 session.info['app_user_id'] (deps.tenant_scope 写在 session 上, 跨 commit
+    持续且 after_begin 直接拿得到 session), 回退 contextvar。
+    **为什么不能只靠 contextvar**: FastAPI 同步生成器依赖(tenant_scope)的 setup 与端点
+    body 可能跑在不同 copied context, contextvar 改动传不到端点事务里的 after_begin →
+    post-commit 新事务 app.user_id 漏设 → RLS 拦掉 audit/raw 写 (生产实测 500)。
+    session.info 绑在 session 对象上, 与执行 context 无关, 根治。
     """
     if connection.dialect.name != "postgresql":
         return
-    uid = current_tenant_id.get()
+    uid = session.info.get("app_user_id")
+    if uid is None:
+        uid = current_tenant_id.get()
     if uid is None:
         return
     # int() 强转防注入 (set_current_tenant 已强转, 此处双保险)。
