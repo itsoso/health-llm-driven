@@ -12,15 +12,22 @@ final class HealthAgentAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func activateExistingInstanceAndTerminateIfNeeded() {
-        guard MacAppLifecyclePolicy.preventsMultipleInstances else {
-            return
-        }
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let runningInstances = NSRunningApplication
             .runningApplications(withBundleIdentifier: MacAppLifecyclePolicy.bundleIdentifier)
-            .filter { !$0.isTerminated && $0.processIdentifier != currentPID }
+        let snapshots = runningInstances.map {
+            MacRunningApplicationSnapshot(
+                processIdentifier: $0.processIdentifier,
+                isTerminated: $0.isTerminated
+            )
+        }
 
-        guard let existingInstance = runningInstances.first else {
+        let action = MacSingleInstanceLaunchGuard.launchAction(
+            currentProcessIdentifier: currentPID,
+            runningApplications: snapshots
+        )
+        guard case .activateExistingAndTerminate(let processIdentifier) = action,
+              let existingInstance = runningInstances.first(where: { $0.processIdentifier == processIdentifier }) else {
             return
         }
 

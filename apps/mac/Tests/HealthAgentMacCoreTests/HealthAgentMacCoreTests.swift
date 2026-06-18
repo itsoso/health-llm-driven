@@ -78,4 +78,30 @@ final class HealthAgentMacCoreTests: XCTestCase {
         XCTAssertTrue(MacAppLifecyclePolicy.terminatesAfterLastWindowClosed)
         XCTAssertEqual(MacAppLifecyclePolicy.multipleInstancePlistKey, "LSMultipleInstancesProhibited")
     }
+
+    func testSingleInstanceLaunchGuardActivatesExistingAppAndTerminatesDuplicate() {
+        let action = MacSingleInstanceLaunchGuard.launchAction(
+            currentProcessIdentifier: 100,
+            runningApplications: [
+                .init(processIdentifier: 100, isTerminated: false),
+                .init(processIdentifier: 200, isTerminated: false)
+            ],
+            preventsMultipleInstances: true
+        )
+
+        XCTAssertEqual(action, .activateExistingAndTerminate(processIdentifier: 200))
+    }
+
+    func testSingleInstanceLaunchGuardContinuesWhenOnlyCurrentOrTerminatedInstancesExist() {
+        let action = MacSingleInstanceLaunchGuard.launchAction(
+            currentProcessIdentifier: 100,
+            runningApplications: [
+                .init(processIdentifier: 100, isTerminated: false),
+                .init(processIdentifier: 200, isTerminated: true)
+            ],
+            preventsMultipleInstances: true
+        )
+
+        XCTAssertEqual(action, .continueLaunching)
+    }
 }
