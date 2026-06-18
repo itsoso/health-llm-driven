@@ -15,10 +15,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
 import {
+  getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
   openRokidRevaCustomView,
   requestRokidAuthorization,
   takeRokidPhotoBase64,
+  type RokidDeviceValidationStep,
   type RokidIntegrationStatus,
 } from '../modules/rokid-bridge';
 import {
@@ -143,6 +145,7 @@ export default function RokidHealthScreen() {
     : [];
   const isIOS = status?.platform === 'ios';
   const iosCapabilitiesReady = isIOS && status?.capabilitiesReady === true;
+  const validationSteps = useMemo(() => getRokidDeviceValidationSteps(status), [status]);
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
 
   const refresh = () => {
@@ -358,6 +361,31 @@ export default function RokidHealthScreen() {
                   {sessionState.message}
                 </Text>
               ) : null}
+
+              <View style={styles.validationBox}>
+                <Text style={txt.validationHeading}>真机验证</Text>
+                {validationSteps.map((step) => {
+                  const tone = validationTone(step);
+                  return (
+                    <View key={step.id} style={styles.validationRow}>
+                      <View style={[styles.validationIcon, { backgroundColor: tone.bg }]}>
+                        <Ionicons name={validationIcon(step.status)} size={16} color={tone.fg} />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={styles.validationTitleRow}>
+                          <Text style={txt.validationTitle} numberOfLines={1}>{step.title}</Text>
+                          {step.status === 'next' && step.actionLabel ? (
+                            <Text style={txt.validationNext} numberOfLines={1}>
+                              下一步: {step.actionLabel}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Text style={txt.validationDetail} numberOfLines={2}>{step.detail}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           ) : null}
 
@@ -504,6 +532,32 @@ export default function RokidHealthScreen() {
       </View>
     );
   }
+
+  function validationIcon(status: RokidDeviceValidationStep['status']): keyof typeof Ionicons.glyphMap {
+    switch (status) {
+      case 'done':
+        return 'checkmark-circle';
+      case 'blocked':
+        return 'alert-circle';
+      case 'next':
+        return 'radio-button-on';
+      default:
+        return 'ellipse-outline';
+    }
+  }
+
+  function validationTone(step: RokidDeviceValidationStep) {
+    switch (step.status) {
+      case 'done':
+        return { fg: s.success.solid, bg: s.success.bg };
+      case 'blocked':
+        return { fg: s.warning.solid, bg: s.warning.bg };
+      case 'next':
+        return { fg: c.brand, bg: c.brandLight };
+      default:
+        return { fg: c.labelTertiary, bg: c.fill };
+    }
+  }
 }
 
 const createStyles = (c: ColorPalette) => StyleSheet.create({
@@ -575,6 +629,30 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   },
   buttonRow: {
     flexDirection: 'column',
+    gap: 8,
+  },
+  validationBox: {
+    marginTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.separator,
+    paddingTop: spacing.md,
+    gap: 10,
+  },
+  validationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  validationIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  validationTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   secondaryButton: {
@@ -659,6 +737,10 @@ const createTxt = (c: ColorPalette) => ({
   secondaryButton: { fontSize: 12, fontWeight: '800', color: c.brand, textAlign: 'center' } as TextStyle,
   openState: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
   sessionMessage: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
+  validationHeading: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  validationTitle: { flex: 1, fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  validationNext: { fontSize: 11, fontWeight: '800', color: c.brand, maxWidth: 140 } as TextStyle,
+  validationDetail: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   sectionTitle: { fontSize: 15, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sectionHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4, marginBottom: spacing.sm } as TextStyle,
   statusPill: { fontSize: 12, fontWeight: '800', maxWidth: 140 } as TextStyle,

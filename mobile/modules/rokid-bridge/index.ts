@@ -40,6 +40,20 @@ export type RokidIntegrationStatus = {
   reason?: string;
 };
 
+export type RokidDeviceValidationStepStatus = 'done' | 'next' | 'pending' | 'blocked';
+export type RokidDeviceValidationStep = {
+  id:
+    | 'ios_sdk_linked'
+    | 'hi_rokid_ready'
+    | 'rokid_authorized'
+    | 'custom_view_running'
+    | 'capture_ready';
+  title: string;
+  detail: string;
+  status: RokidDeviceValidationStepStatus;
+  actionLabel?: string;
+};
+
 type RokidNativeModule = {
   getIntegrationStatus: () => Promise<Partial<RokidIntegrationStatus>>;
   openHiRokid: () => Promise<boolean>;
@@ -86,6 +100,74 @@ function getNativeBridge(): RokidNativeModule | null {
     cachedNative = null;
   }
   return cachedNative;
+}
+
+export function getRokidDeviceValidationSteps(
+  status?: Partial<RokidIntegrationStatus> | null,
+): RokidDeviceValidationStep[] {
+  const platform = status?.platform ?? Platform.OS;
+  const sdkLinked = platform === 'ios' && status?.bridgeAvailable === true && status?.sdkLinked === true;
+  const hiRokidReady = status?.hiRokidInstalled === true && status?.canOpenHiRokid === true;
+  const authorized = status?.authorizationState === 'authenticated';
+  const customViewRunning = status?.customViewRunning === true;
+  const captureReady = status?.capabilitiesReady === true;
+  const iosClient = status?.sdkArtifacts?.iosClient ?? ROKID_SDK_ARTIFACTS.iosClient;
+
+  const drafts: Array<Omit<RokidDeviceValidationStep, 'status'> & {
+    done: boolean;
+    blocked?: boolean;
+  }> = [
+    {
+      id: 'ios_sdk_linked',
+      title: 'iOS SDK 已链接',
+      detail: sdkLinked
+        ? `当前包已链接 ${iosClient}。`
+        : '安装 Rokid 版 Reva 包, 确认 ROKID_IOS_SDK_ENABLED=1。',
+      actionLabel: '安装 Rokid 版 Reva',
+      done: sdkLinked,
+      blocked: platform !== 'ios' || status?.bridgeAvailable === false,
+    },
+    {
+      id: 'hi_rokid_ready',
+      title: 'Hi Rokid 已连接',
+      detail: hiRokidReady ? 'Hi Rokid 可唤起, 可继续授权。' : '在 Hi Rokid 中确认眼镜已连接。',
+      actionLabel: '打开 Hi Rokid',
+      done: hiRokidReady,
+    },
+    {
+      id: 'rokid_authorized',
+      title: 'CXR-L 授权',
+      detail: authorized ? '授权 token 可用。' : '在 Reva 中完成 CXR-L 授权回调后继续。',
+      actionLabel: '授权 Rokid',
+      done: authorized,
+    },
+    {
+      id: 'custom_view_running',
+      title: 'Reva 眼镜视图',
+      detail: customViewRunning ? 'CustomView 已在眼镜端运行。' : '打开 Reva CustomView, 确认眼镜端已经显示。',
+      actionLabel: '打开 Reva 眼镜视图',
+      done: customViewRunning,
+    },
+    {
+      id: 'capture_ready',
+      title: '拍照能力就绪',
+      detail: captureReady ? '可以主动触发食物/补剂/用药拍照。' : '完成会话构建后再进行食物视觉记录。',
+      actionLabel: '拍照验证',
+      done: captureReady,
+    },
+  ];
+
+  let firstOpenStepAssigned = false;
+  return drafts.map(({ done, blocked, ...step }) => {
+    if (done) {
+      return { ...step, status: 'done' };
+    }
+    if (!firstOpenStepAssigned) {
+      firstOpenStepAssigned = true;
+      return { ...step, status: blocked ? 'blocked' : 'next' };
+    }
+    return { ...step, status: 'pending' };
+  });
 }
 
 export async function getRokidIntegrationStatus(): Promise<RokidIntegrationStatus> {

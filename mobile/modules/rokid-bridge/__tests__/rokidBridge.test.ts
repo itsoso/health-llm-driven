@@ -195,4 +195,47 @@ describe('rokid-bridge JS facade', () => {
     expect(JSON.stringify(view)).toContain('午饭后步行 10 分钟');
     expect(JSON.stringify(view)).toContain('P1');
   });
+
+  it('builds an ordered on-device validation checklist from iOS Rokid status', () => {
+    const { bridge } = loadModule('ios');
+
+    const steps = bridge.getRokidDeviceValidationSteps({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(steps.map((step: any) => step.id)).toEqual([
+      'ios_sdk_linked',
+      'hi_rokid_ready',
+      'rokid_authorized',
+      'custom_view_running',
+      'capture_ready',
+    ]);
+    expect(steps.map((step: any) => step.status)).toEqual([
+      'done',
+      'done',
+      'next',
+      'pending',
+      'pending',
+    ]);
+    expect(steps[2]).toMatchObject({
+      actionLabel: '授权 Rokid',
+      detail: '在 Reva 中完成 CXR-L 授权回调后继续。',
+    });
+  });
 });

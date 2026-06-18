@@ -1,12 +1,13 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { fireEvent, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
 const mockGetRokidIntegrationStatus = jest.fn();
 const mockTakeRokidPhotoBase64 = jest.fn();
 const mockRequestRokidAuthorization = jest.fn();
 const mockOpenRokidRevaCustomView = jest.fn();
+const mockGetRokidDeviceValidationSteps = jest.fn();
 const mockListRokidGlanceCards = jest.fn();
 const mockOpenRokidCompanionIfAvailable = jest.fn();
 const mockSubmitRokidVisualInput = jest.fn();
@@ -18,6 +19,7 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../modules/rokid-bridge', () => ({
   getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
+  getRokidDeviceValidationSteps: (...args: any[]) => mockGetRokidDeviceValidationSteps(...args),
   openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
   requestRokidAuthorization: (...args: any[]) => mockRequestRokidAuthorization(...args),
   takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
@@ -31,6 +33,8 @@ jest.mock('../../services/rokidAmbient', () => ({
 
 import RokidHealthScreen from '../rokid-health';
 import { renderWithProviders } from '../../test-utils';
+
+const flushAsyncUpdates = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('RokidHealthScreen', () => {
   beforeEach(() => {
@@ -75,6 +79,43 @@ describe('RokidHealthScreen', () => {
       capabilitiesReady: true,
     });
     mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
+    mockGetRokidDeviceValidationSteps.mockImplementation((status) => [
+      {
+        id: 'ios_sdk_linked',
+        title: 'iOS SDK 已链接',
+        detail: status?.sdkLinked ? '当前包已链接 RGCxrClient:1.0.1。' : '安装 Rokid 版 Reva 包。',
+        status: status?.sdkLinked ? 'done' : 'next',
+        actionLabel: '安装 Rokid 版 Reva',
+      },
+      {
+        id: 'hi_rokid_ready',
+        title: 'Hi Rokid 已连接',
+        detail: '在 Hi Rokid 中确认眼镜已连接。',
+        status: status?.hiRokidInstalled && status?.canOpenHiRokid ? 'done' : 'pending',
+        actionLabel: '打开 Hi Rokid',
+      },
+      {
+        id: 'rokid_authorized',
+        title: 'CXR-L 授权',
+        detail: '在 Reva 中完成 CXR-L 授权回调后继续。',
+        status: status?.authorizationState === 'authenticated' ? 'done' : 'next',
+        actionLabel: '授权 Rokid',
+      },
+      {
+        id: 'custom_view_running',
+        title: 'Reva 眼镜视图',
+        detail: '打开 Reva CustomView, 确认眼镜端已经显示。',
+        status: status?.customViewRunning ? 'done' : 'pending',
+        actionLabel: '打开 Reva 眼镜视图',
+      },
+      {
+        id: 'capture_ready',
+        title: '拍照能力就绪',
+        detail: '完成会话构建后再进行食物视觉记录。',
+        status: status?.capabilitiesReady ? 'done' : 'pending',
+        actionLabel: '拍照验证',
+      },
+    ]);
   });
 
   it('shows bridge status, privacy boundaries, and pending Rokid glance cards', async () => {
@@ -91,7 +132,10 @@ describe('RokidHealthScreen', () => {
     expect(screen.getByText('仅主动触发拍照 / 录音')).toBeTruthy();
     expect(screen.getByText('用药和补剂只生成待确认草稿')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('打开 Hi Rokid'));
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Hi Rokid'));
+      await flushAsyncUpdates();
+    });
 
     await waitFor(() => {
       expect(mockOpenRokidCompanionIfAvailable).toHaveBeenCalledTimes(1);
@@ -106,7 +150,10 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByLabelText('主动触发 食物视觉记录')).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+      await flushAsyncUpdates();
+    });
 
     await waitFor(() => {
       expect(mockTakeRokidPhotoBase64).toHaveBeenCalledWith({
@@ -155,12 +202,18 @@ describe('RokidHealthScreen', () => {
     const screen = renderWithProviders(<RokidHealthScreen />);
 
     await waitFor(() => {
+      expect(screen.getByText('真机验证')).toBeTruthy();
+      expect(screen.getByText('下一步: 授权 Rokid')).toBeTruthy();
+      expect(screen.getByText('在 Reva 中完成 CXR-L 授权回调后继续。')).toBeTruthy();
       expect(screen.getByText('授权 Rokid')).toBeTruthy();
       expect(screen.getByText('打开 Reva 眼镜视图')).toBeTruthy();
       expect(screen.getByText('能力未就绪')).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByText('授权 Rokid'));
+    await act(async () => {
+      fireEvent.press(screen.getByText('授权 Rokid'));
+      await flushAsyncUpdates();
+    });
 
     await waitFor(() => {
       expect(mockRequestRokidAuthorization).toHaveBeenCalledWith({
@@ -170,7 +223,10 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('Rokid 已授权')).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+      await flushAsyncUpdates();
+    });
 
     await waitFor(() => {
       expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
@@ -208,7 +264,10 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('能力未就绪')).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+      await flushAsyncUpdates();
+    });
 
     await waitFor(() => {
       expect(mockTakeRokidPhotoBase64).not.toHaveBeenCalled();
