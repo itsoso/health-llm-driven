@@ -153,6 +153,18 @@ export default function RokidHealthScreen() {
     glanceQuery.refetch();
   };
 
+  const settleRokidAuthorizationStatus = async (attempts: number) => {
+    let latest = statusQuery.data;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const refreshed = await statusQuery.refetch();
+      latest = refreshed.data ?? latest;
+      if (latest?.authorizationState === 'authenticated') {
+        break;
+      }
+    }
+    return latest;
+  };
+
   const openCompanion = async () => {
     setOpenState('opening');
     try {
@@ -172,10 +184,15 @@ export default function RokidHealthScreen() {
         scopes: ['device_control', 'audio_stream'],
       });
       if (result.ok === false) {
+        const settledStatus = await settleRokidAuthorizationStatus(3);
+        if (settledStatus?.authorizationState === 'authenticated') {
+          setSessionState({ status: 'ready', message: 'Rokid 已授权' });
+          return;
+        }
         throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_authorization_failed');
       }
+      await settleRokidAuthorizationStatus(1);
       setSessionState({ status: 'ready', message: 'Rokid 已授权' });
-      await statusQuery.refetch();
     } catch (error) {
       setSessionState({
         status: 'failed',

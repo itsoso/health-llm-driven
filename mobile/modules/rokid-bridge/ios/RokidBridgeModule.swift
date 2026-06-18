@@ -162,6 +162,10 @@ public class RokidBridgeModule: Module {
   private static func requestAuthorization(scopes: [String], appName: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
+    if CxrClient.shared.auth.isAuthenticated() {
+      promise.resolve(authorizationSuccessPayload(source: "cached"))
+      return
+    }
     DispatchQueue.main.async {
       CxrClient.shared.auth.authenticate(
         scopes: scopes,
@@ -169,16 +173,22 @@ public class RokidBridgeModule: Module {
       ) { result in
         switch result {
         case .success(let authResult):
-          var response: [String: Any] = [:]
-          response["ok"] = true
-          response["tokenLength"] = authResult.token.count
-          response["sessionId"] = authResult.sessionId as Any
-          response["authorizationState"] = "authenticated"
-          promise.resolve(response)
+          promise.resolve(authorizationSuccessPayload(
+            tokenLength: authResult.token.count,
+            sessionId: authResult.sessionId,
+            source: "authenticate_completion"
+          ))
         case .failure(let error):
+          if CxrClient.shared.auth.isAuthenticated() {
+            var response = authorizationSuccessPayload(source: "post_failure_state")
+            response["nativeWarning"] = String(describing: error)
+            promise.resolve(response)
+            return
+          }
           promise.resolve([
             "ok": false,
             "reason": String(describing: error),
+            "authorizationState": authorizationState(),
           ])
         }
       }
@@ -465,6 +475,30 @@ public class RokidBridgeModule: Module {
   }
 
   #if canImport(RGCxrClient)
+  private static func authorizationSuccessPayload(
+    tokenLength: Int? = nil,
+    sessionId: String? = nil,
+    source: String
+  ) -> [String: Any] {
+    var response: [String: Any] = [:]
+    response["ok"] = true
+    response["authorizationState"] = "authenticated"
+    response["source"] = source
+    response["tokenLength"] = tokenLength ?? CxrClient.shared.auth.currentToken?.count ?? 0
+    if let resolvedSessionId = sessionId ?? CxrClient.shared.auth.currentSessionId {
+      response["sessionId"] = resolvedSessionId
+    }
+    if let lastCallbackUrl {
+      response["lastCallbackUrl"] = lastCallbackUrl
+    }
+    if let lastCallbackHandled {
+      response["lastCallbackHandled"] = lastCallbackHandled
+    }
+    return response
+  }
+  #endif
+
+  #if canImport(RGCxrClient)
   private static func installAppAtPath(
     _ path: String,
     packageName: String,
@@ -620,9 +654,18 @@ public class RokidBridgeModule: Module {
   }
 
   fileprivate static func isExpectedAuthCallback(_ url: URL) -> Bool {
-    url.scheme?.caseInsensitiveCompare(callbackScheme) == .orderedSame
-      && url.host?.caseInsensitiveCompare(callbackHost) == .orderedSame
-      && url.path == callbackPath
+    guard url.scheme?.caseInsensitiveCompare(callbackScheme) == .orderedSame else {
+      return false
+    }
+
+    #if canImport(RGCxrClient)
+    configureAuthentication()
+    if CxrClient.shared.auth.canHandleURL(url) {
+      return true
+    }
+    #endif
+    // The callback scheme is app-private; let the SDK inspect vendor path/query variants.
+    return true
   }
 
   fileprivate static func handleOpenURL(_ url: URL) -> Bool {
@@ -635,7 +678,9 @@ public class RokidBridgeModule: Module {
 
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
-    let handled = CxrClient.shared.handleOpenURL(url)
+    let handledByAuth = CxrClient.shared.auth.handleCallback(url: url)
+    let handledByClient = handledByAuth ? false : CxrClient.shared.handleOpenURL(url)
+    let handled = handledByAuth || handledByClient || CxrClient.shared.auth.isAuthenticated()
     lastCallbackHandled = handled
     return handled
     #else

@@ -250,6 +250,95 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('treats delayed iOS Rokid callback state as authorization success', async () => {
+    mockGetRokidIntegrationStatus
+      .mockResolvedValueOnce({
+        platform: 'ios',
+        bridgeAvailable: true,
+        hiRokidInstalled: true,
+        canOpenHiRokid: true,
+        mode: 'sdk_probe',
+        sdkLinked: true,
+        authorizationState: 'not_authenticated',
+        sessionMode: 'customView',
+        customViewRunning: false,
+        capabilitiesReady: false,
+        callbackScheme: 'life.executor.health.rokid',
+        sdkArtifacts: {
+          clientM: 'com.rokid.cxr:client-m:1.2.2',
+          clientL: 'com.rokid.cxr:client-l:1.0.3',
+          iosClient: 'RGCxrClient:1.0.1',
+          iosClientCandidate: 'RGCxrClient:1.0.2',
+          iosCore: 'RGCoreKit:0.0.2',
+        },
+      })
+      .mockResolvedValueOnce({
+        platform: 'ios',
+        bridgeAvailable: true,
+        hiRokidInstalled: true,
+        canOpenHiRokid: true,
+        mode: 'sdk_probe',
+        sdkLinked: true,
+        authorizationState: 'not_authenticated',
+        sessionMode: 'customView',
+        customViewRunning: false,
+        capabilitiesReady: false,
+        callbackScheme: 'life.executor.health.rokid',
+        lastCallbackUrl: 'life.executor.health.rokid://auth/callback?code=abc',
+        lastCallbackHandled: true,
+        sdkArtifacts: {
+          clientM: 'com.rokid.cxr:client-m:1.2.2',
+          clientL: 'com.rokid.cxr:client-l:1.0.3',
+          iosClient: 'RGCxrClient:1.0.1',
+          iosClientCandidate: 'RGCxrClient:1.0.2',
+          iosCore: 'RGCoreKit:0.0.2',
+        },
+      })
+      .mockResolvedValue({
+        platform: 'ios',
+        bridgeAvailable: true,
+        hiRokidInstalled: true,
+        canOpenHiRokid: true,
+        mode: 'sdk_probe',
+        sdkLinked: true,
+        authorizationState: 'authenticated',
+        sessionMode: 'customView',
+        customViewRunning: false,
+        capabilitiesReady: false,
+        callbackScheme: 'life.executor.health.rokid',
+        lastCallbackUrl: 'life.executor.health.rokid://auth/callback?code=abc',
+        lastCallbackHandled: true,
+        sdkArtifacts: {
+          clientM: 'com.rokid.cxr:client-m:1.2.2',
+          clientL: 'com.rokid.cxr:client-l:1.0.3',
+          iosClient: 'RGCxrClient:1.0.1',
+          iosClientCandidate: 'RGCxrClient:1.0.2',
+          iosCore: 'RGCoreKit:0.0.2',
+        },
+      });
+    mockRequestRokidAuthorization.mockResolvedValue({
+      ok: false,
+      reason: 'authorization_callback_pending',
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('授权 Rokid')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('授权 Rokid'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Rokid 已授权')).toBeTruthy();
+      expect(screen.queryByText(/Rokid 授权失败/)).toBeNull();
+    });
+    expect(mockGetRokidIntegrationStatus).toHaveBeenCalledTimes(3);
+  });
+
   it('blocks iOS photo capture until the customView scene is running', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',
