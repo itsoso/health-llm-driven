@@ -280,3 +280,44 @@ def test_api_events_decrypted_for_owner(client, db, auth_user_and_headers):
     db.commit()
     rows = client.get("/api/v1/calendar/events", headers=h).json()
     assert any(r["title"] == "自己的事件" for r in rows)
+
+
+# ── safety review 修复:SSRF 重定向逐跳校验 + 错误脱敏 + seam label ──
+import pytest as _pytest
+
+
+def test_ics_redirect_to_internal_rejected():
+    import urllib.request
+    from app.services.caldav_sync import _GuardedRedirectHandler
+    h = _GuardedRedirectHandler()
+    req = urllib.request.Request("https://public.example.com/cal.ics")
+    # 302 → metadata 端点(http,且链路本地)→ 拒
+    with _pytest.raises(ValueError):
+        h.redirect_request(req, None, 302, "Found", {}, "http://169.254.169.254/latest/meta-data/")
+    # 302 → https 但环回 → 拒
+    with _pytest.raises(ValueError):
+        h.redirect_request(req, None, 302, "Found", {}, "https://127.0.0.1/x.ics")
+
+
+def test_scrub_error_strips_credential_url():
+    from app.services.caldav_sync import _scrub_error
+    s = _scrub_error(Exception("login failed for https://user:s3cret@cal.host/dav"))
+    assert "s3cret" not in s and "user:s3cret" not in s
+    assert "<url>" in s
+
+
+def test_seam_source_label_never_leaks_name():
+    from app.services.caldav_sync import calendar_event_for_llm
+
+    class _Src:
+        name = "张总 1on1"
+
+    class _Ev:
+        source = _Src()
+        start_time = None
+        end_time = None
+        all_day = False
+
+    out = calendar_event_for_llm(_Ev())
+    assert out["source_label"] == "日历"
+    assert "张总" not in str(out)

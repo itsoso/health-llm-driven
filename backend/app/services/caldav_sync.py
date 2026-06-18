@@ -7,6 +7,7 @@
 """
 import ipaddress
 import logging
+import re
 import socket
 from datetime import date, datetime, timedelta, timezone as _tz
 from typing import List, Optional, Tuple
@@ -50,6 +51,27 @@ def _assert_safe_caldav_url(url: str) -> None:
 def _assert_safe_ics_url(url: str) -> None:
     """SSRF 护栏(ics 订阅)。"""
     _assert_safe_url(url, label="ICS ")
+
+
+_URL_WITH_CREDS_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s'\"]+")
+
+
+def _scrub_error(e: Exception) -> str:
+    """同步错误存 last_error / 打日志前脱敏:剥掉可能含凭据的 URL
+    (caldav 异常常含 https://user:pass@host),只留异常类型 + 去 URL 的概述。"""
+    return f"{type(e).__name__}: {_URL_WITH_CREDS_RE.sub('<url>', str(e))}"[:500]
+
+
+import urllib.request as _urllib_request  # noqa: E402 — 模块级,供 redirect handler 子类
+
+
+class _GuardedRedirectHandler(_urllib_request.HTTPRedirectHandler):
+    """逐跳重过 SSRF 护栏:公网 .ics 可 302→169.254/localhost/内网 把服务端当跳板。
+    每个重定向目标重新校验 https + 非内网,不安全则 raise 中断(初始 URL 过护栏 ≠ 跳转安全)。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _assert_safe_ics_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def save_credentials(db: Session, user_id: int, *, url: str, username: str, password: str) -> CalendarCredential:
@@ -122,7 +144,7 @@ def sync_today(db: Session, user_id: int) -> dict:
     try:
         events = _fetch_events(c["url"], c.get("username", ""), c.get("password", ""), today)
     except Exception as e:  # fail loud — 不假装同步成功
-        cred.last_error = str(e)[:500]
+        cred.last_error = _scrub_error(e)
         db.commit()
         logger.warning("[caldav] user=%s 同步失败: %s", user_id, e)
         raise
@@ -255,12 +277,17 @@ def _fetch_caldav_range(url: str, username: str, password: str,
 
 
 def _fetch_ics_text(url: str, *, timeout: int = 15) -> str:
-    """SSRF-guard 后用 stdlib 拉 .ics 文本。"""
-    _assert_safe_ics_url(url)  # SSRF 护栏
+    """SSRF-guard 后用 stdlib 拉 .ics 文本。
+
+    重定向必须**逐跳重新过护栏**:urlopen 默认跟随 302,公网 .ics 可 302→
+    169.254.169.254 / localhost / 10.x 把服务端当跳板(初始 URL 过护栏不代表跳转目标安全)。
+    """
+    _assert_safe_ics_url(url)  # SSRF 护栏(初始 URL)
     import urllib.request  # lazy
 
+    opener = urllib.request.build_opener(_GuardedRedirectHandler)
     req = urllib.request.Request(url, headers={"User-Agent": "health-calendar/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec - URL 已过 SSRF 护栏
+    with opener.open(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
 
@@ -347,7 +374,7 @@ def sync_all_sources(db: Session, user_id: int) -> dict:
             db.commit()
         except Exception as e:  # fail-soft per source — 记 last_error,不抛
             db.rollback()
-            src.last_error = str(e)[:500]
+            src.last_error = _scrub_error(e)
             db.commit()
             logger.warning("[calendar] source=%s 同步失败: %s", src.id, e)
             summary[src.id] = {"error": str(e)[:500]}
@@ -364,10 +391,8 @@ def calendar_event_for_llm(event: CalendarEvent) -> dict:
     返回 {start, end, busy, all_day, source_label}。绝不含 title/location/
     description/attendees/uid。这是日历 → LLM 的不可绕过边界(隐私接缝)。
     """
+    # 固定通用词 —— 绝不外泄用户自定义源名(可能含人名,如 "张总 1on1");别改成 src.name。
     label = "日历"
-    src = getattr(event, "source", None)
-    if src is not None and getattr(src, "name", None):
-        label = "日历"  # 不外泄用户自定义标签(可能含人名)→ 用通用词
     return {
         "start": event.start_time.isoformat() if event.start_time else None,
         "end": event.end_time.isoformat() if event.end_time else None,
