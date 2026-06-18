@@ -1,9 +1,11 @@
 /**
- * 日历(Calendar v2 / C2)—— 只读日程视图。
- * 一条时间轴聚合两层:① 外部日历事件(GET /calendar/events,按源着色);
- * ② 健康日程(GET /schedule/today 的药/补剂/餐/运动时点,含 cut-A 处方)。
+ * 日历(Calendar v2 / C2)—— 只读单日时间轴视图。
+ * 一条 24h 垂直时间轴聚合两层:① 外部日历事件(GET /calendar/events,按源着色,
+ * 真实 start→end 块);② 健康日程(GET /schedule/today 的药/补剂/餐/运动时点,
+ * movement 用处方 duration_min,其余时点渲成细 marker)。
  * 进入即同步(POST /calendar/sync)再拉事件;下拉刷新同。
- * 点条目 → 展开明细。只读:不建/不改/不写回(那是 C3)。
+ * 全天事件 → 顶部 strip;"现在"线仅今天。点块 → 底部展开明细。
+ * 多日:日期左右翻页(每天 = 这条时间轴)。只读:不建/不改/不写回(那是 C3)。
  */
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
@@ -16,6 +18,10 @@ import {
   type CalendarEvent, type CalendarSource,
 } from '../services/calendar';
 import { getTodaySchedule, type ScheduleItem, type TodaySchedule } from '../services/schedule';
+import DayTimeline, { type TimelineEntry } from '../components/calendar/DayTimeline';
+import {
+  clampDayMinute, hhmmToMinutes, isoToMinutesOfDay,
+} from '../components/calendar/timelineLayout';
 
 const DOMAIN_LABEL: Record<string, string> = {
   medication: '药', supplement: '补剂', diet: '饮食',
@@ -28,6 +34,11 @@ const DOMAIN_COLOR: Record<string, string> = {
 // 源缺自定义色时按 id 轮转一组温和色。
 const SOURCE_FALLBACK = ['#2A6FDB', '#7A5AF0', '#C98A1E', '#1F8A5B', '#D5503A', '#0E7C86'];
 
+// 时点(无真实时长)默认块时长:点类(药/补剂)→ 细 marker;其余(餐/复查)→ 30min。
+const POINT_DOMAINS = new Set(['medication', 'supplement']);
+const DEFAULT_BLOCK_MIN = 30;
+const MARKER_MIN = 10;
+
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -37,41 +48,42 @@ function hhmm(iso: string | null): string {
   if (isNaN(d.getTime())) return '--:--';
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+function hhmmFromMin(min: number): string {
+  const m = clampDayMinute(min);
+  const h = Math.floor(m / 60) % 24;
+  return `${String(h).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
 function dateLabel(d: Date): string {
   const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
   return `${d.getMonth() + 1}月${d.getDate()}日 ${wd}`;
 }
 
-/** 时间轴统一行模型(外部事件 + 健康日程合并)。 */
+/** 统一行模型 —— 用于详情展开(timeline 块按 key 对回此表)。 */
 type Row =
-  | { kind: 'event'; key: string; time: string; sortKey: string; ev: CalendarEvent; color: string; sourceName: string }
-  | { kind: 'health'; key: string; time: string; sortKey: string; it: ScheduleItem };
+  | { kind: 'event'; key: string; ev: CalendarEvent; color: string; sourceName: string }
+  | { kind: 'health'; key: string; it: ScheduleItem };
 
 export default function CalendarScreen() {
   const qc = useQueryClient();
-  const [dayOffset, setDayOffset] = useState(0); // 0=今天;7-day toggle 用 0/+7 区间
-  const [span, setSpan] = useState<1 | 7>(1); // 1=单日;7=未来 7 天
+  const [dayOffset, setDayOffset] = useState(0); // 相对今天的天数偏移(左右翻页)
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const today = new Date();
-  const from = new Date(today);
-  from.setDate(today.getDate() + dayOffset);
-  const to = new Date(from);
-  to.setDate(from.getDate() + (span - 1));
-  const fromStr = ymd(from);
-  const toStr = ymd(to);
+  const day = new Date(today);
+  day.setDate(today.getDate() + dayOffset);
+  const dayStr = ymd(day);
+  const isToday = dayOffset === 0;
 
-  // 进入即同步,再拉事件(同步失败不阻断读已存事件 —— fail-soft)。
+  // 进入即同步,再拉当日事件(同步失败不阻断读已存事件 —— fail-soft)。
   const eventsQ = useQuery<CalendarEvent[]>({
-    queryKey: ['calendar', 'events', fromStr, toStr],
+    queryKey: ['calendar', 'events', dayStr],
     queryFn: async () => {
       try { await syncCalendar(); } catch { /* 同步失败仍读已存事件,UI 提示在 sourcesQ.last_error */ }
-      return getCalendarEvents(fromStr, toStr);
+      return getCalendarEvents(dayStr, dayStr);
     },
   });
   const sourcesQ = useQuery<CalendarSource[]>({ queryKey: ['calendar', 'sources'], queryFn: listCalendarSources });
-  // 健康日程仅当日有意义(timing-solver 是「今日」端点),仅 span=1 且 offset=0 时并入。
-  const isToday = dayOffset === 0 && span === 1;
+  // 健康日程仅当日有意义(timing-solver 是「今日」端点),仅看今天时并入。
   const schedQ = useQuery<TodaySchedule>({
     queryKey: ['schedule', 'today'],
     queryFn: getTodaySchedule,
@@ -86,23 +98,61 @@ export default function CalendarScreen() {
     return map;
   }, [sourcesQ.data]);
 
-  const rows = useMemo<Row[]>(() => {
-    const out: Row[] = [];
+  // 行表(用于明细)+ 全天 strip + 时间轴块。
+  const { rowMap, allDay, entries } = useMemo(() => {
+    const rowMap = new Map<string, Row>();
+    const allDay: { key: string; title: string; color: string }[] = [];
+    const entries: TimelineEntry[] = [];
+
     (eventsQ.data ?? []).forEach((ev) => {
       const meta = sourceColor[ev.source_id];
-      out.push({
-        kind: 'event', key: `ev:${ev.id}`,
-        time: ev.all_day ? '全天' : hhmm(ev.start),
-        sortKey: ev.all_day ? '00:00' : (ev.start ?? '99:99'),
-        ev, color: meta?.color ?? C.ink3, sourceName: meta?.name ?? '日历',
+      const color = meta?.color ?? C.ink3;
+      const sourceName = meta?.name ?? '日历';
+      const key = `ev:${ev.id}`;
+      rowMap.set(key, { kind: 'event', key, ev, color, sourceName });
+      if (ev.all_day) {
+        allDay.push({ key, title: ev.title || '(无标题)', color });
+        return;
+      }
+      const startMin = isoToMinutesOfDay(ev.start);
+      if (startMin == null) return; // 无有效开始时间 → 不放进网格
+      const rawEnd = isoToMinutesOfDay(ev.end);
+      const endMin = rawEnd != null && rawEnd > startMin ? rawEnd : startMin + DEFAULT_BLOCK_MIN;
+      entries.push({
+        key,
+        startMin: clampDayMinute(startMin),
+        endMin: clampDayMinute(endMin),
+        title: ev.title || '(无标题)',
+        timeLabel: `${hhmm(ev.start)}–${hhmm(ev.end)}`,
+        subtitle: ev.location || undefined,
+        color,
+        isPoint: false,
       });
     });
+
     if (isToday) {
       (schedQ.data?.scheduled ?? []).forEach((it) => {
-        out.push({ kind: 'health', key: `hs:${it.id}`, time: it.time, sortKey: it.time, it });
+        const key = `hs:${it.id}`;
+        rowMap.set(key, { kind: 'health', key, it });
+        const startMin = hhmmToMinutes(it.time);
+        if (startMin == null) return;
+        const dur = it.prescription?.duration_min; // 仅 movement 有真实时长
+        const isPoint = POINT_DOMAINS.has(it.domain) && !dur;
+        const span = dur ?? (isPoint ? MARKER_MIN : DEFAULT_BLOCK_MIN);
+        entries.push({
+          key,
+          startMin: clampDayMinute(startMin),
+          endMin: clampDayMinute(startMin + span),
+          title: it.title,
+          timeLabel: dur ? `${it.time}–${hhmmFromMin(startMin + dur)}` : it.time,
+          subtitle: it.prescription?.guidance || (DOMAIN_LABEL[it.domain] ?? it.domain),
+          color: DOMAIN_COLOR[it.domain] ?? C.ink3,
+          isPoint,
+        });
       });
     }
-    return out.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+    return { rowMap, allDay, entries };
   }, [eventsQ.data, schedQ.data, sourceColor, isToday]);
 
   const refreshing = eventsQ.isFetching && !eventsQ.isLoading;
@@ -113,6 +163,9 @@ export default function CalendarScreen() {
   };
 
   const erroredSources = (sourcesQ.data ?? []).filter((s) => s.last_error);
+  const loading = eventsQ.isLoading || (isToday && schedQ.isLoading);
+  const isEmpty = entries.length === 0 && allDay.length === 0;
+  const activeRow = expanded ? rowMap.get(expanded) ?? null : null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.paper }} edges={['top']}>
@@ -126,24 +179,22 @@ export default function CalendarScreen() {
           ),
         }}
       />
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.green500} />}
-      >
-        {/* 日期 + 区间切换 */}
+      <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+        {/* 日期 + 左右翻页 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <Text style={{ fontFamily: 'NotoSansSC', fontWeight: '700', fontSize: 17, color: C.ink1 }}>
-            {span === 7 ? `未来 7 天` : dateLabel(from)}
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Toggle label="今日" active={span === 1} onPress={() => { setSpan(1); setDayOffset(0); }} />
-            <Toggle label="7 天" active={span === 7} onPress={() => { setSpan(7); setDayOffset(0); }} />
-          </View>
+          <PagerBtn label="‹" onPress={() => setDayOffset((o) => o - 1)} />
+          <Pressable onPress={() => setDayOffset(0)} hitSlop={8} style={{ alignItems: 'center' }}>
+            <Text style={{ fontFamily: 'NotoSansSC', fontWeight: '700', fontSize: 17, color: C.ink1 }}>
+              {dateLabel(day)}
+            </Text>
+            {!isToday ? <Text style={{ fontSize: 11, color: C.green500, marginTop: 1 }}>回到今天</Text> : null}
+          </Pressable>
+          <PagerBtn label="›" onPress={() => setDayOffset((o) => o + 1)} />
         </View>
 
         {/* 源同步错误提示(fail-loud,不假装成功)*/}
         {erroredSources.length > 0 ? (
-          <View style={{ backgroundColor: '#FBE8E4', borderRadius: 10, padding: 10, marginBottom: 12 }}>
+          <View style={{ backgroundColor: '#FBE8E4', borderRadius: 10, padding: 10, marginBottom: 10 }}>
             <Text style={{ fontSize: 12.5, color: '#D5503A', lineHeight: 18 }}>
               {erroredSources.length} 个日历源同步出错(显示的是上次成功的数据)。
               <Text onPress={() => router.push('/calendar-sources' as any)} style={{ fontWeight: '700' }}> 去检查 ›</Text>
@@ -151,78 +202,93 @@ export default function CalendarScreen() {
           </View>
         ) : null}
 
-        {/* 时间轴 */}
-        {eventsQ.isLoading || (isToday && schedQ.isLoading) ? (
+        {/* 全天事件 strip(不进网格)*/}
+        {allDay.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10, flexGrow: 0 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {allDay.map((a) => (
+                <Pressable
+                  key={a.key}
+                  onPress={() => setExpanded(expanded === a.key ? null : a.key)}
+                  style={({ pressed }) => [{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: C.surface, borderRadius: 999, borderLeftWidth: 3, borderLeftColor: a.color,
+                    paddingLeft: 8, paddingRight: 12, paddingVertical: 6, opacity: pressed ? 0.85 : 1,
+                  }]}
+                >
+                  <Text style={{ fontSize: 10, color: C.ink3 }}>全天</Text>
+                  <Text style={{ fontSize: 12.5, color: C.ink1, maxWidth: 160 }} numberOfLines={1}>{a.title}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        ) : null}
+
+        {/* 时间轴主体 */}
+        {loading ? (
           <ActivityIndicator style={{ marginTop: 24 }} />
         ) : eventsQ.isError ? (
-          <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 20 }}>
-            暂时取不到日历,下拉重试。
-          </Text>
-        ) : rows.length === 0 ? (
-          <EmptyState hasSources={(sourcesQ.data?.length ?? 0) > 0} />
+          <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.green500} />}>
+            <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 20, marginTop: 8 }}>暂时取不到日历,下拉重试。</Text>
+          </ScrollView>
+        ) : isEmpty ? (
+          <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.green500} />}>
+            <EmptyState hasSources={(sourcesQ.data?.length ?? 0) > 0} isToday={isToday} />
+          </ScrollView>
         ) : (
-          <View style={{ backgroundColor: C.surface, borderRadius: 14, overflow: 'hidden' }}>
-            {rows.map((r, i) => (
-              <TimelineRow
-                key={r.key}
-                row={r}
-                first={i === 0}
-                open={expanded === r.key}
-                onToggle={() => setExpanded(expanded === r.key ? null : r.key)}
-              />
-            ))}
+          <View style={{ flex: 1 }}>
+            <DayTimeline
+              entries={entries}
+              isToday={isToday}
+              activeKey={expanded}
+              onPressBlock={(k) => setExpanded(expanded === k ? null : k)}
+            />
           </View>
         )}
 
-        {/* 健康日程 disclaimer(后端随响应带出)*/}
-        {isToday && schedQ.data?.disclaimer ? (
-          <Text style={{ fontSize: 11, color: C.ink3, lineHeight: 16, marginTop: 18 }}>{schedQ.data.disclaimer}</Text>
+        {/* 明细抽屉(点块展开)*/}
+        {activeRow ? (
+          <View style={{
+            position: 'absolute', left: 16, right: 16, bottom: 12,
+            backgroundColor: C.surface, borderRadius: 14, padding: 14,
+            shadowColor: '#142019', shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8,
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <Text style={{ flex: 1, fontFamily: 'NotoSansSC', fontWeight: '700', fontSize: 15, color: C.ink1 }}>
+                {activeRow.kind === 'event' ? (activeRow.ev.title || '(无标题)') : activeRow.it.title}
+              </Text>
+              <Pressable onPress={() => setExpanded(null)} hitSlop={10}>
+                <Text style={{ fontSize: 18, color: C.ink3, marginLeft: 12 }}>×</Text>
+              </Pressable>
+            </View>
+            <View style={{ marginTop: 8, gap: 4 }}>
+              <RowDetail row={activeRow} />
+            </View>
+          </View>
         ) : null}
-      </ScrollView>
+
+        {/* 健康日程 disclaimer(后端随响应带出)*/}
+        {isToday && !activeRow && schedQ.data?.disclaimer ? (
+          <Text style={{ fontSize: 11, color: C.ink3, lineHeight: 16, marginTop: 8 }} numberOfLines={2}>
+            {schedQ.data.disclaimer}
+          </Text>
+        ) : null}
+      </View>
     </SafeAreaView>
   );
 }
 
-function Toggle({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function PagerBtn({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={10}
       style={({ pressed }) => [{
-        borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6,
-        backgroundColor: active ? C.green500 : C.surface,
-        borderWidth: 1, borderColor: active ? C.green500 : C.line, opacity: pressed ? 0.8 : 1,
+        width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, opacity: pressed ? 0.7 : 1,
       }]}
     >
-      <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : C.ink2 }}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function TimelineRow({ row, first, open, onToggle }: {
-  row: Row; first: boolean; open: boolean; onToggle: () => void;
-}) {
-  const dotColor = row.kind === 'event' ? row.color : (DOMAIN_COLOR[row.it.domain] ?? C.ink3);
-  const title = row.kind === 'event' ? (row.ev.title || '(无标题)') : row.it.title;
-  const tag = row.kind === 'event' ? row.sourceName : (DOMAIN_LABEL[row.it.domain] ?? row.it.domain);
-
-  return (
-    <Pressable
-      onPress={onToggle}
-      style={({ pressed }) => [{
-        paddingVertical: 12, paddingHorizontal: 14,
-        borderTopWidth: first ? 0 : 1, borderTopColor: C.line,
-        backgroundColor: pressed ? C.surface2 : C.surface,
-      }]}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 14, fontWeight: '700', color: C.ink1, width: 52 }}>
-          {row.time}
-        </Text>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} />
-        <Text style={{ flex: 1, fontSize: 14, color: C.ink1 }} numberOfLines={open ? undefined : 1}>{title}</Text>
-        <Text style={{ fontSize: 11, color: C.ink3 }} numberOfLines={1}>{tag}</Text>
-      </View>
-      {open ? <RowDetail row={row} /> : null}
+      <Text style={{ fontSize: 20, color: C.ink2, lineHeight: 22 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -230,11 +296,9 @@ function TimelineRow({ row, first, open, onToggle }: {
 function RowDetail({ row }: { row: Row }) {
   if (row.kind === 'event') {
     const ev = row.ev;
-    const timeText = ev.all_day
-      ? '全天'
-      : `${hhmm(ev.start)} – ${hhmm(ev.end)}`;
+    const timeText = ev.all_day ? '全天' : `${hhmm(ev.start)} – ${hhmm(ev.end)}`;
     return (
-      <View style={{ marginTop: 10, marginLeft: 64, gap: 4 }}>
+      <>
         <DetailLine label="时间" value={timeText} />
         <DetailLine label="来源" value={row.sourceName} />
         {ev.location ? <DetailLine label="地点" value={ev.location} /> : null}
@@ -243,13 +307,12 @@ function RowDetail({ row }: { row: Row }) {
         {ev.description ? (
           <Text style={{ fontSize: 12.5, color: C.ink2, lineHeight: 18, marginTop: 4 }}>{ev.description}</Text>
         ) : null}
-      </View>
+      </>
     );
   }
-  // 健康日程:复用 day-schedule 的处方渲染。
   const p = row.it.prescription;
   return (
-    <View style={{ marginTop: 10, marginLeft: 64, gap: 4 }}>
+    <>
       <DetailLine label="类型" value={DOMAIN_LABEL[row.it.domain] ?? row.it.domain} />
       <DetailLine label="时点" value={row.it.time} />
       {row.it.anchor ? <DetailLine label="锚点" value={row.it.anchor} /> : null}
@@ -262,7 +325,7 @@ function RowDetail({ row }: { row: Row }) {
       {row.it.warning ? (
         <Text style={{ fontSize: 12, color: '#C98A1E', lineHeight: 18, marginTop: 2 }}>{row.it.warning}</Text>
       ) : null}
-    </View>
+    </>
   );
 }
 
@@ -275,13 +338,15 @@ function DetailLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function EmptyState({ hasSources }: { hasSources: boolean }) {
+function EmptyState({ hasSources, isToday }: { hasSources: boolean; isToday: boolean }) {
   return (
-    <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 20, alignItems: 'center' }}>
-      <Text style={{ fontSize: 14, color: C.ink1, fontWeight: '600', marginBottom: 6 }}>这段时间还没有日程</Text>
+    <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 20, alignItems: 'center', marginTop: 8 }}>
+      <Text style={{ fontSize: 14, color: C.ink1, fontWeight: '600', marginBottom: 6 }}>
+        {isToday ? '今天还没有日程' : '这天还没有日程'}
+      </Text>
       <Text style={{ fontSize: 12.5, color: C.ink2, textAlign: 'center', lineHeight: 19 }}>
         {hasSources
-          ? '已连接日历源,但所选区间没有事件。下拉可重新同步。'
+          ? '已连接日历源,但这天没有事件。下拉可重新同步。'
           : '还没连接外部日历。连接 CalDAV / ICS 源后,会议会和健康日程并在一条时间轴。'}
       </Text>
       {!hasSources ? (
