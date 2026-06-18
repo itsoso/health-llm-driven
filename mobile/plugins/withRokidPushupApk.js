@@ -57,6 +57,18 @@ function hasFileReference(project, fileName) {
   ));
 }
 
+function ensureResourcesGroup(project) {
+  if (project.pbxGroupByName('Resources')) {
+    return;
+  }
+
+  const resourcesGroup = project.addPbxGroup([], 'Resources');
+  const mainGroup = project.getFirstProject()?.firstProject?.mainGroup;
+  if (mainGroup) {
+    project.addToPbxGroup(resourcesGroup.uuid, mainGroup);
+  }
+}
+
 function withRokidPushupApk(config) {
   return withXcodeProject(config, (cfg) => {
     const projectRoot = cfg.modRequest.projectRoot;
@@ -89,6 +101,7 @@ function withRokidPushupApk(config) {
     }
 
     if (!hasFileReference(project, BUNDLED_APK_NAME)) {
+      ensureResourcesGroup(project);
       project.addResourceFile(RESOURCE_DEST, { target: mainTargetUuid });
     }
     return cfg;
@@ -97,4 +110,5 @@ function withRokidPushupApk(config) {
 
 module.exports = withRokidPushupApk;
 module.exports._findRokidPushupApk = findRokidPushupApk;
+module.exports._ensureResourcesGroup = ensureResourcesGroup;
 module.exports._BUNDLED_APK_NAME = BUNDLED_APK_NAME;
