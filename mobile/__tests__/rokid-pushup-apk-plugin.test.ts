@@ -1,4 +1,7 @@
-const { _ensureResourcesGroup } = require('../plugins/withRokidPushupApk');
+const {
+  _addBundledApkResource,
+  _ensureResourcesGroup,
+} = require('../plugins/withRokidPushupApk');
 
 function createProjectMock(hasResourcesGroup = false) {
   const groups: Record<string, any> = hasResourcesGroup
@@ -6,10 +9,12 @@ function createProjectMock(hasResourcesGroup = false) {
     : {};
   const addedGroups: any[] = [];
   const addedToGroups: any[] = [];
+  const addedResourceFiles: any[] = [];
 
   return {
     addedGroups,
     addedToGroups,
+    addedResourceFiles,
     project: {
       pbxGroupByName(name: string) {
         return groups[name] ?? null;
@@ -33,6 +38,9 @@ function createProjectMock(hasResourcesGroup = false) {
       addToPbxGroup(file: string, group: string) {
         addedToGroups.push({ file, group });
       },
+      addResourceFile(resourcePath: string, options: any) {
+        addedResourceFiles.push({ resourcePath, options });
+      },
     },
   };
 }
@@ -45,9 +53,9 @@ describe('withRokidPushupApk', () => {
 
     expect(project.pbxGroupByName('Resources')).toEqual({
       name: 'Resources',
-      path: undefined,
       children: [],
     });
+    expect(project.pbxGroupByName('Resources')).not.toHaveProperty('path');
     expect(addedGroups).toEqual([{ files: [], name: 'Resources', groupPath: undefined }]);
     expect(addedToGroups).toEqual([{ file: 'Resources-uuid', group: 'MAIN_GROUP' }]);
   });
@@ -59,5 +67,21 @@ describe('withRokidPushupApk', () => {
 
     expect(addedGroups).toEqual([]);
     expect(addedToGroups).toEqual([]);
+  });
+
+  it('adds the APK resource relative to SOURCE_ROOT', () => {
+    const { project, addedResourceFiles } = createProjectMock();
+
+    _addBundledApkResource(project, 'HEALTHPILOT_TARGET');
+
+    expect(addedResourceFiles).toEqual([
+      {
+        resourcePath: 'HealthPilot/RokidApps/rokid-pushup-glasses.apk',
+        options: {
+          target: 'HEALTHPILOT_TARGET',
+          sourceTree: 'SOURCE_ROOT',
+        },
+      },
+    ]);
   });
 });
