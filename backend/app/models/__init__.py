@@ -130,6 +130,7 @@ from app.models.ambient_wearable import (
     HearingHealthTask,
     VisualInputEvent,
 )
+from app.models.rokid_pushup import RokidPushupEvent, RokidPushupSession
 
 __all__ = [
     "User",
@@ -147,6 +148,8 @@ __all__ = [
     "HearingHealthTask",
     "VisualInputEvent",
     "GlanceCard",
+    "RokidPushupSession",
+    "RokidPushupEvent",
     "DiseaseRecord",
     "GarminData",
     "ExerciseRecord",
