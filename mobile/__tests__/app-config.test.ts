@@ -1,4 +1,5 @@
 import buildConfig from '../app.config';
+const { buildWatchInjectionEnv } = require('../plugins/withWatchApp');
 
 function configForVariant(variant?: string) {
   const previous = process.env.APP_VARIANT;
@@ -46,5 +47,13 @@ describe('app.config app links', () => {
       ],
       category: ['BROWSABLE', 'DEFAULT'],
     });
+  });
+
+  it('passes Expo app version to the watch target injector', () => {
+    const env = buildWatchInjectionEnv({ version: '1.3.0' }, { PATH: '/usr/bin' });
+
+    expect(env.REVA_MARKETING_VERSION).toBe('1.3.0');
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.LANG).toBe('en_US.UTF-8');
   });
 });

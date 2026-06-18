@@ -111,4 +111,22 @@ describe('SettingsScreen', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/rokid-health');
   });
+
+  it('opens the Rokid push-up coach from settings', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('Rokid 俯卧撑计数'));
+
+    expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
+  });
+
+  it('opens diagnostics pages from settings', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('Rokid 自检'));
+    fireEvent.press(getByText('App 诊断'));
+
+    expect(mockPush).toHaveBeenCalledWith('/rokid-diagnostics');
+    expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
+  });
 });

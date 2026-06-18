@@ -99,6 +99,9 @@ describe('rokid-bridge JS facade', () => {
         base64: 'jpeg-base64',
         mimeType: 'image/jpeg',
       }),
+      queryApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      openApp: jest.fn().mockResolvedValue({ ok: true, opened: true }),
+      stopApp: jest.fn().mockResolvedValue({ ok: true, stopped: true }),
       startRecord: jest.fn().mockResolvedValue({ ok: true }),
       stopRecord: jest.fn().mockResolvedValue({ ok: true }),
       clearAuthorization: jest.fn().mockResolvedValue(true),
@@ -136,6 +139,19 @@ describe('rokid-bridge JS facade', () => {
       ok: true,
       base64: 'jpeg-base64',
     });
+    await expect(bridge.queryRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: true,
+      installed: true,
+    });
+    await expect(bridge.openRokidApp({
+      packageName: 'life.executor.health.rokid.pushup',
+      activityName: '.MainActivity',
+      url: 'reva://rokid/pushup?session_id=7',
+    })).resolves.toEqual({ ok: true, opened: true });
+    await expect(bridge.stopRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: true,
+      stopped: true,
+    });
     await expect(bridge.startRokidRecord({ type: 'food_voice', codec: 'pcm', mode: 'rokidOmni' })).resolves.toEqual({ ok: true });
     await expect(bridge.stopRokidRecord('food_voice')).resolves.toEqual({ ok: true });
     await expect(bridge.clearRokidAuthorization()).resolves.toBe(true);
@@ -147,9 +163,40 @@ describe('rokid-bridge JS facade', () => {
     expect(native.updateCustomView).toHaveBeenCalledWith('{"type":"text","text":"稍后"}');
     expect(native.closeCustomView).toHaveBeenCalledWith('{"id":"drink-water"}');
     expect(native.takePhotoBase64).toHaveBeenCalledWith(1024, 768, 80);
+    expect(native.queryApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
+    expect(native.openApp).toHaveBeenCalledWith(
+      'life.executor.health.rokid.pushup',
+      '.MainActivity',
+      'reva://rokid/pushup?session_id=7',
+    );
+    expect(native.stopApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
     expect(native.startRecord).toHaveBeenCalledWith('food_voice', 'pcm', 'rokidOmni');
     expect(native.stopRecord).toHaveBeenCalledWith('food_voice');
     expect(native.clearAuthorization).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns explicit unavailable results for CustomApp controls when native methods are absent', async () => {
+    const native = {
+      getIntegrationStatus: jest.fn().mockResolvedValue({ platform: 'ios', bridgeAvailable: true }),
+      openHiRokid: jest.fn().mockResolvedValue(true),
+    };
+    const { bridge } = loadModule('ios', native);
+
+    await expect(bridge.queryRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: false,
+      installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.openRokidApp({
+      packageName: 'life.executor.health.rokid.pushup',
+      activityName: '.MainActivity',
+      url: 'reva://rokid/pushup?session_id=7',
+    })).resolves.toEqual({ ok: false, opened: false, reason: 'native_bridge_unavailable' });
+    await expect(bridge.stopRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: false,
+      stopped: false,
+      reason: 'native_bridge_unavailable',
+    });
   });
 
   it('opens a Reva customView layout before enabling iOS capture capabilities', async () => {

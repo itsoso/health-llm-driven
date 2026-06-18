@@ -80,3 +80,111 @@ class CalendarBusyBlock(Base):
             return _fernet.decrypt(self.encrypted_title.encode()).decode()
         except Exception:
             return ""
+
+
+def _enc(value) -> str:
+    """Fernet 加密任意字符串(None/空 → None)。事件 PII 静态加密(防御纵深)。"""
+    if value is None or value == "":
+        return None
+    return _fernet.encrypt(str(value).encode()).decode()
+
+
+def _dec(token: str) -> str:
+    if not token:
+        return ""
+    try:
+        return _fernet.decrypt(token.encode()).decode()
+    except Exception:
+        return ""
+
+
+# ── Calendar v2 (C1):多源 + 详细事件 ───────────────────────────────────────
+# 事件 PII(标题/地点/描述/参会人)静态 Fernet 加密 —— 与上面 CalendarBusyBlock 的隐私姿态一致;
+# 真正的隐私边界是 caldav_sync.calendar_event_for_llm(LLM/agent 出口),静态加密只是防御纵深。
+
+
+class CalendarSource(Base):
+    """一个外部日历源(每用户可多条)。caldav 存 {url,username,password},ics 存 {url}。"""
+    __tablename__ = "calendar_sources"
+    __table_args__ = (
+        Index("ix_calsource_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String(20), nullable=False, default="caldav")  # caldav | ics
+    name = Column(String(200), nullable=False)  # 用户标签,如 "Kim 工作"
+    color = Column(String(20))
+    encrypted_credentials = Column(Text, nullable=False)  # Fernet JSON
+    writable = Column(Boolean, default=False)  # ics 永远只读
+    sync_enabled = Column(Boolean, default=True)
+    last_sync_at = Column(DateTime(timezone=True))
+    last_error = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def set_credentials(self, creds: dict) -> None:
+        self.encrypted_credentials = _fernet.encrypt(json.dumps(creds).encode()).decode()
+
+    def get_credentials(self) -> dict:
+        if not self.encrypted_credentials:
+            return {}
+        try:
+            return json.loads(_fernet.decrypt(self.encrypted_credentials.encode()).decode())
+        except Exception:
+            return {}
+
+
+class CalendarEvent(Base):
+    """单条日历事件(全量明细,PII 加密存)。源内按 (source_id, uid) 幂等。"""
+    __tablename__ = "calendar_events"
+    __table_args__ = (
+        UniqueConstraint("source_id", "uid", name="uq_calevent_source_uid"),
+        Index("ix_calevent_user", "user_id"),
+        Index("ix_calevent_source", "source_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    source_id = Column(Integer, ForeignKey("calendar_sources.id"), nullable=False, index=True)
+    uid = Column(String(255), nullable=False)
+    encrypted_title = Column(Text)
+    start_time = Column(DateTime(timezone=True))
+    end_time = Column(DateTime(timezone=True))
+    all_day = Column(Boolean, default=False)
+    encrypted_location = Column(Text)
+    encrypted_description = Column(Text)
+    encrypted_attendees = Column(Text)  # JSON-string of list, encrypted
+    status = Column(String(40))
+    last_synced_at = Column(DateTime(timezone=True))
+
+    # PII get/set helpers(明文绝不落库,绝不进 LLM 路径)
+    def set_title(self, v: str) -> None:
+        self.encrypted_title = _enc(v)
+
+    def get_title(self) -> str:
+        return _dec(self.encrypted_title)
+
+    def set_location(self, v: str) -> None:
+        self.encrypted_location = _enc(v)
+
+    def get_location(self) -> str:
+        return _dec(self.encrypted_location)
+
+    def set_description(self, v: str) -> None:
+        self.encrypted_description = _enc(v)
+
+    def get_description(self) -> str:
+        return _dec(self.encrypted_description)
+
+    def set_attendees(self, attendees) -> None:
+        self.encrypted_attendees = _enc(json.dumps(attendees)) if attendees else None
+
+    def get_attendees(self) -> list:
+        raw = _dec(self.encrypted_attendees)
+        if not raw:
+            return []
+        try:
+            return json.loads(raw)
+        except Exception:
+            return []

@@ -114,8 +114,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/agenda' as any)} />
           <SettingRow icon="time-outline" label="今日时间轴 · 工作时间"
             onPress={() => router.push('/day-schedule' as any)} />
-          <SettingRow icon="calendar-outline" label="连接日历 · 避开会议"
-            onPress={() => router.push('/calendar-connect' as any)} />
+          <SettingRow icon="calendar-outline" label="日历 · 日程 + 多源管理"
+            onPress={() => router.push('/calendar' as any)} />
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="calendar-outline" label="本周建议"
@@ -159,6 +159,10 @@ export default function SettingsScreen() {
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
           <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
             onPress={() => router.push('/rokid-health' as any)} />
+          <SettingRow icon="body-outline" label="Rokid 俯卧撑计数"
+            onPress={() => router.push('/rokid-pushup-coach' as any)} />
+          <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
+            onPress={() => router.push('/rokid-diagnostics' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
             onPress={() => router.push('/device-sources' as any)} />
         </View>
@@ -225,6 +229,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="pulse-outline" label="数据自检"
             onPress={() => router.push('/data-integrity' as any)} />
+          <SettingRow icon="bug-outline" label="App 诊断"
+            onPress={() => router.push('/app-diagnostics' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
           <SettingRow icon="shield-checkmark-outline" label="隐私政策" onPress={() => {}} />
         </View>

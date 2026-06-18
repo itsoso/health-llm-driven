@@ -9,11 +9,22 @@
 #   ./scripts/mobile-ota.sh                # 推到 production channel (默认)
 #   ./scripts/mobile-ota.sh preview        # 推到 preview
 #   ./scripts/mobile-ota.sh production "fix briefing pinning"
+#   ./scripts/mobile-ota.sh rokid-production "Rokid diagnostics"
 
 set -euo pipefail
 
 CHANNEL="${1:-production}"
 MESSAGE="${2:-$(git log -1 --pretty=format:'%s')}"
+ENVIRONMENT="${CHANNEL}"
+
+case "${CHANNEL}" in
+  rokid-production)
+    ENVIRONMENT="production"
+    ;;
+  rokid-preview)
+    ENVIRONMENT="preview"
+    ;;
+esac
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ANCHOR_FILE="${REPO_ROOT}/.last-ota-commit"
@@ -21,12 +32,13 @@ ANCHOR_FILE="${REPO_ROOT}/.last-ota-commit"
 cd "${REPO_ROOT}/mobile"
 
 echo "==> EAS Update → channel=${CHANNEL}"
+echo "    environment: ${ENVIRONMENT}"
 echo "    message: ${MESSAGE}"
 echo ""
 
 # 不打 web bundle (react-native-maps 不支持 web)
-# --environment 与 channel 名字对齐 (development/preview/production), 新版 eas-cli 在 non-interactive 下必填
-npx eas-cli update --branch "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${CHANNEL}" --non-interactive
+# --environment 对普通 channel 与 channel 名字对齐;Rokid 隔离 channel 复用生产/预览环境变量。
+npx eas-cli update --branch "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive
 
 # 记录这次 OTA 对应的 commit, 让 deploy.sh 检测后续 mobile/ 漂移
 if [ "${CHANNEL}" = "production" ]; then

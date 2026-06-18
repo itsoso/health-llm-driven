@@ -25,7 +25,8 @@ project = Xcodeproj::Project.open(proj_path)
 # 版本号必须与主 app HealthPilot 一致(否则 watchOS 校验报版本不匹配)。
 main_t = project.targets.find { |t| t.name == 'HealthPilot' }
 main_bs = main_t&.build_configurations&.find { |c| c.name == 'Release' }&.build_settings || {}
-mv = main_bs['MARKETING_VERSION'] || '1.0'
+configured_mv = ENV['REVA_MARKETING_VERSION'].to_s.strip
+mv = configured_mv.empty? ? (main_bs['MARKETING_VERSION'] || '1.0') : configured_mv
 cv = main_bs['CURRENT_PROJECT_VERSION'] || '1'
 puts "• 主 app 版本: MARKETING_VERSION=#{mv} CURRENT_PROJECT_VERSION=#{cv}"
 
@@ -33,6 +34,7 @@ if main_t
   main_t.build_configurations.each do |c|
     bs = c.build_settings
     bs['PRODUCT_BUNDLE_IDENTIFIER'] = ios_bundle
+    bs['MARKETING_VERSION'] = mv
     bs['DEVELOPMENT_TEAM'] ||= ENV['APPLE_TEAM_ID'] || main_bs['DEVELOPMENT_TEAM'] || 'QA2U724DAN'
   end
 end

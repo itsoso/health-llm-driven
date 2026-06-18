@@ -397,6 +397,22 @@ export default function RokidHealthScreen() {
               {openState === 'opened' ? '已请求打开 Hi Rokid' : '当前设备无法打开 Hi Rokid'}
             </Text>
           ) : null}
+
+          <Pressable
+            onPress={() => router.push('/rokid-pushup-coach' as any)}
+            style={({ pressed }) => [styles.featureRow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="打开 Rokid 俯卧撑计数"
+          >
+            <View style={styles.featureIcon}>
+              <Ionicons name="body-outline" size={18} color={c.orange} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={txt.featureTitle}>俯卧撑计数</Text>
+              <Text style={txt.featureDetail}>眼镜视图展示计数、动作评价和下一步建议。</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+          </Pressable>
         </View>
 
         <View style={styles.panel}>
@@ -727,6 +743,23 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  featureRow: {
+    marginTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.separator,
+    paddingTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  featureIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.sm,
+    backgroundColor: c.tintOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -755,5 +788,7 @@ const createTxt = (c: ColorPalette) => ({
   captureDetail: { fontSize: 12, color: c.labelSecondary, lineHeight: 17, marginTop: 2 } as TextStyle,
   captureStatus: { fontSize: 11, color: c.labelTertiary, fontWeight: '800' } as TextStyle,
   captureMessage: { fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: spacing.sm } as TextStyle,
+  featureTitle: { fontSize: 14, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  featureDetail: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   technical: { fontSize: 11, color: c.labelTertiary, marginTop: spacing.sm, lineHeight: 16 } as TextStyle,
 });
