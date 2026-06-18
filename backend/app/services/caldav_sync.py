@@ -377,7 +377,7 @@ def sync_all_sources(db: Session, user_id: int) -> dict:
             src.last_error = _scrub_error(e)
             db.commit()
             logger.warning("[calendar] source=%s 同步失败: %s", src.id, e)
-            summary[src.id] = {"error": str(e)[:500]}
+            summary[src.id] = {"error": _scrub_error(e)}
     return {"sources": summary, "count": len(sources)}
 
 
