@@ -12,7 +12,6 @@ import RGCoreKit
 #endif
 
 public class RokidBridgeModule: Module {
-  private static let callbackScheme = "life.executor.health.rokid"
   private static let callbackHost = "auth"
   private static let callbackPath = "/callback"
   private static let authorizationRequestTimeoutSeconds: TimeInterval = 180.0
@@ -33,6 +32,13 @@ public class RokidBridgeModule: Module {
   #if canImport(RGCxrClient)
   private static var cancellables = Set<AnyCancellable>()
   #endif
+
+  private static var callbackScheme: String {
+    guard let bundleIdentifier = Bundle.main.bundleIdentifier, !bundleIdentifier.isEmpty else {
+      return "life.executor.health.rokid"
+    }
+    return "\(bundleIdentifier).rokid"
+  }
 
   public func definition() -> ModuleDefinition {
     Name("RokidBridge")

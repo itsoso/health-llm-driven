@@ -24,4 +24,10 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('lastAuthorizationError');
     expect(source).toContain('lastAuthorizationErrorAt');
   });
+
+  it('derives the callback scheme from the installed bundle id to avoid cross-variant URL ownership', () => {
+    expect(source).toContain('private static var callbackScheme: String');
+    expect(source).toContain('return "\\(bundleIdentifier).rokid"');
+    expect(source).not.toContain('private static let callbackScheme = "life.executor.health.rokid"');
+  });
 });

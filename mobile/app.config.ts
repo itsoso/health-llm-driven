@@ -22,7 +22,6 @@ const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
 const ASSOCIATED_DOMAIN = `applinks:${APP_LINK_DOMAIN}`;
 const APP_OPEN_PATH_PREFIX = '/open/shared';
-const ROKID_CALLBACK_SCHEME = `${BUNDLE_ID_BASE}.rokid`;
 const ROKID_QUERY_SCHEMES = ['rokidai'];
 const PHOTO_LIBRARY_USAGE_DESCRIPTION =
   '用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析';
@@ -52,6 +51,7 @@ const displayName = IS_DEV
     : '健康助理';
 
 const androidPackage = bundleId;
+const ROKID_CALLBACK_SCHEME = `${bundleId}.rokid`;
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
