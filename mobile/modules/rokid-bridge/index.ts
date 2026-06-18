@@ -65,6 +65,13 @@ type RokidNativeModule = {
   closeCustomView?: (view: string) => Promise<Record<string, unknown>>;
   takePhotoBase64?: (width: number, height: number, quality: number) => Promise<Record<string, unknown>>;
   queryApp?: (packageName: string) => Promise<Record<string, unknown>>;
+  installBundledApp?: (
+    resourceName: string,
+    resourceExtension: string,
+    packageName: string,
+  ) => Promise<Record<string, unknown>>;
+  installAppFileUri?: (fileUri: string, packageName: string) => Promise<Record<string, unknown>>;
+  uninstallApp?: (packageName: string) => Promise<Record<string, unknown>>;
   openApp?: (packageName: string, activityName: string, url: string) => Promise<Record<string, unknown>>;
   stopApp?: (packageName: string) => Promise<Record<string, unknown>>;
   startRecord?: (type: string, codec: string, mode: string) => Promise<Record<string, unknown>>;
@@ -344,6 +351,41 @@ export async function queryRokidApp(packageName: string): Promise<Record<string,
     return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
   }
   return native.queryApp(packageName);
+}
+
+export async function installBundledRokidApp(options: {
+  resourceName: string;
+  resourceExtension?: string;
+  packageName: string;
+}): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.installBundledApp) {
+    return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.installBundledApp(
+    options.resourceName,
+    options.resourceExtension ?? 'apk',
+    options.packageName,
+  );
+}
+
+export async function installRokidAppFromFileUri(options: {
+  fileUri: string;
+  packageName: string;
+}): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.installAppFileUri) {
+    return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.installAppFileUri(options.fileUri, options.packageName);
+}
+
+export async function uninstallRokidApp(packageName: string): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.uninstallApp) {
+    return { ok: false, uninstalled: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.uninstallApp(packageName);
 }
 
 export async function openRokidApp(options: {

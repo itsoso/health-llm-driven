@@ -7,6 +7,8 @@ import {
 
 export const ROKID_PUSHUP_APP_PACKAGE = 'life.executor.health.rokid.pushup';
 export const ROKID_PUSHUP_APP_ACTIVITY = '.MainActivity';
+export const ROKID_PUSHUP_APK_RESOURCE_NAME = 'rokid-pushup-glasses';
+export const ROKID_PUSHUP_APK_RESOURCE_EXTENSION = 'apk';
 
 export type RokidPushupSession = {
   id: number;

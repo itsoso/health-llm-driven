@@ -63,6 +63,27 @@ public class RokidBridgeModule: Module {
       RokidBridgeModule.queryApp(packageName: packageName, promise: promise)
     }
 
+    AsyncFunction("installBundledApp") { (resourceName: String, resourceExtension: String, packageName: String, promise: Promise) in
+      RokidBridgeModule.installBundledApp(
+        resourceName: resourceName,
+        resourceExtension: resourceExtension,
+        packageName: packageName,
+        promise: promise
+      )
+    }
+
+    AsyncFunction("installAppFileUri") { (fileUri: String, packageName: String, promise: Promise) in
+      RokidBridgeModule.installAppFileUri(
+        fileUri: fileUri,
+        packageName: packageName,
+        promise: promise
+      )
+    }
+
+    AsyncFunction("uninstallApp") { (packageName: String, promise: Promise) in
+      RokidBridgeModule.uninstallApp(packageName: packageName, promise: promise)
+    }
+
     AsyncFunction("openApp") { (packageName: String, activityName: String, url: String, promise: Promise) in
       RokidBridgeModule.openApp(
         packageName: packageName,
@@ -256,6 +277,91 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
+  private static func installBundledApp(
+    resourceName: String,
+    resourceExtension: String,
+    packageName: String,
+    promise: Promise
+  ) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "installed": false, "reason": "rokid_not_authorized"])
+      return
+    }
+    guard let apkURL = Bundle.main.url(forResource: resourceName, withExtension: resourceExtension) ??
+      Bundle.main.url(forResource: resourceName, withExtension: resourceExtension, subdirectory: "RokidApps") else {
+      promise.resolve([
+        "ok": false,
+        "installed": false,
+        "reason": "rokid_apk_resource_missing",
+        "resourceName": resourceName,
+        "resourceExtension": resourceExtension,
+        "packageName": packageName,
+      ])
+      return
+    }
+    installAppAtPath(
+      apkURL.path,
+      packageName: packageName,
+      source: "bundle",
+      promise: promise
+    )
+    #else
+    _ = resourceName
+    _ = resourceExtension
+    _ = packageName
+    promise.resolve(["ok": false, "installed": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func installAppFileUri(fileUri: String, packageName: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "installed": false, "reason": "rokid_not_authorized"])
+      return
+    }
+    let path: String
+    if let url = URL(string: fileUri), url.isFileURL {
+      path = url.path
+    } else {
+      path = fileUri
+    }
+    installAppAtPath(
+      path,
+      packageName: packageName,
+      source: "file_uri",
+      promise: promise
+    )
+    #else
+    _ = fileUri
+    _ = packageName
+    promise.resolve(["ok": false, "installed": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func uninstallApp(packageName: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "uninstalled": false, "reason": "rokid_not_authorized"])
+      return
+    }
+
+    CxrClient.shared.uninstallApp(packageName) { uninstalled in
+      promise.resolve([
+        "ok": uninstalled,
+        "uninstalled": uninstalled,
+        "packageName": packageName,
+      ])
+    }
+    #else
+    _ = packageName
+    promise.resolve(["ok": false, "uninstalled": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
   private static func openApp(packageName: String, activityName: String, url: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
@@ -341,6 +447,41 @@ public class RokidBridgeModule: Module {
     response["pendingSessionEvent"] = commandAccepted && !running
     return response
   }
+
+  #if canImport(RGCxrClient)
+  private static func installAppAtPath(
+    _ path: String,
+    packageName: String,
+    source: String,
+    promise: Promise
+  ) {
+    guard FileManager.default.fileExists(atPath: path) else {
+      promise.resolve([
+        "ok": false,
+        "installed": false,
+        "reason": "rokid_apk_file_missing",
+        "packageName": packageName,
+      ])
+      return
+    }
+
+    let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+    let byteLength = (attributes?[.size] as? NSNumber)?.uint64Value
+    let fileName = URL(fileURLWithPath: path).lastPathComponent
+    CxrClient.shared.installApp(path) { installed in
+      var response: [String: Any] = [:]
+      response["ok"] = installed
+      response["installed"] = installed
+      response["packageName"] = packageName
+      response["source"] = source
+      response["apkFileName"] = fileName
+      if let byteLength {
+        response["byteLength"] = byteLength
+      }
+      promise.resolve(response)
+    }
+  }
+  #endif
 
   private static func canOpenHiRokid() -> Bool {
     guard let url = URL(string: "rokidai://") else {

@@ -100,6 +100,9 @@ describe('rokid-bridge JS facade', () => {
         mimeType: 'image/jpeg',
       }),
       queryApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      installBundledApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      installAppFileUri: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      uninstallApp: jest.fn().mockResolvedValue({ ok: true, uninstalled: true }),
       openApp: jest.fn().mockResolvedValue({ ok: true, opened: true }),
       stopApp: jest.fn().mockResolvedValue({ ok: true, stopped: true }),
       startRecord: jest.fn().mockResolvedValue({ ok: true }),
@@ -143,6 +146,19 @@ describe('rokid-bridge JS facade', () => {
       ok: true,
       installed: true,
     });
+    await expect(bridge.installBundledRokidApp({
+      resourceName: 'rokid-pushup-glasses',
+      resourceExtension: 'apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({ ok: true, installed: true });
+    await expect(bridge.installRokidAppFromFileUri({
+      fileUri: 'file:///tmp/rokid-pushup-glasses.apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({ ok: true, installed: true });
+    await expect(bridge.uninstallRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: true,
+      uninstalled: true,
+    });
     await expect(bridge.openRokidApp({
       packageName: 'life.executor.health.rokid.pushup',
       activityName: '.MainActivity',
@@ -164,6 +180,16 @@ describe('rokid-bridge JS facade', () => {
     expect(native.closeCustomView).toHaveBeenCalledWith('{"id":"drink-water"}');
     expect(native.takePhotoBase64).toHaveBeenCalledWith(1024, 768, 80);
     expect(native.queryApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
+    expect(native.installBundledApp).toHaveBeenCalledWith(
+      'rokid-pushup-glasses',
+      'apk',
+      'life.executor.health.rokid.pushup',
+    );
+    expect(native.installAppFileUri).toHaveBeenCalledWith(
+      'file:///tmp/rokid-pushup-glasses.apk',
+      'life.executor.health.rokid.pushup',
+    );
+    expect(native.uninstallApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
     expect(native.openApp).toHaveBeenCalledWith(
       'life.executor.health.rokid.pushup',
       '.MainActivity',
@@ -185,6 +211,28 @@ describe('rokid-bridge JS facade', () => {
     await expect(bridge.queryRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
       ok: false,
       installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.installBundledRokidApp({
+      resourceName: 'rokid-pushup-glasses',
+      resourceExtension: 'apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({
+      ok: false,
+      installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.installRokidAppFromFileUri({
+      fileUri: 'file:///tmp/rokid-pushup-glasses.apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({
+      ok: false,
+      installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.uninstallRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: false,
+      uninstalled: false,
       reason: 'native_bridge_unavailable',
     });
     await expect(bridge.openRokidApp({

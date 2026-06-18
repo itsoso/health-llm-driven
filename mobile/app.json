@@ -92,6 +92,7 @@
       "expo-image",
       "expo-web-browser",
       "./plugins/withHealthKitCleanup",
+      "./plugins/withRokidPushupApk",
       [
         "react-native-health",
         {

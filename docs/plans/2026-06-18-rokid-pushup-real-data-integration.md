@@ -63,6 +63,9 @@
 新增 iOS bridge 方法：
 
 - `queryRokidApp(packageName)`
+- `installBundledRokidApp({ resourceName, resourceExtension, packageName })`
+- `installRokidAppFromFileUri({ fileUri, packageName })`
+- `uninstallRokidApp(packageName)`
 - `openRokidApp({ packageName, activityName, url })`
 - `stopRokidApp(packageName)`
 
@@ -77,9 +80,10 @@
 
 1. 创建后端 session。
 2. 检查眼镜端 push-up app 是否安装。
-3. 用 CXR-L `openApp` 启动眼镜端 app。
-4. 每 1 秒轮询 Reva 后端事件。
-5. 用真实 pose / rep event 驱动现有计数和动作评价。
+3. 如果眼镜端 app 未安装, 先用 CXR-L `installApp` 安装内置 APK; 如包内未内置 APK, 允许从 iPhone Files 选择 APK 安装。
+4. 用 CXR-L `openApp` 启动眼镜端 app。
+5. 每 1 秒轮询 Reva 后端事件。
+6. 用真实 pose / rep event 驱动现有计数和动作评价。
 
 ## 眼镜端 Android App 契约
 
@@ -188,13 +192,14 @@ Rep event：
 
 1. 安装带 Rokid SDK 的 Reva iOS 包。
 2. 在 Reva 完成 CXR-L 授权。
-3. 在 Rokid 眼镜安装 `life.executor.health.rokid.pushup`。
-4. 打开 Reva 的 Rokid 俯卧撑页，点“启动眼镜识别”。
-5. iOS 调用 `queryApp`，必须返回 installed。
-6. iOS 调用 `openApp`，眼镜端 App 前台启动。
-7. 眼镜端 App POST 一条 `pose` 测试事件。
-8. Reva 手机页面 1 秒内显示计数/反馈更新。
-9. 完成一组后点保存，进入今日力量训练记录。
+3. 打开 Reva 的 Rokid 俯卧撑页，点“安装/更新眼镜端 App”。
+4. 若 iOS 包已内置 APK, Reva 直接通过 CXR-L `installApp(path)` 上传安装; 否则从 iPhone Files 选择 `app-debug.apk`。
+5. 点“启动眼镜识别”。
+6. iOS 调用 `queryApp`，必须返回 installed。
+7. iOS 调用 `openApp`，眼镜端 App 前台启动。
+8. 眼镜端 App POST 一条 `pose` 测试事件。
+9. Reva 手机页面 1 秒内显示计数/反馈更新。
+10. 完成一组后点保存，进入今日力量训练记录。
 
 ## 关键边界
 

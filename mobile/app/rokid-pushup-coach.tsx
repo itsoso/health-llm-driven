@@ -13,9 +13,12 @@ import { Stack, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
+import * as DocumentPicker from 'expo-document-picker';
 
 import {
   closeRokidCustomView,
+  installBundledRokidApp,
+  installRokidAppFromFileUri,
   openRokidCustomView,
   openRokidApp,
   queryRokidApp,
@@ -35,6 +38,8 @@ import {
   type PushupPoseSample,
 } from '../services/pushupCoach';
 import {
+  ROKID_PUSHUP_APK_RESOURCE_EXTENSION,
+  ROKID_PUSHUP_APK_RESOURCE_NAME,
   ROKID_PUSHUP_APP_ACTIVITY,
   ROKID_PUSHUP_APP_PACKAGE,
   applyRokidPushupEventToCoach,
@@ -45,11 +50,15 @@ import {
 } from '../services/rokidPushupSession';
 
 type RokidSessionState = 'idle' | 'opening' | 'opened' | 'failed';
-type RealPoseSessionState = 'idle' | 'creating' | 'running' | 'stopping' | 'failed';
+type RealPoseSessionState = 'idle' | 'installing' | 'creating' | 'running' | 'stopping' | 'failed';
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
 function readResultOk(result: Record<string, unknown>) {
   return result.ok !== false;
+}
+
+function resultReason(result: Record<string, unknown>, fallback: string) {
+  return typeof result.reason === 'string' ? result.reason : fallback;
 }
 
 export default function RokidPushupCoachScreen() {
@@ -104,10 +113,95 @@ export default function RokidPushupCoachScreen() {
     await pushViewToGlasses(coach, true);
   }, [coach, pushViewToGlasses]);
 
+  const installBundledGlassesApp = useCallback(async () => {
+    const installResult = await installBundledRokidApp({
+      resourceName: ROKID_PUSHUP_APK_RESOURCE_NAME,
+      resourceExtension: ROKID_PUSHUP_APK_RESOURCE_EXTENSION,
+      packageName: ROKID_PUSHUP_APP_PACKAGE,
+    });
+    if (!readResultOk(installResult) || installResult.installed === false) {
+      throw new Error(resultReason(installResult, 'rokid_pushup_app_install_failed'));
+    }
+  }, []);
+
+  const ensureGlassesAppInstalled = useCallback(async (options?: { force?: boolean }) => {
+    const appProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+    if (!readResultOk(appProbe)) {
+      throw new Error(resultReason(appProbe, 'rokid_app_probe_failed'));
+    }
+    if (appProbe.installed !== false && !options?.force) {
+      return;
+    }
+
+    setRealSessionState('installing');
+    setRealSessionMessage(options?.force ? '正在更新眼镜端应用...' : '正在安装眼镜端应用...');
+    await installBundledGlassesApp();
+
+    const installedProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+    if (!readResultOk(installedProbe)) {
+      throw new Error(resultReason(installedProbe, 'rokid_app_verify_failed'));
+    }
+    if (installedProbe.installed === false) {
+      throw new Error('rokid_pushup_app_install_not_confirmed');
+    }
+  }, [installBundledGlassesApp]);
+
+  const installGlassesApp = useCallback(async () => {
+    setRealSessionState('installing');
+    setRealSessionMessage('正在安装眼镜端应用...');
+    try {
+      try {
+        await ensureGlassesAppInstalled({ force: true });
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== 'rokid_apk_resource_missing') {
+          throw error;
+        }
+
+        const picked = await DocumentPicker.getDocumentAsync({
+          copyToCacheDirectory: true,
+          multiple: false,
+          type: [
+            'application/vnd.android.package-archive',
+            'application/octet-stream',
+            'public.data',
+          ],
+        });
+        if (picked.canceled) {
+          throw new Error('rokid_apk_picker_cancelled');
+        }
+        const asset = picked.assets?.[0];
+        if (!asset?.uri) {
+          throw new Error('rokid_apk_file_missing');
+        }
+        if (asset.name && !asset.name.toLowerCase().endsWith('.apk')) {
+          throw new Error('rokid_apk_file_required');
+        }
+        const installResult = await installRokidAppFromFileUri({
+          fileUri: asset.uri,
+          packageName: ROKID_PUSHUP_APP_PACKAGE,
+        });
+        if (!readResultOk(installResult) || installResult.installed === false) {
+          throw new Error(resultReason(installResult, 'rokid_pushup_app_install_failed'));
+        }
+      }
+
+      const installedProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      if (!readResultOk(installedProbe) || installedProbe.installed === false) {
+        throw new Error(resultReason(installedProbe, 'rokid_pushup_app_install_not_confirmed'));
+      }
+      setRealSessionState('idle');
+      setRealSessionMessage('眼镜端应用已安装/更新');
+    } catch (error) {
+      setRealSessionState('failed');
+      setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_app_install_failed');
+    }
+  }, [ensureGlassesAppInstalled]);
+
   const startRealGlassesCoach = useCallback(async () => {
     setRealSessionState('creating');
     setRealSessionMessage('正在启动眼镜端识别...');
     try {
+      await ensureGlassesAppInstalled();
       const session = await createRokidPushupSession({
         targetReps: coach.targetReps,
         sourceDevice: 'rokid_glasses',
@@ -117,13 +211,6 @@ export default function RokidPushupCoachScreen() {
           mode: 'pushup_pose',
         },
       });
-      const appProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
-      if (!readResultOk(appProbe)) {
-        throw new Error(typeof appProbe.reason === 'string' ? appProbe.reason : 'rokid_app_probe_failed');
-      }
-      if (appProbe.installed === false) {
-        throw new Error('rokid_pushup_app_not_installed');
-      }
       if (!session.open_url) {
         throw new Error('rokid_pushup_session_open_url_missing');
       }
@@ -133,7 +220,7 @@ export default function RokidPushupCoachScreen() {
         url: session.open_url,
       });
       if (!readResultOk(opened) || opened.opened === false) {
-        throw new Error(typeof opened.reason === 'string' ? opened.reason : 'rokid_pushup_app_open_failed');
+        throw new Error(resultReason(opened, 'rokid_pushup_app_open_failed'));
       }
       lastRokidEventIdRef.current = 0;
       setRealSession(session);
@@ -143,7 +230,7 @@ export default function RokidPushupCoachScreen() {
       setRealSessionState('failed');
       setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_real_session_failed');
     }
-  }, [coach.targetReps]);
+  }, [coach.targetReps, ensureGlassesAppInstalled]);
 
   const stopRealGlassesCoach = useCallback(async () => {
     setRealSessionState('stopping');
@@ -356,6 +443,8 @@ export default function RokidPushupCoachScreen() {
             <Text style={[txt.sessionState, { color: realSessionTone }]}>
               {realSessionState === 'running'
                 ? '运行中'
+                : realSessionState === 'installing'
+                  ? '安装中'
                 : realSessionState === 'creating'
                   ? '启动中'
                   : realSessionState === 'stopping'
@@ -366,17 +455,17 @@ export default function RokidPushupCoachScreen() {
           <View style={styles.buttonRow}>
             <Pressable
               onPress={startRealGlassesCoach}
-              disabled={realSessionState === 'creating' || realSessionState === 'running' || realSessionState === 'stopping'}
+              disabled={realSessionState === 'creating' || realSessionState === 'installing' || realSessionState === 'running' || realSessionState === 'stopping'}
               style={({ pressed }) => [
                 styles.primaryButton,
                 pressed && styles.pressed,
-                (realSessionState === 'creating' || realSessionState === 'running' || realSessionState === 'stopping') && styles.disabledButton,
+                (realSessionState === 'creating' || realSessionState === 'installing' || realSessionState === 'running' || realSessionState === 'stopping') && styles.disabledButton,
               ]}
               accessibilityRole="button"
             >
               <Ionicons name="scan-outline" size={17} color="#fff" />
               <Text style={txt.primaryButton}>
-                {realSessionState === 'creating' ? '启动中...' : '启动眼镜识别'}
+                {realSessionState === 'creating' || realSessionState === 'installing' ? '启动中...' : '启动眼镜识别'}
               </Text>
             </Pressable>
             <Pressable
@@ -393,6 +482,22 @@ export default function RokidPushupCoachScreen() {
               <Text style={txt.secondaryButton}>停止</Text>
             </Pressable>
           </View>
+          <Pressable
+            onPress={installGlassesApp}
+            disabled={realSessionState === 'installing' || realSessionState === 'creating' || realSessionState === 'running' || realSessionState === 'stopping'}
+            style={({ pressed }) => [
+              styles.fullWidthSecondaryButton,
+              pressed && styles.pressed,
+              (realSessionState === 'installing' || realSessionState === 'creating' || realSessionState === 'running' || realSessionState === 'stopping') && styles.disabledButton,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="安装或更新 Rokid 俯卧撑眼镜应用"
+          >
+            <Ionicons name="download-outline" size={16} color={c.brand} />
+            <Text style={txt.secondaryButton}>
+              {realSessionState === 'installing' ? '安装中...' : '安装/更新眼镜端 App'}
+            </Text>
+          </Pressable>
           {realSessionMessage ? <Text style={txt.sessionMessage}>{realSessionMessage}</Text> : null}
         </View>
 
@@ -640,6 +745,19 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
     paddingHorizontal: spacing.md,
+  },
+  fullWidthSecondaryButton: {
+    minHeight: 44,
+    borderRadius: radii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    backgroundColor: c.fill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.sm,
   },
   sampleGrid: {
     flexDirection: 'row',
