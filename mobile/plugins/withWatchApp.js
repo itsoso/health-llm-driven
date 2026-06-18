@@ -84,6 +84,15 @@ function copyDirectory(srcDir, destDir) {
   fs.cpSync(srcDir, destDir, { recursive: true });
 }
 
+function buildWatchInjectionEnv(exp, baseEnv = process.env) {
+  return {
+    ...baseEnv,
+    LANG: 'en_US.UTF-8',
+    LC_ALL: 'en_US.UTF-8',
+    REVA_MARKETING_VERSION: exp?.version || '1.0',
+  };
+}
+
 function withWatchSources(config) {
   return withDangerousMod(config, [
     'ios',
@@ -113,7 +122,7 @@ function withWatchSources(config) {
       const proj = path.join(iosRoot, 'HealthPilot.xcodeproj');
       execSync(`ruby "${script}" "${proj}"`, {
         stdio: 'inherit',
-        env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
+        env: buildWatchInjectionEnv(cfg.modRequest.exp, process.env),
       });
       return cfg;
     },
@@ -141,3 +150,4 @@ module.exports = function withWatchApp(config) {
   config = withBridgeActivation(config);
   return config;
 };
+module.exports.buildWatchInjectionEnv = buildWatchInjectionEnv;
