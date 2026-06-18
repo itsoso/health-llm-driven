@@ -7,6 +7,7 @@ public class RokidBridgeAppDelegateSubscriber: ExpoAppDelegateSubscriber {
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
-    RokidBridgeURLHandler.handleOpenURL(url)
+    RokidBridgeURLHandler.observeOpenURL(url)
+    return RokidBridgeURLHandler.handleOpenURL(url)
   }
 }

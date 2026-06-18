@@ -15,6 +15,9 @@ describe('rokid diagnostics', () => {
       sessionMode: 'customView',
       callbackScheme: 'life.executor.health.rokid',
       querySchemes: ['rokidai'],
+      lastOpenUrlFingerprint: 'life.executor.health.rokid://auth/callback',
+      lastOpenUrlExpectedAuthCallback: true,
+      lastOpenUrlAt: '2026-06-18T23:59:00Z',
       sdkArtifacts: {
         clientM: 'com.rokid.cxr:client-m:1.2.2',
         clientL: 'com.rokid.cxr:client-l:1.0.3',
@@ -198,5 +201,44 @@ describe('rokid diagnostics', () => {
         detail: 'eventAt=2026-06-18T23:58:00Z',
       }),
     ]));
+  });
+
+  it('surfaces query-free iOS openURL fingerprints for callback mismatch diagnosis', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastOpenUrlFingerprint: 'life.executor.health://auth/callback',
+      lastOpenUrlAt: '2026-06-18T23:59:00Z',
+      lastOpenUrlExpectedAuthCallback: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'ios_open_url',
+        label: 'iOS 回跳',
+        value: '最近回跳不是授权 scheme',
+        severity: 'warn',
+        detail: 'life.executor.health://auth/callback; at=2026-06-18T23:59:00Z; expected=life.executor.health.rokid://auth/callback',
+      }),
+    ]));
+    expect(JSON.stringify(check.items)).not.toContain('code=');
+    expect(JSON.stringify(check.items)).not.toContain('state=');
   });
 });

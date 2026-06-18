@@ -37,6 +37,18 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('currentDeviceName');
   });
 
+  it('observes every inbound iOS URL with a query-free fingerprint before auth filtering', () => {
+    expect(source).toContain('lastOpenUrlFingerprint');
+    expect(source).toContain('lastOpenUrlAt');
+    expect(source).toContain('lastOpenUrlExpectedAuthCallback');
+    expect(source).toContain('fileprivate static func observeOpenURL(_ url: URL)');
+    expect(source).toContain('lastOpenUrlFingerprint = urlFingerprint(url)');
+    expect(source).toContain('lastOpenUrlExpectedAuthCallback = isExpectedAuthCallback(url)');
+    expect(source).toContain('private static func urlFingerprint(_ url: URL) -> String');
+    expect(source).toContain('payload["lastOpenUrlFingerprint"] = lastOpenUrlFingerprint');
+    expect(source).not.toContain('lastOpenUrlFingerprint = url.absoluteString');
+  });
+
   it('resets stale failed or authenticating SDK auth state before explicit retry', () => {
     expect(source).toContain('resetAuthorizationStateForExplicitRequest()');
     expect(source).toMatch(/resetAuthorizationStateForExplicitRequest\(\)[\s\S]+markAuthorizationRequest\(scopes: scopes, appName: appName\)[\s\S]+CxrClient\.shared\.auth\.authenticate/);

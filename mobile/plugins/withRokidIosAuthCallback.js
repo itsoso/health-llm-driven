@@ -7,6 +7,7 @@ internal import RokidBridge
 #endif`;
 
 const ROKID_OPEN_URL_HOOK = `    #if canImport(RokidBridge)
+    RokidBridgeURLHandler.observeOpenURL(url)
     if RokidBridgeURLHandler.canHandleOpenURL(url) {
       _ = RokidBridgeURLHandler.handleOpenURL(url)
       return true

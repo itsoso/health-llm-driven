@@ -25,10 +25,14 @@ describe('withRokidIosAuthCallback', () => {
     expect(patched).toContain(`#if canImport(RokidBridge)
 internal import RokidBridge
 #endif`);
-    expect(patched).toContain(`if RokidBridgeURLHandler.canHandleOpenURL(url) {
+    expect(patched).toContain(`RokidBridgeURLHandler.observeOpenURL(url)
+    if RokidBridgeURLHandler.canHandleOpenURL(url) {
       _ = RokidBridgeURLHandler.handleOpenURL(url)
       return true
     }`);
+    expect(patched.indexOf('RokidBridgeURLHandler.observeOpenURL(url)')).toBeLessThan(
+      patched.indexOf('RokidBridgeURLHandler.canHandleOpenURL(url)'),
+    );
     expect(patched.indexOf('RokidBridgeURLHandler.canHandleOpenURL(url)')).toBeLessThan(
       patched.indexOf('RCTLinkingManager.application'),
     );
@@ -39,6 +43,6 @@ internal import RokidBridge
     const twice = _patchAppDelegateContents(once);
 
     expect(twice).toBe(once);
-    expect((twice.match(/RokidBridgeURLHandler/g) ?? []).length).toBe(2);
+    expect((twice.match(/RokidBridgeURLHandler/g) ?? []).length).toBe(3);
   });
 });

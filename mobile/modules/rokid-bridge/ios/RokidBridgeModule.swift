@@ -35,6 +35,9 @@ public class RokidBridgeModule: Module {
   private static var lastAuthorizationEvent: String?
   private static var lastAuthorizationEventAt: String?
   private static var currentDeviceName: String?
+  private static var lastOpenUrlFingerprint: String?
+  private static var lastOpenUrlAt: String?
+  private static var lastOpenUrlExpectedAuthCallback: Bool?
   #if canImport(RGCxrClient)
   private static var cancellables = Set<AnyCancellable>()
   #endif
@@ -177,6 +180,15 @@ public class RokidBridgeModule: Module {
     }
     if let currentDeviceName {
       payload["currentDeviceName"] = currentDeviceName
+    }
+    if let lastOpenUrlFingerprint {
+      payload["lastOpenUrlFingerprint"] = lastOpenUrlFingerprint
+    }
+    if let lastOpenUrlAt {
+      payload["lastOpenUrlAt"] = lastOpenUrlAt
+    }
+    if let lastOpenUrlExpectedAuthCallback {
+      payload["lastOpenUrlExpectedAuthCallback"] = lastOpenUrlExpectedAuthCallback
     }
     payload["cxrClientInitialized"] = cxrClientInitialized()
     payload["cxrInitializationMode"] = cxrInitializationMode()
@@ -825,6 +837,25 @@ public class RokidBridgeModule: Module {
     return true
   }
 
+  fileprivate static func observeOpenURL(_ url: URL) {
+    lastOpenUrlFingerprint = urlFingerprint(url)
+    lastOpenUrlAt = isoTimestamp()
+    lastOpenUrlExpectedAuthCallback = isExpectedAuthCallback(url)
+  }
+
+  private static func urlFingerprint(_ url: URL) -> String {
+    let scheme = url.scheme ?? "unknown"
+    let host = url.host ?? ""
+    let path = url.path
+    if !host.isEmpty {
+      return "\(scheme)://\(host)\(path)"
+    }
+    if !path.isEmpty {
+      return "\(scheme):\(path)"
+    }
+    return "\(scheme)://"
+  }
+
   fileprivate static func handleOpenURL(_ url: URL) -> Bool {
     guard isExpectedAuthCallback(url) else {
       return false
@@ -890,6 +921,10 @@ public class RokidBridgeModule: Module {
 }
 
 @objc public class RokidBridgeURLHandler: NSObject {
+  @objc public static func observeOpenURL(_ url: URL) {
+    RokidBridgeModule.observeOpenURL(url)
+  }
+
   @objc public static func canHandleOpenURL(_ url: URL) -> Bool {
     RokidBridgeModule.isExpectedAuthCallback(url)
   }

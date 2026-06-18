@@ -46,6 +46,9 @@ export type RokidIntegrationStatus = {
   companionAppName?: string;
   companionServerScheme?: string;
   companionServerHost?: string;
+  lastOpenUrlFingerprint?: string;
+  lastOpenUrlAt?: string;
+  lastOpenUrlExpectedAuthCallback?: boolean;
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;

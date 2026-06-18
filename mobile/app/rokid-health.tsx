@@ -149,6 +149,11 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (status.lastAuthorizationEvent) {
     lines.push(`SDK 授权事件: ${status.lastAuthorizationEvent}`);
   }
+  if (status.lastOpenUrlFingerprint) {
+    const route = status.lastOpenUrlExpectedAuthCallback ? '匹配授权 scheme' : '不是授权 scheme';
+    const at = status.lastOpenUrlAt ? ` · ${status.lastOpenUrlAt}` : '';
+    lines.push(`iOS 回跳: ${status.lastOpenUrlFingerprint} · ${route}${at}`);
+  }
   if (status.lastAuthorizationRequestAt) {
     lines.push(`最近授权请求: ${status.lastAuthorizationRequestAt}`);
   }
@@ -159,6 +164,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     lines.push(`最近回调: ${status.lastCallbackHandled ? 'SDK 已处理' : 'SDK 未确认'} · ${status.lastCallbackAt}`);
   } else if (status.lastAuthorizationError && isRecoverableRokidAuthorizationDelay(status.lastAuthorizationError)) {
     lines.push('最近回调: 尚未进入 Reva');
+    lines.push('iOS 回跳: 尚未收到 AppDelegate openURL');
   }
   return lines;
 }

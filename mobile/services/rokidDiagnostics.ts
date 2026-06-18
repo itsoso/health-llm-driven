@@ -96,6 +96,36 @@ function authorizationEventSeverity(event?: string): RokidSelfCheckSeverity {
   return 'info';
 }
 
+function iosOpenUrlValue(status: RokidIntegrationStatus, authorized: boolean) {
+  if (!status.lastOpenUrlFingerprint) {
+    return authorized ? '本次启动无 iOS 回跳记录' : '尚未收到 iOS openURL';
+  }
+  return status.lastOpenUrlExpectedAuthCallback
+    ? '最近回跳匹配授权 scheme'
+    : '最近回跳不是授权 scheme';
+}
+
+function iosOpenUrlSeverity(status: RokidIntegrationStatus, authorized: boolean): RokidSelfCheckSeverity {
+  if (!status.lastOpenUrlFingerprint) {
+    return authorized ? 'info' : 'warn';
+  }
+  return status.lastOpenUrlExpectedAuthCallback ? 'pass' : 'warn';
+}
+
+function iosOpenUrlDetail(status: RokidIntegrationStatus) {
+  if (!status.lastOpenUrlFingerprint) {
+    return status.callbackUrl ? `expected=${status.callbackUrl}` : undefined;
+  }
+  const parts = [status.lastOpenUrlFingerprint];
+  if (status.lastOpenUrlAt) {
+    parts.push(`at=${status.lastOpenUrlAt}`);
+  }
+  if (status.callbackUrl) {
+    parts.push(`expected=${status.callbackUrl}`);
+  }
+  return parts.join('; ');
+}
+
 export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCheck {
   const bridgeReady = status.bridgeAvailable === true;
   const sdkLinked = status.sdkLinked === true;
@@ -167,6 +197,13 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         value: callbackValue,
         severity: callbackSeverity,
         detail: redactCallbackUrl(status.lastCallbackUrl ?? status.callbackUrl),
+      },
+      {
+        id: 'ios_open_url',
+        label: 'iOS 回跳',
+        value: iosOpenUrlValue(status, authorized),
+        severity: iosOpenUrlSeverity(status, authorized),
+        detail: iosOpenUrlDetail(status),
       },
       {
         id: 'auth_error',
