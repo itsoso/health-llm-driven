@@ -37,6 +37,7 @@ struct AppServices {
     let nocturnalClient: NocturnalTimeseriesClient
     let garminTrendClient: GarminTrendClient
     let labClient: LabClient
+    let labUploadClient: LabUploadClient
     let interventionsClient: InterventionsClient
     let workoutClient: WorkoutClient
     let goalClient: GoalClient
@@ -53,7 +54,10 @@ struct AppServices {
         let tokenProvider = UserDefaultsTokenStore()
         self.tokenProvider = tokenProvider
         let baseURL = APIEndpoint.resolvedBaseURL()
-        self.apiClient = APIClient(baseURL: baseURL, tokenProvider: tokenProvider)
+        let apiClient = APIClient(baseURL: baseURL, tokenProvider: tokenProvider)
+        self.apiClient = apiClient
+        let labUploadClient = LabUploadClient(apiClient: apiClient)
+        self.labUploadClient = labUploadClient
         self.todayViewModel = TodayViewModel(
             service: DesktopBootstrapService(apiClient: apiClient)
         )
@@ -63,7 +67,8 @@ struct AppServices {
             conversationStore: UserDefaultsAgentConversationStore(),
             // Backend conversation list/detail so Mac matches web/mobile; the local
             // store above is now only the offline fallback.
-            remoteSource: AgentConversationClient(apiClient: apiClient)
+            remoteSource: AgentConversationClient(apiClient: apiClient),
+            labUploadService: labUploadClient
         )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)

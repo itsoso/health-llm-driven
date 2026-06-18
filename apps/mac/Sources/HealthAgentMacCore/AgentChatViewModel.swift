@@ -413,6 +413,20 @@ public struct AgentContextBundle: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct LabReportImportContext: Equatable, Sendable {
+    public let fileName: String
+    public let sourceHash: String
+    public let sourceKind: FileSourceKind
+    public let result: LabUploadResult
+
+    public init(fileName: String, sourceHash: String, sourceKind: FileSourceKind, result: LabUploadResult) {
+        self.fileName = fileName
+        self.sourceHash = sourceHash
+        self.sourceKind = sourceKind
+        self.result = result
+    }
+}
+
 public protocol AgentContextBundleStoring: Sendable {
     func loadContextBundles() -> [AgentContextBundle]
     func saveContextBundles(_ bundles: [AgentContextBundle])
@@ -511,6 +525,7 @@ public final class AgentChatViewModel {
     /// 「默认 3 个」模式 → 后端多模型综合分析 (商用三强 panel)。
     public var multiModel = false
     public var attachments: [FileIntakeItem] = []
+    public var labReportImports: [LabReportImportContext] = []
     public var conversationID: Int?
     public var messages: [AgentChatMessage] = []
     public var errorMessage: String?
@@ -553,6 +568,8 @@ public final class AgentChatViewModel {
     @ObservationIgnored
     private let remoteSource: AgentConversationRemoteSourcing?
     @ObservationIgnored
+    private let labUploadService: LabUploadServicing?
+    @ObservationIgnored
     private var currentConversationSnapshotID: UUID?
 
     public var canRetry: Bool {
@@ -572,13 +589,15 @@ public final class AgentChatViewModel {
         streamService: AgentStreamServicing? = nil,
         contextBundleStore: AgentContextBundleStoring? = nil,
         conversationStore: AgentConversationStoring? = nil,
-        remoteSource: AgentConversationRemoteSourcing? = nil
+        remoteSource: AgentConversationRemoteSourcing? = nil,
+        labUploadService: LabUploadServicing? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
         self.contextBundleStore = contextBundleStore
         self.conversationStore = conversationStore
         self.remoteSource = remoteSource
+        self.labUploadService = labUploadService
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
         // Seed from the local cache so the list isn't empty before the first
         // backend fetch returns; `refreshConversationHistory()` replaces it.
@@ -722,6 +741,7 @@ public final class AgentChatViewModel {
         }
 
         do {
+            try await importLabReportAttachmentsIfNeeded()
             for try await event in streamService.stream(
                 message: message,
                 conversationID: conversationID,
@@ -825,6 +845,7 @@ public final class AgentChatViewModel {
         currentConversationSnapshotID = nil
         proposedActions = []
         attachments = []
+        labReportImports = []
         contextItems = []
         preparedDraft = nil
     }
@@ -1207,6 +1228,9 @@ public final class AgentChatViewModel {
                 ]
             }
         }
+        if !labReportImports.isEmpty {
+            context["lab_report_imports"] = labReportImports.map(labReportImportPayload)
+        }
         if !contextItems.isEmpty {
             context["context_items"] = contextItems.map {
                 [
@@ -1222,6 +1246,59 @@ public final class AgentChatViewModel {
             return nil
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func importLabReportAttachmentsIfNeeded() async throws {
+        guard let labUploadService else { return }
+        let medicalAttachments = attachments.filter {
+            $0.sourceKind == .medicalFile && LabReportUploadMime.isSupported(forExtension: $0.url.pathExtension)
+        }
+        guard !medicalAttachments.isEmpty else { return }
+
+        for attachment in medicalAttachments {
+            guard !labReportImports.contains(where: { $0.sourceHash == attachment.sha256 }) else {
+                continue
+            }
+            let result = try await labUploadService.importReport(fileURL: attachment.url)
+            labReportImports.append(LabReportImportContext(
+                fileName: attachment.name,
+                sourceHash: attachment.sha256,
+                sourceKind: attachment.sourceKind,
+                result: result
+            ))
+        }
+    }
+
+    private func labReportImportPayload(_ item: LabReportImportContext) -> [String: Any] {
+        var payload: [String: Any] = [
+            "file_name": item.fileName,
+            "source_hash": item.sourceHash,
+            "source_kind": item.sourceKind.rawValue,
+            "exam_id": item.result.examID,
+            "message": item.result.message
+        ]
+        if let examDate = item.result.examDate {
+            payload["exam_date"] = examDate
+        }
+        if let examType = item.result.examType {
+            payload["exam_type"] = examType
+        }
+        if let hospitalName = item.result.hospitalName {
+            payload["hospital_name"] = hospitalName
+        }
+        if let itemsCount = item.result.itemsCount {
+            payload["items_count"] = itemsCount
+        }
+        if let abnormalCount = item.result.abnormalCount {
+            payload["abnormal_count"] = abnormalCount
+        }
+        if let conclusionsCount = item.result.conclusionsCount {
+            payload["conclusions_count"] = conclusionsCount
+        }
+        if let conclusion = item.result.conclusion {
+            payload["conclusion"] = conclusion
+        }
+        return payload
     }
 
     private static let desktopMarkdownResponseInstruction = """

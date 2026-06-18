@@ -1887,6 +1887,7 @@ private final class CommandReturnTextView: NSTextView {
 struct RecordHubView: View {
     let client: RecordClient
     let productClient: SupplementProductLibraryClient
+    let labUploadClient: LabUploadClient
     @Bindable var viewModel: TodayViewModel
     var onAskAgent: ((String, AgentContextItem?) -> Void)?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -1928,6 +1929,12 @@ struct RecordHubView: View {
     @State private var resultMessage: String?
     @State private var lastSavedRecord: QuickRecordResult?
     @State private var isSubmitting = false
+    @State private var isLabImporterPresented = false
+    @State private var isUploadingLab = false
+    @State private var labUploadStatus: String?
+    @State private var lastLabUploadResult: LabUploadResult?
+    @State private var lastLabUploadFileName: String?
+    @State private var lastLabUploadSourceHash: String?
     @State private var isParsingVoiceDraft = false
     @State private var isUndoing = false
     @State private var quickFocusToken = 0
@@ -1948,6 +1955,7 @@ struct RecordHubView: View {
                         HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 16) {
                                 quickCaptureCard
+                                labUploadCard
                                 structuredCaptureCard
                             }
                             .frame(minWidth: 600, maxWidth: .infinity, alignment: .topLeading)
@@ -1961,6 +1969,7 @@ struct RecordHubView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 16) {
                             quickCaptureCard
+                            labUploadCard
                             structuredCaptureCard
                             saveStatusPanel
                             recentRecordsPanel
@@ -1988,6 +1997,13 @@ struct RecordHubView: View {
                 }
             }
             .task { await loadFrequentSuggestions() }
+        }
+        .fileImporter(
+            isPresented: $isLabImporterPresented,
+            allowedContentTypes: [.pdf, .image],
+            allowsMultipleSelection: false
+        ) { result in
+            Task { await uploadLabFile(result: result) }
         }
     }
 
@@ -2328,6 +2344,93 @@ struct RecordHubView: View {
                 Text(appText("Quick parser will infer record type.", appLanguageRaw))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var labUploadCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 10) {
+                Label(appText("Upload Lab Report", appLanguageRaw), systemImage: "doc.badge.arrow.up")
+                    .font(.headline)
+                Text(appText("PDF or image lab reports", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if isUploadingLab {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 10) {
+                Button {
+                    isLabImporterPresented = true
+                } label: {
+                    Label(appText("Choose Image or PDF", appLanguageRaw), systemImage: "tray.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isUploadingLab)
+
+                Text(appText("Agent chat also accepts pasted lab images.", appLanguageRaw))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                Spacer()
+            }
+
+            if let labUploadStatus {
+                Label(
+                    labUploadStatus,
+                    systemImage: lastLabUploadResult == nil ? "info.circle" : "checkmark.circle.fill"
+                )
+                .font(.callout)
+                .foregroundStyle(lastLabUploadResult == nil ? Color.secondary : Color.green)
+                .lineLimit(3)
+            }
+
+            if let result = lastLabUploadResult {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "stethoscope")
+                        .font(.title3)
+                        .foregroundStyle(.teal)
+                        .frame(width: 30, height: 30)
+                        .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(lastLabUploadFileName ?? appText("Lab report", appLanguageRaw))
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(1)
+                        Text(labUploadResultSummary(result))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    if let onAskAgent {
+                        Button {
+                            onAskAgent(
+                                "解释这份刚上传的化验报告：先列出异常/关键指标，再说明不确定性边界和下一步需要复核的地方。",
+                                labUploadContextItem(result)
+                            )
+                        } label: {
+                            Label(appText("Ask Agent about Lab", appLanguageRaw), systemImage: "sparkles")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(12)
+                .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.teal.opacity(0.16), lineWidth: 1)
+                }
             }
         }
         .padding(18)
@@ -3239,6 +3342,114 @@ struct RecordHubView: View {
         } catch {
             resultMessage = "Save failed: \(userFacingError(error, appLanguageRaw))"
         }
+    }
+
+    private func uploadLabFile(result: Result<[URL], Error>) async {
+        do {
+            guard let url = try result.get().first else { return }
+            await uploadLabFile(url: url)
+        } catch {
+            labUploadStatus = "\(appText("Lab upload failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
+            lastLabUploadResult = nil
+        }
+    }
+
+    private func uploadLabFile(url: URL) async {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        isUploadingLab = true
+        labUploadStatus = appText("Uploading lab report...", appLanguageRaw)
+        lastLabUploadResult = nil
+        defer { isUploadingLab = false }
+
+        do {
+            let intakeItem = try await FileIntakeService.inspect(url: url)
+            guard intakeItem.sourceKind == .medicalFile,
+                  LabReportUploadMime.isSupported(forExtension: url.pathExtension) else {
+                labUploadStatus = appText("Please choose a supported lab PDF or image.", appLanguageRaw)
+                return
+            }
+
+            let result = try await labUploadClient.importReport(fileURL: url)
+            lastLabUploadResult = result
+            lastLabUploadFileName = intakeItem.name
+            lastLabUploadSourceHash = intakeItem.sha256
+            labUploadStatus = appText("Lab report imported. Review OCR values before relying on them.", appLanguageRaw)
+            await viewModel.refresh()
+        } catch {
+            labUploadStatus = "\(appText("Lab upload failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
+            lastLabUploadResult = nil
+        }
+    }
+
+    private func labUploadResultSummary(_ result: LabUploadResult) -> String {
+        var parts: [String] = ["#\(result.examID)"]
+        if let examDate = result.examDate, !examDate.isEmpty {
+            parts.append(examDate)
+        }
+        if let examType = result.examType, !examType.isEmpty {
+            parts.append(examType)
+        }
+        if let itemsCount = result.itemsCount {
+            parts.append("\(itemsCount) \(appText("items", appLanguageRaw))")
+        }
+        if let abnormalCount = result.abnormalCount {
+            parts.append("\(abnormalCount) \(appText("abnormal", appLanguageRaw))")
+        }
+        if let conclusionsCount = result.conclusionsCount {
+            parts.append("\(conclusionsCount) \(appText("conclusions", appLanguageRaw))")
+        }
+        if let conclusion = result.conclusion, !conclusion.isEmpty {
+            parts.append(conclusion)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func labUploadContextItem(_ result: LabUploadResult) -> AgentContextItem {
+        var payload: [String: String] = [
+            "exam_id": "\(result.examID)",
+            "message": result.message
+        ]
+        if let sourceHash = lastLabUploadSourceHash {
+            payload["source_hash"] = sourceHash
+        }
+        if let fileName = lastLabUploadFileName {
+            payload["file_name"] = fileName
+        }
+        if let examDate = result.examDate {
+            payload["exam_date"] = examDate
+        }
+        if let examType = result.examType {
+            payload["exam_type"] = examType
+        }
+        if let hospitalName = result.hospitalName {
+            payload["hospital_name"] = hospitalName
+        }
+        if let itemsCount = result.itemsCount {
+            payload["items_count"] = "\(itemsCount)"
+        }
+        if let abnormalCount = result.abnormalCount {
+            payload["abnormal_count"] = "\(abnormalCount)"
+        }
+        if let conclusionsCount = result.conclusionsCount {
+            payload["conclusions_count"] = "\(conclusionsCount)"
+        }
+        if let conclusion = result.conclusion {
+            payload["conclusion"] = conclusion
+        }
+        let title = lastLabUploadFileName ?? appText("Lab report", appLanguageRaw)
+        return AgentContextItem(
+            sourceID: "medical_exam:\(result.examID)",
+            sourceKind: "lab_report_import",
+            title: title,
+            summary: labUploadResultSummary(result),
+            payload: payload
+        )
     }
 
     private func parseVoiceDietDraft() async {

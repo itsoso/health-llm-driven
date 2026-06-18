@@ -580,6 +580,43 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelImportsMedicalAttachmentsBeforeStreaming() async throws {
+        let service = CapturingAgentStreamService()
+        let labUpload = StubLabUploadService(result: LabUploadResult(
+            message: "图片 OCR 导入成功",
+            examID: 321,
+            examDate: "2026-06-18",
+            examType: "biochemistry",
+            hospitalName: "Test Lab",
+            itemsCount: 9,
+            abnormalCount: 2,
+            conclusionsCount: nil,
+            conclusion: "LDL 偏高"
+        ))
+        let model = AgentChatViewModel(streamService: service, labUploadService: labUpload)
+        let url = URL(fileURLWithPath: "/tmp/lab-photo.png")
+        model.addAttachment(.init(
+            url: url,
+            name: "lab-photo.png",
+            sourceKind: .medicalFile,
+            sha256: "sha256:lab"
+        ))
+
+        await model.send("解释这份化验单")
+
+        XCTAssertEqual(labUpload.importedURLs, [url])
+        let context = try XCTUnwrap(service.extraContext)
+        let data = try XCTUnwrap(context.data(using: .utf8))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let imports = try XCTUnwrap(json["lab_report_imports"] as? [[String: Any]])
+        XCTAssertEqual(imports.first?["exam_id"] as? Int, 321)
+        XCTAssertEqual(imports.first?["file_name"] as? String, "lab-photo.png")
+        XCTAssertEqual(imports.first?["items_count"] as? Int, 9)
+        XCTAssertEqual(imports.first?["abnormal_count"] as? Int, 2)
+        XCTAssertEqual(imports.first?["source_hash"] as? String, "sha256:lab")
+    }
+
+    @MainActor
     func testAgentChatViewModelAlwaysRequestsStructuredMarkdownReplies() async throws {
         let service = CapturingAgentStreamService()
         let model = AgentChatViewModel(streamService: service)
@@ -756,5 +793,19 @@ private final class SequencedAgentStreamService: AgentStreamServicing, @unchecke
             return AsyncThrowingStream { continuation in continuation.finish() }
         }
         return streams.removeFirst()
+    }
+}
+
+private final class StubLabUploadService: LabUploadServicing, @unchecked Sendable {
+    nonisolated(unsafe) var importedURLs: [URL] = []
+    let result: LabUploadResult
+
+    init(result: LabUploadResult) {
+        self.result = result
+    }
+
+    func importReport(fileURL: URL) async throws -> LabUploadResult {
+        importedURLs.append(fileURL)
+        return result
     }
 }

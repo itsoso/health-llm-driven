@@ -58,7 +58,7 @@ public enum FileIntakeService {
         if ["xml", "zip"].contains(ext) {
             return .appleHealthExport
         }
-        if ["pdf", "jpg", "jpeg", "png", "heic"].contains(ext) {
+        if ["pdf", "jpg", "jpeg", "png", "heic", "webp"].contains(ext) {
             return .medicalFile
         }
         return .unknown

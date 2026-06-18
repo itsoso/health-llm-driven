@@ -119,6 +119,7 @@ struct AppRootView: View {
             RecordHubView(
                 client: services.recordClient,
                 productClient: services.supplementProductClient,
+                labUploadClient: services.labUploadClient,
                 viewModel: services.todayViewModel,
                 onAskAgent: askAgentWithContext
             )
