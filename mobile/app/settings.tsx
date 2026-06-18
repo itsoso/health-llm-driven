@@ -114,8 +114,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/agenda' as any)} />
           <SettingRow icon="time-outline" label="今日时间轴 · 工作时间"
             onPress={() => router.push('/day-schedule' as any)} />
-          <SettingRow icon="calendar-outline" label="连接日历 · 避开会议"
-            onPress={() => router.push('/calendar-connect' as any)} />
+          <SettingRow icon="calendar-outline" label="日历 · 日程 + 多源管理"
+            onPress={() => router.push('/calendar' as any)} />
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="calendar-outline" label="本周建议"
