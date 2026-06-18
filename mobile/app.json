@@ -80,6 +80,7 @@
         }
       ],
       "./plugins/withRokidIosPods",
+      "./plugins/withRokidIosAuthCallback",
       [
         "expo-notifications",
         {

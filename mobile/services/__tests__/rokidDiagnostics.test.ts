@@ -70,4 +70,42 @@ describe('rokid diagnostics', () => {
       status: 'blocked',
     });
   });
+
+  it('surfaces iOS auth callback routing diagnostics', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastCallbackUrl: 'life.executor.health.rokid://auth/callback?code=abc',
+      lastCallbackHandled: true,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth_callback',
+        severity: 'pass',
+        value: '最近回调已进入 Reva',
+        detail: 'life.executor.health.rokid://auth/callback?code=abc',
+      }),
+    ]));
+    expect(check.items.find((item) => item.id === 'authorization')).toMatchObject({
+      detail: 'life.executor.health.rokid://auth/callback',
+    });
+  });
 });

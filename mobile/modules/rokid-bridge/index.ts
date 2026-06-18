@@ -29,9 +29,16 @@ export type RokidIntegrationStatus = {
   installedPackage?: string | null;
   supportedPackages?: string[];
   callbackScheme?: string;
+  callbackUrl?: string;
+  lastCallbackUrl?: string;
+  lastCallbackAt?: string;
+  lastCallbackHandled?: boolean;
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;
+  cxrClientInitialized?: boolean;
+  cxrInitializationMode?: 'customView' | 'customApp' | 'unknown' | string;
+  cxrInitializationOutcome?: string;
   authorizationState?: RokidAuthorizationState;
   capabilitiesReady?: boolean;
   customAppSupported?: boolean;

@@ -47,6 +47,22 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
   const companion = passIf(companionReady, 'Hi Rokid 可用', 'Hi Rokid 未就绪', 'warn');
   const authorization = passIf(authorized, 'CXR-L 已授权', 'CXR-L 未授权', 'warn');
   const session = passIf(sessionReady, '会话能力就绪', '会话未构建完成', 'warn');
+  const callbackSeen = typeof status.lastCallbackUrl === 'string' && status.lastCallbackUrl.length > 0;
+  const callbackHandled = status.lastCallbackHandled === true;
+  const callbackValue = callbackHandled
+    ? '最近回调已进入 Reva'
+    : callbackSeen
+      ? '回调进入 Reva, SDK 未确认'
+      : authorized
+        ? '已授权, 本次启动无回调记录'
+        : '尚未收到授权回调';
+  const callbackSeverity: RokidSelfCheckSeverity = callbackHandled
+    ? 'pass'
+    : callbackSeen
+      ? 'warn'
+      : authorized
+        ? 'pass'
+        : 'warn';
 
   return {
     summary: {
@@ -79,7 +95,14 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         id: 'authorization',
         label: '授权',
         ...authorization,
-        detail: status.callbackScheme,
+        detail: status.callbackUrl ?? status.callbackScheme,
+      },
+      {
+        id: 'auth_callback',
+        label: '授权回调',
+        value: callbackValue,
+        severity: callbackSeverity,
+        detail: status.lastCallbackUrl ?? status.callbackUrl,
       },
       {
         id: 'session',

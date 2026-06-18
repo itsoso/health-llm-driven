@@ -20,6 +20,10 @@ public class RokidBridgeModule: Module {
   private static var didInitializeCustomView = false
   private static var didBindRuntimeEvents = false
   private static var customViewRunning = false
+  private static var cxrInitializationOutcome = "not_started"
+  private static var lastCallbackUrl: String?
+  private static var lastCallbackAt: String?
+  private static var lastCallbackHandled: Bool?
   #if canImport(RGCxrClient)
   private static var cancellables = Set<AnyCancellable>()
   #endif
@@ -125,6 +129,18 @@ public class RokidBridgeModule: Module {
     payload["customAppSupported"] = sdkLinked()
     payload["callbackScheme"] = callbackScheme
     payload["callbackUrl"] = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
+    payload["cxrClientInitialized"] = cxrClientInitialized()
+    payload["cxrInitializationMode"] = cxrInitializationMode()
+    payload["cxrInitializationOutcome"] = cxrInitializationOutcome
+    if let lastCallbackUrl {
+      payload["lastCallbackUrl"] = lastCallbackUrl
+    }
+    if let lastCallbackAt {
+      payload["lastCallbackAt"] = lastCallbackAt
+    }
+    if let lastCallbackHandled {
+      payload["lastCallbackHandled"] = lastCallbackHandled
+    }
     payload["querySchemes"] = querySchemes
     payload["sdkClassProbe"] = sdkClassProbe()
     return payload
@@ -493,6 +509,7 @@ public class RokidBridgeModule: Module {
   private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
     if !RokidBridgeModule.didInitializeCustomView {
+      RokidBridgeModule.cxrInitializationOutcome = "legacy_client_no_initialize_api"
       RokidBridgeModule.didInitializeCustomView = true
     }
     configureAuthentication()
@@ -586,6 +603,47 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
+  private static func cxrClientInitialized() -> Bool {
+    #if canImport(RGCxrClient)
+    return true
+    #else
+    return false
+    #endif
+  }
+
+  private static func cxrInitializationMode() -> String {
+    #if canImport(RGCxrClient)
+    return "implicit_legacy_client"
+    #else
+    return "unknown"
+    #endif
+  }
+
+  fileprivate static func isExpectedAuthCallback(_ url: URL) -> Bool {
+    url.scheme?.caseInsensitiveCompare(callbackScheme) == .orderedSame
+      && url.host?.caseInsensitiveCompare(callbackHost) == .orderedSame
+      && url.path == callbackPath
+  }
+
+  fileprivate static func handleOpenURL(_ url: URL) -> Bool {
+    guard isExpectedAuthCallback(url) else {
+      return false
+    }
+
+    lastCallbackUrl = url.absoluteString
+    lastCallbackAt = ISO8601DateFormatter().string(from: Date())
+
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    let handled = CxrClient.shared.handleOpenURL(url)
+    lastCallbackHandled = handled
+    return handled
+    #else
+    lastCallbackHandled = false
+    return false
+    #endif
+  }
+
   private static func sdkClassProbe() -> [String: Bool] {
     [
       "RGCxrClient.CxrClient": classExists("RGCxrClient.CxrClient"),
@@ -630,12 +688,11 @@ public class RokidBridgeModule: Module {
 }
 
 @objc public class RokidBridgeURLHandler: NSObject {
+  @objc public static func canHandleOpenURL(_ url: URL) -> Bool {
+    RokidBridgeModule.isExpectedAuthCallback(url)
+  }
+
   @objc public static func handleOpenURL(_ url: URL) -> Bool {
-    #if canImport(RGCxrClient)
-    return CxrClient.shared.handleOpenURL(url)
-    #else
-    _ = url
-    return false
-    #endif
+    RokidBridgeModule.handleOpenURL(url)
   }
 }
