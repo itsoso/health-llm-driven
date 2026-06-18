@@ -245,3 +245,50 @@ def test_sleep_prescription_failsoft(db, monkeypatch):
     items = sleep_items(DayContext(), rx)
     cutoff = next(it for it in items if it.id == "sleep:caffeine_cutoff")
     assert cutoff.prescription["cutoff_hours"] == 8
+
+
+# ── safety review 跟进:APOE 不上时间线 + 处方串无药物剂量(R4 守门)──
+import re as _re
+
+
+def test_apoe_excluded_from_timeline_gene_note(monkeypatch):
+    """APOE(阿尔茨海默风险位点)携带者状态不得出现在被动时间线的 gene_note;非敏感基因保留。"""
+    import app.services.schedule_diet_sleep as svc
+
+    class _Twin:  # getattr → None,nutrition_prescription 内有 if body 守卫
+        pass
+
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda *a, **k: _Twin())
+    monkeypatch.setattr(
+        "app.agents.fuel_strategist.strategist._gene_nudges",
+        lambda twin: [
+            {"gene": "APOE", "tip": "APOE 4型携带者,对饱和脂肪敏感,LDL目标更严格"},
+            {"gene": "CYP1A2", "tip": "咖啡因慢代谢倾向,午后减少咖啡"},
+        ],
+    )
+    monkeypatch.setattr("app.agents.fuel_strategist.strategist._protein_target_g", lambda *a, **k: None)
+    rx = svc.nutrition_prescription(db=None, user_id=3) or {}
+    note = rx.get("gene_note", "")
+    assert "APOE" not in note and "LDL" not in note, f"APOE 不该上时间线: {note!r}"
+    assert "咖啡因" in note, "非敏感基因提示应保留"
+
+
+_DRUG_DOSE_RE = _re.compile(r"\d+\s*(mg|µg|mcg|ug|iu|毫克|微克|国际单位|片|粒|丸)", _re.I)
+
+
+def test_no_drug_dose_in_emitted_prescription_strings(monkeypatch):
+    """diet/sleep 处方串绝不含药物/补剂剂量(防未来误把剂量塞进 R4 边界串)。
+    kcal/蛋白 g 是营养目标(数字字段),不在本守门范围;本测只查自由文本串。"""
+    import app.services.schedule_diet_sleep as svc
+
+    class _Twin:
+        pass
+
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda *a, **k: _Twin())
+    monkeypatch.setattr("app.agents.fuel_strategist.strategist._gene_nudges", lambda twin: [])
+    monkeypatch.setattr("app.agents.fuel_strategist.strategist._protein_target_g", lambda *a, **k: None)
+    nrx = svc.nutrition_prescription(db=None, user_id=3) or {}
+    srx = svc.sleep_prescription(db=None, user_id=3) or {}
+    text_fields = [v for v in list(nrx.values()) + list(srx.values()) if isinstance(v, str)]
+    for s in text_fields:
+        assert not _DRUG_DOSE_RE.search(s), f"处方自由文本疑似含药物剂量: {s!r}"

@@ -70,7 +70,14 @@ def nutrition_prescription(db, user_id: int) -> Optional[dict]:
             rx["protein_per_meal_g"] = round(protein_g / 3)
         nudges = _gene_nudges(twin) or []
         # 基因提示压成一行(取与饮食最相关的前两条),非剂量、非裁决。
-        gene_tips = [n.get("tip") for n in nudges if isinstance(n, dict) and n.get("tip")]
+        # 排除 APOE:阿尔茨海默风险位点,携带者状态不该出现在常驻首页时间线(肩窥/截图风险);
+        # 其完整解读留在 fuel_strategist 专家面板(主动分析面),不进被动日程。(safety review 4b)
+        _TIMELINE_EXCLUDED_GENES = {"APOE"}
+        gene_tips = [
+            n.get("tip") for n in nudges
+            if isinstance(n, dict) and n.get("tip")
+            and (n.get("gene") or "").upper() not in _TIMELINE_EXCLUDED_GENES
+        ]
         if gene_tips:
             rx["gene_note"] = " ".join(gene_tips[:2])
         # 围训练碳水提示(对冲措辞,不带克数处方)。
