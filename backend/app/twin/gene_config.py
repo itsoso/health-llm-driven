@@ -224,6 +224,12 @@ def build_gene_config(twin: "HealthTwin") -> Optional[GeneConfig]:
             # 单 SNP 强结论已剔除:COMT 对认知/焦虑的解释方差 <1%,候选基因时代未复现。
             # 仅保留 stress_type 分型供下游参考,不再注入"需正念和低咖啡因"的祈使指令。
 
+    # ── PEMT (胆碱/磷脂酰胆碱) ──
+    if _variant("PEMT"):
+        cfg.summary_lines.append(
+            "PEMT 变异型：内源合成磷脂酰胆碱能力或下降，可关注膳食胆碱(蛋黄/肝)摄入，结合肝酶评估；筛查级，非诊断"
+        )
+
     # ── 药物代谢 ──
     for enzyme in ["CYP2D6", "CYP2C19", "CYP2C9", "SLCO1B1"]:
         v = _variant(enzyme)
