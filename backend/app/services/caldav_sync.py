@@ -14,30 +14,42 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
-from app.models.calendar_sync import CalendarBusyBlock, CalendarCredential
+from app.models.calendar_sync import (
+    CalendarBusyBlock, CalendarCredential, CalendarEvent, CalendarSource,
+)
 
 logger = logging.getLogger(__name__)
 _BEIJING = _tz(timedelta(hours=8))
 
 
-def _assert_safe_caldav_url(url: str) -> None:
+def _assert_safe_url(url: str, *, label: str = "日历") -> None:
     """SSRF 护栏(连接前校验):仅 https + 拒私网/环回/链路本地/保留地址。
-    防把服务端当跳板探内网(如 169.254.169.254 / localhost / 10.x)。DNS 解析后逐 IP 检查。"""
+    caldav 与 ics 共用:防把服务端当跳板探内网(169.254.169.254 / localhost / 10.x)。"""
     p = urlparse(url or "")
     if p.scheme != "https":
-        raise ValueError("CalDAV 地址必须是 https://")
+        raise ValueError(f"{label}地址必须是 https://")
     host = p.hostname
     if not host:
-        raise ValueError("CalDAV 地址无效")
+        raise ValueError(f"{label}地址无效")
     try:
         infos = socket.getaddrinfo(host, p.port or 443, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
-        raise ValueError("CalDAV 主机无法解析")
+        raise ValueError(f"{label}主机无法解析")
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if (ip.is_private or ip.is_loopback or ip.is_link_local
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-            raise ValueError("CalDAV 地址不可指向内网/环回/保留地址")
+            raise ValueError(f"{label}地址不可指向内网/环回/保留地址")
+
+
+def _assert_safe_caldav_url(url: str) -> None:
+    """SSRF 护栏(CalDAV);保留旧名做 back-compat,委托 _assert_safe_url。"""
+    _assert_safe_url(url, label="CalDAV ")
+
+
+def _assert_safe_ics_url(url: str) -> None:
+    """SSRF 护栏(ics 订阅)。"""
+    _assert_safe_url(url, label="ICS ")
 
 
 def save_credentials(db: Session, user_id: int, *, url: str, username: str, password: str) -> CalendarCredential:
@@ -141,10 +153,225 @@ def sync_today(db: Session, user_id: int) -> dict:
 
 
 def today_busy_blocks(db: Session, user_id: int) -> List[Tuple[str, str]]:
-    """今日忙碌块 [(start,end)] 供 timing-solver(DayContext.busy)。标题不出本函数。"""
+    """今日(北京)忙碌块 [(start_hhmm,end_hhmm)] 供 timing-solver(DayContext.busy)。
+
+    从 CalendarEvent 派生(v2:跨所有源);只取有时刻的(非全天)事件,丢零/负长度。
+    标题/PII 绝不出本函数 —— 只返回 (HH:MM, HH:MM)。shape 与 v1 完全一致。
+    """
+    today = _china_today()
     rows = (
-        db.query(CalendarBusyBlock)
-        .filter(CalendarBusyBlock.user_id == user_id, CalendarBusyBlock.event_date == _china_today())
+        db.query(CalendarEvent)
+        .filter(
+            CalendarEvent.user_id == user_id,
+            CalendarEvent.all_day.is_(False),
+            CalendarEvent.start_time.isnot(None),
+            CalendarEvent.end_time.isnot(None),
+        )
         .all()
     )
-    return [(r.start_time, r.end_time) for r in rows]
+    out: List[Tuple[str, str]] = []
+    for r in rows:
+        s, e = r.start_time, r.end_time
+        if s is None or e is None:
+            continue
+        sl = s.astimezone(_BEIJING) if s.tzinfo else s.replace(tzinfo=_BEIJING)
+        el = e.astimezone(_BEIJING) if e.tzinfo else e.replace(tzinfo=_BEIJING)
+        if sl.date() != today:
+            continue
+        sm, em = _hhmm(sl), _hhmm(el)
+        if sm >= em:  # 零/负长度 → 丢(solver bs<be 守卫亦会丢)
+            continue
+        out.append((sm, em))
+    return out
+
+
+# ── Calendar v2 (C1) 同步引擎 ──────────────────────────────────────────────
+
+def _parse_vevent(comp) -> Optional[dict]:
+    """从一个 VEVENT icalendar 组件抽字段。返回 None 表示该组件无可用时间。
+    返回 {uid,title,location,description,attendees(list),status,start,end,all_day}。"""
+    dtstart = comp.get("dtstart")
+    if not dtstart:
+        return None
+    s = dtstart.dt
+    dtend = comp.get("dtend")
+    e = dtend.dt if dtend else None
+    all_day = not isinstance(s, datetime)
+    if all_day:
+        # date(非 datetime)→ 全天:跨当日 00:00 → 次日 00:00
+        start = datetime(s.year, s.month, s.day, 0, 0, tzinfo=_BEIJING)
+        if e is not None and not isinstance(e, datetime):
+            end = datetime(e.year, e.month, e.day, 0, 0, tzinfo=_BEIJING)
+        else:
+            end = start + timedelta(days=1)
+    else:
+        start = s if s.tzinfo else s.replace(tzinfo=_BEIJING)
+        if isinstance(e, datetime):
+            end = e if e.tzinfo else e.replace(tzinfo=_BEIJING)
+        else:
+            end = start + timedelta(hours=1)
+    attendees: List[str] = []
+    raw_att = comp.get("attendee")
+    if raw_att is not None:
+        items = raw_att if isinstance(raw_att, list) else [raw_att]
+        for a in items:
+            cn = None
+            try:
+                cn = a.params.get("CN")  # type: ignore[attr-defined]
+            except Exception:
+                cn = None
+            attendees.append(str(cn) if cn else str(a).replace("mailto:", ""))
+    return {
+        "uid": str(comp.get("uid") or ""),
+        "title": str(comp.get("summary") or ""),
+        "location": str(comp.get("location") or "") or None,
+        "description": str(comp.get("description") or "") or None,
+        "attendees": attendees,
+        "status": str(comp.get("status") or "") or None,
+        "start": start,
+        "end": end,
+        "all_day": all_day,
+    }
+
+
+def _fetch_caldav_range(url: str, username: str, password: str,
+                        start: datetime, end: datetime) -> List[dict]:
+    """连 CalDAV 抓 [start,end) 窗口内所有事件(明细)。lazy import caldav。"""
+    _assert_safe_caldav_url(url)  # SSRF 护栏
+    import caldav  # lazy
+
+    client = caldav.DAVClient(url=url, username=username, password=password)
+    principal = client.principal()
+    out: List[dict] = []
+    for cal in principal.calendars():
+        for ev in cal.search(start=start, end=end, event=True, expand=True):
+            comp = ev.icalendar_component
+            if comp is None:
+                continue
+            parsed = _parse_vevent(comp)
+            if parsed and parsed["uid"]:
+                out.append(parsed)
+    return out
+
+
+def _fetch_ics_text(url: str, *, timeout: int = 15) -> str:
+    """SSRF-guard 后用 stdlib 拉 .ics 文本。"""
+    _assert_safe_ics_url(url)  # SSRF 护栏
+    import urllib.request  # lazy
+
+    req = urllib.request.Request(url, headers={"User-Agent": "health-calendar/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec - URL 已过 SSRF 护栏
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def _parse_ics(text: str) -> List[dict]:
+    """解析 .ics 文本 → 事件明细列表。lazy import icalendar。"""
+    from icalendar import Calendar  # lazy
+
+    cal = Calendar.from_ical(text)
+    out: List[dict] = []
+    for comp in cal.walk("VEVENT"):
+        parsed = _parse_vevent(comp)
+        if parsed and parsed["uid"]:
+            out.append(parsed)
+    return out
+
+
+def _fetch_source_events(source: CalendarSource, start: datetime, end: datetime) -> List[dict]:
+    """按 provider 分派抓取。creds 解密只在内存,绝不外发。"""
+    c = source.get_credentials()
+    url = c.get("url")
+    if not url:
+        raise ValueError("源缺少 url")
+    if source.provider == "ics":
+        events = _parse_ics(_fetch_ics_text(url))
+        # ics 是订阅窗口外的也会带,过滤到窗口内
+        return [e for e in events if e["end"] > start and e["start"] < end]
+    # 默认 caldav
+    return _fetch_caldav_range(url, c.get("username", ""), c.get("password", ""), start, end)
+
+
+def sync_source(db: Session, source: CalendarSource, *,
+                window_days_back: int = 7, window_days_fwd: int = 30) -> dict:
+    """同步单个源:SSRF 校验 → 抓窗口事件 → 全量替换该源窗口内事件(按 uid upsert)。
+
+    幂等:先删 source_id 在窗口内的旧事件,再按 (source_id,uid) upsert。
+    成功清 last_error;失败由调用方记 last_error(此函数直接抛 → fail loud)。
+    """
+    now = datetime.now(_BEIJING)
+    start = now - timedelta(days=window_days_back)
+    end = now + timedelta(days=window_days_fwd)
+    events = _fetch_source_events(source, start, end)
+
+    # 全量替换窗口内本源事件(删已取消 + 幂等)
+    db.query(CalendarEvent).filter(
+        CalendarEvent.source_id == source.id,
+        CalendarEvent.start_time >= start,
+        CalendarEvent.start_time < end,
+    ).delete(synchronize_session=False)
+
+    seen = set()
+    n = 0
+    for ev in events:
+        uid = ev["uid"]
+        if uid in seen:  # 同一 uid 窗口内重复(重复事件实例)→ 取首条
+            continue
+        seen.add(uid)
+        row = CalendarEvent(
+            user_id=source.user_id, source_id=source.id, uid=uid,
+            start_time=ev["start"], end_time=ev["end"], all_day=ev["all_day"],
+            status=ev["status"], last_synced_at=now,
+        )
+        row.set_title(ev["title"])
+        row.set_location(ev["location"])
+        row.set_description(ev["description"])
+        row.set_attendees(ev["attendees"])
+        db.add(row)
+        n += 1
+    source.last_sync_at = now
+    source.last_error = None
+    return {"synced": n}
+
+
+def sync_all_sources(db: Session, user_id: int) -> dict:
+    """同步该用户所有 sync_enabled 源。每源 try/except 隔离:一源坏只记它的 last_error,不阻断其它(fail-soft per source)。"""
+    sources = (
+        db.query(CalendarSource)
+        .filter(CalendarSource.user_id == user_id, CalendarSource.sync_enabled.is_(True))
+        .all()
+    )
+    summary: dict = {}
+    for src in sources:
+        try:
+            summary[src.id] = sync_source(db, src)
+            db.commit()
+        except Exception as e:  # fail-soft per source — 记 last_error,不抛
+            db.rollback()
+            src.last_error = str(e)[:500]
+            db.commit()
+            logger.warning("[calendar] source=%s 同步失败: %s", src.id, e)
+            summary[src.id] = {"error": str(e)[:500]}
+    return {"sources": summary, "count": len(sources)}
+
+
+# ── 隐私接缝(HARD boundary)──────────────────────────────────────────────
+# 这是 CalendarEvent → 任何 LLM/agent 路径的唯一门。绝不返回 title/location/
+# description/attendees/uid/notes —— 只给粗粒度 busy 窗口。任何 agent 读日历必须经此。
+
+def calendar_event_for_llm(event: CalendarEvent) -> dict:
+    """LLM/agent 安全视图:只暴露非身份性的粗粒度字段。
+
+    返回 {start, end, busy, all_day, source_label}。绝不含 title/location/
+    description/attendees/uid。这是日历 → LLM 的不可绕过边界(隐私接缝)。
+    """
+    label = "日历"
+    src = getattr(event, "source", None)
+    if src is not None and getattr(src, "name", None):
+        label = "日历"  # 不外泄用户自定义标签(可能含人名)→ 用通用词
+    return {
+        "start": event.start_time.isoformat() if event.start_time else None,
+        "end": event.end_time.isoformat() if event.end_time else None,
+        "busy": True,
+        "all_day": bool(event.all_day),
+        "source_label": label,
+    }
