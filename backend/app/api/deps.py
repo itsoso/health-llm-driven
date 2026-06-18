@@ -4,8 +4,9 @@ import logging
 from typing import Optional
 from fastapi import Depends, HTTPException, Header, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app.database import get_db
+from app.database import get_db, set_current_tenant, reset_current_tenant
 from app.models.user import User
 from app.services.auth import auth_service
 
@@ -107,3 +108,29 @@ async def get_current_user_required(
 def get_current_user_id(current_user: User = Depends(get_current_user_required)) -> int:
     """获取当前用户ID"""
     return current_user.id
+
+
+def tenant_scope(
+    user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+) -> User:
+    """租户作用域依赖 —— 设置 RLS 租户上下文, 请求结束 reset。
+
+    放在 get_current_user_required 之后, 把 user.id 注入 current_tenant_id contextvar;
+    database.py 的 after_begin 事件据此为 **commit 后新开的** 事务设置 Postgres app.user_id。
+
+    ⚠ 关键(安全评审 required 修复): get_current_user_required 在本 session 上发的 auth 查询
+    已**先于本依赖**开了第一个事务, 那次 after_begin 触发时 contextvar 尚为 None → 未设
+    app.user_id。若只靠 after_begin, 端点在首个 commit 之前对 genetic_raw 表的查询会因
+    RLS current_setting 为 NULL 而返回 0 行(功能打挂 + 边界形同虚设)。故在此对**当前已开
+    事务**用 set_config(local=true) 显式补设一次; after_begin 负责后续事务。两者合一覆盖全程。
+    RLS policy 在 DB 层强制行级隔离, 应用层 WHERE user_id 仍保留作双保险。
+    """
+    token = set_current_tenant(user.id)
+    # 当前已开事务(auth 查询所开)显式补设 app.user_id;set_config 可参数化、local=true 同事务有效。
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT set_config('app.user_id', :uid, true)"), {"uid": str(int(user.id))})
+    try:
+        yield user
+    finally:
+        reset_current_tenant(token)
