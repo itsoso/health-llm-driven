@@ -33,6 +33,7 @@ interface ForecastDay {
   weather: string;
   temp_max: number;
   temp_min: number;
+  humidity?: number | null;
 }
 interface ForecastResponse {
   available?: boolean;
@@ -186,6 +187,7 @@ export default function RevaWeatherRow() {
           {tomorrow.weather ? (
             <Text style={styles.forecastWeather} numberOfLines={1}>
               {tomorrow.weather}
+              {tomorrow.humidity != null ? ` · 湿度 ${tomorrow.humidity}%` : ''}
             </Text>
           ) : null}
         </View>
