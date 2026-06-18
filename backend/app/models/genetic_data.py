@@ -71,8 +71,9 @@ class GeneticImportJob(Base):
     unmapped_count = Column(Integer, default=0)
     missing_count = Column(Integer, default=0)
     coverage_summary = Column(JSON)
-    # 加密存全量 {rsid: genotype} JSON (Fernet, 经 EncryptedText). 最高隐私级:
-    # 支持任意基因(含白名单外)查询 + 白名单扩展后无需重传即可重解析. 绝不明文落库.
+    # DEPRECATED (2026-06-17): 原始全量基因型已迁移到专用多租户表 GeneticRawFile
+    # (per-tenant 加密 + Postgres RLS + 软删/被遗忘权)。本列保留只为不动已 ship 的迁移,
+    # 新写入一律走 GeneticRawFile, 不再写本列。读路径也已切到 GeneticRawFile。
     raw_genotypes = Column(EncryptedText)
     error_message = Column(Text)
     started_at = Column(DateTime(timezone=True))

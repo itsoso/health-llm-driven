@@ -21,7 +21,9 @@ from app.api.genetic_data import (
     _known_variant_payload,
 )
 from app.models.genetic_data import GeneticProfile, GeneticImportJob, GeneticVariant
+from app.models.genetic_raw import GeneticRawFile
 from app.models.user import User
+from app.services import tenant_crypto
 
 
 # ── A: PEMT 白名单 + hedged 解读 ──
@@ -104,29 +106,35 @@ def _make_user(db) -> User:
 
 
 def _make_profile_with_raw(db, user_id: int, raw: dict) -> GeneticProfile:
+    """建 profile + per-tenant 加密的 GeneticRawFile (新多租户表, 取代旧 blob)。"""
+    import hashlib
+
     profile = GeneticProfile(user_id=user_id, test_provider="微基因", test_date=date(2025, 1, 1))
     db.add(profile); db.commit(); db.refresh(profile)
-    job = GeneticImportJob(
+    plaintext = json.dumps(raw, ensure_ascii=False)
+    db.add(GeneticRawFile(
         user_id=user_id,
         profile_id=profile.id,
-        source_type="txt",
-        provider="微基因",
-        status="done",
-        raw_genotypes=json.dumps(raw, ensure_ascii=False),
-    )
-    db.add(job); db.commit()
+        raw_sha256=hashlib.sha256(plaintext.encode()).hexdigest(),
+        snp_count=len(raw),
+        byte_size=len(plaintext.encode()),
+        ciphertext=tenant_crypto.encrypt_for(user_id, plaintext),
+    ))
+    db.commit()
     return profile
 
 
-# ── B: EncryptedText round-trip ──
+# ── B: GeneticRawFile per-tenant round-trip ──
 
-def test_encrypted_text_roundtrip(db, auth_user_and_headers):
+def test_raw_file_roundtrip(db, auth_user_and_headers):
     user, _ = auth_user_and_headers
     raw = {"rs7946": "AA", "rs9999999": "CT"}
     profile = _make_profile_with_raw(db, user.id, raw)
-    db.expire_all()  # 强制重新 load, 走 process_result_value 解密
-    job = db.query(GeneticImportJob).filter_by(profile_id=profile.id).first()
-    assert json.loads(job.raw_genotypes) == raw
+    db.expire_all()
+    rf = db.query(GeneticRawFile).filter_by(profile_id=profile.id).first()
+    # 库里只见密文, 用 user 的派生密钥解密还原
+    assert rf.ciphertext != json.dumps(raw, ensure_ascii=False)
+    assert json.loads(tenant_crypto.decrypt_for(user.id, rf.ciphertext)) == raw
 
 
 # ── B: reparse ──

@@ -137,6 +137,26 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
+    # 基因租户隔离前置校验: Postgres superuser 会绕过 RLS(含 FORCE)→ genetic_raw_files
+    # 行级隔离退化为仅应用层 WHERE。基因是最敏感数据, 启动时 fail-loud 告警(不静默)。
+    try:
+        import logging as _logging
+        from app.database import SessionLocal as _SL
+        from sqlalchemy import text as _t
+        _db = _SL()
+        try:
+            if _db.bind is not None and _db.bind.dialect.name == "postgresql":
+                _is_super = _db.execute(_t("SELECT current_setting('is_superuser')")).scalar()
+                if _is_super == "on":
+                    _logging.getLogger("main").error(
+                        "[SECURITY] DB 连接角色为 superuser —— Postgres RLS(含 FORCE)被绕过, "
+                        "genetic_raw_files 等表的 DB 层租户隔离失效(仅剩应用层 WHERE)。"
+                        "生产必须改用非 superuser 角色连接。")
+        finally:
+            _db.close()
+    except Exception as _e:  # noqa: BLE001
+        import logging as _logging
+        _logging.getLogger("main").warning(f"[startup] RLS superuser 校验跳过: {_e}")
     # 自动迁移：添加新列（PostgreSQL）
     try:
         from app.database import SessionLocal, engine

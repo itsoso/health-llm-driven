@@ -13,7 +13,9 @@ from sqlalchemy import desc
 from app.database import get_db
 from app.models.user import User
 from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
-from app.api.deps import get_current_user_required
+from app.models.genetic_raw import GeneticRawFile, GeneticRawAudit
+from app.api.deps import get_current_user_required, tenant_scope
+from app.services import tenant_crypto
 
 logger = logging.getLogger(__name__)
 
@@ -832,7 +834,7 @@ def _match_and_store_variants(
 @router.post("/profiles/upload-txt", summary="上传微基因/23andMe 原始 TXT 数据，自动解析健康位点")
 def upload_genetic_txt(
     req: GeneticTxtUploadRequest,
-    current_user: User = Depends(get_current_user_required),
+    current_user: User = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ):
     """解析 WeGene/23andMe 格式的 TXT 原始数据，匹配已知健康 SNP"""
@@ -868,9 +870,38 @@ def upload_genetic_txt(
         db, current_user.id, profile, raw_by_rsid,
     )
 
-    # 加密保留原始全量基因型 (经 EncryptedText → Fernet), 支持任意基因查询 / 白名单扩展后重解析.
+    # per-tenant 加密保留原始全量基因型 → 专用 GeneticRawFile 表 (取代弃用的
+    # import_job.raw_genotypes blob)。加密在 service 层做 (密钥依赖 user_id),
+    # 失败 raise (最高隐私级, 绝不明文落库)。UniqueConstraint(user_id, raw_sha256)
+    # 去重: 同租户同文件已存则跳过, 不重复写。
     if req.retain_raw:
-        import_job.raw_genotypes = json.dumps(raw_by_rsid, ensure_ascii=False)
+        existing_raw = (
+            db.query(GeneticRawFile)
+            .filter(
+                GeneticRawFile.user_id == current_user.id,
+                GeneticRawFile.raw_sha256 == raw_hash,
+                GeneticRawFile.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if existing_raw is None:
+            plaintext = json.dumps(raw_by_rsid, ensure_ascii=False)
+            ciphertext = tenant_crypto.encrypt_for(current_user.id, plaintext)
+            db.add(GeneticRawFile(
+                user_id=current_user.id,
+                profile_id=profile.id,
+                import_job_id=import_job.id,
+                raw_sha256=raw_hash,
+                snp_count=len(raw_by_rsid),
+                byte_size=len(plaintext.encode("utf-8")),
+                key_version=1,
+                enc_algo="fernet-hkdf",
+                ciphertext=ciphertext,
+            ))
+        _write_raw_audit(
+            db, current_user.id, profile.id, "upload",
+            {"snp_count": len(raw_by_rsid), "deduped": existing_raw is not None},
+        )
 
     coverage = _build_import_coverage(matched_rsids, set(raw_by_rsid.keys()))
     profile.notes = f"TXT 解析完成，匹配 {len(matched)} 个健康位点"
@@ -924,36 +955,51 @@ def _owned_profile_or_404(db: Session, user_id: int, profile_id: int) -> Genetic
     return profile
 
 
-def _latest_raw_job(db: Session, user_id: int, profile_id: int) -> Optional[GeneticImportJob]:
-    """取该 profile 最近一条带 raw_genotypes 的导入记录."""
+def _write_raw_audit(
+    db: Session, user_id: int, profile_id: int, action: str, detail: Optional[Dict[str, Any]] = None
+) -> None:
+    """写一条基因原始数据访问审计 (旁路, 不含明文全量基因型)。"""
+    db.add(GeneticRawAudit(
+        user_id=user_id, profile_id=profile_id, action=action, detail=detail,
+    ))
+
+
+def _latest_raw_file(db: Session, user_id: int, profile_id: int) -> Optional[GeneticRawFile]:
+    """取该 profile 最近一条未软删的原始密文行 (应用层 user_id 过滤 + RLS 双保险)。"""
     return (
-        db.query(GeneticImportJob)
+        db.query(GeneticRawFile)
         .filter(
-            GeneticImportJob.user_id == user_id,
-            GeneticImportJob.profile_id == profile_id,
-            GeneticImportJob.raw_genotypes.isnot(None),
+            GeneticRawFile.user_id == user_id,
+            GeneticRawFile.profile_id == profile_id,
+            GeneticRawFile.deleted_at.is_(None),
         )
-        .order_by(desc(GeneticImportJob.id))
+        .order_by(desc(GeneticRawFile.id))
         .first()
     )
+
+
+def _decrypt_raw_file(user_id: int, raw_file: GeneticRawFile) -> Dict[str, str]:
+    """解密 + 反序列化原始密文。解密/解析失败 → 400 (fail-loud, 不静默吞)。"""
+    try:
+        plaintext = tenant_crypto.decrypt_for(user_id, raw_file.ciphertext)
+        return json.loads(plaintext)
+    except Exception as e:  # noqa: BLE001 — 不在异常里带明文, 只给通用错误
+        raise HTTPException(status_code=400, detail="原始基因数据解密失败") from e
 
 
 @router.post("/profiles/{profile_id}/reparse", summary="对已存原始基因型按最新白名单重解析，无需重传")
 def reparse_genetic_profile(
     profile_id: int,
-    current_user: User = Depends(get_current_user_required),
+    current_user: User = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ):
     """白名单扩展(如新增 PEMT)后, 用已加密保留的原始全量基因型重新匹配, 只新增未解析过的位点."""
     profile = _owned_profile_or_404(db, current_user.id, profile_id)
-    job = _latest_raw_job(db, current_user.id, profile_id)
-    if job is None or not job.raw_genotypes:
+    raw_file = _latest_raw_file(db, current_user.id, profile_id)
+    if raw_file is None:
         raise HTTPException(status_code=400, detail="该档案未保留原始数据，请重新上传(勾选保留原始)")
 
-    try:
-        raw_by_rsid: Dict[str, str] = json.loads(job.raw_genotypes)
-    except (ValueError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=f"原始基因型解析失败: {e}")
+    raw_by_rsid: Dict[str, str] = _decrypt_raw_file(current_user.id, raw_file)
 
     existing_rsids = {
         r for (r,) in db.query(GeneticVariant.rsid)
@@ -963,6 +1009,10 @@ def reparse_genetic_profile(
     }
     newly_matched, _matched_rsids, _unmapped = _match_and_store_variants(
         db, current_user.id, profile, raw_by_rsid, skip_rsids=existing_rsids,
+    )
+    _write_raw_audit(
+        db, current_user.id, profile_id, "reparse",
+        {"newly_added_count": len(newly_matched)},
     )
     db.commit()
 
@@ -983,40 +1033,65 @@ def raw_lookup_genetic_profile(
     profile_id: int,
     rsid: Optional[str] = Query(None, description="按 rsID 直查(含白名单外)"),
     gene: Optional[str] = Query(None, description="按基因名查(用内置 _GENE_RSIDS 映射)"),
-    current_user: User = Depends(get_current_user_required),
+    current_user: User = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ):
-    """从加密保留的原始全量基因型里查任意位点/基因. 属主校验防 IDOR."""
+    """从 per-tenant 加密的原始全量基因型里查任意位点/基因. 属主校验防 IDOR + 写审计."""
+    # 参数校验先于解密 (无 rsid/gene → 422, 不必碰密文)。
+    if not rsid and not gene:
+        raise HTTPException(status_code=422, detail="必须提供 rsid 或 gene 之一")
+
     _owned_profile_or_404(db, current_user.id, profile_id)
-    job = _latest_raw_job(db, current_user.id, profile_id)
-    if job is None or not job.raw_genotypes:
+    raw_file = _latest_raw_file(db, current_user.id, profile_id)
+    if raw_file is None:
         raise HTTPException(status_code=400, detail="该档案未保留原始数据，请重新上传(勾选保留原始)")
 
-    try:
-        raw_by_rsid: Dict[str, str] = json.loads(job.raw_genotypes)
-    except (ValueError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=f"原始基因型解析失败: {e}")
+    raw_by_rsid: Dict[str, str] = _decrypt_raw_file(current_user.id, raw_file)
 
     if rsid:
         norm = _normalize_rsid(rsid) or rsid.strip().lower()
         genotype = raw_by_rsid.get(norm)
+        _write_raw_audit(db, current_user.id, profile_id, "lookup", {"rsid": norm})
+        db.commit()
         return {"rsid": norm, "genotype": genotype, "in_whitelist": norm in KNOWN_SNPS}
 
-    if gene:
-        gene_key = gene.strip().upper()
-        rsids = _GENE_RSIDS.get(gene_key)
-        if rsids is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"基因 {gene_key} 不在内置映射中，可用 rsid 直查",
-            )
-        results = [
-            {"rsid": r, "genotype": raw_by_rsid.get(r), "in_whitelist": r in KNOWN_SNPS}
-            for r in rsids
-        ]
-        return {"gene": gene_key, "variants": results}
+    gene_key = gene.strip().upper()
+    rsids = _GENE_RSIDS.get(gene_key)
+    if rsids is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"基因 {gene_key} 不在内置映射中，可用 rsid 直查",
+        )
+    results = [
+        {"rsid": r, "genotype": raw_by_rsid.get(r), "in_whitelist": r in KNOWN_SNPS}
+        for r in rsids
+    ]
+    _write_raw_audit(db, current_user.id, profile_id, "lookup", {"gene": gene_key})
+    db.commit()
+    return {"gene": gene_key, "variants": results}
 
-    raise HTTPException(status_code=422, detail="必须提供 rsid 或 gene 之一")
+
+@router.delete("/profiles/{profile_id}/raw", summary="删除原始基因数据(被遗忘权)")
+def delete_genetic_raw(
+    profile_id: int,
+    current_user: User = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+):
+    """真删除该档案的原始基因密文(硬清 ciphertext, 不可逆)+ 标 deleted_at + 写审计. 属主校验防 IDOR.
+
+    安全评审 required: 不做软删占位 —— 直接清空密文使数据**真正不可还原**(被遗忘权),
+    仅保留审计元数据(谁/何时删, 不含基因型)。deleted_at 同时让读路径过滤。
+    """
+    _owned_profile_or_404(db, current_user.id, profile_id)
+    raw_file = _latest_raw_file(db, current_user.id, profile_id)
+    if raw_file is None:
+        raise HTTPException(status_code=404, detail="该档案无可删除的原始基因数据")
+
+    raw_file.ciphertext = ""        # 硬清密文 = 真删除, 不可逆(密钥即使可派生也无密文可解)
+    raw_file.deleted_at = _utcnow()
+    _write_raw_audit(db, current_user.id, profile_id, "delete", {"raw_file_id": raw_file.id})
+    db.commit()
+    return {"deleted": True, "message": "原始基因数据已永久删除(被遗忘权)"}
 
 
 @router.post("/profiles/upload-pdf", summary="上传基因检测 PDF，AI 自动提取基因位点")
