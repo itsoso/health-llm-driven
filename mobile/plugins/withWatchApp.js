@@ -7,6 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const PHOTO_LIBRARY_USAGE_DESCRIPTION =
+  '用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析';
+const PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION = '用于你主动保存健康报告、截图或导出图片到照片图库';
+
 const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -33,6 +37,8 @@ const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>NSPhotoLibraryUsageDescription</key><string>${PHOTO_LIBRARY_USAGE_DESCRIPTION}</string>
+  <key>NSPhotoLibraryAddUsageDescription</key><string>${PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION}</string>
   <key>WKApplication</key><true/>
   <key>WKCompanionAppBundleIdentifier</key><string>life.executor.health</string>
 </dict>
@@ -52,6 +58,8 @@ const WIDGET_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>NSPhotoLibraryUsageDescription</key><string>${PHOTO_LIBRARY_USAGE_DESCRIPTION}</string>
+  <key>NSPhotoLibraryAddUsageDescription</key><string>${PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION}</string>
   <key>NSExtension</key>
   <dict>
     <key>NSExtensionPointIdentifier</key>

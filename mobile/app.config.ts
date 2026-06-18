@@ -24,6 +24,9 @@ const ASSOCIATED_DOMAIN = `applinks:${APP_LINK_DOMAIN}`;
 const APP_OPEN_PATH_PREFIX = '/open/shared';
 const ROKID_CALLBACK_SCHEME = `${BUNDLE_ID_BASE}.rokid`;
 const ROKID_QUERY_SCHEMES = ['rokidai'];
+const PHOTO_LIBRARY_USAGE_DESCRIPTION =
+  '用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析';
+const PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION = '用于你主动保存健康报告、截图或导出图片到照片图库';
 const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
   action: 'VIEW',
   autoVerify: true,
@@ -90,6 +93,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
       NSBluetoothPeripheralUsageDescription:
         '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
+      NSPhotoLibraryUsageDescription: PHOTO_LIBRARY_USAGE_DESCRIPTION,
+      NSPhotoLibraryAddUsageDescription: PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION,
     },
   },
   android: {
