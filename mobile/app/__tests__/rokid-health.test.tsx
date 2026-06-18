@@ -90,10 +90,10 @@ describe('RokidHealthScreen', () => {
       },
       {
         id: 'hi_rokid_ready',
-        title: 'Hi Rokid 已连接',
-        detail: '在 Hi Rokid 中确认眼镜已连接。',
+        title: 'Rokid companion 已连接',
+        detail: '在 Rokid AI / Hi Rokid 中确认眼镜已连接。',
         status: status?.hiRokidInstalled && status?.canOpenHiRokid ? 'done' : 'pending',
-        actionLabel: '打开 Hi Rokid',
+        actionLabel: '打开 Rokid AI / Hi Rokid',
       },
       {
         id: 'rokid_authorized',
@@ -124,7 +124,7 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Rokid 眼镜健康模式')).toBeTruthy();
-      expect(screen.getByText('Hi Rokid 已安装')).toBeTruthy();
+      expect(screen.getByText('Rokid companion 已安装')).toBeTruthy();
       expect(screen.getByText('Bridge 已就绪')).toBeTruthy();
       expect(screen.getByText('SDK 未链接')).toBeTruthy();
       expect(screen.getByText('进公司后 20 个俯卧撑')).toBeTruthy();
@@ -134,13 +134,13 @@ describe('RokidHealthScreen', () => {
     expect(screen.getByText('用药和补剂只生成待确认草稿')).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开 Hi Rokid'));
+      fireEvent.press(screen.getByText('打开 Rokid AI / Hi Rokid'));
       await flushAsyncUpdates();
     });
 
     await waitFor(() => {
       expect(mockOpenRokidCompanionIfAvailable).toHaveBeenCalledTimes(1);
-      expect(screen.getByText('已请求打开 Hi Rokid')).toBeTruthy();
+      expect(screen.getByText('已请求打开 Rokid AI / Hi Rokid')).toBeTruthy();
     });
   });
 

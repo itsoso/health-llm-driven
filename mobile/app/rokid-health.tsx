@@ -53,18 +53,18 @@ type RokidGlanceCard = {
   priority_tier?: string;
 };
 
-const PRIVACY_MODES: Array<{ key: PrivacyMode; label: string; description: string }> = [
+const PRIVACY_MODES: { key: PrivacyMode; label: string; description: string }[] = [
   { key: 'private', label: '私密', description: '可保留原始素材, 仍需主动触发' },
   { key: 'workplace', label: '办公', description: '默认保留摘要和 hash' },
   { key: 'public', label: '公共', description: '默认不保留原图和原音频' },
 ];
 
-const CAPTURE_ACTIONS: Array<{
+const CAPTURE_ACTIONS: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   detail: string;
   intent: RokidVisualIntent;
-}> = [
+}[] = [
   { icon: 'fast-food-outline', title: '食物视觉记录', detail: '拍菜单 / 餐盘后生成饮食草稿', intent: 'food_scan' },
   { icon: 'nutrition-outline', title: '补剂标签扫描', detail: 'OCR 后进入补剂待确认队列', intent: 'supplement_scan' },
   { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药', intent: 'medication_scan' },
@@ -79,7 +79,7 @@ function statusLabel(status?: RokidIntegrationStatus) {
     };
   }
   return {
-    hiRokid: status.hiRokidInstalled ? 'Hi Rokid 已安装' : '未检测到 Hi Rokid',
+    hiRokid: status.hiRokidInstalled ? 'Rokid companion 已安装' : '未检测到 Rokid companion',
     bridge: status.bridgeAvailable ? 'Bridge 已就绪' : 'Bridge 未就绪',
     sdk: status.sdkLinked ? 'SDK 已链接' : 'SDK 未链接',
   };
@@ -129,7 +129,7 @@ function isRecoverableRokidAuthorizationDelay(reason?: string) {
 
 function formatRokidAuthorizationIssue(reason?: string) {
   if (isRecoverableRokidAuthorizationDelay(reason)) {
-    return '鉴权请求超时: Hi Rokid 未在等待窗口内回调 Reva';
+    return '鉴权请求超时: Rokid AI / Hi Rokid 未在等待窗口内回调 Reva';
   }
   return reason ?? 'authorization_failed';
 }
@@ -139,8 +139,15 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (!status) {
     return lines;
   }
+  if (status.companionServerScheme && status.companionServerHost) {
+    const device = status.currentDeviceName ? ` · device=${status.currentDeviceName}` : '';
+    lines.push(`Companion: ${status.companionServerScheme}://${status.companionServerHost}${device}`);
+  }
   if (status.lastAuthorizationError) {
     lines.push(`最近授权错误: ${formatRokidAuthorizationIssue(status.lastAuthorizationError)}`);
+  }
+  if (status.lastAuthorizationEvent) {
+    lines.push(`SDK 授权事件: ${status.lastAuthorizationEvent}`);
   }
   if (status.lastAuthorizationRequestAt) {
     lines.push(`最近授权请求: ${status.lastAuthorizationRequestAt}`);
@@ -236,7 +243,7 @@ export default function RokidHealthScreen() {
         if (isRecoverableRokidAuthorizationDelay(reason)) {
           setSessionState({
             status: 'waiting',
-            message: '等待 Rokid 授权回调。请在 Hi Rokid 完成授权后回到 Reva 并点刷新; 若仍超时, 继续点授权重试。',
+            message: '等待 Rokid 授权回调。请在 Rokid AI / Hi Rokid 完成授权后回到 Reva 并点刷新; 若仍超时, 继续点授权重试。',
           });
           return;
         }
@@ -370,7 +377,7 @@ export default function RokidHealthScreen() {
             accessibilityRole="button"
           >
             <Ionicons name="open-outline" size={17} color="#fff" />
-            <Text style={txt.primaryButton}>{openState === 'opening' ? '打开中...' : '打开 Hi Rokid'}</Text>
+            <Text style={txt.primaryButton}>{openState === 'opening' ? '打开中...' : '打开 Rokid AI / Hi Rokid'}</Text>
           </Pressable>
 
           {isIOS ? (
@@ -471,7 +478,7 @@ export default function RokidHealthScreen() {
               txt.openState,
               openState === 'opened' ? { color: s.success.solid } : { color: s.warning.solid },
             ]}>
-              {openState === 'opened' ? '已请求打开 Hi Rokid' : '当前设备无法打开 Hi Rokid'}
+              {openState === 'opened' ? '已请求打开 Rokid AI / Hi Rokid' : '当前设备无法打开 Rokid AI / Hi Rokid'}
             </Text>
           ) : null}
 
@@ -588,7 +595,7 @@ export default function RokidHealthScreen() {
             {captureState.message ? `最近状态: ${captureState.message}` : '等待主动触发。不会连续录音或后台拍摄。'}
           </Text>
           {status?.installedPackage ? (
-            <Text style={txt.technical}>Hi Rokid package: {status.installedPackage}</Text>
+            <Text style={txt.technical}>Rokid companion package: {status.installedPackage}</Text>
           ) : null}
           {status?.iosSdkCompatibility ? (
             <Text style={txt.technical}>{status.iosSdkCompatibility}</Text>

@@ -71,6 +71,31 @@ function authorizationErrorDetail(status: RokidIntegrationStatus) {
   return parts.length > 0 ? parts.join('; ') : undefined;
 }
 
+function companionDetail(status: RokidIntegrationStatus, companionReady: boolean) {
+  const parts: string[] = [];
+  if (status.companionServerScheme && status.companionServerHost) {
+    parts.push(`server=${status.companionServerScheme}://${status.companionServerHost}`);
+  }
+  if (status.currentDeviceName) {
+    parts.push(`device=${status.currentDeviceName}`);
+  }
+  if (parts.length > 0) {
+    return parts.join('; ');
+  }
+  return companionReady ? '可唤起 Rokid AI / Hi Rokid' : '需要先安装并连接眼镜';
+}
+
+function authorizationEventSeverity(event?: string): RokidSelfCheckSeverity {
+  const normalized = event?.toLowerCase() ?? '';
+  if (normalized.includes('failed') || normalized.includes('expired')) {
+    return 'warn';
+  }
+  if (normalized.includes('succeeded') || normalized.includes('authenticated')) {
+    return 'pass';
+  }
+  return 'info';
+}
+
 export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCheck {
   const bridgeReady = status.bridgeAvailable === true;
   const sdkLinked = status.sdkLinked === true;
@@ -81,7 +106,8 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
 
   const bridge = passIf(bridgeReady, 'Bridge 已就绪', 'Bridge 未就绪', 'block');
   const sdk = passIf(sdkLinked, 'SDK 已链接', 'SDK 未链接', bridgeReady ? 'warn' : 'block');
-  const companion = passIf(companionReady, 'Hi Rokid 可用', 'Hi Rokid 未就绪', 'warn');
+  const companionName = status.companionAppName ?? 'Rokid AI / Hi Rokid';
+  const companion = passIf(companionReady, 'Rokid companion 可用', 'Rokid companion 未就绪', 'warn');
   const authorization = passIf(authorized, 'CXR-L 已授权', 'CXR-L 未授权', 'warn');
   const session = passIf(sessionReady, '会话能力就绪', '会话未构建完成', 'warn');
   const callbackSeen = typeof status.lastCallbackUrl === 'string' && status.lastCallbackUrl.length > 0;
@@ -125,9 +151,9 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
       },
       {
         id: 'companion',
-        label: 'Hi Rokid',
+        label: companionName,
         ...companion,
-        detail: companionReady ? '可唤起 Rokid AI / Hi Rokid' : '需要先安装并连接眼镜',
+        detail: companionDetail(status, companionReady),
       },
       {
         id: 'authorization',
@@ -149,6 +175,13 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         severity: authErrorValue ? 'warn' : authorized ? 'pass' : 'info',
         detail: authErrorValue ? authorizationErrorDetail(status) : undefined,
       },
+      ...(status.lastAuthorizationEvent ? [{
+        id: 'auth_event',
+        label: 'SDK 授权事件',
+        value: status.lastAuthorizationEvent,
+        severity: authorizationEventSeverity(status.lastAuthorizationEvent),
+        detail: status.lastAuthorizationEventAt ? `eventAt=${status.lastAuthorizationEventAt}` : undefined,
+      }] : []),
       {
         id: 'session',
         label: '会话',

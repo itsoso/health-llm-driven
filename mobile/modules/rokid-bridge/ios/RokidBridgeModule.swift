@@ -12,6 +12,9 @@ import RGCoreKit
 #endif
 
 public class RokidBridgeModule: Module {
+  private static let companionAppName = "Rokid AI / Hi Rokid"
+  private static let companionServerScheme = "rokidai"
+  private static let companionServerHost = "connect"
   private static let callbackHost = "auth"
   private static let callbackPath = "/callback"
   private static let authorizationRequestTimeoutSeconds: TimeInterval = 180.0
@@ -29,6 +32,9 @@ public class RokidBridgeModule: Module {
   private static var lastAuthorizationRequestAt: String?
   private static var lastAuthorizationError: String?
   private static var lastAuthorizationErrorAt: String?
+  private static var lastAuthorizationEvent: String?
+  private static var lastAuthorizationEventAt: String?
+  private static var currentDeviceName: String?
   #if canImport(RGCxrClient)
   private static var cancellables = Set<AnyCancellable>()
   #endif
@@ -140,6 +146,9 @@ public class RokidBridgeModule: Module {
     payload["customViewRunning"] = isCustomViewRunning()
     payload["capabilitiesReady"] = capabilitiesReady()
     payload["customAppSupported"] = sdkLinked()
+    payload["companionAppName"] = companionAppName
+    payload["companionServerScheme"] = companionServerScheme
+    payload["companionServerHost"] = companionServerHost
     payload["callbackScheme"] = callbackScheme
     payload["callbackUrl"] = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
     if let bundleIdentifier = Bundle.main.bundleIdentifier {
@@ -160,6 +169,15 @@ public class RokidBridgeModule: Module {
     if let lastAuthorizationErrorAt {
       payload["lastAuthorizationErrorAt"] = lastAuthorizationErrorAt
     }
+    if let lastAuthorizationEvent {
+      payload["lastAuthorizationEvent"] = lastAuthorizationEvent
+    }
+    if let lastAuthorizationEventAt {
+      payload["lastAuthorizationEventAt"] = lastAuthorizationEventAt
+    }
+    if let currentDeviceName {
+      payload["currentDeviceName"] = currentDeviceName
+    }
     payload["cxrClientInitialized"] = cxrClientInitialized()
     payload["cxrInitializationMode"] = cxrInitializationMode()
     payload["cxrInitializationOutcome"] = cxrInitializationOutcome
@@ -178,7 +196,7 @@ public class RokidBridgeModule: Module {
   }
 
   private static func openHiRokid(promise: Promise) {
-    guard let url = URL(string: "rokidai://"), UIApplication.shared.canOpenURL(url) else {
+    guard let url = URL(string: "\(companionServerScheme)://"), UIApplication.shared.canOpenURL(url) else {
       promise.resolve(false)
       return
     }
@@ -572,7 +590,7 @@ public class RokidBridgeModule: Module {
   #endif
 
   private static func canOpenHiRokid() -> Bool {
-    guard let url = URL(string: "rokidai://") else {
+    guard let url = URL(string: "\(companionServerScheme)://") else {
       return false
     }
     return UIApplication.shared.canOpenURL(url)
@@ -590,13 +608,22 @@ public class RokidBridgeModule: Module {
   }
 
   private static func recordAuthorizationError(_ error: Error) {
-    lastAuthorizationError = String(describing: error)
+    recordAuthorizationErrorDescription(String(describing: error))
+  }
+
+  private static func recordAuthorizationErrorDescription(_ error: String) {
+    lastAuthorizationError = error
     lastAuthorizationErrorAt = isoTimestamp()
   }
 
   private static func clearAuthorizationError() {
     lastAuthorizationError = nil
     lastAuthorizationErrorAt = nil
+  }
+
+  private static func recordAuthorizationEvent(_ event: String) {
+    lastAuthorizationEvent = event
+    lastAuthorizationEventAt = isoTimestamp()
   }
 
   #if canImport(RGCxrClient)
@@ -632,6 +659,8 @@ public class RokidBridgeModule: Module {
     }
     RokidBridgeModule.didConfigureAuthentication = true
     CxrClient.shared.auth.config = RGCxrClientAuthConfig(
+      serverScheme: companionServerScheme,
+      serverHost: companionServerHost,
       callbackScheme: callbackScheme,
       callbackHost: callbackHost,
       callbackPath: callbackPath,
@@ -652,8 +681,61 @@ public class RokidBridgeModule: Module {
         RokidBridgeModule.customViewRunning = event.isRunning
       }
       .store(in: &RokidBridgeModule.cancellables)
+    CxrClient.shared.auth.eventPublisher
+      .receive(on: DispatchQueue.main)
+      .sink { event in
+        RokidBridgeModule.handleAuthorizationEvent(event)
+      }
+      .store(in: &RokidBridgeModule.cancellables)
     #endif
   }
+
+  #if canImport(RGCxrClient)
+  private static func handleAuthorizationEvent(_ event: RGCxrClientAuthEvent) {
+    switch event {
+    case .stateChanged(let state):
+      let stateDescription = authorizationStateDescription(state)
+      recordAuthorizationEvent("stateChanged:\(stateDescription)")
+      if case .failed(let error) = state {
+        recordAuthorizationErrorDescription(error)
+      }
+    case .authenticationSucceeded(_, let sessionId, let deviceName):
+      clearAuthorizationError()
+      if let deviceName, !deviceName.isEmpty {
+        currentDeviceName = deviceName
+      }
+      if let sessionId, !sessionId.isEmpty {
+        recordAuthorizationEvent("authenticationSucceeded:session")
+      } else {
+        recordAuthorizationEvent("authenticationSucceeded")
+      }
+    case .authenticationFailed(let error):
+      recordAuthorizationErrorDescription(error)
+      recordAuthorizationEvent("authenticationFailed:\(error)")
+    case .tokenExpired:
+      recordAuthorizationEvent("tokenExpired")
+    @unknown default:
+      recordAuthorizationEvent("unknown")
+    }
+  }
+
+  private static func authorizationStateDescription(_ state: RGCxrClientAuthState) -> String {
+    switch state {
+    case .notAuthenticated:
+      return "not_authenticated"
+    case .authenticating:
+      return "authenticating"
+    case .authenticated(_, _):
+      return "authenticated"
+    case .expired:
+      return "expired"
+    case .failed(let error):
+      return "failed:\(error)"
+    @unknown default:
+      return "unknown"
+    }
+  }
+  #endif
 
   private static func sdkLinked() -> Bool {
     #if canImport(RGCxrClient)

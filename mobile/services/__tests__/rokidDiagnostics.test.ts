@@ -153,4 +153,50 @@ describe('rokid diagnostics', () => {
     expect(JSON.stringify(check.items)).not.toContain('code=abc');
     expect(JSON.stringify(check.items)).not.toContain('state=secret');
   });
+
+  it('surfaces companion routing and native auth event diagnostics', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      companionAppName: 'Rokid AI / Hi Rokid',
+      companionServerScheme: 'rokidai',
+      companionServerHost: 'connect',
+      lastAuthorizationEvent: 'authenticationFailed: user_cancelled',
+      lastAuthorizationEventAt: '2026-06-18T23:58:00Z',
+      currentDeviceName: 'Rokid Glasses',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'companion',
+        label: 'Rokid AI / Hi Rokid',
+        value: 'Rokid companion 可用',
+        detail: 'server=rokidai://connect; device=Rokid Glasses',
+      }),
+      expect.objectContaining({
+        id: 'auth_event',
+        label: 'SDK 授权事件',
+        value: 'authenticationFailed: user_cancelled',
+        severity: 'warn',
+        detail: 'eventAt=2026-06-18T23:58:00Z',
+      }),
+    ]));
+  });
 });

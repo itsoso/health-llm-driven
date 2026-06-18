@@ -40,6 +40,12 @@ export type RokidIntegrationStatus = {
   lastAuthorizationRequestAt?: string;
   lastAuthorizationError?: string;
   lastAuthorizationErrorAt?: string;
+  lastAuthorizationEvent?: string;
+  lastAuthorizationEventAt?: string;
+  currentDeviceName?: string;
+  companionAppName?: string;
+  companionServerScheme?: string;
+  companionServerHost?: string;
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;
@@ -138,10 +144,10 @@ export function getRokidDeviceValidationSteps(
   const captureReady = status?.capabilitiesReady === true;
   const iosClient = status?.sdkArtifacts?.iosClient ?? ROKID_SDK_ARTIFACTS.iosClient;
 
-  const drafts: Array<Omit<RokidDeviceValidationStep, 'status'> & {
+  const drafts: (Omit<RokidDeviceValidationStep, 'status'> & {
     done: boolean;
     blocked?: boolean;
-  }> = [
+  })[] = [
     {
       id: 'ios_sdk_linked',
       title: 'iOS SDK 已链接',
@@ -154,9 +160,9 @@ export function getRokidDeviceValidationSteps(
     },
     {
       id: 'hi_rokid_ready',
-      title: 'Hi Rokid 已连接',
-      detail: hiRokidReady ? 'Hi Rokid 可唤起, 可继续授权。' : '在 Hi Rokid 中确认眼镜已连接。',
-      actionLabel: '打开 Hi Rokid',
+      title: 'Rokid companion 已连接',
+      detail: hiRokidReady ? 'Rokid AI / Hi Rokid 可唤起, 可继续授权。' : '在 Rokid AI / Hi Rokid 中确认眼镜已连接。',
+      actionLabel: '打开 Rokid AI / Hi Rokid',
       done: hiRokidReady,
     },
     {

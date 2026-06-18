@@ -25,6 +25,18 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('lastAuthorizationErrorAt');
   });
 
+  it('records SDK auth events and explicit companion routing config for device debugging', () => {
+    expect(source).toContain('private static let companionServerScheme = "rokidai"');
+    expect(source).toContain('private static let companionServerHost = "connect"');
+    expect(source).toContain('payload["companionServerScheme"] = companionServerScheme');
+    expect(source).toContain('payload["companionServerHost"] = companionServerHost');
+    expect(source).toContain('CxrClient.shared.auth.eventPublisher');
+    expect(source).toContain('recordAuthorizationEvent');
+    expect(source).toContain('lastAuthorizationEvent');
+    expect(source).toContain('lastAuthorizationEventAt');
+    expect(source).toContain('currentDeviceName');
+  });
+
   it('resets stale failed or authenticating SDK auth state before explicit retry', () => {
     expect(source).toContain('resetAuthorizationStateForExplicitRequest()');
     expect(source).toMatch(/resetAuthorizationStateForExplicitRequest\(\)[\s\S]+markAuthorizationRequest\(scopes: scopes, appName: appName\)[\s\S]+CxrClient\.shared\.auth\.authenticate/);
