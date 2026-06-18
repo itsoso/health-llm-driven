@@ -28,6 +28,16 @@ interface AirQuality {
   aqi?: number;
   pm25?: number;
 }
+interface ForecastDay {
+  date: string;
+  weather: string;
+  temp_max: number;
+  temp_min: number;
+}
+interface ForecastResponse {
+  available?: boolean;
+  forecasts?: ForecastDay[];
+}
 interface ProfileLocation {
   use_manual_location?: boolean;
   manual_location?: { city: string | null; region: string | null } | null;
@@ -78,6 +88,22 @@ export default function RevaWeatherRow() {
     staleTime: 30 * 60 * 1000,
   });
 
+  // 明日预报 — 复用 EnvironmentCard 的 ['env','forecast'] key,React Query 去重。
+  const forecastQ = useQuery<ForecastDay[] | null>({
+    queryKey: ['env', 'forecast'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get<ForecastResponse>('/environment/weather/forecast', {
+          params: { days: 3 },
+        });
+        return data?.forecasts ?? null;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 60 * 60 * 1000,
+  });
+
   const locationQ = useQuery<{ city: string | null; region: string | null }>({
     queryKey: ['env', 'location'],
     queryFn: async () => {
@@ -101,7 +127,17 @@ export default function RevaWeatherRow() {
   const a = aqiQ.data;
   const loc = locationQ.data;
 
-  if (!w && !a && !loc?.city) return null;
+  // 明日 = 按日期匹配(今天+1),匹配不到再退回索引 1,避免「源首项不是今天」时错位。
+  const tomorrow = (() => {
+    const fc = forecastQ.data;
+    if (!fc || fc.length === 0) return null;
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return fc.find((f) => f.date === iso) ?? fc[1] ?? null;
+  })();
+
+  if (!w && !a && !loc?.city && !tomorrow) return null;
 
   const top = [
     loc?.city || null,
@@ -141,6 +177,19 @@ export default function RevaWeatherRow() {
           ))}
         </View>
       ) : null}
+      {tomorrow ? (
+        <View style={styles.forecastRow}>
+          <Text style={styles.forecastLabel}>明日</Text>
+          <Text style={styles.forecastTemp}>
+            {Math.round(tomorrow.temp_max)}° / {Math.round(tomorrow.temp_min)}°
+          </Text>
+          {tomorrow.weather ? (
+            <Text style={styles.forecastWeather} numberOfLines={1}>
+              {tomorrow.weather}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -162,4 +211,15 @@ const styles = StyleSheet.create({
   dot: { color: C.ink4, fontSize: 12, marginRight: 2 },
   metricLabel: { fontSize: 12, color: C.ink3 },
   metricValue: { fontFamily: 'IBMPlexMono', fontSize: 13, fontWeight: '500', color: C.ink2 },
+  forecastRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 7,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  forecastLabel: { fontSize: 12, color: C.ink3 },
+  forecastTemp: { fontFamily: 'IBMPlexMono', fontSize: 13, fontWeight: '600', color: C.ink1 },
+  forecastWeather: { flex: 1, minWidth: 0, fontSize: 12.5, color: C.ink2 },
 });
