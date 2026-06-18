@@ -1,6 +1,7 @@
 """基因数据 API — 基因检测档案 + 变异位点管理 + 交叉分析"""
 import logging
 import hashlib
+import json
 from datetime import date
 from typing import Optional, List, Dict, Any
 
@@ -343,6 +344,15 @@ KNOWN_SNPS = {
     "rs1544410": {"category": "nutrition", "gene": "VDR", "variant": "维生素D受体",
         "map": {"CC": ("CC", "维D需求正常", "low"), "CT": ("CT", "维D需求轻度增高", "low"), "TT": ("TT", "维D需求增高", "medium")},
         "desc": "维生素D受体基因，影响钙吸收和骨密度"},
+    "rs7946": {"category": "nutrition", "gene": "PEMT", "variant": "磷脂酰胆碱合成(V175M)",
+        "map": {"GG": ("GG", "PEMT 活性正常", "low"), "AG": ("AG", "PEMT 活性可能轻度降低，胆碱需求或偏高", "info"), "AA": ("AA", "PEMT 活性可能降低，低胆碱饮食下脂肪肝易感或升高(筛查级，须结合饮食/肝酶)", "medium")},
+        "desc": "磷脂酰乙醇胺N-甲基转移酶，内源合成磷脂酰胆碱；与胆碱需求、脂肪肝易感相关(证据筛查级)"},
+    # 注: rs12325817 是 G>C strand-ambiguous SNP — 消费级 TXT 无 strand 元数据, 无法区分
+    # GG/CC 正反链(物理固有局限, 同其它 G/C 营养位点); label 已 hedged 到筛查级以缓解。
+    # (rs7946 是 A>G, _genotype_candidates 的互补匹配可正确处理反链, 无此歧义。)
+    "rs12325817": {"category": "nutrition", "gene": "PEMT", "variant": "胆碱需求(-744 G>C)",
+        "map": {"GG": ("GG", "胆碱代谢常见型", "low"), "CG": ("CG", "低胆碱饮食下需求或偏高", "info"), "CC": ("CC", "低胆碱饮食下器官功能障碍易感或升高(筛查级)", "medium")},
+        "desc": "PEMT 启动子区，影响雌激素诱导的 PEMT 表达与膳食胆碱需求(证据筛查级)"},
     # 运动能力
     "rs1815739": {"category": "exercise", "gene": "ACTN3", "variant": "R577X",
         "map": {"CC": ("RR", "爆发力型", "info"), "CT": ("RX", "混合型", "info"), "TT": ("XX", "耐力型", "info")},
@@ -664,6 +674,7 @@ class GeneticTxtUploadRequest(BaseModel):
     test_date: date = Field(..., description="检测日期")
     txt_content: str = Field(..., max_length=20_000_000, description="TXT 原始数据内容")
     notes: Optional[str] = None
+    retain_raw: bool = Field(True, description="加密保留原始全量基因型，支持任意基因查询/白名单扩展后重解析；最高隐私级")
 
 
 def _utcnow():
@@ -716,6 +727,108 @@ def _job_to_dict(job: Optional[GeneticImportJob]) -> Optional[Dict[str, Any]]:
     }
 
 
+# gene → 该基因在白名单中的 rsid 列表 (供 raw-lookup 按基因名查任意位点; 可逐步扩充).
+_GENE_RSIDS: Dict[str, List[str]] = {
+    "PEMT": ["rs7946", "rs12325817"],
+    "COMT": ["rs4680"],
+    "MTHFR": ["rs1801133"],
+}
+
+
+def _parse_raw_txt_genotypes(txt_content: str) -> tuple[Dict[str, str], int, int]:
+    """解析 WeGene/23andMe tab 格式, 收集去重后的 {rsid: genotype}.
+
+    返回 (raw_by_rsid, raw_record_count, duplicate_count). 跳过空行 / '#' 注释 /
+    字段不足 / genotype 为 '--' 的行; 同一 rsid 重复出现只保留首条并计 duplicate.
+    """
+    raw_by_rsid: Dict[str, str] = {}
+    raw_record_count = 0
+    duplicate_count = 0
+    for line in txt_content.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+        rsid = _normalize_rsid(parts[0])
+        genotype = parts[3].strip()
+        if rsid and genotype != "--":
+            raw_record_count += 1
+            if rsid in raw_by_rsid:
+                duplicate_count += 1
+                continue
+            raw_by_rsid[rsid] = genotype
+    return raw_by_rsid, raw_record_count, duplicate_count
+
+
+def _match_and_store_variants(
+    db: Session,
+    user_id: int,
+    profile: GeneticProfile,
+    raw_by_rsid: Dict[str, str],
+    *,
+    skip_rsids: Optional[set] = None,
+) -> tuple[List[Dict[str, Any]], set, int]:
+    """按白名单匹配 raw_by_rsid, 为每个命中位点创建 GeneticVariant (add 进 session, 不 commit).
+
+    返回 (matched, matched_rsids, unmapped_count). skip_rsids 里的 rsid 跳过 (重解析复用,
+    避免重复建已存在的 variant). 含 rs429358 APOE 双位点特判 (与 upload 原行为一致).
+    """
+    skip = skip_rsids or set()
+    matched: List[Dict[str, Any]] = []
+    matched_rsids: set = set()
+    unmapped_count = 0
+    for rsid, genotype in raw_by_rsid.items():
+        if rsid not in KNOWN_SNPS or rsid in skip:
+            continue
+        snp = KNOWN_SNPS[rsid]
+        if rsid == "rs429358":
+            apoe = _derive_apoe_epsilon(raw_by_rsid)
+            if apoe is None:
+                continue
+            payload = {
+                "rsid": rsid,
+                "category": snp["category"],
+                "gene_name": snp["gene"],
+                "variant_name": "APOE ε2/ε3/ε4 双位点分型",
+                "description": "APOE ε 型需要 rs429358 + rs7412 共同判定；单个位点不作最终风险结论。",
+                "mapping_source": "apoe_pair",
+                **apoe,
+            }
+        else:
+            payload = _known_variant_payload(rsid, genotype, snp)
+            if payload is None:
+                unmapped_count += 1
+                continue
+
+        variant = GeneticVariant(
+            user_id=user_id,
+            profile_id=profile.id,
+            rsid=payload["rsid"],
+            category=payload["category"],
+            gene_name=payload["gene_name"],
+            variant_name=payload["variant_name"],
+            genotype=payload["genotype"],
+            raw_genotype=payload["raw_genotype"],
+            result_label=payload["result_label"],
+            risk_level=payload["risk_level"],
+            description=payload["description"],
+            health_implications=payload.get("health_implications"),
+            mapping_source=payload.get("mapping_source", "known_snp"),
+            evidence_level=payload.get("evidence_level", "screening"),
+        )
+        db.add(variant)
+        matched_rsids.add(rsid)
+        matched.append({
+            "gene": payload["gene_name"],
+            "genotype": payload["genotype"],
+            "result": payload["result_label"],
+            "risk": payload["risk_level"],
+        })
+    return matched, matched_rsids, unmapped_count
+
+
 @router.post("/profiles/upload-txt", summary="上传微基因/23andMe 原始 TXT 数据，自动解析健康位点")
 def upload_genetic_txt(
     req: GeneticTxtUploadRequest,
@@ -749,75 +862,15 @@ def upload_genetic_txt(
     db.refresh(import_job)
 
     # 解析 TXT: 先收集原始 rsid/genotype, 再按白名单生成正式解释.
-    raw_by_rsid: Dict[str, str] = {}
-    raw_record_count = 0
-    duplicate_count = 0
-    for line in req.txt_content.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) < 4:
-            continue
-        rsid = _normalize_rsid(parts[0])
-        genotype = parts[3].strip()
-        if rsid and genotype != "--":
-            raw_record_count += 1
-            if rsid in raw_by_rsid:
-                duplicate_count += 1
-                continue
-            raw_by_rsid[rsid] = genotype
+    raw_by_rsid, raw_record_count, duplicate_count = _parse_raw_txt_genotypes(req.txt_content)
 
-    matched = []
-    matched_rsids: set[str] = set()
-    unmapped_count = 0
-    for rsid, genotype in raw_by_rsid.items():
-        if rsid not in KNOWN_SNPS:
-            continue
-        snp = KNOWN_SNPS[rsid]
-        if rsid == "rs429358":
-            apoe = _derive_apoe_epsilon(raw_by_rsid)
-            if apoe is None:
-                continue
-            payload = {
-                "rsid": rsid,
-                "category": snp["category"],
-                "gene_name": snp["gene"],
-                "variant_name": "APOE ε2/ε3/ε4 双位点分型",
-                "description": "APOE ε 型需要 rs429358 + rs7412 共同判定；单个位点不作最终风险结论。",
-                "mapping_source": "apoe_pair",
-                **apoe,
-            }
-        else:
-            payload = _known_variant_payload(rsid, genotype, snp)
-            if payload is None:
-                unmapped_count += 1
-                continue
+    matched, matched_rsids, unmapped_count = _match_and_store_variants(
+        db, current_user.id, profile, raw_by_rsid,
+    )
 
-        variant = GeneticVariant(
-            user_id=current_user.id,
-            profile_id=profile.id,
-            rsid=payload["rsid"],
-            category=payload["category"],
-            gene_name=payload["gene_name"],
-            variant_name=payload["variant_name"],
-            genotype=payload["genotype"],
-            raw_genotype=payload["raw_genotype"],
-            result_label=payload["result_label"],
-            risk_level=payload["risk_level"],
-            description=payload["description"],
-            health_implications=payload.get("health_implications"),
-            mapping_source=payload.get("mapping_source", "known_snp"),
-            evidence_level=payload.get("evidence_level", "screening"),
-        )
-        db.add(variant)
-        matched_rsids.add(rsid)
-        matched.append({
-            "gene": payload["gene_name"],
-            "genotype": payload["genotype"],
-            "result": payload["result_label"],
-            "risk": payload["risk_level"],
-        })
+    # 加密保留原始全量基因型 (经 EncryptedText → Fernet), 支持任意基因查询 / 白名单扩展后重解析.
+    if req.retain_raw:
+        import_job.raw_genotypes = json.dumps(raw_by_rsid, ensure_ascii=False)
 
     coverage = _build_import_coverage(matched_rsids, set(raw_by_rsid.keys()))
     profile.notes = f"TXT 解析完成，匹配 {len(matched)} 个健康位点"
@@ -857,6 +910,113 @@ def upload_genetic_txt(
         "coverage": coverage,
         "message": f"成功解析 {len(matched)} 个健康相关基因位点",
     }
+
+
+def _owned_profile_or_404(db: Session, user_id: int, profile_id: int) -> GeneticProfile:
+    """属主校验: 该 profile 必须属于当前用户 (防 IDOR). 不存在 / 不属主 → 404."""
+    profile = (
+        db.query(GeneticProfile)
+        .filter(GeneticProfile.id == profile_id, GeneticProfile.user_id == user_id)
+        .first()
+    )
+    if profile is None:
+        raise HTTPException(status_code=404, detail="基因档案不存在或无权访问")
+    return profile
+
+
+def _latest_raw_job(db: Session, user_id: int, profile_id: int) -> Optional[GeneticImportJob]:
+    """取该 profile 最近一条带 raw_genotypes 的导入记录."""
+    return (
+        db.query(GeneticImportJob)
+        .filter(
+            GeneticImportJob.user_id == user_id,
+            GeneticImportJob.profile_id == profile_id,
+            GeneticImportJob.raw_genotypes.isnot(None),
+        )
+        .order_by(desc(GeneticImportJob.id))
+        .first()
+    )
+
+
+@router.post("/profiles/{profile_id}/reparse", summary="对已存原始基因型按最新白名单重解析，无需重传")
+def reparse_genetic_profile(
+    profile_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """白名单扩展(如新增 PEMT)后, 用已加密保留的原始全量基因型重新匹配, 只新增未解析过的位点."""
+    profile = _owned_profile_or_404(db, current_user.id, profile_id)
+    job = _latest_raw_job(db, current_user.id, profile_id)
+    if job is None or not job.raw_genotypes:
+        raise HTTPException(status_code=400, detail="该档案未保留原始数据，请重新上传(勾选保留原始)")
+
+    try:
+        raw_by_rsid: Dict[str, str] = json.loads(job.raw_genotypes)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"原始基因型解析失败: {e}")
+
+    existing_rsids = {
+        r for (r,) in db.query(GeneticVariant.rsid)
+        .filter(GeneticVariant.profile_id == profile_id, GeneticVariant.user_id == current_user.id)
+        .all()
+        if r
+    }
+    newly_matched, _matched_rsids, _unmapped = _match_and_store_variants(
+        db, current_user.id, profile, raw_by_rsid, skip_rsids=existing_rsids,
+    )
+    db.commit()
+
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[基因重解析] Twin invalidation 失败 (旁路): {e}")
+
+    return {
+        "newly_added": newly_matched,
+        "message": f"重解析完成，新增 {len(newly_matched)} 个健康相关基因位点",
+    }
+
+
+@router.get("/profiles/{profile_id}/raw-lookup", summary="查任意位点/基因的原始基因型(含白名单外)")
+def raw_lookup_genetic_profile(
+    profile_id: int,
+    rsid: Optional[str] = Query(None, description="按 rsID 直查(含白名单外)"),
+    gene: Optional[str] = Query(None, description="按基因名查(用内置 _GENE_RSIDS 映射)"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """从加密保留的原始全量基因型里查任意位点/基因. 属主校验防 IDOR."""
+    _owned_profile_or_404(db, current_user.id, profile_id)
+    job = _latest_raw_job(db, current_user.id, profile_id)
+    if job is None or not job.raw_genotypes:
+        raise HTTPException(status_code=400, detail="该档案未保留原始数据，请重新上传(勾选保留原始)")
+
+    try:
+        raw_by_rsid: Dict[str, str] = json.loads(job.raw_genotypes)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"原始基因型解析失败: {e}")
+
+    if rsid:
+        norm = _normalize_rsid(rsid) or rsid.strip().lower()
+        genotype = raw_by_rsid.get(norm)
+        return {"rsid": norm, "genotype": genotype, "in_whitelist": norm in KNOWN_SNPS}
+
+    if gene:
+        gene_key = gene.strip().upper()
+        rsids = _GENE_RSIDS.get(gene_key)
+        if rsids is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"基因 {gene_key} 不在内置映射中，可用 rsid 直查",
+            )
+        results = [
+            {"rsid": r, "genotype": raw_by_rsid.get(r), "in_whitelist": r in KNOWN_SNPS}
+            for r in rsids
+        ]
+        return {"gene": gene_key, "variants": results}
+
+    raise HTTPException(status_code=422, detail="必须提供 rsid 或 gene 之一")
 
 
 @router.post("/profiles/upload-pdf", summary="上传基因检测 PDF，AI 自动提取基因位点")

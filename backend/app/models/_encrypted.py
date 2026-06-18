@@ -23,7 +23,7 @@ import logging
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import String
+from sqlalchemy import String, Text
 from sqlalchemy.types import TypeDecorator
 
 from app.config import settings
@@ -69,3 +69,27 @@ class EncryptedString(TypeDecorator):
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[encrypted] decrypt 失败, 返回原值: {e}")
             return value
+
+
+class EncryptedText(EncryptedString):
+    """透明加解密 Text 列 (大字段, 如全量基因型 JSON). 复用 EncryptedString 的 Fernet 逻辑.
+
+    与 EncryptedString 的区别:
+    1. 底层用 TEXT 而非 VARCHAR(N), 无长度上限.
+    2. **encrypt 失败时 raise, 绝不落回明文** —— 用于最高隐私级数据(基因全量),
+       加密失败必须让写入失败而非明文落库(安全评审 required; 不假装成功).
+    读取仍 graceful fallback(旧明文行/解密异常返回原值, 不阻断读).
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None or value == "":
+            return value
+        try:
+            return _fernet.encrypt(value.encode()).decode()
+        except Exception as e:  # noqa: BLE001
+            # 最高隐私级: 加密失败拒绝明文落库, fail-loud 让调用方感知
+            logger.error(f"[encrypted-text] encrypt 失败, 拒绝明文落库: {e}")
+            raise

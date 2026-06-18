@@ -2,7 +2,7 @@
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, JSON, Index
 from sqlalchemy.sql import func
 from app.database import Base
-from app.models._encrypted import EncryptedString
+from app.models._encrypted import EncryptedString, EncryptedText
 
 
 class GeneticProfile(Base):
@@ -71,6 +71,9 @@ class GeneticImportJob(Base):
     unmapped_count = Column(Integer, default=0)
     missing_count = Column(Integer, default=0)
     coverage_summary = Column(JSON)
+    # 加密存全量 {rsid: genotype} JSON (Fernet, 经 EncryptedText). 最高隐私级:
+    # 支持任意基因(含白名单外)查询 + 白名单扩展后无需重传即可重解析. 绝不明文落库.
+    raw_genotypes = Column(EncryptedText)
     error_message = Column(Text)
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
