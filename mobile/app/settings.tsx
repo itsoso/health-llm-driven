@@ -159,6 +159,8 @@ export default function SettingsScreen() {
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
           <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
             onPress={() => router.push('/rokid-health' as any)} />
+          <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
+            onPress={() => router.push('/rokid-diagnostics' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
             onPress={() => router.push('/device-sources' as any)} />
         </View>
@@ -225,6 +227,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="pulse-outline" label="数据自检"
             onPress={() => router.push('/data-integrity' as any)} />
+          <SettingRow icon="bug-outline" label="App 诊断"
+            onPress={() => router.push('/app-diagnostics' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
           <SettingRow icon="shield-checkmark-outline" label="隐私政策" onPress={() => {}} />
         </View>
