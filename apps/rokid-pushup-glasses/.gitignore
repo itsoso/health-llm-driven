@@ -1,0 +1,5 @@
+local.properties
+app/src/main/assets/pose_landmarker_lite.task
+app/build/
+.gradle/
+*.hprof

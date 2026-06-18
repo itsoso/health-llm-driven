@@ -83,17 +83,25 @@
 
 ## 眼镜端 Android App 契约
 
-建议包名：
+当前实现位置：
+
+```text
+apps/rokid-pushup-glasses
+```
+
+包名：
 
 ```text
 life.executor.health.rokid.pushup
 ```
 
-建议入口：
+入口：
 
 ```text
 .MainActivity
 ```
+
+构建与安装步骤见 `apps/rokid-pushup-glasses/README.md`。当前 APK 使用 CameraX + MediaPipe Pose Landmarker Lite 在眼镜端本地识别姿态，使用 CXR-S 上报轻量状态，并按下面的 session URL 把结构化 `pose` / `rep` 事件写回 Reva。
 
 iOS `openApp` 传入的 `url` 格式：
 
