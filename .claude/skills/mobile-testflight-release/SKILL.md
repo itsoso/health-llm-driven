@@ -44,12 +44,23 @@ npx eas-cli build -p ios --profile production --non-interactive --auto-submit
 
 ## 发版路径:原生 xcodebuild + ASC key(✅ 终极兜底,EAS 凭据漂移时唯一能过的路)
 
-**触发场景(2026-06-18 实战,烧了 ~5 次 build 才定位)**:换过分发证书后,EAS 凭据库里存的
+> ⚠️ **先纠正一条曾经的错误断言(2026-06-18 复盘)**:本节原写"远端 `--auto-submit` 也会撞证书漂移"——
+> **错的,是没测远端就臆断**(当时所有失败都是 `--local`)。实测:**远端 `eas build --profile production
+> --non-interactive --auto-submit` 不撞本地证书漂移**(它用 EAS 服务端自洽的证书+profile 构建,与本机钥匙串无关),
+> 且**正确打包多 target 手表 app** + `autoIncrement` 自动版本号。**带手表/复杂 target 的发版,远端就是首选,别走下面的本地原生路。**
+> build 123(含 standalone watch)就是本地原生失败后改远端一把过的。下面这节只在**远端不可用**(断网/EAS 配额耗尽)时才用。
+>
+> ⚠️ **本地原生路的两条硬伤(只适合单 target app)**:① 需本机钥匙串证书与 profile 对得上(否则 `--local` 撞
+> `doesn't include signing certificate`);② **命令行 `CODE_SIGN_STYLE=Automatic`/`DEVELOPMENT_TEAM=` 会串到所有 target**,
+> 把 watch 子 app 错绑成主 app 的 bundle id(build 118 实测:`Watch/HealthPilot.app` 拿了 `life.executor.health`)→ 上传被拒。
+> **有 watch/extension 子 target 时禁用本地原生归档,走远端。**
+
+**触发场景(单 target、远端不可用时;2026-06-18 烧了 ~5 次 build 才定位)**:换过分发证书后,EAS 凭据库里存的
 profile 仍绑**旧**证书(`eas credentials` 里看 Distribution Certificate 的 serial 和本机钥匙串
-对不上,如 EAS 存 `1FA510…` 而本机是 `CD61BFA4…`)。结果:`eas build --local` **和**远端
-`--auto-submit` 都会一直撞 `Provisioning profile doesn't include signing certificate
-"Apple Distribution: …"` —— 远端**并不会**自动修(它用自己库里那张旧证书重签发 profile,还是旧的)。
-唯一彻底修法是交互式 `eas credentials` 重签发,要 Apple ID + 2FA(assistant 做不了,代输 Apple 凭据是禁区)。
+对不上,如 EAS 存 `1FA510…` 而本机是 `CD61BFA4…`)。结果:**`eas build --local`** 会撞 `Provisioning
+profile doesn't include signing certificate "Apple Distribution: …"`(本机钥匙串那张新证书 ≠ EAS profile 绑的旧证书)。
+**注意:远端 build 不受此影响**(见上)。本地彻底修法是交互式 `eas credentials` 重签发(要 Apple ID + 2FA,
+assistant 做不了)——所以本地撞了**优先改走远端**,而不是死磕本地。
 
 **绕过去**:完全不碰 EAS 凭据,用 **App Store Connect API Key(.env 里那把,只需 Key 不需 2FA)**
 + **本机钥匙串里的分发证书**,原生 `xcodebuild` 出包:
