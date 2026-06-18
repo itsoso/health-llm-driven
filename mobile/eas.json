@@ -30,7 +30,8 @@
     "rokid-preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "latest"
       },
       "channel": "preview",
       "env": {
@@ -59,7 +60,8 @@
         "autoIncrement": true
       },
       "ios": {
-        "autoIncrement": true
+        "autoIncrement": true,
+        "image": "latest"
       },
       "channel": "production",
       "env": {
