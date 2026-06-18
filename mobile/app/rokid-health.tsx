@@ -35,7 +35,7 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 type PrivacyMode = 'private' | 'workplace' | 'public';
 type OpenState = 'idle' | 'opening' | 'opened' | 'unavailable' | 'failed';
 type CaptureStatus = 'idle' | 'capturing' | 'submitted' | 'failed';
-type SessionStatus = 'idle' | 'running' | 'ready' | 'failed';
+type SessionStatus = 'idle' | 'running' | 'ready' | 'waiting' | 'failed';
 
 type CaptureState = {
   status: CaptureStatus;
@@ -114,6 +114,48 @@ function iosAuthorizationLabel(status?: RokidIntegrationStatus) {
   }
 }
 
+function isRecoverableRokidAuthorizationDelay(reason?: string) {
+  if (!reason) {
+    return false;
+  }
+  const normalized = reason.toLowerCase();
+  return normalized.includes('鉴权请求超时')
+    || normalized.includes('rgcxrclientautherror code=-1')
+    || normalized.includes('authorization_callback_pending')
+    || normalized.includes('authorization request timed out')
+    || normalized.includes('request timeout')
+    || normalized.includes('timeout');
+}
+
+function formatRokidAuthorizationIssue(reason?: string) {
+  if (isRecoverableRokidAuthorizationDelay(reason)) {
+    return '鉴权请求超时: Hi Rokid 未在等待窗口内回调 Reva';
+  }
+  return reason ?? 'authorization_failed';
+}
+
+function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
+  const lines: string[] = [];
+  if (!status) {
+    return lines;
+  }
+  if (status.lastAuthorizationError) {
+    lines.push(`最近授权错误: ${formatRokidAuthorizationIssue(status.lastAuthorizationError)}`);
+  }
+  if (status.lastAuthorizationRequestAt) {
+    lines.push(`最近授权请求: ${status.lastAuthorizationRequestAt}`);
+  }
+  if (typeof status.authorizationRequestTimeoutSeconds === 'number') {
+    lines.push(`SDK 等待窗口: ${Math.round(status.authorizationRequestTimeoutSeconds)} 秒`);
+  }
+  if (status.lastCallbackAt) {
+    lines.push(`最近回调: ${status.lastCallbackHandled ? 'SDK 已处理' : 'SDK 未确认'} · ${status.lastCallbackAt}`);
+  } else if (status.lastAuthorizationError && isRecoverableRokidAuthorizationDelay(status.lastAuthorizationError)) {
+    lines.push('最近回调: 尚未进入 Reva');
+  }
+  return lines;
+}
+
 export default function RokidHealthScreen() {
   const router = useRouter();
   const { c, s } = useTheme();
@@ -146,6 +188,7 @@ export default function RokidHealthScreen() {
   const isIOS = status?.platform === 'ios';
   const iosCapabilitiesReady = isIOS && status?.capabilitiesReady === true;
   const validationSteps = useMemo(() => getRokidDeviceValidationSteps(status), [status]);
+  const authDiagnosticLines = useMemo(() => buildAuthDiagnosticLines(status), [status]);
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
 
   const refresh = () => {
@@ -184,12 +227,20 @@ export default function RokidHealthScreen() {
         scopes: ['device_control', 'audio_stream'],
       });
       if (result.ok === false) {
+        const reason = typeof result.reason === 'string' ? result.reason : 'rokid_authorization_failed';
         const settledStatus = await settleRokidAuthorizationStatus(3);
         if (settledStatus?.authorizationState === 'authenticated') {
           setSessionState({ status: 'ready', message: 'Rokid 已授权' });
           return;
         }
-        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_authorization_failed');
+        if (isRecoverableRokidAuthorizationDelay(reason)) {
+          setSessionState({
+            status: 'waiting',
+            message: '等待 Rokid 授权回调。请在 Hi Rokid 完成授权后回到 Reva 并点刷新; 若仍超时, 继续点授权重试。',
+          });
+          return;
+        }
+        throw new Error(reason);
       }
       await settleRokidAuthorizationStatus(1);
       setSessionState({ status: 'ready', message: 'Rokid 已授权' });
@@ -373,10 +424,19 @@ export default function RokidHealthScreen() {
                 <Text style={[
                   txt.sessionMessage,
                   sessionState.status === 'ready' ? { color: s.success.solid } : null,
+                  sessionState.status === 'waiting' ? { color: c.brand } : null,
                   sessionState.status === 'failed' ? { color: s.warning.solid } : null,
                 ]}>
                   {sessionState.message}
                 </Text>
+              ) : null}
+
+              {authDiagnosticLines.length > 0 ? (
+                <View style={styles.authDiagnosticBox}>
+                  {authDiagnosticLines.map((line) => (
+                    <Text key={line} style={txt.authDiagnostic} numberOfLines={3}>{line}</Text>
+                  ))}
+                </View>
               ) : null}
 
               <View style={styles.validationBox}>
@@ -671,6 +731,13 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     paddingTop: spacing.md,
     gap: 10,
   },
+  authDiagnosticBox: {
+    marginTop: spacing.sm,
+    borderRadius: radii.sm,
+    backgroundColor: c.fill,
+    padding: spacing.sm,
+    gap: 4,
+  },
   validationRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -787,6 +854,7 @@ const createTxt = (c: ColorPalette) => ({
   secondaryButton: { fontSize: 12, fontWeight: '800', color: c.brand, textAlign: 'center' } as TextStyle,
   openState: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
   sessionMessage: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
+  authDiagnostic: { fontSize: 11, fontWeight: '700', color: c.labelSecondary, lineHeight: 16 } as TextStyle,
   validationHeading: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   validationTitle: { flex: 1, fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   validationNext: { fontSize: 11, fontWeight: '800', color: c.brand, maxWidth: 140 } as TextStyle,

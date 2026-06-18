@@ -101,11 +101,56 @@ describe('rokid diagnostics', () => {
         id: 'auth_callback',
         severity: 'pass',
         value: '最近回调已进入 Reva',
-        detail: 'life.executor.health.rokid://auth/callback?code=abc',
+        detail: 'life.executor.health.rokid://auth/callback?<redacted>',
       }),
     ]));
     expect(check.items.find((item) => item.id === 'authorization')).toMatchObject({
       detail: 'life.executor.health.rokid://auth/callback',
     });
+  });
+
+  it('surfaces iOS authorization timeout without leaking callback query data', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticating',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastCallbackUrl: 'life.executor.health.rokid://auth/callback?code=abc&state=secret',
+      lastCallbackHandled: false,
+      lastAuthorizationError: 'Error Domain=RGCxrClientAuthError Code=-1 "鉴权请求超时"',
+      lastAuthorizationRequestAt: '2026-06-18T23:51:00Z',
+      authorizationRequestTimeoutSeconds: 180,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth_callback',
+        value: '回调进入 Reva, SDK 未确认',
+        detail: 'life.executor.health.rokid://auth/callback?<redacted>',
+      }),
+      expect.objectContaining({
+        id: 'auth_error',
+        severity: 'warn',
+        value: '鉴权请求超时',
+        detail: 'lastRequestAt=2026-06-18T23:51:00Z; timeout=180s',
+      }),
+    ]));
+    expect(JSON.stringify(check.items)).not.toContain('code=abc');
+    expect(JSON.stringify(check.items)).not.toContain('state=secret');
   });
 });

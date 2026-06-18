@@ -15,4 +15,13 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).not.toContain('&& url.host?.caseInsensitiveCompare(callbackHost) == .orderedSame');
     expect(source).not.toContain('&& url.path == callbackPath');
   });
+
+  it('uses explicit bundle id, longer timeout, and native auth diagnostics', () => {
+    expect(source).toContain('authorizationRequestTimeoutSeconds: TimeInterval = 180.0');
+    expect(source).toContain('requestTimeout: authorizationRequestTimeoutSeconds');
+    expect(source).toContain('bundleId: Bundle.main.bundleIdentifier');
+    expect(source).toContain('lastAuthorizationRequestAt');
+    expect(source).toContain('lastAuthorizationError');
+    expect(source).toContain('lastAuthorizationErrorAt');
+  });
 });

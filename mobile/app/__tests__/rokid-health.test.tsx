@@ -339,6 +339,57 @@ describe('RokidHealthScreen', () => {
     expect(mockGetRokidIntegrationStatus).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps iOS Rokid authorization timeout recoverable instead of showing a hard failure', async () => {
+    const timeoutReason = 'Error Domain=RGCxrClientAuthError Code=-1 "鉴权请求超时" UserInfo={NSLocalizedDescription=鉴权请求超时}';
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticating',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastAuthorizationError: timeoutReason,
+      lastAuthorizationRequestAt: '2026-06-18T23:51:00Z',
+      authorizationRequestTimeoutSeconds: 180,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    mockRequestRokidAuthorization.mockResolvedValue({
+      ok: false,
+      reason: timeoutReason,
+      authorizationState: 'authenticating',
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('授权 Rokid')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('授权 Rokid'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/等待 Rokid 授权回调/)).toBeTruthy();
+      expect(screen.getByText(/最近授权错误: 鉴权请求超时/)).toBeTruthy();
+      expect(screen.getByText(/SDK 等待窗口: 180 秒/)).toBeTruthy();
+      expect(screen.queryByText(/Rokid 授权失败/)).toBeNull();
+    });
+  });
+
   it('blocks iOS photo capture until the customView scene is running', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',

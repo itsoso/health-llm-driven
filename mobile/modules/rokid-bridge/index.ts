@@ -33,6 +33,13 @@ export type RokidIntegrationStatus = {
   lastCallbackUrl?: string;
   lastCallbackAt?: string;
   lastCallbackHandled?: boolean;
+  authorizationRequestTimeoutSeconds?: number;
+  bundleIdentifier?: string;
+  lastAuthorizationAppName?: string;
+  lastAuthorizationScopes?: string[];
+  lastAuthorizationRequestAt?: string;
+  lastAuthorizationError?: string;
+  lastAuthorizationErrorAt?: string;
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;

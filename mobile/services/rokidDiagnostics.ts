@@ -34,6 +34,43 @@ function passIf(condition: boolean, passValue: string, failValue: string, failSe
   };
 }
 
+function redactCallbackUrl(url?: string) {
+  if (!url) {
+    return undefined;
+  }
+  const queryIndex = url.indexOf('?');
+  if (queryIndex < 0) {
+    return url;
+  }
+  return `${url.slice(0, queryIndex)}?<redacted>`;
+}
+
+function formatAuthorizationError(error?: string) {
+  if (!error) {
+    return undefined;
+  }
+  const normalized = error.toLowerCase();
+  if (
+    error.includes('鉴权请求超时')
+    || normalized.includes('rgcxrclientautherror code=-1')
+    || normalized.includes('timeout')
+  ) {
+    return '鉴权请求超时';
+  }
+  return error;
+}
+
+function authorizationErrorDetail(status: RokidIntegrationStatus) {
+  const parts: string[] = [];
+  if (status.lastAuthorizationRequestAt) {
+    parts.push(`lastRequestAt=${status.lastAuthorizationRequestAt}`);
+  }
+  if (typeof status.authorizationRequestTimeoutSeconds === 'number') {
+    parts.push(`timeout=${Math.round(status.authorizationRequestTimeoutSeconds)}s`);
+  }
+  return parts.length > 0 ? parts.join('; ') : undefined;
+}
+
 export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCheck {
   const bridgeReady = status.bridgeAvailable === true;
   const sdkLinked = status.sdkLinked === true;
@@ -63,6 +100,7 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
       : authorized
         ? 'pass'
         : 'warn';
+  const authErrorValue = formatAuthorizationError(status.lastAuthorizationError);
 
   return {
     summary: {
@@ -102,7 +140,14 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         label: '授权回调',
         value: callbackValue,
         severity: callbackSeverity,
-        detail: status.lastCallbackUrl ?? status.callbackUrl,
+        detail: redactCallbackUrl(status.lastCallbackUrl ?? status.callbackUrl),
+      },
+      {
+        id: 'auth_error',
+        label: '最近授权错误',
+        value: authErrorValue ?? (authorized ? '无近期授权错误' : '尚无授权错误'),
+        severity: authErrorValue ? 'warn' : authorized ? 'pass' : 'info',
+        detail: authErrorValue ? authorizationErrorDetail(status) : undefined,
       },
       {
         id: 'session',
