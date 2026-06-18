@@ -223,6 +223,7 @@ public class RokidBridgeModule: Module {
   private static func requestAuthorization(scopes: [String], appName: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
+    configureAuthentication(force: true)
     if CxrClient.shared.auth.isAuthenticated() {
       promise.resolve(authorizationSuccessPayload(source: "cached"))
       return
@@ -641,9 +642,9 @@ public class RokidBridgeModule: Module {
   #if canImport(RGCxrClient)
   private static func resetAuthorizationStateForExplicitRequest() {
     switch CxrClient.shared.auth.currentState {
-    case .notAuthenticated, .authenticated(_, _):
+    case .authenticated(_, _):
       return
-    case .authenticating, .expired:
+    case .notAuthenticated, .authenticating, .expired:
       CxrClient.shared.auth.clearAuthentication()
     case .failed(_):
       CxrClient.shared.auth.clearAuthentication()
@@ -664,9 +665,9 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private static func configureAuthentication() {
+  private static func configureAuthentication(force: Bool = false) {
     #if canImport(RGCxrClient)
-    guard !RokidBridgeModule.didConfigureAuthentication else {
+    guard force || !RokidBridgeModule.didConfigureAuthentication else {
       return
     }
     RokidBridgeModule.didConfigureAuthentication = true
