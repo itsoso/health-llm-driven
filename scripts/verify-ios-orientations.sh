@@ -2,20 +2,19 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_JSON="${ROOT_DIR}/mobile/app.json"
+MOBILE_DIR="${ROOT_DIR}/mobile"
 
-node - "${APP_JSON}" <<'NODE'
-const fs = require('fs');
+CONFIG_JSON="$(cd "${MOBILE_DIR}" && npx expo config --type public --json)"
 
-const appJsonPath = process.argv[2];
-const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
-const infoPlist = appJson.expo?.ios?.infoPlist || {};
-const required = [
-  'UIInterfaceOrientationPortrait',
-  'UIInterfaceOrientationPortraitUpsideDown',
-  'UIInterfaceOrientationLandscapeLeft',
-  'UIInterfaceOrientationLandscapeRight',
-];
+node - "${MOBILE_DIR}" "${CONFIG_JSON}" <<'NODE'
+const path = require('path');
+
+const mobileDir = process.argv[2];
+const config = JSON.parse(process.argv[3]);
+const infoPlist = config.ios?.infoPlist || {};
+const pluginPath = path.join(mobileDir, 'plugins', 'withIosSupportedOrientations.js');
+const orientationPlugin = require(pluginPath);
+const required = orientationPlugin._SUPPORTED_ORIENTATIONS;
 
 const failures = [];
 for (const key of ['UISupportedInterfaceOrientations', 'UISupportedInterfaceOrientations~ipad']) {
@@ -28,6 +27,22 @@ for (const key of ['UISupportedInterfaceOrientations', 'UISupportedInterfaceOrie
   for (const orientation of required) {
     if (!configured.includes(orientation)) {
       failures.push(`${key}: missing ${orientation}`);
+    }
+  }
+}
+
+const plugins = config.plugins || [];
+if (!plugins.some((plugin) => plugin === './plugins/withIosSupportedOrientations')) {
+  failures.push('plugins: missing ./plugins/withIosSupportedOrientations');
+}
+
+const patched = orientationPlugin._applySupportedOrientationsToInfoPlist({
+  UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
+});
+for (const key of ['UISupportedInterfaceOrientations', 'UISupportedInterfaceOrientations~ipad']) {
+  for (const orientation of required) {
+    if (!patched[key]?.includes(orientation)) {
+      failures.push(`withIosSupportedOrientations: ${key} did not apply ${orientation}`);
     }
   }
 }

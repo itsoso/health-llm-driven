@@ -99,7 +99,8 @@
           "healthSharePermission": "用于读取 Apple Watch / RingConn / Oura 等设备的健康数据"
         }
       ],
-      "./plugins/withWatchApp"
+      "./plugins/withWatchApp",
+      "./plugins/withIosSupportedOrientations"
     ],
     "experiments": {
       "typedRoutes": true,
