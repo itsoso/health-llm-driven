@@ -34,6 +34,7 @@ export type RokidIntegrationStatus = {
   iosSdkCompatibility?: string;
   authorizationState?: RokidAuthorizationState;
   capabilitiesReady?: boolean;
+  customAppSupported?: boolean;
   customViewRunning?: boolean;
   sessionMode?: RokidSessionMode;
   sdkClassProbe?: Record<string, boolean>;
@@ -63,6 +64,9 @@ type RokidNativeModule = {
   updateCustomView?: (view: string) => Promise<Record<string, unknown>>;
   closeCustomView?: (view: string) => Promise<Record<string, unknown>>;
   takePhotoBase64?: (width: number, height: number, quality: number) => Promise<Record<string, unknown>>;
+  queryApp?: (packageName: string) => Promise<Record<string, unknown>>;
+  openApp?: (packageName: string, activityName: string, url: string) => Promise<Record<string, unknown>>;
+  stopApp?: (packageName: string) => Promise<Record<string, unknown>>;
   startRecord?: (type: string, codec: string, mode: string) => Promise<Record<string, unknown>>;
   stopRecord?: (type: string) => Promise<Record<string, unknown>>;
 };
@@ -332,6 +336,34 @@ export async function takeRokidPhotoBase64(options?: {
     options?.height ?? 768,
     options?.quality ?? 80,
   );
+}
+
+export async function queryRokidApp(packageName: string): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.queryApp) {
+    return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.queryApp(packageName);
+}
+
+export async function openRokidApp(options: {
+  packageName: string;
+  activityName: string;
+  url: string;
+}): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.openApp) {
+    return { ok: false, opened: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.openApp(options.packageName, options.activityName, options.url);
+}
+
+export async function stopRokidApp(packageName: string): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.stopApp) {
+    return { ok: false, stopped: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.stopApp(packageName);
 }
 
 export async function startRokidRecord(options?: {

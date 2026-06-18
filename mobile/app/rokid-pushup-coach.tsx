@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -17,6 +17,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   closeRokidCustomView,
   openRokidCustomView,
+  openRokidApp,
+  queryRokidApp,
+  stopRokidApp,
   updateRokidCustomView,
 } from '../modules/rokid-bridge';
 import { invalidateRecordMutation } from '../applib/queryKeys';
@@ -31,8 +34,18 @@ import {
   type PushupCoachState,
   type PushupPoseSample,
 } from '../services/pushupCoach';
+import {
+  ROKID_PUSHUP_APP_ACTIVITY,
+  ROKID_PUSHUP_APP_PACKAGE,
+  applyRokidPushupEventToCoach,
+  createRokidPushupSession,
+  finishRokidPushupSession,
+  listRokidPushupEvents,
+  type RokidPushupSession,
+} from '../services/rokidPushupSession';
 
 type RokidSessionState = 'idle' | 'opening' | 'opened' | 'failed';
+type RealPoseSessionState = 'idle' | 'creating' | 'running' | 'stopping' | 'failed';
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
 function readResultOk(result: Record<string, unknown>) {
@@ -48,7 +61,12 @@ export default function RokidPushupCoachScreen() {
   const [coach, setCoach] = useState<PushupCoachState>(() => createPushupCoachState({ targetReps: 20 }));
   const [sessionState, setSessionState] = useState<RokidSessionState>('idle');
   const [sessionMessage, setSessionMessage] = useState('');
+  const [realSessionState, setRealSessionState] = useState<RealPoseSessionState>('idle');
+  const [realSession, setRealSession] = useState<RokidPushupSession | null>(null);
+  const [realSessionMessage, setRealSessionMessage] = useState('');
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const lastRokidEventIdRef = useRef(0);
+  const pollInFlightRef = useRef(false);
 
   const pushViewToGlasses = useCallback(async (nextCoach: PushupCoachState, force = false) => {
     if (!force && sessionState !== 'opened') {
@@ -85,6 +103,118 @@ export default function RokidPushupCoachScreen() {
     setSessionMessage('正在打开眼镜计数视图...');
     await pushViewToGlasses(coach, true);
   }, [coach, pushViewToGlasses]);
+
+  const startRealGlassesCoach = useCallback(async () => {
+    setRealSessionState('creating');
+    setRealSessionMessage('正在启动眼镜端识别...');
+    try {
+      const session = await createRokidPushupSession({
+        targetReps: coach.targetReps,
+        sourceDevice: 'rokid_glasses',
+        meta: {
+          packageName: ROKID_PUSHUP_APP_PACKAGE,
+          activityName: ROKID_PUSHUP_APP_ACTIVITY,
+          mode: 'pushup_pose',
+        },
+      });
+      const appProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      if (!readResultOk(appProbe)) {
+        throw new Error(typeof appProbe.reason === 'string' ? appProbe.reason : 'rokid_app_probe_failed');
+      }
+      if (appProbe.installed === false) {
+        throw new Error('rokid_pushup_app_not_installed');
+      }
+      if (!session.open_url) {
+        throw new Error('rokid_pushup_session_open_url_missing');
+      }
+      const opened = await openRokidApp({
+        packageName: ROKID_PUSHUP_APP_PACKAGE,
+        activityName: ROKID_PUSHUP_APP_ACTIVITY,
+        url: session.open_url,
+      });
+      if (!readResultOk(opened) || opened.opened === false) {
+        throw new Error(typeof opened.reason === 'string' ? opened.reason : 'rokid_pushup_app_open_failed');
+      }
+      lastRokidEventIdRef.current = 0;
+      setRealSession(session);
+      setRealSessionState('running');
+      setRealSessionMessage('眼镜端识别已启动, 等待姿态数据...');
+    } catch (error) {
+      setRealSessionState('failed');
+      setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_real_session_failed');
+    }
+  }, [coach.targetReps]);
+
+  const stopRealGlassesCoach = useCallback(async () => {
+    setRealSessionState('stopping');
+    setRealSessionMessage('正在停止眼镜端识别...');
+    try {
+      if (realSession) {
+        await finishRokidPushupSession(realSession.id);
+      }
+      await stopRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      setRealSessionState('idle');
+      setRealSession(null);
+      setRealSessionMessage('眼镜端识别已停止');
+    } catch (error) {
+      setRealSessionState('failed');
+      setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_stop_failed');
+    }
+  }, [realSession]);
+
+  useEffect(() => {
+    if (realSessionState !== 'running' || !realSession) {
+      return undefined;
+    }
+    let cancelled = false;
+
+    const poll = async () => {
+      if (pollInFlightRef.current) {
+        return;
+      }
+      pollInFlightRef.current = true;
+      try {
+        const events = await listRokidPushupEvents(realSession.id, {
+          afterId: lastRokidEventIdRef.current,
+          limit: 80,
+        });
+        if (cancelled || events.length === 0) {
+          return;
+        }
+        lastRokidEventIdRef.current = Math.max(
+          lastRokidEventIdRef.current,
+          ...events.map((event) => event.id),
+        );
+        setCoach((prev) => {
+          let next = prev;
+          for (const event of events) {
+            next = applyRokidPushupEventToCoach(next, event);
+          }
+          if (next.reps > prev.reps) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          void pushViewToGlasses(next);
+          return next;
+        });
+        setRealSessionMessage(`已接收 ${events.length} 条眼镜姿态事件`);
+      } catch (error) {
+        if (!cancelled) {
+          setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_event_poll_failed');
+        }
+      } finally {
+        pollInFlightRef.current = false;
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => {
+      void poll();
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pushViewToGlasses, realSession, realSessionState]);
 
   const closeCoachView = useCallback(async () => {
     try {
@@ -166,6 +296,11 @@ export default function RokidPushupCoachScreen() {
     : sessionState === 'failed'
       ? s.warning.solid
       : c.labelSecondary;
+  const realSessionTone = realSessionState === 'running'
+    ? s.success.solid
+    : realSessionState === 'failed'
+      ? s.warning.solid
+      : c.labelSecondary;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -217,7 +352,53 @@ export default function RokidPushupCoachScreen() {
 
         <View style={styles.panel}>
           <View style={styles.sectionHeader}>
-            <Text style={txt.sectionTitle}>眼镜显示</Text>
+            <Text style={txt.sectionTitle}>真实识别</Text>
+            <Text style={[txt.sessionState, { color: realSessionTone }]}>
+              {realSessionState === 'running'
+                ? '运行中'
+                : realSessionState === 'creating'
+                  ? '启动中'
+                  : realSessionState === 'stopping'
+                    ? '停止中'
+                    : '未启动'}
+            </Text>
+          </View>
+          <View style={styles.buttonRow}>
+            <Pressable
+              onPress={startRealGlassesCoach}
+              disabled={realSessionState === 'creating' || realSessionState === 'running' || realSessionState === 'stopping'}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+                (realSessionState === 'creating' || realSessionState === 'running' || realSessionState === 'stopping') && styles.disabledButton,
+              ]}
+              accessibilityRole="button"
+            >
+              <Ionicons name="scan-outline" size={17} color="#fff" />
+              <Text style={txt.primaryButton}>
+                {realSessionState === 'creating' ? '启动中...' : '启动眼镜识别'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={stopRealGlassesCoach}
+              disabled={realSessionState !== 'running'}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+                realSessionState !== 'running' && styles.disabledButton,
+              ]}
+              accessibilityRole="button"
+            >
+              <Ionicons name="stop-circle-outline" size={16} color={c.brand} />
+              <Text style={txt.secondaryButton}>停止</Text>
+            </Pressable>
+          </View>
+          {realSessionMessage ? <Text style={txt.sessionMessage}>{realSessionMessage}</Text> : null}
+        </View>
+
+        <View style={styles.panel}>
+          <View style={styles.sectionHeader}>
+            <Text style={txt.sectionTitle}>CustomView 接力显示</Text>
             <Text style={[txt.sessionState, { color: sessionTone }]}>
               {sessionState === 'opened' ? '已打开' : sessionState === 'opening' ? '打开中' : '未打开'}
             </Text>
@@ -254,7 +435,7 @@ export default function RokidPushupCoachScreen() {
         </View>
 
         <View style={styles.panel}>
-          <Text style={txt.sectionTitle}>姿态采样</Text>
+          <Text style={txt.sectionTitle}>校准采样</Text>
           <View style={styles.sampleGrid}>
             <PoseButton
               label="下放"

@@ -59,6 +59,23 @@ public class RokidBridgeModule: Module {
       RokidBridgeModule.takePhotoBase64(width: width, height: height, quality: quality, promise: promise)
     }
 
+    AsyncFunction("queryApp") { (packageName: String, promise: Promise) in
+      RokidBridgeModule.queryApp(packageName: packageName, promise: promise)
+    }
+
+    AsyncFunction("openApp") { (packageName: String, activityName: String, url: String, promise: Promise) in
+      RokidBridgeModule.openApp(
+        packageName: packageName,
+        activityName: activityName,
+        url: url,
+        promise: promise
+      )
+    }
+
+    AsyncFunction("stopApp") { (packageName: String, promise: Promise) in
+      RokidBridgeModule.stopApp(packageName: packageName, promise: promise)
+    }
+
     AsyncFunction("startRecord") { (type: String, codec: String, mode: String) -> [String: Any] in
       RokidBridgeModule.startRecord(type: type, codec: codec, mode: mode)
     }
@@ -84,6 +101,7 @@ public class RokidBridgeModule: Module {
     payload["authorizationState"] = authorizationState()
     payload["customViewRunning"] = isCustomViewRunning()
     payload["capabilitiesReady"] = capabilitiesReady()
+    payload["customAppSupported"] = sdkLinked()
     payload["callbackScheme"] = callbackScheme
     payload["callbackUrl"] = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
     payload["querySchemes"] = querySchemes
@@ -214,6 +232,72 @@ public class RokidBridgeModule: Module {
     _ = height
     _ = quality
     promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func queryApp(packageName: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "installed": false, "reason": "rokid_not_authorized"])
+      return
+    }
+
+    CxrClient.shared.queryApp(packageName: packageName) { installed in
+      promise.resolve([
+        "ok": true,
+        "installed": installed,
+        "packageName": packageName,
+      ])
+    }
+    #else
+    _ = packageName
+    promise.resolve(["ok": false, "installed": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func openApp(packageName: String, activityName: String, url: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "opened": false, "reason": "rokid_not_authorized"])
+      return
+    }
+
+    CxrClient.shared.openApp(packageName: packageName, activityName: activityName, url: url) { opened in
+      promise.resolve([
+        "ok": opened,
+        "opened": opened,
+        "packageName": packageName,
+        "activityName": activityName,
+      ])
+    }
+    #else
+    _ = packageName
+    _ = activityName
+    _ = url
+    promise.resolve(["ok": false, "opened": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func stopApp(packageName: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "stopped": false, "reason": "rokid_not_authorized"])
+      return
+    }
+
+    CxrClient.shared.stopApp(packageName) { stopped in
+      promise.resolve([
+        "ok": stopped,
+        "stopped": stopped,
+        "packageName": packageName,
+      ])
+    }
+    #else
+    _ = packageName
+    promise.resolve(["ok": false, "stopped": false, "reason": "ios_sdk_not_linked"])
     #endif
   }
 
