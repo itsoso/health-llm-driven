@@ -12,8 +12,11 @@ import RGCoreKit
 #endif
 
 public class RokidBridgeModule: Module {
-  private let callbackScheme = "life.executor.health.rokid"
-  private let querySchemes = ["rokidai"]
+  private static let callbackScheme = "life.executor.health.rokid"
+  private static let callbackHost = "auth"
+  private static let callbackPath = "/callback"
+  private static let querySchemes = ["rokidai"]
+  private static var didConfigureAuthentication = false
   private static var didInitializeCustomView = false
   private static var didBindRuntimeEvents = false
   private static var customViewRunning = false
@@ -25,215 +28,268 @@ public class RokidBridgeModule: Module {
     Name("RokidBridge")
 
     AsyncFunction("getIntegrationStatus") { () -> [String: Any] in
-      ensureCustomViewInitialized()
-      let installed = canOpenHiRokid()
-      return [
-        "platform": "ios",
-        "bridgeAvailable": true,
-        "hiRokidInstalled": installed,
-        "canOpenHiRokid": installed,
-        "mode": "sdk_probe",
-        "sdkLinked": sdkLinked(),
-        "iosSdkDependencyMode": sdkDependencyMode(),
-        "iosSdkCompatibility": "CXR-L iOS public sample uses RGCxrClient 1.0.1; 1.0.2 requires Rokid specs source",
-        "sessionMode": "customView",
-        "authorizationState": authorizationState(),
-        "customViewRunning": customViewRunning(),
-        "capabilitiesReady": capabilitiesReady(),
-        "callbackScheme": callbackScheme,
-        "querySchemes": querySchemes,
-        "sdkClassProbe": sdkClassProbe(),
-      ]
+      RokidBridgeModule.integrationStatusPayload()
     }
 
     AsyncFunction("openHiRokid") { (promise: Promise) in
-      guard let url = URL(string: "rokidai://"), UIApplication.shared.canOpenURL(url) else {
-        promise.resolve(false)
-        return
-      }
-
-      DispatchQueue.main.async {
-        UIApplication.shared.open(url, options: [:]) { opened in
-          promise.resolve(opened)
-        }
-      }
+      RokidBridgeModule.openHiRokid(promise: promise)
     }
 
     AsyncFunction("requestAuthorization") { (scopes: [String], appName: String, promise: Promise) in
-      #if canImport(RGCxrClient)
-      ensureCustomViewInitialized()
-      DispatchQueue.main.async {
-        CxrClient.shared.auth.authenticate(
-          scopes: scopes,
-          appName: appName
-        ) { result in
-          switch result {
-          case .success(let (token, sessionId)):
-            promise.resolve([
-              "ok": true,
-              "tokenLength": token.count,
-              "sessionId": sessionId as Any,
-              "authorizationState": "authenticated",
-            ])
-          case .failure(let error):
-            promise.resolve([
-              "ok": false,
-              "reason": String(describing: error),
-            ])
-          }
-        }
-      }
-      #else
-      _ = scopes
-      _ = appName
-      promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
-      #endif
+      RokidBridgeModule.requestAuthorization(scopes: scopes, appName: appName, promise: promise)
     }
 
     AsyncFunction("clearAuthorization") {
-      #if canImport(RGCxrClient)
-      CxrClient.shared.auth.clearAuthentication()
-      return true
-      #else
-      return false
-      #endif
+      RokidBridgeModule.clearAuthorization()
     }
 
     AsyncFunction("openCustomView") { (view: String, promise: Promise) in
-      #if canImport(RGCxrClient)
-      ensureCustomViewInitialized()
-      guard CxrClient.shared.auth.isAuthenticated() else {
-        promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
-        return
-      }
-      CxrClient.shared.openCustomView(view) { success, errorCode in
-        RokidBridgeModule.customViewRunning = success
-        var response: [String: Any] = [
-          "ok": success,
-          "customViewRunning": success,
-          "capabilitiesReady": success,
-        ]
-        if !success {
-          response["errorCode"] = String(describing: errorCode as Any)
-        }
-        promise.resolve(response)
-      }
-      #else
-      _ = view
-      promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
-      #endif
+      RokidBridgeModule.openCustomView(view, promise: promise)
     }
 
     AsyncFunction("updateCustomView") { (view: String, promise: Promise) in
-      #if canImport(RGCxrClient)
-      ensureCustomViewInitialized()
-      guard RokidBridgeModule.customViewRunning else {
-        promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
-        return
-      }
-      CxrClient.shared.updateCustomView(view) { success in
-        promise.resolve(["ok": success])
-      }
-      #else
-      _ = view
-      promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
-      #endif
+      RokidBridgeModule.updateCustomView(view, promise: promise)
     }
 
     AsyncFunction("closeCustomView") { (view: String, promise: Promise) in
-      #if canImport(RGCxrClient)
-      ensureCustomViewInitialized()
-      CxrClient.shared.closeCustomView(view) { success in
-        if success {
-          RokidBridgeModule.customViewRunning = false
-        }
-        promise.resolve([
-          "ok": success,
-          "customViewRunning": RokidBridgeModule.customViewRunning,
-          "capabilitiesReady": self.capabilitiesReady(),
-        ])
-      }
-      #else
-      _ = view
-      promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
-      #endif
+      RokidBridgeModule.closeCustomView(view, promise: promise)
     }
 
     AsyncFunction("takePhotoBase64") { (width: Int, height: Int, quality: Int, promise: Promise) in
-      #if canImport(RGCxrClient)
-      ensureCustomViewInitialized()
-      guard CxrClient.shared.auth.isAuthenticated() else {
-        promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
-        return
-      }
-      guard RokidBridgeModule.customViewRunning else {
-        promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
-        return
-      }
-      CxrClient.shared.takePhotoWithData(width: width, height: height, quality: quality) { data in
-        promise.resolve([
-          "ok": true,
-          "base64": data.base64EncodedString(),
-          "mimeType": "image/jpeg",
-          "byteLength": data.count,
-        ])
-      }
-      #else
-      _ = width
-      _ = height
-      _ = quality
-      promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
-      #endif
+      RokidBridgeModule.takePhotoBase64(width: width, height: height, quality: quality, promise: promise)
     }
 
     AsyncFunction("startRecord") { (type: String, codec: String, mode: String) -> [String: Any] in
-      #if canImport(RGCxrClient)
-      ensureCustomViewInitialized()
-      guard CxrClient.shared.auth.isAuthenticated() else {
-        return ["ok": false, "reason": "rokid_not_authorized"]
-      }
-      guard RokidBridgeModule.customViewRunning else {
-        return ["ok": false, "reason": "rokid_custom_view_not_ready"]
-      }
-      CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
-      return ["ok": true]
-      #else
-      _ = type
-      _ = codec
-      _ = mode
-      return ["ok": false, "reason": "ios_sdk_not_linked"]
-      #endif
+      RokidBridgeModule.startRecord(type: type, codec: codec, mode: mode)
     }
 
     AsyncFunction("stopRecord") { (type: String) -> [String: Any] in
-      #if canImport(RGCxrClient)
-      CxrClient.shared.stopRecord(type)
-      return ["ok": true]
-      #else
-      _ = type
-      return ["ok": false, "reason": "ios_sdk_not_linked"]
-      #endif
+      RokidBridgeModule.stopRecord(type: type)
     }
   }
 
-  private func canOpenHiRokid() -> Bool {
+  private static func integrationStatusPayload() -> [String: Any] {
+    ensureCustomViewInitialized()
+    let installed = canOpenHiRokid()
+    var payload: [String: Any] = [:]
+    payload["platform"] = "ios"
+    payload["bridgeAvailable"] = true
+    payload["hiRokidInstalled"] = installed
+    payload["canOpenHiRokid"] = installed
+    payload["mode"] = "sdk_probe"
+    payload["sdkLinked"] = sdkLinked()
+    payload["iosSdkDependencyMode"] = sdkDependencyMode()
+    payload["iosSdkCompatibility"] = "CXR-L iOS public sample uses RGCxrClient 1.0.1; 1.0.2 requires Rokid specs source"
+    payload["sessionMode"] = "customView"
+    payload["authorizationState"] = authorizationState()
+    payload["customViewRunning"] = isCustomViewRunning()
+    payload["capabilitiesReady"] = capabilitiesReady()
+    payload["callbackScheme"] = callbackScheme
+    payload["callbackUrl"] = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
+    payload["querySchemes"] = querySchemes
+    payload["sdkClassProbe"] = sdkClassProbe()
+    return payload
+  }
+
+  private static func openHiRokid(promise: Promise) {
+    guard let url = URL(string: "rokidai://"), UIApplication.shared.canOpenURL(url) else {
+      promise.resolve(false)
+      return
+    }
+
+    DispatchQueue.main.async {
+      UIApplication.shared.open(url, options: [:]) { opened in
+        promise.resolve(opened)
+      }
+    }
+  }
+
+  private static func requestAuthorization(scopes: [String], appName: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    DispatchQueue.main.async {
+      CxrClient.shared.auth.authenticate(
+        scopes: scopes,
+        appName: appName
+      ) { result in
+        switch result {
+        case .success(let authResult):
+          var response: [String: Any] = [:]
+          response["ok"] = true
+          response["tokenLength"] = authResult.token.count
+          response["sessionId"] = authResult.sessionId as Any
+          response["authorizationState"] = "authenticated"
+          promise.resolve(response)
+        case .failure(let error):
+          promise.resolve([
+            "ok": false,
+            "reason": String(describing: error),
+          ])
+        }
+      }
+    }
+    #else
+    _ = scopes
+    _ = appName
+    promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func clearAuthorization() -> Bool {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    CxrClient.shared.auth.clearAuthentication()
+    return true
+    #else
+    return false
+    #endif
+  }
+
+  private static func openCustomView(_ view: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
+      return
+    }
+
+    CxrClient.shared.openCustomView(view)
+    promise.resolve(customViewCommandPayload(commandAccepted: true))
+    #else
+    _ = view
+    promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func updateCustomView(_ view: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard RokidBridgeModule.customViewRunning else {
+      promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
+      return
+    }
+
+    CxrClient.shared.updateCustomView(view)
+    promise.resolve(customViewCommandPayload(commandAccepted: true))
+    #else
+    _ = view
+    promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func closeCustomView(_ view: String, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    CxrClient.shared.closeCustomView(view)
+    RokidBridgeModule.customViewRunning = false
+    promise.resolve(customViewCommandPayload(commandAccepted: true))
+    #else
+    _ = view
+    promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func takePhotoBase64(width: Int, height: Int, quality: Int, promise: Promise) {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
+      return
+    }
+    guard RokidBridgeModule.customViewRunning else {
+      promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
+      return
+    }
+
+    CxrClient.shared.takePhotoWithData(width: width, height: height, quality: quality) { data in
+      promise.resolve([
+        "ok": true,
+        "base64": data.base64EncodedString(),
+        "mimeType": "image/jpeg",
+        "byteLength": data.count,
+      ])
+    }
+    #else
+    _ = width
+    _ = height
+    _ = quality
+    promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func startRecord(type: String, codec: String, mode: String) -> [String: Any] {
+    #if canImport(RGCxrClient)
+    ensureCustomViewInitialized()
+    guard CxrClient.shared.auth.isAuthenticated() else {
+      return ["ok": false, "reason": "rokid_not_authorized"]
+    }
+    guard RokidBridgeModule.customViewRunning else {
+      return ["ok": false, "reason": "rokid_custom_view_not_ready"]
+    }
+
+    CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
+    return ["ok": true]
+    #else
+    _ = type
+    _ = codec
+    _ = mode
+    return ["ok": false, "reason": "ios_sdk_not_linked"]
+    #endif
+  }
+
+  private static func stopRecord(type: String) -> [String: Any] {
+    #if canImport(RGCxrClient)
+    CxrClient.shared.stopRecord(type)
+    return ["ok": true]
+    #else
+    _ = type
+    return ["ok": false, "reason": "ios_sdk_not_linked"]
+    #endif
+  }
+
+  private static func customViewCommandPayload(commandAccepted: Bool) -> [String: Any] {
+    let running = isCustomViewRunning()
+    var response: [String: Any] = [:]
+    response["ok"] = commandAccepted
+    response["customViewCommandAccepted"] = commandAccepted
+    response["customViewRunning"] = running
+    response["capabilitiesReady"] = capabilitiesReady()
+    response["pendingSessionEvent"] = commandAccepted && !running
+    return response
+  }
+
+  private static func canOpenHiRokid() -> Bool {
     guard let url = URL(string: "rokidai://") else {
       return false
     }
     return UIApplication.shared.canOpenURL(url)
   }
 
-  private func ensureCustomViewInitialized() {
+  private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
     if !RokidBridgeModule.didInitializeCustomView {
-      CxrClient.initialize(mode: .customView, options: .init(appDisplayName: "Reva", pageName: nil))
       RokidBridgeModule.didInitializeCustomView = true
     }
+    configureAuthentication()
     bindRuntimeEvents()
     #endif
   }
 
-  private func bindRuntimeEvents() {
+  private static func configureAuthentication() {
+    #if canImport(RGCxrClient)
+    guard !RokidBridgeModule.didConfigureAuthentication else {
+      return
+    }
+    RokidBridgeModule.didConfigureAuthentication = true
+    CxrClient.shared.auth.config = RGCxrClientAuthConfig(
+      callbackScheme: callbackScheme,
+      callbackHost: callbackHost,
+      callbackPath: callbackPath
+    )
+    #endif
+  }
+
+  private static func bindRuntimeEvents() {
     #if canImport(RGCxrClient)
     guard !RokidBridgeModule.didBindRuntimeEvents else {
       return
@@ -248,7 +304,7 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private func sdkLinked() -> Bool {
+  private static func sdkLinked() -> Bool {
     #if canImport(RGCxrClient)
     return true
     #else
@@ -256,7 +312,7 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private func sdkDependencyMode() -> String {
+  private static func sdkDependencyMode() -> String {
     #if canImport(RGCxrClient)
     return "linked"
     #elseif ROKID_IOS_SIMULATOR_EXCLUDED
@@ -268,7 +324,7 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private func authorizationState() -> String {
+  private static func authorizationState() -> String {
     #if canImport(RGCxrClient)
     switch CxrClient.shared.auth.currentState {
     case .notAuthenticated:
@@ -281,13 +337,15 @@ public class RokidBridgeModule: Module {
       return "expired"
     case .failed(_):
       return "failed"
+    @unknown default:
+      return "unknown"
     }
     #else
     return "unknown"
     #endif
   }
 
-  private func customViewRunning() -> Bool {
+  private static func isCustomViewRunning() -> Bool {
     #if canImport(RGCxrClient)
     return RokidBridgeModule.customViewRunning
     #else
@@ -295,7 +353,7 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private func capabilitiesReady() -> Bool {
+  private static func capabilitiesReady() -> Bool {
     #if canImport(RGCxrClient)
     return CxrClient.shared.auth.isAuthenticated() && RokidBridgeModule.customViewRunning
     #else
@@ -303,7 +361,7 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private func sdkClassProbe() -> [String: Bool] {
+  private static func sdkClassProbe() -> [String: Bool] {
     [
       "RGCxrClient.CxrClient": classExists("RGCxrClient.CxrClient"),
       "RGCxrClient": classExists("RGCxrClient"),
@@ -311,12 +369,12 @@ public class RokidBridgeModule: Module {
     ]
   }
 
-  private func classExists(_ className: String) -> Bool {
+  private static func classExists(_ className: String) -> Bool {
     NSClassFromString(className) != nil
   }
 
   #if canImport(RGCxrClient)
-  private func audioCodec(_ codec: String) -> RGCxrAudioCodec {
+  private static func audioCodec(_ codec: String) -> RGCxrAudioCodec {
     switch codec.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "oggopus", "ogg_opus", "opus":
       return .oggOpus
@@ -327,7 +385,7 @@ public class RokidBridgeModule: Module {
     }
   }
 
-  private func audioMode(_ mode: String) -> RGCxrAudioMode {
+  private static func audioMode(_ mode: String) -> RGCxrAudioMode {
     switch mode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "xf":
       return .xf
