@@ -37,6 +37,8 @@ ssh root@39.98.206.178 'curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.
 - **改了后端 request/response schema** → 部署后记得 `cd mobile && npm run generate-types` 重生成移动端类型(否则手写类型静默漂移)。
 - 涉及 用药/基因/化验/CGM/SpO2/safety规则/对外健康建议 的改动 → 部署**前**先走 `safety-gate`(派 safety-privacy-reviewer,GO 才部署)。
 - 加了 model/service/router/safety规则/twin分区 → 部署前先过 `doc-drift-fix`(CI 会卡 doc-drift)。
+- **`.env` 同步坑(`deploy_backend` 调 `sync_env`)**:`-b` 会把**根 `.env`**(`$SCRIPT_DIR/.env`,非 `backend/.env`)scp 到 `prod:backend/.env`(先备份远端 .env,留 20 份)。所以**必须从有真 prod 根 `.env` 的目录跑**(根 .env 形态=含 `DEPLOY_SERVER`/`DEVICE_ENCRYPTION_KEY`/`DATABASE_URL=postgresql`)。**从干净 worktree 跑要先把根 `.env` 拷进 worktree**,否则 sync_env 推空/dev .env 污染 prod(`backend/.env` 是 dev/sqlite,别混)。并发 agent 翻分支时,worktree 跑更稳(`git push` 在 main 上是空操作)。
+- **基因/RLS 多租户表(genetic_raw_files)**:迁移建表时上 `ENABLE/FORCE ROW LEVEL SECURITY`。**生产 DB 连接角色必须是非 superuser**(superuser 绕过 RLS → 隔离退化为仅应用层)。部署后看 `journalctl -u health-backend` 有无 `[SECURITY] ... superuser ... RLS 被绕过` 告警;有则把 prod DATABASE_URL 的角色换成非 superuser(如 `health_user`)。
 
 ## 坐标 / 排错
 
