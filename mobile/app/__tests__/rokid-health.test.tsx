@@ -3,6 +3,7 @@ import React from 'react';
 import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
+const mockPush = jest.fn();
 const mockGetRokidIntegrationStatus = jest.fn();
 const mockTakeRokidPhotoBase64 = jest.fn();
 const mockRequestRokidAuthorization = jest.fn();
@@ -14,7 +15,7 @@ const mockSubmitRokidVisualInput = jest.fn();
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back: mockBack }),
+  useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
 
 jest.mock('../../modules/rokid-bridge', () => ({
@@ -141,6 +142,18 @@ describe('RokidHealthScreen', () => {
       expect(mockOpenRokidCompanionIfAvailable).toHaveBeenCalledTimes(1);
       expect(screen.getByText('已请求打开 Hi Rokid')).toBeTruthy();
     });
+  });
+
+  it('opens the Rokid push-up coach from health mode', async () => {
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('俯卧撑计数')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('打开 Rokid 俯卧撑计数'));
+
+    expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
   });
 
   it('submits an explicit food photo capture as an ambient visual draft', async () => {

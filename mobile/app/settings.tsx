@@ -159,6 +159,8 @@ export default function SettingsScreen() {
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
           <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
             onPress={() => router.push('/rokid-health' as any)} />
+          <SettingRow icon="body-outline" label="Rokid 俯卧撑计数"
+            onPress={() => router.push('/rokid-pushup-coach' as any)} />
           <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
             onPress={() => router.push('/rokid-diagnostics' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
