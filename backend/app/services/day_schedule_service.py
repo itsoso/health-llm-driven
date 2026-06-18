@@ -16,10 +16,26 @@ HealthTwin 上跑规则 → 把命中的物质名映射回 med.id)—— 是独�
 在那之前:① SafetyGuardian 仍独立向用户告警(另一通道);② solver 仍强制螯合间隔与锚点。
 本服务不重实现 DSI 逻辑(避免重复;删>写)。
 """
+import logging
 from typing import Dict, List, Optional
 
 from app.services.timing_adapter import medications_to_items
-from app.services.timing_solver import DayContext, solve_day_schedule
+from app.services.timing_solver import (
+    RED,
+    DayContext,
+    Item,
+    _to_hhmm,
+    pick_workout_start,
+    solve_day_schedule,
+)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_WORKOUT_MINUTES = 40  # 用户未设 workout_target_minutes 时的缺省锻炼时长
+
+# Garmin training_readiness_level → solver readiness 灯。仅「poor」判 Red(剔锻炼→休息);
+# 其余(含缺值)留 gray/不门控——保守:只有明确低恢复才劝休息,不无信号瞎拦。
+_READINESS_LEVEL_TO_ZONE = {"poor": RED}
 
 
 def _day_context(profile=None, *, overrides: Optional[dict] = None) -> DayContext:
@@ -34,6 +50,13 @@ def _day_context(profile=None, *, overrides: Optional[dict] = None) -> DayContex
             ctx.meals = {**ctx.meals, "breakfast": _add_min(wake, 30)}
     if sleep:
         ctx.sleep = sleep
+    # 工作时间窗:浮动 nudge 避开上班时段(锚点药/补剂/餐不受影响,见 timing_solver)。
+    work_start = getattr(profile, "work_start_time", None) if profile else None
+    work_end = getattr(profile, "work_end_time", None) if profile else None
+    if work_start:
+        ctx.work_start = work_start
+    if work_end:
+        ctx.work_end = work_end
     for k, v in (overrides or {}).items():
         setattr(ctx, k, v)
     return ctx
@@ -55,11 +78,146 @@ def schedule_from_medications(
     profile=None,
     forbidden_reasons: Optional[Dict] = None,
     ctx_overrides: Optional[dict] = None,
+    workout_rx: Optional[dict] = None,
 ) -> Dict[str, list]:
-    """纯核心:给定 medications + profile(+ 安全硬禁忌)→ 当日时间轴。无 DB。"""
-    items = medications_to_items(meds, forbidden_reasons=forbidden_reasons or {})
+    """纯核心:给定 medications + profile(+ 安全硬禁忌)→ 当日时间轴。无 DB。
+
+    安全 seam(cut 5):跑 DDI/DSI 硬禁忌 → 补剂侧拒排(并入 forbidden_reasons)、处方药侧行警告。
+    """
+    from app.services.schedule_safety_seam import compute_seam
+
+    seam_forbidden, warnings = compute_seam(meds)
+    merged_forbidden = {**(forbidden_reasons or {}), **seam_forbidden}
+    items = medications_to_items(meds, forbidden_reasons=merged_forbidden)
+    if warnings:
+        for it in items:
+            try:
+                mid = int(str(it.id).split(":", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            if mid in warnings:
+                it.warning = warnings[mid]
     ctx = _day_context(profile, overrides=ctx_overrides)
+
+    # 锻炼时点(cut 7)+ 处方化(cut A):有偏好窗 → 排锻炼块,块带 movement_coach 处方
+    # (类型/强度/时长/RPE/ACTN3);intensity=rest → 拒排为「今日恢复」。workout_rx 由 DB 包装层算好传入
+    # (纯核心不连库);None → 通用块。
+    workout = _maybe_workout_item(profile, ctx, workout_rx)
+    if workout is not None:
+        items.append(workout)
+
     return solve_day_schedule(items, ctx)
+
+
+# cut A:movement_coach intensity_code → 时长/RPE/类型(处方化锻炼块)。
+_RX_DURATION = {"high": 45, "moderate": 50, "low": 30}      # rest/unknown 不在此(rest→拒排)
+_RX_RPE = {"high": "7-9", "moderate": "6-7", "low": "≤5"}
+_RX_TYPE = {"high": "interval_or_strength", "moderate": "aerobic_z2", "low": "easy_aerobic"}
+_RX_LABEL = {"high": "高强度训练", "moderate": "Z2 有氧", "low": "轻有氧"}
+
+
+def workout_prescription(db, user_id: int) -> Optional[dict]:
+    """movement_coach 处方(ACWR×readiness×ACTN3)→ 结构化 dict,供 _maybe_workout_item 用。
+
+    fail-soft:取数/build_twin 任一失败 → None(回退通用块),失败记 warning(不静默吞)。
+    复用 movement_coach 的矩阵函数(_resolve_training_status/_today_intensity/_gene_bias),
+    不重实现。twin 用 use_cache=True(与 agenda 的训练灯同源,5min 缓存)。
+    """
+    try:
+        from app.twin.builder import build_twin
+        from app.agents.recovery_coach import compute_readiness
+        from app.agents.movement_coach import coach as mc
+
+        twin = build_twin(db, user_id, use_cache=True)
+        try:
+            zone = compute_readiness(twin).zone  # rest/light/moderate/hard
+        except Exception:
+            zone = None
+        status, _src = mc._resolve_training_status(twin)
+        intensity, guidance = mc._today_intensity(status, zone)
+        # 急性不适/生病门控:与 movement_coach.run 同源(twin.acute.should_rest_from_training)。
+        # 必须在这里复刻 —— 本函数走矩阵函数而非 coach.run,否则急性病人可能被排中等强度训练。
+        acute = getattr(twin, "acute", None)
+        if bool(getattr(acute, "should_rest_from_training", False)):
+            intensity = "rest"
+            guidance = getattr(acute, "training_guardrail", None) \
+                or "当前有急性不适/生病状态,今天优先休息,不安排训练。"
+        gene = mc._gene_bias(twin) or {}
+        gene_tip = gene.get("tip") if isinstance(gene, dict) else None  # _gene_bias 返单数 "tip"(已 join)
+        rx = {
+            "intensity": intensity,
+            "type": _RX_TYPE.get(intensity, "general"),
+            "guidance": guidance,
+        }
+        if intensity in _RX_DURATION:
+            rx["duration_min"] = _RX_DURATION[intensity]
+            rx["rpe"] = _RX_RPE[intensity]
+        if gene_tip:
+            rx["gene_note"] = gene_tip
+        return rx
+    except Exception:
+        logger.warning("workout_prescription failed for user %s", user_id, exc_info=True)
+        return None
+
+
+def _maybe_workout_item(profile, ctx: DayContext, rx: Optional[dict] = None) -> Optional[Item]:
+    """据 profile 偏好选锻炼起点,设 ctx.workout_start(对齐围训练营养),返回 movement Item。
+
+    - 无偏好窗 → None(不排锻炼)。
+    - 处方 intensity=rest → Item(hard_forbidden, reason=guidance) 让 solver 拒排为「今日恢复」。
+    - 当日无合适空档 → None(MVP 不强塞)。
+    - readiness=Red → 仍返回 Item(requires_strength)让 solver 剔为「改拉伸/休息」,且不设
+      ctx.workout_start(锻炼会被剔,围训练营养不应锚到不存在的锻炼)。
+    - rx(cut A)→ 块带结构化处方(类型/强度/时长/RPE/ACTN3),title 用处方简短串。
+    """
+    pref = getattr(profile, "workout_pref_window", None) if profile else None
+    if not pref:
+        return None
+    # 处方判定休息(过载/急性)→ 不排锻炼,拒排为恢复项(复用 hard_forbidden 拒排通道)。
+    if rx and rx.get("intensity") == "rest":
+        return Item(
+            id="workout:today", domain="movement", title="今日主动恢复",
+            hard_forbidden=True, forbidden_reason=rx.get("guidance") or "今日建议恢复,不安排训练",
+            deferrable=False, severity=55, prescription=rx,
+        )
+    dur = (rx or {}).get("duration_min") \
+        or (getattr(profile, "workout_target_minutes", None) if profile else None) \
+        or DEFAULT_WORKOUT_MINUTES
+    start = pick_workout_start(ctx, pref, dur)
+    if start is None:
+        return None
+    if ctx.readiness != RED:
+        ctx.workout_start = _to_hhmm(start)
+    label = _RX_LABEL.get((rx or {}).get("intensity"))
+    title = f"{label} {dur} 分钟" if label else f"锻炼 {dur} 分钟"
+    return Item(
+        id="workout:today",
+        domain="movement",
+        title=title,
+        fixed_time=_to_hhmm(start),
+        requires_strength=True,  # Red 下由 solver Step 0 剔除为「改拉伸/休息」
+        deferrable=False,
+        severity=55,
+        prescription=rx,
+    )
+
+
+def _latest_readiness_zone(db, user_id: int) -> Optional[str]:
+    """最近一条带 training_readiness_level 的 garmin 行 → solver readiness 灯(仅 poor→Red)。"""
+    from app.models.daily_health import GarminData
+
+    row = (
+        db.query(GarminData.training_readiness_level)
+        .filter(
+            GarminData.user_id == user_id,
+            GarminData.training_readiness_level.isnot(None),
+        )
+        .order_by(GarminData.record_date.desc())
+        .first()
+    )
+    if not row or not row[0]:
+        return None
+    return _READINESS_LEVEL_TO_ZONE.get(str(row[0]).strip().lower())
 
 
 def build_day_schedule(
@@ -79,6 +237,31 @@ def build_day_schedule(
         .all()
     )
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+
+    # 日历忙碌块(CalDAV 同步来的)→ DayContext.busy,solver 浮动项避开会议。
+    # 失败不阻塞排程(降级到无忙碌块);调用方传入的 ctx_overrides.busy 优先。
+    overrides = dict(ctx_overrides or {})
+    if "busy" not in overrides:
+        try:
+            from app.services.caldav_sync import today_busy_blocks
+            overrides["busy"] = today_busy_blocks(db, user_id)
+        except Exception:  # 忙碌块读取失败 → 退化为不避会议,不让它炸掉整条排程
+            pass
+
+    # 锻炼 readiness 门控(cut 7):取最近一条有 training_readiness_level 的 garmin 行 → 灯。
+    # 失败/无信号 → 不门控(留 gray),保守只在明确低恢复(poor→Red)时劝休息。
+    if "readiness" not in overrides:
+        try:
+            zone = _latest_readiness_zone(db, user_id)
+            if zone:
+                overrides["readiness"] = zone
+        except Exception:
+            pass
+
+    # 锻炼处方(cut A):movement_coach intensity×类型×ACTN3。fail-soft(None→通用块)。
+    rx = workout_prescription(db, user_id) if getattr(profile, "workout_pref_window", None) else None
+
     return schedule_from_medications(
-        meds, profile=profile, forbidden_reasons=forbidden_reasons, ctx_overrides=ctx_overrides
+        meds, profile=profile, forbidden_reasons=forbidden_reasons,
+        ctx_overrides=overrides, workout_rx=rx,
     )

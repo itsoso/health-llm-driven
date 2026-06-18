@@ -4,7 +4,7 @@
 > Owner: backend (health-os 调度器线)
 > Updated: 2026-06-17
 > Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md · docs/design/health-os/os-design.md · docs/design/health-os/planning-methodology.md
-> Related code: backend/app/services/{timing_solver,timing_adapter,day_schedule_service,recheck_floor}.py
+> Related code: backend/app/services/{timing_solver,timing_adapter,day_schedule_service,recheck_floor,schedule_safety_seam}.py
 
 > 说明:本 spec 为已落地的 timing-solver 子系统补治理(governance spec §8.1:新 ranker/
 > verification loop / 写路径需 feature spec)。cut 1–4 已合入 main;cut 5–6 见 §13/§14。
@@ -54,7 +54,9 @@ RequirementAdmission:
 - 不重实现 DDI/DSI 逻辑 —— 硬禁忌由 SafetyGuardian 算,本系统消费其裁决(cut 5)。
 - 不出「对你有效/恶化」因果裁决(处方/激素指标 → clinician_review)。
 - 不做自治执行 —— 全 manual_confirm,Write 层用户确认(自治分级是另一线)。
-- 围训练碳水时点(需真实 WorkoutRecord 开始时间)暂不实现(cut 后续)。
+- 锻炼时点(cut 7)只按用户偏好窗 + readiness 门控排「一个锻炼块」并设 `workout_start`;
+  **不开运动处方**(不定强度/动作/组数),Red→剔为「改拉伸/休息」(复用 solver Step 0)。
+  围训练碳水营养时点借 cut 7 的 `workout_start` 自动对齐(此前缺数据源)。
 - 不自行缩短复查间隔到短于医嘱/生物下限(由 recheck_floor 护栏保证)。
 
 ## 5. Product Object Mapping
@@ -155,10 +157,18 @@ git diff --check
 
 ## 14. Open Questions
 
-阻塞 cut 5/6 前需定:
-- **cut 5 安全 seam**:SafetyGuardian 输出 Alert(物质级),如何映射回 `med.id` 填 `forbidden_reasons`?(别名匹配 vs 在已填分区 Twin 上跑规则)。需 dsi/ddi WIP 落定 + safety-privacy-reviewer。
+阻塞 cut 6+ 前需定:
 - **cut 6 表面**:`/schedule/today` 端点 vs 直接投影进现有 agenda_service?source-of-truth 不重复。
-- 围训练时点:WorkoutRecord 多为事后记录,缺「今日计划开始时间」数据源。
+
+已解决:
+- ~~**cut 5 安全 seam**:如何映射 Alert → `med.id`?~~ → `schedule_safety_seam.compute_seam(meds)`
+  纯函数,由待排 meds 自身派生最小 twin 跑 DDI/DSI 规则(同源匹配消除跨表名字漂移),取
+  HIGH/CRITICAL,`data_citation` 物质名匹配回行:补剂→`forbidden_reasons`(拒排走告警)、
+  处方药→`Item.warning`(保留排程标警告;R4 永不 forbid)。与 SafetyGuardian 独立告警通道叠加。
+- ~~围训练时点缺「今日计划开始时间」数据源~~ → cut 7 选「用户偏好窗 + readiness 门控」(用户决策):
+  profile.`workout_pref_window`/`workout_target_minutes` → `pick_workout_start` 纯函数在空窗
+  (避工作窗/CalDAV 忙碌块/餐 ±60min/睡前 2h)选起点 → 设 `ctx.workout_start`(围训练营养自动对齐)
+  + 发一个 movement 项;readiness=poor→Red 由 solver Step 0 剔为「改拉伸/休息」。不开运动处方。
 
 不阻塞首片(cut 1–4 已独立成立)。
 
@@ -167,3 +177,5 @@ git diff --check
 | Date | Change | Reason |
 |---|---|---|
 | 2026-06-17 | 初稿(补已落地 cut 1–4 的治理;定义 cut 5–6 契约) | governance §8.1 要求 + dogfood admission gate |
+| 2026-06-17 | cut 5 安全 seam 落地(`schedule_safety_seam`):DDI/DSI 硬禁忌 → 补剂拒排 / 处方药行警告;safety review GO | dsi/ddi 规则已稳定,接通 forbidden_reasons + Item.warning |
+| 2026-06-17 | cut 7 锻炼时点(`pick_workout_start` + profile 偏好 + readiness 门控):空窗排锻炼块、设 workout_start、Red→休息 | 用户选「偏好窗+readiness」MVP;补齐围训练营养的 workout_start 数据源 |

@@ -248,3 +248,106 @@ def test_confirm_recheck_due_creates_reminder(db):
     res = svc.confirm(db, u.id, wi_id)
     assert res["status"] == "executed" and res["executed_ref"].startswith("smart_reminder:")
     assert db.query(SmartReminder).filter(SmartReminder.user_id == u.id).count() == 1
+
+
+# ─────────────────── adherence_nudge syscall (Phase 1) ───────────────────
+
+def _mk_med(db, user_id, name="二甲双胍"):
+    from app.models.medication import Medication
+    m = Medication(user_id=user_id, name=name, times_per_day=1, is_active=True)
+    db.add(m); db.commit(); db.refresh(m)
+    return m
+
+
+def _mk_supp(db, user_id, name="鱼油"):
+    from app.models.supplement import SupplementDefinition
+    s = SupplementDefinition(user_id=user_id, name=name, is_active=True)
+    db.add(s); db.commit(); db.refresh(s)
+    return s
+
+
+def test_adherence_nudge_proposes_med_and_supplement(db):
+    u = _mk_user(db)
+    _mk_med(db, u.id)
+    _mk_supp(db, u.id)
+    assert svc.generate_adherence_nudge(db, u.id) == 2
+    titles = [it["title"] for it in svc.list_pending(db, u.id) if it["kind"] == "adherence_nudge"]
+    assert any("二甲双胍" in t for t in titles) and any("鱼油" in t for t in titles)
+
+
+def test_adherence_nudge_skips_already_taken(db):
+    from app.models.medication import MedicationLog
+    from app.models.supplement import SupplementRecord
+    u = _mk_user(db)
+    m = _mk_med(db, u.id)
+    s = _mk_supp(db, u.id)
+    db.add(MedicationLog(user_id=u.id, medication_id=m.id, taken_date=date.today(), status="taken"))
+    db.add(SupplementRecord(user_id=u.id, supplement_id=s.id, record_date=date.today(), taken=True))
+    db.commit()
+    assert svc.generate_adherence_nudge(db, u.id) == 0  # 都已记录 → 不提
+
+
+def test_confirm_adherence_nudge_writes_med_log(db):
+    from app.models.medication import MedicationLog
+    u = _mk_user(db)
+    m = _mk_med(db, u.id)
+    svc.generate_adherence_nudge(db, u.id)
+    wi_id = [it for it in svc.list_pending(db, u.id) if it["kind"] == "adherence_nudge"][0]["id"]
+    res = svc.confirm(db, u.id, wi_id)
+    assert res["status"] == "executed" and res["executed_ref"].startswith("medication_log:")
+    logs = db.query(MedicationLog).filter(
+        MedicationLog.user_id == u.id, MedicationLog.medication_id == m.id,
+        MedicationLog.taken_date == date.today(),
+    ).all()
+    assert len(logs) == 1 and logs[0].status == "taken"
+    # 确认后已服 → 同日不再提
+    assert svc.generate_adherence_nudge(db, u.id) == 0
+
+
+def test_confirm_adherence_nudge_writes_supplement_record(db):
+    from app.models.supplement import SupplementRecord
+    u = _mk_user(db)
+    s = _mk_supp(db, u.id)
+    svc.generate_adherence_nudge(db, u.id)
+    wi_id = [it for it in svc.list_pending(db, u.id) if it["kind"] == "adherence_nudge"][0]["id"]
+    res = svc.confirm(db, u.id, wi_id)
+    assert res["status"] == "executed" and res["executed_ref"].startswith("supplement_record:")
+    rec = db.query(SupplementRecord).filter(
+        SupplementRecord.user_id == u.id, SupplementRecord.supplement_id == s.id,
+        SupplementRecord.record_date == date.today(),
+    ).first()
+    assert rec is not None and rec.taken is True
+
+
+def test_adherence_nudge_no_same_day_renag(db):
+    u = _mk_user(db)
+    _mk_med(db, u.id)
+    assert svc.generate_adherence_nudge(db, u.id) == 1
+    for it in svc.list_pending(db, u.id):
+        if it["kind"] == "adherence_nudge":
+            svc.dismiss(db, u.id, it["id"])
+    assert svc.generate_adherence_nudge(db, u.id) == 0  # 同日忽略后不重复
+
+
+def test_adherence_nudge_idempotent_when_already_logged(db):
+    """竞态:propose 后用户经别的路径(腕上一键/quick record)已按日标记,再 confirm 这条 intent
+    → 执行幂等返回既有行,绝不落第二条虚高依从(DB uq + _execute reread 双保险)。"""
+    from app.models.medication import MedicationLog
+    u = _mk_user(db)
+    m = _mk_med(db, u.id)
+    wi = svc.propose(
+        db, u.id, kind="adherence_nudge", title=f"今天还没记录:{m.name}",
+        description="如果已经服用了,点确认记一笔(标记已服);没服就忽略。", source="adherence_gap",
+        target_type="medication", target_id=m.id, payload={"item_type": "medication", "name": m.name},
+    )
+    # 另一路径先落了今天的按日标记(NULL 槽)
+    db.add(MedicationLog(user_id=u.id, medication_id=m.id, taken_date=date.today(), taken_time=None, status="taken"))
+    db.commit()
+
+    res = svc.confirm(db, u.id, wi.id)
+    assert res["status"] == "executed" and res["executed_ref"].startswith("medication_log:")
+    logs = db.query(MedicationLog).filter(
+        MedicationLog.user_id == u.id, MedicationLog.medication_id == m.id,
+        MedicationLog.taken_date == date.today(), MedicationLog.taken_time.is_(None),
+    ).all()
+    assert len(logs) == 1  # 仍只 1 条,没有虚高

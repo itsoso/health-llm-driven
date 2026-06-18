@@ -107,6 +107,39 @@ public let watchCompletableKinds: Set<String> = [
     "training", "activity", "exercise",
 ]
 
+/// cut A:movement 处方(后端 `prescription`)。各端按形态渲染;腕上用 intensityLabel 出强度 chip。
+public struct WatchPrescription: Codable, Sendable, Equatable {
+    public let intensity: String        // high | moderate | low | rest | unknown
+    public let type: String?
+    public let durationMin: Int?
+    public let rpe: String?
+    public let guidance: String?
+    public let geneNote: String?
+
+    public init(intensity: String, type: String? = nil, durationMin: Int? = nil,
+                rpe: String? = nil, guidance: String? = nil, geneNote: String? = nil) {
+        self.intensity = intensity; self.type = type; self.durationMin = durationMin
+        self.rpe = rpe; self.guidance = guidance; self.geneNote = geneNote
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case intensity, type, rpe, guidance
+        case durationMin = "duration_min"
+        case geneNote = "gene_note"
+    }
+
+    /// 腕上强度 chip 文案(空串 = 不显示)。
+    public var intensityLabel: String {
+        switch intensity {
+        case "high": return "高强度"
+        case "moderate": return "中强度"
+        case "low": return "低强度"
+        case "rest": return "休息"
+        default: return ""
+        }
+    }
+}
+
 public struct WatchTopAction: Codable, Sendable {
     public let title: String
     public let kind: String
@@ -119,6 +152,7 @@ public struct WatchTopAction: Codable, Sendable {
     public let safetyStatus: String?
     /// 后端注入:`agenda-{object_type}-{object_id}`。无 source 的项为 nil(不可完成,只读)。
     public let actionId: String?
+    public let prescription: WatchPrescription?
 
     public init(
         title: String,
@@ -130,7 +164,8 @@ public struct WatchTopAction: Codable, Sendable {
         rationaleShort: String? = nil,
         verificationWindowDays: Int? = nil,
         safetyStatus: String? = nil,
-        actionId: String? = nil
+        actionId: String? = nil,
+        prescription: WatchPrescription? = nil
     ) {
         self.title = title
         self.kind = kind
@@ -142,6 +177,7 @@ public struct WatchTopAction: Codable, Sendable {
         self.verificationWindowDays = verificationWindowDays
         self.safetyStatus = safetyStatus
         self.actionId = actionId
+        self.prescription = prescription
     }
 
     /// 可一键完成 = 有 action_id 且 kind 属于 health_protocol 可回写域。非可完成项只渲染只读。
@@ -160,6 +196,7 @@ public struct WatchTopAction: Codable, Sendable {
         case verificationWindowDays = "verification_window_days"
         case safetyStatus = "safety_status"
         case actionId = "action_id"
+        case prescription
     }
 }
 
@@ -169,6 +206,13 @@ public struct WatchDueItem: Codable, Sendable, Identifiable {
     public let timeWindow: String?
     public let source: WatchSource?
     public let actionId: String?
+    public let prescription: WatchPrescription?
+
+    public init(title: String, kind: String, timeWindow: String?, source: WatchSource?,
+                actionId: String? = nil, prescription: WatchPrescription? = nil) {
+        self.title = title; self.kind = kind; self.timeWindow = timeWindow
+        self.source = source; self.actionId = actionId; self.prescription = prescription
+    }
 
     public var id: String { actionId ?? "\(kind)-\(title)-\(timeWindow ?? "anytime")" }
 
@@ -182,6 +226,7 @@ public struct WatchDueItem: Codable, Sendable, Identifiable {
         case title, kind, source
         case timeWindow = "time_window"
         case actionId = "action_id"
+        case prescription
     }
 }
 

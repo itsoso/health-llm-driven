@@ -20,8 +20,6 @@ final class WatchCredentialStore {
         }
         if (context[Self.contextTokenDeletedKey] as? Bool) == true {
             deleteToken()
-            // JWT 已清;同时清掉 App Group 里残留的粗粒度健康摘要 + 表盘缓存,避免换机/注销后旧数据存活。
-            WatchSessionReset.clearCachedHealthData()
             return
         }
         if let token = context[Self.contextTokenKey] as? String, !token.isEmpty {

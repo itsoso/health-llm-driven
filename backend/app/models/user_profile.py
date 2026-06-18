@@ -59,6 +59,12 @@ class UserProfile(Base):
     work_type = Column(String(50), nullable=True)  # office/remote/physical/mixed
     work_hours_per_day = Column(Float, nullable=True)  # 每天工作时长
     sitting_hours_per_day = Column(Float, nullable=True)  # 久坐时长
+    work_start_time = Column(String(10), nullable=True)  # 上班 "09:00"(时点日程避开工作窗用)
+    work_end_time = Column(String(10), nullable=True)  # 下班 "18:00"
+
+    # === 锻炼时点偏好(timing-solver 据此在空窗排锻炼块)===
+    workout_pref_window = Column(String(20), nullable=True)  # morning/midday/evening/any(None=不排锻炼块)
+    workout_target_minutes = Column(Integer, nullable=True)  # 目标锻炼时长(分钟);缺省走 DEFAULT_WORKOUT_MINUTES
 
     # === 地理位置（用于天气/空气质量） ===
     city = Column(String(100), nullable=True)  # 所在城市

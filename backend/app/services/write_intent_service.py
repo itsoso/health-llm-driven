@@ -262,6 +262,84 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         db.add(rem)
         db.flush()
         return f"smart_reminder:{rem.id}"
+    if wi.kind == "adherence_nudge":
+        # 写依从事实:确认即用户断言「我服了」。同事务内只 flush(外层 confirm 统一 commit);
+        # 幂等防虚高依从(虚高依从会经 twin.medication.adherence 误证给 DDI/PGx/SafetyGuardian)。
+        from datetime import date as _date
+        from sqlalchemy.exc import IntegrityError
+        p = wi.payload or {}
+        item_type = p.get("item_type")
+        today = _date.today()  # 与服药/补剂子系统口径一致(服务器 Asia/Shanghai)
+        if item_type == "medication":
+            from app.models.medication import MedicationLog
+
+            def _find_med():
+                return (
+                    db.query(MedicationLog)
+                    .filter(
+                        MedicationLog.user_id == wi.user_id,
+                        MedicationLog.medication_id == wi.target_id,
+                        MedicationLog.taken_date == today,
+                        MedicationLog.taken_time.is_(None),
+                    )
+                    .order_by(MedicationLog.id.desc())
+                    .first()
+                )
+
+            existing = _find_med()
+            if existing is not None:  # 今天已按日标记 → 幂等,不重复写
+                return f"medication_log:{existing.id}"
+            log = MedicationLog(
+                user_id=wi.user_id, medication_id=wi.target_id,
+                taken_date=today, taken_time=None, status="taken",
+                notes="write_intent:adherence_nudge",
+            )
+            try:
+                with db.begin_nested():  # SAVEPOINT:并发撞 uq_medlog 只回滚这条 INSERT,不毁外层事务
+                    db.add(log)
+                    db.flush()
+                return f"medication_log:{log.id}"
+            except IntegrityError:  # TOCTOU:另一路已落同槽 → 收敛到既有行,不虚高依从
+                dup = _find_med()
+                if dup is None:  # 撞约束却查不到 → 反常,fail loud
+                    raise
+                return f"medication_log:{dup.id}"
+        if item_type == "supplement":
+            from app.models.supplement import SupplementRecord
+
+            def _find_supp():
+                return (
+                    db.query(SupplementRecord)
+                    .filter(
+                        SupplementRecord.user_id == wi.user_id,
+                        SupplementRecord.supplement_id == wi.target_id,
+                        SupplementRecord.record_date == today,
+                    )
+                    .first()
+                )
+
+            existing = _find_supp()
+            if existing is not None:  # 幂等:已有当日行 → 置 taken,不新增
+                existing.taken = True
+                db.flush()
+                return f"supplement_record:{existing.id}"
+            rec = SupplementRecord(
+                user_id=wi.user_id, supplement_id=wi.target_id,
+                record_date=today, taken=True,
+            )
+            try:
+                with db.begin_nested():  # SAVEPOINT:并发撞 uq_supprec 只回滚这条 INSERT
+                    db.add(rec)
+                    db.flush()
+                return f"supplement_record:{rec.id}"
+            except IntegrityError:
+                dup = _find_supp()
+                if dup is None:
+                    raise
+                dup.taken = True
+                db.flush()
+                return f"supplement_record:{dup.id}"
+        raise ValueError(f"unknown adherence_nudge item_type: {item_type}")
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
 
@@ -434,3 +512,97 @@ def generate_recheck_due(db: Session, user_id: int, within_days: int = 7) -> int
     )
     db.commit()
     return 1 if wi is not None else 0
+
+
+def _proposed_same_day_local(db: Session, user_id: int, kind: str, target_type: str, target_id) -> bool:
+    """该 (kind,target) 今天(本地日历日)是否已提过(任何状态)→ 防同日重复 nag。
+
+    created_at 存 UTC,本地化到机器时区后与 date.today() 同基准比对(服务器 Asia/Shanghai)。
+    """
+    from datetime import date as _date
+
+    last = (
+        db.query(WriteIntent)
+        .filter(
+            WriteIntent.user_id == user_id,
+            WriteIntent.kind == kind,
+            WriteIntent.target_type == target_type,
+            WriteIntent.target_id == target_id,
+        )
+        .order_by(WriteIntent.created_at.desc())
+        .first()
+    )
+    if last is None or last.created_at is None:
+        return False
+    ca = last.created_at
+    if ca.tzinfo is None:  # SQLite 存 naive UTC;PG 为 tz-aware
+        ca = ca.replace(tzinfo=timezone.utc)
+    return ca.astimezone().date() == _date.today()
+
+
+def generate_adherence_nudge(db: Session, user_id: int) -> int:
+    """服药/补剂依从缺口:今天该服但没记录 → 提议「已服了?标记已服」(确认即写依从事实)。
+
+    不依赖干预周期(依从是日常)。药用 get_today_status(taken_count==0=今天完全没记录);补剂
+    用活跃定义 ∧ 今天无 taken 记录。每个 item 一条,同 item 当天已提过(任何状态)→ 不重复。
+    返回新建提议数。
+    """
+    from datetime import date as _date
+    from app.services.medication_service import medication_service
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+
+    today = _date.today()
+    created = 0
+    _DESC = "如果已经服用了,点确认记一笔(标记已服);没服就忽略。"
+
+    # ── 药:今天完全没记录(taken_count==0)的活跃药 ──
+    for st in medication_service.get_today_status(db, user_id):
+        if st.get("taken_count", 0) > 0:
+            continue
+        med_id = st.get("medication_id")
+        if _proposed_same_day_local(db, user_id, "adherence_nudge", "medication", med_id):
+            continue
+        wi = propose(
+            db, user_id, kind="adherence_nudge",
+            title=f"今天还没记录:{st.get('name')}",
+            description=_DESC, source="adherence_gap",
+            target_type="medication", target_id=med_id,
+            payload={"item_type": "medication", "name": st.get("name")},
+            commit=False,
+        )
+        if wi is not None:
+            created += 1
+
+    # ── 补剂:今天没有 taken 记录的活跃补剂 ──
+    active_supps = (
+        db.query(SupplementDefinition)
+        .filter(SupplementDefinition.user_id == user_id, SupplementDefinition.is_active)
+        .all()
+    )
+    for supp in active_supps:
+        rec = (
+            db.query(SupplementRecord)
+            .filter(
+                SupplementRecord.user_id == user_id,
+                SupplementRecord.supplement_id == supp.id,
+                SupplementRecord.record_date == today,
+            )
+            .first()
+        )
+        if rec is not None and rec.taken:
+            continue
+        if _proposed_same_day_local(db, user_id, "adherence_nudge", "supplement", supp.id):
+            continue
+        wi = propose(
+            db, user_id, kind="adherence_nudge",
+            title=f"今天还没记录:{supp.name}",
+            description=_DESC, source="adherence_gap",
+            target_type="supplement", target_id=supp.id,
+            payload={"item_type": "supplement", "name": supp.name},
+            commit=False,
+        )
+        if wi is not None:
+            created += 1
+
+    db.commit()
+    return created

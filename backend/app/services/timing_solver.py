@@ -59,6 +59,8 @@ class Item:
     deferrable: bool = True                      # 能否顺延(prescribed 固定项通常 False)
     preference_weight: float = 0.0               # 偏好加权(仅在不违反硬约束时生效)
     fixed_time: Optional[str] = None             # 医嘱固定时点 "HH:MM"(优先于锚点启发式)
+    warning: Optional[str] = None                # 行级警告(如 drug×drug 相互作用;保留排程不删,遵医嘱)
+    prescription: Optional[dict] = None          # cut A:movement 处方(intensity/type/duration/rpe/guidance/gene_note)
 
 
 @dataclass
@@ -72,6 +74,10 @@ class DayContext:
     quiet_hours: Tuple[str, str] = ("22:00", "08:30")
     daily_recheck_cap: int = 2
     anchors_degraded: bool = False               # 餐点是默认值(无真实打卡)→ 文案标降级
+    work_start: Optional[str] = None             # 上班 "09:00"(None=未设;不约束)
+    work_end: Optional[str] = None               # 下班 "18:00"
+    is_workday: bool = True                       # 今天是否工作日(周末/休假→不避工作窗)
+    busy: List[Tuple[str, str]] = field(default_factory=list)  # 日历忙碌块 [(start,end)],浮动项避开(CalDAV 源)
 
 
 # ── 时间工具(分钟制,跨午夜安全)───────────────────────────────────────────
@@ -92,6 +98,45 @@ def _in_quiet(minutes: int, quiet: Tuple[str, str]) -> bool:
     if start <= end:
         return start <= minutes < end
     return minutes >= start or minutes < end  # 跨午夜
+
+
+def _in_work(minutes: int, ctx: DayContext) -> bool:
+    """是否落在工作窗内(仅工作日且上下班都已设;常规白班,不约束夜班/异常)。"""
+    if not ctx.is_workday or not ctx.work_start or not ctx.work_end:
+        return False
+    ws, we = _to_min(ctx.work_start), _to_min(ctx.work_end)
+    if ws >= we:  # 跨午夜/异常 → 不约束(避免误把全天当工作窗)
+        return False
+    return ws <= (minutes % (24 * 60)) < we
+
+
+def _block_minutes(ctx: DayContext) -> List[Tuple[int, int]]:
+    """当日所有「忙碌块」(工作窗 + 日历忙碌)归一成 [(start_min,end_min)] 升序。跨午夜/异常块跳过。"""
+    blocks: List[Tuple[int, int]] = []
+    if ctx.is_workday and ctx.work_start and ctx.work_end:
+        ws, we = _to_min(ctx.work_start), _to_min(ctx.work_end)
+        if ws < we:
+            blocks.append((ws, we))
+    for pair in (ctx.busy or []):
+        try:
+            bs, be = _to_min(pair[0]), _to_min(pair[1])
+        except (ValueError, AttributeError, IndexError, TypeError):
+            continue  # 脏忙碌块跳过,不让坏数据炸掉整条求解
+        if bs < be:
+            blocks.append((bs, be))
+    return sorted(blocks)
+
+
+def _push_free(t: int, blocks: List[Tuple[int, int]]) -> int:
+    """若 t 落在任一忙碌块内 → 推到块尾;迭代处理相邻/重叠块,直到落进空档。"""
+    moved = True
+    while moved:
+        moved = False
+        for bs, be in blocks:
+            if bs <= t < be:
+                t = be
+                moved = True
+    return t
 
 
 # ── 锚点落桩(Step 1)─────────────────────────────────────────────────────
@@ -122,6 +167,49 @@ def _anchor_minutes(item: Item, ctx: DayContext) -> Optional[int]:
 
 def _meal(ctx: DayContext, ref: str) -> int:
     return _to_min(ctx.meals.get(ref, ctx.meals.get("breakfast", "07:30")))
+
+
+# ── 锻炼时点选择(cut 7)──────────────────────────────────────────────────
+# 纯函数:给定作息/工作窗/忙碌块 + 偏好时段 + 时长 → 锻炼起点(分钟);找不到空档→None。
+# 硬边界:锻炼整段须落在偏好窗内且 ≤ 睡前 2h 结束(高强度近睡影响睡眠);避开工作窗 + 日历忙碌块 +
+# 餐后 60min(刚吃完不剧烈运动)。本函数只选「起点」,readiness 门控(Red→休息)由 solver Step 0 负责。
+def pick_workout_start(ctx: DayContext, pref_window: str, duration_min: int) -> Optional[int]:
+    wake, sleep = _to_min(ctx.wake), _to_min(ctx.sleep)
+    earliest = wake + 60                 # 起床 1h 后才安排(留出晨间/早餐)
+    latest_end = sleep - 120             # 锻炼结束须 ≥ 睡前 2h
+    # 偏好窗给「粗」边界,精细错峰(避餐 ±60min、避工作/忙碌块)交给下方迭代。
+    windows = {
+        "morning": (earliest, 11 * 60 + 30),
+        "midday": (11 * 60 + 30, 15 * 60),
+        "evening": (16 * 60 + 30, latest_end),
+        "any": (earliest, latest_end),
+    }
+    lo, hi = windows.get(pref_window or "any", (earliest, latest_end))
+    lo = max(lo, earliest)
+    hi_start = min(hi, latest_end) - duration_min  # 起点上界:留时长在窗内 + 睡前 2h 收口
+    if hi_start < lo:                    # 偏好窗太窄(早睡/长时长)→ 回退全天可用窗
+        lo, hi_start = earliest, latest_end - duration_min
+    if hi_start < lo:                    # 全天都放不下(如极早睡)→ 当日不排
+        return None
+
+    blocks = _block_minutes(ctx)
+    meals = sorted({_meal(ctx, "breakfast"), _meal(ctx, "lunch"), _meal(ctx, "dinner")})
+    t = lo
+    # 迭代收敛:推出忙碌块 → 与任一餐 ±60min 内或整段跨餐 → 推到餐后 60min → 整段避忙碌块。
+    for _ in range(8):
+        nt = _push_free(t, blocks)
+        for m in meals:
+            if (m - 60 < nt < m + 60) or (nt <= m < nt + duration_min):
+                nt = max(nt, m + 60)
+        for bs, be in blocks:            # 整段 [nt, nt+dur) 与某忙碌块重叠 → 推到块尾
+            if nt < be and bs < nt + duration_min:
+                nt = max(nt, be)
+        if nt == t:
+            break
+        t = nt
+    if t > hi_start:                     # 推完已越过上界 → 当日无合适空档
+        return None
+    return t
 
 
 # ── 主求解(纯函数)────────────────────────────────────────────────────────
@@ -167,38 +255,50 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
     # 更长间隔先满足
     constraints.sort(key=lambda c: -c[2])
 
-    # ── anytime 项先填占位时点(锚点为 None 的)—— 必须在间隔约束满足之前,
-    # 否则两个 anytime 螯合项(如 anytime 钙 + anytime 铁)在间隔 pass 时仍是 None
-    # 被 continue 跳过,只在事后 +30min 错开,违反 ≥2h 间隔。先给确定时点 → 参与求解。
+    def _satisfy_intervals() -> None:
+        """迭代收敛间隔约束(钙×铁≥2h、钙/铁×左甲状腺素≥4h…)。让步方=tier 更低者后移。
+        仅对已落桩(非 None)的项生效 —— 故 anytime 项须先在 fill 里拿到时点再跑本函数。"""
+        for _pass in range(4):  # 迭代收敛(项数小,固定几轮足够)
+            moved = False
+            for a_id, b_id, gap_min in constraints:
+                ta, tb = placed.get(a_id), placed.get(b_id)
+                if ta is None or tb is None:
+                    continue
+                if abs(ta - tb) >= gap_min:
+                    continue
+                # 违反:让「让步方」后移。让步方 = tier 更低(severity 低/可顺延/偏好)者
+                ia, ib = by_id[a_id], by_id[b_id]
+                yielder, fixed = (ia, tb) if tier_key(ia) > tier_key(ib) else (ib, ta)
+                if not yielder.deferrable:
+                    # 两个都不可顺延且冲突 → 标记冲突(让步给安全侧:把可调的那个尽量推)
+                    other = ib if yielder is ia else ia
+                    if other.deferrable:
+                        yielder = other
+                    else:
+                        continue  # 双固定冲突:留给上层(医嘱)处理,不强行改
+                # 把让步方推到「远侧」:本就在 fixed 之后→further after;在之前→further before
+                placed[yielder.id] = (fixed + int(gap_min)) if placed[yielder.id] >= fixed else (fixed - int(gap_min))
+                moved = True
+            if not moved:
+                break
+
+    _satisfy_intervals()  # 第一轮:已落桩的锚点/固定项之间的间隔
+
+    # ── anytime 项填空隙(锚点为 None 的)—— 从「起床+1h 或静默窗结束」较晚者起,错开 ──
+    # 工作日避开工作窗:浮动主动 nudge 落在上班时段 → 顺延到下班后(不打扰工作);
+    # 上班前的空档(起床~上班)仍可用。锚点项(空腹/餐前/睡前/医嘱固定)不受此约束。
     fallback = max(_to_min(ctx.wake) + 60, _to_min(ctx.quiet_hours[1]))
+    blocks = _block_minutes(ctx)  # 工作窗 + 日历忙碌块,统一回避
     for it in order:
         if placed[it.id] is None:
+            fallback = _push_free(fallback, blocks)  # 落在忙碌块 → 推到块尾(空档)
             placed[it.id] = fallback
-            fallback += 30  # 错开,避免堆叠;间隔 pass 会进一步拉开有约束的项
+            fallback += 30  # 错开,避免堆叠
 
-    for _pass in range(4):  # 迭代收敛(项数小,固定几轮足够)
-        moved = False
-        for a_id, b_id, gap_min in constraints:
-            ta, tb = placed.get(a_id), placed.get(b_id)
-            if ta is None or tb is None:
-                continue
-            if abs(ta - tb) >= gap_min:
-                continue
-            # 违反:让「让步方」后移。让步方 = tier 更低(severity 低/可顺延/偏好)者
-            ia, ib = by_id[a_id], by_id[b_id]
-            yielder, fixed = (ia, tb) if tier_key(ia) > tier_key(ib) else (ib, ta)
-            if not yielder.deferrable:
-                # 两个都不可顺延且冲突 → 标记冲突(让步给安全侧:把可调的那个尽量推)
-                other = ib if yielder is ia else ia
-                if other.deferrable:
-                    yielder = other
-                else:
-                    continue  # 双固定冲突:留给上层(医嘱)处理,不强行改
-            # 把让步方推到「远侧」:本就在 fixed 之后→further after;在之前→further before
-            placed[yielder.id] = (fixed + int(gap_min)) if placed[yielder.id] >= fixed else (fixed - int(gap_min))
-            moved = True
-        if not moved:
-            break
+    # 第二轮:anytime 项已落桩 → 补跑间隔约束,让两个「随时」螯合项(钙×铁)也守 ≥2h
+    # (此前都是 None 被第一轮跳过,只在 fill 里 +30 错开)。螯合间隔(layer 4)优先级高于
+    # 工作窗回避(layer 8),故被推动的 anytime 项即便落回工作时段也以安全间隔为先。
+    _satisfy_intervals()
 
     # ── Step 7 静默窗 + 复查配额 ───────────────────────────────────────
     scheduled: List[dict] = []
@@ -212,9 +312,14 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
         # 即使落在静默窗也保留原时点 —— 绝不把处方剂量或晨起空腹药丢到次日(R4:不漏给药)。
         if it.anchor == ANCHOR_ANYTIME and it.deferrable and _in_quiet(t, ctx.quiet_hours):
             t = qend  # 浮动 nudge 顺延到静默窗结束
-        scheduled.append({"id": it.id, "title": it.title, "domain": it.domain,
-                          "time": _to_hhmm(t), "_min": t, "anchor": it.anchor,
-                          "severity": it.severity, "degraded": ctx.anchors_degraded})
+        entry = {"id": it.id, "title": it.title, "domain": it.domain,
+                 "time": _to_hhmm(t), "_min": t, "anchor": it.anchor,
+                 "severity": it.severity, "degraded": ctx.anchors_degraded}
+        if it.warning:
+            entry["warning"] = it.warning  # 行级相互作用警告(保留排程,遵医嘱)
+        if it.prescription:
+            entry["prescription"] = it.prescription  # cut A:movement 处方,各端按形态渲染
+        scheduled.append(entry)
 
     # 复查配额:checkup 域按 severity 取前 N,其余顺延
     checkups = sorted([s for s in scheduled if s["domain"] == "checkup"],
