@@ -48,10 +48,14 @@ WORST_VALUE_METRICS = frozenset({"spo2_avg", "spo2_min"})
 # 血氧:Garmin 腕式反射血氧个体实测不准(假性低值会经 WORST_VALUE 取最小被误采,
 # 触发假性低氧告警),改为只信 RingConn 等贴肤光路;Garmin SpO2 整源剔除。
 # 注:睡眠/HRV/呼吸等仍走 _RING_FIRST,Garmin 作 fallback 不受影响——只排血氧。
+# "garmin-app" = Garmin Connect 把 SpO2 镜像进 Apple HealthKit 后, mobile/healthkit
+# 适配器打的来源标签。它是同一块 Garmin 腕式反射传感器的数据,与 "garmin" 同样不准 ——
+# 必须一并剔除,否则戴 Garmin 的用户把数据同步进 HealthKit 后,逐分钟假性低值会经
+# spo2_samples 表灌进夜间低氧 CRITICAL 规则的"持续负荷"佐证(绕开了直采路径的剔除)。
 EXCLUDED_SOURCES: Dict[str, frozenset] = {
-    "spo2_avg": frozenset({"garmin"}),
-    "spo2_min": frozenset({"garmin"}),
-    "spo2_max": frozenset({"garmin"}),
+    "spo2_avg": frozenset({"garmin", "garmin-app"}),
+    "spo2_min": frozenset({"garmin", "garmin-app"}),
+    "spo2_max": frozenset({"garmin", "garmin-app"}),
 }
 
 

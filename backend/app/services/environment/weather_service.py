@@ -301,6 +301,7 @@ class WeatherService:
                 forecasts = []
 
                 for day in daily[:days]:
+                    rh = day.get("humidity")
                     forecasts.append({
                         "date": day.get("fxDate", ""),
                         "weather": day.get("textDay", ""),
@@ -309,6 +310,7 @@ class WeatherService:
                         "temp_min": float(day.get("tempMin", 0)),
                         "feels_like_max": float(day.get("tempMax", 0)),  # 和风天气预报没有体感温度
                         "feels_like_min": float(day.get("tempMin", 0)),
+                        "humidity": int(float(rh)) if rh not in (None, "") else None,  # 和风每日相对湿度
                         "precipitation_probability": int(float(day.get("precip", 0))),
                         "uv_index": int(float(day.get("uvIndex", 0)))
                     })
@@ -358,7 +360,7 @@ class WeatherService:
             params = {
                 "latitude": lat,
                 "longitude": lon,
-                "daily": "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,uv_index_max",
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,relative_humidity_2m_mean,precipitation_probability_max,uv_index_max",
                 "timezone": "Asia/Shanghai",
                 "forecast_days": days
             }
@@ -370,7 +372,9 @@ class WeatherService:
             dates = daily.get("time", [])
 
             forecasts = []
+            rh_list = daily.get("relative_humidity_2m_mean", [])
             for i, date in enumerate(dates):
+                rh = rh_list[i] if i < len(rh_list) else None
                 forecasts.append({
                     "date": date,
                     "weather": self._weather_code_to_text(daily.get("weather_code", [])[i] if i < len(daily.get("weather_code", [])) else 0),
@@ -379,6 +383,7 @@ class WeatherService:
                     "temp_min": daily.get("temperature_2m_min", [])[i] if i < len(daily.get("temperature_2m_min", [])) else 0,
                     "feels_like_max": daily.get("apparent_temperature_max", [])[i] if i < len(daily.get("apparent_temperature_max", [])) else 0,
                     "feels_like_min": daily.get("apparent_temperature_min", [])[i] if i < len(daily.get("apparent_temperature_min", [])) else 0,
+                    "humidity": round(rh) if rh is not None else None,  # open-meteo 每日平均相对湿度
                     "precipitation_probability": daily.get("precipitation_probability_max", [])[i] if i < len(daily.get("precipitation_probability_max", [])) else 0,
                     "uv_index": daily.get("uv_index_max", [])[i] if i < len(daily.get("uv_index_max", [])) else 0
                 })

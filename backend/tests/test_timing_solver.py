@@ -152,6 +152,19 @@ def test_longer_interval_wins():
     assert _gap(res, "cal", "iron") >= 120
 
 
+def test_interval_holds_for_anytime_items():
+    # 两个无锚点(anytime)螯合项也必须满足 ≥2h 间隔 —— 不能只靠 +30min 错开。
+    # 回归:之前 anytime 项在间隔 pass 时还是 None 被跳过,只隔 30min。
+    items = [
+        Item(id="cal", domain="supplement", title="钙", anchor=ANCHOR_ANYTIME, severity=40,
+             interval_constraints=[("iron", 2.0)]),
+        Item(id="iron", domain="supplement", title="铁", anchor=ANCHOR_ANYTIME, severity=70),
+    ]
+    res = solve_day_schedule(items, DayContext(**WIDE))
+    assert "cal" in _by_id(res) and "iron" in _by_id(res)  # 两项都排上
+    assert _gap(res, "cal", "iron") >= 120  # 间隔≥2h,与锚点无关
+
+
 # ── 复查配额 / 确定性 ──────────────────────────────────────────────────────
 def test_recheck_daily_cap():
     items = [

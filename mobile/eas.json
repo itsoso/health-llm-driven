@@ -33,7 +33,7 @@
         "simulator": false,
         "image": "latest"
       },
-      "channel": "preview",
+      "channel": "rokid-preview",
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "APP_VARIANT": "preview",
@@ -63,7 +63,7 @@
         "autoIncrement": true,
         "image": "latest"
       },
-      "channel": "production",
+      "channel": "rokid-production",
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "APP_VARIANT": "production",

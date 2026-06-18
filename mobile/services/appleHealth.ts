@@ -48,6 +48,8 @@ import type { components } from '../types/api.generated';
 type ApiHealthKitRecord = components['schemas']['HealthKitDailyRecord'];
 // 血压点事件出口 payload —— 同样用生成 schema 标注, 防字段漂移。
 type ApiBPReading = components['schemas']['BPReadingIn'];
+// 整夜逐分钟血氧采样点出口 payload —— 生成 schema 标注, 防字段漂移。
+type ApiSpo2Sample = components['schemas']['Spo2SampleIn'];
 
 type AppleHealthKitModule = typeof ReactNativeHealth & Record<string, any>;
 
@@ -126,6 +128,10 @@ export interface HealthKitDailyRecord {
   // 血压点事件 (一天多次, 与 ECG 同范式 —— 逐条进数组, 不塞日聚合).
   // 每条 {systolic, diastolic, measured_at(ISO), source?}; 无数据时缺省.
   blood_pressure_readings?: ApiBPReading[];
+  // 整夜逐分钟血氧序列 (RingConn / Apple Watch 等贴肤光路). 每条 {value(0-100), measured_at(ISO)}.
+  // 落后端 spo2_samples 表 —— ODI / below-90% 持续负荷的唯一来源 (日聚合 spo2_min 算不出)。
+  // 无数据时缺省。
+  spo2_samples?: ApiSpo2Sample[];
   // 体脂率 (百分数 0–100, HealthKit 原始 0–1 已 ×100). 随 weight_kg 落 WeightRecord.
   body_fat_percentage?: number;
 }
@@ -402,6 +408,15 @@ function buildRecordForSource(
   // SpO2 HealthKit 单位是 0–1 小数,转成 0–100 百分数
   const spo2Avg = avg(m.spo2);
   const spo2Min = min(m.spo2);
+  // 整夜逐分钟序列: 每个样本各自上行 (value ×100 成百分数 + measured_at ISO)。
+  // 这是后端算 ODI / below-90% 持续负荷的唯一来源 —— 日聚合 spo2_min 算不出。
+  // 跳过缺 value / startDate 的坏样本; 全空则不带该字段 (后端 Optional)。
+  const spo2Samples: ApiSpo2Sample[] = (m.spo2 as SampleWithSource[])
+    .filter((s) => s.value != null && s.startDate)
+    .map((s) => ({
+      value: (s.value as number) * 100,
+      measured_at: new Date(s.startDate).toISOString(),
+    }));
 
   // 后端 steps / resting_heart_rate 是 Optional[int],float 会 422 → 客户端先取整。
   const intOr = (n: number | undefined) => (n !== undefined ? Math.round(n) : undefined);
@@ -416,6 +431,7 @@ function buildRecordForSource(
     hrv: ((s) => (s !== undefined ? Math.round(s * 1000 * 10) / 10 : undefined))(avg(m.hrv)),
     spo2_avg: spo2Avg !== undefined ? spo2Avg * 100 : undefined,
     spo2_min: spo2Min !== undefined && spo2Min !== Infinity ? spo2Min * 100 : undefined,
+    spo2_samples: spo2Samples.length > 0 ? spo2Samples : undefined,
     total_sleep_minutes: totalSleepMin > 0 ? round(totalSleepMin) : undefined,
     deep_sleep_minutes: deepMin > 0 ? round(deepMin) : undefined,
     rem_sleep_minutes: remMin > 0 ? round(remMin) : undefined,
@@ -724,6 +740,9 @@ function toApiRecord(r: HealthKitDailyRecord): ApiHealthKitRecord {
     // 无血压时 undefined (后端 Optional)。对象字面量受 ApiHealthKitRecord 约束 →
     // 后端改 BPReadingIn 字段时这里 tsc 直接红。
     blood_pressure_readings: r.blood_pressure_readings,
+    // 整夜逐分钟血氧序列 — 原样转发 (value 已 ×100, measured_at ISO)。无数据时 undefined。
+    // 对象字面量受 ApiHealthKitRecord 约束 → 后端改 Spo2SampleIn 字段时这里 tsc 直接红。
+    spo2_samples: r.spo2_samples,
     // 体脂率 (百分数) + 其载体体重。后端要求体脂随体重落库,故仅在有体脂时把
     // weight_kg 一并上行 (round 到 0.1kg); 无体脂则不发 weight_kg (走 /weight 端点)。
     body_fat_percentage: r.body_fat_percentage,

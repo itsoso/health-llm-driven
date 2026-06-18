@@ -911,9 +911,12 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
         from app.models.daily_health import GarminData, SpO2Sample
         from app.services.device_source_priority import excluded_sources
 
-        # 血氧排除源(garmin):SpO2Sample 当前只由 garmin 写(source 硬编码 garmin),
-        # 这条主路径喂夜间低氧 CRITICAL,必须按 source 过滤,否则 garmin 假性低值漏进。
-        # notin_ 同时把 source 为 NULL(历史/默认 garmin)的行排除,与"默认 garmin"一致。
+        # 血氧排除源(garmin):SpO2Sample 由 garmin 采集器 + HealthKit 导入
+        # (apple-watch / ringconn 等贴肤光路, 见 healthkit.HealthKitAdapter._save_spo2_samples)
+        # 共同写入。这条主路径喂夜间低氧 CRITICAL,必须按 source 过滤掉 garmin / garmin-app
+        # (同一块腕式反射传感器的假性低值,后者是 Garmin→HealthKit 镜像),否则会漏进。
+        # notin_ 同时把 source 为 NULL(历史/默认 garmin)的行排除,与"默认 garmin"一致;
+        # apple-watch / ringconn / unknown 等贴肤光路源正常纳入。
         _ex_spo2 = list(excluded_sources("spo2_min"))
 
         latest_row = (

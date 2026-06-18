@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from app.services.managed_migrations import apply_managed_migrations
@@ -103,6 +104,82 @@ def test_desktop_jobs_has_managed_postgres_migration():
     assert "CREATE TABLE IF NOT EXISTS desktop_jobs" in sql
     assert "idx_desktop_jobs_user_created" in sql
     assert "idx_desktop_jobs_user_status" in sql
+
+
+def test_adherence_writeback_unique_migrations_exist_and_dedupe():
+    """依从写回幂等迁移成对存在,PG variant 先 dedup 再建唯一索引(脏数据上直接建会失败)。"""
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+
+    med_pg = migrations_dir / "20260617_120000_add_medication_log_unique.postgresql.sql"
+    med_sqlite = migrations_dir / "20260617_120000_add_medication_log_unique.sqlite.sql"
+    supp_pg = migrations_dir / "20260617_120100_add_supplement_record_unique.postgresql.sql"
+    supp_sqlite = migrations_dir / "20260617_120100_add_supplement_record_unique.sqlite.sql"
+    for f in (med_pg, med_sqlite, supp_pg, supp_sqlite):
+        assert f.exists(), f"缺迁移文件: {f.name}"
+
+    med_pg_sql = med_pg.read_text(encoding="utf-8")
+    # PG 先删现存重复(同槽保留 max id)再建唯一索引;COALESCE 让 NULL 槽去重、多剂不同时点并存。
+    assert "DELETE FROM medication_logs" in med_pg_sql
+    assert "a.id < b.id" in med_pg_sql
+    assert "COALESCE(taken_time, '')" in med_pg_sql
+    assert "uq_medlog_med_date_time" in med_pg_sql
+
+    supp_pg_sql = supp_pg.read_text(encoding="utf-8")
+    assert "DELETE FROM supplement_records" in supp_pg_sql
+    assert "uq_supprec_supp_date" in supp_pg_sql
+
+    # 注释里不能出现裸分号(runner 按 ; 切分,会把语句切碎)。
+    for f in (med_pg, med_sqlite, supp_pg, supp_sqlite):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if line.lstrip().startswith("--"):
+                assert ";" not in line, f"{f.name} 注释含裸分号会被 runner 误切: {line!r}"
+
+
+def test_medication_log_unique_sqlite_migration_creates_index(tmp_path: Path):
+    """对裸 medication_logs 表跑 sqlite migration → 建出 uq_medlog_med_date_time 唯一索引。
+
+    用 IntegrityError 功能验证而非 inspect().get_indexes():SQLAlchemy 反射会跳过
+    expression-based index(COALESCE(...)),反射查不到不代表没建。NULL 折叠去重 + 多剂并存
+    一并钉死。
+    """
+    from sqlalchemy.exc import IntegrityError as SAIntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260617_120000_add_medication_log_unique.sqlite.sql"
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE medication_logs (id INTEGER PRIMARY KEY, medication_id INTEGER, "
+            "taken_date DATE, taken_time VARCHAR(10), status VARCHAR(20))"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert "20260617_120000_add_medication_log_unique" in [m.id for m in result.applied]
+    # 索引名应在 sqlite_master(反射跳过表达式索引,这里直接看建表目录)。
+    with engine.connect() as conn:
+        names = [r[0] for r in conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='index'")).fetchall()]
+    assert "uq_medlog_med_date_time" in names
+
+    ins = (
+        "INSERT INTO medication_logs (medication_id, taken_date, taken_time, status) "
+        "VALUES (1, '2026-06-17', :t, 'taken')"
+    )
+    with engine.begin() as conn:
+        conn.execute(text(ins), {"t": None})        # 按日标记(NULL)
+    # 同 (药, 日期, NULL→'') 第二条应撞唯一约束
+    with pytest.raises(SAIntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(ins), {"t": None})
+    # 不同时点是不同槽 → 允许(多剂不被误伤)
+    with engine.begin() as conn:
+        conn.execute(text(ins), {"t": "08:00"})
+        conn.execute(text(ins), {"t": "20:00"})
 
 
 def test_semicolon_inside_comment_does_not_break_statement(tmp_path: Path):

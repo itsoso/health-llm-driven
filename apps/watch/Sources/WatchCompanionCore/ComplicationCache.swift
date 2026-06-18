@@ -5,22 +5,22 @@ public enum ComplicationCache {
     public static let appGroup = "group.life.executor.health"
     private static let key = "reva.complication.state"
 
-    private static var defaults: UserDefaults {
+    static var sharedDefaults: UserDefaults {
         UserDefaults(suiteName: appGroup) ?? .standard
     }
 
-    public static func save(_ state: ComplicationState) {
+    public static func save(_ state: ComplicationState, in store: UserDefaults? = nil) {
         let dict: [String: Any] = [
             "tone": state.tone.rawValue,
             "short": state.shortText,
             "full": state.fullText,
             "badge": state.urgentBadge,
         ]
-        defaults.set(dict, forKey: key)
+        (store ?? sharedDefaults).set(dict, forKey: key)
     }
 
-    public static func load() -> ComplicationState {
-        guard let d = defaults.dictionary(forKey: key),
+    public static func load(in store: UserDefaults? = nil) -> ComplicationState {
+        guard let d = (store ?? sharedDefaults).dictionary(forKey: key),
               let toneRaw = d["tone"] as? String,
               let tone = ComplicationTone(rawValue: toneRaw) else {
             return .init(tone: .gray, shortText: "Reva", fullText: "健康助理", urgentBadge: 0)
@@ -31,5 +31,10 @@ public enum ComplicationCache {
             fullText: d["full"] as? String ?? "",
             urgentBadge: d["badge"] as? Int ?? 0
         )
+    }
+
+    /// 注销/换机时清掉残留表盘状态(App Group 明文,不应跨账号存活)。
+    public static func clear(in store: UserDefaults? = nil) {
+        (store ?? sharedDefaults).removeObject(forKey: key)
     }
 }

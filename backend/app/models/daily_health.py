@@ -1,5 +1,5 @@
 """日常健康记录模型"""
-from sqlalchemy import Column, Integer, BigInteger, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, text
+from sqlalchemy import Column, Integer, BigInteger, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -313,6 +313,16 @@ class SpO2Sample(Base):
     __table_args__ = (
         Index('idx_spo2_user_date', 'user_id', 'record_date'),
         Index('idx_spo2_user_date_time', 'user_id', 'record_date', 'sample_time'),
+        # 逐分钟去重的 DB 兜底: 同一 (用户, 日期, 分钟, 来源) 至多一行。
+        # 没有它时, HealthKit 与 garmin 采集器都用「按 (user,date,source) 删后插」+
+        # 「同源导入串行」的假设保幂等; 但同 (user, source) 两个并发导入会双删双插 →
+        # 重复分钟行 → 虚高 spo2_below_90_pct / spo2_odi → 污染夜间低氧 CRITICAL 的
+        # 「持续负荷」佐证 (见 vitals.spo2_min_nocturnal_severe)。约束含 source, 故多设备
+        # 同日同分钟 (apple-watch vs ringconn vs garmin) 是不同槽, 正常并存。
+        UniqueConstraint(
+            'user_id', 'record_date', 'sample_time', 'source',
+            name='uq_spo2_user_date_time_source',
+        ),
     )
 
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.models.user import User
@@ -553,23 +554,41 @@ async def log_medication_taken(
         raise HTTPException(status_code=404, detail="用药方案不存在")
 
     today = date.today()
+    # 依从写回幂等(读-改-写竞态 DB 兜底)。/take 是「今日按日标记已服」,taken_time=NULL;
+    # 唯一索引 uq_medlog_med_date_time 用 COALESCE(taken_time,'') 把 NULL 折叠成同一槽,
+    # 故两个并发 POST 都读到无行、都 INSERT 时第二条撞 IntegrityError —— 不再静默落 2 条
+    # 虚高依从(否则经 twin.medication.adherence_7d_pct 误证给 DDI/PGx/SafetyGuardian)。
     existing = db.query(MedicationLog).filter(
         MedicationLog.medication_id == med_id,
         MedicationLog.taken_date == today,
     ).first()
+    if existing is not None:
+        if existing.status != "taken":
+            existing.status = "taken"
+            db.commit()
+        return {"message": f"已记录服用: {med.name}"}
 
-    if existing:
-        existing.status = "taken"
-    else:
-        log = MedicationLog(
-            user_id=current_user.id,
-            medication_id=med_id,
-            taken_date=today,
-            status="taken",
-        )
-        db.add(log)
-
-    db.commit()
+    log = MedicationLog(
+        user_id=current_user.id,
+        medication_id=med_id,
+        taken_date=today,
+        status="taken",
+    )
+    db.add(log)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发另一个请求已落今日行 → 回滚本次 INSERT, 重读并确保 taken(幂等收敛, 不报错)。
+        db.rollback()
+        existing = db.query(MedicationLog).filter(
+            MedicationLog.medication_id == med_id,
+            MedicationLog.taken_date == today,
+        ).first()
+        if existing is None:  # 撞唯一约束却查不到 → 反常, fail loud 不吞
+            raise
+        if existing.status != "taken":
+            existing.status = "taken"
+            db.commit()
     return {"message": f"已记录服用: {med.name}"}
 
 

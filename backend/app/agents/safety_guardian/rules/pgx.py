@@ -222,9 +222,63 @@ def pgx_warfarin_dosing(twin: HealthTwin) -> Optional[Alert]:
 # ─────────────────────── SLCO1B1 × 辛伐他汀 ─────────
 
 
+# SLCO1B1 c.521T>C (rs4149056, *5) 的功能降低等位基因（*5/*15/*17 均为 C-侧）。
+_SLCO1B1_REDUCED_ALLELES = ("*5", "*15", "*17")
+
+
+def _slco1b1_function(variant: Dict[str, Any]) -> str:
+    """把 SLCO1B1 c.521T>C (rs4149056) 携带状态判成 poor / decreased / unknown。
+
+    CPIC 2022 据表型分流，二者处置不同：
+      - decreased（杂合 T/C，功能降低）→ 可 ≤20mg/日辛伐他汀 **或** 换药；OR≈1.8。
+      - poor（纯合 C/C，功能差）       → **只换药**，不留减量辛伐他汀的后路；OR≈2.8。
+    区分不出纯合/杂合时返回 ``unknown``，由调用方走「剂量/换药交医生定夺」措辞，
+    绝不把「辛伐他汀 ≤20mg/日」当可自行采用的安全选项。
+    """
+    label = (variant.get("result_label") or "").lower()
+    geno = (variant.get("genotype") or "").lower()
+
+    # 1) 显式表型/合子词（最高优先，label 与 genotype 都查）
+    blob = f"{label} {geno}"
+    if any(k in blob for k in ["poor", "纯合", "homozyg"]):
+        return "poor"
+    if any(k in blob for k in ["decreased", "intermediate", "杂合", "heterozyg"]):
+        return "decreased"
+
+    # 2) 星号等位基因对，如 *1/*5（杂合）、*5/*5（纯合）
+    if "*" in geno and "/" in geno:
+        alleles = [a.strip() for a in geno.split("/") if a.strip()]
+        if len(alleles) == 2:
+            reduced = [a for a in alleles if any(r in a for r in _SLCO1B1_REDUCED_ALLELES)]
+            normal = [
+                a for a in alleles
+                if "*1" in a and not any(r in a for r in _SLCO1B1_REDUCED_ALLELES)
+            ]
+            if len(reduced) == 2:
+                return "poor"
+            if len(reduced) == 1 and len(normal) == 1:
+                return "decreased"
+
+    # 3) 裸 SNP 碱基对（c.521T>C），如 CC / CT / TC。跳过 "c.521t>c" / "rs…" 这类
+    #    只描述变异位点、不含合子信息的命名串。
+    if ">" not in geno and "c." not in geno:
+        bases = re.sub(r"[^tc]", "", geno)
+        if len(bases) == 2:
+            if bases == "cc":
+                return "poor"
+            if bases in ("tc", "ct"):
+                return "decreased"
+
+    return "unknown"
+
+
 @register
 def pgx_slco1b1_simvastatin(twin: HealthTwin) -> Optional[Alert]:
-    """SLCO1B1*5 (521T>C) → 辛伐他汀肌病风险升高 3-5 倍。"""
+    """SLCO1B1 c.521T>C (rs4149056, *5) → 辛伐他汀肌病/横纹肌溶解风险升高。
+
+    CPIC 合并分析 OR 约 1.8（杂合 T/C，功能降低）、约 2.8（纯合 C/C，功能差），
+    剂量相关。处置按表型分流：杂合可 ≤20mg/日或换药，纯合只换药。
+    """
     variant = _find_variant_by_gene(twin, "SLCO1B1")
     if not variant or not _is_deficient_or_risk(variant):
         return None
@@ -234,22 +288,52 @@ def pgx_slco1b1_simvastatin(twin: HealthTwin) -> Optional[Alert]:
     if not simva:
         return None
 
+    function = _slco1b1_function(variant)
+
+    if function == "poor":
+        risk_clause = (
+            "提示辛伐他汀的肝脏摄取显著减弱（纯合 C/C、功能差型），血药浓度升高，"
+            "肌病和横纹肌溶解风险约升高 2.8 倍，且呈剂量相关。"
+        )
+        # 纯合 C/C：CPIC 建议换用其他他汀，不给减量辛伐他汀的后路。
+        action = (
+            "与医生讨论改用普伐他汀、瑞舒伐他汀等替代他汀（SLCO1B1 影响较小）——"
+            "纯合 C/C（功能差）不建议继续用辛伐他汀，即便减量也不安全；"
+            "任何肌肉痛、无力、尿色变深立即停药就医。"
+        )
+    elif function == "decreased":
+        risk_clause = (
+            "提示辛伐他汀的肝脏摄取减弱（杂合 T/C、功能降低型），血药浓度升高，"
+            "肌病和横纹肌溶解风险约升高 1.8 倍，且呈剂量相关。"
+        )
+        action = (
+            "与医生讨论将辛伐他汀限制在 ≤20mg/日，或换用普伐他汀、瑞舒伐他汀"
+            "（SLCO1B1 影响较小）；任何肌肉痛、无力、尿色变深立即停药就医。"
+        )
+    else:
+        # 无法可靠区分纯合/杂合：不把「辛伐他汀 ≤20mg/日」当可自行采用的安全选项。
+        risk_clause = (
+            "提示辛伐他汀的肝脏摄取减弱，血药浓度升高，肌病和横纹肌溶解风险呈剂量相关地"
+            "升高——杂合 T/C（功能降低）约 1.8 倍、纯合 C/C（功能差）约 2.8 倍。"
+        )
+        action = (
+            "辛伐他汀是否限制在 ≤20mg/日还是换用普伐他汀、瑞舒伐他汀，须由医生结合你的 "
+            "SLCO1B1 表型（杂合 vs 纯合）判定——纯合 C/C 通常应换药而非减量；"
+            "请勿自行把辛伐他汀减到 ≤20mg/日当作安全选项；"
+            "任何肌肉痛、无力、尿色变深立即停药就医。"
+        )
+
     return Alert(
         rule_id="pgx.slco1b1_simvastatin",
         category="pgx",
         severity=Severity.HIGH,
         title="SLCO1B1 变异 —— 辛伐他汀肌病风险",
-        message=(
-            f"你的 SLCO1B1 基因型 ({variant.get('genotype')}) 提示辛伐他汀的肝脏摄取减弱，"
-            "血药浓度升高，肌病和横纹肌溶解风险提高 3-5 倍（以高剂量尤甚）。"
-        ),
-        action=(
-            "与医生讨论降低剂量（≤20mg/日）或换用普伐他汀、瑞舒伐他汀（SLCO1B1 影响较小）；"
-            "任何肌肉痛、无力、尿色变深立即停药就医。"
-        ),
-        data_citation={"variant": variant, "meds": simva},
+        message=f"你的 SLCO1B1 基因型 ({variant.get('genotype')}) {risk_clause}",
+        action=action,
+        data_citation={"variant": variant, "meds": simva, "function": function},
         references=[
             "https://cpicpgx.org/guidelines/guideline-for-simvastatin-and-slco1b1/",
+            "https://www.ncbi.nlm.nih.gov/books/NBK602238/",
         ],
         requires_medical_attention=True,
     )

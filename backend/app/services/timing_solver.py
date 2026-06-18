@@ -167,6 +167,15 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
     # 更长间隔先满足
     constraints.sort(key=lambda c: -c[2])
 
+    # ── anytime 项先填占位时点(锚点为 None 的)—— 必须在间隔约束满足之前,
+    # 否则两个 anytime 螯合项(如 anytime 钙 + anytime 铁)在间隔 pass 时仍是 None
+    # 被 continue 跳过,只在事后 +30min 错开,违反 ≥2h 间隔。先给确定时点 → 参与求解。
+    fallback = max(_to_min(ctx.wake) + 60, _to_min(ctx.quiet_hours[1]))
+    for it in order:
+        if placed[it.id] is None:
+            placed[it.id] = fallback
+            fallback += 30  # 错开,避免堆叠;间隔 pass 会进一步拉开有约束的项
+
     for _pass in range(4):  # 迭代收敛(项数小,固定几轮足够)
         moved = False
         for a_id, b_id, gap_min in constraints:
@@ -190,13 +199,6 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
             moved = True
         if not moved:
             break
-
-    # ── anytime 项填空隙(锚点为 None 的)—— 从「起床+1h 或静默窗结束」较晚者起,错开 ──
-    fallback = max(_to_min(ctx.wake) + 60, _to_min(ctx.quiet_hours[1]))
-    for it in order:
-        if placed[it.id] is None:
-            placed[it.id] = fallback
-            fallback += 30  # 错开,避免堆叠
 
     # ── Step 7 静默窗 + 复查配额 ───────────────────────────────────────
     scheduled: List[dict] = []

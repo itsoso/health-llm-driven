@@ -210,7 +210,7 @@ class SleepAnalysisService:
         n = math.ceil(total_deficit / 1.5) if total_deficit > 0 else 0
         recovery_msg = {"none": "睡眠充足，无需补觉", "mild": f"轻度不足，建议接下来{n}晚每晚多睡1-1.5小时",
                         "moderate": f"中度债务，建议{n}晚逐步补回，避免周末一次性补觉",
-                        "severe": "严重债务，需要1-2周调整作息，每晚保证至少8小时"}
+                        "severe": f"严重债务，需要1-2周调整作息，每晚保证{rec_lo:g}-{rec_hi:g}小时（你的年龄段推荐）"}
 
         return {
             "status": "success",

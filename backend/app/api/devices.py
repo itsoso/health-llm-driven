@@ -824,6 +824,24 @@ class BPReadingIn(BaseModel):
         return v
 
 
+class Spo2SampleIn(BaseModel):
+    """单条整夜血氧采样点 — RingConn / Apple Watch 等写 HealthKit 的设备的逐分钟序列.
+
+    HealthKit ``HKQuantityTypeIdentifierOxygenSaturation`` 是离散样本: 每条
+    ``{value (0-100 百分数), measured_at (ISO)}``。逐分钟 SpO2 是夜间低氧"持续负荷"
+    (ODI / below-90% 时长占比) 的唯一数据源 —— 日聚合单点 ``spo2_min`` 无法算这两个
+    指标, 而 ``vitals.spo2_min_nocturnal_severe`` 需要它们做佐证才拉 CRITICAL
+    (否则降级 INFO, 见 2026-06-17 裁决)。Garmin 血氧已整源剔除, 多设备用户的逐秒
+    SpO2 之前无任何入口 → 夜间低氧规则只能靠日聚合单点最低值判断, 本字段补齐缺口。
+
+    - value: HealthKit 原始 0-1 已由 mobile ×100 成百分数; service 层取整 + sanity
+      50-100, 坏值丢弃该条 (不崩整批)。Optional → 缺失不 422。
+    - measured_at: 决定 sample_time (转 CST HH:MM) 与 epoch_ms; 缺失/坏值 → service 丢弃。
+    """
+    value: Optional[float] = None
+    measured_at: Optional[datetime] = None
+
+
 class HealthKitDailyRecord(BaseModel):
     """单日 HealthKit 聚合记录 — mobile 端按天预聚合后推上来.
 
@@ -883,6 +901,12 @@ class HealthKitDailyRecord(BaseModel):
     # 每条 reading 各自按 (user_id, measured_at) 去重幂等落 blood_pressure_records。
     blood_pressure_readings: Optional[List[BPReadingIn]] = None
 
+    # ===== 整夜逐分钟血氧 (RingConn / Apple Watch 等贴肤光路) =====
+    # 逐分钟 SpO2 序列, 落 spo2_samples 表 (与日聚合 spo2_avg/spo2_min 并行)。
+    # 这是 ODI / below-90% 持续负荷指标的唯一数据源 —— 夜间严重低氧规则靠它把"真 OSA"
+    # 与"单点伪影"区分开。按 (user_id, record_date, data_source) 删后插, 重复上送幂等。
+    spo2_samples: Optional[List[Spo2SampleIn]] = None
+
     # ===== 体脂 (随体重) =====
     # body_fat_percentage 随 weight_kg 一并落 weight_records (weight 列 NOT NULL,
     # body_fat 必须有体重作载体)。只有 body_fat 没 weight → 无法落库, 静默不写 (非错误)。
@@ -918,7 +942,7 @@ class HealthKitImportRequest(BaseModel):
 class HealthKitImportError(BaseModel):
     index: int
     # "daily" (日聚合) | "ecg" (ECG 点事件) | "blood_pressure" (血压点事件) |
-    # "body_composition" (体重+体脂)
+    # "body_composition" (体重+体脂) | "spo2" (整夜逐分钟血氧序列)
     kind: str = "daily"
     record_date: Optional[str]
     error: str
@@ -928,6 +952,7 @@ class HealthKitImportResponse(BaseModel):
     imported_count: int
     ecg_imported_count: int = 0  # 独立落库的 ECG 点事件数 (与日聚合并行, 不依赖其成功)
     blood_pressure_imported_count: int = 0  # 独立落库的血压点事件数 (与日聚合并行)
+    spo2_sample_imported_count: int = 0  # 独立落库的整夜逐分钟血氧采样点数 (与日聚合并行)
     source_breakdown: dict  # {"apple-watch": 12, "ringconn": 5, ...}
     errors: List[HealthKitImportError]
 
@@ -966,6 +991,7 @@ async def healthkit_import(
         f"[healthkit_import] user={current_user.id} batch={len(records)} "
         f"imported={result['imported_count']} ecg_imported={result['ecg_imported_count']} "
         f"bp_imported={result['blood_pressure_imported_count']} "
+        f"spo2_samples={result['spo2_sample_imported_count']} "
         f"sources={result['source_breakdown']} errors={len(result['errors'])}"
     )
 
@@ -973,6 +999,7 @@ async def healthkit_import(
         imported_count=result["imported_count"],
         ecg_imported_count=result["ecg_imported_count"],
         blood_pressure_imported_count=result["blood_pressure_imported_count"],
+        spo2_sample_imported_count=result["spo2_sample_imported_count"],
         source_breakdown=result["source_breakdown"],
         errors=[HealthKitImportError(**e) for e in result["errors"]],
     )

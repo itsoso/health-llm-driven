@@ -675,6 +675,37 @@ final class WatchBackendRequestTests: XCTestCase {
     }
 }
 
+final class WatchSessionResetTests: XCTestCase {
+    private let summaryJSON = Data("""
+    {"status":{"light":"green","readiness_score":80,"headline":"h"},
+     "top_action":null,"agenda":{"total":1,"pending":1},
+     "due_items":[],"quick_actions":[],"push_items":[],"generated_at":"x"}
+    """.utf8)
+
+    func testLogoutResetClearsSummaryAndComplicationCaches() throws {
+        let suite = "WatchSessionResetTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // 模拟注销前腕上已缓存粗粒度健康数据
+        WatchSummaryCache(defaults: defaults).save(try WatchSummary.decode(summaryJSON))
+        ComplicationCache.save(
+            ComplicationState(tone: .yellow, shortText: "适度", fullText: "下午低强度活动", urgentBadge: 0),
+            in: defaults
+        )
+        XCTAssertNotNil(WatchSummaryCache(defaults: defaults).load())
+        XCTAssertEqual(ComplicationCache.load(in: defaults).tone, .yellow)
+
+        // 注销信号到达后两处缓存都被清空(只剩默认占位)
+        WatchSessionReset.clearCachedHealthData(in: defaults)
+
+        XCTAssertNil(WatchSummaryCache(defaults: defaults).load(), "summary 缓存应被清空")
+        let complication = ComplicationCache.load(in: defaults)
+        XCTAssertEqual(complication.tone, .gray, "complication 应回到默认占位")
+        XCTAssertEqual(complication.shortText, "Reva")
+    }
+}
+
 final class SymptomBuilderTests: XCTestCase {
     func testSymptomBuildsPathMethodBody() throws {
         let r = try QuickRecord.symptom(text: "胸口闷,左手发麻")

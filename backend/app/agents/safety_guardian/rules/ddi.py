@@ -48,7 +48,7 @@ DRUG_ALIASES = {
         "diazepam", "alprazolam", "lorazepam", "clonazepam", "estazolam", "midazolam",
     ],
     "opioid": [
-        "吗啡", "芬太尼", "可待因", "曲马多", "羟考酮", "布洛芬", "氢可酮",
+        "吗啡", "芬太尼", "可待因", "曲马多", "羟考酮", "氢可酮",
         "morphine", "fentanyl", "codeine", "tramadol", "oxycodone", "hydrocodone",
     ],
     "warfarin": ["华法林", "warfarin"],
@@ -160,17 +160,34 @@ def ddi_glp1_gastric_emptying_info(twin: HealthTwin) -> Optional[Alert]:
     if not glp1:
         return None
 
+    # 替尔泊肽是 GIP/GLP-1 双激动剂，避孕药暴露下降的证据仅见于替尔泊肽，
+    # 不能外推到纯 GLP-1（司美格鲁肽对口服避孕药暴露无影响，Kapitza 2015 / FDA 说明书）。
+    tirzepatide = [m for m in glp1 if "替尔泊肽" in m or "tirzepatide" in m]
+
+    action_parts = [
+        "左甲状腺素等窄治疗窗的口服药建议每天固定同一时段、空腹并与其他药物间隔服用，"
+        "保持服药时间一致，并按医嘱定期复查 TSH（这一错开是按小时同日间隔，与 GLP-1 是否为注射日无关）",
+        "正在使用华法林等抗凝药者，在 GLP-1 起始或调整剂量时按医嘱监测 INR",
+    ]
+    if tirzepatide:
+        action_parts.append(
+            "替尔泊肽（GIP/GLP-1）可能降低口服避孕药吸收，起始及每次加量后 4 周内"
+            "建议加用屏障避孕法或改用非口服避孕方式"
+        )
+    action_parts.append("有疑问时咨询药师或处方医生")
+
     return Alert(
         rule_id="ddi.glp1_gastric_emptying",
         category="ddi",
         severity=Severity.LOW,
         title="GLP-1 会延迟胃排空",
         message=(
-            f"你在使用 GLP-1 药物（{', '.join(set(glp1))}）。GLP-1 会使胃排空减慢约 30-70 分钟，"
-            "对需要快速起效或吸收窗口狭窄的口服药物（例如避孕药、某些抗凝、甲状腺素）可能略有影响。"
+            f"你在使用 GLP-1 药物（{', '.join(set(glp1))}）。GLP-1 会减慢胃排空，"
+            "可能使同时口服的药物吸收变慢、峰浓度（Cmax）略有下降，"
+            "对吸收窗口狭窄或依赖稳定血药浓度的口服药（如左甲状腺素）可能有轻微影响。"
         ),
-        action="窄治疗窗口的口服药建议在注射日与非注射日之间错开；有避孕需求的女性建议同时使用屏障法；有疑问时咨询药师。",
-        data_citation={"glp1_meds": glp1},
+        action="；".join(action_parts) + "。",
+        data_citation={"glp1_meds": glp1, "tirzepatide": tirzepatide},
     )
 
 
@@ -309,6 +326,23 @@ def ddi_ssri_maoi_serotonin(twin: HealthTwin) -> Optional[Alert]:
     if not ssri or not maoi:
         return None
 
+    # 氟西汀半衰期长（活性代谢物去甲氟西汀），FDA 标签要求停用后 ≥5 周方可起始 MAOI，
+    # 远超其它 SSRI 的 ≥2 周。匹配到氟西汀时洗脱期措辞必须按 5 周给，否则临床上是错的。
+    has_fluoxetine = any(
+        ("氟西汀" in s) or ("fluoxetine" in s.lower()) for s in ssri
+    )
+    if has_fluoxetine:
+        washout = (
+            "洗脱期是有方向性的：停 MAOI → 间隔 ≥14 天再起始 SSRI；"
+            "停氟西汀 → 因半衰期长、活性代谢物去甲氟西汀蓄积，需间隔 ≥5 周（约 5 weeks）"
+            "再起始 MAOI（其它 SSRI 为 ≥2 周）。"
+        )
+    else:
+        washout = (
+            "洗脱期是有方向性的：停 MAOI → 间隔 ≥14 天再起始 SSRI；"
+            "停 SSRI → 间隔 ≥2 周再起始 MAOI。"
+        )
+
     return Alert(
         rule_id="ddi.ssri_maoi",
         category="ddi",
@@ -316,7 +350,7 @@ def ddi_ssri_maoi_serotonin(twin: HealthTwin) -> Optional[Alert]:
         title="SSRI 与 MAOI 合用 —— 绝对禁忌",
         message=(
             f"SSRI ({', '.join(set(ssri))}) 与 MAOI ({', '.join(set(maoi))}) 合用会引发致命的"
-            "5-羟色胺综合征（高热、肌阵挛、抽搐、循环衰竭）。两药停用之间需要 2 周洗脱期。"
+            "5-羟色胺综合征（高热、肌阵挛、抽搐、循环衰竭）。" + washout
         ),
         action="立即联系处方医生停用其中一种；如果已经出现高热/震颤/意识改变立即急诊。",
         data_citation={"ssri": ssri, "maoi": maoi},

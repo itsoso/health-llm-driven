@@ -390,6 +390,97 @@ class HealthKitAdapter(DeviceAdapter):
         return True
 
     @classmethod
+    def _save_spo2_samples(
+        cls, db: Session, user_id: int, record: Dict[str, Any], data_source: str
+    ) -> int:
+        """落库整夜逐分钟血氧到 spo2_samples 表 (RingConn / Apple Watch 等非 garmin 源).
+
+        逐分钟 SpO2 是夜间低氧"持续负荷"(ODI / below-90% 时长占比)的唯一数据源 ——
+        日聚合单点 spo2_min 算不出这两个指标, 而 vitals.spo2_min_nocturnal_severe 需要
+        它们做佐证才拉 CRITICAL (否则降级 INFO)。Garmin 血氧已整源剔除, 多设备用户的
+        逐秒 SpO2 之前无入口 → 此方法补齐缺口。
+
+        幂等: 按 (user_id, record_date, source) 删后插 —— 只清"同源同日"的样本, 不碰
+        garmin 或其它设备同日的样本 (Garmin 路径按 user+date 删是因为它是该表唯一写者;
+        多源下必须按 source 缩窄删除范围, 否则一台设备的导入会抹掉另一台的整夜数据)。
+        按分钟去重 (同分钟多采样取首个)。spo2_value 容错取整 + sanity 50-100, 坏值跳过。
+        samples 为空或全部坏值 → 返回 0 不写 (不删既有数据)。返回写入条数。
+
+        并发安全 (DB 兜底): "删后插" 的应用层幂等只在同 (user, source) 导入**串行**时成立
+        (mobile 端按月切片顺序 POST)。两个并发导入会双删双插 → 同分钟落 2 行 → 虚高
+        spo2_below_90_pct / spo2_odi → 污染 vitals.spo2_min_nocturnal_severe 的"持续负荷"
+        佐证。真正的兜底是 spo2_samples 上的唯一约束 uq_spo2_user_date_time_source
+        (user_id, record_date, sample_time, source)。本方法在 commit 撞约束 (IntegrityError)
+        时回滚 —— 事务整体回滚, 既有行 (并发写者刚提交的等价数据) 保持完好, 视为幂等成功:
+        两个并发导入的是**同一** (user, date, source) 的同一夜序列, 内容等价, 谁先提交都对。
+        """
+        from datetime import timezone, timedelta
+        from app.models.daily_health import SpO2Sample
+
+        samples_in = record.get("spo2_samples")
+        if not samples_in:
+            return 0
+
+        record_date = cls._parse_date(record.get("record_date"))
+        if record_date is None:
+            raise ValueError(f"spo2_samples 需要有效 record_date: {record.get('record_date')!r}")
+
+        cst = timezone(timedelta(hours=8))  # Asia/Shanghai — 与 garmin 采集器、spo2 API 一致
+        seen: Dict[str, Dict[str, Any]] = {}
+        for s in samples_in:
+            if not isinstance(s, dict):
+                continue
+            measured_at = cls._parse_datetime(s.get("measured_at"))
+            val = cls._coerce_int(s.get("value"))
+            # 单点最低值是消费级光电传感器最易被伪影污染的量, 但 50-100 是物理合理区间;
+            # 这层只挡明显坏值 (0 / >100 / 非数), 不做伪影判定 (那是 Twin/规则层的事)。
+            if measured_at is None or val is None or not (50 <= val <= 100):
+                continue
+            if measured_at.tzinfo is None:
+                # naive datetime 视为 CST (与 garmin Local 字段降级处理一致)
+                measured_at = measured_at.replace(tzinfo=cst)
+            epoch_ms = int(measured_at.timestamp() * 1000)
+            cst_dt = measured_at.astimezone(cst)
+            st = _time(cst_dt.hour, cst_dt.minute)
+            key = f"{st.hour:02d}:{st.minute:02d}"
+            if key not in seen:
+                seen[key] = {"time": st, "value": val, "epoch_ms": epoch_ms}
+
+        if not seen:
+            return 0
+
+        db.query(SpO2Sample).filter(
+            SpO2Sample.user_id == user_id,
+            SpO2Sample.record_date == record_date,
+            SpO2Sample.source == data_source,
+        ).delete()
+
+        objects = [
+            SpO2Sample(
+                user_id=user_id,
+                record_date=record_date,
+                sample_time=d["time"],
+                spo2_value=d["value"],
+                epoch_ms=d["epoch_ms"],
+                source=data_source,
+            )
+            for d in sorted(seen.values(), key=lambda x: x["epoch_ms"])
+        ]
+        db.bulk_save_objects(objects)
+        try:
+            db.commit()
+        except IntegrityError:
+            # 并发导入撞唯一约束 uq_spo2_user_date_time_source —— 另一个写者已先提交
+            # 同 (user, date, source) 的等价序列。回滚 (delete+insert 整体撤销, 既有行
+            # 完好), 视为幂等成功: 内容等价, 无重复行污染下游 ODI / below-90% 佐证。
+            db.rollback()
+            logger.info(
+                f"[healthkit] spo2_samples 并发幂等回滚 user={user_id} "
+                f"date={record_date} source={data_source} (唯一约束兜底, 既有行保留)"
+            )
+        return len(objects)
+
+    @classmethod
     def batch_save(
         cls,
         db: Session,
@@ -409,15 +500,19 @@ class HealthKitAdapter(DeviceAdapter):
         体脂 (body_fat_percentage) 随体重 (weight_kg) 落 weight_records, 也独立 try
         (`kind: "body_composition"`)。各源失败互不影响, 不静默吞。
 
+        整夜逐分钟血氧 (spo2_samples) 落 spo2_samples 表 (`kind: "spo2"`), 同样独立 try,
+        是 ODI / below-90% 持续负荷的唯一来源 (夜间严重低氧规则靠它区分真 OSA 与单点伪影)。
+
         返回:
           {
             "imported_count": int,
             "ecg_imported_count": int,
             "blood_pressure_imported_count": int,
+            "spo2_sample_imported_count": int,
             "source_breakdown": {"apple-watch": 12, "ringconn": 5, ...},
             "errors": [
               {"index": int,
-               "kind": "daily"|"ecg"|"blood_pressure"|"body_composition",
+               "kind": "daily"|"ecg"|"blood_pressure"|"body_composition"|"spo2",
                "record_date": str|None, "error": str},
               ...
             ]
@@ -428,6 +523,7 @@ class HealthKitAdapter(DeviceAdapter):
         imported = 0
         ecg_imported = 0
         bp_imported = 0
+        spo2_imported = 0
         breakdown: Dict[str, int] = {}
         errors: List[Dict[str, Any]] = []
 
@@ -532,10 +628,35 @@ class HealthKitAdapter(DeviceAdapter):
                     except Exception:
                         pass
 
+            # ── 整夜逐分钟血氧序列写入 (独立 try, 与日聚合并行) ──────────────────
+            # 序列数据落 spo2_samples 表, 是 ODI / below-90% 持续负荷的唯一来源。
+            # 不依赖日聚合成功; 按 (user_id, record_date, source) 幂等删后插。
+            if record.get("spo2_samples"):
+                try:
+                    ds_spo2 = cls._resolve_data_source(record)
+                    spo2_imported += cls._save_spo2_samples(db, user_id, record, ds_spo2)
+                except Exception as spo2_err:  # noqa: BLE001
+                    logger.error(
+                        f"[healthkit] spo2_samples dropped idx={idx} "
+                        f"record_date={record.get('record_date')!r}: "
+                        f"{type(spo2_err).__name__}: {spo2_err}"
+                    )
+                    errors.append({
+                        "index": idx,
+                        "kind": "spo2",
+                        "record_date": str(record.get("record_date")) if record.get("record_date") else None,
+                        "error": f"spo2_samples dropped: {type(spo2_err).__name__}: {spo2_err}",
+                    })
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+
         return {
             "imported_count": imported,
             "ecg_imported_count": ecg_imported,
             "blood_pressure_imported_count": bp_imported,
+            "spo2_sample_imported_count": spo2_imported,
             "source_breakdown": breakdown,
             "errors": errors,
         }

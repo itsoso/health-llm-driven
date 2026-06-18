@@ -242,6 +242,39 @@ _BRACKET_TOOL_CALL_STRIP_RE = re.compile(
     re.S | re.I,
 )
 
+# Markdown 清单式工具调用:`Tool calls:\n- health_query`(无括号、无参数)。实测
+# Claude-Opus-4.7 经 langbridge 代理时**偶发**(多数仍结构化)把工具调用降级成这种文本 —
+# 既没结构化 tool_calls(没真执行=零数据)又把 "Tool calls:" 标记泄漏给用户。
+# 区别于上面括号格式:那种带参数可解析回 tool_call;这种**没参数**,只能重提示模型用
+# 结构化 function calling 重试(代理本身支持,见日志大量 has_tool_calls=True)。
+# 流式期前缀检测(无需冒号)→ 一出现就抑制 live 下发,避免逐 token 泄漏。
+_TEXT_TOOLCALL_PREFIX_RE = re.compile(r"(?i)\btool[\s_]?calls?\b")
+# 落地判定(需冒号 + 命名了已注册工具):比前缀严,降低误伤正常回复。
+_TEXT_TOOLCALL_HEADER_RE = re.compile(r"(?i)(?:\btool[\s_]?calls?\b|工具调用|要调用的工具)\s*[:：]")
+# 最终输出兜底剥离:把 "Tool calls:" 起到结尾的清单段去掉(没轮次重试时不泄漏)。
+_TEXT_TOOLCALL_STRIP_RE = re.compile(
+    r"(?im)\n*\s*(?:\btool[\s_]?calls?\b|工具调用|要调用的工具)\s*[:：].*\Z",
+    re.S,
+)
+
+
+def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict]]) -> bool:
+    """模型把工具调用写成了 Markdown 文本(`Tool calls:\\n- <tool>`)而非结构化 tool_calls。
+
+    判定:命中 "Tool calls:"/"工具调用:" 标题 **且** 文本里出现某个已注册工具名。
+    仅在 `_extract_inline_tool_call`(带参数的可解析格式)已返回 None 后调用 —
+    这种无参数清单格式解析不出参数,只能重提示重试。
+    """
+    if not content or not _TEXT_TOOLCALL_HEADER_RE.search(content):
+        return False
+    allowed = {t.get("function", {}).get("name") for t in (tools or [])}
+    return any(n and n in content for n in allowed)
+
+
+def _strip_text_tool_call(content: str) -> str:
+    """剥掉 "Tool calls: ..." 文本清单段,避免泄漏给用户(重试用尽时的兜底)。"""
+    return _TEXT_TOOLCALL_STRIP_RE.sub("", content or "").strip()
+
 
 def _split_top_level_commas(s: str) -> List[str]:
     """Split on commas that are not nested inside (), [], {} or quotes.
@@ -1139,6 +1172,18 @@ class AgentExecutor:
                     if recovered:
                         tool_calls = [recovered]
                         content = ""
+                # 文本式工具调用(Tool calls:\n- xxx)无参数可解析 → 重提示结构化重试。
+                if not tool_calls and _is_botched_text_tool_call(content, tools):
+                    if _round < MULTI_MODEL_MAX_LEAD_ROUNDS - 1:
+                        logger.warning("[agent_executor] 文本式工具调用(多模型路), 重提示重试. preview=%s", content[:120])
+                        lead_messages.append({"role": "assistant", "content": content})
+                        lead_messages.append({"role": "user", "content": (
+                            "你刚才把工具调用写成了文本(例如 \"Tool calls:\\n- health_query\"),"
+                            "并没有真正调用工具。请立刻用结构化 function calling 真正调用所需工具并带正确参数"
+                            "(例如查看补剂库用 health_query 且 dimension=\"supplements\")。"
+                        )})
+                        continue
+                    content = _strip_text_tool_call(content)
                 if tool_calls:
                     lead_messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
                     for tc in tool_calls:
@@ -1435,6 +1480,8 @@ class AgentExecutor:
                                 # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
                                 # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
                                 or "工具调用" in streamed_text
+                                # Markdown 清单式 "Tool calls:" 同样抑制(英文标记)。
+                                or _TEXT_TOOLCALL_PREFIX_RE.search(streamed_text)
                             )
                         ):
                             # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
@@ -1494,6 +1541,31 @@ class AgentExecutor:
                             "finish_reason": "tool_calls",
                             "tool_calls": [inline_tool_call],
                         }
+
+                # 模型把工具调用写成 Markdown 文本(`Tool calls:\n- health_query`)、无结构化调用
+                # 也无参数可解析 → 不能当最终答案(否则零数据 + 泄漏标记)。本代理大多数时候能正确
+                # 结构化(日志大量 has_tool_calls=True),只是偶发降级 → 重提示一次让它用结构化重试。
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and _is_botched_text_tool_call(response.get("content") or "", tools)
+                ):
+                    botched = response.get("content") or ""
+                    if round_idx < MAX_TOOL_ROUNDS - 1:
+                        logger.warning(
+                            "[agent_executor] 文本式工具调用未结构化, 重提示重试 (round %d). preview=%s",
+                            round_idx + 1, botched[:120],
+                        )
+                        messages.append({"role": "assistant", "content": botched})
+                        messages.append({"role": "user", "content": (
+                            "你刚才把工具调用写成了文本(例如 \"Tool calls:\\n- health_query\"),"
+                            "并没有真正调用工具,所以没有任何数据返回。请立刻用结构化 function calling "
+                            "真正调用所需工具并带上正确参数(例如查看补剂库用 health_query 且 "
+                            "dimension=\"supplements\"),不要再输出 \"Tool calls:\" 这类文本。"
+                        )})
+                        continue  # 进入下一轮,模型用结构化 tool_calls 重试
+                    # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
+                    response = {**response, "content": _strip_text_tool_call(botched)}
 
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
