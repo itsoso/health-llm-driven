@@ -79,15 +79,43 @@ def schedule_from_medications(
     forbidden_reasons: Optional[Dict] = None,
     ctx_overrides: Optional[dict] = None,
     workout_rx: Optional[dict] = None,
+    nutrition_rx: Optional[dict] = None,
+    sleep_rx: Optional[dict] = None,
 ) -> Dict[str, list]:
     """纯核心:给定 medications + profile(+ 安全硬禁忌)→ 当日时间轴。无 DB。
 
     安全 seam(cut 5):跑 DDI/DSI 硬禁忌 → 补剂侧拒排(并入 forbidden_reasons)、处方药侧行警告。
+
+    排程顺序(顺序敏感):
+      1. 构建 ctx + 算锻炼块(_maybe_workout_item 设 ctx.workout_start)
+      2. 围训练餐对齐(align_post_workout_meal 改 ctx.meals)—— 必须早于 meds 锚定餐
+      3. medications_to_items 按(已对齐的)ctx.meals 锚定药/补剂
+      4. 追加 diet(D1)+ sleep(D2)项
     """
     from app.services.schedule_safety_seam import compute_seam
+    from app.services.schedule_diet_sleep import (
+        align_post_workout_meal,
+        meal_items,
+        sleep_items,
+    )
 
     seam_forbidden, warnings = compute_seam(meds)
     merged_forbidden = {**(forbidden_reasons or {}), **seam_forbidden}
+
+    ctx = _day_context(profile, overrides=ctx_overrides)
+
+    # 锻炼时点(cut 7)+ 处方化(cut A):有偏好窗 → 排锻炼块,块带 movement_coach 处方
+    # (类型/强度/时长/RPE/ACTN3);intensity=rest → 拒排为「今日恢复」。workout_rx 由 DB 包装层算好传入
+    # (纯核心不连库);None → 通用块。_maybe_workout_item 会设 ctx.workout_start(若排上锻炼)。
+    workout = _maybe_workout_item(profile, ctx, workout_rx)
+
+    # D1 围训练餐对齐:把离训练最近的餐拉到训练结束后 ≤60min(蛋白/碳水窗)。
+    # 必须在 medications_to_items 之前 —— 餐锚定的药/补剂会按 ctx.meals 落桩。
+    workout_min = (workout_rx or {}).get("duration_min") \
+        or (getattr(profile, "workout_target_minutes", None) if profile else None) \
+        or DEFAULT_WORKOUT_MINUTES
+    align_post_workout_meal(ctx, workout_minutes=workout_min)
+
     items = medications_to_items(meds, forbidden_reasons=merged_forbidden)
     if warnings:
         for it in items:
@@ -97,14 +125,13 @@ def schedule_from_medications(
                 continue
             if mid in warnings:
                 it.warning = warnings[mid]
-    ctx = _day_context(profile, overrides=ctx_overrides)
 
-    # 锻炼时点(cut 7)+ 处方化(cut A):有偏好窗 → 排锻炼块,块带 movement_coach 处方
-    # (类型/强度/时长/RPE/ACTN3);intensity=rest → 拒排为「今日恢复」。workout_rx 由 DB 包装层算好传入
-    # (纯核心不连库);None → 通用块。
-    workout = _maybe_workout_item(profile, ctx, workout_rx)
     if workout is not None:
         items.append(workout)
+
+    # D1 三餐 + D2 睡眠卫生(均带 prescription,经 solver/agenda/watch 透传到各端)。
+    items.extend(meal_items(ctx, nutrition_rx))
+    items.extend(sleep_items(ctx, sleep_rx))
 
     return solve_day_schedule(items, ctx)
 
@@ -261,7 +288,17 @@ def build_day_schedule(
     # 锻炼处方(cut A):movement_coach intensity×类型×ACTN3。fail-soft(None→通用块)。
     rx = workout_prescription(db, user_id) if getattr(profile, "workout_pref_window", None) else None
 
+    # D1 营养处方 + D2 睡眠处方:薄 DB 层,fail-soft(None→无处方的纯餐项 / 默认睡眠卫生)。
+    from app.services.schedule_diet_sleep import (
+        nutrition_prescription,
+        sleep_prescription,
+    )
+
+    nutrition_rx = nutrition_prescription(db, user_id)
+    sleep_rx = sleep_prescription(db, user_id)
+
     return schedule_from_medications(
         meds, profile=profile, forbidden_reasons=forbidden_reasons,
         ctx_overrides=overrides, workout_rx=rx,
+        nutrition_rx=nutrition_rx, sleep_rx=sleep_rx,
     )

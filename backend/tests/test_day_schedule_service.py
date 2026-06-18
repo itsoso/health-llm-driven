@@ -43,7 +43,9 @@ def test_profile_drives_bedtime():
     prof = SimpleNamespace(usual_wake_time="08:00", usual_sleep_time="23:30")
     meds = [_med(id=1, name="镁", category="supplement", timing_relation="bedtime")]
     res = schedule_from_medications(meds, profile=prof)
-    assert res["scheduled"][0]["time"] == "22:45"  # 23:30 - 45min
+    # D1/D2 现在也会排三餐+睡眠卫生 → 定位镁这一项,不依赖位置。
+    mg = next(s for s in res["scheduled"] if s["id"] == "med:1")
+    assert mg["time"] == "22:45"  # 23:30 - 45min
 
 
 def test_late_wake_shifts_breakfast_anchor():
@@ -54,13 +56,15 @@ def test_late_wake_shifts_breakfast_anchor():
     meds = [_med(id=1, name="PPI", category="处方药", timing_relation="before_meal_30",
                  meal_anchor="breakfast")]
     res = schedule_from_medications(meds, profile=prof)
-    assert res["scheduled"][0]["time"] == "09:00"
+    ppi = next(s for s in res["scheduled"] if s["id"] == "med:1")
+    assert ppi["time"] == "09:00"
 
 
 def test_forbidden_reason_rejects():
     meds = [_med(id=7, name="维生素K", category="supplement")]
     res = schedule_from_medications(meds, forbidden_reasons={7: "维K×华法林直接拮抗"})
-    assert not res["scheduled"]
+    # 维K 被拒排;D1/D2 仍排三餐+睡眠(它们与 med 无关)→ 只断言 med 不在 scheduled。
+    assert not any(s["id"] == "med:7" for s in res["scheduled"])
     assert res["rejected"][0]["id"] == "med:7"
 
 
