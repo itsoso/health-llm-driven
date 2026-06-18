@@ -22,6 +22,7 @@ import {
 export default function WriteIntentCard() {
   const qc = useQueryClient();
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const q = useQuery({
     queryKey: ['write-intents'],
@@ -54,54 +55,90 @@ export default function WriteIntentCard() {
   // 空态 / 出错 → 不渲染(不显示噪声卡)
   if (q.isError || items.length === 0) return null;
 
+  // 依从打卡(每个药/补剂一条)会刷屏首页 → 折叠成 1 条摘要,点开逐条标记;
+  // 其余高信号提议(复查到点 / 晨测 / 随访)仍逐条显示。
+  const adherence = items.filter((it) => it.kind === 'adherence_nudge');
+  const others = items.filter((it) => it.kind !== 'adherence_nudge');
+
+  const renderRow = (it: WriteIntent, last: boolean) => {
+    const busy = busyId === it.id;
+    return (
+      <View key={it.id} style={[styles.row, last && { borderBottomWidth: 0 }]}>
+        <View style={styles.head}>
+          <View style={styles.icon}>
+            <Icon name="sparkles" size={17} color={C.green600} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.title} numberOfLines={2}>{it.title}</Text>
+            {it.description ? (
+              <Text style={styles.desc} numberOfLines={2}>{it.description}</Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.actions}>
+          {busy ? (
+            <ActivityIndicator color={C.green500} style={{ marginRight: 8 }} />
+          ) : (
+            <>
+              <Pressable
+                style={({ pressed }) => [styles.confirmBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => confirm.mutate(it.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`确认:${it.title}`}
+              >
+                <Icon name="check" size={15} color={C.greenOn} />
+                <Text style={styles.confirmText}>确认</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.dismissBtn, pressed && { opacity: 0.6 }]}
+                onPress={() => dismiss.mutate(it.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`忽略:${it.title}`}
+              >
+                <Text style={styles.dismissText}>忽略</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  const hasAdherence = adherence.length > 0;
+
   return (
     <View>
       <SectionLabel>待你确认</SectionLabel>
       <Card pad={0}>
-        {items.map((it, i) => {
-          const busy = busyId === it.id;
-          const last = i === items.length - 1;
-          return (
-            <View key={it.id} style={[styles.row, last && { borderBottomWidth: 0 }]}>
+        {others.map((it, i) => renderRow(it, !hasAdherence && i === others.length - 1))}
+        {hasAdherence ? (
+          <>
+            <Pressable
+              style={[styles.row, !expanded && { borderBottomWidth: 0 }]}
+              onPress={() => setExpanded((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={`今日还有 ${adherence.length} 项补剂或药未记录,点击${expanded ? '收起' : '展开逐条标记'}`}
+            >
               <View style={styles.head}>
                 <View style={styles.icon}>
                   <Icon name="sparkles" size={17} color={C.green600} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.title} numberOfLines={2}>{it.title}</Text>
-                  {it.description ? (
-                    <Text style={styles.desc} numberOfLines={2}>{it.description}</Text>
-                  ) : null}
+                  <Text style={styles.title} numberOfLines={1}>
+                    今日还有 {adherence.length} 项补剂/药未记录
+                  </Text>
+                  <Text style={styles.desc} numberOfLines={1}>
+                    {expanded ? '点击收起' : '已服的点开逐条「确认」;没服忽略'}
+                  </Text>
                 </View>
+                <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={C.ink3} />
               </View>
-              <View style={styles.actions}>
-                {busy ? (
-                  <ActivityIndicator color={C.green500} style={{ marginRight: 8 }} />
-                ) : (
-                  <>
-                    <Pressable
-                      style={({ pressed }) => [styles.confirmBtn, pressed && { opacity: 0.85 }]}
-                      onPress={() => confirm.mutate(it.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`确认:${it.title}`}
-                    >
-                      <Icon name="check" size={15} color={C.greenOn} />
-                      <Text style={styles.confirmText}>确认</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [styles.dismissBtn, pressed && { opacity: 0.6 }]}
-                      onPress={() => dismiss.mutate(it.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`忽略:${it.title}`}
-                    >
-                      <Text style={styles.dismissText}>忽略</Text>
-                    </Pressable>
-                  </>
-                )}
-              </View>
-            </View>
-          );
-        })}
+            </Pressable>
+            {expanded
+              ? adherence.map((it, i) => renderRow(it, i === adherence.length - 1))
+              : null}
+          </>
+        ) : null}
       </Card>
     </View>
   );
