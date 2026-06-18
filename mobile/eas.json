@@ -46,6 +46,11 @@
       "ios": {
         "ascAppId": "6763569720"
       }
+    },
+    "rokid-production": {
+      "ios": {
+        "ascAppId": "6763569720"
+      }
     }
   }
 }
