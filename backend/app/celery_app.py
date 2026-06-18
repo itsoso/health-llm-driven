@@ -45,6 +45,7 @@ celery_app = Celery(
         "app.tasks.trajectory_watch",
         "app.tasks.adherence_watch",
         "app.tasks.data_integrity_scan",
+        "app.tasks.calendar_tasks",
     ]
 )
 
@@ -99,6 +100,12 @@ celery_app.conf.beat_schedule = {
     "medication-reminder-scan": {
         "task": "app.tasks.notifications.scan_medication_reminders",
         "schedule": crontab(minute="*"),
+    },
+
+    # 每 30 分钟同步各用户外部日历(CalDAV/.ics)→ CalendarEvent,让 timing-solver 忙闲常新
+    "sync-all-calendars": {
+        "task": "app.tasks.calendar_tasks.sync_all_calendars",
+        "schedule": crontab(minute="*/30"),
     },
 
     # 每 5 分钟扫描静默时段延迟的推送, scheduled_at 到点就 fire
