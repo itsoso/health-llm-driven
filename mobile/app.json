@@ -73,6 +73,7 @@
           }
         }
       ],
+      "./plugins/withRokidIosPods",
       [
         "expo-notifications",
         {
