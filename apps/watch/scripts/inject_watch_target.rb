@@ -34,6 +34,8 @@ if main_t
   main_t.build_configurations.each do |c|
     bs = c.build_settings
     bs['PRODUCT_BUNDLE_IDENTIFIER'] = ios_bundle
+    bs['GENERATE_INFOPLIST_FILE'] = 'NO'
+    bs['INFOPLIST_FILE'] = 'HealthPilot/Info.plist'
     bs['MARKETING_VERSION'] = mv
     bs['DEVELOPMENT_TEAM'] ||= ENV['APPLE_TEAM_ID'] || main_bs['DEVELOPMENT_TEAM'] || 'QA2U724DAN'
   end

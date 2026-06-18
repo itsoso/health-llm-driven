@@ -93,11 +93,17 @@ function copyDirectory(srcDir, destDir) {
 }
 
 function buildWatchInjectionEnv(exp, baseEnv = process.env) {
+  const version =
+    exp?.version ||
+    exp?.modRequest?.exp?.version ||
+    exp?.modRequest?.config?.version ||
+    '1.0';
+
   return {
     ...baseEnv,
     LANG: 'en_US.UTF-8',
     LC_ALL: 'en_US.UTF-8',
-    REVA_MARKETING_VERSION: exp?.version || '1.0',
+    REVA_MARKETING_VERSION: version,
   };
 }
 
@@ -130,7 +136,7 @@ function withWatchSources(config) {
       const proj = path.join(iosRoot, 'HealthPilot.xcodeproj');
       execSync(`ruby "${script}" "${proj}"`, {
         stdio: 'inherit',
-        env: buildWatchInjectionEnv(cfg.modRequest.exp, process.env),
+        env: buildWatchInjectionEnv(cfg, process.env),
       });
       return cfg;
     },
