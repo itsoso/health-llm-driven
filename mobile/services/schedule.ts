@@ -5,6 +5,15 @@
  */
 import api from './api';
 
+export interface WorkoutPrescription {
+  intensity: string; // high | moderate | low | rest | unknown
+  type?: string; // interval_or_strength | aerobic_z2 | easy_aerobic | recovery
+  duration_min?: number;
+  rpe?: string;
+  guidance?: string;
+  gene_note?: string;
+}
+
 export interface ScheduleItem {
   id: string;
   title: string;
@@ -12,6 +21,8 @@ export interface ScheduleItem {
   time: string; // "HH:MM"
   anchor?: string;
   degraded?: boolean;
+  warning?: string;
+  prescription?: WorkoutPrescription; // cut A:movement 块带处方,前端渲染强度/RPE/指导
 }
 
 export interface RejectedOrDeferred {

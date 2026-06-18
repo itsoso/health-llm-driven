@@ -125,13 +125,24 @@ export default function DayScheduleScreen() {
                   {it.time}
                 </Text>
                 <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: DOMAIN_COLOR[it.domain] ?? C.ink3 }} />
-                <Text
-                  style={{ flex: 1, fontSize: 14, color: done.has(it.id) ? C.ink3 : C.ink1,
-                           textDecorationLine: done.has(it.id) ? 'line-through' : 'none' }}
-                  numberOfLines={1}
-                >
-                  {it.title}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{ fontSize: 14, color: done.has(it.id) ? C.ink3 : C.ink1,
+                             textDecorationLine: done.has(it.id) ? 'line-through' : 'none' }}
+                    numberOfLines={1}
+                  >
+                    {it.title}
+                  </Text>
+                  {it.prescription ? (
+                    <Text style={{ fontSize: 11.5, color: C.ink2, marginTop: 2, lineHeight: 16 }} numberOfLines={3}>
+                      {[
+                        it.prescription.rpe ? `RPE ${it.prescription.rpe}` : null,
+                        it.prescription.guidance,
+                      ].filter(Boolean).join(' · ')}
+                      {it.prescription.gene_note ? `\n${it.prescription.gene_note}` : ''}
+                    </Text>
+                  ) : null}
+                </View>
                 {CONFIRMABLE.has(it.domain) ? (
                   done.has(it.id) ? (
                     <Text style={{ fontSize: 13, color: C.green500, fontWeight: '700' }}>✓ 已服</Text>

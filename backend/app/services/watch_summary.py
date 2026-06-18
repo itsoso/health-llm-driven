@@ -82,18 +82,22 @@ def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "rationale_short": item.get("rationale_short"),
         "verification_window_days": item.get("verification_window_days"),
         "safety_status": item.get("safety_status"),
+        "prescription": item.get("prescription"),  # cut A:movement 处方(None 则前端忽略)
     }
 
 
 def _due_view(item: Dict[str, Any]) -> Dict[str, Any]:
     """只读到点项(腕上「待打点」列表):带 action_id 可一键完成。"""
-    return {
+    view = {
         "action_id": _action_id(item),
         "title": item.get("title"),
         "kind": item.get("type"),
         "time_window": item.get("time_window"),
         "source": item.get("source"),
     }
+    if item.get("prescription"):
+        view["prescription"] = item["prescription"]  # cut A:腕上渲染强度 chip
+    return view
 
 
 def _push_view(item: Dict[str, Any], tier: str) -> Dict[str, Any]:

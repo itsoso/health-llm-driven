@@ -60,6 +60,7 @@ class Item:
     preference_weight: float = 0.0               # 偏好加权(仅在不违反硬约束时生效)
     fixed_time: Optional[str] = None             # 医嘱固定时点 "HH:MM"(优先于锚点启发式)
     warning: Optional[str] = None                # 行级警告(如 drug×drug 相互作用;保留排程不删,遵医嘱)
+    prescription: Optional[dict] = None          # cut A:movement 处方(intensity/type/duration/rpe/guidance/gene_note)
 
 
 @dataclass
@@ -316,6 +317,8 @@ def solve_day_schedule(items: List[Item], ctx: DayContext) -> Dict[str, list]:
                  "severity": it.severity, "degraded": ctx.anchors_degraded}
         if it.warning:
             entry["warning"] = it.warning  # 行级相互作用警告(保留排程,遵医嘱)
+        if it.prescription:
+            entry["prescription"] = it.prescription  # cut A:movement 处方,各端按形态渲染
         scheduled.append(entry)
 
     # 复查配额:checkup 域按 severity 取前 N,其余顺延

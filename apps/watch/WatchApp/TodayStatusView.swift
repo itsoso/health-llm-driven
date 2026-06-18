@@ -219,13 +219,15 @@ struct TodayStatusView: View {
     private func actionMetaLine(_ action: WatchTopAction) -> some View {
         let window = timeWindowLabel(action.timeWindow)
         let rationale = action.rationaleShort
-        if window != nil || rationale != nil {
+        let rx = action.prescription
+        if window != nil || rationale != nil || rx != nil {
             VStack(alignment: .leading, spacing: 2) {
                 if let window {
                     Label(window, systemImage: "clock")
                         .font(.caption2)
                         .foregroundStyle(RevaWatch.ink2)
                 }
+                if let rx { prescriptionLine(rx) }
                 if let rationale, !rationale.isEmpty {
                     Text(rationale)
                         .font(.caption2)
@@ -233,6 +235,40 @@ struct TodayStatusView: View {
                         .lineLimit(2)
                 }
             }
+        }
+    }
+
+    /// cut A:movement 处方 —— 强度 chip + RPE + 一句指导(腕上瞥一眼即知今天练什么/多重)。
+    @ViewBuilder
+    private func prescriptionLine(_ rx: WatchPrescription) -> some View {
+        let label = rx.intensityLabel
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                if !label.isEmpty {
+                    Text(label)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(intensityColor(rx.intensity))
+                }
+                if let rpe = rx.rpe, !rpe.isEmpty {
+                    Text("RPE \(rpe)")
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                }
+            }
+            if let g = rx.guidance, !g.isEmpty {
+                Text(g)
+                    .font(.caption2)
+                    .foregroundStyle(RevaWatch.ink2)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private func intensityColor(_ intensity: String) -> Color {
+        switch intensity {
+        case "high": return RevaWatch.caution
+        case "moderate": return RevaWatch.greenBright
+        default: return RevaWatch.ink2   // low / rest / unknown
         }
     }
 

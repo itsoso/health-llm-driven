@@ -188,7 +188,7 @@ def _day_schedule_workout_item(db: Session, user_id: int) -> Dict[str, Any] | No
 
     w = next((s for s in sched.get("scheduled", []) if s.get("id") == "workout:today"), None)
     if w:
-        return _agenda_item(
+        item = _agenda_item(
             type="movement",
             title=w.get("title") or "锻炼",
             status="pending",
@@ -197,6 +197,9 @@ def _day_schedule_workout_item(db: Session, user_id: int) -> Dict[str, Any] | No
             priority=55,
             source={"object_type": "day_schedule_workout", "object_id": user_id},
         )
+        if w.get("prescription"):
+            item["prescription"] = w["prescription"]  # cut A:结构化处方,各端渲染
+        return item
     r = next((x for x in sched.get("rejected", []) if x.get("id") == "workout:today"), None)
     if r:
         return _agenda_item(
