@@ -7,7 +7,7 @@ WORKSPACE="${ROKID_IOS_WORKSPACE:-HealthPilot.xcworkspace}"
 SCHEME="${ROKID_IOS_SCHEME:-RokidBridge}"
 CONFIGURATION="${ROKID_IOS_CONFIGURATION:-Debug}"
 DESTINATION="${ROKID_IOS_DESTINATION:-generic/platform=iOS}"
-CLIENT_VERSION="${ROKID_IOS_CLIENT_VERSION:-1.0.2}"
+CLIENT_VERSION="${ROKID_IOS_CLIENT_VERSION:-1.0.1}"
 SPECS_REPO="${ROKID_IOS_SPECS_REPO:-}"
 SPECS_REPO_NAME="${ROKID_IOS_SPECS_REPO_NAME:-rokid-ios-specs}"
 SIMULATOR="${ROKID_IOS_SIMULATOR:-0}"
@@ -29,7 +29,7 @@ Usage:
   scripts/rokid-ios-compat-probe.sh [--dry-run] [--check-spec-only] [--skip-build] [--inspect-framework]
 
 Environment:
-  ROKID_IOS_CLIENT_VERSION    RGCxrClient version to probe. Default: 1.0.2
+  ROKID_IOS_CLIENT_VERSION    RGCxrClient version to probe. Default: 1.0.1
   ROKID_IOS_SPECS_REPO        Optional Rokid CocoaPods specs git URL.
   ROKID_IOS_SIMULATOR         Set 1 to exclude the device-only Rokid SDK during pod install.
   ROKID_IOS_SCHEME            Xcode scheme. Default: RokidBridge

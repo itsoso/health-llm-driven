@@ -151,4 +151,48 @@ describe('rokid-bridge JS facade', () => {
     expect(native.stopRecord).toHaveBeenCalledWith('food_voice');
     expect(native.clearAuthorization).toHaveBeenCalledTimes(1);
   });
+
+  it('opens a Reva customView layout before enabling iOS capture capabilities', async () => {
+    const native = {
+      getIntegrationStatus: jest.fn().mockResolvedValue({
+        platform: 'ios',
+        bridgeAvailable: true,
+        hiRokidInstalled: true,
+        canOpenHiRokid: true,
+        mode: 'sdk_probe',
+        sdkLinked: true,
+        sessionMode: 'customView',
+        authorizationState: 'authenticated',
+        customViewRunning: false,
+        capabilitiesReady: false,
+      }),
+      openCustomView: jest.fn().mockResolvedValue({
+        ok: true,
+        customViewRunning: true,
+        capabilitiesReady: true,
+      }),
+    };
+    const { bridge } = loadModule('ios', native);
+
+    await expect(bridge.openRokidRevaCustomView({
+      title: 'Reva',
+      body: '午饭后步行 10 分钟',
+      priority: 'P1',
+    })).resolves.toMatchObject({
+      ok: true,
+      customViewRunning: true,
+      capabilitiesReady: true,
+    });
+
+    expect(native.openCustomView).toHaveBeenCalledTimes(1);
+    const view = JSON.parse(native.openCustomView.mock.calls[0][0]);
+    expect(view.type).toBe('LinearLayout');
+    expect(view.props).toMatchObject({
+      layout_width: 'match_parent',
+      layout_height: 'match_parent',
+      orientation: 'vertical',
+    });
+    expect(JSON.stringify(view)).toContain('午饭后步行 10 分钟');
+    expect(JSON.stringify(view)).toContain('P1');
+  });
 });

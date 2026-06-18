@@ -5,6 +5,8 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 const mockBack = jest.fn();
 const mockGetRokidIntegrationStatus = jest.fn();
 const mockTakeRokidPhotoBase64 = jest.fn();
+const mockRequestRokidAuthorization = jest.fn();
+const mockOpenRokidRevaCustomView = jest.fn();
 const mockListRokidGlanceCards = jest.fn();
 const mockOpenRokidCompanionIfAvailable = jest.fn();
 const mockSubmitRokidVisualInput = jest.fn();
@@ -16,6 +18,8 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../modules/rokid-bridge', () => ({
   getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
+  openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
+  requestRokidAuthorization: (...args: any[]) => mockRequestRokidAuthorization(...args),
   takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
 }));
 
@@ -63,6 +67,12 @@ describe('RokidHealthScreen', () => {
       ok: true,
       imageUri: 'private://rokid/meal-001.jpg',
       imageSha256: 'sha256-meal-001',
+    });
+    mockRequestRokidAuthorization.mockResolvedValue({ ok: true, tokenLength: 24 });
+    mockOpenRokidRevaCustomView.mockResolvedValue({
+      ok: true,
+      customViewRunning: true,
+      capabilitiesReady: true,
     });
     mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
   });
@@ -117,6 +127,93 @@ describe('RokidHealthScreen', () => {
         },
       });
       expect(screen.getByText('已提交食物视觉记录草稿')).toBeTruthy();
+    });
+  });
+
+  it('shows the iOS authorization and customView steps before capture is available', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      iosSdkDependencyMode: 'linked',
+      authorizationState: 'not_authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      callbackScheme: 'life.executor.health.rokid',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('授权 Rokid')).toBeTruthy();
+      expect(screen.getByText('打开 Reva 眼镜视图')).toBeTruthy();
+      expect(screen.getByText('能力未就绪')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByText('授权 Rokid'));
+
+    await waitFor(() => {
+      expect(mockRequestRokidAuthorization).toHaveBeenCalledWith({
+        appName: 'Reva',
+        scopes: ['device_control', 'audio_stream'],
+      });
+      expect(screen.getByText('Rokid 已授权')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+
+    await waitFor(() => {
+      expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
+        body: '等待 Reva 投递下一条健康行动',
+        priority: 'manual_confirm',
+        title: 'Reva Health',
+      });
+    });
+  });
+
+  it('blocks iOS photo capture until the customView scene is running', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('主动触发 食物视觉记录')).toBeTruthy();
+      expect(screen.getByText('能力未就绪')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+
+    await waitFor(() => {
+      expect(mockTakeRokidPhotoBase64).not.toHaveBeenCalled();
+      expect(mockSubmitRokidVisualInput).not.toHaveBeenCalled();
+      expect(screen.getByText('食物视觉记录失败: rokid_custom_view_not_ready')).toBeTruthy();
     });
   });
 });

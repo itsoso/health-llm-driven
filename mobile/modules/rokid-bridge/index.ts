@@ -9,6 +9,14 @@ export const ROKID_SDK_ARTIFACTS = {
 } as const;
 
 export type RokidIntegrationMode = 'unavailable' | 'sdk_probe';
+export type RokidAuthorizationState =
+  | 'unknown'
+  | 'not_authenticated'
+  | 'authenticating'
+  | 'authenticated'
+  | 'expired'
+  | 'failed';
+export type RokidSessionMode = 'customView' | 'customApp' | 'unknown';
 
 export type RokidIntegrationStatus = {
   platform: string;
@@ -24,6 +32,10 @@ export type RokidIntegrationStatus = {
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;
+  authorizationState?: RokidAuthorizationState;
+  capabilitiesReady?: boolean;
+  customViewRunning?: boolean;
+  sessionMode?: RokidSessionMode;
   sdkClassProbe?: Record<string, boolean>;
   reason?: string;
 };
@@ -42,6 +54,12 @@ type RokidNativeModule = {
 };
 
 let cachedNative: RokidNativeModule | null | undefined;
+
+type RevaCustomViewOptions = {
+  title?: string;
+  body?: string;
+  priority?: string;
+};
 
 function unavailableStatus(platform: string, reason = 'native_bridge_unavailable'): RokidIntegrationStatus {
   return {
@@ -133,6 +151,73 @@ export async function openRokidCustomView(view: string): Promise<Record<string, 
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
   return native.openCustomView(view);
+}
+
+export function createRokidRevaCustomViewLayout(options?: RevaCustomViewOptions): string {
+  const title = options?.title ?? 'Reva Health';
+  const body = options?.body ?? '等待 Reva 投递下一条健康行动';
+  const priority = options?.priority ?? 'manual_confirm';
+  return JSON.stringify({
+    type: 'LinearLayout',
+    props: {
+      id: 'reva_root',
+      layout_width: 'match_parent',
+      layout_height: 'match_parent',
+      orientation: 'vertical',
+      gravity: 'center_vertical',
+      paddingStart: '24dp',
+      paddingEnd: '24dp',
+      paddingTop: '120dp',
+      paddingBottom: '100dp',
+      backgroundColor: '#FF000000',
+    },
+    children: [
+      {
+        type: 'TextView',
+        props: {
+          id: 'reva_title',
+          layout_width: 'wrap_content',
+          layout_height: 'wrap_content',
+          text: title,
+          textColor: '#FFFFFFFF',
+          textSize: '18sp',
+          textStyle: 'bold',
+          marginBottom: '14dp',
+        },
+      },
+      {
+        type: 'TextView',
+        props: {
+          id: 'reva_body',
+          layout_width: 'match_parent',
+          layout_height: 'wrap_content',
+          text: body,
+          textColor: '#FFE8F0FF',
+          textSize: '16sp',
+          gravity: 'center',
+          marginBottom: '12dp',
+        },
+      },
+      {
+        type: 'TextView',
+        props: {
+          id: 'reva_priority',
+          layout_width: 'wrap_content',
+          layout_height: 'wrap_content',
+          text: priority,
+          textColor: '#FF9CCBFF',
+          textSize: '12sp',
+          gravity: 'center',
+        },
+      },
+    ],
+  });
+}
+
+export async function openRokidRevaCustomView(
+  options?: RevaCustomViewOptions,
+): Promise<Record<string, unknown>> {
+  return openRokidCustomView(createRokidRevaCustomViewLayout(options));
 }
 
 export async function updateRokidCustomView(view: string): Promise<Record<string, unknown>> {

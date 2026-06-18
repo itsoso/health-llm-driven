@@ -16,6 +16,8 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   getRokidIntegrationStatus,
+  openRokidRevaCustomView,
+  requestRokidAuthorization,
   takeRokidPhotoBase64,
   type RokidIntegrationStatus,
 } from '../modules/rokid-bridge';
@@ -31,6 +33,7 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 type PrivacyMode = 'private' | 'workplace' | 'public';
 type OpenState = 'idle' | 'opening' | 'opened' | 'unavailable' | 'failed';
 type CaptureStatus = 'idle' | 'capturing' | 'submitted' | 'failed';
+type SessionStatus = 'idle' | 'running' | 'ready' | 'failed';
 
 type CaptureState = {
   status: CaptureStatus;
@@ -94,6 +97,21 @@ function readString(result: Record<string, unknown>, keys: string[]) {
   return undefined;
 }
 
+function iosAuthorizationLabel(status?: RokidIntegrationStatus) {
+  switch (status?.authorizationState) {
+    case 'authenticated':
+      return '已授权';
+    case 'authenticating':
+      return '授权中';
+    case 'expired':
+      return '授权过期';
+    case 'failed':
+      return '授权失败';
+    default:
+      return '未授权';
+  }
+}
+
 export default function RokidHealthScreen() {
   const router = useRouter();
   const { c, s } = useTheme();
@@ -102,6 +120,10 @@ export default function RokidHealthScreen() {
   const [privacyMode, setPrivacyMode] = useState<PrivacyMode>('workplace');
   const [openState, setOpenState] = useState<OpenState>('idle');
   const [captureState, setCaptureState] = useState<CaptureState>({ status: 'idle' });
+  const [sessionState, setSessionState] = useState<{
+    status: SessionStatus;
+    message?: string;
+  }>({ status: 'idle' });
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -119,6 +141,8 @@ export default function RokidHealthScreen() {
   const glanceCards = Array.isArray(glanceQuery.data)
     ? (glanceQuery.data as RokidGlanceCard[])
     : [];
+  const isIOS = status?.platform === 'ios';
+  const iosCapabilitiesReady = isIOS && status?.capabilitiesReady === true;
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
 
   const refresh = () => {
@@ -137,9 +161,53 @@ export default function RokidHealthScreen() {
     }
   };
 
+  const authorizeRokid = async () => {
+    setSessionState({ status: 'running', message: 'Rokid 授权中...' });
+    try {
+      const result = await requestRokidAuthorization({
+        appName: 'Reva',
+        scopes: ['device_control', 'audio_stream'],
+      });
+      if (result.ok === false) {
+        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_authorization_failed');
+      }
+      setSessionState({ status: 'ready', message: 'Rokid 已授权' });
+      await statusQuery.refetch();
+    } catch (error) {
+      setSessionState({
+        status: 'failed',
+        message: `Rokid 授权失败: ${error instanceof Error ? error.message : 'authorization_failed'}`,
+      });
+    }
+  };
+
+  const openRevaCustomView = async () => {
+    setSessionState({ status: 'running', message: '正在打开 Reva 眼镜视图...' });
+    try {
+      const result = await openRokidRevaCustomView({
+        title: 'Reva Health',
+        body: '等待 Reva 投递下一条健康行动',
+        priority: 'manual_confirm',
+      });
+      if (result.ok === false) {
+        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_custom_view_failed');
+      }
+      setSessionState({ status: 'ready', message: 'Reva 眼镜视图已打开' });
+      await statusQuery.refetch();
+    } catch (error) {
+      setSessionState({
+        status: 'failed',
+        message: `Reva 眼镜视图失败: ${error instanceof Error ? error.message : 'custom_view_failed'}`,
+      });
+    }
+  };
+
   const handleVisualCapture = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
     setCaptureState({ status: 'capturing', actionTitle: action.title, message: `${action.title}提交中...` });
     try {
+      if (status?.platform === 'ios' && status.capabilitiesReady !== true) {
+        throw new Error('rokid_custom_view_not_ready');
+      }
       const captureResult = await takeRokidPhotoBase64({ width: 1024, height: 768, quality: 80 });
       if (captureResult.ok === false) {
         throw new Error(
@@ -233,6 +301,65 @@ export default function RokidHealthScreen() {
             <Ionicons name="open-outline" size={17} color="#fff" />
             <Text style={txt.primaryButton}>{openState === 'opening' ? '打开中...' : '打开 Hi Rokid'}</Text>
           </Pressable>
+
+          {isIOS ? (
+            <View style={styles.iosSessionBox}>
+              <View style={styles.statusGrid}>
+                <StatusPill
+                  label={iosAuthorizationLabel(status)}
+                  ok={status?.authorizationState === 'authenticated'}
+                  muted={!status?.authorizationState || status.authorizationState === 'not_authenticated'}
+                />
+                <StatusPill
+                  label={status?.customViewRunning ? 'CustomView 运行中' : 'CustomView 未运行'}
+                  ok={status?.customViewRunning === true}
+                  muted={!status?.customViewRunning}
+                />
+                <StatusPill
+                  label={iosCapabilitiesReady ? '能力已就绪' : '能力未就绪'}
+                  ok={iosCapabilitiesReady}
+                  muted={!iosCapabilitiesReady}
+                />
+              </View>
+              <View style={styles.buttonRow}>
+                <Pressable
+                  onPress={authorizeRokid}
+                  disabled={!status?.sdkLinked || sessionState.status === 'running'}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    pressed && styles.pressed,
+                    (!status?.sdkLinked || sessionState.status === 'running') && styles.disabledButton,
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="key-outline" size={16} color={c.brand} />
+                  <Text style={txt.secondaryButton}>授权 Rokid</Text>
+                </Pressable>
+                <Pressable
+                  onPress={openRevaCustomView}
+                  disabled={!status?.sdkLinked || sessionState.status === 'running'}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    pressed && styles.pressed,
+                    (!status?.sdkLinked || sessionState.status === 'running') && styles.disabledButton,
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="browsers-outline" size={16} color={c.brand} />
+                  <Text style={txt.secondaryButton}>打开 Reva 眼镜视图</Text>
+                </Pressable>
+              </View>
+              {sessionState.message ? (
+                <Text style={[
+                  txt.sessionMessage,
+                  sessionState.status === 'ready' ? { color: s.success.solid } : null,
+                  sessionState.status === 'failed' ? { color: s.warning.solid } : null,
+                ]}>
+                  {sessionState.message}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
 
           {openState !== 'idle' && openState !== 'opening' ? (
             <Text style={[
@@ -443,6 +570,25 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  iosSessionBox: {
+    marginTop: spacing.sm,
+  },
+  buttonRow: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  secondaryButton: {
+    minHeight: 42,
+    borderRadius: radii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    backgroundColor: c.fill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.sm,
+  },
   pressed: { opacity: 0.82 },
   disabledButton: { opacity: 0.55 },
   segmentRow: {
@@ -510,7 +656,9 @@ const createTxt = (c: ColorPalette) => ({
   panelTitle: { fontSize: 17, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   panelSub: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 3 } as TextStyle,
   primaryButton: { fontSize: 15, fontWeight: '800', color: '#fff' } as TextStyle,
+  secondaryButton: { fontSize: 12, fontWeight: '800', color: c.brand, textAlign: 'center' } as TextStyle,
   openState: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
+  sessionMessage: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
   sectionTitle: { fontSize: 15, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sectionHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4, marginBottom: spacing.sm } as TextStyle,
   statusPill: { fontSize: 12, fontWeight: '800', maxWidth: 140 } as TextStyle,
