@@ -27,6 +27,17 @@ function patchAppDelegateContents(contents) {
     patched = patched.replace(importAnchor, `${importAnchor}\n${ROKID_IMPORT_BLOCK}\n`);
   }
 
+  if (
+    patched.includes('RokidBridgeURLHandler.canHandleOpenURL(url)')
+    && !patched.includes('RokidBridgeURLHandler.observeOpenURL(url)')
+  ) {
+    patched = patched.replace(
+      '    if RokidBridgeURLHandler.canHandleOpenURL(url) {',
+      `    RokidBridgeURLHandler.observeOpenURL(url)
+    if RokidBridgeURLHandler.canHandleOpenURL(url) {`,
+    );
+  }
+
   if (!patched.includes('RokidBridgeURLHandler.canHandleOpenURL(url)')) {
     const returnAnchor = '    return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)\n';
     if (!patched.includes(returnAnchor)) {

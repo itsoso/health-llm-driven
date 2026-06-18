@@ -71,6 +71,51 @@ function authorizationErrorDetail(status: RokidIntegrationStatus) {
   return parts.length > 0 ? parts.join('; ') : undefined;
 }
 
+function authorizationAttemptValue(status: RokidIntegrationStatus) {
+  const parts: string[] = [];
+  if (status.lastAuthorizationAttemptId) {
+    parts.push(status.lastAuthorizationAttemptId);
+  }
+  if (typeof status.authorizationAttemptCount === 'number') {
+    parts.push(`#${status.authorizationAttemptCount}`);
+  }
+  if (status.lastAuthorizationPhase) {
+    parts.push(status.lastAuthorizationPhase);
+  }
+  return parts.length > 0 ? parts.join(' / ') : undefined;
+}
+
+function authorizationAttemptDetail(status: RokidIntegrationStatus) {
+  return typeof status.lastAuthorizationDurationMs === 'number'
+    ? `duration=${status.lastAuthorizationDurationMs}ms`
+    : undefined;
+}
+
+function authorizationAttemptSeverity(status: RokidIntegrationStatus): RokidSelfCheckSeverity {
+  const phase = status.lastAuthorizationPhase?.toLowerCase() ?? '';
+  if (phase.includes('succeeded') || phase.includes('cached_authenticated')) {
+    return 'pass';
+  }
+  if (phase.includes('failed') || phase.includes('timeout')) {
+    return 'warn';
+  }
+  return 'info';
+}
+
+function authorizationStateTraceValue(status: RokidIntegrationStatus) {
+  const parts: string[] = [];
+  if (status.lastAuthorizationStateBeforeReset) {
+    parts.push(`beforeReset=${status.lastAuthorizationStateBeforeReset}`);
+  }
+  if (status.lastAuthorizationStateAfterReset) {
+    parts.push(`afterReset=${status.lastAuthorizationStateAfterReset}`);
+  }
+  if (status.lastAuthorizationStateBeforeAuthenticate) {
+    parts.push(`beforeAuth=${status.lastAuthorizationStateBeforeAuthenticate}`);
+  }
+  return parts.length > 0 ? parts.join('; ') : undefined;
+}
+
 function companionDetail(status: RokidIntegrationStatus, companionReady: boolean) {
   const parts: string[] = [];
   if (status.companionServerScheme && status.companionServerHost) {
@@ -157,6 +202,11 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         ? 'pass'
         : 'warn';
   const authErrorValue = formatAuthorizationError(status.lastAuthorizationError);
+  const authAttemptValue = authorizationAttemptValue(status);
+  const authStateTraceValue = authorizationStateTraceValue(status);
+  const authTimeline = Array.isArray(status.authDiagnosticTimeline)
+    ? status.authDiagnosticTimeline.slice(-8)
+    : [];
 
   return {
     summary: {
@@ -212,12 +262,32 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         severity: authErrorValue ? 'warn' : authorized ? 'pass' : 'info',
         detail: authErrorValue ? authorizationErrorDetail(status) : undefined,
       },
+      ...(authAttemptValue ? [{
+        id: 'auth_attempt',
+        label: '授权 Attempt',
+        value: authAttemptValue,
+        severity: authorizationAttemptSeverity(status),
+        detail: authorizationAttemptDetail(status),
+      }] : []),
+      ...(authStateTraceValue ? [{
+        id: 'auth_state_trace',
+        label: 'SDK 状态轨迹',
+        value: authStateTraceValue,
+        severity: 'info' as const,
+        detail: status.authorizationConfigSummary,
+      }] : []),
       ...(status.lastAuthorizationEvent ? [{
         id: 'auth_event',
         label: 'SDK 授权事件',
         value: status.lastAuthorizationEvent,
         severity: authorizationEventSeverity(status.lastAuthorizationEvent),
         detail: status.lastAuthorizationEventAt ? `eventAt=${status.lastAuthorizationEventAt}` : undefined,
+      }] : []),
+      ...(authTimeline.length > 0 ? [{
+        id: 'auth_timeline',
+        label: 'Native 授权时间线',
+        value: authTimeline.join('\n'),
+        severity: authTimeline.some((line) => line.toLowerCase().includes('failed')) ? 'warn' as const : 'info' as const,
       }] : []),
       {
         id: 'session',

@@ -45,4 +45,26 @@ internal import RokidBridge
     expect(twice).toBe(once);
     expect((twice.match(/RokidBridgeURLHandler/g) ?? []).length).toBe(3);
   });
+
+  it('repairs a generated AppDelegate that handles Rokid URLs but forgot to observe them', () => {
+    const partiallyPatched = BASE_APP_DELEGATE.replace(
+      '    return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)\n',
+      `    #if canImport(RokidBridge)
+    if RokidBridgeURLHandler.canHandleOpenURL(url) {
+      _ = RokidBridgeURLHandler.handleOpenURL(url)
+      return true
+    }
+    #endif
+
+    return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)
+`,
+    );
+
+    const patched = _patchAppDelegateContents(partiallyPatched);
+
+    expect(patched).toContain('RokidBridgeURLHandler.observeOpenURL(url)');
+    expect(patched.indexOf('RokidBridgeURLHandler.observeOpenURL(url)')).toBeLessThan(
+      patched.indexOf('RokidBridgeURLHandler.canHandleOpenURL(url)'),
+    );
+  });
 });

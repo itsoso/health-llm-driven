@@ -390,6 +390,52 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('shows native Rokid authorization attempt timeline for field debugging', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastAuthorizationAttemptId: 'auth-3',
+      authorizationAttemptCount: 3,
+      lastAuthorizationPhase: 'authenticate_failed',
+      lastAuthorizationDurationMs: 180012,
+      lastAuthorizationStateBeforeReset: 'not_authenticated',
+      lastAuthorizationStateAfterReset: 'not_authenticated',
+      lastAuthorizationStateBeforeAuthenticate: 'not_authenticated',
+      authorizationConfigSummary: 'server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+      authDiagnosticTimeline: [
+        '2026-06-18T23:59:00Z #auth-3 request_started appName=Reva; scopes=device_control,audio_stream',
+        '2026-06-18T23:59:01Z #auth-3 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+        '2026-06-19T00:02:01Z #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
+      ],
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('授权 attempt: auth-3 · #3 · phase=authenticate_failed · duration=180012ms')).toBeTruthy();
+      expect(screen.getByText('SDK state: beforeReset=not_authenticated · afterReset=not_authenticated · beforeAuth=not_authenticated')).toBeTruthy();
+      expect(screen.getByText('Auth config: server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T00:02:01Z #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1')).toBeTruthy();
+    });
+  });
+
   it('blocks iOS photo capture until the customView scene is running', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',

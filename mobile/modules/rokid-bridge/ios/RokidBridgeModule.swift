@@ -38,6 +38,16 @@ public class RokidBridgeModule: Module {
   private static var lastOpenUrlFingerprint: String?
   private static var lastOpenUrlAt: String?
   private static var lastOpenUrlExpectedAuthCallback: Bool?
+  private static let authDiagnosticTimelineLimit = 40
+  private static var authDiagnosticTimeline: [String] = []
+  private static var authorizationAttemptCount = 0
+  private static var lastAuthorizationAttemptId: String?
+  private static var lastAuthorizationStartedAt: Date?
+  private static var lastAuthorizationDurationMs: Int?
+  private static var lastAuthorizationPhase: String?
+  private static var lastAuthorizationStateBeforeReset: String?
+  private static var lastAuthorizationStateAfterReset: String?
+  private static var lastAuthorizationStateBeforeAuthenticate: String?
   #if canImport(RGCxrClient)
   private static var cancellables = Set<AnyCancellable>()
   #endif
@@ -157,6 +167,31 @@ public class RokidBridgeModule: Module {
     if let bundleIdentifier = Bundle.main.bundleIdentifier {
       payload["bundleIdentifier"] = bundleIdentifier
     }
+    payload["authorizationConfigSummary"] = authorizationConfigSummary()
+    if authorizationAttemptCount > 0 {
+      payload["authorizationAttemptCount"] = authorizationAttemptCount
+    }
+    if let lastAuthorizationAttemptId {
+      payload["lastAuthorizationAttemptId"] = lastAuthorizationAttemptId
+    }
+    if let lastAuthorizationPhase {
+      payload["lastAuthorizationPhase"] = lastAuthorizationPhase
+    }
+    if let lastAuthorizationDurationMs {
+      payload["lastAuthorizationDurationMs"] = lastAuthorizationDurationMs
+    }
+    if let lastAuthorizationStateBeforeReset {
+      payload["lastAuthorizationStateBeforeReset"] = lastAuthorizationStateBeforeReset
+    }
+    if let lastAuthorizationStateAfterReset {
+      payload["lastAuthorizationStateAfterReset"] = lastAuthorizationStateAfterReset
+    }
+    if let lastAuthorizationStateBeforeAuthenticate {
+      payload["lastAuthorizationStateBeforeAuthenticate"] = lastAuthorizationStateBeforeAuthenticate
+    }
+    if !authDiagnosticTimeline.isEmpty {
+      payload["authDiagnosticTimeline"] = authDiagnosticTimeline
+    }
     if let lastAuthorizationAppName {
       payload["lastAuthorizationAppName"] = lastAuthorizationAppName
     }
@@ -209,12 +244,15 @@ public class RokidBridgeModule: Module {
 
   private static func openHiRokid(promise: Promise) {
     guard let url = URL(string: "\(companionServerScheme)://"), UIApplication.shared.canOpenURL(url) else {
+      recordAuthDiagnostic("companion_open_unavailable", detail: "url=\(companionServerScheme)://")
       promise.resolve(false)
       return
     }
 
+    recordAuthDiagnostic("companion_open_requested", detail: "url=\(companionServerScheme)://")
     DispatchQueue.main.async {
       UIApplication.shared.open(url, options: [:]) { opened in
+        recordAuthDiagnostic("companion_open_result", detail: "opened=\(opened)")
         promise.resolve(opened)
       }
     }
@@ -223,14 +261,22 @@ public class RokidBridgeModule: Module {
   private static func requestAuthorization(scopes: [String], appName: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
-    configureAuthentication(force: true)
+    startAuthorizationAttempt(scopes: scopes, appName: appName)
     if CxrClient.shared.auth.isAuthenticated() {
+      markAuthorizationPhase("cached_authenticated", detail: "state=authenticated")
       promise.resolve(authorizationSuccessPayload(source: "cached"))
       return
     }
+    lastAuthorizationStateBeforeReset = authorizationState()
+    recordAuthDiagnostic("state_before_reset", detail: lastAuthorizationStateBeforeReset)
     resetAuthorizationStateForExplicitRequest()
-    markAuthorizationRequest(scopes: scopes, appName: appName)
+    lastAuthorizationStateAfterReset = authorizationState()
+    recordAuthDiagnostic("state_after_reset", detail: lastAuthorizationStateAfterReset)
+    configureAuthentication(force: true)
+    recordAuthDiagnostic("config_refreshed", detail: authorizationConfigSummary())
     DispatchQueue.main.async {
+      lastAuthorizationStateBeforeAuthenticate = authorizationState()
+      markAuthorizationPhase("authenticate_invoking", detail: "state=\(lastAuthorizationStateBeforeAuthenticate ?? "unknown")")
       CxrClient.shared.auth.authenticate(
         scopes: scopes,
         bundleId: Bundle.main.bundleIdentifier,
@@ -238,6 +284,7 @@ public class RokidBridgeModule: Module {
       ) { result in
         switch result {
         case .success(let authResult):
+          markAuthorizationPhase("authenticate_succeeded", detail: "tokenLength=\(authResult.token.count); session=\(authResult.sessionId == nil ? "none" : "present")")
           promise.resolve(authorizationSuccessPayload(
             tokenLength: authResult.token.count,
             sessionId: authResult.sessionId,
@@ -247,15 +294,21 @@ public class RokidBridgeModule: Module {
           if CxrClient.shared.auth.isAuthenticated() {
             var response = authorizationSuccessPayload(source: "post_failure_state")
             response["nativeWarning"] = String(describing: error)
+            markAuthorizationPhase("authenticate_warning_authenticated", detail: String(describing: error))
             promise.resolve(response)
             return
           }
           recordAuthorizationError(error)
+          markAuthorizationPhase("authenticate_failed", detail: String(describing: error))
           promise.resolve([
             "ok": false,
             "reason": String(describing: error),
             "authorizationState": authorizationState(),
             "authorizationRequestTimeoutSeconds": authorizationRequestTimeoutSeconds,
+            "lastAuthorizationAttemptId": lastAuthorizationAttemptId ?? "",
+            "authorizationAttemptCount": authorizationAttemptCount,
+            "lastAuthorizationPhase": lastAuthorizationPhase ?? "",
+            "lastAuthorizationDurationMs": lastAuthorizationDurationMs ?? 0,
           ])
         }
       }
@@ -613,11 +666,73 @@ public class RokidBridgeModule: Module {
     ISO8601DateFormatter().string(from: Date())
   }
 
-  private static func markAuthorizationRequest(scopes: [String], appName: String) {
+  private static func authorizationConfigSummary() -> String {
+    let callback = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
+    return "server=\(companionServerScheme)://\(companionServerHost); callback=\(callback); timeout=\(Int(authorizationRequestTimeoutSeconds))s"
+  }
+
+  private static func clearCallbackRouteStateForNewAttempt() {
+    lastCallbackUrl = nil
+    lastCallbackAt = nil
+    lastCallbackHandled = nil
+    lastOpenUrlFingerprint = nil
+    lastOpenUrlAt = nil
+    lastOpenUrlExpectedAuthCallback = nil
+  }
+
+  private static func startAuthorizationAttempt(scopes: [String], appName: String) {
+    authorizationAttemptCount += 1
+    lastAuthorizationAttemptId = "auth-\(authorizationAttemptCount)"
+    lastAuthorizationStartedAt = Date()
+    lastAuthorizationDurationMs = nil
+    lastAuthorizationPhase = "request_started"
+    lastAuthorizationStateBeforeReset = nil
+    lastAuthorizationStateAfterReset = nil
+    lastAuthorizationStateBeforeAuthenticate = nil
     lastAuthorizationAppName = appName
     lastAuthorizationScopes = scopes
     lastAuthorizationRequestAt = isoTimestamp()
     clearAuthorizationError()
+    clearCallbackRouteStateForNewAttempt()
+    recordAuthDiagnostic(
+      "request_started",
+      detail: "appName=\(appName); scopes=\(scopes.joined(separator: ",")); bundle=\(Bundle.main.bundleIdentifier ?? "unknown"); \(authorizationConfigSummary())"
+    )
+  }
+
+  @discardableResult
+  private static func markAuthorizationPhase(_ phase: String, detail: String? = nil) -> Int? {
+    lastAuthorizationPhase = phase
+    if let startedAt = lastAuthorizationStartedAt {
+      lastAuthorizationDurationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+    }
+    recordAuthDiagnostic(phase, detail: detail)
+    return lastAuthorizationDurationMs
+  }
+
+  private static func recordAuthDiagnostic(_ phase: String, detail: String? = nil) {
+    let attempt = lastAuthorizationAttemptId ?? "no-attempt"
+    let cleanDetail = detail.map(sanitizeAuthDiagnosticDetail)
+    let line = [
+      isoTimestamp(),
+      "#\(attempt)",
+      phase,
+      cleanDetail,
+    ]
+      .compactMap { $0 }
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+    authDiagnosticTimeline.append(line)
+    if authDiagnosticTimeline.count > authDiagnosticTimelineLimit {
+      authDiagnosticTimeline.removeFirst(authDiagnosticTimeline.count - authDiagnosticTimelineLimit)
+    }
+    NSLog("[RevaRokidAuth] %@", line)
+  }
+
+  private static func sanitizeAuthDiagnosticDetail(_ detail: String) -> String {
+    detail
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
   }
 
   private static func recordAuthorizationError(_ error: Error) {
@@ -627,6 +742,7 @@ public class RokidBridgeModule: Module {
   private static func recordAuthorizationErrorDescription(_ error: String) {
     lastAuthorizationError = error
     lastAuthorizationErrorAt = isoTimestamp()
+    recordAuthDiagnostic("authorization_error", detail: error)
   }
 
   private static func clearAuthorizationError() {
@@ -637,6 +753,7 @@ public class RokidBridgeModule: Module {
   private static func recordAuthorizationEvent(_ event: String) {
     lastAuthorizationEvent = event
     lastAuthorizationEventAt = isoTimestamp()
+    recordAuthDiagnostic("sdk_event", detail: event)
   }
 
   #if canImport(RGCxrClient)
@@ -692,6 +809,7 @@ public class RokidBridgeModule: Module {
       .receive(on: DispatchQueue.main)
       .sink { event in
         RokidBridgeModule.customViewRunning = event.isRunning
+        RokidBridgeModule.recordAuthDiagnostic("custom_view_event", detail: "isRunning=\(event.isRunning)")
       }
       .store(in: &RokidBridgeModule.cancellables)
     CxrClient.shared.auth.eventPublisher
@@ -842,6 +960,10 @@ public class RokidBridgeModule: Module {
     lastOpenUrlFingerprint = urlFingerprint(url)
     lastOpenUrlAt = isoTimestamp()
     lastOpenUrlExpectedAuthCallback = isExpectedAuthCallback(url)
+    recordAuthDiagnostic(
+      "ios_open_url",
+      detail: "\(lastOpenUrlFingerprint ?? "unknown"); expectedAuthCallback=\(lastOpenUrlExpectedAuthCallback == true)"
+    )
   }
 
   private static func urlFingerprint(_ url: URL) -> String {
@@ -859,11 +981,13 @@ public class RokidBridgeModule: Module {
 
   fileprivate static func handleOpenURL(_ url: URL) -> Bool {
     guard isExpectedAuthCallback(url) else {
+      recordAuthDiagnostic("callback_ignored", detail: urlFingerprint(url))
       return false
     }
 
     lastCallbackUrl = url.absoluteString
     lastCallbackAt = isoTimestamp()
+    recordAuthDiagnostic("callback_received", detail: urlFingerprint(url))
 
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
@@ -871,9 +995,14 @@ public class RokidBridgeModule: Module {
     let handledByClient = handledByAuth ? false : CxrClient.shared.handleOpenURL(url)
     let handled = handledByAuth || handledByClient || CxrClient.shared.auth.isAuthenticated()
     lastCallbackHandled = handled
+    recordAuthDiagnostic(
+      "callback_handled",
+      detail: "handledByAuth=\(handledByAuth); handledByClient=\(handledByClient); authenticated=\(CxrClient.shared.auth.isAuthenticated())"
+    )
     return handled
     #else
     lastCallbackHandled = false
+    recordAuthDiagnostic("callback_unhandled", detail: "ios_sdk_not_linked")
     return false
     #endif
   }

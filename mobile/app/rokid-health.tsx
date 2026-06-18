@@ -143,6 +143,36 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     const device = status.currentDeviceName ? ` · device=${status.currentDeviceName}` : '';
     lines.push(`Companion: ${status.companionServerScheme}://${status.companionServerHost}${device}`);
   }
+  if (status.lastAuthorizationAttemptId || status.authorizationAttemptCount || status.lastAuthorizationPhase) {
+    const parts: string[] = [];
+    if (status.lastAuthorizationAttemptId) {
+      parts.push(status.lastAuthorizationAttemptId);
+    }
+    if (typeof status.authorizationAttemptCount === 'number') {
+      parts.push(`#${status.authorizationAttemptCount}`);
+    }
+    if (status.lastAuthorizationPhase) {
+      parts.push(`phase=${status.lastAuthorizationPhase}`);
+    }
+    if (typeof status.lastAuthorizationDurationMs === 'number') {
+      parts.push(`duration=${status.lastAuthorizationDurationMs}ms`);
+    }
+    lines.push(`授权 attempt: ${parts.join(' · ')}`);
+  }
+  if (
+    status.lastAuthorizationStateBeforeReset
+    || status.lastAuthorizationStateAfterReset
+    || status.lastAuthorizationStateBeforeAuthenticate
+  ) {
+    lines.push(
+      `SDK state: beforeReset=${status.lastAuthorizationStateBeforeReset ?? 'unknown'}`
+      + ` · afterReset=${status.lastAuthorizationStateAfterReset ?? 'unknown'}`
+      + ` · beforeAuth=${status.lastAuthorizationStateBeforeAuthenticate ?? 'unknown'}`,
+    );
+  }
+  if (status.authorizationConfigSummary) {
+    lines.push(`Auth config: ${status.authorizationConfigSummary}`);
+  }
   if (status.lastAuthorizationError) {
     lines.push(`最近授权错误: ${formatRokidAuthorizationIssue(status.lastAuthorizationError)}`);
   }
@@ -165,6 +195,11 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   } else if (status.lastAuthorizationError && isRecoverableRokidAuthorizationDelay(status.lastAuthorizationError)) {
     lines.push('最近回调: 尚未进入 Reva');
     lines.push('iOS 回跳: 尚未收到 AppDelegate openURL');
+  }
+  if (Array.isArray(status.authDiagnosticTimeline)) {
+    status.authDiagnosticTimeline.slice(-6).forEach((entry) => {
+      lines.push(`Native: ${entry}`);
+    });
   }
   return lines;
 }

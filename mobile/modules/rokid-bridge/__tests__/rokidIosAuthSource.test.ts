@@ -51,7 +51,7 @@ describe('RokidBridge iOS auth callback source', () => {
 
   it('resets stale not-authenticated, failed, or authenticating SDK auth state before explicit retry', () => {
     expect(source).toContain('resetAuthorizationStateForExplicitRequest()');
-    expect(source).toMatch(/resetAuthorizationStateForExplicitRequest\(\)[\s\S]+markAuthorizationRequest\(scopes: scopes, appName: appName\)[\s\S]+CxrClient\.shared\.auth\.authenticate/);
+    expect(source).toMatch(/startAuthorizationAttempt\(scopes: scopes, appName: appName\)[\s\S]+resetAuthorizationStateForExplicitRequest\(\)[\s\S]+configureAuthentication\(force: true\)[\s\S]+CxrClient\.shared\.auth\.authenticate/);
     expect(source).toContain('case .notAuthenticated, .authenticating, .expired');
     expect(source).toContain('case .failed(_)');
     expect(source).toContain('CxrClient.shared.auth.clearAuthentication()');
@@ -62,10 +62,22 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toMatch(/case \.notAuthenticated, \.authenticating, \.expired:/);
   });
 
-  it('refreshes the SDK auth config on each explicit authorization request', () => {
+  it('refreshes the SDK auth config after clearing stale auth state on each explicit authorization request', () => {
     expect(source).toContain('configureAuthentication(force: true)');
     expect(source).toContain('private static func configureAuthentication(force: Bool = false)');
-    expect(source).toMatch(/configureAuthentication\(force: true\)[\s\S]+resetAuthorizationStateForExplicitRequest\(\)[\s\S]+markAuthorizationRequest/);
+    expect(source).toMatch(/resetAuthorizationStateForExplicitRequest\(\)[\s\S]+configureAuthentication\(force: true\)[\s\S]+markAuthorizationPhase\("authenticate_invoking"/);
+  });
+
+  it('exposes a query-redacted native authorization timeline for field debugging', () => {
+    expect(source).toContain('authDiagnosticTimeline');
+    expect(source).toContain('lastAuthorizationAttemptId');
+    expect(source).toContain('lastAuthorizationPhase');
+    expect(source).toContain('lastAuthorizationDurationMs');
+    expect(source).toContain('lastAuthorizationStateBeforeReset');
+    expect(source).toContain('lastAuthorizationStateAfterReset');
+    expect(source).toContain('lastAuthorizationStateBeforeAuthenticate');
+    expect(source).toContain('NSLog("[RevaRokidAuth]');
+    expect(source).toContain('payload["authDiagnosticTimeline"] = authDiagnosticTimeline');
   });
 
   it('derives the callback scheme from the installed bundle id to avoid cross-variant URL ownership', () => {

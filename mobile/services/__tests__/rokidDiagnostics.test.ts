@@ -241,4 +241,64 @@ describe('rokid diagnostics', () => {
     expect(JSON.stringify(check.items)).not.toContain('code=');
     expect(JSON.stringify(check.items)).not.toContain('state=');
   });
+
+  it('surfaces native authorization attempt timeline and SDK state transitions', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastAuthorizationAttemptId: 'auth-7',
+      authorizationAttemptCount: 7,
+      lastAuthorizationPhase: 'authenticate_failed',
+      lastAuthorizationDurationMs: 180123,
+      lastAuthorizationStateBeforeReset: 'not_authenticated',
+      lastAuthorizationStateAfterReset: 'not_authenticated',
+      lastAuthorizationStateBeforeAuthenticate: 'not_authenticated',
+      authorizationConfigSummary: 'server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+      authDiagnosticTimeline: [
+        '2026-06-18T23:59:00Z #auth-7 request_started appName=Reva; scopes=device_control,audio_stream',
+        '2026-06-18T23:59:01Z #auth-7 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+        '2026-06-19T00:02:01Z #auth-7 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
+      ],
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth_attempt',
+        label: '授权 Attempt',
+        value: 'auth-7 / #7 / authenticate_failed',
+        detail: 'duration=180123ms',
+        severity: 'warn',
+      }),
+      expect.objectContaining({
+        id: 'auth_state_trace',
+        label: 'SDK 状态轨迹',
+        value: 'beforeReset=not_authenticated; afterReset=not_authenticated; beforeAuth=not_authenticated',
+        detail: 'server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+        severity: 'info',
+      }),
+      expect.objectContaining({
+        id: 'auth_timeline',
+        label: 'Native 授权时间线',
+        value: '2026-06-18T23:59:00Z #auth-7 request_started appName=Reva; scopes=device_control,audio_stream\n2026-06-18T23:59:01Z #auth-7 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s\n2026-06-19T00:02:01Z #auth-7 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
+        severity: 'warn',
+      }),
+    ]));
+  });
 });

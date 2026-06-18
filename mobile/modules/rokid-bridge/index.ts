@@ -35,6 +35,15 @@ export type RokidIntegrationStatus = {
   lastCallbackHandled?: boolean;
   authorizationRequestTimeoutSeconds?: number;
   bundleIdentifier?: string;
+  lastAuthorizationAttemptId?: string;
+  authorizationAttemptCount?: number;
+  lastAuthorizationPhase?: string;
+  lastAuthorizationDurationMs?: number;
+  lastAuthorizationStateBeforeReset?: string;
+  lastAuthorizationStateAfterReset?: string;
+  lastAuthorizationStateBeforeAuthenticate?: string;
+  authorizationConfigSummary?: string;
+  authDiagnosticTimeline?: string[];
   lastAuthorizationAppName?: string;
   lastAuthorizationScopes?: string[];
   lastAuthorizationRequestAt?: string;
