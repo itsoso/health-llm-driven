@@ -25,6 +25,14 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('lastAuthorizationErrorAt');
   });
 
+  it('resets stale failed or authenticating SDK auth state before explicit retry', () => {
+    expect(source).toContain('resetAuthorizationStateForExplicitRequest()');
+    expect(source).toMatch(/resetAuthorizationStateForExplicitRequest\(\)[\s\S]+markAuthorizationRequest\(scopes: scopes, appName: appName\)[\s\S]+CxrClient\.shared\.auth\.authenticate/);
+    expect(source).toContain('case .authenticating, .expired');
+    expect(source).toContain('case .failed(_)');
+    expect(source).toContain('CxrClient.shared.auth.clearAuthentication()');
+  });
+
   it('derives the callback scheme from the installed bundle id to avoid cross-variant URL ownership', () => {
     expect(source).toContain('private static var callbackScheme: String');
     expect(source).toContain('return "\\(bundleIdentifier).rokid"');

@@ -197,6 +197,7 @@ public class RokidBridgeModule: Module {
       promise.resolve(authorizationSuccessPayload(source: "cached"))
       return
     }
+    resetAuthorizationStateForExplicitRequest()
     markAuthorizationRequest(scopes: scopes, appName: appName)
     DispatchQueue.main.async {
       CxrClient.shared.auth.authenticate(
@@ -597,6 +598,21 @@ public class RokidBridgeModule: Module {
     lastAuthorizationError = nil
     lastAuthorizationErrorAt = nil
   }
+
+  #if canImport(RGCxrClient)
+  private static func resetAuthorizationStateForExplicitRequest() {
+    switch CxrClient.shared.auth.currentState {
+    case .notAuthenticated, .authenticated(_, _):
+      return
+    case .authenticating, .expired:
+      CxrClient.shared.auth.clearAuthentication()
+    case .failed(_):
+      CxrClient.shared.auth.clearAuthentication()
+    @unknown default:
+      CxrClient.shared.auth.clearAuthentication()
+    }
+  }
+  #endif
 
   private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
