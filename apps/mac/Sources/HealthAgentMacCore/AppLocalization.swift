@@ -830,6 +830,20 @@ public enum L10n {
         "Data Self-Check": "数据自检",
         "All data checks passed.": "所有数据检查均通过。",
         "%d data issue(s) found.": "发现 %d 条数据问题。",
-        "Could not load data self-check. Try again.": "无法加载数据自检，请重试。"
+        "Could not load data self-check. Try again.": "无法加载数据自检，请重试。",
+        // Day Timeline (P1-A · 今日时间线)
+        "Today Timeline": "今日时间线",
+        "Timeline Items": "条时间线项",
+        "Checkup": "复查",
+        "Meeting": "会议",
+        "Calendar": "日历",
+        "Untitled": "(无标题)",
+        "Time": "时间",
+        "All-day": "全天",
+        "Loading timeline...": "正在加载时间线...",
+        "Timeline failed to load": "时间线加载失败",
+        "No timeline items today": "今天还没有时间线项",
+        "No schedule item or calendar event is on today's timeline.": "今天没有日程项或日历事件。",
+        "A 24-hour timeline of today's schedule and calendar events.": "今日日程和日历事件的 24 小时时间线。"
     ]
 }

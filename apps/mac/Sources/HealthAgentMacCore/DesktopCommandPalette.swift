@@ -163,6 +163,8 @@ public enum DesktopCommandPalette {
             L10n.text("Daily dashboard, priorities, and recent context.", language: language)
         case .agenda:
             L10n.text("Training gate, follow-ups, protocols, and device quality.", language: language)
+        case .timeline:
+            L10n.text("A 24-hour timeline of today's schedule and calendar events.", language: language)
         case .agent:
             L10n.text("Ask questions with files, selected context, and evidence.", language: language)
         case .record:

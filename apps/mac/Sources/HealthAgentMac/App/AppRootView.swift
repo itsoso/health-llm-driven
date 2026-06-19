@@ -113,6 +113,11 @@ struct AppRootView: View {
             )
         case .agenda:
             AgendaView(client: services.agendaClient)
+        case .timeline:
+            DayTimelineView(
+                scheduleClient: services.scheduleClient,
+                calendarClient: services.calendarClient
+            )
         case .agent:
             AgentChatView(viewModel: services.agentViewModel, navigation: navigation)
         case .record:
