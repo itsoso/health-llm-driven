@@ -63,6 +63,8 @@ export type RokidIntegrationStatus = {
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;
+  cxrCallbackApiEnabled?: boolean;
+  cxrNotifySubscriptionMode?: string;
   cxrClientInitialized?: boolean;
   cxrInitializationMode?: 'customView' | 'customApp' | 'unknown' | string;
   cxrInitializationOutcome?: string;
@@ -72,6 +74,16 @@ export type RokidIntegrationStatus = {
   capabilitiesReady?: boolean;
   customAppSupported?: boolean;
   customViewRunning?: boolean;
+  lastCustomViewPayloadHash?: string;
+  lastCustomViewPayloadShape?: string;
+  lastCustomViewPayloadBytes?: number;
+  lastCustomViewCommandAt?: string;
+  lastCustomViewRawNotify?: string;
+  lastCustomViewRawNotifyAt?: string;
+  lastCustomViewOpenError?: string;
+  lastCustomViewOpenCallbackSuccess?: boolean;
+  lastCustomViewOpenCallbackErrorCode?: string;
+  lastCustomViewOpenCallbackAt?: string;
   sessionMode?: RokidSessionMode;
   sdkClassProbe?: Record<string, boolean>;
   reason?: string;

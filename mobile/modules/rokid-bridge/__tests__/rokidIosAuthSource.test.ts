@@ -4,6 +4,8 @@ import path from 'path';
 describe('RokidBridge iOS auth callback source', () => {
   const sourcePath = path.join(__dirname, '..', 'ios', 'RokidBridgeModule.swift');
   const source = fs.readFileSync(sourcePath, 'utf8');
+  const podspecPath = path.join(__dirname, '..', 'ios', 'RokidBridge.podspec');
+  const podspec = fs.readFileSync(podspecPath, 'utf8');
 
   it('routes callbacks through the SDK auth manager callback handler', () => {
     expect(source).toContain('CxrClient.shared.auth.canHandleURL(url)');
@@ -96,6 +98,41 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('recordAuthDiagnostic(');
     expect(source).toContain('"custom_view_open_requested"');
     expect(source).toContain('"custom_view_open_invoked"');
+  });
+
+  it('captures raw CustomView notify events and payload fingerprints for open failures', () => {
+    expect(source).toContain('lastCustomViewPayloadHash');
+    expect(source).toContain('lastCustomViewPayloadShape');
+    expect(source).toContain('lastCustomViewPayloadBytes');
+    expect(source).toContain('lastCustomViewRawNotify');
+    expect(source).toContain('lastCustomViewOpenError');
+    expect(source).toContain('cxrCallbackApiEnabled');
+    expect(source).toContain('cxrNotifySubscriptionMode');
+    expect(source).toContain('RGCxrClientBLE.shared.notifyPublisher');
+    expect(source).toContain('handleCustomViewNotify');
+    expect(source).toContain('Custom_View_Opened');
+    expect(source).toContain('Custom_View_Open_Failed');
+    expect(source).toContain('payload["lastCustomViewPayloadHash"]');
+    expect(source).toContain('payload["lastCustomViewRawNotify"]');
+    expect(source).toContain('payload["cxrCallbackApiEnabled"]');
+    expect(source).toContain('payload["cxrNotifySubscriptionMode"]');
+  });
+
+  it('keeps the callback CustomView API behind an explicit compile flag for the refreshed Rokid framework', () => {
+    expect(source).toContain('#if ROKID_CXRL_CALLBACK_API');
+    expect(source).toContain('setNotifyEventListenCmds');
+    expect(source).toContain('custom_view_open_callback');
+    expect(source).toContain('lastCustomViewOpenCallbackSuccess');
+    expect(source).toContain('lastCustomViewOpenCallbackErrorCode');
+    expect(source).toContain('ROKID_CXRL_CALLBACK_API');
+  });
+
+  it('allows pinning a refreshed Rokid iOS binary framework instead of relying only on the pod version', () => {
+    expect(podspec).toContain('ROKID_IOS_CLIENT_FRAMEWORK_PATH');
+    expect(podspec).toContain('s.vendored_frameworks = rokid_ios_client_framework_path');
+    expect(podspec).toContain("s.dependency 'RGCoreKit', '0.0.2'");
+    expect(podspec).toContain('ROKID_IOS_CLIENT_HAS_CALLBACK_API');
+    expect(podspec).toContain('ROKID_CXRL_CALLBACK_API');
   });
 
   it('can configure the SDK callback scheme from Info.plist while keeping safe fallbacks observable', () => {

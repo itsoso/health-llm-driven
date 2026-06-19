@@ -177,6 +177,52 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     const device = status.iosBleDeviceName ? ` · device=${status.iosBleDeviceName}` : '';
     lines.push(`iOS BLE: connected=${status.iosBleConnected}${device}`);
   }
+  if (typeof status.cxrCallbackApiEnabled === 'boolean' || status.cxrNotifySubscriptionMode) {
+    const parts: string[] = [];
+    if (typeof status.cxrCallbackApiEnabled === 'boolean') {
+      parts.push(`callbackApi=${status.cxrCallbackApiEnabled}`);
+    }
+    if (status.cxrNotifySubscriptionMode) {
+      parts.push(`notify=${status.cxrNotifySubscriptionMode}`);
+    }
+    lines.push(`CXR-L API: ${parts.join(' · ')}`);
+  }
+  if (typeof status.lastCustomViewPayloadBytes === 'number' || status.lastCustomViewPayloadHash) {
+    const parts: string[] = [];
+    if (typeof status.lastCustomViewPayloadBytes === 'number') {
+      parts.push(`bytes=${status.lastCustomViewPayloadBytes}`);
+    }
+    if (status.lastCustomViewPayloadHash) {
+      parts.push(`hash=${status.lastCustomViewPayloadHash}`);
+    }
+    lines.push(`CustomView payload: ${parts.join(' · ')}`);
+  }
+  if (status.lastCustomViewPayloadShape) {
+    lines.push(`CustomView shape: ${status.lastCustomViewPayloadShape}`);
+  }
+  if (status.lastCustomViewRawNotify) {
+    const at = status.lastCustomViewRawNotifyAt ? ` · ${status.lastCustomViewRawNotifyAt}` : '';
+    lines.push(`CustomView raw: ${status.lastCustomViewRawNotify}${at}`);
+  }
+  if (status.lastCustomViewOpenError) {
+    lines.push(`CustomView error: ${status.lastCustomViewOpenError}`);
+  }
+  if (
+    typeof status.lastCustomViewOpenCallbackSuccess === 'boolean'
+    || status.lastCustomViewOpenCallbackErrorCode
+  ) {
+    const parts: string[] = [];
+    if (typeof status.lastCustomViewOpenCallbackSuccess === 'boolean') {
+      parts.push(`success=${status.lastCustomViewOpenCallbackSuccess}`);
+    }
+    if (status.lastCustomViewOpenCallbackErrorCode) {
+      parts.push(`errorCode=${status.lastCustomViewOpenCallbackErrorCode}`);
+    }
+    if (status.lastCustomViewOpenCallbackAt) {
+      parts.push(status.lastCustomViewOpenCallbackAt);
+    }
+    lines.push(`CustomView callback: ${parts.join(' · ')}`);
+  }
   if (Array.isArray(status.acceptedCallbackSchemes) && status.acceptedCallbackSchemes.length > 0) {
     const parts = [`accepted=${status.acceptedCallbackSchemes.join(', ')}`];
     if (status.callbackScheme) {

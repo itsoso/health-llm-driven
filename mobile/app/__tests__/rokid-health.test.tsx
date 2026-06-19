@@ -327,6 +327,52 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('shows CustomView payload and raw notify diagnostics for iOS open failures', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      cxrCallbackApiEnabled: true,
+      cxrNotifySubscriptionMode: 'setNotifyEventListenCmds',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewPayloadBytes: 944,
+      lastCustomViewPayloadHash: 'fnv1a64:abc123',
+      lastCustomViewPayloadShape: 'root=LinearLayout; props=backgroundColor,gravity; children=3:TextView,TextView,TextView',
+      lastCustomViewRawNotify: 'Custom_View_Open_Failed reason=invalid_layout',
+      lastCustomViewRawNotifyAt: '2026-06-19T06:31:55Z',
+      lastCustomViewOpenError: 'Custom_View_Open_Failed reason=invalid_layout',
+      lastCustomViewOpenCallbackSuccess: false,
+      lastCustomViewOpenCallbackErrorCode: 'invalid_layout',
+      lastCustomViewOpenCallbackAt: '2026-06-19T06:31:56Z',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('CXR-L API: callbackApi=true · notify=setNotifyEventListenCmds')).toBeTruthy();
+      expect(screen.getByText('CustomView payload: bytes=944 · hash=fnv1a64:abc123')).toBeTruthy();
+      expect(screen.getByText('CustomView shape: root=LinearLayout; props=backgroundColor,gravity; children=3:TextView,TextView,TextView')).toBeTruthy();
+      expect(screen.getByText('CustomView raw: Custom_View_Open_Failed reason=invalid_layout · 2026-06-19T06:31:55Z')).toBeTruthy();
+      expect(screen.getByText('CustomView error: Custom_View_Open_Failed reason=invalid_layout')).toBeTruthy();
+      expect(screen.getByText('CustomView callback: success=false · errorCode=invalid_layout · 2026-06-19T06:31:56Z')).toBeTruthy();
+    });
+  });
+
   it('treats delayed iOS Rokid callback state as authorization success', async () => {
     mockGetRokidIntegrationStatus
       .mockResolvedValueOnce({

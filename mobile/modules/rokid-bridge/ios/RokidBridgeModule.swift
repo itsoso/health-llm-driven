@@ -12,6 +12,10 @@ import RGCoreKit
 #endif
 
 public class RokidBridgeModule: Module {
+  private final class PromiseResolutionState {
+    var resolved = false
+  }
+
   private static let companionAppName = "Rokid AI / Hi Rokid"
   private static let companionServerScheme = "rokidai"
   private static let companionServerHost = "connect"
@@ -41,6 +45,17 @@ public class RokidBridgeModule: Module {
   private static var lastOpenUrlFingerprint: String?
   private static var lastOpenUrlAt: String?
   private static var lastOpenUrlExpectedAuthCallback: Bool?
+  private static var lastCustomViewPayloadHash: String?
+  private static var lastCustomViewPayloadShape: String?
+  private static var lastCustomViewPayloadBytes: Int?
+  private static var lastCustomViewCommandAt: String?
+  private static var lastCustomViewRawNotify: String?
+  private static var lastCustomViewRawNotifyAt: String?
+  private static var lastCustomViewOpenError: String?
+  private static var lastCustomViewOpenCallbackSuccess: Bool?
+  private static var lastCustomViewOpenCallbackErrorCode: String?
+  private static var lastCustomViewOpenCallbackAt: String?
+  private static let customViewOpenSettleDelaySeconds: TimeInterval = 2.0
   private static let authDiagnosticTimelineLimit = 40
   private static var authDiagnosticTimeline: [String] = []
   private static var authorizationAttemptCount = 0
@@ -183,6 +198,8 @@ public class RokidBridgeModule: Module {
     payload["sdkLinked"] = sdkLinked()
     payload["iosSdkDependencyMode"] = sdkDependencyMode()
     payload["iosSdkCompatibility"] = "CXR-L iOS public sample uses RGCxrClient 1.0.1; 1.0.2 requires Rokid specs source"
+    payload["cxrCallbackApiEnabled"] = cxrCallbackApiEnabled()
+    payload["cxrNotifySubscriptionMode"] = cxrNotifySubscriptionMode()
     payload["sessionMode"] = "customView"
     payload["authorizationState"] = authorizationState()
     payload["authorizationRequestTimeoutSeconds"] = authorizationRequestTimeoutSeconds
@@ -193,6 +210,36 @@ public class RokidBridgeModule: Module {
     payload["customViewRunning"] = isCustomViewRunning()
     payload["capabilitiesReady"] = capabilitiesReady()
     payload["customAppSupported"] = sdkLinked()
+    if let lastCustomViewPayloadHash {
+      payload["lastCustomViewPayloadHash"] = lastCustomViewPayloadHash
+    }
+    if let lastCustomViewPayloadShape {
+      payload["lastCustomViewPayloadShape"] = lastCustomViewPayloadShape
+    }
+    if let lastCustomViewPayloadBytes {
+      payload["lastCustomViewPayloadBytes"] = lastCustomViewPayloadBytes
+    }
+    if let lastCustomViewCommandAt {
+      payload["lastCustomViewCommandAt"] = lastCustomViewCommandAt
+    }
+    if let lastCustomViewRawNotify {
+      payload["lastCustomViewRawNotify"] = lastCustomViewRawNotify
+    }
+    if let lastCustomViewRawNotifyAt {
+      payload["lastCustomViewRawNotifyAt"] = lastCustomViewRawNotifyAt
+    }
+    if let lastCustomViewOpenError {
+      payload["lastCustomViewOpenError"] = lastCustomViewOpenError
+    }
+    if let lastCustomViewOpenCallbackSuccess {
+      payload["lastCustomViewOpenCallbackSuccess"] = lastCustomViewOpenCallbackSuccess
+    }
+    if let lastCustomViewOpenCallbackErrorCode {
+      payload["lastCustomViewOpenCallbackErrorCode"] = lastCustomViewOpenCallbackErrorCode
+    }
+    if let lastCustomViewOpenCallbackAt {
+      payload["lastCustomViewOpenCallbackAt"] = lastCustomViewOpenCallbackAt
+    }
     payload["companionAppName"] = companionAppName
     payload["companionServerScheme"] = companionServerScheme
     payload["companionServerHost"] = companionServerHost
@@ -369,9 +416,10 @@ public class RokidBridgeModule: Module {
   private static func openCustomView(_ view: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
+    recordCustomViewPayload(view)
     recordAuthDiagnostic(
       "custom_view_open_requested",
-      detail: "authorized=\(CxrClient.shared.auth.isAuthenticated()); bleConnected=\(iosBleConnected()); bleDevice=\(iosBleDeviceName() ?? "unknown"); bytes=\(view.utf8.count); runningBefore=\(RokidBridgeModule.customViewRunning)"
+      detail: "authorized=\(CxrClient.shared.auth.isAuthenticated()); bleConnected=\(iosBleConnected()); bleDevice=\(iosBleDeviceName() ?? "unknown"); bytes=\(view.utf8.count); hash=\(lastCustomViewPayloadHash ?? "unknown"); shape=\(lastCustomViewPayloadShape ?? "unknown"); runningBefore=\(RokidBridgeModule.customViewRunning)"
     )
     guard CxrClient.shared.auth.isAuthenticated() else {
       recordAuthDiagnostic("custom_view_open_blocked", detail: "rokid_not_authorized")
@@ -379,12 +427,45 @@ public class RokidBridgeModule: Module {
       return
     }
 
+    let resolutionState = PromiseResolutionState()
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.openCustomView(view) { success, errorCode in
+      DispatchQueue.main.async {
+        lastCustomViewOpenCallbackSuccess = success
+        lastCustomViewOpenCallbackErrorCode = String(describing: errorCode)
+        lastCustomViewOpenCallbackAt = isoTimestamp()
+        if success {
+          RokidBridgeModule.customViewRunning = true
+          RokidBridgeModule.lastCustomViewOpenError = nil
+        } else {
+          RokidBridgeModule.customViewRunning = false
+          RokidBridgeModule.lastCustomViewOpenError = "open_callback_error_code=\(String(describing: errorCode))"
+        }
+        recordAuthDiagnostic(
+          "custom_view_open_callback",
+          detail: "success=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning)"
+        )
+        resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: true)
+      }
+    }
+    #else
     CxrClient.shared.openCustomView(view)
+    #endif
     recordAuthDiagnostic(
       "custom_view_open_invoked",
       detail: "bleConnected=\(iosBleConnected()); runningAfterInvoke=\(RokidBridgeModule.customViewRunning); waitingForRunningEvent=\(!RokidBridgeModule.customViewRunning)"
     )
-    promise.resolve(customViewCommandPayload(commandAccepted: true))
+    if RokidBridgeModule.customViewRunning {
+      resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: true)
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + customViewOpenSettleDelaySeconds) {
+      recordAuthDiagnostic(
+        "custom_view_open_settled",
+        detail: "running=\(RokidBridgeModule.customViewRunning); rawNotify=\(lastCustomViewRawNotify ?? "none"); openError=\(lastCustomViewOpenError ?? "none")"
+      )
+      resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: true)
+    }
     #else
     _ = view
     promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
@@ -639,8 +720,50 @@ public class RokidBridgeModule: Module {
     if let bleDeviceName = iosBleDeviceName() {
       response["iosBleDeviceName"] = bleDeviceName
     }
+    if let lastCustomViewPayloadHash {
+      response["lastCustomViewPayloadHash"] = lastCustomViewPayloadHash
+    }
+    if let lastCustomViewPayloadShape {
+      response["lastCustomViewPayloadShape"] = lastCustomViewPayloadShape
+    }
+    if let lastCustomViewPayloadBytes {
+      response["lastCustomViewPayloadBytes"] = lastCustomViewPayloadBytes
+    }
+    if let lastCustomViewCommandAt {
+      response["lastCustomViewCommandAt"] = lastCustomViewCommandAt
+    }
+    if let lastCustomViewRawNotify {
+      response["lastCustomViewRawNotify"] = lastCustomViewRawNotify
+    }
+    if let lastCustomViewRawNotifyAt {
+      response["lastCustomViewRawNotifyAt"] = lastCustomViewRawNotifyAt
+    }
+    if let lastCustomViewOpenError {
+      response["lastCustomViewOpenError"] = lastCustomViewOpenError
+    }
+    if let lastCustomViewOpenCallbackSuccess {
+      response["lastCustomViewOpenCallbackSuccess"] = lastCustomViewOpenCallbackSuccess
+    }
+    if let lastCustomViewOpenCallbackErrorCode {
+      response["lastCustomViewOpenCallbackErrorCode"] = lastCustomViewOpenCallbackErrorCode
+    }
+    if let lastCustomViewOpenCallbackAt {
+      response["lastCustomViewOpenCallbackAt"] = lastCustomViewOpenCallbackAt
+    }
     response["pendingSessionEvent"] = commandAccepted && !running
     return response
+  }
+
+  private static func resolveCustomViewOpenPromiseIfNeeded(
+    _ promise: Promise,
+    state: PromiseResolutionState,
+    commandAccepted: Bool
+  ) {
+    guard !state.resolved else {
+      return
+    }
+    state.resolved = true
+    promise.resolve(customViewCommandPayload(commandAccepted: commandAccepted))
   }
 
   #if canImport(RGCxrClient)
@@ -797,9 +920,56 @@ public class RokidBridgeModule: Module {
   }
 
   private static func sanitizeAuthDiagnosticDetail(_ detail: String) -> String {
-    detail
+    let sanitized = detail
       .replacingOccurrences(of: "\n", with: " ")
       .replacingOccurrences(of: "\r", with: " ")
+    if sanitized.count <= 480 {
+      return sanitized
+    }
+    return "\(sanitized.prefix(480))..."
+  }
+
+  private static func recordCustomViewPayload(_ view: String) {
+    lastCustomViewPayloadBytes = view.utf8.count
+    lastCustomViewPayloadHash = fnv1a64Hex(view)
+    lastCustomViewPayloadShape = customViewPayloadShape(view)
+    lastCustomViewCommandAt = isoTimestamp()
+    lastCustomViewOpenError = nil
+    lastCustomViewOpenCallbackSuccess = nil
+    lastCustomViewOpenCallbackErrorCode = nil
+    lastCustomViewOpenCallbackAt = nil
+  }
+
+  private static func fnv1a64Hex(_ value: String) -> String {
+    var hash: UInt64 = 0xcbf29ce484222325
+    for byte in value.utf8 {
+      hash = (hash ^ UInt64(byte)) &* 0x100000001b3
+    }
+    return String(format: "fnv1a64:%016llx", hash)
+  }
+
+  private static func customViewPayloadShape(_ view: String) -> String {
+    guard let data = view.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data),
+      let root = object as? [String: Any] else {
+      return "invalid_json"
+    }
+    let rootType = root["type"] as? String ?? "unknown"
+    let propKeys = (root["props"] as? [String: Any])?.keys.sorted().joined(separator: ",") ?? "none"
+    let children = root["children"] as? [[String: Any]] ?? []
+    let childTypes = children.compactMap { $0["type"] as? String }.joined(separator: ",")
+    let childIds = children.compactMap { child -> String? in
+      (child["props"] as? [String: Any])?["id"] as? String
+    }.joined(separator: ",")
+    var parts = [
+      "root=\(rootType)",
+      "props=\(propKeys)",
+      "children=\(children.count):\(childTypes.isEmpty ? "none" : childTypes)",
+    ]
+    if !childIds.isEmpty {
+      parts.append("ids=\(childIds)")
+    }
+    return parts.joined(separator: "; ")
   }
 
   private static func recordAuthorizationError(_ error: Error) {
@@ -879,6 +1049,7 @@ public class RokidBridgeModule: Module {
         RokidBridgeModule.recordAuthDiagnostic("custom_view_event", detail: "isRunning=\(event.isRunning)")
       }
       .store(in: &RokidBridgeModule.cancellables)
+    configureCustomViewNotifySubscription()
     CxrClient.shared.auth.eventPublisher
       .receive(on: DispatchQueue.main)
       .sink { event in
@@ -897,10 +1068,57 @@ public class RokidBridgeModule: Module {
         )
       }
       .store(in: &RokidBridgeModule.cancellables)
+    RGCxrClientBLE.shared.notifyPublisher
+      .receive(on: DispatchQueue.main)
+      .sink { notify in
+        RokidBridgeModule.handleCustomViewNotify(notify)
+      }
+      .store(in: &RokidBridgeModule.cancellables)
     #endif
   }
 
   #if canImport(RGCxrClient)
+  private static func configureCustomViewNotifySubscription() {
+    #if ROKID_CXRL_CALLBACK_API
+    let commands = [
+      RGCxrSubCmd.Custom_View_Opened.rawValue,
+      RGCxrSubCmd.Custom_View_Open_Failed.rawValue,
+      RGCxrSubCmd.Custom_View_Updated.rawValue,
+      RGCxrSubCmd.Custom_View_Closed.rawValue,
+    ]
+    CxrClient.shared.setNotifyEventListenCmds(commands)
+    recordAuthDiagnostic("custom_view_notify_subscription", detail: "mode=setNotifyEventListenCmds; commands=\(commands.joined(separator: ","))")
+    #else
+    recordAuthDiagnostic("custom_view_notify_subscription", detail: "mode=legacy_notify_publisher_only")
+    #endif
+  }
+
+  private static func handleCustomViewNotify(_ notify: String) {
+    let cleanNotify = sanitizeAuthDiagnosticDetail(notify)
+    guard isCustomViewNotify(cleanNotify) else {
+      return
+    }
+    lastCustomViewRawNotify = cleanNotify
+    lastCustomViewRawNotifyAt = isoTimestamp()
+
+    let normalized = cleanNotify.lowercased()
+    if normalized.contains("custom_view_opened") {
+      customViewRunning = true
+      lastCustomViewOpenError = nil
+    } else if normalized.contains("custom_view_open_failed") {
+      customViewRunning = false
+      lastCustomViewOpenError = cleanNotify
+    } else if normalized.contains("custom_view_closed") || normalized.contains("close_custom_view") {
+      customViewRunning = false
+    }
+    recordAuthDiagnostic("custom_view_notify", detail: cleanNotify)
+  }
+
+  private static func isCustomViewNotify(_ notify: String) -> Bool {
+    let normalized = notify.lowercased()
+    return normalized.contains("custom_view") || normalized.contains("customview")
+  }
+
   private static func handleAuthorizationEvent(_ event: RGCxrClientAuthEvent) {
     switch event {
     case .stateChanged(let state):
@@ -964,6 +1182,24 @@ public class RokidBridgeModule: Module {
     return "requested_but_unlinked"
     #else
     return "opt_in_disabled"
+    #endif
+  }
+
+  private static func cxrCallbackApiEnabled() -> Bool {
+    #if ROKID_CXRL_CALLBACK_API
+    return true
+    #else
+    return false
+    #endif
+  }
+
+  private static func cxrNotifySubscriptionMode() -> String {
+    #if ROKID_CXRL_CALLBACK_API
+    return "setNotifyEventListenCmds"
+    #elseif canImport(RGCxrClient)
+    return "legacy_notify_publisher_only"
+    #else
+    return "unavailable"
     #endif
   }
 

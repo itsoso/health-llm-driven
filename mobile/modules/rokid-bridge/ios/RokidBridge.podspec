@@ -7,6 +7,10 @@ Pod::Spec.new do |s|
   )
   rokid_ios_client_version = ENV['ROKID_IOS_CLIENT_VERSION'].to_s.strip
   rokid_ios_client_version = '1.0.1' if rokid_ios_client_version.empty?
+  rokid_ios_client_framework_path = ENV['ROKID_IOS_CLIENT_FRAMEWORK_PATH'].to_s.strip
+  rokid_ios_client_has_callback_api = ['1', 'true', 'yes'].include?(
+    ENV['ROKID_IOS_CLIENT_HAS_CALLBACK_API'].to_s.downcase
+  )
   swift_flags = ['$(inherited)']
 
   s.name           = 'RokidBridge'
@@ -22,8 +26,16 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
 
   if rokid_ios_sdk_enabled && !rokid_ios_simulator
-    s.dependency 'RGCxrClient', rokid_ios_client_version
+    if !rokid_ios_client_framework_path.empty?
+      s.vendored_frameworks = rokid_ios_client_framework_path
+      s.dependency 'RGCoreKit', '0.0.2'
+    else
+      s.dependency 'RGCxrClient', rokid_ios_client_version
+    end
     swift_flags << '-D' << 'ROKID_IOS_SDK_REQUESTED'
+    if rokid_ios_client_has_callback_api
+      swift_flags << '-D' << 'ROKID_CXRL_CALLBACK_API'
+    end
   elsif rokid_ios_sdk_enabled && rokid_ios_simulator
     swift_flags << '-D' << 'ROKID_IOS_SIMULATOR_EXCLUDED'
   end
