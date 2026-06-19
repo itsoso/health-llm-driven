@@ -7117,6 +7117,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/watch/workday/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Workday Plan
+         * @description 显式生成/刷新今天的工作日微运动协议。
+         *
+         *     v0 不接位置/日历;调用方可以是 Watch 打开、Mobile 到公司事件或后续定时任务。
+         *     幂等:同一 slot 不重复创建协议。
+         */
+        post: operations["generate_workday_plan_api_v1_watch_workday_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watch/actions/{action_id}/complete": {
         parameters: {
             query?: never;
@@ -7265,6 +7288,233 @@ export interface paths {
          * @description 忽略一个写意图(标记 dismissed,不执行)。不存在/非本人 → 404。
          */
         post: operations["dismiss_write_intent_api_v1_write_intents__intent_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedule/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Schedule
+         * @description 当日时点日程:{scheduled, rejected, deferred}。
+         *
+         *     读活跃 medications + user_profile(作息 + 上下班),按硬约束(药代/螯合/餐锚/昼夜/静默窗/
+         *     工作窗)确定性求解。浮动项避开工作时段;锚点药/补剂/餐不受工作窗影响。
+         *
+         *     disclaimer 随响应一起带出 hedge —— 即使将来 Watch 等别的客户端先消费本端点、还没接上
+         *     展示层措辞,时点也不会以「处方」面目出现(safety review 建议:hedge 跟数据走)。
+         */
+        get: operations["get_today_schedule_api_v1_schedule_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fitness/weekly-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Weekly Plan
+         * @description 本周已有计划则返回,否则从 twin 生成新提议(status=proposed)。
+         */
+        get: operations["get_weekly_plan_api_v1_fitness_weekly_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fitness/weekly-plan/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Weekly Plan
+         * @description T2 一键确认 → 排程(幂等:确认两次不重复排程)。
+         */
+        post: operations["confirm_weekly_plan_api_v1_fitness_weekly_plan_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fitness/weekly-plan/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Weekly Plan */
+        post: operations["dismiss_weekly_plan_api_v1_fitness_weekly_plan_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fitness/exercise-guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Exercise Guide
+         * @description 浏览动作图文指导列表(key + name)。
+         */
+        get: operations["list_exercise_guide_api_v1_fitness_exercise_guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fitness/exercise-guide/{exercise_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Exercise Guide Detail
+         * @description 单个动作完整图文条目;未知 key → 404。
+         */
+        get: operations["get_exercise_guide_detail_api_v1_fitness_exercise_guide__exercise_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/calendar/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 保存 CalDAV 凭据(加密) */
+        put: operations["put_credentials_api_v1_calendar_credentials_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/calendar/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 立即同步所有源(窗口明细) */
+        post: operations["post_sync_api_v1_calendar_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/calendar/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出用户的日历源(不含凭据) */
+        get: operations["list_sources_api_v1_calendar_sources_get"];
+        put?: never;
+        /** 新增日历源(加密凭据) */
+        post: operations["create_source_api_v1_calendar_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/calendar/sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 改名/启停日历源 */
+        put: operations["update_source_api_v1_calendar_sources__source_id__put"];
+        post?: never;
+        /** 删除日历源及其事件 */
+        delete: operations["delete_source_api_v1_calendar_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/calendar/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取本人日历事件明细(解密) */
+        get: operations["get_events_api_v1_calendar_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/calendar/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 日历连接状态 */
+        get: operations["get_status_api_v1_calendar_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14274,6 +14524,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/rokid/pushup-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Rokid Pushup Session */
+        post: operations["create_rokid_pushup_session_api_v1_devices_rokid_pushup_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/rokid/pushup-sessions/{session_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rokid Pushup Events */
+        get: operations["list_rokid_pushup_events_api_v1_devices_rokid_pushup_sessions__session_id__events_get"];
+        put?: never;
+        /** Ingest Rokid Pushup Event */
+        post: operations["ingest_rokid_pushup_event_api_v1_devices_rokid_pushup_sessions__session_id__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/rokid/pushup-sessions/{session_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish Rokid Pushup Session */
+        post: operations["finish_rokid_pushup_session_api_v1_devices_rokid_pushup_sessions__session_id__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/environment/weather": {
         parameters: {
             query?: never;
@@ -15471,6 +15773,69 @@ export interface paths {
          */
         post: operations["upload_genetic_txt_api_v1_genetic_profiles_upload_txt_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/profiles/{profile_id}/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 对已存原始基因型按最新白名单重解析，无需重传
+         * @description 白名单扩展(如新增 PEMT)后, 用已加密保留的原始全量基因型重新匹配, 只新增未解析过的位点.
+         */
+        post: operations["reparse_genetic_profile_api_v1_genetic_profiles__profile_id__reparse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/profiles/{profile_id}/raw-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查任意位点/基因的原始基因型(含白名单外)
+         * @description 从 per-tenant 加密的原始全量基因型里查任意位点/基因. 属主校验防 IDOR + 写审计.
+         */
+        get: operations["raw_lookup_genetic_profile_api_v1_genetic_profiles__profile_id__raw_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genetic/profiles/{profile_id}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 删除原始基因数据(被遗忘权)
+         * @description 真删除该档案的原始基因密文(硬清 ciphertext, 不可逆)+ 标 deleted_at + 写审计. 属主校验防 IDOR.
+         *
+         *     安全评审 required: 不做软删占位 —— 直接清空密文使数据**真正不可还原**(被遗忘权),
+         *     仅保留审计元数据(谁/何时删, 不含基因型)。deleted_at 同时让读路径过滤。
+         */
+        delete: operations["delete_genetic_raw_api_v1_genetic_profiles__profile_id__raw_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -18235,6 +18600,21 @@ export interface components {
              */
             category: string;
         };
+        /** CalDAVCredentialIn */
+        CalDAVCredentialIn: {
+            /**
+             * Url
+             * @description CalDAV 服务地址(必须 https)
+             */
+            url: string;
+            /** Username */
+            username: string;
+            /**
+             * Password
+             * @description 应用专用密码(非主密码)
+             */
+            password: string;
+        };
         /** CaptureOut */
         CaptureOut: {
             /**
@@ -19078,6 +19458,20 @@ export interface components {
             object_type: string;
             /** Object Id */
             object_id: number;
+        };
+        /** ConfirmIn */
+        ConfirmIn: {
+            /** Plan Id */
+            plan_id: number;
+        };
+        /** ConfirmOut */
+        ConfirmOut: {
+            /** Confirmed */
+            confirmed: boolean;
+            /** Plan Id */
+            plan_id: number;
+            /** Scheduled Count */
+            scheduled_count: number;
         };
         /** ConnectionCheckinBody */
         ConnectionCheckinBody: {
@@ -19996,6 +20390,18 @@ export interface components {
              */
             records: components["schemas"]["WaterRecordResponse"][];
         };
+        /** DayOut */
+        DayOut: {
+            /** Date */
+            date: string;
+            /** Weekday */
+            weekday: string;
+            /** Day Type */
+            day_type: string;
+            workout?: components["schemas"]["WorkoutOut"] | null;
+            /** Rationale */
+            rationale: string;
+        };
         /**
          * DeleteBySourceInput
          * @description 按来源删除
@@ -20117,14 +20523,14 @@ export interface components {
              * @default 0
              */
             ai_recognized: number | null;
+            /** Ai Confidence */
+            ai_confidence?: number | null;
             /** Health Tips */
             health_tips?: string | null;
             /** Id */
             id: number;
             /** User Id */
             user_id: number;
-            /** Ai Confidence */
-            ai_confidence?: number | null;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -20298,6 +20704,11 @@ export interface components {
             follow_up_notes: string | null;
             /** Notes */
             notes: string | null;
+        };
+        /** DismissOut */
+        DismissOut: {
+            /** Dismissed */
+            dismissed: boolean;
         };
         /** DoctorFeedbackIn */
         DoctorFeedbackIn: {
@@ -20821,6 +21232,33 @@ export interface components {
             blood_count: number;
             /** Daily Summary */
             daily_summary?: components["schemas"]["ExcretionDailySummary"][];
+        };
+        /** ExerciseDetailOut */
+        ExerciseDetailOut: {
+            /** Exercise Key */
+            exercise_key: string;
+            /** Name */
+            name: string;
+            /** Steps */
+            steps: string[];
+            /** Common Mistakes */
+            common_mistakes: string[];
+            /** Injury Red Lines */
+            injury_red_lines: string[];
+            /** Safety Note */
+            safety_note: string;
+        };
+        /** ExerciseListItem */
+        ExerciseListItem: {
+            /** Exercise Key */
+            exercise_key: string;
+            /** Name */
+            name: string;
+        };
+        /** ExerciseListOut */
+        ExerciseListOut: {
+            /** Exercises */
+            exercises: components["schemas"]["ExerciseListItem"][];
         };
         /** ExerciseOut */
         ExerciseOut: {
@@ -21978,6 +22416,12 @@ export interface components {
             txt_content: string;
             /** Notes */
             notes?: string | null;
+            /**
+             * Retain Raw
+             * @description 加密保留原始全量基因型，支持任意基因查询/白名单扩展后重解析；最高隐私级
+             * @default true
+             */
+            retain_raw: boolean;
         };
         /** GlanceCardCreate */
         GlanceCardCreate: {
@@ -25626,6 +26070,141 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** RokidPushupEventCreate */
+        RokidPushupEventCreate: {
+            /** Event Type */
+            event_type: string;
+            /** Reps */
+            reps?: number | null;
+            /** Phase */
+            phase?: string | null;
+            /** Elbow Angle Deg */
+            elbow_angle_deg?: number | null;
+            /** Shoulder Hip Ankle Angle Deg */
+            shoulder_hip_ankle_angle_deg?: number | null;
+            /** Visibility */
+            visibility?: number | null;
+            /** Quality Score */
+            quality_score?: number | null;
+            /** Payload */
+            payload?: Record<string, never> | null;
+            /** Occurred At */
+            occurred_at?: string | null;
+        };
+        /** RokidPushupEventListResponse */
+        RokidPushupEventListResponse: {
+            /** Events */
+            events: components["schemas"]["RokidPushupEventResponse"][];
+        };
+        /** RokidPushupEventResponse */
+        RokidPushupEventResponse: {
+            /** Id */
+            id: number;
+            /** Session Id */
+            session_id: number;
+            /** User Id */
+            user_id: number;
+            /** Event Type */
+            event_type: string;
+            /** Reps */
+            reps: number | null;
+            /** Phase */
+            phase: string | null;
+            /** Elbow Angle Deg */
+            elbow_angle_deg: number | null;
+            /** Shoulder Hip Ankle Angle Deg */
+            shoulder_hip_ankle_angle_deg: number | null;
+            /** Visibility */
+            visibility: number | null;
+            /** Quality Score */
+            quality_score: number | null;
+            /** Payload */
+            payload: Record<string, never> | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** RokidPushupSessionCreate */
+        RokidPushupSessionCreate: {
+            /**
+             * Target Reps
+             * @default 20
+             */
+            target_reps: number;
+            /**
+             * Source Device
+             * @default rokid_glasses
+             */
+            source_device: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** RokidPushupSessionCreateResponse */
+        RokidPushupSessionCreateResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /** Status */
+            status: string;
+            /** Target Reps */
+            target_reps: number;
+            /** Source Device */
+            source_device: string;
+            /** Ingest Token */
+            ingest_token: string;
+            /** Ingest Url */
+            ingest_url: string;
+            /** Events Url */
+            events_url: string;
+            /** Open Url */
+            open_url: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** RokidPushupSessionFinishResponse */
+        RokidPushupSessionFinishResponse: {
+            session: components["schemas"]["RokidPushupSessionResponse"];
+        };
+        /** RokidPushupSessionResponse */
+        RokidPushupSessionResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /** Status */
+            status: string;
+            /** Target Reps */
+            target_reps: number;
+            /** Source Device */
+            source_device: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at: string | null;
+            /** Last Event At */
+            last_event_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
         /**
          * RoutePoint
          * @description GPS路线数据点
@@ -26018,6 +26597,37 @@ export interface components {
             avg_bedtime?: string | null;
             /** Avg Wake Time */
             avg_wake_time?: string | null;
+        };
+        /** SourceIn */
+        SourceIn: {
+            /**
+             * Provider
+             * @description caldav | ics
+             * @default caldav
+             */
+            provider: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color?: string | null;
+            /**
+             * Url
+             * @description 必须 https
+             */
+            url: string;
+            /** Username */
+            username?: string | null;
+            /** Password */
+            password?: string | null;
+        };
+        /** SourceUpdateIn */
+        SourceUpdateIn: {
+            /** Name */
+            name?: string | null;
+            /** Color */
+            color?: string | null;
+            /** Sync Enabled */
+            sync_enabled?: boolean | null;
         };
         /** SpO2NightSummary */
         SpO2NightSummary: {
@@ -27560,6 +28170,26 @@ export interface components {
              */
             sitting_hours_per_day?: number | null;
             /**
+             * Work Start Time
+             * @description 上班时间 HH:MM(时点日程避开工作窗)
+             */
+            work_start_time?: string | null;
+            /**
+             * Work End Time
+             * @description 下班时间 HH:MM
+             */
+            work_end_time?: string | null;
+            /**
+             * Workout Pref Window
+             * @description 锻炼偏好时段 morning/midday/evening/any(空=不排锻炼块)
+             */
+            workout_pref_window?: string | null;
+            /**
+             * Workout Target Minutes
+             * @description 目标锻炼时长(分钟),缺省 40
+             */
+            workout_target_minutes?: number | null;
+            /**
              * City
              * @description 所在城市
              */
@@ -27682,6 +28312,14 @@ export interface components {
             work_hours_per_day?: number | null;
             /** Sitting Hours Per Day */
             sitting_hours_per_day?: number | null;
+            /** Work Start Time */
+            work_start_time?: string | null;
+            /** Work End Time */
+            work_end_time?: string | null;
+            /** Workout Pref Window */
+            workout_pref_window?: string | null;
+            /** Workout Target Minutes */
+            workout_target_minutes?: number | null;
             /** City */
             city?: string | null;
             /** Timezone */
@@ -28344,6 +28982,25 @@ export interface components {
              */
             created_at: string;
         };
+        /** WeeklyPlanOut */
+        WeeklyPlanOut: {
+            /** Plan Id */
+            plan_id?: number | null;
+            /** Status */
+            status?: string | null;
+            /** Week Start */
+            week_start: string;
+            /** Goal */
+            goal: string;
+            /** Acwr */
+            acwr?: number | null;
+            /** Readiness Note */
+            readiness_note: string;
+            /** Days */
+            days: components["schemas"]["DayOut"][];
+            /** Disclaimer */
+            disclaimer: string;
+        };
         /** WeeklyPlanResponse */
         WeeklyPlanResponse: {
             /** Id */
@@ -28557,6 +29214,17 @@ export interface components {
             upper_bpm?: number | null;
             /** Seconds In Zone */
             seconds_in_zone: number;
+        };
+        /** WorkoutOut */
+        WorkoutOut: {
+            /** Name */
+            name: string;
+            /** Exercise Key */
+            exercise_key: string;
+            /** Duration Min */
+            duration_min: number;
+            /** Intensity Note */
+            intensity_note: string;
         };
         /**
          * WorkoutRecordCreate
@@ -29011,6 +29679,8 @@ export interface components {
              * @default 0
              */
             ai_recognized: number | null;
+            /** Ai Confidence */
+            ai_confidence?: number | null;
             /** Health Tips */
             health_tips?: string | null;
             /** User Id */
@@ -40675,6 +41345,26 @@ export interface operations {
             };
         };
     };
+    generate_workday_plan_api_v1_watch_workday_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     complete_action_api_v1_watch_actions__action_id__complete_post: {
         parameters: {
             query?: never;
@@ -40887,6 +41577,387 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_schedule_api_v1_schedule_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_weekly_plan_api_v1_fitness_weekly_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeeklyPlanOut"];
+                };
+            };
+        };
+    };
+    confirm_weekly_plan_api_v1_fitness_weekly_plan_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_weekly_plan_api_v1_fitness_weekly_plan_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_exercise_guide_api_v1_fitness_exercise_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExerciseListOut"];
+                };
+            };
+        };
+    };
+    get_exercise_guide_detail_api_v1_fitness_exercise_guide__exercise_key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exercise_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExerciseDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_credentials_api_v1_calendar_credentials_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalDAVCredentialIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_sync_api_v1_calendar_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_sources_api_v1_calendar_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_source_api_v1_calendar_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_source_api_v1_calendar_sources__source_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_api_v1_calendar_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_events_api_v1_calendar_events_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_v1_calendar_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -51841,6 +52912,141 @@ export interface operations {
             };
         };
     };
+    create_rokid_pushup_session_api_v1_devices_rokid_pushup_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RokidPushupSessionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidPushupSessionCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rokid_pushup_events_api_v1_devices_rokid_pushup_sessions__session_id__events_get: {
+        parameters: {
+            query?: {
+                after_id?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidPushupEventListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_rokid_pushup_event_api_v1_devices_rokid_pushup_sessions__session_id__events_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Reva-Rokid-Session-Token"?: string | null;
+            };
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RokidPushupEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidPushupEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_rokid_pushup_session_api_v1_devices_rokid_pushup_sessions__session_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidPushupSessionFinishResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_weather_api_v1_environment_weather_get: {
         parameters: {
             query?: {
@@ -53705,6 +54911,104 @@ export interface operations {
                 "application/json": components["schemas"]["GeneticTxtUploadRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reparse_genetic_profile_api_v1_genetic_profiles__profile_id__reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    raw_lookup_genetic_profile_api_v1_genetic_profiles__profile_id__raw_lookup_get: {
+        parameters: {
+            query?: {
+                /** @description 按 rsID 直查(含白名单外) */
+                rsid?: string | null;
+                /** @description 按基因名查(用内置 _GENE_RSIDS 映射) */
+                gene?: string | null;
+            };
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_genetic_raw_api_v1_genetic_profiles__profile_id__raw_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
