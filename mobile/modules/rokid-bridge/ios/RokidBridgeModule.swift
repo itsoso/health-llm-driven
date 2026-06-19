@@ -1095,7 +1095,26 @@ public class RokidBridgeModule: Module {
   private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
     if !RokidBridgeModule.didInitializeCustomView {
+      #if ROKID_CXRL_CALLBACK_API
+      // 刷新框架强制要求先 CxrClient.initialize 再 auth/openCustomView, 否则真实 SDK
+      // 报 RGCxrClientAuthError Code=-2 "SDK 未初始化"。Reva 用 CustomView 模式, 参照官方
+      // ios_cxr_l_sample 的 AppDelegate: CxrClient.initialize(mode: .customView, options:
+      // .init(appDisplayName: nil, pageName: nil))。旧 client 无此 API, 保留 legacy 分支。
+      let outcome = CxrClient.initialize(
+        mode: .customView,
+        options: RGCxrClientInitializationOptions(appDisplayName: nil, pageName: nil)
+      )
+      switch outcome {
+      case .success:
+        RokidBridgeModule.cxrInitializationOutcome = "initialized_custom_view"
+      case .failureAlreadyInitialized:
+        RokidBridgeModule.cxrInitializationOutcome = "already_initialized"
+      @unknown default:
+        RokidBridgeModule.cxrInitializationOutcome = "initialize_unknown_outcome"
+      }
+      #else
       RokidBridgeModule.cxrInitializationOutcome = "legacy_client_no_initialize_api"
+      #endif
       RokidBridgeModule.didInitializeCustomView = true
     }
     configureAuthentication()
