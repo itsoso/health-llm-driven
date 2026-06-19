@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from app.models.calendar_sync import (
-    CalendarBusyBlock, CalendarCredential, CalendarEvent, CalendarSource,
+    CalendarCredential, CalendarEvent, CalendarSource,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,53 +125,6 @@ def _fetch_events(url: str, username: str, password: str, day: date) -> List[Tup
                 continue  # 全天事件:无时间块,跳过
             out.append((s, e, str(comp.get("uid") or ""), str(comp.get("summary") or "")))
     return out
-
-
-def sync_today(db: Session, user_id: int) -> dict:
-    """同步今日忙碌块。无凭据→跳过;连接/解析失败→记 last_error 并抛(fail loud)。"""
-    cred = (
-        db.query(CalendarCredential)
-        .filter(CalendarCredential.user_id == user_id, CalendarCredential.sync_enabled.is_(True))
-        .first()
-    )
-    if cred is None:
-        return {"synced": 0, "skipped": "no_credential"}
-    c = cred.get_credentials()
-    if not c.get("url"):
-        return {"synced": 0, "skipped": "no_url"}
-
-    today = _china_today()
-    try:
-        events = _fetch_events(c["url"], c.get("username", ""), c.get("password", ""), today)
-    except Exception as e:  # fail loud — 不假装同步成功
-        cred.last_error = _scrub_error(e)
-        db.commit()
-        logger.warning("[caldav] user=%s 同步失败: %s", user_id, e)
-        raise
-
-    # 全量替换今天的 caldav 块(删已取消事件 + 幂等)
-    db.query(CalendarBusyBlock).filter(
-        CalendarBusyBlock.user_id == user_id,
-        CalendarBusyBlock.event_date == today,
-        CalendarBusyBlock.source == "caldav",
-    ).delete(synchronize_session=False)
-
-    n = 0
-    for s, e, uid, title in events:
-        sm, em = _hhmm(s), _hhmm(e)
-        if sm >= em:  # 跨午夜/零长 → solver 的 bs<be 守卫也会丢,这里先不存
-            continue
-        blk = CalendarBusyBlock(
-            user_id=user_id, event_date=today, start_time=sm, end_time=em,
-            external_uid=(uid or None), source="caldav",
-        )
-        blk.set_title(title)
-        db.add(blk)
-        n += 1
-    cred.last_sync_at = datetime.now(_BEIJING)
-    cred.last_error = None
-    db.commit()
-    return {"synced": n}
 
 
 def today_busy_blocks(db: Session, user_id: int) -> List[Tuple[str, str]]:
