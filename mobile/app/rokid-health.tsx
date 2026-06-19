@@ -321,8 +321,18 @@ export default function RokidHealthScreen() {
       if (result.ok === false) {
         throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_custom_view_failed');
       }
-      setSessionState({ status: 'ready', message: 'Reva 眼镜视图已打开' });
-      await statusQuery.refetch();
+      const refreshed = await statusQuery.refetch();
+      const customViewRunning =
+        result.customViewRunning === true ||
+        refreshed.data?.customViewRunning === true;
+      if (customViewRunning) {
+        setSessionState({ status: 'ready', message: 'Reva 眼镜视图已运行' });
+        return;
+      }
+      setSessionState({
+        status: 'waiting',
+        message: 'Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。',
+      });
     } catch (error) {
       setSessionState({
         status: 'failed',

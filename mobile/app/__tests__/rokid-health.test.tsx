@@ -250,6 +250,53 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('does not mark CustomView ready until the iOS running event is observed', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: true,
+      customViewCommandAccepted: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      pendingSessionEvent: true,
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('已授权')).toBeTruthy();
+      expect(screen.getByText('CustomView 未运行')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。')).toBeTruthy();
+      expect(screen.queryByText('Reva 眼镜视图已打开')).toBeNull();
+      expect(screen.queryByText('Reva 眼镜视图已运行')).toBeNull();
+    });
+  });
+
   it('treats delayed iOS Rokid callback state as authorization success', async () => {
     mockGetRokidIntegrationStatus
       .mockResolvedValueOnce({
