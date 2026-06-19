@@ -471,11 +471,28 @@ public class RokidBridgeModule: Module {
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
-    let bleConnectedBeforeOpen = iosBleConnected()
+    // 实证回归修复(EAS build #158 ab0674de 有此 guard → 眼镜可"连上等待命令";
+    // #159 8db5fa54 删除后眼镜不再渲染、rawNotify=none)。openCustomView 只能在 BLE 真就绪时
+    // 发给 SDK —— 过早发会让眼镜进坏状态、之后连上也不渲染。pendingCustomViewPayload 已在上方
+    // 设好,connectionStatePublisher 连上时自动重发,所以阻断不影响 hand-off。
     let bleDeviceNameBeforeOpen = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
+    guard iosBleConnected() else {
+      let reason = "rokid_glasses_ble_not_connected"
+      RokidBridgeModule.lastCustomViewOpenError = "\(reason); device=\(bleDeviceNameBeforeOpen); pending_retry_on_ble_connect"
+      recordAuthDiagnostic(
+        "custom_view_open_blocked",
+        detail: "rokid_glasses_ble_not_connected; device=\(bleDeviceNameBeforeOpen); authorized=true; pendingRetry=true"
+      )
+      var response = customViewCommandPayload(commandAccepted: false)
+      response["reason"] = reason
+      response["iosBleConnected"] = false
+      response["iosBleDeviceName"] = bleDeviceNameBeforeOpen
+      promise.resolve(response)
+      return
+    }
     recordAuthDiagnostic(
       "custom_view_ble_preflight",
-      detail: "connected=\(bleConnectedBeforeOpen); device=\(bleDeviceNameBeforeOpen); action=attempt_sdk_open"
+      detail: "connected=true; device=\(bleDeviceNameBeforeOpen); action=attempt_sdk_open"
     )
 
     let resolutionState = PromiseResolutionState()

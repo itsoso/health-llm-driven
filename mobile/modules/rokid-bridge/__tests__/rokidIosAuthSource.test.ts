@@ -108,17 +108,22 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('"custom_view_open_invoked"');
   });
 
-  it('treats iOS BLE state as non-fatal CustomView diagnostics instead of a hard open gate', () => {
+  it('gates the CustomView SDK open on a live BLE link (restored after the #158->#159 regression), keeping pending auto-retry', () => {
     expect(source).toContain('rokid_glasses_ble_not_connected');
     expect(source).toContain('"custom_view_ble_preflight"');
+    // pending payload is stored BEFORE the guard so connectionStatePublisher can auto-retry once BLE connects
     expect(source).toContain('pendingCustomViewPayload = view');
     expect(source).toContain('retryPendingCustomViewAfterBleConnected()');
     expect(source).toContain('"custom_view_auto_retry"');
     expect(source).toContain('payload["customViewPendingRetry"]');
     expect(source).toContain('payload["lastCustomViewAutoRetryAt"]');
-    expect(source).not.toMatch(/guard iosBleConnected\(\) else \{[\s\S]+custom_view_open_blocked[\s\S]+rokid_glasses_ble_not_connected[\s\S]+promise\.resolve/);
-    expect(source).not.toMatch(/if !bleConnectedBeforeOpen \{[\s\S]+lastCustomViewOpenError = "rokid_glasses_ble_not_connected;[\s\S]+sdk_open_will_still_be_attempted[\s\S]+\}/);
-    expect(source).toMatch(/"custom_view_ble_preflight"[\s\S]+let resolutionState = PromiseResolutionState/);
+    // #158 worked WITH this guard; #159 removed it and the glasses stopped rendering.
+    // openCustomView must NOT reach the SDK while BLE is down — block, surface, and return.
+    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+custom_view_open_blocked[\s\S]+promise\.resolve[\s\S]+return/);
+    // the never-attempt-while-disconnected stopgap from #159 must be gone
+    expect(source).not.toMatch(/sdk_open_will_still_be_attempted/);
+    // the guard must sit before the SDK open path
+    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+let resolutionState = PromiseResolutionState/);
     expect(source).toMatch(/CxrClient\.shared\.openCustomView\(view\) \{ success, errorCode in/);
   });
 
