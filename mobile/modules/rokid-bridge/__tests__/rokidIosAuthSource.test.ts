@@ -108,17 +108,23 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('"custom_view_open_invoked"');
   });
 
-  it('treats iOS BLE state as CustomView diagnostics instead of a hard open gate', () => {
+  it('treats iOS BLE state as non-fatal CustomView diagnostics instead of a hard open gate', () => {
     expect(source).toContain('rokid_glasses_ble_not_connected');
     expect(source).toContain('"custom_view_ble_preflight"');
+    expect(source).toContain('pendingCustomViewPayload = view');
+    expect(source).toContain('retryPendingCustomViewAfterBleConnected()');
+    expect(source).toContain('"custom_view_auto_retry"');
+    expect(source).toContain('payload["customViewPendingRetry"]');
+    expect(source).toContain('payload["lastCustomViewAutoRetryAt"]');
     expect(source).not.toMatch(/guard iosBleConnected\(\) else \{[\s\S]+custom_view_open_blocked[\s\S]+rokid_glasses_ble_not_connected[\s\S]+promise\.resolve/);
+    expect(source).not.toMatch(/if !bleConnectedBeforeOpen \{[\s\S]+lastCustomViewOpenError = "rokid_glasses_ble_not_connected;[\s\S]+sdk_open_will_still_be_attempted[\s\S]+\}/);
     expect(source).toMatch(/"custom_view_ble_preflight"[\s\S]+let resolutionState = PromiseResolutionState/);
     expect(source).toMatch(/CxrClient\.shared\.openCustomView\(view\) \{ success, errorCode in/);
   });
 
-  it('does not resolve CustomView open as accepted when no running event or callback succeeded', () => {
+  it('keeps CustomView open pending when no running event or callback rejection arrives yet', () => {
     expect(source).not.toMatch(/custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: true\)/);
-    expect(source).toMatch(/let settledCommandAccepted =[\s\S]+lastCustomViewOpenCommandAccepted \?\? false[\s\S]+custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: settledCommandAccepted\)/);
+    expect(source).toMatch(/let settledCommandAccepted =[\s\S]+lastCustomViewOpenCommandAccepted \?\? true[\s\S]+custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: settledCommandAccepted\)/);
     expect(source).toMatch(/if !commandAccepted \{[\s\S]+response\["reason"\] = lastCustomViewOpenError \?\? "rokid_custom_view_open_not_accepted"/);
   });
 

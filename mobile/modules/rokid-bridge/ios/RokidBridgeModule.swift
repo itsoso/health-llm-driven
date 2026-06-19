@@ -56,6 +56,8 @@ public class RokidBridgeModule: Module {
   private static var lastCustomViewPayloadHash: String?
   private static var lastCustomViewPayloadShape: String?
   private static var lastCustomViewPayloadBytes: Int?
+  private static var pendingCustomViewPayload: String?
+  private static var lastCustomViewAutoRetryAt: String?
   private static var lastCustomViewCommandAt: String?
   private static var lastCustomViewRawNotify: String?
   private static var lastCustomViewRawNotifyAt: String?
@@ -230,6 +232,10 @@ public class RokidBridgeModule: Module {
     }
     if let lastCustomViewPayloadBytes {
       payload["lastCustomViewPayloadBytes"] = lastCustomViewPayloadBytes
+    }
+    payload["customViewPendingRetry"] = pendingCustomViewPayload != nil
+    if let lastCustomViewAutoRetryAt {
+      payload["lastCustomViewAutoRetryAt"] = lastCustomViewAutoRetryAt
     }
     if let lastCustomViewCommandAt {
       payload["lastCustomViewCommandAt"] = lastCustomViewCommandAt
@@ -455,6 +461,7 @@ public class RokidBridgeModule: Module {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
     recordCustomViewPayload(view)
+    pendingCustomViewPayload = view
     recordAuthDiagnostic(
       "custom_view_open_requested",
       detail: "authorized=\(CxrClient.shared.auth.isAuthenticated()); bleConnected=\(iosBleConnected()); bleDevice=\(iosBleDeviceName() ?? "unknown"); bytes=\(view.utf8.count); hash=\(lastCustomViewPayloadHash ?? "unknown"); shape=\(lastCustomViewPayloadShape ?? "unknown"); runningBefore=\(RokidBridgeModule.customViewRunning)"
@@ -466,9 +473,6 @@ public class RokidBridgeModule: Module {
     }
     let bleConnectedBeforeOpen = iosBleConnected()
     let bleDeviceNameBeforeOpen = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
-    if !bleConnectedBeforeOpen {
-      RokidBridgeModule.lastCustomViewOpenError = "rokid_glasses_ble_not_connected; device=\(bleDeviceNameBeforeOpen); sdk_open_will_still_be_attempted"
-    }
     recordAuthDiagnostic(
       "custom_view_ble_preflight",
       detail: "connected=\(bleConnectedBeforeOpen); device=\(bleDeviceNameBeforeOpen); action=attempt_sdk_open"
@@ -512,7 +516,7 @@ public class RokidBridgeModule: Module {
     DispatchQueue.main.asyncAfter(deadline: .now() + customViewOpenSettleDelaySeconds) {
       let settledCommandAccepted = RokidBridgeModule.customViewRunning
         ? true
-        : (RokidBridgeModule.lastCustomViewOpenCommandAccepted ?? false)
+        : (RokidBridgeModule.lastCustomViewOpenCommandAccepted ?? true)
       if !RokidBridgeModule.customViewRunning && !settledCommandAccepted && RokidBridgeModule.lastCustomViewOpenError == nil {
         let deviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
         RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_not_running_after_open; iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
@@ -850,6 +854,10 @@ public class RokidBridgeModule: Module {
     }
     if let lastCustomViewPayloadBytes {
       response["lastCustomViewPayloadBytes"] = lastCustomViewPayloadBytes
+    }
+    response["customViewPendingRetry"] = pendingCustomViewPayload != nil
+    if let lastCustomViewAutoRetryAt {
+      response["lastCustomViewAutoRetryAt"] = lastCustomViewAutoRetryAt
     }
     if let lastCustomViewCommandAt {
       response["lastCustomViewCommandAt"] = lastCustomViewCommandAt
@@ -1225,6 +1233,11 @@ public class RokidBridgeModule: Module {
       .receive(on: DispatchQueue.main)
       .sink { event in
         RokidBridgeModule.customViewRunning = event.isRunning
+        if event.isRunning {
+          RokidBridgeModule.pendingCustomViewPayload = nil
+          RokidBridgeModule.lastCustomViewOpenCommandAccepted = true
+          RokidBridgeModule.lastCustomViewOpenError = nil
+        }
         RokidBridgeModule.recordAuthDiagnostic("custom_view_event", detail: "isRunning=\(event.isRunning)")
       }
       .store(in: &RokidBridgeModule.cancellables)
@@ -1245,6 +1258,9 @@ public class RokidBridgeModule: Module {
           "ble_connection_event",
           detail: "connected=\(connected); device=\(RGCxrClientBLE.shared.connectedDeviceName ?? "unknown")"
         )
+        if connected {
+          RokidBridgeModule.retryPendingCustomViewAfterBleConnected()
+        }
       }
       .store(in: &RokidBridgeModule.cancellables)
     RGCxrClientBLE.shared.notifyPublisher
@@ -1284,13 +1300,55 @@ public class RokidBridgeModule: Module {
     if normalized.contains("custom_view_opened") {
       lastCustomViewOpenCommandAccepted = true
       lastCustomViewOpenError = nil
+      pendingCustomViewPayload = nil
     } else if normalized.contains("custom_view_open_failed") {
       customViewRunning = false
       lastCustomViewOpenError = cleanNotify
+      pendingCustomViewPayload = nil
     } else if normalized.contains("custom_view_closed") || normalized.contains("close_custom_view") {
       customViewRunning = false
+      pendingCustomViewPayload = nil
     }
     recordAuthDiagnostic("custom_view_notify", detail: cleanNotify)
+  }
+
+  private static func retryPendingCustomViewAfterBleConnected() {
+    guard let view = pendingCustomViewPayload else {
+      return
+    }
+    guard CxrClient.shared.auth.isAuthenticated(), !customViewRunning else {
+      return
+    }
+    lastCustomViewAutoRetryAt = isoTimestamp()
+    recordAuthDiagnostic(
+      "custom_view_auto_retry",
+      detail: "trigger=ble_connected; device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown"); bytes=\(view.utf8.count); hash=\(lastCustomViewPayloadHash ?? "unknown")"
+    )
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.openCustomView(view) { success, errorCode in
+      DispatchQueue.main.async {
+        lastCustomViewOpenCallbackSuccess = success
+        lastCustomViewOpenCommandAccepted = success
+        lastCustomViewOpenCallbackErrorCode = String(describing: errorCode)
+        lastCustomViewOpenCallbackAt = isoTimestamp()
+        if success {
+          lastCustomViewOpenError = nil
+        } else {
+          let callbackBleConnected = iosBleConnected()
+          let callbackDeviceName = iosBleDeviceName() ?? currentDeviceName ?? "unknown"
+          let linkHint = callbackBleConnected ? "ios_ble_connected" : "rokid_glasses_ble_not_connected"
+          lastCustomViewOpenError = "\(linkHint); auto_retry_open_callback_error_code=\(String(describing: errorCode)); device=\(callbackDeviceName)"
+        }
+        recordAuthDiagnostic(
+          "custom_view_auto_retry_callback",
+          detail: "commandAccepted=\(success); errorCode=\(String(describing: errorCode)); running=\(customViewRunning); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+        )
+      }
+    }
+    #else
+    CxrClient.shared.openCustomView(view)
+    lastCustomViewOpenCommandAccepted = true
+    #endif
   }
 
   private static func isCustomViewNotify(_ notify: String) -> Bool {

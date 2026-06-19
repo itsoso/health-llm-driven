@@ -80,6 +80,8 @@ export type RokidIntegrationStatus = {
   lastCustomViewPayloadHash?: string;
   lastCustomViewPayloadShape?: string;
   lastCustomViewPayloadBytes?: number;
+  customViewPendingRetry?: boolean;
+  lastCustomViewAutoRetryAt?: string;
   lastCustomViewCommandAt?: string;
   lastCustomViewRawNotify?: string;
   lastCustomViewRawNotifyAt?: string;

@@ -607,6 +607,72 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('keeps CustomView open pending when BLE preflight is false but SDK has not rejected the command', async () => {
+    const initialStatus = {
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    } as const;
+    mockGetRokidIntegrationStatus
+      .mockResolvedValueOnce(initialStatus)
+      .mockResolvedValueOnce({
+        ...initialStatus,
+        customViewPendingRetry: true,
+        lastCustomViewAutoRetryAt: '2026-06-19T11:46:21Z',
+        authDiagnosticTimeline: [
+          '2026-06-19T11:46:18Z #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open',
+          '2026-06-19T11:46:18Z #auth-3 custom_view_open_invoked bleConnected=false; runningAfterInvoke=false; waitingForRunningEvent=true',
+          '2026-06-19T11:46:20Z #auth-3 custom_view_open_settled running=false; commandAccepted=true; rawNotify=none; openError=none',
+          '2026-06-19T11:46:21Z #auth-3 custom_view_auto_retry trigger=ble_connected; device=Glasses_0077; bytes=944; hash=fnv1a64:24a216e694b6e683',
+        ],
+      });
+    mockOpenRokidRevaCustomView.mockResolvedValue({
+      ok: true,
+      customViewCommandAccepted: true,
+      customViewRunning: false,
+      pendingSessionEvent: true,
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('打开 Reva 眼镜视图')).toBeTruthy();
+      expect(screen.getByText('iOS BLE: connected=false · device=Glasses_0077')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。')).toBeTruthy();
+      expect(screen.queryByText(/Reva 眼镜视图失败/)).toBeNull();
+      expect(screen.getByText('CustomView retry: pending=true · lastAutoRetry=2026-06-19T19:46:21+08:00')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T19:46:18+08:00 #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T19:46:20+08:00 #auth-3 custom_view_open_settled running=false; commandAccepted=true; rawNotify=none; openError=none')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T19:46:21+08:00 #auth-3 custom_view_auto_retry trigger=ble_connected; device=Glasses_0077; bytes=944; hash=fnv1a64:24a216e694b6e683')).toBeTruthy();
+    });
+  });
+
   it('explains SDK CustomView failures with BLE preflight diagnostics', async () => {
     const initialStatus = {
       platform: 'ios',

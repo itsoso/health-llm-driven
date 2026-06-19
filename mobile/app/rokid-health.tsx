@@ -240,6 +240,16 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (status.lastCustomViewPayloadShape) {
     lines.push(`CustomView shape: ${status.lastCustomViewPayloadShape}`);
   }
+  if (status.customViewPendingRetry === true || status.lastCustomViewAutoRetryAt) {
+    const parts: string[] = [];
+    if (status.customViewPendingRetry === true) {
+      parts.push('pending=true');
+    }
+    if (status.lastCustomViewAutoRetryAt) {
+      parts.push(`lastAutoRetry=${formatRokidLogTimestamp(status.lastCustomViewAutoRetryAt)}`);
+    }
+    lines.push(`CustomView retry: ${parts.join(' · ')}`);
+  }
   if (status.lastCustomViewRawNotify) {
     const at = status.lastCustomViewRawNotifyAt ? ` · ${formatRokidLogTimestamp(status.lastCustomViewRawNotifyAt)}` : '';
     lines.push(`CustomView raw: ${status.lastCustomViewRawNotify}${at}`);
