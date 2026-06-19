@@ -26,6 +26,9 @@ export type RokidIntegrationStatus = {
   mode: RokidIntegrationMode;
   sdkArtifacts: typeof ROKID_SDK_ARTIFACTS;
   sdkLinked?: boolean;
+  sdkLinkedReason?: string;
+  nativeAppVersion?: string;
+  nativeBuildNumber?: string;
   installedPackage?: string | null;
   supportedPackages?: string[];
   callbackScheme?: string;
@@ -167,6 +170,14 @@ export function getRokidDeviceValidationSteps(
 ): RokidDeviceValidationStep[] {
   const platform = status?.platform ?? Platform.OS;
   const sdkLinked = platform === 'ios' && status?.bridgeAvailable === true && status?.sdkLinked === true;
+  const sdkRequestedButUnlinked = platform === 'ios'
+    && status?.bridgeAvailable === true
+    && status?.sdkLinked !== true
+    && (
+      status?.iosSdkDependencyMode === 'requested_but_unlinked'
+      || status?.cxrCallbackApiEnabled === true
+      || status?.sdkLinkedReason?.includes('unavailable') === true
+    );
   const hiRokidReady = status?.hiRokidInstalled === true && status?.canOpenHiRokid === true;
   const authorized = status?.authorizationState === 'authenticated';
   const customViewRunning = status?.customViewRunning === true;
@@ -182,6 +193,8 @@ export function getRokidDeviceValidationSteps(
       title: 'iOS SDK 已链接',
       detail: sdkLinked
         ? `当前包已链接 ${iosClient}。`
+        : sdkRequestedButUnlinked
+          ? `Rokid SDK 编译开关已打开, 但 native 未导入 RGCxrClient: ${status?.sdkLinkedReason ?? status?.iosSdkDependencyMode ?? 'unknown'}。`
         : '安装 Rokid 版 Reva 包, 确认 ROKID_IOS_SDK_ENABLED=1。',
       actionLabel: '安装 Rokid 版 Reva',
       done: sdkLinked,

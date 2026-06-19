@@ -327,6 +327,44 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('surfaces iOS CXR-L callback builds that did not import RGCxrClient', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: false,
+      iosSdkDependencyMode: 'requested_but_unlinked',
+      sdkLinkedReason: 'sdk_requested_callback_macro_but_RGCxrClient_unavailable',
+      nativeAppVersion: '1.3.0',
+      nativeBuildNumber: '153',
+      authorizationState: 'not_authenticated',
+      iosBleConnected: false,
+      cxrCallbackApiEnabled: true,
+      cxrNotifySubscriptionMode: 'setNotifyEventListenCmds',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('SDK 请求但未导入')).toBeTruthy();
+      expect(screen.getByText('Reva build: version=1.3.0 · build=153')).toBeTruthy();
+      expect(screen.getByText('SDK linkage: sdkLinked=false · mode=requested_but_unlinked · reason=sdk_requested_callback_macro_but_RGCxrClient_unavailable')).toBeTruthy();
+      expect(screen.getByText('CXR-L API: callbackApi=true · notify=setNotifyEventListenCmds')).toBeTruthy();
+    });
+  });
+
   it('shows CustomView payload and raw notify diagnostics for iOS open failures', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',

@@ -333,4 +333,39 @@ describe('rokid-bridge JS facade', () => {
       detail: '在 Reva 中完成 CXR-L 授权回调后继续。',
     });
   });
+
+  it('flags iOS builds where CXR-L callback APIs are enabled but RGCxrClient is not imported', () => {
+    const { bridge } = loadModule('ios');
+
+    const steps = bridge.getRokidDeviceValidationSteps({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: false,
+      iosSdkDependencyMode: 'requested_but_unlinked',
+      sdkLinkedReason: 'sdk_requested_callback_macro_but_RGCxrClient_unavailable',
+      cxrCallbackApiEnabled: true,
+      cxrNotifySubscriptionMode: 'setNotifyEventListenCmds',
+      authorizationState: 'not_authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(steps[0]).toMatchObject({
+      id: 'ios_sdk_linked',
+      status: 'next',
+      detail: 'Rokid SDK 编译开关已打开, 但 native 未导入 RGCxrClient: sdk_requested_callback_macro_but_RGCxrClient_unavailable。',
+    });
+    expect(steps[1]).toMatchObject({ id: 'hi_rokid_ready', status: 'done' });
+  });
 });

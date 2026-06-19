@@ -78,10 +78,18 @@ function statusLabel(status?: RokidIntegrationStatus) {
       sdk: 'SDK 检测中',
     };
   }
+  const sdkRequestedButUnlinked = status.platform === 'ios'
+    && status.bridgeAvailable === true
+    && status.sdkLinked !== true
+    && (
+      status.iosSdkDependencyMode === 'requested_but_unlinked'
+      || status.cxrCallbackApiEnabled === true
+      || status.sdkLinkedReason?.includes('unavailable') === true
+    );
   return {
     hiRokid: status.hiRokidInstalled ? 'Rokid companion 已安装' : '未检测到 Rokid companion',
     bridge: status.bridgeAvailable ? 'Bridge 已就绪' : 'Bridge 未就绪',
-    sdk: status.sdkLinked ? 'SDK 已链接' : 'SDK 未链接',
+    sdk: status.sdkLinked ? 'SDK 已链接' : sdkRequestedButUnlinked ? 'SDK 请求但未导入' : 'SDK 未链接',
   };
 }
 
@@ -142,6 +150,26 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (status.companionServerScheme && status.companionServerHost) {
     const device = status.currentDeviceName ? ` · device=${status.currentDeviceName}` : '';
     lines.push(`Companion: ${status.companionServerScheme}://${status.companionServerHost}${device}`);
+  }
+  if (status.nativeAppVersion || status.nativeBuildNumber) {
+    lines.push(`Reva build: version=${status.nativeAppVersion ?? 'unknown'} · build=${status.nativeBuildNumber ?? 'unknown'}`);
+  }
+  if (
+    typeof status.sdkLinked === 'boolean'
+    || status.iosSdkDependencyMode
+    || status.sdkLinkedReason
+  ) {
+    const parts: string[] = [];
+    if (typeof status.sdkLinked === 'boolean') {
+      parts.push(`sdkLinked=${status.sdkLinked}`);
+    }
+    if (status.iosSdkDependencyMode) {
+      parts.push(`mode=${status.iosSdkDependencyMode}`);
+    }
+    if (status.sdkLinkedReason) {
+      parts.push(`reason=${status.sdkLinkedReason}`);
+    }
+    lines.push(`SDK linkage: ${parts.join(' · ')}`);
   }
   if (status.lastAuthorizationAttemptId || status.authorizationAttemptCount || status.lastAuthorizationPhase) {
     const parts: string[] = [];

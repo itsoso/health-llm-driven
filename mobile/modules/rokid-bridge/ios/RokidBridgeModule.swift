@@ -11,6 +11,14 @@ import RGCxrClient
 import RGCoreKit
 #endif
 
+#if ROKID_IOS_SDK_REQUESTED && !canImport(RGCxrClient) && !ROKID_IOS_SIMULATOR_EXCLUDED
+#error("ROKID_IOS_SDK_REQUESTED requires RGCxrClient to be importable. Check ROKID_IOS_CLIENT_FRAMEWORK_PATH and RokidBridge.podspec vendored_frameworks.")
+#endif
+
+#if ROKID_CXRL_CALLBACK_API && !canImport(RGCxrClient)
+#error("ROKID_CXRL_CALLBACK_API requires the refreshed RGCxrClient framework to be importable.")
+#endif
+
 public class RokidBridgeModule: Module {
   private final class PromiseResolutionState {
     var resolved = false
@@ -197,8 +205,11 @@ public class RokidBridgeModule: Module {
     payload["canOpenHiRokid"] = installed
     payload["mode"] = "sdk_probe"
     payload["sdkLinked"] = sdkLinked()
+    payload["sdkLinkedReason"] = sdkLinkedReason()
     payload["iosSdkDependencyMode"] = sdkDependencyMode()
     payload["iosSdkCompatibility"] = "CXR-L iOS public sample uses RGCxrClient 1.0.1; 1.0.2 requires Rokid specs source"
+    payload["nativeAppVersion"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    payload["nativeBuildNumber"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
     payload["cxrCallbackApiEnabled"] = cxrCallbackApiEnabled()
     payload["cxrNotifySubscriptionMode"] = cxrNotifySubscriptionMode()
     payload["sessionMode"] = "customView"
@@ -1255,6 +1266,26 @@ public class RokidBridgeModule: Module {
     return "requested_but_unlinked"
     #else
     return "opt_in_disabled"
+    #endif
+  }
+
+  private static func sdkLinkedReason() -> String {
+    #if canImport(RGCxrClient)
+    #if ROKID_CXRL_CALLBACK_API
+    return "can_import_RGCxrClient_with_callback_api"
+    #else
+    return "can_import_RGCxrClient_legacy_api"
+    #endif
+    #elseif ROKID_IOS_SIMULATOR_EXCLUDED
+    return "simulator_excluded"
+    #elseif ROKID_IOS_SDK_REQUESTED
+    #if ROKID_CXRL_CALLBACK_API
+    return "sdk_requested_callback_macro_but_RGCxrClient_unavailable"
+    #else
+    return "sdk_requested_but_RGCxrClient_unavailable"
+    #endif
+    #else
+    return "sdk_opt_in_disabled"
     #endif
   }
 
