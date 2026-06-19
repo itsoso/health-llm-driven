@@ -26,6 +26,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSafetyReport, type SafetyAlert } from '../../services/safety';
 import api from '../../services/api';
 import { spacing } from '../../constants/theme';
+import { useFloatingTabBarHeight } from '../../hooks/useFloatingTabBarHeight';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
 import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
@@ -73,6 +74,9 @@ export default function TodayScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const revaFontsLoaded = useRevaFonts();
+  // 悬浮胶囊 tab bar 是 absolute,不占布局流;底部内容须按其真实高度留白,
+  // 否则最后一块(「开始跑步」绿色 CTA)会被 tab bar 半遮盖(硬编码 110 在大安全区机型不够)。
+  const tabBarHeight = useFloatingTabBarHeight();
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const safetyQuery = useQuery({
@@ -237,7 +241,7 @@ export default function TodayScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: revaColors.paper }]} edges={['top']}>
       <StatusBar style="dark" />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + spacing.lg }]}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
         {/* 1 · 问候头 */}
@@ -389,7 +393,7 @@ function classifyInterventionDomain(action: DailyPlanAction): InterventionDomain
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   // 暖纸背景 + 统一垂直节奏(各块/分组间距 18)
-  content: { padding: spacing.lg, paddingBottom: 110, gap: 18 },
+  content: { padding: spacing.lg, gap: 18 }, // paddingBottom 动态注入(见 tabBarHeight)
   fontGate: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loading: { paddingVertical: spacing.xl, alignItems: 'center' },
 });
