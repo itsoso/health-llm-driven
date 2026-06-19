@@ -415,7 +415,7 @@ describe('rokid-bridge JS facade', () => {
     ]);
     expect(steps[3]).toMatchObject({
       title: '眼镜蓝牙链路',
-      detail: 'Rokid CXR-L 还未连接到眼镜蓝牙链路: Glasses_0077。请在 Rokid AI / Hi Rokid 中确认眼镜在线, 返回 Reva 后刷新。',
+      detail: 'Rokid CXR-L 还未连接到眼镜蓝牙链路: Glasses_0077。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。',
       actionLabel: '打开 Rokid AI / Hi Rokid',
     });
   });

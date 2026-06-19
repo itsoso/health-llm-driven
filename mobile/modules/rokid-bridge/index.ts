@@ -247,7 +247,7 @@ export function getRokidDeviceValidationSteps(
       title: '眼镜蓝牙链路',
       detail: glassesBleConnected
         ? `Rokid CXR-L 已连接眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。`
-        : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。请在 Rokid AI / Hi Rokid 中确认眼镜在线, 返回 Reva 后刷新。`,
+        : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。`,
       actionLabel: '打开 Rokid AI / Hi Rokid',
       done: glassesBleConnected,
     }] : []),

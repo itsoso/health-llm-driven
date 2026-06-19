@@ -664,7 +664,7 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Reva 眼镜视图失败: 眼镜蓝牙链路未连接/)).toBeTruthy();
-      expect(screen.getByText(/请在 Rokid AI \/ Hi Rokid 中确认眼镜在线/)).toBeTruthy();
+      expect(screen.getByText(/「完全退出」Rokid AI \/ Hi Rokid/)).toBeTruthy();
       expect(screen.getByText('CustomView error: rokid_glasses_ble_not_connected; open_callback_error_code=nil; device=Glasses_0077')).toBeTruthy();
       expect(screen.getByText('CustomView callback: success=false · errorCode=nil · 2026-06-19T19:46:20+08:00')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T19:46:18+08:00 #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open')).toBeTruthy();
