@@ -425,6 +425,11 @@ export default function RokidHealthScreen() {
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'custom_view_failed';
+      try {
+        await statusQuery.refetch();
+      } catch {
+        // The failure message is still useful even if the diagnostic refresh fails.
+      }
       setSessionState({
         status: 'failed',
         message: `Reva 眼镜视图失败: ${formatRokidCustomViewIssue(reason)}`,
