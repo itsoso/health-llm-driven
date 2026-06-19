@@ -10,6 +10,34 @@ target 'HealthPilot' do
 end
 `;
 
+const LEGACY_HOOK_ONLY_PODFILE = `# Reva Rokid iOS SDK dynamic framework fix
+def reva_rokid_ios_sdk_enabled?
+  ['1', 'true', 'yes'].include?(
+    (ENV['ROKID_IOS_SDK_ENABLED'] || ENV['ROKID_SDK_ENABLED']).to_s.downcase
+  )
+end
+
+pre_install do |installer|
+  next unless reva_rokid_ios_sdk_enabled?
+
+  reva_rokid_dynamic_framework_pods = ['RGCoreKit', 'CocoaLumberjack']
+  installer.pod_targets.each do |pod|
+    next unless reva_rokid_dynamic_framework_pods.include?(pod.name)
+
+    def pod.build_type
+      Pod::BuildType.dynamic_framework
+    end
+  end
+end
+
+platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
+
+target 'HealthPilot' do
+  use_expo_modules!
+  pod 'SomethingElse'
+end
+`;
+
 describe('withRokidIosPods Podfile patch', () => {
   it('injects the RGCxrClient local pod INSIDE the HealthPilot target, gated on rokid env', () => {
     const patched = _patchPodfileContents(BASE_PODFILE);
@@ -34,6 +62,14 @@ describe('withRokidIosPods Podfile patch', () => {
     expect(twice).toBe(once);
     const occurrences = twice.split("pod 'RGCxrClient'").length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  it('repairs legacy Podfiles that already have the global hook but not the target RGCxrClient pod', () => {
+    const patched = _patchPodfileContents(LEGACY_HOOK_ONLY_PODFILE);
+
+    expect(patched).toContain("pod 'RGCxrClient', :path => '../modules/rokid-bridge/ios/vendor'");
+    expect(patched.split('# Reva Rokid iOS SDK dynamic framework fix').length - 1).toBe(1);
+    expect(patched.split("pod 'RGCxrClient'").length - 1).toBe(1);
   });
 
   it('throws if the HealthPilot target anchor is missing', () => {

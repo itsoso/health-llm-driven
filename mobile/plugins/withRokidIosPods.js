@@ -2,9 +2,11 @@ const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const ROKID_PODFILE_MARKER = '# Reva Rokid iOS SDK dynamic framework fix';
+const ROKID_PODFILE_HOOK_MARKER = '# Reva Rokid iOS SDK dynamic framework fix';
+const ROKID_TARGET_POD_MARKER = '# Reva Rokid iOS SDK RGCxrClient local pod';
+const ROKID_TARGET_POD_LINE = "pod 'RGCxrClient', :path => '../modules/rokid-bridge/ios/vendor'";
 
-const ROKID_PODFILE_HOOK = `${ROKID_PODFILE_MARKER}
+const ROKID_PODFILE_HOOK = `${ROKID_PODFILE_HOOK_MARKER}
 def reva_rokid_ios_sdk_enabled?
   ['1', 'true', 'yes'].include?(
     (ENV['ROKID_IOS_SDK_ENABLED'] || ENV['ROKID_SDK_ENABLED']).to_s.downcase
@@ -30,26 +32,26 @@ end
 // 接它, 但在 Expo static_framework 里 vendored_frameworks 不传播 -F 搜索路径 →
 // canImport(RGCxrClient)=false → SDK 静默缺席(EAS build f0878b7b 实测)。作为一等
 // pod 才能像官方 sample 那样正确接 module / 搜索路径 / 链接。
-const ROKID_TARGET_POD = `  ${ROKID_PODFILE_MARKER} (target pod)
+const ROKID_TARGET_POD = `  ${ROKID_TARGET_POD_MARKER}
   if reva_rokid_ios_sdk_enabled?
-    pod 'RGCxrClient', :path => '../modules/rokid-bridge/ios/vendor'
+    ${ROKID_TARGET_POD_LINE}
   end
 `;
 
 function patchPodfileContents(contents) {
-  if (contents.includes(ROKID_PODFILE_MARKER)) {
-    return contents;
-  }
-
   const targetAnchor = "target 'HealthPilot' do";
   if (!contents.includes(targetAnchor)) {
     throw new Error('withRokidIosPods could not find the HealthPilot Podfile target');
   }
 
-  return contents.replace(
-    targetAnchor,
-    `${ROKID_PODFILE_HOOK}\n${targetAnchor}\n${ROKID_TARGET_POD}`,
-  );
+  let patched = contents;
+  if (!patched.includes(ROKID_PODFILE_HOOK_MARKER)) {
+    patched = patched.replace(targetAnchor, `${ROKID_PODFILE_HOOK}\n${targetAnchor}`);
+  }
+  if (!patched.includes(ROKID_TARGET_POD_LINE)) {
+    patched = patched.replace(targetAnchor, `${targetAnchor}\n${ROKID_TARGET_POD}`);
+  }
+  return patched;
 }
 
 function withRokidIosPods(config) {
