@@ -607,8 +607,8 @@ describe('RokidHealthScreen', () => {
     });
   });
 
-  it('explains that the glasses BLE link is required before opening the Reva CustomView', async () => {
-    const staleStatus = {
+  it('explains SDK CustomView failures with BLE preflight diagnostics', async () => {
+    const initialStatus = {
       platform: 'ios',
       bridgeAvailable: true,
       hiRokidInstalled: true,
@@ -621,10 +621,6 @@ describe('RokidHealthScreen', () => {
       sessionMode: 'customView',
       customViewRunning: false,
       capabilitiesReady: false,
-      lastCustomViewOpenError: 'open_callback_error_code=nil',
-      lastCustomViewOpenCallbackSuccess: false,
-      lastCustomViewOpenCallbackErrorCode: 'nil',
-      lastCustomViewOpenCallbackAt: '2026-06-19T11:45:35Z',
       sdkArtifacts: {
         clientM: 'com.rokid.cxr:client-m:1.2.2',
         clientL: 'com.rokid.cxr:client-l:1.0.3',
@@ -634,20 +630,22 @@ describe('RokidHealthScreen', () => {
       },
     } as const;
     mockGetRokidIntegrationStatus
-      .mockResolvedValueOnce(staleStatus)
+      .mockResolvedValueOnce(initialStatus)
       .mockResolvedValueOnce({
-        ...staleStatus,
-        lastCustomViewOpenError: 'rokid_glasses_ble_not_connected; device=Glasses_0077',
-        lastCustomViewOpenCallbackSuccess: undefined,
-        lastCustomViewOpenCallbackErrorCode: undefined,
-        lastCustomViewOpenCallbackAt: undefined,
+        ...initialStatus,
+        lastCustomViewOpenError: 'rokid_glasses_ble_not_connected; open_callback_error_code=nil; device=Glasses_0077',
+        lastCustomViewOpenCallbackSuccess: false,
+        lastCustomViewOpenCallbackErrorCode: 'nil',
+        lastCustomViewOpenCallbackAt: '2026-06-19T11:46:20Z',
         authDiagnosticTimeline: [
-          '2026-06-19T11:46:18Z #auth-3 custom_view_open_blocked rokid_glasses_ble_not_connected; device=Glasses_0077; authorized=true',
+          '2026-06-19T11:46:18Z #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open',
+          '2026-06-19T11:46:18Z #auth-3 custom_view_open_invoked bleConnected=false; runningAfterInvoke=false; waitingForRunningEvent=true',
+          '2026-06-19T11:46:20Z #auth-3 custom_view_open_callback commandAccepted=false; errorCode=nil; running=false; bleConnected=false; device=Glasses_0077',
         ],
       });
     mockOpenRokidRevaCustomView.mockResolvedValue({
       ok: false,
-      reason: 'rokid_glasses_ble_not_connected',
+      reason: 'rokid_glasses_ble_not_connected; open_callback_error_code=nil; device=Glasses_0077',
       iosBleConnected: false,
       iosBleDeviceName: 'Glasses_0077',
     });
@@ -667,10 +665,11 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(screen.getByText(/Reva 眼镜视图失败: 眼镜蓝牙链路未连接/)).toBeTruthy();
       expect(screen.getByText(/请在 Rokid AI \/ Hi Rokid 中确认眼镜在线/)).toBeTruthy();
-      expect(screen.getByText('CustomView error: rokid_glasses_ble_not_connected; device=Glasses_0077')).toBeTruthy();
-      expect(screen.getByText('Native: 2026-06-19T19:46:18+08:00 #auth-3 custom_view_open_blocked rokid_glasses_ble_not_connected; device=Glasses_0077; authorized=true')).toBeTruthy();
+      expect(screen.getByText('CustomView error: rokid_glasses_ble_not_connected; open_callback_error_code=nil; device=Glasses_0077')).toBeTruthy();
+      expect(screen.getByText('CustomView callback: success=false · errorCode=nil · 2026-06-19T19:46:20+08:00')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T19:46:18+08:00 #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T19:46:20+08:00 #auth-3 custom_view_open_callback commandAccepted=false; errorCode=nil; running=false; bleConnected=false; device=Glasses_0077')).toBeTruthy();
     });
-    expect(screen.queryByText(/open_callback_error_code=nil/)).toBeNull();
   });
 
   it('blocks iOS photo capture until the customView scene is running', async () => {

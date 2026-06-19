@@ -108,10 +108,25 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('"custom_view_open_invoked"');
   });
 
-  it('blocks CustomView opening until the CXR-L glasses BLE link is connected', () => {
+  it('treats iOS BLE state as CustomView diagnostics instead of a hard open gate', () => {
     expect(source).toContain('rokid_glasses_ble_not_connected');
-    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+custom_view_open_blocked[\s\S]+rokid_glasses_ble_not_connected[\s\S]+promise\.resolve/);
-    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+return[\s\S]+let resolutionState = PromiseResolutionState/);
+    expect(source).toContain('"custom_view_ble_preflight"');
+    expect(source).not.toMatch(/guard iosBleConnected\(\) else \{[\s\S]+custom_view_open_blocked[\s\S]+rokid_glasses_ble_not_connected[\s\S]+promise\.resolve/);
+    expect(source).toMatch(/"custom_view_ble_preflight"[\s\S]+let resolutionState = PromiseResolutionState/);
+    expect(source).toMatch(/CxrClient\.shared\.openCustomView\(view\) \{ success, errorCode in/);
+  });
+
+  it('does not resolve CustomView open as accepted when no running event or callback succeeded', () => {
+    expect(source).not.toMatch(/custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: true\)/);
+    expect(source).toMatch(/let settledCommandAccepted =[\s\S]+lastCustomViewOpenCommandAccepted \?\? false[\s\S]+custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: settledCommandAccepted\)/);
+    expect(source).toMatch(/if !commandAccepted \{[\s\S]+response\["reason"\] = lastCustomViewOpenError \?\? "rokid_custom_view_open_not_accepted"/);
+  });
+
+  it('initializes the CXR client, auth config, and runtime subscriptions on the main thread together', () => {
+    expect(source).toContain('let initializeConfigureAndBind = {');
+    expect(source).toMatch(/let initializeConfigureAndBind = \{[\s\S]+CxrClient\.initialize\([\s\S]+configureAuthentication\(\)[\s\S]+bindRuntimeEvents\(\)/);
+    expect(source).toMatch(/if Thread\.isMainThread \{[\s\S]+initializeConfigureAndBind\(\)[\s\S]+\} else \{[\s\S]+DispatchQueue\.main\.sync\(execute: initializeConfigureAndBind\)/);
+    expect(source).not.toMatch(/DispatchQueue\.main\.sync\(execute: initializeIfNeeded\)[\s\S]+configureAuthentication\(\)[\s\S]+bindRuntimeEvents\(\)/);
   });
 
   it('captures raw CustomView notify events and payload fingerprints for open failures', () => {

@@ -464,23 +464,15 @@ public class RokidBridgeModule: Module {
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
-    guard iosBleConnected() else {
-      let reason = "rokid_glasses_ble_not_connected"
-      let deviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
-      RokidBridgeModule.customViewRunning = false
-      RokidBridgeModule.lastCustomViewOpenCommandAccepted = false
-      RokidBridgeModule.lastCustomViewOpenError = "\(reason); device=\(deviceName)"
-      recordAuthDiagnostic(
-        "custom_view_open_blocked",
-        detail: "rokid_glasses_ble_not_connected; device=\(deviceName); authorized=true"
-      )
-      var response = customViewCommandPayload(commandAccepted: false)
-      response["reason"] = reason
-      response["iosBleConnected"] = false
-      response["iosBleDeviceName"] = deviceName
-      promise.resolve(response)
-      return
+    let bleConnectedBeforeOpen = iosBleConnected()
+    let bleDeviceNameBeforeOpen = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
+    if !bleConnectedBeforeOpen {
+      RokidBridgeModule.lastCustomViewOpenError = "rokid_glasses_ble_not_connected; device=\(bleDeviceNameBeforeOpen); sdk_open_will_still_be_attempted"
     }
+    recordAuthDiagnostic(
+      "custom_view_ble_preflight",
+      detail: "connected=\(bleConnectedBeforeOpen); device=\(bleDeviceNameBeforeOpen); action=attempt_sdk_open"
+    )
 
     let resolutionState = PromiseResolutionState()
     #if ROKID_CXRL_CALLBACK_API
@@ -494,11 +486,14 @@ public class RokidBridgeModule: Module {
           RokidBridgeModule.lastCustomViewOpenError = nil
         } else {
           RokidBridgeModule.customViewRunning = false
-          RokidBridgeModule.lastCustomViewOpenError = "open_callback_error_code=\(String(describing: errorCode))"
+          let callbackBleConnected = iosBleConnected()
+          let callbackDeviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
+          let linkHint = callbackBleConnected ? "ios_ble_connected" : "rokid_glasses_ble_not_connected"
+          RokidBridgeModule.lastCustomViewOpenError = "\(linkHint); open_callback_error_code=\(String(describing: errorCode)); device=\(callbackDeviceName)"
         }
         recordAuthDiagnostic(
           "custom_view_open_callback",
-          detail: "commandAccepted=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning)"
+          detail: "commandAccepted=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown")"
         )
         resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: success)
       }
@@ -515,11 +510,18 @@ public class RokidBridgeModule: Module {
       return
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + customViewOpenSettleDelaySeconds) {
+      let settledCommandAccepted = RokidBridgeModule.customViewRunning
+        ? true
+        : (RokidBridgeModule.lastCustomViewOpenCommandAccepted ?? false)
+      if !RokidBridgeModule.customViewRunning && !settledCommandAccepted && RokidBridgeModule.lastCustomViewOpenError == nil {
+        let deviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
+        RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_not_running_after_open; iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
+      }
       recordAuthDiagnostic(
         "custom_view_open_settled",
-        detail: "running=\(RokidBridgeModule.customViewRunning); rawNotify=\(lastCustomViewRawNotify ?? "none"); openError=\(lastCustomViewOpenError ?? "none")"
+        detail: "running=\(RokidBridgeModule.customViewRunning); commandAccepted=\(settledCommandAccepted); rawNotify=\(lastCustomViewRawNotify ?? "none"); openError=\(lastCustomViewOpenError ?? "none")"
       )
-      resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: true)
+      resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: settledCommandAccepted)
     }
     #else
     _ = view
@@ -873,6 +875,9 @@ public class RokidBridgeModule: Module {
     if let lastCustomViewOpenCallbackAt {
       response["lastCustomViewOpenCallbackAt"] = lastCustomViewOpenCallbackAt
     }
+    if !commandAccepted {
+      response["reason"] = lastCustomViewOpenError ?? "rokid_custom_view_open_not_accepted"
+    }
     response["pendingSessionEvent"] = commandAccepted && !running
     return response
   }
@@ -1139,39 +1144,37 @@ public class RokidBridgeModule: Module {
 
   private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
+    let initializeConfigureAndBind = {
     #if ROKID_CXRL_CALLBACK_API
-    let initializeIfNeeded = {
       let initializedBefore = CxrClient.isInitialized
-      guard !RokidBridgeModule.didInitializeCustomView || !initializedBefore else {
-        return
+      if !RokidBridgeModule.didInitializeCustomView || !initializedBefore {
+        let outcome = CxrClient.initialize(
+          mode: .customView,
+          options: RGCxrClientInitializationOptions(appDisplayName: nil, pageName: nil)
+        )
+        let outcomeDescription = cxrInitializeOutcomeDescription(outcome)
+        let initializedAfter = CxrClient.isInitialized
+        RokidBridgeModule.cxrInitializationOutcome = outcomeDescription
+        RokidBridgeModule.didInitializeCustomView = initializedAfter
+        recordAuthDiagnostic(
+          "cxr_initialize",
+          detail: "before=\(initializedBefore); outcome=\(outcomeDescription); after=\(initializedAfter); mode=\(cxrInitializationMode())"
+        )
       }
-
-      let outcome = CxrClient.initialize(
-        mode: .customView,
-        options: RGCxrClientInitializationOptions(appDisplayName: nil, pageName: nil)
-      )
-      let outcomeDescription = cxrInitializeOutcomeDescription(outcome)
-      let initializedAfter = CxrClient.isInitialized
-      RokidBridgeModule.cxrInitializationOutcome = outcomeDescription
-      RokidBridgeModule.didInitializeCustomView = initializedAfter
-      recordAuthDiagnostic(
-        "cxr_initialize",
-        detail: "before=\(initializedBefore); outcome=\(outcomeDescription); after=\(initializedAfter); mode=\(cxrInitializationMode())"
-      )
+    #else
+      if !RokidBridgeModule.didInitializeCustomView {
+        RokidBridgeModule.cxrInitializationOutcome = "legacy_client_no_initialize_api"
+        RokidBridgeModule.didInitializeCustomView = true
+      }
+    #endif
+      configureAuthentication()
+      bindRuntimeEvents()
     }
     if Thread.isMainThread {
-      initializeIfNeeded()
+      initializeConfigureAndBind()
     } else {
-      DispatchQueue.main.sync(execute: initializeIfNeeded)
+      DispatchQueue.main.sync(execute: initializeConfigureAndBind)
     }
-    #else
-    if !RokidBridgeModule.didInitializeCustomView {
-      RokidBridgeModule.cxrInitializationOutcome = "legacy_client_no_initialize_api"
-      RokidBridgeModule.didInitializeCustomView = true
-    }
-    #endif
-    configureAuthentication()
-    bindRuntimeEvents()
     #endif
   }
 
@@ -1190,18 +1193,25 @@ public class RokidBridgeModule: Module {
 
   private static func configureAuthentication(force: Bool = false) {
     #if canImport(RGCxrClient)
-    guard force || !RokidBridgeModule.didConfigureAuthentication else {
-      return
+    let configure = {
+      guard force || !RokidBridgeModule.didConfigureAuthentication else {
+        return
+      }
+      RokidBridgeModule.didConfigureAuthentication = true
+      CxrClient.shared.auth.config = RGCxrClientAuthConfig(
+        serverScheme: companionServerScheme,
+        serverHost: companionServerHost,
+        callbackScheme: callbackScheme,
+        callbackHost: callbackHost,
+        callbackPath: callbackPath,
+        requestTimeout: authorizationRequestTimeoutSeconds
+      )
     }
-    RokidBridgeModule.didConfigureAuthentication = true
-    CxrClient.shared.auth.config = RGCxrClientAuthConfig(
-      serverScheme: companionServerScheme,
-      serverHost: companionServerHost,
-      callbackScheme: callbackScheme,
-      callbackHost: callbackHost,
-      callbackPath: callbackPath,
-      requestTimeout: authorizationRequestTimeoutSeconds
-    )
+    if Thread.isMainThread {
+      configure()
+    } else {
+      DispatchQueue.main.sync(execute: configure)
+    }
     #endif
   }
 
