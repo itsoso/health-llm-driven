@@ -1089,12 +1089,12 @@ public class RokidBridgeModule: Module {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
     let handledByAuth = CxrClient.shared.auth.handleCallback(url: url)
-    let handledByClient = handledByAuth ? false : CxrClient.shared.handleOpenURL(url)
+    let handledByClient = CxrClient.shared.handleOpenURL(url)
     let handled = handledByAuth || handledByClient || CxrClient.shared.auth.isAuthenticated()
     lastCallbackHandled = handled
     recordAuthDiagnostic(
       "callback_handled",
-      detail: "handledByAuth=\(handledByAuth); handledByClient=\(handledByClient); authenticated=\(CxrClient.shared.auth.isAuthenticated())"
+      detail: "authCallbackHandled=\(handledByAuth); clientOpenUrlHandled=\(handledByClient); authenticated=\(CxrClient.shared.auth.isAuthenticated())"
     )
     return handled
     #else

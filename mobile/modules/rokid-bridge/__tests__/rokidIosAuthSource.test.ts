@@ -10,6 +10,12 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('CxrClient.shared.auth.handleCallback(url: url)');
   });
 
+  it('always lets the top-level CXR client inspect auth callbacks for session setup', () => {
+    expect(source).toMatch(/let handledByAuth = CxrClient\.shared\.auth\.handleCallback\(url: url\)[\s\S]+let handledByClient = CxrClient\.shared\.handleOpenURL\(url\)/);
+    expect(source).not.toContain('handledByAuth ? false : CxrClient.shared.handleOpenURL(url)');
+    expect(source).toContain('clientOpenUrlHandled');
+  });
+
   it('does not require the callback host/path before passing the URL to the SDK', () => {
     expect(source).toContain('acceptedCallbackSchemes.contains');
     expect(source).not.toContain('&& url.host?.caseInsensitiveCompare(callbackHost) == .orderedSame');
