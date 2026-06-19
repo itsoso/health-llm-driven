@@ -203,6 +203,46 @@ describe('rokid diagnostics', () => {
     ]));
   });
 
+  it('surfaces the configured and accepted callback schemes used for Rokid auth routing', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'cxrl',
+      callbackUrl: 'cxrl://auth/callback',
+      callbackSchemeSource: 'info_plist',
+      acceptedCallbackSchemes: ['cxrl', 'life.executor.health.rokid'],
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'callback_schemes',
+        label: 'Callback Schemes',
+        value: 'cxrl, life.executor.health.rokid',
+        detail: 'configured=cxrl; source=info_plist',
+        severity: 'info',
+      }),
+      expect.objectContaining({
+        id: 'authorization',
+        detail: 'cxrl://auth/callback',
+      }),
+    ]));
+  });
+
   it('surfaces query-free iOS openURL fingerprints for callback mismatch diagnosis', () => {
     const check = buildRokidSelfCheck({
       platform: 'ios',

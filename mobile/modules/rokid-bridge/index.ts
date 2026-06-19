@@ -29,6 +29,8 @@ export type RokidIntegrationStatus = {
   installedPackage?: string | null;
   supportedPackages?: string[];
   callbackScheme?: string;
+  callbackSchemeSource?: string;
+  acceptedCallbackSchemes?: string[];
   callbackUrl?: string;
   lastCallbackUrl?: string;
   lastCallbackAt?: string;

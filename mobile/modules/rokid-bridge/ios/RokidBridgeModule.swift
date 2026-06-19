@@ -17,6 +17,9 @@ public class RokidBridgeModule: Module {
   private static let companionServerHost = "connect"
   private static let callbackHost = "auth"
   private static let callbackPath = "/callback"
+  private static let callbackSchemeInfoPlistKey = "RokidCXRAuthCallbackScheme"
+  private static let sdkDefaultCallbackScheme = "cxrl"
+  private static let fallbackBundleCallbackScheme = "life.executor.health.rokid"
   private static let authorizationRequestTimeoutSeconds: TimeInterval = 180.0
   private static let querySchemes = ["rokidai"]
   private static var didConfigureAuthentication = false
@@ -52,11 +55,38 @@ public class RokidBridgeModule: Module {
   private static var cancellables = Set<AnyCancellable>()
   #endif
 
-  private static var callbackScheme: String {
+  private static var bundleCallbackScheme: String {
     guard let bundleIdentifier = Bundle.main.bundleIdentifier, !bundleIdentifier.isEmpty else {
-      return "life.executor.health.rokid"
+      return fallbackBundleCallbackScheme
     }
     return "\(bundleIdentifier).rokid"
+  }
+
+  private static var configuredCallbackScheme: String? {
+    guard let configured = Bundle.main.object(forInfoDictionaryKey: callbackSchemeInfoPlistKey) as? String else {
+      return nil
+    }
+    let scheme = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+    return scheme.isEmpty ? nil : scheme
+  }
+
+  private static var callbackScheme: String {
+    configuredCallbackScheme ?? bundleCallbackScheme
+  }
+
+  private static var callbackSchemeSource: String {
+    configuredCallbackScheme == nil ? "bundle_identifier" : "info_plist"
+  }
+
+  private static var acceptedCallbackSchemes: [String] {
+    var schemes = [
+      callbackScheme,
+      bundleCallbackScheme,
+    ]
+    if callbackScheme.caseInsensitiveCompare(sdkDefaultCallbackScheme) == .orderedSame {
+      schemes.append(sdkDefaultCallbackScheme)
+    }
+    return uniqueSchemes(schemes)
   }
 
   public func definition() -> ModuleDefinition {
@@ -164,6 +194,8 @@ public class RokidBridgeModule: Module {
     payload["companionServerHost"] = companionServerHost
     payload["callbackScheme"] = callbackScheme
     payload["callbackUrl"] = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
+    payload["callbackSchemeSource"] = callbackSchemeSource
+    payload["acceptedCallbackSchemes"] = acceptedCallbackSchemes
     if let bundleIdentifier = Bundle.main.bundleIdentifier {
       payload["bundleIdentifier"] = bundleIdentifier
     }
@@ -666,6 +698,24 @@ public class RokidBridgeModule: Module {
     ISO8601DateFormatter().string(from: Date())
   }
 
+  private static func uniqueSchemes(_ schemes: [String]) -> [String] {
+    var result: [String] = []
+    var seen: Set<String> = []
+    for rawScheme in schemes {
+      let scheme = rawScheme.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !scheme.isEmpty else {
+        continue
+      }
+      let normalized = scheme.lowercased()
+      guard !seen.contains(normalized) else {
+        continue
+      }
+      seen.insert(normalized)
+      result.append(scheme)
+    }
+    return result
+  }
+
   private static func authorizationConfigSummary() -> String {
     let callback = "\(callbackScheme)://\(callbackHost)\(callbackPath)"
     return "server=\(companionServerScheme)://\(companionServerHost); callback=\(callback); timeout=\(Int(authorizationRequestTimeoutSeconds))s"
@@ -942,7 +992,9 @@ public class RokidBridgeModule: Module {
   }
 
   fileprivate static func isExpectedAuthCallback(_ url: URL) -> Bool {
-    guard url.scheme?.caseInsensitiveCompare(callbackScheme) == .orderedSame else {
+    guard let urlScheme = url.scheme, acceptedCallbackSchemes.contains(where: {
+      $0.caseInsensitiveCompare(urlScheme) == .orderedSame
+    }) else {
       return false
     }
 

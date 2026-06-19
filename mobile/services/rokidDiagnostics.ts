@@ -171,6 +171,26 @@ function iosOpenUrlDetail(status: RokidIntegrationStatus) {
   return parts.join('; ');
 }
 
+function acceptedCallbackSchemesValue(status: RokidIntegrationStatus) {
+  if (!Array.isArray(status.acceptedCallbackSchemes) || status.acceptedCallbackSchemes.length === 0) {
+    return undefined;
+  }
+  return status.acceptedCallbackSchemes
+    .filter((scheme) => typeof scheme === 'string' && scheme.trim().length > 0)
+    .join(', ');
+}
+
+function callbackSchemesDetail(status: RokidIntegrationStatus) {
+  const parts: string[] = [];
+  if (status.callbackScheme) {
+    parts.push(`configured=${status.callbackScheme}`);
+  }
+  if (status.callbackSchemeSource) {
+    parts.push(`source=${status.callbackSchemeSource}`);
+  }
+  return parts.length > 0 ? parts.join('; ') : undefined;
+}
+
 export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCheck {
   const bridgeReady = status.bridgeAvailable === true;
   const sdkLinked = status.sdkLinked === true;
@@ -207,6 +227,7 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
   const authTimeline = Array.isArray(status.authDiagnosticTimeline)
     ? status.authDiagnosticTimeline.slice(-8)
     : [];
+  const callbackSchemesValue = acceptedCallbackSchemesValue(status);
 
   return {
     summary: {
@@ -248,6 +269,13 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         severity: callbackSeverity,
         detail: redactCallbackUrl(status.lastCallbackUrl ?? status.callbackUrl),
       },
+      ...(callbackSchemesValue ? [{
+        id: 'callback_schemes',
+        label: 'Callback Schemes',
+        value: callbackSchemesValue,
+        severity: 'info' as const,
+        detail: callbackSchemesDetail(status),
+      }] : []),
       {
         id: 'ios_open_url',
         label: 'iOS 回跳',

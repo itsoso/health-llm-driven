@@ -352,8 +352,10 @@ describe('RokidHealthScreen', () => {
       sessionMode: 'customView',
       customViewRunning: false,
       capabilitiesReady: false,
-      callbackScheme: 'life.executor.health.rokid',
-      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      callbackScheme: 'cxrl',
+      callbackUrl: 'cxrl://auth/callback',
+      callbackSchemeSource: 'info_plist',
+      acceptedCallbackSchemes: ['cxrl', 'life.executor.health.rokid'],
       lastAuthorizationError: timeoutReason,
       lastAuthorizationRequestAt: '2026-06-18T23:51:00Z',
       authorizationRequestTimeoutSeconds: 180,
@@ -402,8 +404,10 @@ describe('RokidHealthScreen', () => {
       sessionMode: 'customView',
       customViewRunning: false,
       capabilitiesReady: false,
-      callbackScheme: 'life.executor.health.rokid',
-      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      callbackScheme: 'cxrl',
+      callbackUrl: 'cxrl://auth/callback',
+      callbackSchemeSource: 'info_plist',
+      acceptedCallbackSchemes: ['cxrl', 'life.executor.health.rokid'],
       lastAuthorizationAttemptId: 'auth-3',
       authorizationAttemptCount: 3,
       lastAuthorizationPhase: 'authenticate_failed',
@@ -411,10 +415,10 @@ describe('RokidHealthScreen', () => {
       lastAuthorizationStateBeforeReset: 'not_authenticated',
       lastAuthorizationStateAfterReset: 'not_authenticated',
       lastAuthorizationStateBeforeAuthenticate: 'not_authenticated',
-      authorizationConfigSummary: 'server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+      authorizationConfigSummary: 'server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s',
       authDiagnosticTimeline: [
         '2026-06-18T23:59:00Z #auth-3 request_started appName=Reva; scopes=device_control,audio_stream',
-        '2026-06-18T23:59:01Z #auth-3 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+        '2026-06-18T23:59:01Z #auth-3 config_refreshed server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s',
         '2026-06-19T00:02:01Z #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
       ],
       sdkArtifacts: {
@@ -431,7 +435,8 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('授权 attempt: auth-3 · #3 · phase=authenticate_failed · duration=180012ms')).toBeTruthy();
       expect(screen.getByText('SDK state: beforeReset=not_authenticated · afterReset=not_authenticated · beforeAuth=not_authenticated')).toBeTruthy();
-      expect(screen.getByText('Auth config: server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s')).toBeTruthy();
+      expect(screen.getByText('Auth config: server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s')).toBeTruthy();
+      expect(screen.getByText('Callback schemes: accepted=cxrl, life.executor.health.rokid · configured=cxrl · source=info_plist')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T00:02:01Z #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1')).toBeTruthy();
     });
   });

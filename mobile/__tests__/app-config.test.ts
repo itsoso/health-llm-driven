@@ -1,12 +1,21 @@
 const { buildWatchInjectionEnv } = require('../plugins/withWatchApp');
 
-function configForVariant(variant?: string) {
+function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
   const previous = process.env.APP_VARIANT;
+  const previousEnv = new Map<string, string | undefined>();
   if (variant == null) {
     delete process.env.APP_VARIANT;
   } else {
     process.env.APP_VARIANT = variant;
   }
+  Object.entries(env).forEach(([key, value]) => {
+    previousEnv.set(key, process.env[key]);
+    if (value == null) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  });
 
   try {
     jest.resetModules();
@@ -23,6 +32,13 @@ function configForVariant(variant?: string) {
     } else {
       process.env.APP_VARIANT = previous;
     }
+    previousEnv.forEach((value, key) => {
+      if (value == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    });
   }
 }
 
@@ -76,5 +92,18 @@ describe('app.config app links', () => {
       previewSchemes.find((scheme: string) => scheme.includes('.rokid')),
       developmentSchemes.find((scheme: string) => scheme.includes('.rokid')),
     ]).size).toBe(3);
+  });
+
+  it('allows Rokid CXR-L builds to request the SDK default cxrl callback while keeping the bundle-specific fallback registered', () => {
+    const config = configForVariant('production', {
+      ROKID_IOS_CALLBACK_SCHEME: 'cxrl',
+    });
+    const schemes = configuredUrlSchemes(config);
+
+    expect(config.ios?.infoPlist?.RokidCXRAuthCallbackScheme).toBe('cxrl');
+    expect(schemes).toEqual(expect.arrayContaining([
+      'cxrl',
+      'life.executor.health.rokid',
+    ]));
   });
 });

@@ -173,6 +173,16 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (status.authorizationConfigSummary) {
     lines.push(`Auth config: ${status.authorizationConfigSummary}`);
   }
+  if (Array.isArray(status.acceptedCallbackSchemes) && status.acceptedCallbackSchemes.length > 0) {
+    const parts = [`accepted=${status.acceptedCallbackSchemes.join(', ')}`];
+    if (status.callbackScheme) {
+      parts.push(`configured=${status.callbackScheme}`);
+    }
+    if (status.callbackSchemeSource) {
+      parts.push(`source=${status.callbackSchemeSource}`);
+    }
+    lines.push(`Callback schemes: ${parts.join(' · ')}`);
+  }
   if (status.lastAuthorizationError) {
     lines.push(`最近授权错误: ${formatRokidAuthorizationIssue(status.lastAuthorizationError)}`);
   }

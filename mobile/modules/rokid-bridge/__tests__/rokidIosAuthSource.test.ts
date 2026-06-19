@@ -11,7 +11,7 @@ describe('RokidBridge iOS auth callback source', () => {
   });
 
   it('does not require the callback host/path before passing the URL to the SDK', () => {
-    expect(source).toContain('url.scheme?.caseInsensitiveCompare(callbackScheme) == .orderedSame');
+    expect(source).toContain('acceptedCallbackSchemes.contains');
     expect(source).not.toContain('&& url.host?.caseInsensitiveCompare(callbackHost) == .orderedSame');
     expect(source).not.toContain('&& url.path == callbackPath');
   });
@@ -80,8 +80,13 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('payload["authDiagnosticTimeline"] = authDiagnosticTimeline');
   });
 
-  it('derives the callback scheme from the installed bundle id to avoid cross-variant URL ownership', () => {
+  it('can configure the SDK callback scheme from Info.plist while keeping safe fallbacks observable', () => {
     expect(source).toContain('private static var callbackScheme: String');
+    expect(source).toContain('private static let sdkDefaultCallbackScheme = "cxrl"');
+    expect(source).toContain('RokidCXRAuthCallbackScheme');
+    expect(source).toContain('private static var acceptedCallbackSchemes: [String]');
+    expect(source).toContain('payload["callbackSchemeSource"] = callbackSchemeSource');
+    expect(source).toContain('payload["acceptedCallbackSchemes"] = acceptedCallbackSchemes');
     expect(source).toContain('return "\\(bundleIdentifier).rokid"');
     expect(source).not.toContain('private static let callbackScheme = "life.executor.health.rokid"');
   });

@@ -51,7 +51,13 @@ const displayName = IS_DEV
     : '健康助理';
 
 const androidPackage = bundleId;
-const ROKID_CALLBACK_SCHEME = `${bundleId}.rokid`;
+const BUNDLE_ROKID_CALLBACK_SCHEME = `${bundleId}.rokid`;
+const CONFIGURED_ROKID_CALLBACK_SCHEME = process.env.ROKID_IOS_CALLBACK_SCHEME?.trim();
+const ROKID_CALLBACK_SCHEME = CONFIGURED_ROKID_CALLBACK_SCHEME || BUNDLE_ROKID_CALLBACK_SCHEME;
+const ROKID_CALLBACK_SCHEMES = Array.from(new Set([
+  ROKID_CALLBACK_SCHEME,
+  BUNDLE_ROKID_CALLBACK_SCHEME,
+]));
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -82,9 +88,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         ...(((((config.ios as any)?.infoPlist ?? {}) as any).CFBundleURLTypes ?? []) as any[]),
         {
           CFBundleURLName: 'Rokid CXR Auth Callback',
-          CFBundleURLSchemes: [ROKID_CALLBACK_SCHEME],
+          CFBundleURLSchemes: ROKID_CALLBACK_SCHEMES,
         },
       ],
+      RokidCXRAuthCallbackScheme: ROKID_CALLBACK_SCHEME,
       UIBackgroundModes: Array.from(new Set([
         ...(((((config.ios as any)?.infoPlist ?? {}) as any).UIBackgroundModes ?? []) as string[]),
         'bluetooth-central',
