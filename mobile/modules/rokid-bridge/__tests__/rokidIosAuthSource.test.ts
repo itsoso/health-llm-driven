@@ -6,6 +6,8 @@ describe('RokidBridge iOS auth callback source', () => {
   const source = fs.readFileSync(sourcePath, 'utf8');
   const podspecPath = path.join(__dirname, '..', 'ios', 'RokidBridge.podspec');
   const podspec = fs.readFileSync(podspecPath, 'utf8');
+  const easJsonPath = path.join(__dirname, '..', '..', '..', 'eas.json');
+  const easJson = JSON.parse(fs.readFileSync(easJsonPath, 'utf8'));
 
   it('routes callbacks through the SDK auth manager callback handler', () => {
     expect(source).toContain('CxrClient.shared.auth.canHandleURL(url)');
@@ -127,12 +129,29 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('ROKID_CXRL_CALLBACK_API');
   });
 
+  it('does not mark CustomView as running from openCustomView callback success alone', () => {
+    expect(source).toContain('lastCustomViewOpenCommandAccepted');
+    expect(source).toContain('payload["lastCustomViewOpenCommandAccepted"]');
+    expect(source).not.toContain('RokidBridgeModule.customViewRunning = true');
+    expect(source).toMatch(/customViewRunningEventPublisher[\s\S]+customViewRunning = event\.isRunning/);
+  });
+
   it('allows pinning a refreshed Rokid iOS binary framework instead of relying only on the pod version', () => {
     expect(podspec).toContain('ROKID_IOS_CLIENT_FRAMEWORK_PATH');
+    expect(podspec).toContain('Rokid vendored framework not found');
+    expect(podspec).toContain('Rokid vendored framework is missing refreshed CustomView callback APIs');
     expect(podspec).toContain('s.vendored_frameworks = rokid_ios_client_framework_path');
     expect(podspec).toContain("s.dependency 'RGCoreKit', '0.0.2'");
     expect(podspec).toContain('ROKID_IOS_CLIENT_HAS_CALLBACK_API');
     expect(podspec).toContain('ROKID_CXRL_CALLBACK_API');
+  });
+
+  it('activates the refreshed Rokid iOS framework path and callback API in Rokid EAS profiles', () => {
+    for (const profileName of ['rokid-preview', 'rokid-production']) {
+      const env = easJson.build[profileName].env;
+      expect(env.ROKID_IOS_CLIENT_FRAMEWORK_PATH).toBe('vendor/RGCxrClient.framework');
+      expect(env.ROKID_IOS_CLIENT_HAS_CALLBACK_API).toBe('1');
+    }
   });
 
   it('can configure the SDK callback scheme from Info.plist while keeping safe fallbacks observable', () => {

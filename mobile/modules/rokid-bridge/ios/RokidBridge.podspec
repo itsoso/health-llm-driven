@@ -27,6 +27,25 @@ Pod::Spec.new do |s|
 
   if rokid_ios_sdk_enabled && !rokid_ios_simulator
     if !rokid_ios_client_framework_path.empty?
+      expanded_framework_path = File.expand_path(rokid_ios_client_framework_path, __dir__)
+      unless File.directory?(expanded_framework_path)
+        raise "Rokid vendored framework not found: #{expanded_framework_path}"
+      end
+      if rokid_ios_client_has_callback_api
+        swiftinterface_glob = File.join(
+          expanded_framework_path,
+          'Modules',
+          'RGCxrClient.swiftmodule',
+          '*swiftinterface'
+        )
+        swiftinterface = Dir.glob(swiftinterface_glob).find { |path| File.file?(path) }
+        interface_source = swiftinterface ? File.read(swiftinterface) : ''
+        unless interface_source.include?('setNotifyEventListenCmds') &&
+            interface_source.include?('openCustomView') &&
+            interface_source.include?('callback')
+          raise "Rokid vendored framework is missing refreshed CustomView callback APIs: #{expanded_framework_path}"
+        end
+      end
       s.vendored_frameworks = rokid_ios_client_framework_path
       s.dependency 'RGCoreKit', '0.0.2'
     else

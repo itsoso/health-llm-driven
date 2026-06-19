@@ -81,6 +81,7 @@ export type RokidIntegrationStatus = {
   lastCustomViewRawNotify?: string;
   lastCustomViewRawNotifyAt?: string;
   lastCustomViewOpenError?: string;
+  lastCustomViewOpenCommandAccepted?: boolean;
   lastCustomViewOpenCallbackSuccess?: boolean;
   lastCustomViewOpenCallbackErrorCode?: string;
   lastCustomViewOpenCallbackAt?: string;

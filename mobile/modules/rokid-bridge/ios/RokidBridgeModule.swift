@@ -52,6 +52,7 @@ public class RokidBridgeModule: Module {
   private static var lastCustomViewRawNotify: String?
   private static var lastCustomViewRawNotifyAt: String?
   private static var lastCustomViewOpenError: String?
+  private static var lastCustomViewOpenCommandAccepted: Bool?
   private static var lastCustomViewOpenCallbackSuccess: Bool?
   private static var lastCustomViewOpenCallbackErrorCode: String?
   private static var lastCustomViewOpenCallbackAt: String?
@@ -230,6 +231,9 @@ public class RokidBridgeModule: Module {
     }
     if let lastCustomViewOpenError {
       payload["lastCustomViewOpenError"] = lastCustomViewOpenError
+    }
+    if let lastCustomViewOpenCommandAccepted {
+      payload["lastCustomViewOpenCommandAccepted"] = lastCustomViewOpenCommandAccepted
     }
     if let lastCustomViewOpenCallbackSuccess {
       payload["lastCustomViewOpenCallbackSuccess"] = lastCustomViewOpenCallbackSuccess
@@ -432,10 +436,10 @@ public class RokidBridgeModule: Module {
     CxrClient.shared.openCustomView(view) { success, errorCode in
       DispatchQueue.main.async {
         lastCustomViewOpenCallbackSuccess = success
+        lastCustomViewOpenCommandAccepted = success
         lastCustomViewOpenCallbackErrorCode = String(describing: errorCode)
         lastCustomViewOpenCallbackAt = isoTimestamp()
         if success {
-          RokidBridgeModule.customViewRunning = true
           RokidBridgeModule.lastCustomViewOpenError = nil
         } else {
           RokidBridgeModule.customViewRunning = false
@@ -443,7 +447,7 @@ public class RokidBridgeModule: Module {
         }
         recordAuthDiagnostic(
           "custom_view_open_callback",
-          detail: "success=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning)"
+          detail: "commandAccepted=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning)"
         )
         resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: true)
       }
@@ -741,6 +745,9 @@ public class RokidBridgeModule: Module {
     if let lastCustomViewOpenError {
       response["lastCustomViewOpenError"] = lastCustomViewOpenError
     }
+    if let lastCustomViewOpenCommandAccepted {
+      response["lastCustomViewOpenCommandAccepted"] = lastCustomViewOpenCommandAccepted
+    }
     if let lastCustomViewOpenCallbackSuccess {
       response["lastCustomViewOpenCallbackSuccess"] = lastCustomViewOpenCallbackSuccess
     }
@@ -935,6 +942,7 @@ public class RokidBridgeModule: Module {
     lastCustomViewPayloadShape = customViewPayloadShape(view)
     lastCustomViewCommandAt = isoTimestamp()
     lastCustomViewOpenError = nil
+    lastCustomViewOpenCommandAccepted = nil
     lastCustomViewOpenCallbackSuccess = nil
     lastCustomViewOpenCallbackErrorCode = nil
     lastCustomViewOpenCallbackAt = nil
@@ -1103,7 +1111,7 @@ public class RokidBridgeModule: Module {
 
     let normalized = cleanNotify.lowercased()
     if normalized.contains("custom_view_opened") {
-      customViewRunning = true
+      lastCustomViewOpenCommandAccepted = true
       lastCustomViewOpenError = nil
     } else if normalized.contains("custom_view_open_failed") {
       customViewRunning = false
