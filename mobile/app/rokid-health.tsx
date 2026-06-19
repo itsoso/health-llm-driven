@@ -151,6 +151,12 @@ function formatRokidCustomViewIssue(reason?: string) {
   if (normalized.includes('rokid_glasses_ble_not_connected')) {
     return '眼镜蓝牙链路未连接: 授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。';
   }
+  if (normalized.includes('rokid_custom_view_not_running_after_open')) {
+    return 'SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示 Reva；若未显示，请重新打开眼镜视图。';
+  }
+  if (normalized.includes('rokid_custom_view_open_callback_missing')) {
+    return 'SDK 没有返回 CustomView 打开回调，眼镜端也没有回报运行。请确认 Rokid AI 已退出后台占用后重新打开眼镜视图。';
+  }
   return reason;
 }
 

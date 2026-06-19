@@ -254,7 +254,7 @@ describe('RokidHealthScreen', () => {
     });
   });
 
-  it('does not mark CustomView ready until the iOS running event is observed', async () => {
+  it('shows a clear failure when the iOS SDK accepts CustomView open but no running event follows', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',
       bridgeAvailable: true,
@@ -263,6 +263,8 @@ describe('RokidHealthScreen', () => {
       mode: 'sdk_probe',
       sdkLinked: true,
       authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
       sessionMode: 'customView',
       customViewRunning: false,
       capabilitiesReady: false,
@@ -275,11 +277,12 @@ describe('RokidHealthScreen', () => {
       },
     });
     mockOpenRokidRevaCustomView.mockResolvedValueOnce({
-      ok: true,
+      ok: false,
+      reason: 'rokid_custom_view_not_running_after_open; commandAccepted=true; rawNotify=none; iosBleConnected=true; device=Glasses_0077',
       customViewCommandAccepted: true,
       customViewRunning: false,
       capabilitiesReady: false,
-      pendingSessionEvent: true,
+      pendingSessionEvent: false,
     });
 
     const screen = renderWithProviders(<RokidHealthScreen />);
@@ -295,7 +298,7 @@ describe('RokidHealthScreen', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。')).toBeTruthy();
+      expect(screen.getByText('Reva 眼镜视图失败: SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示 Reva；若未显示，请重新打开眼镜视图。')).toBeTruthy();
       expect(screen.queryByText('Reva 眼镜视图已打开')).toBeNull();
       expect(screen.queryByText('Reva 眼镜视图已运行')).toBeNull();
     });

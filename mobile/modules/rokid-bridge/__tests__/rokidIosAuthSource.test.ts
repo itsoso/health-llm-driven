@@ -122,10 +122,16 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toMatch(/CxrClient\.shared\.openCustomView\(view\) \{ success, errorCode in/);
   });
 
-  it('keeps CustomView open pending when no running event or callback rejection arrives yet', () => {
+  it('does not treat connected CustomView open as successful without callback or running confirmation', () => {
     expect(source).not.toMatch(/custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: true\)/);
-    expect(source).toMatch(/let settledCommandAccepted =[\s\S]+lastCustomViewOpenCommandAccepted \?\? true[\s\S]+custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: settledCommandAccepted\)/);
-    expect(source).toMatch(/if !commandAccepted \{[\s\S]+response\["reason"\] = lastCustomViewOpenError \?\? "rokid_custom_view_open_not_accepted"/);
+    expect(source).not.toContain('lastCustomViewOpenCommandAccepted ?? true');
+    expect(source).toContain('customViewOpenSettleCommandAccepted()');
+    expect(source).toContain('markCustomViewOpenUnconfirmedIfNeeded(commandAccepted: settledCommandAccepted)');
+    expect(source).toContain('rokid_custom_view_open_callback_missing');
+    expect(source).toContain('rokid_custom_view_not_running_after_open');
+    expect(source).toMatch(/if !success \|\| RokidBridgeModule\.customViewRunning \{[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: success\)/);
+    expect(source).toMatch(/let settledCommandAccepted =[\s\S]+customViewOpenSettleCommandAccepted\(\)[\s\S]+custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: settledCommandAccepted\)/);
+    expect(source).toMatch(/if !ok \{[\s\S]+response\["reason"\] = lastCustomViewOpenError \?\? "rokid_custom_view_open_not_accepted"/);
   });
 
   it('initializes the CXR client, auth config, and runtime subscriptions on the main thread together', () => {

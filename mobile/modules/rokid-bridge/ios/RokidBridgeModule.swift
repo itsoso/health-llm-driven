@@ -499,7 +499,9 @@ public class RokidBridgeModule: Module {
           "custom_view_open_callback",
           detail: "commandAccepted=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown")"
         )
-        resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: success)
+        if !success || RokidBridgeModule.customViewRunning {
+          resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: success)
+        }
       }
     }
     #else
@@ -514,13 +516,8 @@ public class RokidBridgeModule: Module {
       return
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + customViewOpenSettleDelaySeconds) {
-      let settledCommandAccepted = RokidBridgeModule.customViewRunning
-        ? true
-        : (RokidBridgeModule.lastCustomViewOpenCommandAccepted ?? true)
-      if !RokidBridgeModule.customViewRunning && !settledCommandAccepted && RokidBridgeModule.lastCustomViewOpenError == nil {
-        let deviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
-        RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_not_running_after_open; iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
-      }
+      let settledCommandAccepted = RokidBridgeModule.customViewOpenSettleCommandAccepted()
+      RokidBridgeModule.markCustomViewOpenUnconfirmedIfNeeded(commandAccepted: settledCommandAccepted)
       recordAuthDiagnostic(
         "custom_view_open_settled",
         detail: "running=\(RokidBridgeModule.customViewRunning); commandAccepted=\(settledCommandAccepted); rawNotify=\(lastCustomViewRawNotify ?? "none"); openError=\(lastCustomViewOpenError ?? "none")"
@@ -835,10 +832,50 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
+  private static func customViewOpenSettleCommandAccepted() -> Bool {
+    if RokidBridgeModule.customViewRunning {
+      return true
+    }
+    #if ROKID_CXRL_CALLBACK_API
+    if let commandAccepted = RokidBridgeModule.lastCustomViewOpenCommandAccepted {
+      return commandAccepted
+    }
+    return !iosBleConnected()
+    #else
+    return true
+    #endif
+  }
+
+  private static func markCustomViewOpenUnconfirmedIfNeeded(commandAccepted: Bool) {
+    guard !RokidBridgeModule.customViewRunning, RokidBridgeModule.lastCustomViewOpenError == nil else {
+      return
+    }
+    guard iosBleConnected() else {
+      return
+    }
+
+    let deviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
+    let rawNotify = RokidBridgeModule.lastCustomViewRawNotify ?? "none"
+    #if ROKID_CXRL_CALLBACK_API
+    if RokidBridgeModule.lastCustomViewOpenCommandAccepted == nil {
+      RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_open_callback_missing; running=false; rawNotify=\(rawNotify); iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
+      RokidBridgeModule.pendingCustomViewPayload = nil
+      return
+    }
+    #endif
+    if commandAccepted {
+      RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_not_running_after_open; commandAccepted=true; rawNotify=\(rawNotify); iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
+    } else {
+      RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_open_not_accepted; running=false; rawNotify=\(rawNotify); iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
+    }
+    RokidBridgeModule.pendingCustomViewPayload = nil
+  }
+
   private static func customViewCommandPayload(commandAccepted: Bool) -> [String: Any] {
     let running = isCustomViewRunning()
+    let ok = commandAccepted && (running || lastCustomViewOpenError == nil)
     var response: [String: Any] = [:]
-    response["ok"] = commandAccepted
+    response["ok"] = ok
     response["customViewCommandAccepted"] = commandAccepted
     response["customViewRunning"] = running
     response["capabilitiesReady"] = capabilitiesReady()
@@ -883,10 +920,10 @@ public class RokidBridgeModule: Module {
     if let lastCustomViewOpenCallbackAt {
       response["lastCustomViewOpenCallbackAt"] = lastCustomViewOpenCallbackAt
     }
-    if !commandAccepted {
+    if !ok {
       response["reason"] = lastCustomViewOpenError ?? "rokid_custom_view_open_not_accepted"
     }
-    response["pendingSessionEvent"] = commandAccepted && !running
+    response["pendingSessionEvent"] = ok && commandAccepted && !running
     return response
   }
 
