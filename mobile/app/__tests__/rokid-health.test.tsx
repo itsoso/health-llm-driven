@@ -12,6 +12,7 @@ const mockGetRokidDeviceValidationSteps = jest.fn();
 const mockListRokidGlanceCards = jest.fn();
 const mockOpenRokidCompanionIfAvailable = jest.fn();
 const mockSubmitRokidVisualInput = jest.fn();
+const mockRecognizeFood = jest.fn();
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -30,6 +31,10 @@ jest.mock('../../services/rokidAmbient', () => ({
   listRokidGlanceCards: (...args: any[]) => mockListRokidGlanceCards(...args),
   openRokidCompanionIfAvailable: (...args: any[]) => mockOpenRokidCompanionIfAvailable(...args),
   submitRokidVisualInput: (...args: any[]) => mockSubmitRokidVisualInput(...args),
+}));
+
+jest.mock('../../services/diet', () => ({
+  recognizeFood: (...args: any[]) => mockRecognizeFood(...args),
 }));
 
 import RokidHealthScreen from '../rokid-health';
@@ -70,8 +75,34 @@ describe('RokidHealthScreen', () => {
     });
     mockTakeRokidPhotoBase64.mockResolvedValue({
       ok: true,
+      base64: 'jpeg-base64',
+      mimeType: 'image/jpeg',
+      byteLength: 2048,
       imageUri: 'private://rokid/meal-001.jpg',
       imageSha256: 'sha256-meal-001',
+    });
+    mockRecognizeFood.mockResolvedValue({
+      success: true,
+      foods: [
+        {
+          name: '牛肉面',
+          quantity: '1碗',
+          calories: 620,
+          protein: 32,
+          carbs: 78,
+          fat: 20,
+          fiber: 4,
+          confidence: 0.76,
+        },
+      ],
+      meal_description: '牛肉面 1碗',
+      health_tips: '高盐餐后补水, 下餐增加蔬菜。',
+      total_calories: 620,
+      total_protein: 32,
+      total_carbs: 78,
+      total_fat: 20,
+      total_fiber: 4,
+      error: null,
     });
     mockRequestRokidAuthorization.mockResolvedValue({ ok: true, tokenLength: 24 });
     mockOpenRokidRevaCustomView.mockResolvedValue({
@@ -156,7 +187,7 @@ describe('RokidHealthScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
   });
 
-  it('submits an explicit food photo capture as an ambient visual draft', async () => {
+  it('submits an explicit food photo capture with nutrition recognition as an ambient visual draft', async () => {
     const screen = renderWithProviders(<RokidHealthScreen />);
 
     await waitFor(() => {
@@ -174,16 +205,43 @@ describe('RokidHealthScreen', () => {
         height: 768,
         quality: 80,
       });
+      expect(mockRecognizeFood).toHaveBeenCalledWith('jpeg-base64');
       expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith({
         intent: 'food_scan',
         imageUri: 'private://rokid/meal-001.jpg',
-        imageSha256: 'sha256-meal-001',
+        imageSha256: undefined,
+        recognitionResult: {
+          success: true,
+          foods: [
+            {
+              name: '牛肉面',
+              quantity: '1碗',
+              calories: 620,
+              protein: 32,
+              carbs: 78,
+              fat: 20,
+              fiber: 4,
+              confidence: 0.76,
+            },
+          ],
+          meal_description: '牛肉面 1碗',
+          health_tips: '高盐餐后补水, 下餐增加蔬菜。',
+          total_calories: 620,
+          total_protein: 32,
+          total_carbs: 78,
+          total_fat: 20,
+          total_fiber: 4,
+          error: null,
+        },
+        confidence: 0.76,
         privacyClass: 'health_l3',
         meta: {
           privacy_mode: 'workplace',
           source_surface: 'rokid_health_mode',
           raw_media_retained: false,
           manual_confirm_required: true,
+          image_byte_length: 2048,
+          recognition_source: 'diet_recognize',
         },
       });
       expect(screen.getByText('已提交食物视觉记录草稿')).toBeTruthy();

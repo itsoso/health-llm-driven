@@ -29,6 +29,7 @@ import {
   submitRokidVisualInput,
   type RokidVisualIntent,
 } from '../services/rokidAmbient';
+import { recognizeFood, type FoodRecognitionResponse } from '../services/diet';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
@@ -97,6 +98,37 @@ function readString(result: Record<string, unknown>, keys: string[]) {
     }
   }
   return undefined;
+}
+
+function readNumber(result: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = result[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readValidSha256(result: Record<string, unknown>) {
+  const value = readString(result, ['imageSha256', 'image_sha256', 'sha256']);
+  if (!value || !/^[a-f0-9]{64}$/i.test(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function recognitionConfidence(result?: FoodRecognitionResponse) {
+  if (!result?.foods?.length) {
+    return undefined;
+  }
+  const confidences = result.foods
+    .map((food) => food.confidence)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (confidences.length === 0) {
+    return undefined;
+  }
+  return confidences.reduce((sum, value) => sum + value, 0) / confidences.length;
 }
 
 function iosAuthorizationLabel(status?: RokidIntegrationStatus) {
@@ -217,18 +249,39 @@ export default function RokidHealthScreen() {
           typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed',
         );
       }
+      const imageBase64 = readString(captureResult, ['base64', 'imageBase64', 'image_base64']);
+      const imageByteLength = readNumber(captureResult, ['byteLength', 'byte_length', 'size']);
+      const meta: Record<string, unknown> = {
+        privacy_mode: privacyMode,
+        source_surface: 'rokid_health_mode',
+        raw_media_retained: false,
+        manual_confirm_required: true,
+      };
+      if (typeof imageByteLength === 'number') {
+        meta.image_byte_length = imageByteLength;
+      }
+
+      let recognitionResult: Record<string, unknown> | undefined;
+      let confidence: number | undefined;
+      if (action.intent === 'food_scan' && imageBase64) {
+        try {
+          const recognition = await recognizeFood(imageBase64);
+          recognitionResult = recognition as unknown as Record<string, unknown>;
+          confidence = recognitionConfidence(recognition);
+          meta.recognition_source = 'diet_recognize';
+        } catch (error) {
+          meta.recognition_error = error instanceof Error ? error.message : 'food_recognition_failed';
+        }
+      }
 
       await submitRokidVisualInput({
         intent: action.intent,
         imageUri: readString(captureResult, ['imageUri', 'image_uri', 'uri', 'localUri', 'path']),
-        imageSha256: readString(captureResult, ['imageSha256', 'image_sha256', 'sha256']),
+        imageSha256: readValidSha256(captureResult),
+        recognitionResult,
+        confidence,
         privacyClass: 'health_l3',
-        meta: {
-          privacy_mode: privacyMode,
-          source_surface: 'rokid_health_mode',
-          raw_media_retained: false,
-          manual_confirm_required: true,
-        },
+        meta,
       });
 
       setCaptureState({

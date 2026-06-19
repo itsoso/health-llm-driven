@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -11,8 +12,13 @@ from app.models.ambient_wearable import (
     HearingHealthTask,
     VisualInputEvent,
 )
+from app.models.daily_health import DietRecord
+from app.schemas.diet import MealType
 from app.models.write_intent import WriteIntent
 from app.services import write_intent_service
+
+_BEIJING_TZ = timezone(timedelta(hours=8))
+_MEAL_TYPES = {meal.value for meal in MealType}
 
 
 def audio_next_action(intent: str) -> Optional[Dict[str, str]]:
@@ -119,6 +125,198 @@ def create_visual_input_event(
     if flush:
         db.flush()
     return event
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _compact_number(value: Any) -> Optional[str]:
+    number = _as_float(value)
+    if number is None:
+        text = str(value).strip() if value is not None else ""
+        return text or None
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:g}"
+
+
+def _food_name(food: Dict[str, Any]) -> str:
+    return str(food.get("name") or food.get("food_name") or "").strip()
+
+
+def _format_food_item(food: Dict[str, Any]) -> Optional[str]:
+    name = _food_name(food)
+    if not name:
+        return None
+    quantity = _compact_number(food.get("quantity"))
+    unit = str(food.get("unit") or "").strip()
+    if quantity and unit:
+        return f"{name} {quantity}{unit}"
+    if quantity:
+        return f"{name} {quantity}"
+    return name
+
+
+def _foods_from_recognition(recognition: Dict[str, Any]) -> list[Dict[str, Any]]:
+    foods = recognition.get("foods") or recognition.get("food_items") or []
+    if not isinstance(foods, list):
+        return []
+    return [food for food in foods if isinstance(food, dict) and _food_name(food)]
+
+
+def _sum_food_nutrient(foods: list[Dict[str, Any]], key: str) -> Optional[float]:
+    values = [_as_float(food.get(key)) for food in foods]
+    values = [value for value in values if value is not None]
+    if not values:
+        return None
+    return float(sum(values))
+
+
+def _nutrition_value(
+    recognition: Dict[str, Any],
+    foods: list[Dict[str, Any]],
+    *,
+    total_key: str,
+    item_key: str,
+) -> Optional[float]:
+    direct = _as_float(recognition.get(total_key))
+    if direct is not None:
+        return direct
+    direct = _as_float(recognition.get(item_key))
+    if direct is not None:
+        return direct
+    return _sum_food_nutrient(foods, item_key)
+
+
+def _average_food_confidence(foods: list[Dict[str, Any]]) -> Optional[float]:
+    values = [_as_float(food.get("confidence")) for food in foods]
+    values = [value for value in values if value is not None]
+    if not values:
+        return None
+    return float(sum(values) / len(values))
+
+
+def _normalize_meal_type(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(getattr(value, "value", value)).strip().lower()
+    zh = {
+        "早餐": MealType.BREAKFAST.value,
+        "早饭": MealType.BREAKFAST.value,
+        "午餐": MealType.LUNCH.value,
+        "午饭": MealType.LUNCH.value,
+        "晚餐": MealType.DINNER.value,
+        "晚饭": MealType.DINNER.value,
+        "加餐": MealType.SNACK.value,
+        "零食": MealType.SNACK.value,
+        "夜宵": MealType.SNACK.value,
+        "其他": MealType.EXTRA.value,
+    }
+    text = zh.get(text, text)
+    return text if text in _MEAL_TYPES else None
+
+
+def _infer_meal_type(captured_at: datetime) -> str:
+    local = captured_at.astimezone(_BEIJING_TZ) if captured_at.tzinfo else captured_at.replace(tzinfo=_BEIJING_TZ)
+    hour = local.hour
+    if 5 <= hour < 10:
+        return MealType.BREAKFAST.value
+    if 10 <= hour < 14:
+        return MealType.LUNCH.value
+    if 16 <= hour < 21:
+        return MealType.DINNER.value
+    return MealType.SNACK.value
+
+
+def create_food_diet_record_from_visual_event(
+    db: Session,
+    user_id: int,
+    event: VisualInputEvent,
+    *,
+    flush: bool = True,
+) -> Optional[DietRecord]:
+    """Write a DietRecord when a Rokid food visual event already has nutrition."""
+    if event.intent != "food_scan" or not isinstance(event.recognition_result, dict):
+        return None
+
+    recognition = event.recognition_result
+    if recognition.get("success") is False:
+        return None
+
+    foods = _foods_from_recognition(recognition)
+    food_items = [item for item in (_format_food_item(food) for food in foods) if item]
+    if not food_items:
+        return None
+
+    calories = _nutrition_value(recognition, foods, total_key="total_calories", item_key="calories")
+    protein = _nutrition_value(recognition, foods, total_key="total_protein", item_key="protein")
+    carbs = _nutrition_value(recognition, foods, total_key="total_carbs", item_key="carbs")
+    fat = _nutrition_value(recognition, foods, total_key="total_fat", item_key="fat")
+    fiber = _nutrition_value(recognition, foods, total_key="total_fiber", item_key="fiber")
+    if all(value is None for value in (calories, protein, carbs, fat, fiber)):
+        return None
+
+    meta = event.meta if isinstance(event.meta, dict) else {}
+    meal_type = (
+        _normalize_meal_type(recognition.get("meal_type"))
+        or _normalize_meal_type(meta.get("meal_type"))
+        or _infer_meal_type(event.captured_at)
+    )
+    local_captured = (
+        event.captured_at.astimezone(_BEIJING_TZ)
+        if event.captured_at and event.captured_at.tzinfo
+        else event.captured_at
+    )
+    record_date = local_captured.date() if local_captured else datetime.now(_BEIJING_TZ).date()
+    meal_time = local_captured.time().replace(tzinfo=None) if local_captured else None
+    primary_name = _food_name(foods[0])[:100]
+    confidence = event.confidence or _as_float(recognition.get("confidence")) or _average_food_confidence(foods)
+
+    record = DietRecord(
+        user_id=user_id,
+        record_date=record_date,
+        meal_type=meal_type,
+        meal_time=meal_time,
+        food_name=primary_name,
+        food_items=", ".join(food_items),
+        calories=calories,
+        protein=protein,
+        carbs=carbs,
+        fat=fat,
+        fiber=fiber,
+        image_url=event.image_uri,
+        ai_recognized=True,
+        ai_confidence=confidence,
+        ai_raw_result=json.dumps(recognition, ensure_ascii=False, default=str),
+        notes="Rokid 眼镜食物照片自动生成, 请确认份量和营养估算。",
+        health_tips=recognition.get("health_tips") if isinstance(recognition.get("health_tips"), str) else None,
+    )
+    db.add(record)
+    if flush:
+        db.flush()
+
+    event.status = "processed"
+    event.target_type = "diet_record"
+    event.target_id = record.id
+    event.safety_result = {
+        **(event.safety_result if isinstance(event.safety_result, dict) else {}),
+        "manual_confirmation_recommended": bool(meta.get("manual_confirm_required")),
+        "nutrition_from_recognition": True,
+    }
+    return record
 
 
 def create_glance_card(

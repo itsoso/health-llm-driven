@@ -83,6 +83,7 @@ def create_visual_input(
         privacy_class=body.privacy_class,
         meta=body.meta,
     )
+    svc.create_food_diet_record_from_visual_event(db, current_user.id, event)
     db.commit()
     db.refresh(event)
     return AmbientVisualInputResponse(

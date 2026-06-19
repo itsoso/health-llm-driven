@@ -145,6 +145,75 @@ def test_rokid_visual_food_scan_records_visual_input_event(client, db):
     }
 
 
+def test_rokid_visual_food_scan_with_nutrition_creates_diet_record(client, db):
+    from app.models.ambient_wearable import VisualInputEvent
+    from app.models.daily_health import DietRecord
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/visual-inputs",
+        headers=headers,
+        json={
+            "intent": "food_scan",
+            "source": "rokid_glasses",
+            "device_type": "glasses",
+            "image_uri": "private://rokid/meal-002.jpg",
+            "ocr_text": "牛肉面",
+            "recognition_result": {
+                "success": True,
+                "foods": [
+                    {
+                        "name": "牛肉面",
+                        "quantity": 1,
+                        "unit": "碗",
+                        "calories": 620,
+                        "protein": 32,
+                        "carbs": 78,
+                        "fat": 20,
+                        "fiber": 4,
+                        "confidence": 0.76,
+                    }
+                ],
+                "meal_type": "lunch",
+                "total_calories": 620,
+                "total_protein": 32,
+                "total_carbs": 78,
+                "total_fat": 20,
+                "total_fiber": 4,
+                "health_tips": "高盐餐后补水, 下餐增加蔬菜。",
+            },
+            "confidence": 0.76,
+            "meta": {"manual_confirm_required": True},
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(VisualInputEvent).filter(VisualInputEvent.user_id == user.id).one()
+    record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+
+    assert body["event"]["id"] == event.id
+    assert body["event"]["target_type"] == "diet_record"
+    assert body["event"]["target_id"] == record.id
+    assert event.status == "processed"
+    assert event.target_type == "diet_record"
+    assert event.target_id == record.id
+    assert record.meal_type == "lunch"
+    assert record.food_name == "牛肉面"
+    assert record.food_items == "牛肉面 1碗"
+    assert record.calories == 620
+    assert record.protein == 32
+    assert record.carbs == 78
+    assert record.fat == 20
+    assert record.fiber == 4
+    assert record.image_url == "private://rokid/meal-002.jpg"
+    assert record.ai_recognized is True
+    assert record.ai_confidence == 0.76
+    assert "牛肉面" in record.ai_raw_result
+    assert record.health_tips == "高盐餐后补水, 下餐增加蔬菜。"
+
+
 def test_rokid_glance_cards_are_short_lived_and_user_scoped(client, db):
     from app.models.ambient_wearable import GlanceCard
 
