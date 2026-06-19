@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 154 API 路由 · 253 services              │
+│                  health-api.executor.life · 155 API 路由 · 255 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 154 API 路由, 253 services, 95 models, 57 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 155 API 路由, 255 services, 96 models, 57 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -114,7 +114,7 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 154 条 API 路由 |
+| `backend/app/api/*.py` | 155 条 API 路由 |
 | `backend/app/services/*.py` | 205 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 57 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
@@ -350,6 +350,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 | **Analytics** | `/garmin-analysis` `/daily-health` `/spo2` `/health-analysis` `/personal-outcome` `/monthly-reports` | 聚合 + 趋势 |
 | **Trajectory** | `/trajectory` | `/trajectory/me` 疾病上游健康轨迹快照: 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量; risk 携带 `evidence_tier/confidence/claim_boundary` |
 | **Operating Plan** | `/daily-plan` | `/daily-plan/me` 当前用户每日代谢健康操作计划; action 携带 `evidence_tier/confidence/claim_boundary` |
+| **Fitness (P2)** | `/fitness` | `/fitness/weekly-plan` (T2 周健身计划:系统起草→确认排程) `/fitness/exercise-guide` (动作图文指导,确定性数据集) |
 | **Reminders/Notifications** | `/notification` `/smart-reminder` | `/bind/ios` `/bind/wechat` `/logs` |
 | **Voice/Briefing** | `/tts` `/briefing` `/pre-workout` `/clarification` | `/tts/synthesize` (CosyVoice 代理), briefing voice script |
 | **Admin** | `/admin` `/admin/llm` `/admin/observability` | `/admin/llm/models` `/admin/llm/select-model` `/admin/llm/benchmark/{id}` |

@@ -138,8 +138,10 @@ from app.models.ambient_wearable import (
     VisualInputEvent,
 )
 from app.models.rokid_pushup import RokidPushupEvent, RokidPushupSession
+from app.models.fitness_plan import FitnessPlan
 
 __all__ = [
+    "FitnessPlan",
     "User",
     "BasicHealthData",
     "MedicalExam",
