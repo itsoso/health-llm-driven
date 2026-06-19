@@ -137,6 +137,8 @@ function AppContent() {
         <Stack.Screen name="knowledge/entity" options={{ headerShown: false }} />
         <Stack.Screen name="guided-task" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="rokid-pushup-coach" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="fitness-plan" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="exercise-guide/[key]" options={{ headerShown: false }} />
       </Stack>
       <NotificationBanner />
       <NetworkBanner />
