@@ -186,6 +186,10 @@ public class RokidBridgeModule: Module {
     payload["sessionMode"] = "customView"
     payload["authorizationState"] = authorizationState()
     payload["authorizationRequestTimeoutSeconds"] = authorizationRequestTimeoutSeconds
+    payload["iosBleConnected"] = iosBleConnected()
+    if let bleDeviceName = iosBleDeviceName() {
+      payload["iosBleDeviceName"] = bleDeviceName
+    }
     payload["customViewRunning"] = isCustomViewRunning()
     payload["capabilitiesReady"] = capabilitiesReady()
     payload["customAppSupported"] = sdkLinked()
@@ -365,12 +369,21 @@ public class RokidBridgeModule: Module {
   private static func openCustomView(_ view: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
+    recordAuthDiagnostic(
+      "custom_view_open_requested",
+      detail: "authorized=\(CxrClient.shared.auth.isAuthenticated()); bleConnected=\(iosBleConnected()); bleDevice=\(iosBleDeviceName() ?? "unknown"); bytes=\(view.utf8.count); runningBefore=\(RokidBridgeModule.customViewRunning)"
+    )
     guard CxrClient.shared.auth.isAuthenticated() else {
+      recordAuthDiagnostic("custom_view_open_blocked", detail: "rokid_not_authorized")
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
 
     CxrClient.shared.openCustomView(view)
+    recordAuthDiagnostic(
+      "custom_view_open_invoked",
+      detail: "bleConnected=\(iosBleConnected()); runningAfterInvoke=\(RokidBridgeModule.customViewRunning); waitingForRunningEvent=\(!RokidBridgeModule.customViewRunning)"
+    )
     promise.resolve(customViewCommandPayload(commandAccepted: true))
     #else
     _ = view
@@ -622,6 +635,10 @@ public class RokidBridgeModule: Module {
     response["customViewCommandAccepted"] = commandAccepted
     response["customViewRunning"] = running
     response["capabilitiesReady"] = capabilitiesReady()
+    response["iosBleConnected"] = iosBleConnected()
+    if let bleDeviceName = iosBleDeviceName() {
+      response["iosBleDeviceName"] = bleDeviceName
+    }
     response["pendingSessionEvent"] = commandAccepted && !running
     return response
   }
@@ -868,6 +885,18 @@ public class RokidBridgeModule: Module {
         RokidBridgeModule.handleAuthorizationEvent(event)
       }
       .store(in: &RokidBridgeModule.cancellables)
+    RGCxrClientBLE.shared.connectionStatePublisher
+      .receive(on: DispatchQueue.main)
+      .sink { connected in
+        if connected, let deviceName = RGCxrClientBLE.shared.connectedDeviceName, !deviceName.isEmpty {
+          RokidBridgeModule.currentDeviceName = deviceName
+        }
+        RokidBridgeModule.recordAuthDiagnostic(
+          "ble_connection_event",
+          detail: "connected=\(connected); device=\(RGCxrClientBLE.shared.connectedDeviceName ?? "unknown")"
+        )
+      }
+      .store(in: &RokidBridgeModule.cancellables)
     #endif
   }
 
@@ -972,6 +1001,22 @@ public class RokidBridgeModule: Module {
     return CxrClient.shared.auth.isAuthenticated() && RokidBridgeModule.customViewRunning
     #else
     return false
+    #endif
+  }
+
+  private static func iosBleConnected() -> Bool {
+    #if canImport(RGCxrClient)
+    return RGCxrClientBLE.shared.isConnected
+    #else
+    return false
+    #endif
+  }
+
+  private static func iosBleDeviceName() -> String? {
+    #if canImport(RGCxrClient)
+    return RGCxrClientBLE.shared.connectedDeviceName
+    #else
+    return nil
     #endif
   }
 

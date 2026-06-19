@@ -173,6 +173,10 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (status.authorizationConfigSummary) {
     lines.push(`Auth config: ${status.authorizationConfigSummary}`);
   }
+  if (typeof status.iosBleConnected === 'boolean') {
+    const device = status.iosBleDeviceName ? ` · device=${status.iosBleDeviceName}` : '';
+    lines.push(`iOS BLE: connected=${status.iosBleConnected}${device}`);
+  }
   if (Array.isArray(status.acceptedCallbackSchemes) && status.acceptedCallbackSchemes.length > 0) {
     const parts = [`accepted=${status.acceptedCallbackSchemes.join(', ')}`];
     if (status.callbackScheme) {

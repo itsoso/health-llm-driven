@@ -67,6 +67,8 @@ export type RokidIntegrationStatus = {
   cxrInitializationMode?: 'customView' | 'customApp' | 'unknown' | string;
   cxrInitializationOutcome?: string;
   authorizationState?: RokidAuthorizationState;
+  iosBleConnected?: boolean;
+  iosBleDeviceName?: string;
   capabilitiesReady?: boolean;
   customAppSupported?: boolean;
   customViewRunning?: boolean;

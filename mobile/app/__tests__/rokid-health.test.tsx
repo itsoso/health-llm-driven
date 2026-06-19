@@ -297,6 +297,36 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('shows iOS BLE connection diagnostics before CustomView is running', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('iOS BLE: connected=false')).toBeTruthy();
+      expect(screen.getByText('CustomView 未运行')).toBeTruthy();
+    });
+  });
+
   it('treats delayed iOS Rokid callback state as authorization success', async () => {
     mockGetRokidIntegrationStatus
       .mockResolvedValueOnce({

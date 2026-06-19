@@ -80,6 +80,18 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('payload["authDiagnosticTimeline"] = authDiagnosticTimeline');
   });
 
+  it('surfaces iOS BLE and CustomView-open boundaries for session debugging', () => {
+    expect(source).toContain('RGCxrClientBLE.shared.isConnected');
+    expect(source).toContain('RGCxrClientBLE.shared.connectedDeviceName');
+    expect(source).toContain('payload["iosBleConnected"]');
+    expect(source).toContain('payload["iosBleDeviceName"]');
+    expect(source).toContain('RGCxrClientBLE.shared.connectionStatePublisher');
+    expect(source).toContain('"ble_connection_event"');
+    expect(source).toContain('recordAuthDiagnostic(');
+    expect(source).toContain('"custom_view_open_requested"');
+    expect(source).toContain('"custom_view_open_invoked"');
+  });
+
   it('can configure the SDK callback scheme from Info.plist while keeping safe fallbacks observable', () => {
     expect(source).toContain('private static var callbackScheme: String');
     expect(source).toContain('private static let sdkDefaultCallbackScheme = "cxrl"');
