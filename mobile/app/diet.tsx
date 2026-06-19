@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,7 +7,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
-import { createDietRecord, updateDietRecord, deleteDietRecord, estimateNutrition, recognizeFood, getFrequentFoods, parseVoiceFood, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
+import { useDietEstimate, type EstimateSource } from '../hooks/useDietEstimate';
+import { createDietRecord, updateDietRecord, deleteDietRecord, getFrequentFoods, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
+import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
@@ -16,7 +18,6 @@ import { useToast } from '../hooks/useToast';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
-import { voiceDraftToDietDefaults } from '../utils/dietVoiceDraft';
 
 function todayStr() {
   const d = new Date();
@@ -31,6 +32,14 @@ function offsetDate(base: string, offset: number) {
 
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
+function guessMealType(): DietRecordCreate['meal_type'] {
+  const h = new Date().getHours();
+  if (h < 10) return 'breakfast';
+  if (h < 14) return 'lunch';
+  if (h < 20) return 'dinner';
+  return 'snack';
+}
+
 export default function DietScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -42,15 +51,45 @@ export default function DietScreen() {
   const toast = useToast();
   const [date, setDate] = useState(todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
+  const { estimate, pendingIds, failedIds } = useDietEstimate();
+  // 记住每条记录的估算来源, 让「点重试」用同一来源 (photo/voice/text) 重跑.
+  const sourceMapRef = useRef<Map<number, EstimateSource>>(new Map());
+  const reconciledRef = useRef<Set<number>>(new Set());
   const frequentQuery = useQuery({
     queryKey: ['diet', 'frequent'],
     queryFn: () => getFrequentFoods(8, 30),
     staleTime: 10 * 60 * 1000,
   });
   const [showForm, setShowForm] = useState(false);
-  const [estimating, setEstimating] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
+
+  // 记录立刻入库 (无营养) → 关闭输入 → toast → 后台估算回填. 不阻塞用户.
+  const recordThenEstimate = useCallback(async (
+    description: string,
+    mealType: DietRecordCreate['meal_type'],
+    source: EstimateSource,
+  ) => {
+    let created: DietRecord;
+    try {
+      created = await createDietRecord({ record_date: date, meal_type: mealType, food_items: description });
+    } catch {
+      toast.show('记录失败,请重试', 'error');
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    sourceMapRef.current.set(created.id, source);
+    qc.invalidateQueries({ queryKey: ['diet'] });
+    toast.show('已记录 · 营养后台估算中', 'success');
+    estimate(created.id, source);
+  }, [date, estimate, qc, toast]);
+
+  const retryEstimate = useCallback((record: DietRecord) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const source = sourceMapRef.current.get(record.id)
+      ?? { kind: 'text', description: record.food_items } as EstimateSource;
+    estimate(record.id, source);
+  }, [estimate]);
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
     try {
@@ -84,7 +123,7 @@ export default function DietScreen() {
         fat: f.fat ?? undefined,
       });
     } catch {
-      toast.show('记录失败，请重试', 'error');
+      toast.show('记录失败,请重试', 'error');
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -96,7 +135,7 @@ export default function DietScreen() {
           await deleteDietRecord(created.id);
           qc.invalidateQueries({ queryKey: ['diet'] });
         } catch {
-          toast.show('撤销失败，请重试', 'error');
+          toast.show('撤销失败,请重试', 'error');
         }
       },
       5000,
@@ -135,58 +174,21 @@ export default function DietScreen() {
     );
   }, [qc]);
 
-  const handleText = useCallback(async () => {
-    Alert.prompt('文字估算', '描述你吃的食物（如：鸡胸肉200g + 糙米饭一碗）', async (text) => {
-      if (!text?.trim()) return;
-      setEstimating(true);
-      try {
-        const est = await estimateNutrition(text);
-        if (est.success && est.foods.length > 0) {
-          setFormDefaults({
-            food_items: est.foods.map(f => f.name).join('、') || text,
-            calories: est.total_calories ?? undefined,
-            protein: est.total_protein ?? undefined,
-            carbs: est.total_carbs ?? undefined,
-            fat: est.total_fat ?? undefined,
-          });
-          setShowForm(true);
-        } else {
-          setFormDefaults({ food_items: text });
-          setShowForm(true);
-        }
-      } catch {
-        Alert.alert('估算失败');
-      } finally {
-        setEstimating(false);
-      }
-    });
-  }, []);
-
-  const handleVoiceText = useCallback(async () => {
-    Alert.prompt('语音记录饮食', '说完后保留转写文本，例如: "晚饭吃了鸡胸肉和一碗米饭"', async (text) => {
+  const handleText = useCallback(() => {
+    Alert.prompt('文字记录', '描述你吃的食物（如：鸡胸肉200g + 糙米饭一碗）', (text) => {
       const raw = text?.trim();
       if (!raw) return;
-      setEstimating(true);
-      try {
-        const draft = await parseVoiceFood(raw);
-        setFormDefaults(voiceDraftToDietDefaults(draft, date));
-        setEditingRecord(null);
-        setShowForm(true);
-        if (draft.needs_confirmation && draft.clarifying_question) {
-          toast.show(draft.clarifying_question, 'info');
-        } else {
-          toast.show('语音草稿已填入,确认后保存', 'success');
-        }
-      } catch {
-        Alert.alert('语音解析失败', '已保留原文,你可以手动确认后保存。');
-        setFormDefaults({ record_date: date, meal_type: 'snack', food_items: raw });
-        setEditingRecord(null);
-        setShowForm(true);
-      } finally {
-        setEstimating(false);
-      }
+      recordThenEstimate(raw, guessMealType(), { kind: 'text', description: raw });
     });
-  }, [date, toast]);
+  }, [recordThenEstimate]);
+
+  const handleVoiceText = useCallback(() => {
+    Alert.prompt('语音记录饮食', '说完后保留转写文本，例如: "晚饭吃了鸡胸肉和一碗米饭"', (text) => {
+      const raw = text?.trim();
+      if (!raw) return;
+      recordThenEstimate(raw, guessMealType(), { kind: 'voice', rawText: raw });
+    });
+  }, [recordThenEstimate]);
 
   const handlePhoto = useCallback(async () => {
     try {
@@ -201,31 +203,12 @@ export default function DietScreen() {
         base64: true,
       });
       if (result.canceled || !result.assets[0]?.base64) return;
-
-      setEstimating(true);
-      const recognition = await recognizeFood(result.assets[0].base64);
-      if (recognition && (recognition.foods?.length > 0 || recognition.meal_description)) {
-        const foodDesc = recognition.meal_description
-          || recognition.foods?.map(f => f.name).join('、')
-          || '';
-        setFormDefaults({
-          food_items: foodDesc,
-          calories: recognition.total_calories ?? undefined,
-          protein: recognition.total_protein ?? undefined,
-          carbs: recognition.total_carbs ?? undefined,
-          fat: recognition.total_fat ?? undefined,
-        });
-        setShowForm(true);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        Alert.alert('未识别到食物', '请拍摄更清晰的食物照片');
-      }
+      // 拍完立刻入库占位 (来源=照片), 营养后台识别回填. 图片本身仍走识别, 只是不阻塞.
+      await recordThenEstimate('照片记录的一餐', guessMealType(), { kind: 'photo', imageBase64: result.assets[0].base64 });
     } catch {
-      Alert.alert('识别失败', '请稍后重试');
-    } finally {
-      setEstimating(false);
+      Alert.alert('拍照失败', '请稍后重试');
     }
-  }, []);
+  }, [recordThenEstimate]);
 
   useEffect(() => {
     if (params.capture !== 'photo' || captureConsumedRef.current) return;
@@ -233,6 +216,23 @@ export default function DietScreen() {
     handlePhoto();
   }, [handlePhoto, params.capture]);
 
+  // 进入/刷新时对账: 任何 calories==null 的当日记录 (含上次中途退出卡住的),
+  // 若本会话尚未跑过 → 用已知来源或文字兜底自动重试一次. 不让一餐永远空着.
+  useEffect(() => {
+    const meals = daily?.meals;
+    if (!meals || date !== todayStr()) return;
+    for (const r of meals) {
+      if (!isPendingNutrition(r)) { reconciledRef.current.delete(r.id); continue; }
+      if (pendingIds.has(r.id) || failedIds.has(r.id) || reconciledRef.current.has(r.id)) continue;
+      reconciledRef.current.add(r.id);
+      const source = sourceMapRef.current.get(r.id)
+        ?? { kind: 'text', description: r.food_items } as EstimateSource;
+      estimate(r.id, source);
+    }
+  }, [daily?.meals, date, estimate, pendingIds, failedIds]);
+
+  const meals = daily?.meals ?? [];
+  const totals = useMemo(() => computeDietTotals(meals), [meals]);
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });
 
@@ -270,14 +270,19 @@ export default function DietScreen() {
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
         showsVerticalScrollIndicator={false}>
 
-        {/* Summary */}
+        {/* Summary — pending 记录不计入, 单独标注 (不假装成功) */}
         {daily && (
-          <View style={styles.summaryCard}>
-            <NutriPill label="热量" value={`${(daily.total_calories ?? 0).toFixed(0)}`} unit="kcal" color="#FF6723" />
-            <NutriPill label="蛋白质" value={`${(daily.total_protein ?? 0).toFixed(1)}`} unit="g" color="#FF375F" />
-            <NutriPill label="碳水" value={`${(daily.total_carbs ?? 0).toFixed(1)}`} unit="g" color="#FF9F0A" />
-            <NutriPill label="脂肪" value={`${(daily.total_fat ?? 0).toFixed(1)}`} unit="g" color="#BF5AF2" />
-          </View>
+          <>
+            <View style={styles.summaryCard}>
+              <NutriPill label="热量" value={`${totals.calories.toFixed(0)}`} unit="kcal" color="#FF6723" />
+              <NutriPill label="蛋白质" value={`${totals.protein.toFixed(1)}`} unit="g" color="#FF375F" />
+              <NutriPill label="碳水" value={`${totals.carbs.toFixed(1)}`} unit="g" color="#FF9F0A" />
+              <NutriPill label="脂肪" value={`${totals.fat.toFixed(1)}`} unit="g" color="#BF5AF2" />
+            </View>
+            {totals.pendingMeals > 0 && (
+              <Text style={txt.pendingNote}>含 {totals.pendingMeals} 项营养估算中,暂未计入总量</Text>
+            )}
+          </>
         )}
         {daily && (
           <TouchableOpacity
@@ -316,45 +321,70 @@ export default function DietScreen() {
         )}
 
         {/* Meal records — 左滑暴露 编辑 + 删除 */}
-        {daily?.meals && daily.meals.length > 0 ? (
-          daily.meals.map((r) => (
-            <ReanimatedSwipeable
-              key={r.id}
-              friction={2}
-              rightThreshold={40}
-              renderRightActions={() => (
-                <View style={styles.swipeActions}>
-                  <TouchableOpacity
-                    style={[styles.swipeBtn, { backgroundColor: c.brand }]}
-                    onPress={() => handleEdit(r)}
-                    activeOpacity={0.85}
-                    accessibilityLabel="编辑"
-                  >
-                    <Ionicons name="pencil" size={18} color="#fff" />
-                    <Text style={txt.swipeText}>编辑</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.swipeBtn, { backgroundColor: c.red }]}
-                    onPress={() => handleDelete(r)}
-                    activeOpacity={0.85}
-                    accessibilityLabel="删除"
-                  >
-                    <Ionicons name="trash" size={18} color="#fff" />
-                    <Text style={txt.swipeText}>删除</Text>
-                  </TouchableOpacity>
+        {meals.length > 0 ? (
+          meals.map((r) => {
+            const pending = isPendingNutrition(r);
+            const isEstimating = pendingIds.has(r.id);
+            const failed = failedIds.has(r.id);
+            return (
+              <ReanimatedSwipeable
+                key={r.id}
+                friction={2}
+                rightThreshold={40}
+                renderRightActions={() => (
+                  <View style={styles.swipeActions}>
+                    <TouchableOpacity
+                      style={[styles.swipeBtn, { backgroundColor: c.brand }]}
+                      onPress={() => handleEdit(r)}
+                      activeOpacity={0.85}
+                      accessibilityLabel="编辑"
+                    >
+                      <Ionicons name="pencil" size={18} color="#fff" />
+                      <Text style={txt.swipeText}>编辑</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.swipeBtn, { backgroundColor: c.red }]}
+                      onPress={() => handleDelete(r)}
+                      activeOpacity={0.85}
+                      accessibilityLabel="删除"
+                    >
+                      <Ionicons name="trash" size={18} color="#fff" />
+                      <Text style={txt.swipeText}>删除</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              >
+                <View style={styles.mealRow}>
+                  <View style={styles.mealDot} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
+                    <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
+                  </View>
+                  {pending ? (
+                    failed && !isEstimating ? (
+                      <TouchableOpacity
+                        style={styles.retryBtn}
+                        onPress={() => retryEstimate(r)}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel="营养估算失败,点击重试"
+                      >
+                        <Ionicons name="refresh" size={13} color={c.red} />
+                        <Text style={[txt.retryText, { color: c.red }]}>估算失败 · 重试</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.pendingChip}>
+                        <ActivityIndicator size="small" color={c.labelTertiary} />
+                        <Text style={txt.pendingChipText}>估算中…</Text>
+                      </View>
+                    )
+                  ) : (
+                    <Text style={txt.mealCal}>{r.calories != null ? `${Math.round(r.calories)}kcal` : ''}</Text>
+                  )}
                 </View>
-              )}
-            >
-              <View style={styles.mealRow}>
-                <View style={styles.mealDot} />
-                <View style={{ flex: 1 }}>
-                  <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
-                  <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
-                </View>
-                <Text style={txt.mealCal}>{r.calories ? `${r.calories}kcal` : ''}</Text>
-              </View>
-            </ReanimatedSwipeable>
-          ))
+              </ReanimatedSwipeable>
+            );
+          })
         ) : (
           <Text style={txt.empty}>{date === todayStr() ? '今天还没有饮食记录' : '当日无记录'}</Text>
         )}
@@ -363,16 +393,6 @@ export default function DietScreen() {
       </ScrollView>
 
       <DietFAB onPhoto={handlePhoto} onText={handleText} onVoice={handleVoiceText} />
-
-      <Modal visible={estimating} transparent animationType="fade" statusBarTranslucent>
-        <View style={styles.estimateOverlay}>
-          <View style={styles.estimateCard}>
-            <ActivityIndicator size="large" color={c.brand} />
-            <Text style={txt.estimateText}>AI 正在估算营养…</Text>
-            <Text style={txt.estimateHint}>通常需要 10 秒左右，请稍候</Text>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -408,6 +428,12 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     padding: spacing.lg, marginBottom: spacing.sm, ...shadows.subtle,
   },
   mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.brand },
+  pendingChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radii.full, backgroundColor: c.bgPrimary,
+  },
   swipeActions: {
     flexDirection: 'row', alignItems: 'stretch',
     marginBottom: spacing.sm,
@@ -429,16 +455,6 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     marginTop: -spacing.sm,
     marginBottom: spacing.lg,
   },
-  estimateOverlay: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  estimateCard: {
-    alignItems: 'center', gap: spacing.md,
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.xl,
-    minWidth: 200, ...shadows.subtle,
-  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -447,12 +463,13 @@ const createTxt = (c: ColorPalette) => ({
   nutriVal: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
   nutriUnit: { fontSize: 10, color: c.labelSecondary } as TextStyle,
   nutriLabel: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+  pendingNote: { fontSize: 11, color: c.labelTertiary, textAlign: 'center', marginTop: -spacing.md, marginBottom: spacing.lg } as TextStyle,
   mealType: { fontSize: 13, fontWeight: '600', color: c.labelPrimary } as TextStyle,
   mealFood: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723' } as TextStyle,
+  pendingChipText: { fontSize: 12, color: c.labelTertiary } as TextStyle,
+  retryText: { fontSize: 12, fontWeight: '600' } as TextStyle,
   swipeText: { fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
   agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
   empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', paddingVertical: 30 } as TextStyle,
-  estimateText: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  estimateHint: { fontSize: 12, color: c.labelTertiary } as TextStyle,
 });
