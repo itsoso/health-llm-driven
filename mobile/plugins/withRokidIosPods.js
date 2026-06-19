@@ -25,6 +25,17 @@ pre_install do |installer|
 end
 `;
 
+// 把刷新后的 RGCxrClient 作为一等本地 pod 注入 target 内部。必须放在 target 块里
+// (pod 声明只在 target 内合法)。RokidBridge.podspec 之前用 s.vendored_frameworks
+// 接它, 但在 Expo static_framework 里 vendored_frameworks 不传播 -F 搜索路径 →
+// canImport(RGCxrClient)=false → SDK 静默缺席(EAS build f0878b7b 实测)。作为一等
+// pod 才能像官方 sample 那样正确接 module / 搜索路径 / 链接。
+const ROKID_TARGET_POD = `  ${ROKID_PODFILE_MARKER} (target pod)
+  if reva_rokid_ios_sdk_enabled?
+    pod 'RGCxrClient', :path => '../modules/rokid-bridge/ios/vendor'
+  end
+`;
+
 function patchPodfileContents(contents) {
   if (contents.includes(ROKID_PODFILE_MARKER)) {
     return contents;
@@ -35,7 +46,10 @@ function patchPodfileContents(contents) {
     throw new Error('withRokidIosPods could not find the HealthPilot Podfile target');
   }
 
-  return contents.replace(targetAnchor, `${ROKID_PODFILE_HOOK}\n${targetAnchor}`);
+  return contents.replace(
+    targetAnchor,
+    `${ROKID_PODFILE_HOOK}\n${targetAnchor}\n${ROKID_TARGET_POD}`,
+  );
 }
 
 function withRokidIosPods(config) {

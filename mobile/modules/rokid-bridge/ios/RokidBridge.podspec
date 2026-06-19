@@ -51,9 +51,14 @@ Pod::Spec.new do |s|
           raise "Rokid vendored framework is missing refreshed CustomView callback APIs: #{expanded_framework_path}"
         end
       end
-      s.vendored_frameworks = rokid_ios_client_framework_path
-      s.preserve_paths = rokid_ios_client_framework_path
+      # RGCxrClient 由 withRokidIosPods.js 注入的本地 pod (vendor/RGCxrClient.podspec)
+      # 提供, 这里只声明依赖 —— 不用 s.vendored_frameworks: 在 Expo static_framework
+      # 模块里 vendored_frameworks 不把框架传播进 RokidBridge 的 -F 搜索路径(EAS
+      # build f0878b7b 实测 canImport(RGCxrClient)=false → SDK 静默缺席)。作为一等
+      # pod 依赖才能正确接 module / FRAMEWORK_SEARCH_PATHS / 链接(对齐官方 sample)。
+      # 上面的 framework 存在性 + callback API 校验仍保留, 作为提前 fail-loud 护栏。
       s.dependency 'RGCoreKit', '0.0.2'
+      s.dependency 'RGCxrClient', rokid_ios_client_version
     else
       s.dependency 'RGCxrClient', rokid_ios_client_version
     end
