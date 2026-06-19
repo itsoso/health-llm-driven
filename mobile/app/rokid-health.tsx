@@ -425,7 +425,22 @@ export default function RokidHealthScreen() {
         priority: 'manual_confirm',
       });
       if (result.ok === false) {
-        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_custom_view_failed');
+        const reason = typeof result.reason === 'string' ? result.reason : 'rokid_custom_view_failed';
+        // 眼镜蓝牙未连接时 native 已把本次 view 排入 pending,连上(connectionStatePublisher)会自动重发。
+        // 这不是终态失败,显示"等待中"而非"失败",别误吓用户(council 共识 P2:Codex/Claude B/A)。
+        if (result.customViewPendingRetry === true || reason.includes('rokid_glasses_ble_not_connected')) {
+          try {
+            await statusQuery.refetch();
+          } catch {
+            // diagnostics refresh is best-effort; the waiting message still stands.
+          }
+          setSessionState({
+            status: 'waiting',
+            message: '眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,Reva 会在连上时自动打开眼镜视图。',
+          });
+          return;
+        }
+        throw new Error(reason);
       }
       const refreshed = await statusQuery.refetch();
       const customViewRunning =
