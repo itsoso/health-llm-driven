@@ -18,6 +18,7 @@ const mockPost = jest.fn();
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ back: mockBack }),
+  useFocusEffect: jest.fn(),
 }));
 
 jest.mock('../../modules/rokid-bridge', () => ({
