@@ -11,6 +11,11 @@ Pod::Spec.new do |s|
   rokid_ios_client_has_callback_api = ['1', 'true', 'yes'].include?(
     ENV['ROKID_IOS_CLIENT_HAS_CALLBACK_API'].to_s.downcase
   )
+  rokid_ios_min_target = if rokid_ios_sdk_enabled && !rokid_ios_simulator && !rokid_ios_client_framework_path.empty?
+    '16.0'
+  else
+    '15.1'
+  end
   swift_flags = ['$(inherited)']
 
   s.name           = 'RokidBridge'
@@ -19,7 +24,7 @@ Pod::Spec.new do |s|
   s.description    = s.summary
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'
-  s.platforms      = { :ios => '15.1' }
+  s.platforms      = { :ios => rokid_ios_min_target }
   s.source         = { git: '' }
   s.static_framework = true
 
@@ -47,6 +52,7 @@ Pod::Spec.new do |s|
         end
       end
       s.vendored_frameworks = rokid_ios_client_framework_path
+      s.preserve_paths = rokid_ios_client_framework_path
       s.dependency 'RGCoreKit', '0.0.2'
     else
       s.dependency 'RGCxrClient', rokid_ios_client_version
@@ -66,5 +72,6 @@ Pod::Spec.new do |s|
     'OTHER_SWIFT_FLAGS' => swift_flags.join(' ')
   }
 
-  s.source_files = "**/*.{h,m,mm,swift}"
+  s.source_files = "*.{h,m,mm,swift}"
+  s.exclude_files = "vendor/**/*"
 end

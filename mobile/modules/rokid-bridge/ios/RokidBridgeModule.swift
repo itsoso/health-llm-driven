@@ -449,7 +449,7 @@ public class RokidBridgeModule: Module {
           "custom_view_open_callback",
           detail: "commandAccepted=\(success); errorCode=\(String(describing: errorCode)); running=\(RokidBridgeModule.customViewRunning)"
         )
-        resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: true)
+        resolveCustomViewOpenPromiseIfNeeded(promise, state: resolutionState, commandAccepted: success)
       }
     }
     #else
@@ -484,8 +484,17 @@ public class RokidBridgeModule: Module {
       return
     }
 
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.updateCustomView(view) { updated in
+      DispatchQueue.main.async {
+        recordAuthDiagnostic("custom_view_update_callback", detail: "commandAccepted=\(updated)")
+        promise.resolve(customViewCommandPayload(commandAccepted: updated))
+      }
+    }
+    #else
     CxrClient.shared.updateCustomView(view)
     promise.resolve(customViewCommandPayload(commandAccepted: true))
+    #endif
     #else
     _ = view
     promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
@@ -495,9 +504,24 @@ public class RokidBridgeModule: Module {
   private static func closeCustomView(_ view: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.closeCustomView(view) { closed in
+      DispatchQueue.main.async {
+        if closed {
+          RokidBridgeModule.customViewRunning = false
+        }
+        recordAuthDiagnostic(
+          "custom_view_close_callback",
+          detail: "commandAccepted=\(closed); running=\(RokidBridgeModule.customViewRunning)"
+        )
+        promise.resolve(customViewCommandPayload(commandAccepted: closed))
+      }
+    }
+    #else
     CxrClient.shared.closeCustomView(view)
     RokidBridgeModule.customViewRunning = false
     promise.resolve(customViewCommandPayload(commandAccepted: true))
+    #endif
     #else
     _ = view
     promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
@@ -540,6 +564,15 @@ public class RokidBridgeModule: Module {
       return
     }
 
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.queryApp { installed in
+      promise.resolve([
+        "ok": true,
+        "installed": installed,
+        "packageName": packageName,
+      ])
+    }
+    #else
     CxrClient.shared.queryApp(packageName: packageName) { installed in
       promise.resolve([
         "ok": true,
@@ -547,6 +580,7 @@ public class RokidBridgeModule: Module {
         "packageName": packageName,
       ])
     }
+    #endif
     #else
     _ = packageName
     promise.resolve(["ok": false, "installed": false, "reason": "ios_sdk_not_linked"])
@@ -625,6 +659,15 @@ public class RokidBridgeModule: Module {
       return
     }
 
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.uninstallApp { uninstalled in
+      promise.resolve([
+        "ok": uninstalled,
+        "uninstalled": uninstalled,
+        "packageName": packageName,
+      ])
+    }
+    #else
     CxrClient.shared.uninstallApp(packageName) { uninstalled in
       promise.resolve([
         "ok": uninstalled,
@@ -632,6 +675,7 @@ public class RokidBridgeModule: Module {
         "packageName": packageName,
       ])
     }
+    #endif
     #else
     _ = packageName
     promise.resolve(["ok": false, "uninstalled": false, "reason": "ios_sdk_not_linked"])
@@ -646,6 +690,16 @@ public class RokidBridgeModule: Module {
       return
     }
 
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.openApp(activityName: activityName, url: url) { opened in
+      promise.resolve([
+        "ok": opened,
+        "opened": opened,
+        "packageName": packageName,
+        "activityName": activityName,
+      ])
+    }
+    #else
     CxrClient.shared.openApp(packageName: packageName, activityName: activityName, url: url) { opened in
       promise.resolve([
         "ok": opened,
@@ -654,6 +708,7 @@ public class RokidBridgeModule: Module {
         "activityName": activityName,
       ])
     }
+    #endif
     #else
     _ = packageName
     _ = activityName
@@ -670,6 +725,15 @@ public class RokidBridgeModule: Module {
       return
     }
 
+    #if ROKID_CXRL_CALLBACK_API
+    CxrClient.shared.stopApp { stopped in
+      promise.resolve([
+        "ok": stopped,
+        "stopped": stopped,
+        "packageName": packageName,
+      ])
+    }
+    #else
     CxrClient.shared.stopApp(packageName) { stopped in
       promise.resolve([
         "ok": stopped,
@@ -677,6 +741,7 @@ public class RokidBridgeModule: Module {
         "packageName": packageName,
       ])
     }
+    #endif
     #else
     _ = packageName
     promise.resolve(["ok": false, "stopped": false, "reason": "ios_sdk_not_linked"])
