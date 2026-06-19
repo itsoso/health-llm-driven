@@ -7,13 +7,18 @@ describe('rokid-bridge JS facade', () => {
       }
       return nativeModule;
     });
+    const EventEmitter = jest.fn().mockImplementation(() => ({
+      addListener: jest.fn(),
+    }));
     jest.doMock('expo-modules-core', () => ({
       Platform: { OS: platform },
       requireNativeModule,
+      EventEmitter,
     }));
     return {
       bridge: require('../index'),
       requireNativeModule,
+      EventEmitter,
     };
   };
 
@@ -177,18 +182,20 @@ describe('rokid-bridge JS facade', () => {
 
   it('subscribes to native Rokid transcript events through the JS facade', () => {
     const remove = jest.fn();
+    const addListener = jest.fn().mockReturnValue({ remove });
     const native = {
       getIntegrationStatus: jest.fn().mockResolvedValue({ platform: 'ios', bridgeAvailable: true }),
       openHiRokid: jest.fn().mockResolvedValue(true),
-      addListener: jest.fn().mockReturnValue({ remove }),
     };
-    const { bridge } = loadModule('ios', native);
+    const { bridge, EventEmitter } = loadModule('ios', native);
+    EventEmitter.mockImplementationOnce(() => ({ addListener }));
     const listener = jest.fn();
 
     const subscription = bridge.addRokidTranscriptListener(listener);
     subscription.remove();
 
-    expect(native.addListener).toHaveBeenCalledWith('onRokidTranscript', listener);
+    expect(EventEmitter).toHaveBeenCalledWith(native);
+    expect(addListener).toHaveBeenCalledWith('onRokidTranscript', listener);
     expect(remove).toHaveBeenCalledTimes(1);
   });
 

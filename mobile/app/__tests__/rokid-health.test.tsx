@@ -8,6 +8,7 @@ const mockGetRokidIntegrationStatus = jest.fn();
 const mockTakeRokidPhotoBase64 = jest.fn();
 const mockRequestRokidAuthorization = jest.fn();
 const mockOpenRokidRevaCustomView = jest.fn();
+const mockUpdateRokidCustomView = jest.fn();
 const mockAddRokidTranscriptListener = jest.fn();
 const mockGetRokidDeviceValidationSteps = jest.fn();
 const mockListRokidGlanceCards = jest.fn();
@@ -29,6 +30,15 @@ jest.mock('../../modules/rokid-bridge', () => ({
   getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
   getRokidDeviceValidationSteps: (...args: any[]) => mockGetRokidDeviceValidationSteps(...args),
   openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
+  updateRokidCustomView: (...args: any[]) => mockUpdateRokidCustomView(...args),
+  createRokidRevaCustomViewLayout: (options?: any) => JSON.stringify({
+    type: 'LinearLayout',
+    children: [
+      { props: { text: options?.title ?? 'Reva Health' } },
+      { props: { text: options?.body ?? '' } },
+      { props: { text: options?.priority ?? 'manual_confirm' } },
+    ],
+  }),
   requestRokidAuthorization: (...args: any[]) => mockRequestRokidAuthorization(...args),
   takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
   addRokidTranscriptListener: (...args: any[]) => mockAddRokidTranscriptListener(...args),
@@ -129,6 +139,7 @@ describe('RokidHealthScreen', () => {
       customViewRunning: true,
       capabilitiesReady: true,
     });
+    mockUpdateRokidCustomView.mockResolvedValue({ ok: true });
     mockStartRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
     mockStopRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
     mockSubmitRokidVoiceCommand.mockResolvedValue({
@@ -250,6 +261,45 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('ignores late Rokid transcripts after the voice session starts stopping', async () => {
+    let resolveStop: (value: Record<string, unknown>) => void = () => undefined;
+    mockStopRokidVoiceCommandCapture.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStop = resolve;
+      }),
+    );
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    expect(rokidTranscriptListener).toBeTruthy();
+
+    fireEvent.press(screen.getByText('停止语音控制'));
+    expect(mockTranscriptSubscriptionRemove).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '拍一下这餐',
+        confidence: 0.9,
+      });
+      await flushAsyncUpdates();
+    });
+
+    expect(mockSubmitRokidVoiceCommand).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveStop({ ok: true });
+      await flushAsyncUpdates();
+    });
+  });
+
   it('routes a Rokid food voice transcript into photo capture and nutrition recognition', async () => {
     mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
       command: {
@@ -308,6 +358,7 @@ describe('RokidHealthScreen', () => {
           total_fat: 20,
         }),
       }));
+      expect(mockUpdateRokidCustomView).toHaveBeenCalledWith(expect.stringContaining('开始拍照记录这餐'));
       expect(screen.getByText('开始拍照记录这餐')).toBeTruthy();
     });
   });

@@ -16,11 +16,13 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   addRokidTranscriptListener,
+  createRokidRevaCustomViewLayout,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
   openRokidRevaCustomView,
   requestRokidAuthorization,
   takeRokidPhotoBase64,
+  updateRokidCustomView,
   type RokidDeviceValidationStep,
   type RokidEventSubscription,
   type RokidIntegrationStatus,
@@ -197,6 +199,7 @@ export default function RokidHealthScreen() {
     message?: string;
   }>({ status: 'idle' });
   const voiceTranscriptSubscriptionRef = useRef<RokidEventSubscription | null>(null);
+  const voiceListeningRef = useRef(false);
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -222,6 +225,18 @@ export default function RokidHealthScreen() {
   const removeVoiceTranscriptListener = () => {
     voiceTranscriptSubscriptionRef.current?.remove();
     voiceTranscriptSubscriptionRef.current = null;
+  };
+
+  const updateVoiceCustomView = async (body: string, priority = 'voice') => {
+    try {
+      await updateRokidCustomView(createRokidRevaCustomViewLayout({
+        title: 'Reva 语音控制',
+        body,
+        priority,
+      }));
+    } catch {
+      // The phone-side flow remains authoritative if glasses UI refresh fails.
+    }
   };
 
   useEffect(() => removeVoiceTranscriptListener, []);
@@ -304,9 +319,11 @@ export default function RokidHealthScreen() {
       voiceTranscriptSubscriptionRef.current = addRokidTranscriptListener((event) => {
         void handleVoiceTranscript(event);
       });
+      voiceListeningRef.current = true;
       setVoiceState({ status: 'listening', message: 'Rokid 语音控制已开启' });
       await statusQuery.refetch();
     } catch (error) {
+      voiceListeningRef.current = false;
       removeVoiceTranscriptListener();
       if (recordingStarted) {
         try {
@@ -324,6 +341,8 @@ export default function RokidHealthScreen() {
 
   const stopVoiceControl = async () => {
     setVoiceState({ status: 'stopping', message: 'Rokid 语音控制停止中...' });
+    voiceListeningRef.current = false;
+    removeVoiceTranscriptListener();
     try {
       const result = await stopRokidVoiceCommandCapture();
       if (result.ok === false) {
@@ -403,6 +422,9 @@ export default function RokidHealthScreen() {
   };
 
   async function handleVoiceTranscript(event: RokidTranscriptEvent) {
+    if (!voiceListeningRef.current) {
+      return;
+    }
     if (!shouldRouteTranscript(event)) {
       return;
     }
@@ -412,6 +434,7 @@ export default function RokidHealthScreen() {
     }
 
     setVoiceState({ status: 'listening', message: `识别: ${transcript}` });
+    void updateVoiceCustomView(`识别: ${transcript}`);
     try {
       const response = await submitRokidVoiceCommand({
         transcript,
@@ -428,6 +451,7 @@ export default function RokidHealthScreen() {
       const reply = command?.voice_reply || command?.display_text;
       if (reply) {
         setVoiceState({ status: 'listening', message: reply });
+        await updateVoiceCustomView(reply);
       }
       await executeRokidVoiceClientAction(response, {
         captureFoodPhoto: async ({ visualIntent }) => {

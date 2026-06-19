@@ -1,4 +1,9 @@
-import { Platform, requireNativeModule } from 'expo-modules-core';
+import {
+  EventEmitter,
+  Platform,
+  requireNativeModule,
+  type EventSubscription,
+} from 'expo-modules-core';
 
 export const ROKID_SDK_ARTIFACTS = {
   clientM: 'com.rokid.cxr:client-m:1.2.2',
@@ -75,6 +80,17 @@ export type RokidEventSubscription = {
   remove: () => void;
 };
 
+type RokidBridgeEvents = {
+  [ROKID_TRANSCRIPT_EVENT]: (event: RokidTranscriptEvent) => void;
+};
+
+type RokidNativeEventEmitter = {
+  addListener: (
+    eventName: typeof ROKID_TRANSCRIPT_EVENT,
+    listener: RokidBridgeEvents[typeof ROKID_TRANSCRIPT_EVENT],
+  ) => EventSubscription;
+};
+
 type RokidNativeModule = {
   getIntegrationStatus: () => Promise<Partial<RokidIntegrationStatus>>;
   openHiRokid: () => Promise<boolean>;
@@ -89,13 +105,10 @@ type RokidNativeModule = {
   stopApp?: (packageName: string) => Promise<Record<string, unknown>>;
   startRecord?: (type: string, codec: string, mode: string) => Promise<Record<string, unknown>>;
   stopRecord?: (type: string) => Promise<Record<string, unknown>>;
-  addListener?: (
-    eventName: typeof ROKID_TRANSCRIPT_EVENT,
-    listener: (event: RokidTranscriptEvent) => void,
-  ) => RokidEventSubscription;
 };
 
 let cachedNative: RokidNativeModule | null | undefined;
+let cachedEmitter: RokidNativeEventEmitter | null | undefined;
 
 type RevaCustomViewOptions = {
   title?: string;
@@ -128,6 +141,19 @@ function getNativeBridge(): RokidNativeModule | null {
     cachedNative = null;
   }
   return cachedNative;
+}
+
+function getNativeEmitter(): RokidNativeEventEmitter | null {
+  const native = getNativeBridge();
+  if (!native) {
+    return null;
+  }
+  if (cachedEmitter !== undefined) {
+    return cachedEmitter;
+  }
+  const emitter = new EventEmitter(native as any) as RokidNativeEventEmitter;
+  cachedEmitter = emitter;
+  return emitter;
 }
 
 export function getRokidDeviceValidationSteps(
@@ -417,9 +443,9 @@ export async function stopRokidRecord(type = 'interaction'): Promise<Record<stri
 export function addRokidTranscriptListener(
   listener: (event: RokidTranscriptEvent) => void,
 ): RokidEventSubscription {
-  const native = getNativeBridge();
-  if (!native?.addListener) {
+  const emitter = getNativeEmitter();
+  if (!emitter) {
     return { remove: () => undefined };
   }
-  return native.addListener(ROKID_TRANSCRIPT_EVENT, listener);
+  return emitter.addListener(ROKID_TRANSCRIPT_EVENT, listener) as EventSubscription;
 }
