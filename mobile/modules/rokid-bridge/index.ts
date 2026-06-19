@@ -99,6 +99,7 @@ export type RokidDeviceValidationStep = {
     | 'ios_sdk_linked'
     | 'hi_rokid_ready'
     | 'rokid_authorized'
+    | 'glasses_ble_connected'
     | 'custom_view_running'
     | 'capture_ready';
   title: string;
@@ -180,6 +181,8 @@ export function getRokidDeviceValidationSteps(
     );
   const hiRokidReady = status?.hiRokidInstalled === true && status?.canOpenHiRokid === true;
   const authorized = status?.authorizationState === 'authenticated';
+  const bleDevice = status?.iosBleDeviceName || status?.currentDeviceName;
+  const glassesBleConnected = platform !== 'ios' || status?.iosBleConnected === true;
   const customViewRunning = status?.customViewRunning === true;
   const captureReady = status?.capabilitiesReady === true;
   const iosClient = status?.sdkArtifacts?.iosClient ?? ROKID_SDK_ARTIFACTS.iosClient;
@@ -203,7 +206,7 @@ export function getRokidDeviceValidationSteps(
     {
       id: 'hi_rokid_ready',
       title: 'Rokid companion 已连接',
-      detail: hiRokidReady ? 'Rokid AI / Hi Rokid 可唤起, 可继续授权。' : '在 Rokid AI / Hi Rokid 中确认眼镜已连接。',
+      detail: hiRokidReady ? 'Rokid AI / Hi Rokid 可唤起, 可继续授权。' : '安装并登录 Rokid AI / Hi Rokid。',
       actionLabel: '打开 Rokid AI / Hi Rokid',
       done: hiRokidReady,
     },
@@ -214,6 +217,15 @@ export function getRokidDeviceValidationSteps(
       actionLabel: '授权 Rokid',
       done: authorized,
     },
+    ...(platform === 'ios' ? [{
+      id: 'glasses_ble_connected' as const,
+      title: '眼镜蓝牙链路',
+      detail: glassesBleConnected
+        ? `Rokid CXR-L 已连接眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。`
+        : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。请在 Rokid AI / Hi Rokid 中确认眼镜在线, 返回 Reva 后刷新。`,
+      actionLabel: '打开 Rokid AI / Hi Rokid',
+      done: glassesBleConnected,
+    }] : []),
     {
       id: 'custom_view_running',
       title: 'Reva 眼镜视图',

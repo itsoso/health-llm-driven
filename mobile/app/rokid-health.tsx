@@ -142,6 +142,17 @@ function formatRokidAuthorizationIssue(reason?: string) {
   return reason ?? 'authorization_failed';
 }
 
+function formatRokidCustomViewIssue(reason?: string) {
+  if (!reason) {
+    return 'custom_view_failed';
+  }
+  const normalized = reason.toLowerCase();
+  if (normalized.includes('rokid_glasses_ble_not_connected')) {
+    return '眼镜蓝牙链路未连接: 请在 Rokid AI / Hi Rokid 中确认眼镜在线, 返回 Reva 后刷新。';
+  }
+  return reason;
+}
+
 function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   const lines: string[] = [];
   if (!status) {
@@ -412,9 +423,10 @@ export default function RokidHealthScreen() {
         message: 'Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。',
       });
     } catch (error) {
+      const reason = error instanceof Error ? error.message : 'custom_view_failed';
       setSessionState({
         status: 'failed',
-        message: `Reva 眼镜视图失败: ${error instanceof Error ? error.message : 'custom_view_failed'}`,
+        message: `Reva 眼镜视图失败: ${formatRokidCustomViewIssue(reason)}`,
       });
     }
   };

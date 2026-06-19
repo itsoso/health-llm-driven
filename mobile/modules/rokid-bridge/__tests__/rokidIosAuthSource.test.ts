@@ -102,6 +102,12 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('"custom_view_open_invoked"');
   });
 
+  it('blocks CustomView opening until the CXR-L glasses BLE link is connected', () => {
+    expect(source).toContain('rokid_glasses_ble_not_connected');
+    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+custom_view_open_blocked[\s\S]+rokid_glasses_ble_not_connected[\s\S]+promise\.resolve/);
+    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+return[\s\S]+let resolutionState = PromiseResolutionState/);
+  });
+
   it('captures raw CustomView notify events and payload fingerprints for open failures', () => {
     expect(source).toContain('lastCustomViewPayloadHash');
     expect(source).toContain('lastCustomViewPayloadShape');

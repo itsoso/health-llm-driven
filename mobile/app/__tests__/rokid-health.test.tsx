@@ -602,6 +602,53 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('explains that the glasses BLE link is required before opening the Reva CustomView', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    mockOpenRokidRevaCustomView.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_glasses_ble_not_connected',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('打开 Reva 眼镜视图')).toBeTruthy();
+      expect(screen.getByText('iOS BLE: connected=false · device=Glasses_0077')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Reva 眼镜视图失败: 眼镜蓝牙链路未连接/)).toBeTruthy();
+      expect(screen.getByText(/请在 Rokid AI \/ Hi Rokid 中确认眼镜在线/)).toBeTruthy();
+    });
+  });
+
   it('blocks iOS photo capture until the customView scene is running', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',

@@ -464,6 +464,23 @@ public class RokidBridgeModule: Module {
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
+    guard iosBleConnected() else {
+      let reason = "rokid_glasses_ble_not_connected"
+      let deviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
+      RokidBridgeModule.customViewRunning = false
+      RokidBridgeModule.lastCustomViewOpenCommandAccepted = false
+      RokidBridgeModule.lastCustomViewOpenError = "\(reason); device=\(deviceName)"
+      recordAuthDiagnostic(
+        "custom_view_open_blocked",
+        detail: "rokid_glasses_ble_not_connected; device=\(deviceName); authorized=true"
+      )
+      var response = customViewCommandPayload(commandAccepted: false)
+      response["reason"] = reason
+      response["iosBleConnected"] = false
+      response["iosBleDeviceName"] = deviceName
+      promise.resolve(response)
+      return
+    }
 
     let resolutionState = PromiseResolutionState()
     #if ROKID_CXRL_CALLBACK_API

@@ -10,6 +10,8 @@ describe('rokid diagnostics', () => {
       mode: 'sdk_probe',
       sdkLinked: true,
       authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
       customViewRunning: true,
       capabilitiesReady: true,
       sessionMode: 'customView',
@@ -36,6 +38,7 @@ describe('rokid diagnostics', () => {
     });
     expect(check.items.every((item) => item.severity === 'pass')).toBe(true);
     expect(check.validationSteps.map((step) => step.status)).toEqual([
+      'done',
       'done',
       'done',
       'done',
