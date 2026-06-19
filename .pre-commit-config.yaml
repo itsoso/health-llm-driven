@@ -6,6 +6,10 @@
 # 手动跑全部: pre-commit run --all-files
 # 跳过单次: git commit --no-verify
 
+# Vendored 第三方二进制框架 (Rokid CXR-L SDK) 不能被任何 hook 改 —— whitespace/EOF
+# 修整会污染 .swiftinterface/.abi.json/binary module, 破坏原厂框架。全局排除。
+exclude: '^mobile/modules/rokid-bridge/ios/vendor/RGCxrClient\.framework/'
+
 repos:
   # ── 通用卫生 ──────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
