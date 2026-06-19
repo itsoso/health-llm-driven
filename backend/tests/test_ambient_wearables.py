@@ -105,6 +105,155 @@ def test_ambient_audio_input_routes_food_to_existing_draft_endpoint(client, db):
     }
 
 
+def test_ambient_audio_input_routes_movement_to_guided_task(client, db):
+    from app.models.ambient_wearable import AudioInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/audio-inputs",
+        headers=headers,
+        json={
+            "intent": "movement",
+            "transcript": "今天练什么",
+            "source": "rokid_glasses",
+            "device_type": "glasses",
+            "confidence": 0.86,
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(AudioInputEvent).filter(AudioInputEvent.user_id == user.id).one()
+    assert event.intent == "movement"
+    assert event.source == "rokid_glasses"
+    assert body["recommended_next_action"] == {
+        "type": "fetch_guided_movement",
+        "method": "GET",
+        "path": "/movement/guided-task?domain=strength",
+    }
+
+
+def test_rokid_voice_command_routes_food_photo_to_client_capture_and_audits_event(client, db):
+    from app.models.ambient_wearable import AudioInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/rokid-voice-commands",
+        headers=headers,
+        json={
+            "transcript": "帮我拍一下这餐, 记录热量",
+            "confidence": 0.91,
+            "context": "rokid_health",
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(AudioInputEvent).filter(AudioInputEvent.user_id == user.id).one()
+    assert body["event"]["id"] == event.id
+    assert event.intent == "food"
+    assert event.source == "rokid_glasses"
+    assert event.device_type == "glasses"
+    assert event.status == "processed"
+    assert event.target_type == "rokid_voice_command"
+    assert event.meta["command_intent"] == "food_photo"
+    assert body["command"] == {
+        "intent": "food_photo",
+        "client_action": "capture_food_photo",
+        "route": None,
+        "voice_reply": "我来拍这餐, 识别后会生成待确认的热量和营养记录。",
+        "display_text": "拍摄餐食并生成待确认饮食记录",
+        "requires_confirmation": True,
+        "safety_level": "health_l3",
+        "parameters": {"visual_intent": "food_scan"},
+        "recommended_next_action": {
+            "type": "capture_food_photo",
+            "method": "POST",
+            "path": "/ambient/visual-inputs",
+        },
+    }
+
+
+def test_rokid_voice_command_routes_pushup_start_to_pushup_coach(client, db):
+    from app.models.ambient_wearable import AudioInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/rokid-voice-commands",
+        headers=headers,
+        json={"transcript": "开始俯卧撑, 来一组二十个", "context": "rokid_health"},
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(AudioInputEvent).filter(AudioInputEvent.user_id == user.id).one()
+    assert event.intent == "movement"
+    assert event.status == "processed"
+    assert event.meta["command_intent"] == "pushup_start"
+    assert body["command"]["intent"] == "pushup_start"
+    assert body["command"]["client_action"] == "open_pushup_coach"
+    assert body["command"]["route"] == "/rokid-pushup-coach"
+    assert body["command"]["parameters"] == {"target_reps": 20}
+    assert body["command"]["recommended_next_action"] == {
+        "type": "start_rokid_pushup_session",
+        "method": "POST",
+        "path": "/devices/rokid/pushup-sessions",
+    }
+
+
+def test_rokid_voice_command_routes_exercise_guidance_to_guided_task(client, db):
+    from app.models.ambient_wearable import AudioInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/rokid-voice-commands",
+        headers=headers,
+        json={"transcript": "今天练什么, 指导我运动", "context": "rokid_health"},
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(AudioInputEvent).filter(AudioInputEvent.user_id == user.id).one()
+    assert event.intent == "movement"
+    assert event.status == "processed"
+    assert event.meta["command_intent"] == "exercise_guidance"
+    assert body["command"]["intent"] == "exercise_guidance"
+    assert body["command"]["client_action"] == "open_guided_task"
+    assert body["command"]["route"] == "/guided-task?domain=strength&source=rokid_voice"
+    assert body["command"]["recommended_next_action"] == {
+        "type": "fetch_guided_movement",
+        "method": "GET",
+        "path": "/movement/guided-task?domain=strength",
+    }
+
+
+def test_rokid_voice_command_unknown_asks_for_clarification_without_client_side_write(client, db):
+    from app.models.ambient_wearable import AudioInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/rokid-voice-commands",
+        headers=headers,
+        json={"transcript": "帮我订一杯咖啡", "context": "rokid_health"},
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(AudioInputEvent).filter(AudioInputEvent.user_id == user.id).one()
+    assert event.intent == "note"
+    assert event.status == "pending_clarification"
+    assert event.meta["command_intent"] == "unknown"
+    assert event.safety_result["routed"] is False
+    assert body["command"]["intent"] == "unknown"
+    assert body["command"]["client_action"] == "clarify"
+    assert body["command"]["recommended_next_action"] is None
+
+
 def test_rokid_visual_food_scan_records_visual_input_event(client, db):
     from app.models.ambient_wearable import VisualInputEvent
 

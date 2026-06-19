@@ -29,6 +29,10 @@ import {
   submitRokidVisualInput,
   type RokidVisualIntent,
 } from '../services/rokidAmbient';
+import {
+  startRokidVoiceCommandCapture,
+  stopRokidVoiceCommandCapture,
+} from '../services/rokidVoiceControl';
 import { recognizeFood, type FoodRecognitionResponse } from '../services/diet';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
@@ -37,6 +41,7 @@ type PrivacyMode = 'private' | 'workplace' | 'public';
 type OpenState = 'idle' | 'opening' | 'opened' | 'unavailable' | 'failed';
 type CaptureStatus = 'idle' | 'capturing' | 'submitted' | 'failed';
 type SessionStatus = 'idle' | 'running' | 'ready' | 'failed';
+type VoiceControlStatus = 'idle' | 'starting' | 'listening' | 'stopping' | 'failed';
 
 type CaptureState = {
   status: CaptureStatus;
@@ -158,6 +163,10 @@ export default function RokidHealthScreen() {
     status: SessionStatus;
     message?: string;
   }>({ status: 'idle' });
+  const [voiceState, setVoiceState] = useState<{
+    status: VoiceControlStatus;
+    message?: string;
+  }>({ status: 'idle' });
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -233,6 +242,48 @@ export default function RokidHealthScreen() {
       setSessionState({
         status: 'failed',
         message: `Reva 眼镜视图失败: ${error instanceof Error ? error.message : 'custom_view_failed'}`,
+      });
+    }
+  };
+
+  const startVoiceControl = async () => {
+    setVoiceState({ status: 'starting', message: 'Rokid 语音控制启动中...' });
+    try {
+      const recordResult = await startRokidVoiceCommandCapture();
+      if (recordResult.ok === false) {
+        throw new Error(typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed');
+      }
+      const viewResult = await openRokidRevaCustomView({
+        title: 'Reva 语音控制',
+        body: '正在等待明确语音指令',
+        priority: 'voice',
+      });
+      if (viewResult.ok === false) {
+        throw new Error(typeof viewResult.reason === 'string' ? viewResult.reason : 'rokid_custom_view_failed');
+      }
+      setVoiceState({ status: 'listening', message: 'Rokid 语音控制已开启' });
+      await statusQuery.refetch();
+    } catch (error) {
+      setVoiceState({
+        status: 'failed',
+        message: `Rokid 语音控制失败: ${error instanceof Error ? error.message : 'voice_control_failed'}`,
+      });
+    }
+  };
+
+  const stopVoiceControl = async () => {
+    setVoiceState({ status: 'stopping', message: 'Rokid 语音控制停止中...' });
+    try {
+      const result = await stopRokidVoiceCommandCapture();
+      if (result.ok === false) {
+        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_stop_record_failed');
+      }
+      setVoiceState({ status: 'idle', message: 'Rokid 语音控制已停止' });
+      await statusQuery.refetch();
+    } catch (error) {
+      setVoiceState({
+        status: 'failed',
+        message: `Rokid 语音控制停止失败: ${error instanceof Error ? error.message : 'voice_control_stop_failed'}`,
       });
     }
   };
@@ -466,6 +517,64 @@ export default function RokidHealthScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
           </Pressable>
+        </View>
+
+        <View style={styles.panel}>
+          <View style={styles.sectionHeader}>
+            <Text style={txt.sectionTitle}>语音控制</Text>
+            <Text style={[
+              txt.sessionState,
+              voiceState.status === 'listening' ? { color: s.success.solid } : null,
+              voiceState.status === 'failed' ? { color: s.warning.solid } : null,
+            ]}>
+              {voiceState.status === 'listening'
+                ? '已开启'
+                : voiceState.status === 'starting'
+                  ? '启动中'
+                  : voiceState.status === 'stopping'
+                    ? '停止中'
+                    : '未开启'}
+            </Text>
+          </View>
+          <View style={styles.buttonRow}>
+            <Pressable
+              onPress={startVoiceControl}
+              disabled={voiceState.status === 'starting' || voiceState.status === 'listening' || voiceState.status === 'stopping'}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+                (voiceState.status === 'starting' || voiceState.status === 'listening' || voiceState.status === 'stopping') && styles.disabledButton,
+              ]}
+              accessibilityRole="button"
+            >
+              <Ionicons name="mic-outline" size={17} color="#fff" />
+              <Text style={txt.primaryButton}>
+                {voiceState.status === 'starting' ? '启动中...' : '启动语音控制'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={stopVoiceControl}
+              disabled={voiceState.status !== 'listening'}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+                voiceState.status !== 'listening' && styles.disabledButton,
+              ]}
+              accessibilityRole="button"
+            >
+              <Ionicons name="mic-off-outline" size={16} color={c.brand} />
+              <Text style={txt.secondaryButton}>停止语音控制</Text>
+            </Pressable>
+          </View>
+          {voiceState.message ? (
+            <Text style={[
+              txt.sessionMessage,
+              voiceState.status === 'listening' ? { color: s.success.solid } : null,
+              voiceState.status === 'failed' ? { color: s.warning.solid } : null,
+            ]}>
+              {voiceState.message}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.panel}>
@@ -828,6 +937,7 @@ const createTxt = (c: ColorPalette) => ({
   validationNext: { fontSize: 11, fontWeight: '800', color: c.brand, maxWidth: 140 } as TextStyle,
   validationDetail: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   sectionTitle: { fontSize: 15, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  sessionState: { fontSize: 12, fontWeight: '800', color: c.labelSecondary } as TextStyle,
   sectionHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4, marginBottom: spacing.sm } as TextStyle,
   statusPill: { fontSize: 12, fontWeight: '800', maxWidth: 140 } as TextStyle,
   segmentText: { fontSize: 13, fontWeight: '800', color: c.labelSecondary } as TextStyle,

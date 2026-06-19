@@ -24,6 +24,7 @@ export type RokidAudioIntent =
   | 'mood'
   | 'supplement'
   | 'medication'
+  | 'movement'
   | 'note';
 
 export type SubmitRokidVisualInput = {

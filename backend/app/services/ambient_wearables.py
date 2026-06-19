@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -26,6 +27,8 @@ def audio_next_action(intent: str) -> Optional[Dict[str, str]]:
         return {"type": "parse_food_draft", "method": "POST", "path": "/diet/voice/parse"}
     if intent == "symptom":
         return {"type": "evaluate_symptom", "method": "POST", "path": "/watch/symptoms"}
+    if intent == "movement":
+        return {"type": "fetch_guided_movement", "method": "GET", "path": "/movement/guided-task?domain=strength"}
     return None
 
 
@@ -78,6 +81,189 @@ def create_audio_input_event(
     if flush:
         db.flush()
     return event
+
+
+def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    return any(term in text for term in terms)
+
+
+def _target_reps_from_text(text: str) -> int:
+    match = re.search(r"(\d{1,3})\s*(个|下|次)?", text)
+    if match:
+        reps = int(match.group(1))
+        if 1 <= reps <= 200:
+            return reps
+    zh_numbers = (
+        ("二十五", 25),
+        ("十五", 15),
+        ("二十", 20),
+        ("三十", 30),
+        ("四十", 40),
+        ("五十", 50),
+        ("十", 10),
+    )
+    for token, reps in zh_numbers:
+        if token in text:
+            return reps
+    return 20
+
+
+def _voice_command(
+    *,
+    intent: str,
+    event_intent: str,
+    client_action: str,
+    voice_reply: str,
+    display_text: str,
+    route: Optional[str] = None,
+    requires_confirmation: bool = False,
+    safety_level: str = "health_l3",
+    parameters: Optional[Dict[str, Any]] = None,
+    recommended_next_action: Optional[Dict[str, str]] = None,
+    event_status: str = "processed",
+    routed: bool = True,
+) -> Dict[str, Any]:
+    return {
+        "intent": intent,
+        "event_intent": event_intent,
+        "event_status": event_status,
+        "client_action": client_action,
+        "route": route,
+        "voice_reply": voice_reply,
+        "display_text": display_text,
+        "requires_confirmation": requires_confirmation,
+        "safety_level": safety_level,
+        "parameters": parameters or {},
+        "recommended_next_action": recommended_next_action,
+        "safety_result": {
+            "routed": routed,
+            "router": "deterministic_rokid_voice_v1",
+            "autonomy_tier": "manual_confirm",
+        },
+    }
+
+
+def route_rokid_voice_command(transcript: str, *, context: str = "rokid_health") -> Dict[str, Any]:
+    """Map a bounded Rokid transcript into a whitelisted mobile client action."""
+    text = (transcript or "").strip().lower()
+
+    if _contains_any(text, ("拍一下", "拍这餐", "拍一下这餐", "记录这餐", "记录午饭", "记录晚饭", "记录早餐", "热量")):
+        return _voice_command(
+            intent="food_photo",
+            event_intent="food",
+            client_action="capture_food_photo",
+            voice_reply="我来拍这餐, 识别后会生成待确认的热量和营养记录。",
+            display_text="拍摄餐食并生成待确认饮食记录",
+            requires_confirmation=True,
+            parameters={"visual_intent": "food_scan"},
+            recommended_next_action={
+                "type": "capture_food_photo",
+                "method": "POST",
+                "path": "/ambient/visual-inputs",
+            },
+        )
+
+    if "俯卧撑" in text and _contains_any(text, ("开始", "来一组", "开一组", "做一组")):
+        target_reps = _target_reps_from_text(text)
+        return _voice_command(
+            intent="pushup_start",
+            event_intent="movement",
+            client_action="open_pushup_coach",
+            route="/rokid-pushup-coach",
+            voice_reply=f"开始俯卧撑, 目标 {target_reps} 个。先保证动作完整。",
+            display_text=f"启动 Rokid 俯卧撑计数: {target_reps} 个",
+            parameters={"target_reps": target_reps},
+            recommended_next_action={
+                "type": "start_rokid_pushup_session",
+                "method": "POST",
+                "path": "/devices/rokid/pushup-sessions",
+            },
+        )
+
+    if "俯卧撑" in text and _contains_any(text, ("保存", "记下来", "记录本组")):
+        return _voice_command(
+            intent="pushup_save",
+            event_intent="movement",
+            client_action="save_pushup_set",
+            route="/rokid-pushup-coach",
+            voice_reply="我会保存当前这一组俯卧撑。",
+            display_text="保存当前俯卧撑组",
+            requires_confirmation=True,
+            recommended_next_action={
+                "type": "save_pushup_exercise",
+                "method": "POST",
+                "path": "/daily-health/exercise",
+            },
+        )
+
+    if "俯卧撑" in text and _contains_any(text, ("停止", "结束", "停下")):
+        return _voice_command(
+            intent="pushup_stop",
+            event_intent="movement",
+            client_action="stop_pushup_coach",
+            route="/rokid-pushup-coach",
+            voice_reply="已准备停止俯卧撑识别, 完成后可以保存本组。",
+            display_text="停止 Rokid 俯卧撑识别",
+            recommended_next_action={
+                "type": "finish_rokid_pushup_session",
+                "method": "POST",
+                "path": "/devices/rokid/pushup-sessions/{session_id}/finish",
+            },
+        )
+
+    if _contains_any(text, ("今天练什么", "指导我运动", "运动指导", "怎么练", "练什么", "换轻一点")):
+        return _voice_command(
+            intent="exercise_guidance",
+            event_intent="movement",
+            client_action="open_guided_task",
+            route="/guided-task?domain=strength&source=rokid_voice",
+            voice_reply="我会打开今天的运动指导, 强度由 Reva 的恢复状态门控决定。",
+            display_text="打开今日运动指导",
+            parameters={"domain": "strength"},
+            recommended_next_action={
+                "type": "fetch_guided_movement",
+                "method": "GET",
+                "path": "/movement/guided-task?domain=strength",
+            },
+        )
+
+    if _contains_any(text, ("确认", "可以", "保存", "对的")):
+        return _voice_command(
+            intent="confirm",
+            event_intent="note",
+            client_action="confirm_current",
+            voice_reply="收到, 我会确认当前待处理动作。",
+            display_text="确认当前动作",
+            requires_confirmation=True,
+        )
+
+    if _contains_any(text, ("跳过", "不用", "取消")):
+        return _voice_command(
+            intent="skip",
+            event_intent="note",
+            client_action="skip_current",
+            voice_reply="已准备跳过当前动作。",
+            display_text="跳过当前动作",
+        )
+
+    if _contains_any(text, ("等会", "稍后", "晚点")):
+        return _voice_command(
+            intent="later",
+            event_intent="note",
+            client_action="snooze_current",
+            voice_reply="好, 这个动作稍后再提醒。",
+            display_text="稍后提醒",
+        )
+
+    return _voice_command(
+        intent="unknown",
+        event_intent="note",
+        client_action="clarify",
+        voice_reply="这句我还不能安全执行。你可以说记录这餐、开始俯卧撑, 或指导我运动。",
+        display_text="未识别的 Rokid 语音命令",
+        event_status="pending_clarification",
+        routed=False,
+    )
 
 
 def create_visual_input_event(

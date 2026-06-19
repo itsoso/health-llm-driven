@@ -13,6 +13,8 @@ const mockListRokidGlanceCards = jest.fn();
 const mockOpenRokidCompanionIfAvailable = jest.fn();
 const mockSubmitRokidVisualInput = jest.fn();
 const mockRecognizeFood = jest.fn();
+const mockStartRokidVoiceCommandCapture = jest.fn();
+const mockStopRokidVoiceCommandCapture = jest.fn();
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -35,6 +37,11 @@ jest.mock('../../services/rokidAmbient', () => ({
 
 jest.mock('../../services/diet', () => ({
   recognizeFood: (...args: any[]) => mockRecognizeFood(...args),
+}));
+
+jest.mock('../../services/rokidVoiceControl', () => ({
+  startRokidVoiceCommandCapture: (...args: any[]) => mockStartRokidVoiceCommandCapture(...args),
+  stopRokidVoiceCommandCapture: (...args: any[]) => mockStopRokidVoiceCommandCapture(...args),
 }));
 
 import RokidHealthScreen from '../rokid-health';
@@ -110,6 +117,8 @@ describe('RokidHealthScreen', () => {
       customViewRunning: true,
       capabilitiesReady: true,
     });
+    mockStartRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
+    mockStopRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
     mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
     mockGetRokidDeviceValidationSteps.mockImplementation((status) => [
       {
@@ -185,6 +194,40 @@ describe('RokidHealthScreen', () => {
     fireEvent.press(screen.getByLabelText('打开 Rokid 俯卧撑计数'));
 
     expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
+  });
+
+  it('starts and stops a bounded Rokid voice control session from health mode', async () => {
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('语音控制')).toBeTruthy();
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStartRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
+      expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
+        title: 'Reva 语音控制',
+        body: '正在等待明确语音指令',
+        priority: 'voice',
+      });
+      expect(screen.getByText('Rokid 语音控制已开启')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('停止语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStopRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Rokid 语音控制已停止')).toBeTruthy();
+    });
   });
 
   it('submits an explicit food photo capture with nutrition recognition as an ambient visual draft', async () => {

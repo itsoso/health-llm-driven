@@ -18,7 +18,7 @@ class AudioInputCreate(BaseModel):
     @classmethod
     def _normalize_intent(cls, value: str) -> str:
         text = (value or "").strip().lower()
-        allowed = {"food", "symptom", "fatigue", "mood", "supplement", "medication", "note"}
+        allowed = {"food", "symptom", "fatigue", "mood", "supplement", "medication", "movement", "note"}
         if text not in allowed:
             raise ValueError(f"unsupported audio intent: {text}")
         return text
@@ -54,6 +54,46 @@ class AudioInputEventResponse(BaseModel):
 class AmbientAudioInputResponse(BaseModel):
     event: AudioInputEventResponse
     recommended_next_action: Optional[Dict[str, str]] = None
+
+
+class RokidVoiceCommandCreate(BaseModel):
+    transcript: str = Field(..., min_length=1, max_length=1000)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    context: str = Field(default="rokid_health", max_length=60)
+    captured_at: Optional[datetime] = None
+    privacy_class: str = Field(default="health_l3", max_length=30)
+    meta: Optional[Dict[str, Any]] = None
+
+    @field_validator("transcript")
+    @classmethod
+    def _strip_transcript(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("transcript cannot be blank")
+        return text
+
+    @field_validator("context")
+    @classmethod
+    def _normalize_context(cls, value: str) -> str:
+        text = (value or "").strip().lower()
+        return text or "rokid_health"
+
+
+class RokidVoiceCommandResult(BaseModel):
+    intent: str
+    client_action: str
+    route: Optional[str] = None
+    voice_reply: str
+    display_text: str
+    requires_confirmation: bool
+    safety_level: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    recommended_next_action: Optional[Dict[str, str]] = None
+
+
+class RokidVoiceCommandResponse(BaseModel):
+    event: AudioInputEventResponse
+    command: RokidVoiceCommandResult
 
 
 class VisualInputCreate(BaseModel):
