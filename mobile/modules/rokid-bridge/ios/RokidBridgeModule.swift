@@ -1312,9 +1312,12 @@ public class RokidBridgeModule: Module {
           "ble_connection_event",
           detail: "connected=\(connected); device=\(RGCxrClientBLE.shared.connectedDeviceName ?? "unknown")"
         )
-        if connected {
-          RokidBridgeModule.retryPendingCustomViewAfterBleConnected()
-        }
+        // 自动重试已停用:设备实证(build #158 无此自动重试、手动单发 openCustomView → 眼镜渲染;
+        // #160-162 加了 connectionStatePublisher→自动重发后,openCustomView 在 BLE 刚连上的瞬间被发
+        // (会话未就绪)且与手动点双发 → SDK 不回 callback(rokid_custom_view_open_callback_missing)、
+        // 眼镜不渲染)。回到 #158 的"手动点一次"路径。pendingCustomViewPayload 仅留作诊断状态。
+        // 如需恢复 hand-off,应改为"延迟 + 单飞 + 去抖",而非瞬时直发。
+        _ = connected
       }
       .store(in: &RokidBridgeModule.cancellables)
     RGCxrClientBLE.shared.notifyPublisher
