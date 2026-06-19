@@ -358,8 +358,31 @@ public class RokidBridgeModule: Module {
 
   private static func requestAuthorization(scopes: [String], appName: String, promise: Promise) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
     startAuthorizationAttempt(scopes: scopes, appName: appName)
+    ensureCustomViewInitialized()
+    recordAuthDiagnostic(
+      "cxr_initialization_state",
+      detail: "initialized=\(cxrClientInitialized()); mode=\(cxrInitializationMode()); outcome=\(cxrInitializationOutcome)"
+    )
+    guard cxrClientInitialized() else {
+      let reason = "cxr_client_not_initialized:\(cxrInitializationOutcome)"
+      recordAuthorizationErrorDescription(reason)
+      markAuthorizationPhase("initialize_failed", detail: "\(reason); mode=\(cxrInitializationMode())")
+      promise.resolve([
+        "ok": false,
+        "reason": reason,
+        "authorizationState": authorizationState(),
+        "authorizationRequestTimeoutSeconds": authorizationRequestTimeoutSeconds,
+        "lastAuthorizationAttemptId": lastAuthorizationAttemptId ?? "",
+        "authorizationAttemptCount": authorizationAttemptCount,
+        "lastAuthorizationPhase": lastAuthorizationPhase ?? "",
+        "lastAuthorizationDurationMs": lastAuthorizationDurationMs ?? 0,
+        "cxrClientInitialized": cxrClientInitialized(),
+        "cxrInitializationMode": cxrInitializationMode(),
+        "cxrInitializationOutcome": cxrInitializationOutcome,
+      ])
+      return
+    }
     if CxrClient.shared.auth.isAuthenticated() {
       markAuthorizationPhase("cached_authenticated", detail: "state=authenticated")
       promise.resolve(authorizationSuccessPayload(source: "cached"))
@@ -1094,33 +1117,54 @@ public class RokidBridgeModule: Module {
 
   private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
-    if !RokidBridgeModule.didInitializeCustomView {
-      #if ROKID_CXRL_CALLBACK_API
-      // 刷新框架强制要求先 CxrClient.initialize 再 auth/openCustomView, 否则真实 SDK
-      // 报 RGCxrClientAuthError Code=-2 "SDK 未初始化"。Reva 用 CustomView 模式, 参照官方
-      // ios_cxr_l_sample 的 AppDelegate: CxrClient.initialize(mode: .customView, options:
-      // .init(appDisplayName: nil, pageName: nil))。旧 client 无此 API, 保留 legacy 分支。
+    #if ROKID_CXRL_CALLBACK_API
+    let initializeIfNeeded = {
+      let initializedBefore = CxrClient.isInitialized
+      guard !RokidBridgeModule.didInitializeCustomView || !initializedBefore else {
+        return
+      }
+
       let outcome = CxrClient.initialize(
         mode: .customView,
         options: RGCxrClientInitializationOptions(appDisplayName: nil, pageName: nil)
       )
-      switch outcome {
-      case .success:
-        RokidBridgeModule.cxrInitializationOutcome = "initialized_custom_view"
-      case .failureAlreadyInitialized:
-        RokidBridgeModule.cxrInitializationOutcome = "already_initialized"
-      @unknown default:
-        RokidBridgeModule.cxrInitializationOutcome = "initialize_unknown_outcome"
-      }
-      #else
+      let outcomeDescription = cxrInitializeOutcomeDescription(outcome)
+      let initializedAfter = CxrClient.isInitialized
+      RokidBridgeModule.cxrInitializationOutcome = outcomeDescription
+      RokidBridgeModule.didInitializeCustomView = initializedAfter
+      recordAuthDiagnostic(
+        "cxr_initialize",
+        detail: "before=\(initializedBefore); outcome=\(outcomeDescription); after=\(initializedAfter); mode=\(cxrInitializationMode())"
+      )
+    }
+    if Thread.isMainThread {
+      initializeIfNeeded()
+    } else {
+      DispatchQueue.main.sync(execute: initializeIfNeeded)
+    }
+    #else
+    if !RokidBridgeModule.didInitializeCustomView {
       RokidBridgeModule.cxrInitializationOutcome = "legacy_client_no_initialize_api"
-      #endif
       RokidBridgeModule.didInitializeCustomView = true
     }
+    #endif
     configureAuthentication()
     bindRuntimeEvents()
     #endif
   }
+
+  #if canImport(RGCxrClient) && ROKID_CXRL_CALLBACK_API
+  private static func cxrInitializeOutcomeDescription(_ outcome: RGCxrClientInitializeOutcome) -> String {
+    switch outcome {
+    case .success:
+      return "success"
+    case .failureAlreadyInitialized:
+      return "failure_already_initialized"
+    @unknown default:
+      return "unknown"
+    }
+  }
+  #endif
 
   private static func configureAuthentication(force: Bool = false) {
     #if canImport(RGCxrClient)
@@ -1381,7 +1425,11 @@ public class RokidBridgeModule: Module {
 
   private static func cxrClientInitialized() -> Bool {
     #if canImport(RGCxrClient)
+    #if ROKID_CXRL_CALLBACK_API
+    return CxrClient.isInitialized
+    #else
     return true
+    #endif
     #else
     return false
     #endif
@@ -1389,7 +1437,21 @@ public class RokidBridgeModule: Module {
 
   private static func cxrInitializationMode() -> String {
     #if canImport(RGCxrClient)
-    return "implicit_legacy_client"
+    #if ROKID_CXRL_CALLBACK_API
+    guard let mode = CxrClient.initializationMode else {
+      return "not_initialized"
+    }
+    switch mode {
+    case .customView:
+      return "customView"
+    case .customApp:
+      return "customApp"
+    @unknown default:
+      return "unknown"
+    }
+    #else
+    return "legacy_client_no_initialize_api"
+    #endif
     #else
     return "unknown"
     #endif
@@ -1403,7 +1465,7 @@ public class RokidBridgeModule: Module {
     }
 
     #if canImport(RGCxrClient)
-    configureAuthentication()
+    ensureCustomViewInitialized()
     if CxrClient.shared.auth.canHandleURL(url) {
       return true
     }

@@ -136,12 +136,25 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toMatch(/customViewRunningEventPublisher[\s\S]+customViewRunning = event\.isRunning/);
   });
 
-  it('allows pinning a refreshed Rokid iOS binary framework instead of relying only on the pod version', () => {
+  it('initializes the refreshed CXR-L client before auth and exposes the real initialized state', () => {
+    expect(source).toContain('CxrClient.initialize(');
+    expect(source).toContain('mode: .customView');
+    expect(source).toContain('RGCxrClientInitializationOptions(');
+    expect(source).toContain('CxrClient.isInitialized');
+    expect(source).toContain('CxrClient.initializationMode');
+    expect(source).toContain('cxr_initialize');
+    expect(source).toContain('cxr_client_not_initialized');
+    expect(source).toMatch(/startAuthorizationAttempt\(scopes: scopes, appName: appName\)[\s\S]+ensureCustomViewInitialized\(\)[\s\S]+guard cxrClientInitialized\(\)/);
+    expect(source).not.toContain('return true\n    #else\n    return false\n    #endif\n  }\n\n  private static func cxrInitializationMode()');
+  });
+
+  it('allows pinning a refreshed Rokid iOS binary framework as a first-class local pod', () => {
     expect(podspec).toContain('ROKID_IOS_CLIENT_FRAMEWORK_PATH');
     expect(podspec).toContain('Rokid vendored framework not found');
     expect(podspec).toContain('Rokid vendored framework is missing refreshed CustomView callback APIs');
-    expect(podspec).toContain('s.vendored_frameworks = rokid_ios_client_framework_path');
     expect(podspec).toContain("s.dependency 'RGCoreKit', '0.0.2'");
+    expect(podspec).toContain("s.dependency 'RGCxrClient', rokid_ios_client_version");
+    expect(podspec).toContain('不把框架传播进 RokidBridge 的 -F 搜索路径');
     expect(podspec).toContain('ROKID_IOS_CLIENT_HAS_CALLBACK_API');
     expect(podspec).toContain('ROKID_CXRL_CALLBACK_API');
   });
