@@ -139,6 +139,31 @@ type RevaCustomViewOptions = {
   priority?: string;
 };
 
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+const ISO_TIMESTAMP_PATTERN = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})/;
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function formatTimestampInBeijing(value: string) {
+  const timestampMs = Date.parse(value);
+  if (!Number.isFinite(timestampMs)) {
+    return value;
+  }
+  const beijing = new Date(timestampMs + BEIJING_OFFSET_MS);
+  return `${beijing.getUTCFullYear()}-${pad2(beijing.getUTCMonth() + 1)}-${pad2(beijing.getUTCDate())}`
+    + `T${pad2(beijing.getUTCHours())}:${pad2(beijing.getUTCMinutes())}:${pad2(beijing.getUTCSeconds())}+08:00`;
+}
+
+export function formatRokidLogTimestamp(value: string) {
+  const match = value.match(ISO_TIMESTAMP_PATTERN);
+  if (!match) {
+    return value;
+  }
+  return value.replace(match[0], formatTimestampInBeijing(match[0]));
+}
+
 function unavailableStatus(platform: string, reason = 'native_bridge_unavailable'): RokidIntegrationStatus {
   return {
     platform,

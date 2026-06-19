@@ -18,13 +18,17 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
 
-jest.mock('../../modules/rokid-bridge', () => ({
-  getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
-  getRokidDeviceValidationSteps: (...args: any[]) => mockGetRokidDeviceValidationSteps(...args),
-  openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
-  requestRokidAuthorization: (...args: any[]) => mockRequestRokidAuthorization(...args),
-  takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
-}));
+jest.mock('../../modules/rokid-bridge', () => {
+  const actual = jest.requireActual('../../modules/rokid-bridge');
+  return {
+    formatRokidLogTimestamp: actual.formatRokidLogTimestamp,
+    getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
+    getRokidDeviceValidationSteps: (...args: any[]) => mockGetRokidDeviceValidationSteps(...args),
+    openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
+    requestRokidAuthorization: (...args: any[]) => mockRequestRokidAuthorization(...args),
+    takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
+  };
+});
 
 jest.mock('../../services/rokidAmbient', () => ({
   listRokidGlanceCards: (...args: any[]) => mockListRokidGlanceCards(...args),
@@ -405,9 +409,9 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('CXR-L API: callbackApi=true · notify=setNotifyEventListenCmds')).toBeTruthy();
       expect(screen.getByText('CustomView payload: bytes=944 · hash=fnv1a64:abc123')).toBeTruthy();
       expect(screen.getByText('CustomView shape: root=LinearLayout; props=backgroundColor,gravity; children=3:TextView,TextView,TextView')).toBeTruthy();
-      expect(screen.getByText('CustomView raw: Custom_View_Open_Failed reason=invalid_layout · 2026-06-19T06:31:55Z')).toBeTruthy();
+      expect(screen.getByText('CustomView raw: Custom_View_Open_Failed reason=invalid_layout · 2026-06-19T14:31:55+08:00')).toBeTruthy();
       expect(screen.getByText('CustomView error: Custom_View_Open_Failed reason=invalid_layout')).toBeTruthy();
-      expect(screen.getByText('CustomView callback: success=false · errorCode=invalid_layout · 2026-06-19T06:31:56Z')).toBeTruthy();
+      expect(screen.getByText('CustomView callback: success=false · errorCode=invalid_layout · 2026-06-19T14:31:56+08:00')).toBeTruthy();
     });
   });
 
@@ -548,6 +552,7 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(screen.getByText(/等待 Rokid 授权回调/)).toBeTruthy();
       expect(screen.getByText(/最近授权错误: 鉴权请求超时/)).toBeTruthy();
+      expect(screen.getByText('最近授权请求: 2026-06-19T07:51:00+08:00')).toBeTruthy();
       expect(screen.getByText(/SDK 等待窗口: 180 秒/)).toBeTruthy();
       expect(screen.queryByText(/Rokid 授权失败/)).toBeNull();
     });
@@ -598,7 +603,7 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('SDK state: beforeReset=not_authenticated · afterReset=not_authenticated · beforeAuth=not_authenticated')).toBeTruthy();
       expect(screen.getByText('Auth config: server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s')).toBeTruthy();
       expect(screen.getByText('Callback schemes: accepted=cxrl, life.executor.health.rokid · configured=cxrl · source=info_plist')).toBeTruthy();
-      expect(screen.getByText('Native: 2026-06-19T00:02:01Z #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1')).toBeTruthy();
+      expect(screen.getByText('Native: 2026-06-19T08:02:01+08:00 #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1')).toBeTruthy();
     });
   });
 

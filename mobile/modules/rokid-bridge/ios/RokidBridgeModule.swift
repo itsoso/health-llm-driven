@@ -957,8 +957,13 @@ public class RokidBridgeModule: Module {
     return UIApplication.shared.canOpenURL(url)
   }
 
+  private static let beijingTimeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
+
   private static func isoTimestamp() -> String {
-    ISO8601DateFormatter().string(from: Date())
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = beijingTimeZone
+    return formatter.string(from: Date())
   }
 
   private static func uniqueSchemes(_ schemes: [String]) -> [String] {

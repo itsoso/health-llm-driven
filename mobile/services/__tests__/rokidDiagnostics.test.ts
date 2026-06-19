@@ -153,7 +153,7 @@ describe('rokid diagnostics', () => {
         id: 'auth_error',
         severity: 'warn',
         value: '鉴权请求超时',
-        detail: 'lastRequestAt=2026-06-18T23:51:00Z; timeout=180s',
+        detail: 'lastRequestAt=2026-06-19T07:51:00+08:00; timeout=180s',
       }),
     ]));
     expect(JSON.stringify(check.items)).not.toContain('code=abc');
@@ -201,7 +201,7 @@ describe('rokid diagnostics', () => {
         label: 'SDK 授权事件',
         value: 'authenticationFailed: user_cancelled',
         severity: 'warn',
-        detail: 'eventAt=2026-06-18T23:58:00Z',
+        detail: 'eventAt=2026-06-19T07:58:00+08:00',
       }),
     ]));
   });
@@ -278,7 +278,7 @@ describe('rokid diagnostics', () => {
         label: 'iOS 回跳',
         value: '最近回跳不是授权 scheme',
         severity: 'warn',
-        detail: 'life.executor.health://auth/callback; at=2026-06-18T23:59:00Z; expected=life.executor.health.rokid://auth/callback',
+        detail: 'life.executor.health://auth/callback; at=2026-06-19T07:59:00+08:00; expected=life.executor.health.rokid://auth/callback',
       }),
     ]));
     expect(JSON.stringify(check.items)).not.toContain('code=');
@@ -339,7 +339,7 @@ describe('rokid diagnostics', () => {
       expect.objectContaining({
         id: 'auth_timeline',
         label: 'Native 授权时间线',
-        value: '2026-06-18T23:59:00Z #auth-7 request_started appName=Reva; scopes=device_control,audio_stream\n2026-06-18T23:59:01Z #auth-7 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s\n2026-06-19T00:02:01Z #auth-7 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
+        value: '2026-06-19T07:59:00+08:00 #auth-7 request_started appName=Reva; scopes=device_control,audio_stream\n2026-06-19T07:59:01+08:00 #auth-7 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s\n2026-06-19T08:02:01+08:00 #auth-7 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
         severity: 'warn',
       }),
     ]));

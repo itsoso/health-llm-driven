@@ -1,4 +1,5 @@
 import {
+  formatRokidLogTimestamp,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
   type RokidDeviceValidationStep,
@@ -63,7 +64,7 @@ function formatAuthorizationError(error?: string) {
 function authorizationErrorDetail(status: RokidIntegrationStatus) {
   const parts: string[] = [];
   if (status.lastAuthorizationRequestAt) {
-    parts.push(`lastRequestAt=${status.lastAuthorizationRequestAt}`);
+    parts.push(`lastRequestAt=${formatRokidLogTimestamp(status.lastAuthorizationRequestAt)}`);
   }
   if (typeof status.authorizationRequestTimeoutSeconds === 'number') {
     parts.push(`timeout=${Math.round(status.authorizationRequestTimeoutSeconds)}s`);
@@ -163,7 +164,7 @@ function iosOpenUrlDetail(status: RokidIntegrationStatus) {
   }
   const parts = [status.lastOpenUrlFingerprint];
   if (status.lastOpenUrlAt) {
-    parts.push(`at=${status.lastOpenUrlAt}`);
+    parts.push(`at=${formatRokidLogTimestamp(status.lastOpenUrlAt)}`);
   }
   if (status.callbackUrl) {
     parts.push(`expected=${status.callbackUrl}`);
@@ -309,12 +310,12 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         label: 'SDK 授权事件',
         value: status.lastAuthorizationEvent,
         severity: authorizationEventSeverity(status.lastAuthorizationEvent),
-        detail: status.lastAuthorizationEventAt ? `eventAt=${status.lastAuthorizationEventAt}` : undefined,
+        detail: status.lastAuthorizationEventAt ? `eventAt=${formatRokidLogTimestamp(status.lastAuthorizationEventAt)}` : undefined,
       }] : []),
       ...(authTimeline.length > 0 ? [{
         id: 'auth_timeline',
         label: 'Native 授权时间线',
-        value: authTimeline.join('\n'),
+        value: authTimeline.map(formatRokidLogTimestamp).join('\n'),
         severity: authTimeline.some((line) => line.toLowerCase().includes('failed')) ? 'warn' as const : 'info' as const,
       }] : []),
       {

@@ -90,6 +90,12 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('payload["authDiagnosticTimeline"] = authDiagnosticTimeline');
   });
 
+  it('prints native diagnostic timestamps in Beijing UTC+8 time', () => {
+    expect(source).toContain('beijingTimeZone');
+    expect(source).toContain('TimeZone(secondsFromGMT: 8 * 60 * 60)');
+    expect(source).toContain('formatter.timeZone = beijingTimeZone');
+  });
+
   it('surfaces iOS BLE and CustomView-open boundaries for session debugging', () => {
     expect(source).toContain('RGCxrClientBLE.shared.isConnected');
     expect(source).toContain('RGCxrClientBLE.shared.connectedDeviceName');

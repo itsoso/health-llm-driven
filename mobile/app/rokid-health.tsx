@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
 import {
+  formatRokidLogTimestamp,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
   openRokidRevaCustomView,
@@ -240,7 +241,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     lines.push(`CustomView shape: ${status.lastCustomViewPayloadShape}`);
   }
   if (status.lastCustomViewRawNotify) {
-    const at = status.lastCustomViewRawNotifyAt ? ` · ${status.lastCustomViewRawNotifyAt}` : '';
+    const at = status.lastCustomViewRawNotifyAt ? ` · ${formatRokidLogTimestamp(status.lastCustomViewRawNotifyAt)}` : '';
     lines.push(`CustomView raw: ${status.lastCustomViewRawNotify}${at}`);
   }
   if (status.lastCustomViewOpenError) {
@@ -258,7 +259,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
       parts.push(`errorCode=${status.lastCustomViewOpenCallbackErrorCode}`);
     }
     if (status.lastCustomViewOpenCallbackAt) {
-      parts.push(status.lastCustomViewOpenCallbackAt);
+      parts.push(formatRokidLogTimestamp(status.lastCustomViewOpenCallbackAt));
     }
     lines.push(`CustomView callback: ${parts.join(' · ')}`);
   }
@@ -280,24 +281,24 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   }
   if (status.lastOpenUrlFingerprint) {
     const route = status.lastOpenUrlExpectedAuthCallback ? '匹配授权 scheme' : '不是授权 scheme';
-    const at = status.lastOpenUrlAt ? ` · ${status.lastOpenUrlAt}` : '';
+    const at = status.lastOpenUrlAt ? ` · ${formatRokidLogTimestamp(status.lastOpenUrlAt)}` : '';
     lines.push(`iOS 回跳: ${status.lastOpenUrlFingerprint} · ${route}${at}`);
   }
   if (status.lastAuthorizationRequestAt) {
-    lines.push(`最近授权请求: ${status.lastAuthorizationRequestAt}`);
+    lines.push(`最近授权请求: ${formatRokidLogTimestamp(status.lastAuthorizationRequestAt)}`);
   }
   if (typeof status.authorizationRequestTimeoutSeconds === 'number') {
     lines.push(`SDK 等待窗口: ${Math.round(status.authorizationRequestTimeoutSeconds)} 秒`);
   }
   if (status.lastCallbackAt) {
-    lines.push(`最近回调: ${status.lastCallbackHandled ? 'SDK 已处理' : 'SDK 未确认'} · ${status.lastCallbackAt}`);
+    lines.push(`最近回调: ${status.lastCallbackHandled ? 'SDK 已处理' : 'SDK 未确认'} · ${formatRokidLogTimestamp(status.lastCallbackAt)}`);
   } else if (status.lastAuthorizationError && isRecoverableRokidAuthorizationDelay(status.lastAuthorizationError)) {
     lines.push('最近回调: 尚未进入 Reva');
     lines.push('iOS 回跳: 尚未收到 AppDelegate openURL');
   }
   if (Array.isArray(status.authDiagnosticTimeline)) {
     status.authDiagnosticTimeline.slice(-6).forEach((entry) => {
-      lines.push(`Native: ${entry}`);
+      lines.push(`Native: ${formatRokidLogTimestamp(entry)}`);
     });
   }
   return lines;
