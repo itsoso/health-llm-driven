@@ -46,6 +46,7 @@ celery_app = Celery(
         "app.tasks.adherence_watch",
         "app.tasks.data_integrity_scan",
         "app.tasks.calendar_tasks",
+        "app.tasks.event_reminders",
     ]
 )
 
@@ -99,6 +100,12 @@ celery_app.conf.beat_schedule = {
     # 每分钟扫描 medications.reminder_times，匹配就推 APNs（用户一键"已服用"）
     "medication-reminder-scan": {
         "task": "app.tasks.notifications.scan_medication_reminders",
+        "schedule": crontab(minute="*"),
+    },
+
+    # 每分钟扫描"未来 N 分钟将开始的项"→ 事件前提醒(P1-B,会议-10/服药-15/补剂-15/锻炼-20)
+    "scan-event-reminders": {
+        "task": "app.tasks.event_reminders.scan_event_reminders",
         "schedule": crontab(minute="*"),
     },
 

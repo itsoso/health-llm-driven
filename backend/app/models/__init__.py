@@ -49,6 +49,8 @@ from app.models.notification import (
     UserNotificationSetting, NotificationLog, ReminderConfig,
     NotificationChannel, NotificationType, NotificationStatus
 )
+# 事件前提醒去重(P1-B)
+from app.models.sent_event_reminder import SentEventReminder
 # 复盘模型
 from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 # 用户 API 密钥
@@ -199,6 +201,7 @@ __all__ = [
     "NotificationChannel",
     "NotificationType",
     "NotificationStatus",
+    "SentEventReminder",
     # 复盘模型
     "DailyReview",
     "PeriodReview",

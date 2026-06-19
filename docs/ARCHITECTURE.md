@@ -43,7 +43,7 @@
          ▼           ▼                ▼                    ▼                  ▼
   ┌──────────┐ ┌──────────┐  ┌─────────────┐    ┌──────────────────┐  ┌─────────────┐
   │ Postgres │ │  Redis   │  │  Celery     │    │  LLM Providers   │  │  3rd-party  │
-  │ (多表)   │ │ (cache + │  │ (56 任务)   │    │ openai-proxy /   │  │ Garmin API  │
+  │ (多表)   │ │ (cache + │  │ (57 任务)   │    │ openai-proxy /   │  │ Garmin API  │
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 154 API 路由, 253 services, 94 models, 56 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 154 API 路由, 253 services, 95 models, 57 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -116,7 +116,7 @@
 |------|------|
 | `backend/app/api/*.py` | 154 条 API 路由 |
 | `backend/app/services/*.py` | 205 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
-| `backend/app/tasks/*.py` | 56 Celery 异步任务 |
+| `backend/app/tasks/*.py` | 57 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
 | `mobile/app/` | 98 RN 路由 + Tab 导航 |
@@ -428,13 +428,14 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(56 个任务)
+## 九、Celery 调度(57 个任务)
 
 `backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
 
 | 时间 | 任务 | 职责 |
 |---|---|---|
 | 每分钟 | `notifications.scan_medication_reminders` | 扫 `medications` 的 `reminder_times` 匹配当前 `HH:MM`, 推送用药提醒 |
+| 每分钟 | `event_reminders.scan_event_reminders` | 事件前提醒(P1-B): 排程/会议项开始前按类提前量(会议-10/服药-15/补剂-15/锻炼-20)推一次, `SentEventReminder` 去重 + `proactive_coordinator` 稀缺门 |
 | 每小时 | `garmin_sync.sync_all_users` | 所有用户 Garmin 数据拉新 + 触发异常检测/Safety/workout 分析 |
 | 03:00 | `cleanup.cleanup_old_logs` | 清 old notification logs / expired tokens |
 | 06:00 | `daily_health_plan.generate_for_all` | 生成每日健康计划 |
