@@ -175,6 +175,23 @@ describe('rokid-bridge JS facade', () => {
     expect(native.clearAuthorization).toHaveBeenCalledTimes(1);
   });
 
+  it('subscribes to native Rokid transcript events through the JS facade', () => {
+    const remove = jest.fn();
+    const native = {
+      getIntegrationStatus: jest.fn().mockResolvedValue({ platform: 'ios', bridgeAvailable: true }),
+      openHiRokid: jest.fn().mockResolvedValue(true),
+      addListener: jest.fn().mockReturnValue({ remove }),
+    };
+    const { bridge } = loadModule('ios', native);
+    const listener = jest.fn();
+
+    const subscription = bridge.addRokidTranscriptListener(listener);
+    subscription.remove();
+
+    expect(native.addListener).toHaveBeenCalledWith('onRokidTranscript', listener);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
   it('returns explicit unavailable results for CustomApp controls when native methods are absent', async () => {
     const native = {
       getIntegrationStatus: jest.fn().mockResolvedValue({ platform: 'ios', bridgeAvailable: true }),

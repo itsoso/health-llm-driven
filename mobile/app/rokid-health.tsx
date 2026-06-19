@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -15,13 +15,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
 import {
+  addRokidTranscriptListener,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
   openRokidRevaCustomView,
   requestRokidAuthorization,
   takeRokidPhotoBase64,
   type RokidDeviceValidationStep,
+  type RokidEventSubscription,
   type RokidIntegrationStatus,
+  type RokidTranscriptEvent,
 } from '../modules/rokid-bridge';
 import {
   listRokidGlanceCards,
@@ -30,8 +33,10 @@ import {
   type RokidVisualIntent,
 } from '../services/rokidAmbient';
 import {
+  executeRokidVoiceClientAction,
   startRokidVoiceCommandCapture,
   stopRokidVoiceCommandCapture,
+  submitRokidVoiceCommand,
 } from '../services/rokidVoiceControl';
 import { recognizeFood, type FoodRecognitionResponse } from '../services/diet';
 import { radii, spacing } from '../constants/theme';
@@ -136,6 +141,30 @@ function recognitionConfidence(result?: FoodRecognitionResponse) {
   return confidences.reduce((sum, value) => sum + value, 0) / confidences.length;
 }
 
+function captureActionForVisualIntent(visualIntent?: string) {
+  if (visualIntent) {
+    const matched = CAPTURE_ACTIONS.find((action) => action.intent === visualIntent);
+    if (matched) {
+      return matched;
+    }
+  }
+  return CAPTURE_ACTIONS.find((action) => action.intent === 'food_scan');
+}
+
+function transcriptText(event: RokidTranscriptEvent) {
+  const value = event.transcript ?? event.text;
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function transcriptCapturedAt(event: RokidTranscriptEvent) {
+  const value = event.capturedAt ?? event.captured_at;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function shouldRouteTranscript(event: RokidTranscriptEvent) {
+  return event.partial !== true && event.isFinal !== false && event.is_final !== false && event.final !== false;
+}
+
 function iosAuthorizationLabel(status?: RokidIntegrationStatus) {
   switch (status?.authorizationState) {
     case 'authenticated':
@@ -167,6 +196,7 @@ export default function RokidHealthScreen() {
     status: VoiceControlStatus;
     message?: string;
   }>({ status: 'idle' });
+  const voiceTranscriptSubscriptionRef = useRef<RokidEventSubscription | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -188,6 +218,13 @@ export default function RokidHealthScreen() {
   const iosCapabilitiesReady = isIOS && status?.capabilitiesReady === true;
   const validationSteps = useMemo(() => getRokidDeviceValidationSteps(status), [status]);
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
+
+  const removeVoiceTranscriptListener = () => {
+    voiceTranscriptSubscriptionRef.current?.remove();
+    voiceTranscriptSubscriptionRef.current = null;
+  };
+
+  useEffect(() => removeVoiceTranscriptListener, []);
 
   const refresh = () => {
     statusQuery.refetch();
@@ -248,11 +285,13 @@ export default function RokidHealthScreen() {
 
   const startVoiceControl = async () => {
     setVoiceState({ status: 'starting', message: 'Rokid 语音控制启动中...' });
+    let recordingStarted = false;
     try {
       const recordResult = await startRokidVoiceCommandCapture();
       if (recordResult.ok === false) {
         throw new Error(typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed');
       }
+      recordingStarted = true;
       const viewResult = await openRokidRevaCustomView({
         title: 'Reva 语音控制',
         body: '正在等待明确语音指令',
@@ -261,9 +300,21 @@ export default function RokidHealthScreen() {
       if (viewResult.ok === false) {
         throw new Error(typeof viewResult.reason === 'string' ? viewResult.reason : 'rokid_custom_view_failed');
       }
+      removeVoiceTranscriptListener();
+      voiceTranscriptSubscriptionRef.current = addRokidTranscriptListener((event) => {
+        void handleVoiceTranscript(event);
+      });
       setVoiceState({ status: 'listening', message: 'Rokid 语音控制已开启' });
       await statusQuery.refetch();
     } catch (error) {
+      removeVoiceTranscriptListener();
+      if (recordingStarted) {
+        try {
+          await stopRokidVoiceCommandCapture();
+        } catch {
+          // Best-effort cleanup; keep the original start failure visible.
+        }
+      }
       setVoiceState({
         status: 'failed',
         message: `Rokid 语音控制失败: ${error instanceof Error ? error.message : 'voice_control_failed'}`,
@@ -285,6 +336,8 @@ export default function RokidHealthScreen() {
         status: 'failed',
         message: `Rokid 语音控制停止失败: ${error instanceof Error ? error.message : 'voice_control_stop_failed'}`,
       });
+    } finally {
+      removeVoiceTranscriptListener();
     }
   };
 
@@ -348,6 +401,73 @@ export default function RokidHealthScreen() {
       });
     }
   };
+
+  async function handleVoiceTranscript(event: RokidTranscriptEvent) {
+    if (!shouldRouteTranscript(event)) {
+      return;
+    }
+    const transcript = transcriptText(event);
+    if (!transcript) {
+      return;
+    }
+
+    setVoiceState({ status: 'listening', message: `识别: ${transcript}` });
+    try {
+      const response = await submitRokidVoiceCommand({
+        transcript,
+        confidence: typeof event.confidence === 'number' ? event.confidence : undefined,
+        context: 'rokid_health',
+        capturedAt: transcriptCapturedAt(event),
+        meta: {
+          source_surface: 'rokid_health_mode',
+          source_event: 'rokid_transcript',
+          ...(event.meta ?? {}),
+        },
+      });
+      const command = response.command;
+      const reply = command?.voice_reply || command?.display_text;
+      if (reply) {
+        setVoiceState({ status: 'listening', message: reply });
+      }
+      await executeRokidVoiceClientAction(response, {
+        captureFoodPhoto: async ({ visualIntent }) => {
+          const action = captureActionForVisualIntent(visualIntent);
+          if (!action) {
+            setVoiceState({ status: 'failed', message: `Rokid 语音指令不支持视觉意图: ${visualIntent}` });
+            return;
+          }
+          await handleVisualCapture(action);
+        },
+        openPushupCoach: async ({ route }) => {
+          router.push((route ?? '/rokid-pushup-coach') as any);
+        },
+        stopPushupCoach: async ({ route }) => {
+          if (route) {
+            router.push(route as any);
+          }
+        },
+        savePushupSet: async ({ route }) => {
+          if (route) {
+            router.push(route as any);
+          }
+        },
+        openGuidedTask: async ({ route }) => {
+          router.push(route as any);
+        },
+        clarify: async (commandToClarify) => {
+          setVoiceState({
+            status: 'listening',
+            message: commandToClarify.voice_reply || commandToClarify.display_text || '请再说一遍',
+          });
+        },
+      });
+    } catch (error) {
+      setVoiceState({
+        status: 'failed',
+        message: `Rokid 语音指令失败: ${error instanceof Error ? error.message : 'voice_command_failed'}`,
+      });
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

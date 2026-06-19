@@ -8,6 +8,7 @@ const mockGetRokidIntegrationStatus = jest.fn();
 const mockTakeRokidPhotoBase64 = jest.fn();
 const mockRequestRokidAuthorization = jest.fn();
 const mockOpenRokidRevaCustomView = jest.fn();
+const mockAddRokidTranscriptListener = jest.fn();
 const mockGetRokidDeviceValidationSteps = jest.fn();
 const mockListRokidGlanceCards = jest.fn();
 const mockOpenRokidCompanionIfAvailable = jest.fn();
@@ -15,6 +16,9 @@ const mockSubmitRokidVisualInput = jest.fn();
 const mockRecognizeFood = jest.fn();
 const mockStartRokidVoiceCommandCapture = jest.fn();
 const mockStopRokidVoiceCommandCapture = jest.fn();
+const mockSubmitRokidVoiceCommand = jest.fn();
+const mockTranscriptSubscriptionRemove = jest.fn();
+let rokidTranscriptListener: ((event: any) => void | Promise<void>) | null = null;
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -27,6 +31,7 @@ jest.mock('../../modules/rokid-bridge', () => ({
   openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
   requestRokidAuthorization: (...args: any[]) => mockRequestRokidAuthorization(...args),
   takeRokidPhotoBase64: (...args: any[]) => mockTakeRokidPhotoBase64(...args),
+  addRokidTranscriptListener: (...args: any[]) => mockAddRokidTranscriptListener(...args),
 }));
 
 jest.mock('../../services/rokidAmbient', () => ({
@@ -40,8 +45,10 @@ jest.mock('../../services/diet', () => ({
 }));
 
 jest.mock('../../services/rokidVoiceControl', () => ({
+  ...jest.requireActual('../../services/rokidVoiceControl'),
   startRokidVoiceCommandCapture: (...args: any[]) => mockStartRokidVoiceCommandCapture(...args),
   stopRokidVoiceCommandCapture: (...args: any[]) => mockStopRokidVoiceCommandCapture(...args),
+  submitRokidVoiceCommand: (...args: any[]) => mockSubmitRokidVoiceCommand(...args),
 }));
 
 import RokidHealthScreen from '../rokid-health';
@@ -52,6 +59,11 @@ const flushAsyncUpdates = () => new Promise((resolve) => setTimeout(resolve, 0))
 describe('RokidHealthScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    rokidTranscriptListener = null;
+    mockAddRokidTranscriptListener.mockImplementation((listener) => {
+      rokidTranscriptListener = listener;
+      return { remove: mockTranscriptSubscriptionRemove };
+    });
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'android',
       bridgeAvailable: true,
@@ -119,6 +131,13 @@ describe('RokidHealthScreen', () => {
     });
     mockStartRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
     mockStopRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
+    mockSubmitRokidVoiceCommand.mockResolvedValue({
+      command: {
+        intent: 'unknown',
+        client_action: 'clarify',
+        voice_reply: '请再说一遍',
+      },
+    });
     mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
     mockGetRokidDeviceValidationSteps.mockImplementation((status) => [
       {
@@ -226,8 +245,135 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(mockStopRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
+      expect(mockTranscriptSubscriptionRemove).toHaveBeenCalledTimes(1);
       expect(screen.getByText('Rokid 语音控制已停止')).toBeTruthy();
     });
+  });
+
+  it('routes a Rokid food voice transcript into photo capture and nutrition recognition', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'food_photo',
+        client_action: 'capture_food_photo',
+        voice_reply: '开始拍照记录这餐',
+        parameters: { visual_intent: 'food_scan' },
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    expect(mockAddRokidTranscriptListener).toHaveBeenCalledTimes(1);
+    expect(rokidTranscriptListener).toBeTruthy();
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '拍一下这餐',
+        confidence: 0.93,
+        capturedAt: '2026-06-19T21:40:00+08:00',
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledWith({
+        transcript: '拍一下这餐',
+        confidence: 0.93,
+        context: 'rokid_health',
+        capturedAt: '2026-06-19T21:40:00+08:00',
+        meta: {
+          source_surface: 'rokid_health_mode',
+          source_event: 'rokid_transcript',
+        },
+      });
+      expect(mockTakeRokidPhotoBase64).toHaveBeenCalledWith({
+        width: 1024,
+        height: 768,
+        quality: 80,
+      });
+      expect(mockRecognizeFood).toHaveBeenCalledWith('jpeg-base64');
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
+        intent: 'food_scan',
+        recognitionResult: expect.objectContaining({
+          total_calories: 620,
+          total_protein: 32,
+          total_carbs: 78,
+          total_fat: 20,
+        }),
+      }));
+      expect(screen.getByText('开始拍照记录这餐')).toBeTruthy();
+    });
+  });
+
+  it('routes a Rokid push-up voice transcript into the push-up coach flow', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'pushup_start',
+        client_action: 'open_pushup_coach',
+        route: '/rokid-pushup-coach',
+        voice_reply: '打开俯卧撑教练',
+        parameters: { target_reps: 20 },
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '开始二十个俯卧撑',
+        confidence: 0.9,
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledWith(expect.objectContaining({
+        transcript: '开始二十个俯卧撑',
+        confidence: 0.9,
+        context: 'rokid_health',
+      }));
+      expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
+      expect(screen.getByText('打开俯卧撑教练')).toBeTruthy();
+    });
+  });
+
+  it('does not route non-final Rokid transcript events to the command router', async () => {
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '拍一下这餐',
+        final: false,
+      });
+      await flushAsyncUpdates();
+    });
+
+    expect(mockSubmitRokidVoiceCommand).not.toHaveBeenCalled();
+    expect(mockTakeRokidPhotoBase64).not.toHaveBeenCalled();
   });
 
   it('submits an explicit food photo capture with nutrition recognition as an ambient visual draft', async () => {

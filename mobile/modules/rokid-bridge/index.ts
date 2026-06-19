@@ -17,6 +17,7 @@ export type RokidAuthorizationState =
   | 'expired'
   | 'failed';
 export type RokidSessionMode = 'customView' | 'customApp' | 'unknown';
+export const ROKID_TRANSCRIPT_EVENT = 'onRokidTranscript';
 
 export type RokidIntegrationStatus = {
   platform: string;
@@ -55,6 +56,25 @@ export type RokidDeviceValidationStep = {
   actionLabel?: string;
 };
 
+export type RokidTranscriptEvent = {
+  transcript?: string;
+  text?: string;
+  confidence?: number;
+  capturedAt?: string;
+  captured_at?: string;
+  source?: string;
+  type?: string;
+  partial?: boolean;
+  isFinal?: boolean;
+  is_final?: boolean;
+  final?: boolean;
+  meta?: Record<string, unknown>;
+};
+
+export type RokidEventSubscription = {
+  remove: () => void;
+};
+
 type RokidNativeModule = {
   getIntegrationStatus: () => Promise<Partial<RokidIntegrationStatus>>;
   openHiRokid: () => Promise<boolean>;
@@ -69,6 +89,10 @@ type RokidNativeModule = {
   stopApp?: (packageName: string) => Promise<Record<string, unknown>>;
   startRecord?: (type: string, codec: string, mode: string) => Promise<Record<string, unknown>>;
   stopRecord?: (type: string) => Promise<Record<string, unknown>>;
+  addListener?: (
+    eventName: typeof ROKID_TRANSCRIPT_EVENT,
+    listener: (event: RokidTranscriptEvent) => void,
+  ) => RokidEventSubscription;
 };
 
 let cachedNative: RokidNativeModule | null | undefined;
@@ -388,4 +412,14 @@ export async function stopRokidRecord(type = 'interaction'): Promise<Record<stri
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
   return native.stopRecord(type);
+}
+
+export function addRokidTranscriptListener(
+  listener: (event: RokidTranscriptEvent) => void,
+): RokidEventSubscription {
+  const native = getNativeBridge();
+  if (!native?.addListener) {
+    return { remove: () => undefined };
+  }
+  return native.addListener(ROKID_TRANSCRIPT_EVENT, listener);
 }
