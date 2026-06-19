@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import {
   closeRokidCustomView,
@@ -38,6 +39,7 @@ import {
   type PushupPoseSample,
 } from '../services/pushupCoach';
 import {
+  ROKID_PUSHUP_APK_DOWNLOAD_URL,
   ROKID_PUSHUP_APK_RESOURCE_EXTENSION,
   ROKID_PUSHUP_APK_RESOURCE_NAME,
   ROKID_PUSHUP_APP_ACTIVITY,
@@ -119,8 +121,34 @@ export default function RokidPushupCoachScreen() {
       resourceExtension: ROKID_PUSHUP_APK_RESOURCE_EXTENSION,
       packageName: ROKID_PUSHUP_APP_PACKAGE,
     });
-    if (!readResultOk(installResult) || installResult.installed === false) {
-      throw new Error(resultReason(installResult, 'rokid_pushup_app_install_failed'));
+    if (readResultOk(installResult) && installResult.installed !== false) {
+      return;
+    }
+    const bundledReason = resultReason(installResult, 'rokid_pushup_app_install_failed');
+    if (bundledReason !== 'rokid_apk_resource_missing') {
+      throw new Error(bundledReason);
+    }
+    // IPA 没内置 apk(94MB 进不了包):从 health 公开目录下载到本地缓存,再用 file uri 传到眼镜安装。
+    setRealSessionMessage('眼镜端应用未内置, 正在从 health 下载 (约94MB, 较慢, 请勿退出)...');
+    let downloadedUri: string;
+    try {
+      const target = `${FileSystem.cacheDirectory ?? ''}rokid-pushup-glasses.apk`;
+      const dl = await FileSystem.downloadAsync(ROKID_PUSHUP_APK_DOWNLOAD_URL, target);
+      if (dl.status !== 200) {
+        throw new Error(`rokid_apk_download_http_${dl.status}`);
+      }
+      downloadedUri = dl.uri;
+    } catch {
+      // 下载失败 → 保留 rokid_apk_resource_missing, 让上层 installGlassesApp 回退到手选文件
+      throw new Error('rokid_apk_resource_missing');
+    }
+    setRealSessionMessage('下载完成, 正在把眼镜端应用传到眼镜安装...');
+    const fileInstall = await installRokidAppFromFileUri({
+      fileUri: downloadedUri,
+      packageName: ROKID_PUSHUP_APP_PACKAGE,
+    });
+    if (!readResultOk(fileInstall) || fileInstall.installed === false) {
+      throw new Error(resultReason(fileInstall, 'rokid_pushup_app_install_failed'));
     }
   }, []);
 
