@@ -199,6 +199,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/timeline' as any)} />
           <SettingRow icon="medkit-outline" label="用药管理"
             onPress={() => router.push('/medications' as any)} />
+          <SettingRow icon="cube-outline" label="补剂库存"
+            onPress={() => router.push('/supplement-inventory' as any)} />
           <SettingRow icon="list-outline" label="多药梳理"
             onPress={() => router.push('/deprescribing' as any)} />
           <SettingRow icon="people-circle-outline" label="社会连接自评"

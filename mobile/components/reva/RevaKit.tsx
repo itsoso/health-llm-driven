@@ -37,6 +37,7 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   bell: 'notifications-outline', 'calendar-check': 'calendar-outline', shield: 'shield-checkmark-outline',
   'circle-help': 'help-circle-outline', 'arrow-up': 'arrow-up', heart: 'heart-outline',
   play: 'play', 'refresh-cw': 'refresh', 'alert-triangle': 'warning-outline',
+  package: 'cube-outline',
 };
 
 export function Icon({ name, size = 22, color = C.ink2 }: { name: string; size?: number; color?: string }) {
