@@ -310,6 +310,13 @@ function formatRokidCustomViewIssue(reason?: string) {
   return reason;
 }
 
+function formatQueuedCustomViewMessage(status?: RokidIntegrationStatus) {
+  if (status?.iosBleConnected === true) {
+    return 'Reva 眼镜视图已排队, 但 SDK 尚未回报 CustomView 运行。眼镜蓝牙当前已连接; 若长时间不变, 请完全退出 Rokid AI / Hi Rokid 后重新打开眼镜视图。';
+  }
+  return '眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,Reva 会在连上时自动打开眼镜视图。';
+}
+
 function capabilityRouteTitle(path: RokidRecommendedPath) {
   switch (path) {
     case 'glasses_android_app':
@@ -649,14 +656,16 @@ export default function RokidHealthScreen() {
         // 眼镜蓝牙未连接时 native 已把本次 view 排入 pending,连上(connectionStatePublisher)会自动重发。
         // 这不是终态失败,显示"等待中"而非"失败",别误吓用户(council 共识 P2:Codex/Claude B/A)。
         if (result.customViewPendingRetry === true || reason.includes('rokid_glasses_ble_not_connected')) {
+          let refreshedStatus = statusQuery.data;
           try {
-            await statusQuery.refetch();
+            const refreshed = await statusQuery.refetch();
+            refreshedStatus = refreshed.data ?? refreshedStatus;
           } catch {
             // diagnostics refresh is best-effort; the waiting message still stands.
           }
           setSessionState({
             status: 'waiting',
-            message: '眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,Reva 会在连上时自动打开眼镜视图。',
+            message: formatQueuedCustomViewMessage(refreshedStatus),
           });
           return;
         }
@@ -692,11 +701,6 @@ export default function RokidHealthScreen() {
     setVoiceState({ status: 'starting', message: 'Rokid 语音控制启动中...' });
     let recordingStarted = false;
     try {
-      const recordResult = await startRokidVoiceCommandCapture();
-      if (recordResult.ok === false) {
-        throw new Error(typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed');
-      }
-      recordingStarted = true;
       const viewResult = await openRokidRevaCustomView({
         title: 'Reva 语音控制',
         body: '正在等待明确语音指令',
@@ -705,13 +709,26 @@ export default function RokidHealthScreen() {
       if (viewResult.ok === false) {
         throw new Error(typeof viewResult.reason === 'string' ? viewResult.reason : 'rokid_custom_view_failed');
       }
+      const refreshed = await statusQuery.refetch();
+      const customViewReady =
+        viewResult.customViewRunning === true ||
+        viewResult.capabilitiesReady === true ||
+        refreshed.data?.customViewRunning === true ||
+        refreshed.data?.capabilitiesReady === true;
+      if (!customViewReady) {
+        throw new Error('rokid_custom_view_not_ready');
+      }
+      const recordResult = await startRokidVoiceCommandCapture();
+      if (recordResult.ok === false) {
+        throw new Error(typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed');
+      }
+      recordingStarted = true;
       removeVoiceTranscriptListener();
       voiceTranscriptSubscriptionRef.current = addRokidTranscriptListener((event) => {
         void handleVoiceTranscript(event);
       });
       voiceListeningRef.current = true;
       setVoiceState({ status: 'listening', message: 'Rokid 语音控制已开启' });
-      await statusQuery.refetch();
     } catch (error) {
       voiceListeningRef.current = false;
       removeVoiceTranscriptListener();

@@ -266,6 +266,63 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('opens CustomView before starting native Rokid voice recording', async () => {
+    const callOrder: string[] = [];
+    mockOpenRokidRevaCustomView.mockImplementationOnce(async () => {
+      callOrder.push('open_custom_view');
+      return {
+        ok: true,
+        customViewRunning: true,
+        capabilitiesReady: true,
+      };
+    });
+    mockStartRokidVoiceCommandCapture.mockImplementationOnce(async () => {
+      callOrder.push('start_record');
+      return { ok: true };
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(callOrder).toEqual(['open_custom_view', 'start_record']);
+      expect(screen.getByText('Rokid 语音控制已开启')).toBeTruthy();
+    });
+  });
+
+  it('does not start native Rokid voice recording when CustomView cannot be constructed', async () => {
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_custom_view_open_callback_missing',
+      customViewRunning: false,
+      capabilitiesReady: false,
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStartRokidVoiceCommandCapture).not.toHaveBeenCalled();
+      expect(mockStopRokidVoiceCommandCapture).not.toHaveBeenCalled();
+      expect(screen.getByText(/眼镜原生语音依赖 CustomView/)).toBeTruthy();
+      expect(screen.getByText('手机拍餐')).toBeTruthy();
+    });
+  });
+
   it('keeps mobile fallback actions available when Rokid voice control cannot bind to CustomView', async () => {
     mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
       ok: false,
@@ -291,7 +348,7 @@ describe('RokidHealthScreen', () => {
     fireEvent.press(screen.getByText('手机拍餐'));
 
     expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
-    expect(mockOpenRokidRevaCustomView).not.toHaveBeenCalledWith({
+    expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
       title: 'Reva 语音控制',
       body: '正在等待明确语音指令',
       priority: 'voice',
@@ -1240,6 +1297,55 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('CustomView callback: success=false · errorCode=nil · 2026-06-19T19:46:20+08:00')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T19:46:18+08:00 #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T19:46:20+08:00 #auth-3 custom_view_open_callback commandAccepted=false; errorCode=nil; running=false; bleConnected=false; device=Glasses_0077')).toBeTruthy();
+    });
+  });
+
+  it('does not blame BLE when a queued CustomView retry is already connected on refresh', async () => {
+    const connectedStatus = {
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      sessionMode: 'customView',
+      customViewPendingRetry: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    } as const;
+    mockGetRokidIntegrationStatus.mockResolvedValue(connectedStatus);
+    mockOpenRokidRevaCustomView.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_glasses_ble_not_connected; pending_retry_on_ble_connect; device=Glasses_0077',
+      customViewPendingRetry: true,
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('iOS BLE: connected=true · device=Glasses_0077')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/已排队, 但 SDK 尚未回报 CustomView 运行/)).toBeTruthy();
+      expect(screen.queryByText(/眼镜蓝牙未连接,已排队/)).toBeNull();
     });
   });
 
