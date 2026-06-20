@@ -8,8 +8,26 @@ Related: `docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md` §6 (this 
 > How to use this file: it is pre-filled with everything we can know from the repo.
 > Fill the `[FILL IN]` device/runtime fields from the failing device, attach the
 > listed screenshots/logs, then send the "Message to Rokid" section (§9) plus the
-> facts table. Do **not** send before re-testing on EAS build #167 — if that build
-> makes `rawNotify` non-`none`, the bug is ours and this package is not needed.
+> facts table.
+>
+> UPDATE 2026-06-20 (after a 38-agent swiftinterface audit): build #167 did NOT make
+> `rawNotify` non-`none`. The audit then found a real BRIDGE bug — we observed the wrong
+> notify publisher. `setNotifyEventListenCmds([Custom_View_*])` is registered on
+> `CxrClient` and the SDK delivers the matching typed events on
+> `CxrClient.notifyEventPublisher` (`RGCxrClientNotifyEvent`, swiftinterface :92), but the
+> bridge subscribed ONLY to `RGCxrClientBLE.shared.notifyPublisher` (raw `String`, :243) —
+> so `rawNotify=none` was sourced from the wrong channel and says nothing about the typed
+> channel `setNotifyEventListenCmds` actually gates. **Build #168 (commit 5a671d3e) now also
+> subscribes the typed publisher.** Do **NOT** send this package until #168 is retested AND
+> the typed channel (`custom_view_notify_typed` diagnostic) is ALSO empty. Decision rule:
+> - #168 typed channel shows `Custom_View_*` events → it was our wrong-pipe bug; do not escalate.
+> - #168 typed channel ALSO empty, while `openCustomView` completion never fires and
+>   `customViewRunningEventPublisher` never emits → THREE independent SDK channels are silent
+>   → escalate (this package is now warranted).
+>
+> Also verified by the audit: the SDK exposes NO `connect()/startSession()/bind()` — do not
+> ask Rokid for a "missing init step"; `initialize(mode:.customView)` + auth + BLE are the
+> only entry points and are all wired.
 
 ## 1. One-paragraph summary
 
