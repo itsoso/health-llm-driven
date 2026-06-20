@@ -1366,6 +1366,14 @@ public class RokidBridgeModule: Module {
       RGCxrSubCmd.Custom_View_Open_Failed.rawValue,
       RGCxrSubCmd.Custom_View_Updated.rawValue,
       RGCxrSubCmd.Custom_View_Closed.rawValue,
+      // #169 通信诊断:让眼镜的电量/屏幕/网络/WiFi notify 也回传,定位 CXR 的 TCP/WiFi 数据通道为何不通。
+      // Dev_BatteryChanged 当"notify 通道是否活着"的金丝雀:收到=通道通、问题专在 CustomView;全程零事件=
+      // 整条 notify/会话死(TCP/WiFi 没起);NoNetwork=眼镜无网络(数据通道前提);Dev_Screen_Status=息屏渲染不出。
+      RGCxrSubCmd.Dev_BatteryChanged.rawValue,
+      RGCxrSubCmd.Dev_Screen_Status.rawValue,
+      RGCxrSubCmd.NoNetwork.rawValue,
+      RGCxrSubCmd.Wifi_Status.rawValue,
+      RGCxrSubCmd.Wifi_Connect_Status.rawValue,
     ]
     CxrClient.shared.setNotifyEventListenCmds(commands)
     recordAuthDiagnostic("custom_view_notify_subscription", detail: "mode=setNotifyEventListenCmds; commands=\(commands.joined(separator: ","))")
@@ -1393,6 +1401,10 @@ public class RokidBridgeModule: Module {
     } else if event.subCmd == RGCxrSubCmd.Custom_View_Closed.rawValue {
       customViewRunning = false
       pendingCustomViewPayload = nil
+    } else if event.subCmd == RGCxrSubCmd.NoNetwork.rawValue {
+      // 眼镜上报无网络 → CXR 数据通道(TCP/WiFi)起不来,是 CustomView/install 静默的直接根因。
+      // 抬到用户可见的错误行(settle 只在 error==nil 时写,这里先占位不会被覆盖)。
+      lastCustomViewOpenError = "rokid_glasses_no_network; CXR 数据通道(TCP/WiFi)需眼镜联网; \(summary)"
     }
   }
   #endif
