@@ -1474,6 +1474,13 @@ public class RokidBridgeModule: Module {
             "custom_view_notify_resubscribe_on_connect",
             detail: "device=\(RGCxrClientBLE.shared.connectedDeviceName ?? "unknown")"
           )
+          // 回归修复(council 标定):retryPendingCustomViewAfterBleConnected 此前是死代码、从未被调 →
+          // 排队的 openCustomView 在 BLE 连上后永不重发 → 用户"连不上"。这里接上,但用"延迟 + 单飞"
+          // 规避 #160-162 的坑:延迟 1.5s 让 CXR 会话在 BLE 刚连上后 settle(避免"会话未就绪即发"),
+          // retry 内部 nil 掉 pending 做单飞、且只在仍连接+未运行时发,避免与手动点双发。
+          DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            RokidBridgeModule.retryPendingCustomViewAfterBleConnected()
+          }
         }
       }
       .store(in: &RokidBridgeModule.cancellables)
@@ -1587,9 +1594,10 @@ public class RokidBridgeModule: Module {
     guard let view = pendingCustomViewPayload else {
       return
     }
-    guard CxrClient.shared.auth.isAuthenticated(), !customViewRunning else {
+    guard iosBleConnected(), CxrClient.shared.auth.isAuthenticated(), !customViewRunning else {
       return
     }
+    pendingCustomViewPayload = nil  // 单飞:重发一次即清,避免重复 connect 事件 / 与手动点双发;失败后用户可手动重开
     lastCustomViewAutoRetryAt = isoTimestamp()
     recordAuthDiagnostic(
       "custom_view_auto_retry",

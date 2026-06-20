@@ -652,6 +652,25 @@ export default function RokidHealthScreen() {
 
   useEffect(() => removeVoiceTranscriptListener, []);
 
+  // council 回归修复:'waiting'(已排队)态的文案是在排队瞬间从可能过期的 status 算的
+  // (formatQueuedCustomViewMessage),BLE 随后连上 / CustomView 跑起来都不刷新 → 顶部误显
+  // "眼镜蓝牙未连接"而底部诊断 connected=true。随 live status 收敛:已运行→ready;BLE 连上但
+  // 未运行→用 live 状态重算文案(native 会在连上后自动重发 openCustomView)。
+  useEffect(() => {
+    if (sessionState.status !== 'waiting') {
+      return;
+    }
+    if (status?.customViewRunning === true) {
+      setSessionState({ status: 'ready', message: 'Reva 眼镜视图已运行' });
+    } else if (status?.iosBleConnected === true) {
+      setSessionState((prev) =>
+        prev.status === 'waiting'
+          ? { ...prev, message: formatQueuedCustomViewMessage(status) }
+          : prev,
+      );
+    }
+  }, [status?.customViewRunning, status?.iosBleConnected, sessionState.status]);
+
   const refresh = () => {
     statusQuery.refetch();
     glanceQuery.refetch();
