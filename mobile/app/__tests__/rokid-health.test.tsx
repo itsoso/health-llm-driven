@@ -323,6 +323,60 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('classifies iOS CustomView callback nil as a voice fallback instead of a raw Rokid error', async () => {
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: false,
+      reason: 'ios_ble_connected; open_callback_error_code=nil; device=Glasses_0077',
+      customViewRunning: false,
+      capabilitiesReady: false,
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStartRokidVoiceCommandCapture).not.toHaveBeenCalled();
+      expect(screen.getByText('眼镜原生语音依赖 CustomView，目前不可用。先用下方入口继续：手机拍餐或本地俯卧撑。')).toBeTruthy();
+      expect(screen.queryByText(/Rokid 语音控制失败: ios_ble_connected/)).toBeNull();
+      expect(screen.getByText('手机拍餐')).toBeTruthy();
+    });
+  });
+
+  it('tries Rokid voice recording when nil CustomView callback still has session evidence', async () => {
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: false,
+      reason: 'ios_ble_connected; open_callback_error_code=nil; device=Glasses_0077',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      customViewSessionEvidence: true,
+      customViewDisplayInferred: true,
+      lastCustomViewSessionEvidenceReason: 'open_callback_false_nil_error_ble_connected',
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStartRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Rokid 语音控制已开启')).toBeTruthy();
+      expect(screen.queryByText(/眼镜原生语音依赖 CustomView/)).toBeNull();
+    });
+  });
+
   it('keeps mobile fallback actions available when Rokid voice control cannot bind to CustomView', async () => {
     mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
       ok: false,

@@ -38,6 +38,7 @@ public class RokidBridgeModule: Module {
   private static var didInitializeCustomView = false
   private static var didBindRuntimeEvents = false
   private static var customViewRunning = false
+  private static var customViewDisplayInferred = false
   private static var cxrInitializationOutcome = "not_started"
   private static var lastCallbackUrl: String?
   private static var lastCallbackAt: String?
@@ -59,6 +60,8 @@ public class RokidBridgeModule: Module {
   private static var pendingCustomViewPayload: String?
   private static var lastCustomViewAutoRetryAt: String?
   private static var lastCustomViewCommandAt: String?
+  private static var lastCustomViewSessionEvidenceAt: String?
+  private static var lastCustomViewSessionEvidenceReason: String?
   private static var lastCustomViewRawNotify: String?
   private static var lastCustomViewRawNotifyAt: String?
   private static var lastCustomViewOpenError: String?
@@ -223,6 +226,8 @@ public class RokidBridgeModule: Module {
       payload["iosBleDeviceName"] = bleDeviceName
     }
     payload["customViewRunning"] = isCustomViewRunning()
+    payload["customViewSessionEvidence"] = hasCustomViewSessionEvidence()
+    payload["customViewDisplayInferred"] = customViewDisplayInferred
     payload["capabilitiesReady"] = capabilitiesReady()
     payload["customAppSupported"] = sdkLinked()
     if let lastCustomViewPayloadHash {
@@ -240,6 +245,12 @@ public class RokidBridgeModule: Module {
     }
     if let lastCustomViewCommandAt {
       payload["lastCustomViewCommandAt"] = lastCustomViewCommandAt
+    }
+    if let lastCustomViewSessionEvidenceAt {
+      payload["lastCustomViewSessionEvidenceAt"] = lastCustomViewSessionEvidenceAt
+    }
+    if let lastCustomViewSessionEvidenceReason {
+      payload["lastCustomViewSessionEvidenceReason"] = lastCustomViewSessionEvidenceReason
     }
     if let lastCustomViewRawNotify {
       payload["lastCustomViewRawNotify"] = lastCustomViewRawNotify
@@ -506,12 +517,18 @@ public class RokidBridgeModule: Module {
         lastCustomViewOpenCallbackAt = isoTimestamp()
         if success {
           RokidBridgeModule.lastCustomViewOpenError = nil
+          RokidBridgeModule.markCustomViewSessionEvidence("open_callback_success")
         } else {
           RokidBridgeModule.customViewRunning = false
           let callbackBleConnected = iosBleConnected()
           let callbackDeviceName = iosBleDeviceName() ?? RokidBridgeModule.currentDeviceName ?? "unknown"
           let linkHint = callbackBleConnected ? "ios_ble_connected" : "rokid_glasses_ble_not_connected"
           RokidBridgeModule.lastCustomViewOpenError = "\(linkHint); open_callback_error_code=\(String(describing: errorCode)); device=\(callbackDeviceName)"
+          if callbackBleConnected && errorCode == nil {
+            RokidBridgeModule.markCustomViewSessionEvidence("open_callback_false_nil_error_ble_connected")
+          } else {
+            RokidBridgeModule.clearCustomViewSessionEvidence("open_callback_failed")
+          }
         }
         recordAuthDiagnostic(
           "custom_view_open_callback",
@@ -551,7 +568,7 @@ public class RokidBridgeModule: Module {
   private static func updateCustomView(_ view: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
-    guard RokidBridgeModule.customViewRunning else {
+    guard RokidBridgeModule.hasCustomViewSessionEvidence() else {
       promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
       return
     }
@@ -581,6 +598,7 @@ public class RokidBridgeModule: Module {
       DispatchQueue.main.async {
         if closed {
           RokidBridgeModule.customViewRunning = false
+          RokidBridgeModule.clearCustomViewSessionEvidence("custom_view_close_callback")
         }
         recordAuthDiagnostic(
           "custom_view_close_callback",
@@ -592,6 +610,7 @@ public class RokidBridgeModule: Module {
     #else
     CxrClient.shared.closeCustomView(view)
     RokidBridgeModule.customViewRunning = false
+    RokidBridgeModule.clearCustomViewSessionEvidence("custom_view_close_legacy")
     promise.resolve(customViewCommandPayload(commandAccepted: true))
     #endif
     #else
@@ -826,10 +845,16 @@ public class RokidBridgeModule: Module {
     guard CxrClient.shared.auth.isAuthenticated() else {
       return ["ok": false, "reason": "rokid_not_authorized"]
     }
-    guard RokidBridgeModule.customViewRunning else {
+    guard RokidBridgeModule.hasCustomViewSessionEvidence() else {
       return ["ok": false, "reason": "rokid_custom_view_not_ready"]
     }
 
+    if !RokidBridgeModule.customViewRunning {
+      recordAuthDiagnostic(
+        "record_start_with_inferred_custom_view",
+        detail: "type=\(type); evidence=\(lastCustomViewSessionEvidenceReason ?? "unknown"); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+      )
+    }
     CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
     return ["ok": true]
     #else
@@ -896,6 +921,8 @@ public class RokidBridgeModule: Module {
     response["ok"] = ok
     response["customViewCommandAccepted"] = commandAccepted
     response["customViewRunning"] = running
+    response["customViewSessionEvidence"] = hasCustomViewSessionEvidence()
+    response["customViewDisplayInferred"] = customViewDisplayInferred
     response["capabilitiesReady"] = capabilitiesReady()
     response["iosBleConnected"] = iosBleConnected()
     if let bleDeviceName = iosBleDeviceName() {
@@ -916,6 +943,12 @@ public class RokidBridgeModule: Module {
     }
     if let lastCustomViewCommandAt {
       response["lastCustomViewCommandAt"] = lastCustomViewCommandAt
+    }
+    if let lastCustomViewSessionEvidenceAt {
+      response["lastCustomViewSessionEvidenceAt"] = lastCustomViewSessionEvidenceAt
+    }
+    if let lastCustomViewSessionEvidenceReason {
+      response["lastCustomViewSessionEvidenceReason"] = lastCustomViewSessionEvidenceReason
     }
     if let lastCustomViewRawNotify {
       response["lastCustomViewRawNotify"] = lastCustomViewRawNotify
@@ -1132,6 +1165,9 @@ public class RokidBridgeModule: Module {
     lastCustomViewCommandAt = isoTimestamp()
     lastCustomViewOpenError = nil
     lastCustomViewOpenCommandAccepted = nil
+    customViewDisplayInferred = false
+    lastCustomViewSessionEvidenceAt = nil
+    lastCustomViewSessionEvidenceReason = nil
     lastCustomViewOpenCallbackSuccess = nil
     lastCustomViewOpenCallbackErrorCode = nil
     lastCustomViewOpenCallbackAt = nil
@@ -1292,6 +1328,9 @@ public class RokidBridgeModule: Module {
           RokidBridgeModule.pendingCustomViewPayload = nil
           RokidBridgeModule.lastCustomViewOpenCommandAccepted = true
           RokidBridgeModule.lastCustomViewOpenError = nil
+          RokidBridgeModule.markCustomViewSessionEvidence("running_event_true")
+        } else {
+          RokidBridgeModule.clearCustomViewSessionEvidence("running_event_false")
         }
         RokidBridgeModule.recordAuthDiagnostic("custom_view_event", detail: "isRunning=\(event.isRunning)")
       }
@@ -1394,17 +1433,21 @@ public class RokidBridgeModule: Module {
       lastCustomViewOpenCommandAccepted = true
       lastCustomViewOpenError = nil
       pendingCustomViewPayload = nil
+      markCustomViewSessionEvidence("typed_notify_custom_view_opened")
     } else if event.subCmd == RGCxrSubCmd.Custom_View_Open_Failed.rawValue {
       customViewRunning = false
       lastCustomViewOpenError = "rokid_custom_view_open_failed; status=\(event.status); \(summary)"
       pendingCustomViewPayload = nil
+      clearCustomViewSessionEvidence("typed_notify_custom_view_open_failed")
     } else if event.subCmd == RGCxrSubCmd.Custom_View_Closed.rawValue {
       customViewRunning = false
       pendingCustomViewPayload = nil
+      clearCustomViewSessionEvidence("typed_notify_custom_view_closed")
     } else if event.subCmd == RGCxrSubCmd.NoNetwork.rawValue {
       // 眼镜上报无网络 → CXR 数据通道(TCP/WiFi)起不来,是 CustomView/install 静默的直接根因。
       // 抬到用户可见的错误行(settle 只在 error==nil 时写,这里先占位不会被覆盖)。
       lastCustomViewOpenError = "rokid_glasses_no_network; CXR 数据通道(TCP/WiFi)需眼镜联网; \(summary)"
+      clearCustomViewSessionEvidence("typed_notify_no_network")
     }
   }
   #endif
@@ -1422,13 +1465,16 @@ public class RokidBridgeModule: Module {
       lastCustomViewOpenCommandAccepted = true
       lastCustomViewOpenError = nil
       pendingCustomViewPayload = nil
+      markCustomViewSessionEvidence("raw_notify_custom_view_opened")
     } else if normalized.contains("custom_view_open_failed") {
       customViewRunning = false
       lastCustomViewOpenError = cleanNotify
       pendingCustomViewPayload = nil
+      clearCustomViewSessionEvidence("raw_notify_custom_view_open_failed")
     } else if normalized.contains("custom_view_closed") || normalized.contains("close_custom_view") {
       customViewRunning = false
       pendingCustomViewPayload = nil
+      clearCustomViewSessionEvidence("raw_notify_custom_view_closed")
     }
     recordAuthDiagnostic("custom_view_notify", detail: cleanNotify)
   }
@@ -1608,6 +1654,44 @@ public class RokidBridgeModule: Module {
     #else
     return false
     #endif
+  }
+
+  private static func hasCustomViewNotifyEvidence() -> Bool {
+    guard let notify = RokidBridgeModule.lastCustomViewRawNotify?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !notify.isEmpty else {
+      return false
+    }
+    let normalized = notify.lowercased()
+    return normalized != "none"
+      && !normalized.contains("nonetwork")
+      && !normalized.contains("open_failed")
+  }
+
+  private static func hasCustomViewSessionEvidence() -> Bool {
+    #if canImport(RGCxrClient)
+    return RokidBridgeModule.customViewRunning
+      || RokidBridgeModule.customViewDisplayInferred
+      || (RokidBridgeModule.lastCustomViewOpenCommandAccepted == true && iosBleConnected())
+      || (hasCustomViewNotifyEvidence() && iosBleConnected())
+    #else
+    return false
+    #endif
+  }
+
+  private static func markCustomViewSessionEvidence(_ reason: String) {
+    customViewDisplayInferred = true
+    lastCustomViewSessionEvidenceAt = isoTimestamp()
+    lastCustomViewSessionEvidenceReason = reason
+    recordAuthDiagnostic(
+      "custom_view_session_evidence",
+      detail: "\(reason); running=\(customViewRunning); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+    )
+  }
+
+  private static func clearCustomViewSessionEvidence(_ reason: String) {
+    customViewDisplayInferred = false
+    lastCustomViewSessionEvidenceReason = reason
+    lastCustomViewSessionEvidenceAt = isoTimestamp()
   }
 
   private static func capabilitiesReady() -> Bool {

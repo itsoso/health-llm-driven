@@ -83,12 +83,16 @@ export type RokidIntegrationStatus = {
   capabilitiesReady?: boolean;
   customAppSupported?: boolean;
   customViewRunning?: boolean;
+  customViewSessionEvidence?: boolean;
+  customViewDisplayInferred?: boolean;
   lastCustomViewPayloadHash?: string;
   lastCustomViewPayloadShape?: string;
   lastCustomViewPayloadBytes?: number;
   customViewPendingRetry?: boolean;
   lastCustomViewAutoRetryAt?: string;
   lastCustomViewCommandAt?: string;
+  lastCustomViewSessionEvidenceAt?: string;
+  lastCustomViewSessionEvidenceReason?: string;
   lastCustomViewRawNotify?: string;
   lastCustomViewRawNotifyAt?: string;
   lastCustomViewOpenError?: string;

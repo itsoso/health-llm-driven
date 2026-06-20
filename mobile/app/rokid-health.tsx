@@ -236,9 +236,30 @@ function isRokidNativeChannelNotReady(reason?: string) {
   return normalized.includes('rokid_custom_view_not_ready')
     || normalized.includes('rokid_custom_view_not_running_after_open')
     || normalized.includes('rokid_custom_view_open_callback_missing')
+    || normalized.includes('open_callback_error_code')
+    || normalized.includes('auto_retry_open_callback_error_code')
     || normalized.includes('rokid_glasses_ble_not_connected')
     || normalized.includes('rokid_capture_failed')
     || normalized.includes('rokid_record_failed');
+}
+
+function hasRokidCustomViewSessionEvidence(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
+  if (!result) {
+    return false;
+  }
+  const rawNotify = typeof result.lastCustomViewRawNotify === 'string'
+    ? result.lastCustomViewRawNotify.trim().toLowerCase()
+    : '';
+  const hasNotifyEvidence = rawNotify.length > 0
+    && rawNotify !== 'none'
+    && !rawNotify.includes('nonetwork')
+    && !rawNotify.includes('open_failed');
+  return result.customViewRunning === true
+    || result.capabilitiesReady === true
+    || result.customViewSessionEvidence === true
+    || result.customViewDisplayInferred === true
+    || result.lastCustomViewOpenCommandAccepted === true
+    || hasNotifyEvidence;
 }
 
 function transcriptText(event: RokidTranscriptEvent) {
@@ -306,6 +327,9 @@ function formatRokidCustomViewIssue(reason?: string) {
   }
   if (normalized.includes('rokid_custom_view_open_callback_missing')) {
     return 'SDK 没有返回 CustomView 打开回调，眼镜端也没有回报运行。请确认 Rokid AI 已退出后台占用后重新打开眼镜视图。';
+  }
+  if (normalized.includes('open_callback_error_code') || normalized.includes('auto_retry_open_callback_error_code')) {
+    return 'SDK 回调拒绝 CustomView 打开，但未给出明确错误码。眼镜蓝牙可能已连接，仍需要眼镜端回报 CustomView 运行后才能使用原生语音/拍照。';
   }
   return reason;
 }
@@ -436,6 +460,22 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   }
   if (status.lastCustomViewPayloadShape) {
     lines.push(`CustomView shape: ${status.lastCustomViewPayloadShape}`);
+  }
+  if (status.customViewSessionEvidence === true || status.customViewDisplayInferred === true || status.lastCustomViewSessionEvidenceReason) {
+    const parts: string[] = [];
+    if (typeof status.customViewSessionEvidence === 'boolean') {
+      parts.push(`sessionEvidence=${status.customViewSessionEvidence}`);
+    }
+    if (typeof status.customViewDisplayInferred === 'boolean') {
+      parts.push(`displayInferred=${status.customViewDisplayInferred}`);
+    }
+    if (status.lastCustomViewSessionEvidenceReason) {
+      parts.push(`reason=${status.lastCustomViewSessionEvidenceReason}`);
+    }
+    if (status.lastCustomViewSessionEvidenceAt) {
+      parts.push(formatRokidLogTimestamp(status.lastCustomViewSessionEvidenceAt));
+    }
+    lines.push(`CustomView evidence: ${parts.join(' · ')}`);
   }
   if (status.customViewPendingRetry === true || status.lastCustomViewAutoRetryAt) {
     const parts: string[] = [];
@@ -706,15 +746,15 @@ export default function RokidHealthScreen() {
         body: '正在等待明确语音指令',
         priority: 'voice',
       });
-      if (viewResult.ok === false) {
-        throw new Error(typeof viewResult.reason === 'string' ? viewResult.reason : 'rokid_custom_view_failed');
-      }
       const refreshed = await statusQuery.refetch();
       const customViewReady =
-        viewResult.customViewRunning === true ||
-        viewResult.capabilitiesReady === true ||
-        refreshed.data?.customViewRunning === true ||
-        refreshed.data?.capabilitiesReady === true;
+        hasRokidCustomViewSessionEvidence(viewResult) ||
+        hasRokidCustomViewSessionEvidence(refreshed.data);
+      if (viewResult.ok === false) {
+        if (!customViewReady) {
+          throw new Error(typeof viewResult.reason === 'string' ? viewResult.reason : 'rokid_custom_view_failed');
+        }
+      }
       if (!customViewReady) {
         throw new Error('rokid_custom_view_not_ready');
       }
