@@ -1340,6 +1340,21 @@ public class RokidBridgeModule: Module {
         RokidBridgeModule.handleCustomViewNotify(notify)
       }
       .store(in: &RokidBridgeModule.cancellables)
+    #if ROKID_CXRL_CALLBACK_API
+    // 真机实证(build #167)rawNotify=none 的确定根因:setNotifyEventListenCmds 注册在
+    // CxrClient 上,匹配的结构化事件从 CxrClient.notifyEventPublisher(RGCxrClientNotifyEvent)
+    // 派发 —— 但上面只订了 RGCxrClientBLE.notifyPublisher(原始 String),从不订 typed publisher,
+    // 二者是 SDK 设计上的配对(注册过滤器 + 收 typed 事件),配错对象 → Custom_View_* notify 永收不到。
+    // 这里补订 typed publisher(保留 BLE String sink 作回退)。也是决定性诊断:若 typed channel 仍空
+    // 且 callback/runningEvent 也空 = 三通道全静默,证明静默在我们层之下(companion/固件/会话),
+    // 按 docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md §6 带证据升级 Rokid。
+    CxrClient.shared.notifyEventPublisher
+      .receive(on: DispatchQueue.main)
+      .sink { event in
+        RokidBridgeModule.handleTypedNotifyEvent(event)
+      }
+      .store(in: &RokidBridgeModule.cancellables)
+    #endif
     #endif
   }
 
@@ -1358,6 +1373,29 @@ public class RokidBridgeModule: Module {
     recordAuthDiagnostic("custom_view_notify_subscription", detail: "mode=legacy_notify_publisher_only")
     #endif
   }
+
+  #if ROKID_CXRL_CALLBACK_API
+  // 处理来自 CxrClient.notifyEventPublisher 的结构化 CustomView notify(setNotifyEventListenCmds 的配对出口)。
+  // 每条都记 custom_view_notify_typed 诊断(不预过滤),用 subCmd 等值匹配 RGCxrSubCmd.Custom_View_* 驱动状态。
+  private static func handleTypedNotifyEvent(_ event: RGCxrClientNotifyEvent) {
+    let summary = "cmd=\(event.cmd); subCmd=\(event.subCmd); status=\(event.status); reqId=\(event.reqId)"
+    recordAuthDiagnostic("custom_view_notify_typed", detail: summary)
+    lastCustomViewRawNotify = summary
+    lastCustomViewRawNotifyAt = isoTimestamp()
+    if event.subCmd == RGCxrSubCmd.Custom_View_Opened.rawValue {
+      lastCustomViewOpenCommandAccepted = true
+      lastCustomViewOpenError = nil
+      pendingCustomViewPayload = nil
+    } else if event.subCmd == RGCxrSubCmd.Custom_View_Open_Failed.rawValue {
+      customViewRunning = false
+      lastCustomViewOpenError = "rokid_custom_view_open_failed; status=\(event.status); \(summary)"
+      pendingCustomViewPayload = nil
+    } else if event.subCmd == RGCxrSubCmd.Custom_View_Closed.rawValue {
+      customViewRunning = false
+      pendingCustomViewPayload = nil
+    }
+  }
+  #endif
 
   private static func handleCustomViewNotify(_ notify: String) {
     let cleanNotify = sanitizeAuthDiagnosticDetail(notify)
