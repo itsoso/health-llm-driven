@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
 import {
+  formatRokidLogTimestamp,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
   openRokidRevaCustomView,
@@ -35,7 +36,7 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 type PrivacyMode = 'private' | 'workplace' | 'public';
 type OpenState = 'idle' | 'opening' | 'opened' | 'unavailable' | 'failed';
 type CaptureStatus = 'idle' | 'capturing' | 'submitted' | 'failed';
-type SessionStatus = 'idle' | 'running' | 'ready' | 'failed';
+type SessionStatus = 'idle' | 'running' | 'ready' | 'waiting' | 'failed';
 
 type CaptureState = {
   status: CaptureStatus;
@@ -53,18 +54,18 @@ type RokidGlanceCard = {
   priority_tier?: string;
 };
 
-const PRIVACY_MODES: Array<{ key: PrivacyMode; label: string; description: string }> = [
+const PRIVACY_MODES: { key: PrivacyMode; label: string; description: string }[] = [
   { key: 'private', label: '私密', description: '可保留原始素材, 仍需主动触发' },
   { key: 'workplace', label: '办公', description: '默认保留摘要和 hash' },
   { key: 'public', label: '公共', description: '默认不保留原图和原音频' },
 ];
 
-const CAPTURE_ACTIONS: Array<{
+const CAPTURE_ACTIONS: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   detail: string;
   intent: RokidVisualIntent;
-}> = [
+}[] = [
   { icon: 'fast-food-outline', title: '食物视觉记录', detail: '拍菜单 / 餐盘后生成饮食草稿', intent: 'food_scan' },
   { icon: 'nutrition-outline', title: '补剂标签扫描', detail: 'OCR 后进入补剂待确认队列', intent: 'supplement_scan' },
   { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药', intent: 'medication_scan' },
@@ -78,10 +79,18 @@ function statusLabel(status?: RokidIntegrationStatus) {
       sdk: 'SDK 检测中',
     };
   }
+  const sdkRequestedButUnlinked = status.platform === 'ios'
+    && status.bridgeAvailable === true
+    && status.sdkLinked !== true
+    && (
+      status.iosSdkDependencyMode === 'requested_but_unlinked'
+      || status.cxrCallbackApiEnabled === true
+      || status.sdkLinkedReason?.includes('unavailable') === true
+    );
   return {
-    hiRokid: status.hiRokidInstalled ? 'Hi Rokid 已安装' : '未检测到 Hi Rokid',
+    hiRokid: status.hiRokidInstalled ? 'Rokid companion 已安装' : '未检测到 Rokid companion',
     bridge: status.bridgeAvailable ? 'Bridge 已就绪' : 'Bridge 未就绪',
-    sdk: status.sdkLinked ? 'SDK 已链接' : 'SDK 未链接',
+    sdk: status.sdkLinked ? 'SDK 已链接' : sdkRequestedButUnlinked ? 'SDK 请求但未导入' : 'SDK 未链接',
   };
 }
 
@@ -112,6 +121,203 @@ function iosAuthorizationLabel(status?: RokidIntegrationStatus) {
     default:
       return '未授权';
   }
+}
+
+function isRecoverableRokidAuthorizationDelay(reason?: string) {
+  if (!reason) {
+    return false;
+  }
+  const normalized = reason.toLowerCase();
+  return normalized.includes('鉴权请求超时')
+    || normalized.includes('rgcxrclientautherror code=-1')
+    || normalized.includes('authorization_callback_pending')
+    || normalized.includes('authorization request timed out')
+    || normalized.includes('request timeout')
+    || normalized.includes('timeout');
+}
+
+function formatRokidAuthorizationIssue(reason?: string) {
+  if (isRecoverableRokidAuthorizationDelay(reason)) {
+    return '鉴权请求超时: Rokid AI / Hi Rokid 未在等待窗口内回调 Reva';
+  }
+  return reason ?? 'authorization_failed';
+}
+
+function formatRokidCustomViewIssue(reason?: string) {
+  if (!reason) {
+    return 'custom_view_failed';
+  }
+  const normalized = reason.toLowerCase();
+  if (normalized.includes('rokid_glasses_ble_not_connected')) {
+    return '眼镜蓝牙链路未连接: 授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。';
+  }
+  if (normalized.includes('rokid_custom_view_not_running_after_open')) {
+    return 'SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示 Reva；若未显示，请重新打开眼镜视图。';
+  }
+  if (normalized.includes('rokid_custom_view_open_callback_missing')) {
+    return 'SDK 没有返回 CustomView 打开回调，眼镜端也没有回报运行。请确认 Rokid AI 已退出后台占用后重新打开眼镜视图。';
+  }
+  return reason;
+}
+
+function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
+  const lines: string[] = [];
+  if (!status) {
+    return lines;
+  }
+  if (status.companionServerScheme && status.companionServerHost) {
+    const device = status.currentDeviceName ? ` · device=${status.currentDeviceName}` : '';
+    lines.push(`Companion: ${status.companionServerScheme}://${status.companionServerHost}${device}`);
+  }
+  if (status.nativeAppVersion || status.nativeBuildNumber) {
+    lines.push(`Reva build: version=${status.nativeAppVersion ?? 'unknown'} · build=${status.nativeBuildNumber ?? 'unknown'}`);
+  }
+  if (
+    typeof status.sdkLinked === 'boolean'
+    || status.iosSdkDependencyMode
+    || status.sdkLinkedReason
+  ) {
+    const parts: string[] = [];
+    if (typeof status.sdkLinked === 'boolean') {
+      parts.push(`sdkLinked=${status.sdkLinked}`);
+    }
+    if (status.iosSdkDependencyMode) {
+      parts.push(`mode=${status.iosSdkDependencyMode}`);
+    }
+    if (status.sdkLinkedReason) {
+      parts.push(`reason=${status.sdkLinkedReason}`);
+    }
+    lines.push(`SDK linkage: ${parts.join(' · ')}`);
+  }
+  if (status.lastAuthorizationAttemptId || status.authorizationAttemptCount || status.lastAuthorizationPhase) {
+    const parts: string[] = [];
+    if (status.lastAuthorizationAttemptId) {
+      parts.push(status.lastAuthorizationAttemptId);
+    }
+    if (typeof status.authorizationAttemptCount === 'number') {
+      parts.push(`#${status.authorizationAttemptCount}`);
+    }
+    if (status.lastAuthorizationPhase) {
+      parts.push(`phase=${status.lastAuthorizationPhase}`);
+    }
+    if (typeof status.lastAuthorizationDurationMs === 'number') {
+      parts.push(`duration=${status.lastAuthorizationDurationMs}ms`);
+    }
+    lines.push(`授权 attempt: ${parts.join(' · ')}`);
+  }
+  if (
+    status.lastAuthorizationStateBeforeReset
+    || status.lastAuthorizationStateAfterReset
+    || status.lastAuthorizationStateBeforeAuthenticate
+  ) {
+    lines.push(
+      `SDK state: beforeReset=${status.lastAuthorizationStateBeforeReset ?? 'unknown'}`
+      + ` · afterReset=${status.lastAuthorizationStateAfterReset ?? 'unknown'}`
+      + ` · beforeAuth=${status.lastAuthorizationStateBeforeAuthenticate ?? 'unknown'}`,
+    );
+  }
+  if (status.authorizationConfigSummary) {
+    lines.push(`Auth config: ${status.authorizationConfigSummary}`);
+  }
+  if (typeof status.iosBleConnected === 'boolean') {
+    const device = status.iosBleDeviceName ? ` · device=${status.iosBleDeviceName}` : '';
+    lines.push(`iOS BLE: connected=${status.iosBleConnected}${device}`);
+  }
+  if (typeof status.cxrCallbackApiEnabled === 'boolean' || status.cxrNotifySubscriptionMode) {
+    const parts: string[] = [];
+    if (typeof status.cxrCallbackApiEnabled === 'boolean') {
+      parts.push(`callbackApi=${status.cxrCallbackApiEnabled}`);
+    }
+    if (status.cxrNotifySubscriptionMode) {
+      parts.push(`notify=${status.cxrNotifySubscriptionMode}`);
+    }
+    lines.push(`CXR-L API: ${parts.join(' · ')}`);
+  }
+  if (typeof status.lastCustomViewPayloadBytes === 'number' || status.lastCustomViewPayloadHash) {
+    const parts: string[] = [];
+    if (typeof status.lastCustomViewPayloadBytes === 'number') {
+      parts.push(`bytes=${status.lastCustomViewPayloadBytes}`);
+    }
+    if (status.lastCustomViewPayloadHash) {
+      parts.push(`hash=${status.lastCustomViewPayloadHash}`);
+    }
+    lines.push(`CustomView payload: ${parts.join(' · ')}`);
+  }
+  if (status.lastCustomViewPayloadShape) {
+    lines.push(`CustomView shape: ${status.lastCustomViewPayloadShape}`);
+  }
+  if (status.customViewPendingRetry === true || status.lastCustomViewAutoRetryAt) {
+    const parts: string[] = [];
+    if (status.customViewPendingRetry === true) {
+      parts.push('pending=true');
+    }
+    if (status.lastCustomViewAutoRetryAt) {
+      parts.push(`lastAutoRetry=${formatRokidLogTimestamp(status.lastCustomViewAutoRetryAt)}`);
+    }
+    lines.push(`CustomView retry: ${parts.join(' · ')}`);
+  }
+  if (status.lastCustomViewRawNotify) {
+    const at = status.lastCustomViewRawNotifyAt ? ` · ${formatRokidLogTimestamp(status.lastCustomViewRawNotifyAt)}` : '';
+    lines.push(`CustomView raw: ${status.lastCustomViewRawNotify}${at}`);
+  }
+  if (status.lastCustomViewOpenError) {
+    lines.push(`CustomView error: ${status.lastCustomViewOpenError}`);
+  }
+  if (
+    typeof status.lastCustomViewOpenCallbackSuccess === 'boolean'
+    || status.lastCustomViewOpenCallbackErrorCode
+  ) {
+    const parts: string[] = [];
+    if (typeof status.lastCustomViewOpenCallbackSuccess === 'boolean') {
+      parts.push(`success=${status.lastCustomViewOpenCallbackSuccess}`);
+    }
+    if (status.lastCustomViewOpenCallbackErrorCode) {
+      parts.push(`errorCode=${status.lastCustomViewOpenCallbackErrorCode}`);
+    }
+    if (status.lastCustomViewOpenCallbackAt) {
+      parts.push(formatRokidLogTimestamp(status.lastCustomViewOpenCallbackAt));
+    }
+    lines.push(`CustomView callback: ${parts.join(' · ')}`);
+  }
+  if (Array.isArray(status.acceptedCallbackSchemes) && status.acceptedCallbackSchemes.length > 0) {
+    const parts = [`accepted=${status.acceptedCallbackSchemes.join(', ')}`];
+    if (status.callbackScheme) {
+      parts.push(`configured=${status.callbackScheme}`);
+    }
+    if (status.callbackSchemeSource) {
+      parts.push(`source=${status.callbackSchemeSource}`);
+    }
+    lines.push(`Callback schemes: ${parts.join(' · ')}`);
+  }
+  if (status.lastAuthorizationError) {
+    lines.push(`最近授权错误: ${formatRokidAuthorizationIssue(status.lastAuthorizationError)}`);
+  }
+  if (status.lastAuthorizationEvent) {
+    lines.push(`SDK 授权事件: ${status.lastAuthorizationEvent}`);
+  }
+  if (status.lastOpenUrlFingerprint) {
+    const route = status.lastOpenUrlExpectedAuthCallback ? '匹配授权 scheme' : '不是授权 scheme';
+    const at = status.lastOpenUrlAt ? ` · ${formatRokidLogTimestamp(status.lastOpenUrlAt)}` : '';
+    lines.push(`iOS 回跳: ${status.lastOpenUrlFingerprint} · ${route}${at}`);
+  }
+  if (status.lastAuthorizationRequestAt) {
+    lines.push(`最近授权请求: ${formatRokidLogTimestamp(status.lastAuthorizationRequestAt)}`);
+  }
+  if (typeof status.authorizationRequestTimeoutSeconds === 'number') {
+    lines.push(`SDK 等待窗口: ${Math.round(status.authorizationRequestTimeoutSeconds)} 秒`);
+  }
+  if (status.lastCallbackAt) {
+    lines.push(`最近回调: ${status.lastCallbackHandled ? 'SDK 已处理' : 'SDK 未确认'} · ${formatRokidLogTimestamp(status.lastCallbackAt)}`);
+  } else if (status.lastAuthorizationError && isRecoverableRokidAuthorizationDelay(status.lastAuthorizationError)) {
+    lines.push('最近回调: 尚未进入 Reva');
+    lines.push('iOS 回跳: 尚未收到 AppDelegate openURL');
+  }
+  if (Array.isArray(status.authDiagnosticTimeline)) {
+    status.authDiagnosticTimeline.slice(-6).forEach((entry) => {
+      lines.push(`Native: ${formatRokidLogTimestamp(entry)}`);
+    });
+  }
+  return lines;
 }
 
 export default function RokidHealthScreen() {
@@ -146,11 +352,24 @@ export default function RokidHealthScreen() {
   const isIOS = status?.platform === 'ios';
   const iosCapabilitiesReady = isIOS && status?.capabilitiesReady === true;
   const validationSteps = useMemo(() => getRokidDeviceValidationSteps(status), [status]);
+  const authDiagnosticLines = useMemo(() => buildAuthDiagnosticLines(status), [status]);
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
 
   const refresh = () => {
     statusQuery.refetch();
     glanceQuery.refetch();
+  };
+
+  const settleRokidAuthorizationStatus = async (attempts: number) => {
+    let latest = statusQuery.data;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const refreshed = await statusQuery.refetch();
+      latest = refreshed.data ?? latest;
+      if (latest?.authorizationState === 'authenticated') {
+        break;
+      }
+    }
+    return latest;
   };
 
   const openCompanion = async () => {
@@ -172,10 +391,23 @@ export default function RokidHealthScreen() {
         scopes: ['device_control', 'audio_stream'],
       });
       if (result.ok === false) {
-        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_authorization_failed');
+        const reason = typeof result.reason === 'string' ? result.reason : 'rokid_authorization_failed';
+        const settledStatus = await settleRokidAuthorizationStatus(3);
+        if (settledStatus?.authorizationState === 'authenticated') {
+          setSessionState({ status: 'ready', message: 'Rokid 已授权' });
+          return;
+        }
+        if (isRecoverableRokidAuthorizationDelay(reason)) {
+          setSessionState({
+            status: 'waiting',
+            message: '等待 Rokid 授权回调。请在 Rokid AI / Hi Rokid 完成授权后回到 Reva 并点刷新; 若仍超时, 继续点授权重试。',
+          });
+          return;
+        }
+        throw new Error(reason);
       }
+      await settleRokidAuthorizationStatus(1);
       setSessionState({ status: 'ready', message: 'Rokid 已授权' });
-      await statusQuery.refetch();
     } catch (error) {
       setSessionState({
         status: 'failed',
@@ -193,14 +425,45 @@ export default function RokidHealthScreen() {
         priority: 'manual_confirm',
       });
       if (result.ok === false) {
-        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_custom_view_failed');
+        const reason = typeof result.reason === 'string' ? result.reason : 'rokid_custom_view_failed';
+        // 眼镜蓝牙未连接时 native 已把本次 view 排入 pending,连上(connectionStatePublisher)会自动重发。
+        // 这不是终态失败,显示"等待中"而非"失败",别误吓用户(council 共识 P2:Codex/Claude B/A)。
+        if (result.customViewPendingRetry === true || reason.includes('rokid_glasses_ble_not_connected')) {
+          try {
+            await statusQuery.refetch();
+          } catch {
+            // diagnostics refresh is best-effort; the waiting message still stands.
+          }
+          setSessionState({
+            status: 'waiting',
+            message: '眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,Reva 会在连上时自动打开眼镜视图。',
+          });
+          return;
+        }
+        throw new Error(reason);
       }
-      setSessionState({ status: 'ready', message: 'Reva 眼镜视图已打开' });
-      await statusQuery.refetch();
+      const refreshed = await statusQuery.refetch();
+      const customViewRunning =
+        result.customViewRunning === true ||
+        refreshed.data?.customViewRunning === true;
+      if (customViewRunning) {
+        setSessionState({ status: 'ready', message: 'Reva 眼镜视图已运行' });
+        return;
+      }
+      setSessionState({
+        status: 'waiting',
+        message: 'Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。',
+      });
     } catch (error) {
+      const reason = error instanceof Error ? error.message : 'custom_view_failed';
+      try {
+        await statusQuery.refetch();
+      } catch {
+        // The failure message is still useful even if the diagnostic refresh fails.
+      }
       setSessionState({
         status: 'failed',
-        message: `Reva 眼镜视图失败: ${error instanceof Error ? error.message : 'custom_view_failed'}`,
+        message: `Reva 眼镜视图失败: ${formatRokidCustomViewIssue(reason)}`,
       });
     }
   };
@@ -302,7 +565,7 @@ export default function RokidHealthScreen() {
             accessibilityRole="button"
           >
             <Ionicons name="open-outline" size={17} color="#fff" />
-            <Text style={txt.primaryButton}>{openState === 'opening' ? '打开中...' : '打开 Hi Rokid'}</Text>
+            <Text style={txt.primaryButton}>{openState === 'opening' ? '打开中...' : '打开 Rokid AI / Hi Rokid'}</Text>
           </Pressable>
 
           {isIOS ? (
@@ -356,10 +619,19 @@ export default function RokidHealthScreen() {
                 <Text style={[
                   txt.sessionMessage,
                   sessionState.status === 'ready' ? { color: s.success.solid } : null,
+                  sessionState.status === 'waiting' ? { color: c.brand } : null,
                   sessionState.status === 'failed' ? { color: s.warning.solid } : null,
                 ]}>
                   {sessionState.message}
                 </Text>
+              ) : null}
+
+              {authDiagnosticLines.length > 0 ? (
+                <View style={styles.authDiagnosticBox}>
+                  {authDiagnosticLines.map((line) => (
+                    <Text key={line} style={txt.authDiagnostic} numberOfLines={3}>{line}</Text>
+                  ))}
+                </View>
               ) : null}
 
               <View style={styles.validationBox}>
@@ -394,7 +666,7 @@ export default function RokidHealthScreen() {
               txt.openState,
               openState === 'opened' ? { color: s.success.solid } : { color: s.warning.solid },
             ]}>
-              {openState === 'opened' ? '已请求打开 Hi Rokid' : '当前设备无法打开 Hi Rokid'}
+              {openState === 'opened' ? '已请求打开 Rokid AI / Hi Rokid' : '当前设备无法打开 Rokid AI / Hi Rokid'}
             </Text>
           ) : null}
 
@@ -511,7 +783,7 @@ export default function RokidHealthScreen() {
             {captureState.message ? `最近状态: ${captureState.message}` : '等待主动触发。不会连续录音或后台拍摄。'}
           </Text>
           {status?.installedPackage ? (
-            <Text style={txt.technical}>Hi Rokid package: {status.installedPackage}</Text>
+            <Text style={txt.technical}>Rokid companion package: {status.installedPackage}</Text>
           ) : null}
           {status?.iosSdkCompatibility ? (
             <Text style={txt.technical}>{status.iosSdkCompatibility}</Text>
@@ -654,6 +926,13 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     paddingTop: spacing.md,
     gap: 10,
   },
+  authDiagnosticBox: {
+    marginTop: spacing.sm,
+    borderRadius: radii.sm,
+    backgroundColor: c.fill,
+    padding: spacing.sm,
+    gap: 4,
+  },
   validationRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -770,6 +1049,7 @@ const createTxt = (c: ColorPalette) => ({
   secondaryButton: { fontSize: 12, fontWeight: '800', color: c.brand, textAlign: 'center' } as TextStyle,
   openState: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
   sessionMessage: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
+  authDiagnostic: { fontSize: 11, fontWeight: '700', color: c.labelSecondary, lineHeight: 16 } as TextStyle,
   validationHeading: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   validationTitle: { flex: 1, fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   validationNext: { fontSize: 11, fontWeight: '800', color: c.brand, maxWidth: 140 } as TextStyle,

@@ -1,0 +1,659 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 6.2.4 (swiftlang-6.2.4.1.4 clang-1700.6.4.2)
+// swift-module-flags: -target arm64-apple-ios16.0 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -module-name RGCxrClient
+// swift-module-flags-ignorable: -no-verify-emitted-module-interface -formal-cxx-interoperability-mode=off -interface-compiler-version 6.2.4
+import Combine
+import CoreBluetooth
+import Foundation
+import Network
+import RGCoreKit
+@_exported import RGCxrClient
+import Swift
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+public enum RGCxrClientInitMode : Swift.Sendable {
+  case customView
+  case customApp
+  public static func == (a: RGCxrClientInitMode, b: RGCxrClientInitMode) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public struct RGCxrClientInitializationOptions : Swift.Sendable {
+  public var appDisplayName: Swift.String?
+  public var pageName: Swift.String?
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init(appDisplayName: Swift.String? = nil, pageName: Swift.String? = nil)
+  #endif
+}
+public enum RGCxrClientInitializeOutcome : Swift.Sendable {
+  case success
+  case failureAlreadyInitialized
+  public static func == (a: RGCxrClientInitializeOutcome, b: RGCxrClientInitializeOutcome) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum RGCxrAudioSceneId : Swift.Int, Swift.Sendable {
+  case interaction
+  case translation
+  case call
+  case conference
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.Int)
+  #endif
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+public struct RGCxrClientAudioStartEvent {
+  public let codec: Swift.Int32
+  public let type: Swift.String
+  public let channels: Swift.UInt32
+  public init(codec: Swift.Int32, type: Swift.String, channels: Swift.UInt32)
+}
+public struct RGCxrClientAudioDataEvent {
+  public let data: Foundation.Data
+  public let timestamp: Swift.UInt64
+  public init(data: Foundation.Data, timestamp: Swift.UInt64)
+}
+public enum RGCxrClientAudioEvent {
+  case started(RGCxrClientAudioStartEvent)
+  case stream(RGCxrClientAudioDataEvent)
+}
+public struct RGCxrClientCustomViewRunningEvent {
+  public let isRunning: Swift.Bool
+  public init(isRunning: Swift.Bool)
+}
+public struct RGCxrClientAppResumeChangeEvent {
+  public let packageName: Swift.String
+  public init(packageName: Swift.String)
+}
+public struct RGCxrClientNotifyEvent {
+  public let cmd: Swift.String
+  public let subCmd: Swift.String
+  public let reqId: Swift.Int32
+  public let status: Swift.Int32
+  public let payload: Foundation.Data?
+  public let payloadEx: Foundation.Data?
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init(cmd: Swift.String, subCmd: Swift.String, reqId: Swift.Int32, status: Swift.Int32, payload: Foundation.Data?, payloadEx: Foundation.Data?)
+  #endif
+}
+public protocol RGCxrClient : AnyObject {
+  var auth: RGCxrClientAuthManager { get }
+  var audioEventPublisher: Combine.AnyPublisher<RGCxrClientAudioEvent, Swift.Never> { get }
+  var customViewRunningEventPublisher: Combine.AnyPublisher<RGCxrClientCustomViewRunningEvent, Swift.Never> { get }
+  var appResumeChangeEventPublisher: Combine.AnyPublisher<RGCxrClientAppResumeChangeEvent, Swift.Never> { get }
+  var notifyEventPublisher: Combine.AnyPublisher<RGCxrClientNotifyEvent, Swift.Never> { get }
+  func setNotifyEventListenCmds(_ cmds: [Swift.String])
+  func handleOpenURL(_ url: Foundation.URL) -> Swift.Bool
+  #if compiler(>=5.3) && $NonescapableTypes
+  func sendCustomViewIcons(_ icons: Swift.String, callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func sendCustomCmd(cmd: Swift.String, payload: Foundation.Data?, callback: ((_ success: Swift.Bool, _ payload: Foundation.Data?, _ errorCode: Swift.Int32?, _ errorMsg: Swift.String?) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func sendCustomCmd(cmd: Swift.String, payload: Foundation.Data?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func openCustomView(_ view: Swift.String, callback: ((_ success: Swift.Bool, _ errorCode: Swift.Int?) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func updateCustomView(_ view: Swift.String, callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func closeCustomView(_ view: Swift.String, callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  func startRecord(_ type: Swift.String, codec: RGCxrAudioCodec, mode: RGCxrAudioMode)
+  func stopRecord(_ type: Swift.String)
+  func startPlayAudio(codec: RGCxrAudioCodec)
+  func stopPlayAudio()
+  func feedAudio(_ data: Foundation.Data)
+  func takePhoto()
+  #if compiler(>=5.3) && $NonescapableTypes
+  func takePhotoWithData(width: Swift.Int, height: Swift.Int, quality: Swift.Int, callback: ((Foundation.Data) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func queryApp(callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func openApp(activityName: Swift.String, url: Swift.String, callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func stopApp(callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func uninstallApp(callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func installApp(_ path: Swift.String, callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  func changeAudioSceneId(_ audioSceneId: RGCxrAudioSceneId, callback: ((Swift.Bool) -> Swift.Void)?)
+  #endif
+  func isRokidAppInstalled() -> Swift.Bool
+}
+@_hasMissingDesignatedInitializers final public class CxrClient {
+  public static var shared: any RGCxrClient
+  public static var isInitialized: Swift.Bool {
+    get
+  }
+  #if compiler(>=5.3) && $NonescapableTypes
+  public static var initializationMode: RGCxrClientInitMode? {
+    get
+  }
+  #endif
+  @discardableResult
+  public static func initialize(mode: RGCxrClientInitMode, options: RGCxrClientInitializationOptions) -> RGCxrClientInitializeOutcome
+  @objc deinit
+}
+public enum RGCxrClientAuthState {
+  case notAuthenticated
+  case authenticating
+  case authenticated(token: Swift.String, expiresAt: Foundation.TimeInterval?)
+  case expired
+  case failed(error: Swift.String)
+  public var isAuthenticated: Swift.Bool {
+    get
+  }
+}
+public enum RGCxrClientAuthEvent {
+  case stateChanged(RGCxrClientAuthState)
+  case authenticationSucceeded(token: Swift.String, sessionId: Swift.String?, deviceName: Swift.String?)
+  case authenticationFailed(error: Swift.String)
+  case tokenExpired
+}
+public struct RGCxrClientAuthConfig {
+  public var serverScheme: Swift.String
+  public var serverHost: Swift.String
+  public var callbackScheme: Swift.String
+  public var callbackHost: Swift.String
+  public var callbackPath: Swift.String
+  public var requestTimeout: Foundation.TimeInterval
+  public var timestampTolerance: Foundation.TimeInterval
+  public init(serverScheme: Swift.String = "rokidai", serverHost: Swift.String = "connect", callbackScheme: Swift.String = "cxrl", callbackHost: Swift.String = "auth", callbackPath: Swift.String = "/callback", requestTimeout: Foundation.TimeInterval = 60.0, timestampTolerance: Foundation.TimeInterval = 300.0)
+}
+@_hasMissingDesignatedInitializers final public class RGCxrClientAuthManager {
+  public static let shared: RGCxrClientAuthManager
+  final public var config: RGCxrClientAuthConfig {
+    get
+    set
+  }
+  final public var eventPublisher: Combine.AnyPublisher<RGCxrClientAuthEvent, Swift.Never> {
+    get
+  }
+  final public var statePublisher: Combine.AnyPublisher<RGCxrClientAuthState, Swift.Never> {
+    get
+  }
+  final public var currentState: RGCxrClientAuthState {
+    get
+  }
+  final public var currentToken: Swift.String? {
+    get
+  }
+  final public var currentSessionId: Swift.String? {
+    get
+  }
+  final public var currentDeviceName: Swift.String? {
+    get
+  }
+  final public var expiresAt: Foundation.TimeInterval? {
+    get
+  }
+  #if compiler(>=5.3) && $NonescapableTypes
+  final public func authenticate(scopes: [Swift.String], bundleId: Swift.String? = nil, appName: Swift.String? = nil, completion: ((Swift.Result<(token: Swift.String, sessionId: Swift.String?), any Swift.Error>) -> Swift.Void)? = nil)
+  #endif
+  final public func handleCallback(url: Foundation.URL) -> Swift.Bool
+  final public func isAuthenticated() -> Swift.Bool
+  #if compiler(>=5.3) && $NonescapableTypes
+  final public func getCurrentToken() -> Swift.String?
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  final public func getCurrentSessionId() -> Swift.String?
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  final public func getCurrentDeviceName() -> Swift.String?
+  #endif
+  final public func clearAuthentication()
+  #if compiler(>=5.3) && $NonescapableTypes
+  final public func refreshToken(scopes: [Swift.String]? = nil, completion: ((Swift.Result<(token: Swift.String, sessionId: Swift.String?), any Swift.Error>) -> Swift.Void)? = nil)
+  #endif
+  @objc deinit
+}
+extension RGCxrClientAuthManager {
+  final public func canHandleURL(_ url: Foundation.URL) -> Swift.Bool
+}
+@objc @_inheritsConvenienceInitializers final public class RGCxrClientBLE : ObjectiveC.NSObject {
+  public static let shared: RGCxrClientBLE
+  final public var isConnected: Swift.Bool {
+    get
+  }
+  final public var connectedDeviceName: Swift.String? {
+    get
+  }
+  final public var connectionStatePublisher: Combine.AnyPublisher<Swift.Bool, Swift.Never> {
+    get
+  }
+  final public var notifyPublisher: Combine.AnyPublisher<Swift.String, Swift.Never> {
+    get
+  }
+  final public var encodedDataPublisher: Combine.AnyPublisher<Foundation.Data, Swift.Never> {
+    get
+  }
+  @objc override dynamic public init()
+  #if compiler(>=5.3) && $NonescapableTypes
+  final public func send(data: Any?, dataExt: Any?)
+  #endif
+  final public func handleIncomingData(_ data: Foundation.Data)
+  final public func sendRawData(_ data: Foundation.Data)
+  @objc deinit
+}
+extension RGCxrClientBLE : CoreBluetooth.CBCentralManagerDelegate {
+  @objc final public func centralManagerDidUpdateState(_ central: CoreBluetooth.CBCentralManager)
+  @objc final public func centralManager(_ central: CoreBluetooth.CBCentralManager, didDiscover peripheral: CoreBluetooth.CBPeripheral, advertisementData: [Swift.String : Any], rssi RSSI: Foundation.NSNumber)
+  @objc final public func centralManager(_ central: CoreBluetooth.CBCentralManager, didConnect peripheral: CoreBluetooth.CBPeripheral)
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func centralManager(_ central: CoreBluetooth.CBCentralManager, didFailToConnect peripheral: CoreBluetooth.CBPeripheral, error: (any Swift.Error)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func centralManager(_ central: CoreBluetooth.CBCentralManager, didDisconnectPeripheral peripheral: CoreBluetooth.CBPeripheral, error: (any Swift.Error)?)
+  #endif
+}
+extension RGCxrClientBLE : CoreBluetooth.CBPeripheralDelegate {
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func peripheral(_ peripheral: CoreBluetooth.CBPeripheral, didDiscoverServices error: (any Swift.Error)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func peripheral(_ peripheral: CoreBluetooth.CBPeripheral, didDiscoverCharacteristicsFor service: CoreBluetooth.CBService, error: (any Swift.Error)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func peripheral(_ peripheral: CoreBluetooth.CBPeripheral, didUpdateValueFor characteristic: CoreBluetooth.CBCharacteristic, error: (any Swift.Error)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func peripheral(_ peripheral: CoreBluetooth.CBPeripheral, didUpdateNotificationStateFor characteristic: CoreBluetooth.CBCharacteristic, error: (any Swift.Error)?)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  @objc final public func peripheral(_ peripheral: CoreBluetooth.CBPeripheral, didWriteValueFor characteristic: CoreBluetooth.CBCharacteristic, error: (any Swift.Error)?)
+  #endif
+}
+public enum RGCxrSubCmd : Swift.String {
+  case Dev_GetGlassInfo
+  case Dev_BatteryChanged
+  case Dev_TimeUpdate
+  case Dev_GlassSound
+  case Dev_GlassBrightness
+  case Dev_WearingStatus
+  case Dev_Operate
+  case Dev_LegStatus
+  case Dev_GlassesShutdown
+  case Dev_Screen_Status
+  case Sync_Start
+  case Sync_Stop
+  case UnSync_Count
+  case Med_Count_Update
+  case Med_NotifyArPictureResult
+  case Med_Take_Photo_Global
+  case Med_NotifyMixRecordResult
+  case Med_StartLogZip
+  case Med_LogZip_Status
+  case Med_Take_Photo_Url
+  case KeyDown
+  case KeyUp
+  case Exit
+  case NoNetwork
+  case ASR_Result
+  case ASR_Error
+  case ASR_None
+  case Ai_Error
+  case Ai_OpenCamera
+  case Ai_TakePhoto
+  case TTS_Result
+  case TTS_AudioFinished
+  case Pic_UploadError
+  case Ai_OnLineInstruct
+  case Ai_SceneStatus
+  case ASR_End
+  case Ai_Heartbeat
+  case Ai_EnterSubAgent
+  case Both_KeyDown
+  case KeyDown_Client
+  case Ai_RenderPayload
+  case Ai_PhoneInterrupt
+  case OnStart
+  case OnStop
+  case NotifyConfig
+  case OnPushVideoFrame
+  case NotifyUserSpeaking
+  case NotifyUserAsr
+  case NotifyAIResponse
+  case NotifyCallBegin
+  case WordTips_PageContentLanguage
+  case Weather_SendData
+  case Weather_Send8HourData
+  case Weather_GetData
+  case Weather_Get8HourData
+  case Rec_GetName
+  case WordTips_AiContent
+  case WordTips_SendData
+  case WordTips_SetTvConfig
+  case WordTips_SetBTDevice
+  case WordTips_AllDevices
+  case WordTips_StartBTScan
+  case WordTips_StopBTScan
+  case Sys_StartGetWifiList
+  case Sys_StopGetWifiList
+  case Sys_UpdateWifiList
+  case Msg_SendGlobalToast
+  case Sys_Reconnect
+  case Sys_RestoreFactory
+  case Scene_Control
+  case Sys_Shutdown
+  case Sys_Reboot
+  case WordTips_SetMatchConfig
+  case Sys_SyncAncsApps
+  case Sys_App_Open
+  case Sys_App_Stop
+  case Sys_App_Query
+  case Sys_App_Open_Succeed
+  case Sys_App_Open_Failed
+  case Sys_App_Stop_Succeed
+  case Sys_App_Stop_Failed
+  case Sys_Apk_Uninstall
+  case Sys_Apk_Uninstall_Succeed
+  case Sys_Apk_Uninstall_Failed
+  case Sys_Apk_Install_Succeed
+  case Sys_Apk_Install_Failed
+  case Sys_App_Resume_Change
+  case Tts_SendPlayTts
+  case WordTips_RemoveBTDevice
+  case Schedule_Dismiss
+  case Sys_fetchContacts
+  case Sys_sendContacts
+  case Sys_Contacts_Enable
+  case Sys_Contacts_Select
+  case Sys_Contacts_Page
+  case Sys_Contacts_NotMatch
+  case Sys_Contacts_Start
+  case Sys_Contacts_Stop
+  case Sys_sendSingleContact
+  case Sys_sendEventData
+  case Sys_Bt_Gatt_Server
+  case Sys_Bt_Gatt_Msg
+  case Msg_SendGlobalLocalTtsMsg
+  case Sys_Bluetooth_Pair
+  case Sys_Bluetooth_Discoverable
+  case Sys_ChangeAudioSceneId
+  case Sys_Msg_Tts_Stop
+  case Sys_Msg_Tts_Stopped
+  case Sys_Cloud_Server_Status
+  case Scene_GetSceneStatusInfo
+  case Scene_NotifySceneStatusInfo
+  case Scene_NotifySceneOpenFailed
+  case Scene_Recovery
+  case Trans_Ready
+  case Trans_Start
+  case Trans_Stop
+  case Trans_Result
+  case Trans_SetTvConfig
+  case Trans_RequestChangeSceneId
+  case Trans_Language_info
+  case Trans_ControlServerState
+  case Ota_NormalStart
+  case Ota_MsgNotify
+  case Ota_CheckStatus
+  case Ota_SetAutoOtaConfig
+  case Ota_QueryDeviceStatus
+  case Ota_ResultDeviceStatus
+  case Ota_NormalStop
+  case Nav_Start
+  case Nav_Stop
+  case Nav_UpdateInfo
+  case Nav_UpdateLocPermissionTip
+  case Nav_NetProxyRequest
+  case Nav_NetProxyResponse
+  case Nav_Data
+  case Nav_SetShowMode
+  case Nav_Map_Data
+  case Settings_Update
+  case Schedule_Add
+  case Schedule_Remove
+  case Schedule_Sync
+  case Memo_Sync
+  case Send_Custom_View_Icons
+  case Custom_View_Icons_Sent
+  case Open_Custom_View
+  case Custom_View_Opened
+  case Custom_View_Open_Failed
+  case Update_Custom_View
+  case Custom_View_Updated
+  case Close_Custom_View
+  case Custom_View_Closed
+  case Pay_InitAllSdk
+  case Pay_StartRecording
+  case Pay_StopRecording
+  case Pay_NetProxyRequest
+  case Pay_NetProxyResponse
+  case Pay_DeviceProxyRequest
+  case Pay_DeviceProxyResponse
+  case Pay_FinishPayment
+  case Pay_SendRecoveryScene
+  case Music_Play
+  case Music_Pause
+  case Music_Next
+  case Music_Prev
+  case Music_FullLyrics
+  case Music_QPlayState
+  case Journey_Add
+  case Journey_Remove
+  case Journey_Sync
+  case Journey_Reminder
+  case Order_Update
+  case Wifi_StartGetWifiList
+  case Wifi_StopGetWifiList
+  case Wifi_UpdateWifiList
+  case Wifi_Connect
+  case Wifi_Connect_Status
+  case Wifi_Disconnect
+  case Wifi_Status
+  case Live_PauseByPhone
+  case Live_PauseByGlasses
+  case Live_ResumeByPhone
+  case Live_SyncByPhone
+  case Live_SyncByGlasses
+  case Live_StopByGlasses
+  case Live_GetStatusByPhone
+  case Jsai_AddNativeAgent
+  case Jsai_RemoveNativeAgent
+  case Jsai_GetNativeAgentList
+  case Jsai_GetRequestInfo
+  case Accessibility_start
+  case Accessibility_ASR
+  case Accessibility_end
+  case Accessibility_config
+  case Proxy_NetRequest
+  case Proxy_NetResponse
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.String)
+  #endif
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public enum RGCxrCmd : Swift.String {
+  case Dev
+  case Med
+  case Ota
+  case Ai
+  case Ntf
+  case Nav
+  case Tra
+  case Sys
+  case ARTC
+  case Trans
+  case Other
+  case Settings
+  case Schedule
+  case Memo
+  case Custom_View
+  case Pay
+  case Music
+  case Journey
+  case Order
+  case Wifi
+  case Broadcast
+  case Jsai
+  case Accessibility
+  case Proxy
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.String)
+  #endif
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public enum RGCxrAudioCodec : Swift.UInt32 {
+  case pcm
+  case oggOpus
+  case mp3
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.UInt32)
+  #endif
+  public typealias RawValue = Swift.UInt32
+  public var rawValue: Swift.UInt32 {
+    get
+  }
+}
+public enum RGCxrAudioMode : Swift.UInt32 {
+  case xf
+  case antClose
+  case rokidOmni
+  case antOmni
+  case xfOrientation
+  case barrierFree
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.UInt32)
+  #endif
+  public typealias RawValue = Swift.UInt32
+  public var rawValue: Swift.UInt32 {
+    get
+  }
+}
+public enum RGCxrMessageType : Swift.String, Swift.Codable {
+  case auth
+  case authResponse
+  case startSession
+  case sessionResponse
+  case heartbeat
+  case heartbeatAck
+  case endSession
+  case data
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.String)
+  #endif
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public enum RGCxrAuthStatus : Swift.String, Swift.Codable {
+  case pending
+  case authorized
+  case denied
+  case expired
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init?(rawValue: Swift.String)
+  #endif
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct RGCxrMessage : Swift.Codable {
+  public let type: RGCxrMessageType
+  public let sessionId: Swift.String?
+  public let timestamp: Foundation.TimeInterval
+  public let payload: [Swift.String : AnyCodable]?
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init(type: RGCxrMessageType, sessionId: Swift.String? = nil, payload: [Swift.String : AnyCodable]? = nil)
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  public func toData() -> Foundation.Data?
+  #endif
+  #if compiler(>=5.3) && $NonescapableTypes
+  public static func from(data: Foundation.Data) -> RGCxrMessage?
+  #endif
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct RGCxrAuthResponse : Swift.Codable {
+  public let status: RGCxrAuthStatus
+  public let token: Swift.String?
+  public let message: Swift.String?
+  public let expiresAt: Foundation.TimeInterval?
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init(status: RGCxrAuthStatus, token: Swift.String? = nil, message: Swift.String? = nil, expiresAt: Foundation.TimeInterval? = nil)
+  #endif
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct RGCxrSessionRequest : Swift.Codable {
+  public let authToken: Swift.String
+  public let bundleId: Swift.String
+  public let metadata: [Swift.String : Swift.String]?
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init(authToken: Swift.String, bundleId: Swift.String, metadata: [Swift.String : Swift.String]? = nil)
+  #endif
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct RGCxrSessionResponse : Swift.Codable {
+  public let success: Swift.Bool
+  public let sessionId: Swift.String?
+  public let tcpPort: Swift.UInt16?
+  public let heartbeatInterval: Foundation.TimeInterval
+  public let message: Swift.String?
+  #if compiler(>=5.3) && $NonescapableTypes
+  public init(success: Swift.Bool, sessionId: Swift.String? = nil, tcpPort: Swift.UInt16? = nil, heartbeatInterval: Foundation.TimeInterval = 5.0, message: Swift.String? = nil)
+  #endif
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct AnyCodable : Swift.Codable {
+  public let value: Any
+  public init(_ value: Any)
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+}
+extension RGCxrClientInitMode : Swift.Equatable {}
+extension RGCxrClientInitMode : Swift.Hashable {}
+extension RGCxrClientInitializeOutcome : Swift.Equatable {}
+extension RGCxrClientInitializeOutcome : Swift.Hashable {}
+extension RGCxrAudioSceneId : Swift.Equatable {}
+extension RGCxrAudioSceneId : Swift.Hashable {}
+extension RGCxrAudioSceneId : Swift.RawRepresentable {}
+extension RGCxrSubCmd : Swift.Equatable {}
+extension RGCxrSubCmd : Swift.Hashable {}
+extension RGCxrSubCmd : Swift.RawRepresentable {}
+extension RGCxrCmd : Swift.Equatable {}
+extension RGCxrCmd : Swift.Hashable {}
+extension RGCxrCmd : Swift.RawRepresentable {}
+extension RGCxrAudioCodec : Swift.Equatable {}
+extension RGCxrAudioCodec : Swift.Hashable {}
+extension RGCxrAudioCodec : Swift.RawRepresentable {}
+extension RGCxrAudioMode : Swift.Equatable {}
+extension RGCxrAudioMode : Swift.Hashable {}
+extension RGCxrAudioMode : Swift.RawRepresentable {}
+extension RGCxrMessageType : Swift.Equatable {}
+extension RGCxrMessageType : Swift.Hashable {}
+extension RGCxrMessageType : Swift.RawRepresentable {}
+extension RGCxrAuthStatus : Swift.Equatable {}
+extension RGCxrAuthStatus : Swift.Hashable {}
+extension RGCxrAuthStatus : Swift.RawRepresentable {}

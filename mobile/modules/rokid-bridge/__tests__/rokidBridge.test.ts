@@ -12,6 +12,7 @@ describe('rokid-bridge JS facade', () => {
       requireNativeModule,
     }));
     return {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       bridge: require('../index'),
       requireNativeModule,
     };
@@ -100,6 +101,9 @@ describe('rokid-bridge JS facade', () => {
         mimeType: 'image/jpeg',
       }),
       queryApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      installBundledApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      installAppFileUri: jest.fn().mockResolvedValue({ ok: true, installed: true }),
+      uninstallApp: jest.fn().mockResolvedValue({ ok: true, uninstalled: true }),
       openApp: jest.fn().mockResolvedValue({ ok: true, opened: true }),
       stopApp: jest.fn().mockResolvedValue({ ok: true, stopped: true }),
       startRecord: jest.fn().mockResolvedValue({ ok: true }),
@@ -143,6 +147,19 @@ describe('rokid-bridge JS facade', () => {
       ok: true,
       installed: true,
     });
+    await expect(bridge.installBundledRokidApp({
+      resourceName: 'rokid-pushup-glasses',
+      resourceExtension: 'apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({ ok: true, installed: true });
+    await expect(bridge.installRokidAppFromFileUri({
+      fileUri: 'file:///tmp/rokid-pushup-glasses.apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({ ok: true, installed: true });
+    await expect(bridge.uninstallRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: true,
+      uninstalled: true,
+    });
     await expect(bridge.openRokidApp({
       packageName: 'life.executor.health.rokid.pushup',
       activityName: '.MainActivity',
@@ -164,6 +181,16 @@ describe('rokid-bridge JS facade', () => {
     expect(native.closeCustomView).toHaveBeenCalledWith('{"id":"drink-water"}');
     expect(native.takePhotoBase64).toHaveBeenCalledWith(1024, 768, 80);
     expect(native.queryApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
+    expect(native.installBundledApp).toHaveBeenCalledWith(
+      'rokid-pushup-glasses',
+      'apk',
+      'life.executor.health.rokid.pushup',
+    );
+    expect(native.installAppFileUri).toHaveBeenCalledWith(
+      'file:///tmp/rokid-pushup-glasses.apk',
+      'life.executor.health.rokid.pushup',
+    );
+    expect(native.uninstallApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
     expect(native.openApp).toHaveBeenCalledWith(
       'life.executor.health.rokid.pushup',
       '.MainActivity',
@@ -185,6 +212,28 @@ describe('rokid-bridge JS facade', () => {
     await expect(bridge.queryRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
       ok: false,
       installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.installBundledRokidApp({
+      resourceName: 'rokid-pushup-glasses',
+      resourceExtension: 'apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({
+      ok: false,
+      installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.installRokidAppFromFileUri({
+      fileUri: 'file:///tmp/rokid-pushup-glasses.apk',
+      packageName: 'life.executor.health.rokid.pushup',
+    })).resolves.toEqual({
+      ok: false,
+      installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.uninstallRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: false,
+      uninstalled: false,
       reason: 'native_bridge_unavailable',
     });
     await expect(bridge.openRokidApp({
@@ -270,6 +319,7 @@ describe('rokid-bridge JS facade', () => {
       'ios_sdk_linked',
       'hi_rokid_ready',
       'rokid_authorized',
+      'glasses_ble_connected',
       'custom_view_running',
       'capture_ready',
     ]);
@@ -279,10 +329,94 @@ describe('rokid-bridge JS facade', () => {
       'next',
       'pending',
       'pending',
+      'pending',
     ]);
     expect(steps[2]).toMatchObject({
       actionLabel: '授权 Rokid',
       detail: '在 Reva 中完成 CXR-L 授权回调后继续。',
+    });
+  });
+
+  it('flags iOS builds where CXR-L callback APIs are enabled but RGCxrClient is not imported', () => {
+    const { bridge } = loadModule('ios');
+
+    const steps = bridge.getRokidDeviceValidationSteps({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: false,
+      iosSdkDependencyMode: 'requested_but_unlinked',
+      sdkLinkedReason: 'sdk_requested_callback_macro_but_RGCxrClient_unavailable',
+      cxrCallbackApiEnabled: true,
+      cxrNotifySubscriptionMode: 'setNotifyEventListenCmds',
+      authorizationState: 'not_authenticated',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(steps[0]).toMatchObject({
+      id: 'ios_sdk_linked',
+      status: 'next',
+      detail: 'Rokid SDK 编译开关已打开, 但 native 未导入 RGCxrClient: sdk_requested_callback_macro_but_RGCxrClient_unavailable。',
+    });
+    expect(steps[1]).toMatchObject({ id: 'hi_rokid_ready', status: 'done' });
+  });
+
+  it('points to the glasses BLE link before opening CustomView when CXR-L is authorized', () => {
+    const { bridge } = loadModule('ios');
+
+    const steps = bridge.getRokidDeviceValidationSteps({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(steps.map((step: any) => step.id)).toEqual([
+      'ios_sdk_linked',
+      'hi_rokid_ready',
+      'rokid_authorized',
+      'glasses_ble_connected',
+      'custom_view_running',
+      'capture_ready',
+    ]);
+    expect(steps.map((step: any) => step.status)).toEqual([
+      'done',
+      'done',
+      'done',
+      'next',
+      'pending',
+      'pending',
+    ]);
+    expect(steps[3]).toMatchObject({
+      title: '眼镜蓝牙链路',
+      detail: 'Rokid CXR-L 还未连接到眼镜蓝牙链路: Glasses_0077。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。',
+      actionLabel: '打开 Rokid AI / Hi Rokid',
     });
   });
 });

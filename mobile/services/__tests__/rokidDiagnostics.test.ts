@@ -10,11 +10,16 @@ describe('rokid diagnostics', () => {
       mode: 'sdk_probe',
       sdkLinked: true,
       authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
       customViewRunning: true,
       capabilitiesReady: true,
       sessionMode: 'customView',
       callbackScheme: 'life.executor.health.rokid',
       querySchemes: ['rokidai'],
+      lastOpenUrlFingerprint: 'life.executor.health.rokid://auth/callback',
+      lastOpenUrlExpectedAuthCallback: true,
+      lastOpenUrlAt: '2026-06-18T23:59:00Z',
       sdkArtifacts: {
         clientM: 'com.rokid.cxr:client-m:1.2.2',
         clientL: 'com.rokid.cxr:client-l:1.0.3',
@@ -33,6 +38,7 @@ describe('rokid diagnostics', () => {
     });
     expect(check.items.every((item) => item.severity === 'pass')).toBe(true);
     expect(check.validationSteps.map((step) => step.status)).toEqual([
+      'done',
       'done',
       'done',
       'done',
@@ -69,5 +75,273 @@ describe('rokid diagnostics', () => {
       id: 'ios_sdk_linked',
       status: 'blocked',
     });
+  });
+
+  it('surfaces iOS auth callback routing diagnostics', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastCallbackUrl: 'life.executor.health.rokid://auth/callback?code=abc',
+      lastCallbackHandled: true,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth_callback',
+        severity: 'pass',
+        value: '最近回调已进入 Reva',
+        detail: 'life.executor.health.rokid://auth/callback?<redacted>',
+      }),
+    ]));
+    expect(check.items.find((item) => item.id === 'authorization')).toMatchObject({
+      detail: 'life.executor.health.rokid://auth/callback',
+    });
+  });
+
+  it('surfaces iOS authorization timeout without leaking callback query data', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticating',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastCallbackUrl: 'life.executor.health.rokid://auth/callback?code=abc&state=secret',
+      lastCallbackHandled: false,
+      lastAuthorizationError: 'Error Domain=RGCxrClientAuthError Code=-1 "鉴权请求超时"',
+      lastAuthorizationRequestAt: '2026-06-18T23:51:00Z',
+      authorizationRequestTimeoutSeconds: 180,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth_callback',
+        value: '回调进入 Reva, SDK 未确认',
+        detail: 'life.executor.health.rokid://auth/callback?<redacted>',
+      }),
+      expect.objectContaining({
+        id: 'auth_error',
+        severity: 'warn',
+        value: '鉴权请求超时',
+        detail: 'lastRequestAt=2026-06-19T07:51:00+08:00; timeout=180s',
+      }),
+    ]));
+    expect(JSON.stringify(check.items)).not.toContain('code=abc');
+    expect(JSON.stringify(check.items)).not.toContain('state=secret');
+  });
+
+  it('surfaces companion routing and native auth event diagnostics', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      companionAppName: 'Rokid AI / Hi Rokid',
+      companionServerScheme: 'rokidai',
+      companionServerHost: 'connect',
+      lastAuthorizationEvent: 'authenticationFailed: user_cancelled',
+      lastAuthorizationEventAt: '2026-06-18T23:58:00Z',
+      currentDeviceName: 'Rokid Glasses',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'companion',
+        label: 'Rokid AI / Hi Rokid',
+        value: 'Rokid companion 可用',
+        detail: 'server=rokidai://connect; device=Rokid Glasses',
+      }),
+      expect.objectContaining({
+        id: 'auth_event',
+        label: 'SDK 授权事件',
+        value: 'authenticationFailed: user_cancelled',
+        severity: 'warn',
+        detail: 'eventAt=2026-06-19T07:58:00+08:00',
+      }),
+    ]));
+  });
+
+  it('surfaces the configured and accepted callback schemes used for Rokid auth routing', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'cxrl',
+      callbackUrl: 'cxrl://auth/callback',
+      callbackSchemeSource: 'info_plist',
+      acceptedCallbackSchemes: ['cxrl', 'life.executor.health.rokid'],
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'callback_schemes',
+        label: 'Callback Schemes',
+        value: 'cxrl, life.executor.health.rokid',
+        detail: 'configured=cxrl; source=info_plist',
+        severity: 'info',
+      }),
+      expect.objectContaining({
+        id: 'authorization',
+        detail: 'cxrl://auth/callback',
+      }),
+    ]));
+  });
+
+  it('surfaces query-free iOS openURL fingerprints for callback mismatch diagnosis', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastOpenUrlFingerprint: 'life.executor.health://auth/callback',
+      lastOpenUrlAt: '2026-06-18T23:59:00Z',
+      lastOpenUrlExpectedAuthCallback: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'ios_open_url',
+        label: 'iOS 回跳',
+        value: '最近回跳不是授权 scheme',
+        severity: 'warn',
+        detail: 'life.executor.health://auth/callback; at=2026-06-19T07:59:00+08:00; expected=life.executor.health.rokid://auth/callback',
+      }),
+    ]));
+    expect(JSON.stringify(check.items)).not.toContain('code=');
+    expect(JSON.stringify(check.items)).not.toContain('state=');
+  });
+
+  it('surfaces native authorization attempt timeline and SDK state transitions', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'not_authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      callbackScheme: 'life.executor.health.rokid',
+      callbackUrl: 'life.executor.health.rokid://auth/callback',
+      lastAuthorizationAttemptId: 'auth-7',
+      authorizationAttemptCount: 7,
+      lastAuthorizationPhase: 'authenticate_failed',
+      lastAuthorizationDurationMs: 180123,
+      lastAuthorizationStateBeforeReset: 'not_authenticated',
+      lastAuthorizationStateAfterReset: 'not_authenticated',
+      lastAuthorizationStateBeforeAuthenticate: 'not_authenticated',
+      authorizationConfigSummary: 'server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+      authDiagnosticTimeline: [
+        '2026-06-18T23:59:00Z #auth-7 request_started appName=Reva; scopes=device_control,audio_stream',
+        '2026-06-18T23:59:01Z #auth-7 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+        '2026-06-19T00:02:01Z #auth-7 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
+      ],
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth_attempt',
+        label: '授权 Attempt',
+        value: 'auth-7 / #7 / authenticate_failed',
+        detail: 'duration=180123ms',
+        severity: 'warn',
+      }),
+      expect.objectContaining({
+        id: 'auth_state_trace',
+        label: 'SDK 状态轨迹',
+        value: 'beforeReset=not_authenticated; afterReset=not_authenticated; beforeAuth=not_authenticated',
+        detail: 'server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s',
+        severity: 'info',
+      }),
+      expect.objectContaining({
+        id: 'auth_timeline',
+        label: 'Native 授权时间线',
+        value: '2026-06-19T07:59:00+08:00 #auth-7 request_started appName=Reva; scopes=device_control,audio_stream\n2026-06-19T07:59:01+08:00 #auth-7 config_refreshed server=rokidai://connect; callback=life.executor.health.rokid://auth/callback; timeout=180s\n2026-06-19T08:02:01+08:00 #auth-7 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1',
+        severity: 'warn',
+      }),
+    ]));
   });
 });

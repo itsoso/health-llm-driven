@@ -1,0 +1,11 @@
+framework module RGCxrClient {
+  umbrella header "RGCxrClient-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module RGCxrClient.Swift {
+  header "RGCxrClient-Swift.h"
+  requires objc
+}

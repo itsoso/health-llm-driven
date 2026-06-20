@@ -8,6 +8,8 @@ SCHEME="${ROKID_IOS_SCHEME:-RokidBridge}"
 CONFIGURATION="${ROKID_IOS_CONFIGURATION:-Debug}"
 DESTINATION="${ROKID_IOS_DESTINATION:-generic/platform=iOS}"
 CLIENT_VERSION="${ROKID_IOS_CLIENT_VERSION:-1.0.1}"
+CLIENT_FRAMEWORK_PATH="${ROKID_IOS_CLIENT_FRAMEWORK_PATH:-}"
+CLIENT_HAS_CALLBACK_API="${ROKID_IOS_CLIENT_HAS_CALLBACK_API:-0}"
 SPECS_REPO="${ROKID_IOS_SPECS_REPO:-}"
 SPECS_REPO_NAME="${ROKID_IOS_SPECS_REPO_NAME:-rokid-ios-specs}"
 SIMULATOR="${ROKID_IOS_SIMULATOR:-0}"
@@ -38,6 +40,8 @@ Environment:
   ROKID_IOS_CHECK_SPEC_ONLY   Set 1 to only verify the podspec is visible.
   ROKID_IOS_INSPECT_FRAMEWORK Set 1 to inspect the binary framework Objective-C surface.
   ROKID_IOS_FRAMEWORK_ZIP_URL Optional direct RGCxrClient framework zip URL for inspection.
+  ROKID_IOS_CLIENT_FRAMEWORK_PATH Optional local RGCxrClient.framework path to vendor/inspect.
+  ROKID_IOS_CLIENT_HAS_CALLBACK_API Set 1 only when the framework exposes callback CustomView APIs.
 USAGE
 }
 
@@ -94,6 +98,16 @@ header_has_symbol() {
 }
 
 inspect_framework_surface() {
+  if [[ -n "$CLIENT_FRAMEWORK_PATH" ]]; then
+    if [[ ! -d "$CLIENT_FRAMEWORK_PATH" ]]; then
+      echo "ROKID_IOS_CLIENT_FRAMEWORK_PATH does not exist: $CLIENT_FRAMEWORK_PATH" >&2
+      exit 69
+    fi
+    log "framework_path=$CLIENT_FRAMEWORK_PATH"
+    inspect_framework_dir "$CLIENT_FRAMEWORK_PATH"
+    return 0
+  fi
+
   if [[ -z "$FRAMEWORK_ZIP_URL" ]]; then
     echo "No framework zip URL is known for RGCxrClient $CLIENT_VERSION." >&2
     echo "Set ROKID_IOS_FRAMEWORK_ZIP_URL to a Rokid-provided RGCxrClient framework zip." >&2
@@ -119,6 +133,14 @@ inspect_framework_surface() {
     return 0
   fi
 
+  inspect_framework_dir "$framework_dir"
+}
+
+inspect_framework_dir() {
+  local framework_dir="$1"
+  local header="$framework_dir/Headers/RGCxrClient-Swift.h"
+  local swift_interface="$framework_dir/Modules/RGCxrClient.swiftmodule/arm64-apple-ios.swiftinterface"
+
   if [[ ! -f "$header" ]]; then
     echo "RGCxrClient Swift Objective-C header not found: $header" >&2
     exit 68
@@ -140,6 +162,9 @@ inspect_framework_surface() {
   done
 
   if [[ -f "$swift_interface" ]]; then
+    local interface_lines
+    interface_lines="$(wc -l < "$swift_interface" | tr -d '[:space:]')"
+    log "swift_interface_lines=$interface_lines"
     for symbol in CxrClient RGCxrClientAuthManager openCustomView takePhotoWithData startRecord; do
       if grep -q "$symbol" "$swift_interface"; then
         log "swift_interface_has_${symbol}=yes"
@@ -147,8 +172,29 @@ inspect_framework_surface() {
         log "swift_interface_has_${symbol}=no"
       fi
     done
+    if grep -q "setNotifyEventListenCmds" "$swift_interface"; then
+      log "swift_interface_has_setNotifyEventListenCmds=yes"
+    else
+      log "swift_interface_has_setNotifyEventListenCmds=no"
+    fi
+    if grep -Eq "openCustomView\\([^)]*callback|openCustomView\\(_ view: Swift.String, callback" "$swift_interface"; then
+      log "swift_interface_has_openCustomView_callback=yes"
+    else
+      log "swift_interface_has_openCustomView_callback=no"
+    fi
   else
     log "swift_interface=missing"
+  fi
+
+  if [[ -f "$framework_dir/RGCxrClient" ]]; then
+    if command -v stat >/dev/null 2>&1; then
+      log "framework_binary_bytes=$(stat -f '%z' "$framework_dir/RGCxrClient" 2>/dev/null || stat -c '%s' "$framework_dir/RGCxrClient")"
+    fi
+    if command -v md5 >/dev/null 2>&1; then
+      log "framework_binary_md5=$(md5 -q "$framework_dir/RGCxrClient")"
+    elif command -v md5sum >/dev/null 2>&1; then
+      log "framework_binary_md5=$(md5sum "$framework_dir/RGCxrClient" | awk '{print $1}')"
+    fi
   fi
 
   if ! header_has_symbol "$header" "CxrClient" &&
@@ -166,6 +212,10 @@ require_command pod
 
 log "project=$IOS_DIR"
 log "client=RGCxrClient $CLIENT_VERSION"
+if [[ -n "$CLIENT_FRAMEWORK_PATH" ]]; then
+  log "client_framework_path=$CLIENT_FRAMEWORK_PATH"
+fi
+log "client_has_callback_api=$CLIENT_HAS_CALLBACK_API"
 log "scheme=$SCHEME configuration=$CONFIGURATION destination=$DESTINATION simulator_excluded=$SIMULATOR"
 
 if [[ ! -d "$IOS_DIR" ]]; then
@@ -209,6 +259,8 @@ fi
   run env \
     ROKID_IOS_SDK_ENABLED=1 \
     ROKID_IOS_CLIENT_VERSION="$CLIENT_VERSION" \
+    ROKID_IOS_CLIENT_FRAMEWORK_PATH="$CLIENT_FRAMEWORK_PATH" \
+    ROKID_IOS_CLIENT_HAS_CALLBACK_API="$CLIENT_HAS_CALLBACK_API" \
     ROKID_IOS_SIMULATOR="$SIMULATOR" \
     pod install
 )
@@ -222,7 +274,7 @@ require_command xcodebuild
 
 log "writing xcodebuild log to $LOG_PATH"
 if [[ "$DRY_RUN" == "1" ]]; then
-  log "+ env SENTRY_DISABLE_AUTO_UPLOAD=true ROKID_IOS_SDK_ENABLED=1 ROKID_IOS_CLIENT_VERSION=$CLIENT_VERSION ROKID_IOS_SIMULATOR=$SIMULATOR xcodebuild -workspace $WORKSPACE -scheme $SCHEME -configuration $CONFIGURATION -destination $DESTINATION CODE_SIGNING_ALLOWED=NO build"
+  log "+ env SENTRY_DISABLE_AUTO_UPLOAD=true ROKID_IOS_SDK_ENABLED=1 ROKID_IOS_CLIENT_VERSION=$CLIENT_VERSION ROKID_IOS_CLIENT_FRAMEWORK_PATH=$CLIENT_FRAMEWORK_PATH ROKID_IOS_CLIENT_HAS_CALLBACK_API=$CLIENT_HAS_CALLBACK_API ROKID_IOS_SIMULATOR=$SIMULATOR xcodebuild -workspace $WORKSPACE -scheme $SCHEME -configuration $CONFIGURATION -destination $DESTINATION CODE_SIGNING_ALLOWED=NO build"
   exit 0
 fi
 
@@ -232,6 +284,8 @@ fi
     SENTRY_DISABLE_AUTO_UPLOAD=true \
     ROKID_IOS_SDK_ENABLED=1 \
     ROKID_IOS_CLIENT_VERSION="$CLIENT_VERSION" \
+    ROKID_IOS_CLIENT_FRAMEWORK_PATH="$CLIENT_FRAMEWORK_PATH" \
+    ROKID_IOS_CLIENT_HAS_CALLBACK_API="$CLIENT_HAS_CALLBACK_API" \
     ROKID_IOS_SIMULATOR="$SIMULATOR" \
     xcodebuild \
       -workspace "$WORKSPACE" \

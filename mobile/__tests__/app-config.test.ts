@@ -1,15 +1,25 @@
-import buildConfig from '../app.config';
 const { buildWatchInjectionEnv } = require('../plugins/withWatchApp');
 
-function configForVariant(variant?: string) {
+function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
   const previous = process.env.APP_VARIANT;
+  const previousEnv = new Map<string, string | undefined>();
   if (variant == null) {
     delete process.env.APP_VARIANT;
   } else {
     process.env.APP_VARIANT = variant;
   }
+  Object.entries(env).forEach(([key, value]) => {
+    previousEnv.set(key, process.env[key]);
+    if (value == null) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  });
 
   try {
+    jest.resetModules();
+    const buildConfig = require('../app.config').default;
     return buildConfig({
       config: {
         name: 'HealthPilot',
@@ -22,7 +32,19 @@ function configForVariant(variant?: string) {
     } else {
       process.env.APP_VARIANT = previous;
     }
+    previousEnv.forEach((value, key) => {
+      if (value == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    });
   }
+}
+
+function configuredUrlSchemes(config: any) {
+  return (config.ios?.infoPlist?.CFBundleURLTypes ?? [])
+    .flatMap((entry: any) => entry.CFBundleURLSchemes ?? []);
 }
 
 describe('app.config app links', () => {
@@ -55,5 +77,33 @@ describe('app.config app links', () => {
     expect(env.REVA_MARKETING_VERSION).toBe('1.3.0');
     expect(env.PATH).toBe('/usr/bin');
     expect(env.LANG).toBe('en_US.UTF-8');
+  });
+
+  it('uses variant-specific Rokid callback schemes so installed builds do not steal auth callbacks', () => {
+    const productionSchemes = configuredUrlSchemes(configForVariant('production'));
+    const previewSchemes = configuredUrlSchemes(configForVariant('preview'));
+    const developmentSchemes = configuredUrlSchemes(configForVariant('development'));
+
+    expect(productionSchemes).toContain('life.executor.health.rokid');
+    expect(previewSchemes).toContain('life.executor.health.preview.rokid');
+    expect(developmentSchemes).toContain('life.executor.health.dev.rokid');
+    expect(new Set([
+      productionSchemes.find((scheme: string) => scheme.includes('.rokid')),
+      previewSchemes.find((scheme: string) => scheme.includes('.rokid')),
+      developmentSchemes.find((scheme: string) => scheme.includes('.rokid')),
+    ]).size).toBe(3);
+  });
+
+  it('allows Rokid CXR-L builds to request the SDK default cxrl callback while keeping the bundle-specific fallback registered', () => {
+    const config = configForVariant('production', {
+      ROKID_IOS_CALLBACK_SCHEME: 'cxrl',
+    });
+    const schemes = configuredUrlSchemes(config);
+
+    expect(config.ios?.infoPlist?.RokidCXRAuthCallbackScheme).toBe('cxrl');
+    expect(schemes).toEqual(expect.arrayContaining([
+      'cxrl',
+      'life.executor.health.rokid',
+    ]));
   });
 });

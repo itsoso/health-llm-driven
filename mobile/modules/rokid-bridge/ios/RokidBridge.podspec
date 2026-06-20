@@ -7,6 +7,15 @@ Pod::Spec.new do |s|
   )
   rokid_ios_client_version = ENV['ROKID_IOS_CLIENT_VERSION'].to_s.strip
   rokid_ios_client_version = '1.0.1' if rokid_ios_client_version.empty?
+  rokid_ios_client_framework_path = ENV['ROKID_IOS_CLIENT_FRAMEWORK_PATH'].to_s.strip
+  rokid_ios_client_has_callback_api = ['1', 'true', 'yes'].include?(
+    ENV['ROKID_IOS_CLIENT_HAS_CALLBACK_API'].to_s.downcase
+  )
+  rokid_ios_min_target = if rokid_ios_sdk_enabled && !rokid_ios_simulator && !rokid_ios_client_framework_path.empty?
+    '16.0'
+  else
+    '15.1'
+  end
   swift_flags = ['$(inherited)']
 
   s.name           = 'RokidBridge'
@@ -15,15 +24,48 @@ Pod::Spec.new do |s|
   s.description    = s.summary
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'
-  s.platforms      = { :ios => '15.1' }
+  s.platforms      = { :ios => rokid_ios_min_target }
   s.source         = { git: '' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
 
   if rokid_ios_sdk_enabled && !rokid_ios_simulator
-    s.dependency 'RGCxrClient', rokid_ios_client_version
+    if !rokid_ios_client_framework_path.empty?
+      expanded_framework_path = File.expand_path(rokid_ios_client_framework_path, __dir__)
+      unless File.directory?(expanded_framework_path)
+        raise "Rokid vendored framework not found: #{expanded_framework_path}"
+      end
+      if rokid_ios_client_has_callback_api
+        swiftinterface_glob = File.join(
+          expanded_framework_path,
+          'Modules',
+          'RGCxrClient.swiftmodule',
+          '*swiftinterface'
+        )
+        swiftinterface = Dir.glob(swiftinterface_glob).find { |path| File.file?(path) }
+        interface_source = swiftinterface ? File.read(swiftinterface) : ''
+        unless interface_source.include?('setNotifyEventListenCmds') &&
+            interface_source.include?('openCustomView') &&
+            interface_source.include?('callback')
+          raise "Rokid vendored framework is missing refreshed CustomView callback APIs: #{expanded_framework_path}"
+        end
+      end
+      # RGCxrClient 由 withRokidIosPods.js 注入的本地 pod (vendor/RGCxrClient.podspec)
+      # 提供, 这里只声明依赖 —— 不用 s.vendored_frameworks: 在 Expo static_framework
+      # 模块里 vendored_frameworks 不把框架传播进 RokidBridge 的 -F 搜索路径(EAS
+      # build f0878b7b 实测 canImport(RGCxrClient)=false → SDK 静默缺席)。作为一等
+      # pod 依赖才能正确接 module / FRAMEWORK_SEARCH_PATHS / 链接(对齐官方 sample)。
+      # 上面的 framework 存在性 + callback API 校验仍保留, 作为提前 fail-loud 护栏。
+      s.dependency 'RGCoreKit', '0.0.2'
+      s.dependency 'RGCxrClient', rokid_ios_client_version
+    else
+      s.dependency 'RGCxrClient', rokid_ios_client_version
+    end
     swift_flags << '-D' << 'ROKID_IOS_SDK_REQUESTED'
+    if rokid_ios_client_has_callback_api
+      swift_flags << '-D' << 'ROKID_CXRL_CALLBACK_API'
+    end
   elsif rokid_ios_sdk_enabled && rokid_ios_simulator
     swift_flags << '-D' << 'ROKID_IOS_SIMULATOR_EXCLUDED'
   end
@@ -35,5 +77,5 @@ Pod::Spec.new do |s|
     'OTHER_SWIFT_FLAGS' => swift_flags.join(' ')
   }
 
-  s.source_files = "**/*.{h,m,mm,swift}"
+  s.source_files = "*.{h,m,mm,swift}"
 end

@@ -26,16 +26,70 @@ export type RokidIntegrationStatus = {
   mode: RokidIntegrationMode;
   sdkArtifacts: typeof ROKID_SDK_ARTIFACTS;
   sdkLinked?: boolean;
+  sdkLinkedReason?: string;
+  nativeAppVersion?: string;
+  nativeBuildNumber?: string;
   installedPackage?: string | null;
   supportedPackages?: string[];
   callbackScheme?: string;
+  callbackSchemeSource?: string;
+  acceptedCallbackSchemes?: string[];
+  callbackUrl?: string;
+  lastCallbackUrl?: string;
+  lastCallbackAt?: string;
+  lastCallbackHandled?: boolean;
+  authorizationRequestTimeoutSeconds?: number;
+  bundleIdentifier?: string;
+  lastAuthorizationAttemptId?: string;
+  authorizationAttemptCount?: number;
+  lastAuthorizationPhase?: string;
+  lastAuthorizationDurationMs?: number;
+  lastAuthorizationStateBeforeReset?: string;
+  lastAuthorizationStateAfterReset?: string;
+  lastAuthorizationStateBeforeAuthenticate?: string;
+  authorizationConfigSummary?: string;
+  authDiagnosticTimeline?: string[];
+  lastAuthorizationAppName?: string;
+  lastAuthorizationScopes?: string[];
+  lastAuthorizationRequestAt?: string;
+  lastAuthorizationError?: string;
+  lastAuthorizationErrorAt?: string;
+  lastAuthorizationEvent?: string;
+  lastAuthorizationEventAt?: string;
+  currentDeviceName?: string;
+  companionAppName?: string;
+  companionServerScheme?: string;
+  companionServerHost?: string;
+  lastOpenUrlFingerprint?: string;
+  lastOpenUrlAt?: string;
+  lastOpenUrlExpectedAuthCallback?: boolean;
   querySchemes?: string[];
   iosSdkDependencyMode?: 'linked' | 'opt_in_disabled' | string;
   iosSdkCompatibility?: string;
+  cxrCallbackApiEnabled?: boolean;
+  cxrNotifySubscriptionMode?: string;
+  cxrClientInitialized?: boolean;
+  cxrInitializationMode?: 'customView' | 'customApp' | 'unknown' | string;
+  cxrInitializationOutcome?: string;
   authorizationState?: RokidAuthorizationState;
+  iosBleConnected?: boolean;
+  iosBleDeviceName?: string;
   capabilitiesReady?: boolean;
   customAppSupported?: boolean;
   customViewRunning?: boolean;
+  lastCustomViewPayloadHash?: string;
+  lastCustomViewPayloadShape?: string;
+  lastCustomViewPayloadBytes?: number;
+  customViewPendingRetry?: boolean;
+  lastCustomViewAutoRetryAt?: string;
+  lastCustomViewCommandAt?: string;
+  lastCustomViewRawNotify?: string;
+  lastCustomViewRawNotifyAt?: string;
+  lastCustomViewOpenError?: string;
+  lastCustomViewOpenCommandAccepted?: boolean;
+  lastCustomViewOpenCallbackSuccess?: boolean;
+  lastCustomViewOpenCallbackErrorCode?: string;
+  lastCustomViewOpenCallbackAt?: string;
   sessionMode?: RokidSessionMode;
   sdkClassProbe?: Record<string, boolean>;
   reason?: string;
@@ -47,6 +101,7 @@ export type RokidDeviceValidationStep = {
     | 'ios_sdk_linked'
     | 'hi_rokid_ready'
     | 'rokid_authorized'
+    | 'glasses_ble_connected'
     | 'custom_view_running'
     | 'capture_ready';
   title: string;
@@ -65,6 +120,13 @@ type RokidNativeModule = {
   closeCustomView?: (view: string) => Promise<Record<string, unknown>>;
   takePhotoBase64?: (width: number, height: number, quality: number) => Promise<Record<string, unknown>>;
   queryApp?: (packageName: string) => Promise<Record<string, unknown>>;
+  installBundledApp?: (
+    resourceName: string,
+    resourceExtension: string,
+    packageName: string,
+  ) => Promise<Record<string, unknown>>;
+  installAppFileUri?: (fileUri: string, packageName: string) => Promise<Record<string, unknown>>;
+  uninstallApp?: (packageName: string) => Promise<Record<string, unknown>>;
   openApp?: (packageName: string, activityName: string, url: string) => Promise<Record<string, unknown>>;
   stopApp?: (packageName: string) => Promise<Record<string, unknown>>;
   startRecord?: (type: string, codec: string, mode: string) => Promise<Record<string, unknown>>;
@@ -78,6 +140,31 @@ type RevaCustomViewOptions = {
   body?: string;
   priority?: string;
 };
+
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+const ISO_TIMESTAMP_PATTERN = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})/;
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function formatTimestampInBeijing(value: string) {
+  const timestampMs = Date.parse(value);
+  if (!Number.isFinite(timestampMs)) {
+    return value;
+  }
+  const beijing = new Date(timestampMs + BEIJING_OFFSET_MS);
+  return `${beijing.getUTCFullYear()}-${pad2(beijing.getUTCMonth() + 1)}-${pad2(beijing.getUTCDate())}`
+    + `T${pad2(beijing.getUTCHours())}:${pad2(beijing.getUTCMinutes())}:${pad2(beijing.getUTCSeconds())}+08:00`;
+}
+
+export function formatRokidLogTimestamp(value: string) {
+  const match = value.match(ISO_TIMESTAMP_PATTERN);
+  if (!match) {
+    return value;
+  }
+  return value.replace(match[0], formatTimestampInBeijing(match[0]));
+}
 
 function unavailableStatus(platform: string, reason = 'native_bridge_unavailable'): RokidIntegrationStatus {
   return {
@@ -111,21 +198,33 @@ export function getRokidDeviceValidationSteps(
 ): RokidDeviceValidationStep[] {
   const platform = status?.platform ?? Platform.OS;
   const sdkLinked = platform === 'ios' && status?.bridgeAvailable === true && status?.sdkLinked === true;
+  const sdkRequestedButUnlinked = platform === 'ios'
+    && status?.bridgeAvailable === true
+    && status?.sdkLinked !== true
+    && (
+      status?.iosSdkDependencyMode === 'requested_but_unlinked'
+      || status?.cxrCallbackApiEnabled === true
+      || status?.sdkLinkedReason?.includes('unavailable') === true
+    );
   const hiRokidReady = status?.hiRokidInstalled === true && status?.canOpenHiRokid === true;
   const authorized = status?.authorizationState === 'authenticated';
+  const bleDevice = status?.iosBleDeviceName || status?.currentDeviceName;
+  const glassesBleConnected = platform !== 'ios' || status?.iosBleConnected === true;
   const customViewRunning = status?.customViewRunning === true;
   const captureReady = status?.capabilitiesReady === true;
   const iosClient = status?.sdkArtifacts?.iosClient ?? ROKID_SDK_ARTIFACTS.iosClient;
 
-  const drafts: Array<Omit<RokidDeviceValidationStep, 'status'> & {
+  const drafts: (Omit<RokidDeviceValidationStep, 'status'> & {
     done: boolean;
     blocked?: boolean;
-  }> = [
+  })[] = [
     {
       id: 'ios_sdk_linked',
       title: 'iOS SDK 已链接',
       detail: sdkLinked
         ? `当前包已链接 ${iosClient}。`
+        : sdkRequestedButUnlinked
+          ? `Rokid SDK 编译开关已打开, 但 native 未导入 RGCxrClient: ${status?.sdkLinkedReason ?? status?.iosSdkDependencyMode ?? 'unknown'}。`
         : '安装 Rokid 版 Reva 包, 确认 ROKID_IOS_SDK_ENABLED=1。',
       actionLabel: '安装 Rokid 版 Reva',
       done: sdkLinked,
@@ -133,9 +232,9 @@ export function getRokidDeviceValidationSteps(
     },
     {
       id: 'hi_rokid_ready',
-      title: 'Hi Rokid 已连接',
-      detail: hiRokidReady ? 'Hi Rokid 可唤起, 可继续授权。' : '在 Hi Rokid 中确认眼镜已连接。',
-      actionLabel: '打开 Hi Rokid',
+      title: 'Rokid companion 已连接',
+      detail: hiRokidReady ? 'Rokid AI / Hi Rokid 可唤起, 可继续授权。' : '安装并登录 Rokid AI / Hi Rokid。',
+      actionLabel: '打开 Rokid AI / Hi Rokid',
       done: hiRokidReady,
     },
     {
@@ -145,6 +244,15 @@ export function getRokidDeviceValidationSteps(
       actionLabel: '授权 Rokid',
       done: authorized,
     },
+    ...(platform === 'ios' ? [{
+      id: 'glasses_ble_connected' as const,
+      title: '眼镜蓝牙链路',
+      detail: glassesBleConnected
+        ? `Rokid CXR-L 已连接眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。`
+        : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。`,
+      actionLabel: '打开 Rokid AI / Hi Rokid',
+      done: glassesBleConnected,
+    }] : []),
     {
       id: 'custom_view_running',
       title: 'Reva 眼镜视图',
@@ -344,6 +452,41 @@ export async function queryRokidApp(packageName: string): Promise<Record<string,
     return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
   }
   return native.queryApp(packageName);
+}
+
+export async function installBundledRokidApp(options: {
+  resourceName: string;
+  resourceExtension?: string;
+  packageName: string;
+}): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.installBundledApp) {
+    return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.installBundledApp(
+    options.resourceName,
+    options.resourceExtension ?? 'apk',
+    options.packageName,
+  );
+}
+
+export async function installRokidAppFromFileUri(options: {
+  fileUri: string;
+  packageName: string;
+}): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.installAppFileUri) {
+    return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.installAppFileUri(options.fileUri, options.packageName);
+}
+
+export async function uninstallRokidApp(packageName: string): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.uninstallApp) {
+    return { ok: false, uninstalled: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.uninstallApp(packageName);
 }
 
 export async function openRokidApp(options: {
