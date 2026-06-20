@@ -530,6 +530,17 @@ describe('RokidHealthScreen', () => {
         },
       });
     });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('复制调试信息'));
+      await flushAsyncUpdates();
+    });
+
+    const copied = mockSetClipboardStringAsync.mock.calls.at(-1)?.[0] as string;
+    expect(copied).toContain('voice.normalizer=short-food-record-v2');
+    expect(copied).toContain('route.rawTranscript=记录');
+    expect(copied).toContain('route.normalizedTranscript=记录这餐');
+    expect(copied).toContain('route.normalizedBy=rokid_health_short_food_record');
   });
 
   it('accumulates the longest phone-mic transcript and routes the full phrase on speech end', async () => {

@@ -146,8 +146,10 @@ def _voice_command(
 def route_rokid_voice_command(transcript: str, *, context: str = "rokid_health") -> Dict[str, Any]:
     """Map a bounded Rokid transcript into a whitelisted mobile client action."""
     text = (transcript or "").strip().lower()
+    context_key = (context or "").strip().lower()
+    is_rokid_health_context = context_key in {"rokid_health", "rokid_health_mode"}
 
-    if _contains_any(
+    if (is_rokid_health_context and text in {"记", "记录", "记一下", "记录一下", "帮我记", "帮我记录", "拍照"}) or _contains_any(
         text,
         (
             "拍一下",

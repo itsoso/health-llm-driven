@@ -71,6 +71,9 @@ type CaptureState = {
 
 type VoiceDebugState = {
   lastTranscript?: string;
+  lastRawTranscript?: string;
+  lastNormalizedTranscript?: string;
+  lastTranscriptNormalizedBy?: string;
   lastTranscriptAt?: string;
   lastCommandAction?: string;
   lastCommandAt?: string;
@@ -122,6 +125,7 @@ const CAPTURE_ACTIONS: {
 ] as const;
 
 const PHONE_VOICE_FALLBACK_SILENCE_MS = 1800;
+const ROKID_VOICE_NORMALIZER_VERSION = 'short-food-record-v2';
 
 function statusLabel(status?: RokidIntegrationStatus) {
   if (!status) {
@@ -308,6 +312,7 @@ function transcriptText(event: RokidTranscriptEvent) {
 
 function normalizeRokidHealthTranscript(rawTranscript: string) {
   const compact = rawTranscript.replace(/[，。！？!?.,\s]/g, '');
+  const normalizedBy = 'rokid_health_short_food_record';
   const shortFoodRecordPhrases = new Set([
     '记',
     '记录',
@@ -326,14 +331,16 @@ function normalizeRokidHealthTranscript(rawTranscript: string) {
   if (shortFoodRecordPhrases.has(compact)) {
     return {
       transcript: '记录这餐',
+      normalizedBy,
       meta: {
         raw_transcript: rawTranscript,
-        transcript_normalized_by: 'rokid_health_short_food_record',
+        transcript_normalized_by: normalizedBy,
       },
     };
   }
   return {
     transcript: rawTranscript,
+    normalizedBy: undefined,
     meta: {},
   };
 }
@@ -528,6 +535,14 @@ function buildVoiceSelfCheck(
         ? voiceDebug.fallbackError
         : `reason=${voiceDebug.fallbackReason ?? 'rokid_audio_session_not_ready'} · ${voiceDebug.fallbackLastPartial ?? '等待语音'}`,
     }] : []),
+    ...(voiceDebug.lastRawTranscript ? [{
+      id: 'normalizer',
+      title: '语音归一化',
+      status: voiceDebug.lastTranscriptNormalizedBy ? 'pass' as const : 'info' as const,
+      detail: voiceDebug.lastTranscriptNormalizedBy
+        ? `${voiceDebug.lastRawTranscript} -> ${voiceDebug.lastNormalizedTranscript ?? voiceDebug.lastTranscript ?? 'n/a'} · ${voiceDebug.lastTranscriptNormalizedBy}`
+        : `未改写: ${voiceDebug.lastRawTranscript}`,
+    }] : []),
     {
       id: 'route',
       title: '命令路由',
@@ -562,6 +577,7 @@ function buildRokidVoiceDebugText(
     `generated_at=${formatRokidLogTimestamp(new Date().toISOString())}`,
     `voice.state=${voiceState.status}`,
     `voice.message=${debugValue(voiceState.message)}`,
+    `voice.normalizer=${ROKID_VOICE_NORMALIZER_VERSION}`,
     `summary=${selfCheck.summary}`,
     `build=${debugValue(status?.nativeBuildNumber)}`,
     `version=${debugValue(status?.nativeAppVersion)}`,
@@ -602,6 +618,9 @@ function buildRokidVoiceDebugText(
     `fallback.lastSource=${debugValue(voiceDebug.fallbackLastSource)}`,
     `fallback.lastEventAt=${debugValue(voiceDebug.fallbackLastEventAt)}`,
     `fallback.error=${debugValue(voiceDebug.fallbackError)}`,
+    `route.rawTranscript=${debugValue(voiceDebug.lastRawTranscript)}`,
+    `route.normalizedTranscript=${debugValue(voiceDebug.lastNormalizedTranscript)}`,
+    `route.normalizedBy=${debugValue(voiceDebug.lastTranscriptNormalizedBy)}`,
     `route.lastAction=${debugValue(voiceDebug.lastCommandAction)}`,
     `route.lastAt=${debugValue(voiceDebug.lastCommandAt)}`,
     `route.lastReply=${debugValue(voiceDebug.lastCommandReply)}`,
@@ -1513,6 +1532,9 @@ export default function RokidHealthScreen() {
     setVoiceDebug((prev) => ({
       ...prev,
       lastTranscript: transcript,
+      lastRawTranscript: rawTranscript,
+      lastNormalizedTranscript: transcript,
+      lastTranscriptNormalizedBy: normalizedTranscript.normalizedBy,
       lastTranscriptAt: capturedAt ?? new Date().toISOString(),
       lastCommandError: undefined,
     }));

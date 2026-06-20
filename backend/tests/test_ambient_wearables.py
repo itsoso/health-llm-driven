@@ -200,6 +200,31 @@ def test_rokid_voice_command_routes_current_meal_phrase_to_food_photo(client, db
     assert body["command"]["client_action"] == "capture_food_photo"
 
 
+def test_rokid_voice_command_routes_short_health_record_to_food_photo(client, db):
+    from app.models.ambient_wearable import AudioInputEvent
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/rokid-voice-commands",
+        headers=headers,
+        json={
+            "transcript": "记录",
+            "confidence": 0.72,
+            "context": "rokid_health",
+            "meta": {"source_event": "phone_mic_fallback"},
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(AudioInputEvent).filter(AudioInputEvent.user_id == user.id).one()
+    assert event.intent == "food"
+    assert event.meta["command_intent"] == "food_photo"
+    assert body["command"]["intent"] == "food_photo"
+    assert body["command"]["client_action"] == "capture_food_photo"
+
+
 def test_rokid_voice_command_routes_pushup_start_to_pushup_coach(client, db):
     from app.models.ambient_wearable import AudioInputEvent
 
