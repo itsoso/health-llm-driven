@@ -1313,12 +1313,25 @@ public class RokidBridgeModule: Module {
           "ble_connection_event",
           detail: "connected=\(connected); device=\(RGCxrClientBLE.shared.connectedDeviceName ?? "unknown")"
         )
-        // 自动重试已停用:设备实证(build #158 无此自动重试、手动单发 openCustomView → 眼镜渲染;
-        // #160-162 加了 connectionStatePublisher→自动重发后,openCustomView 在 BLE 刚连上的瞬间被发
-        // (会话未就绪)且与手动点双发 → SDK 不回 callback(rokid_custom_view_open_callback_missing)、
-        // 眼镜不渲染)。回到 #158 的"手动点一次"路径。pendingCustomViewPayload 仅留作诊断状态。
-        // 如需恢复 hand-off,应改为"延迟 + 单飞 + 去抖",而非瞬时直发。
-        _ = connected
+        // openCustomView 的"自动重发"仍停用:设备实证(build #158 无自动重发、手动单发 →
+        // 眼镜渲染;#160-162 在 BLE 刚连上瞬间自动重发 openCustomView(会话未就绪)+ 与手动点
+        // 双发 → SDK 不回 callback、眼镜不渲染)。回到 #158 的"手动点一次"路径。
+        //
+        // 但 notify 订阅(setNotifyEventListenCmds)之前只在首次 bindRuntimeEvents 调一次。
+        // 真机实证(2026-06-20 截图)显示 openCustomView 后 rawNotify=none / running=false /
+        // callback 从不触发,而 iosBleConnected=true —— 一种解释是:订阅是在 BLE 还没真连上(或
+        // 上一条链路)时贴的,SDK 的 cmd 监听注册是 per-link、重连后失效 → 眼镜的 Custom_View_*
+        // notify 根本没被转发回来。BLE 真就绪时重贴一次订阅(只贴订阅、不发任何 openCustomView 命令,
+        // 与上面停用的自动重发不同,不会双发),针对性消除 rawNotify=none 这一边界。
+        // 若重贴后真机仍 rawNotify=none,则证明静默不在订阅层,而在 companion/固件/会话层(按
+        // docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md §4.3/§6 升级 Rokid)。
+        if connected {
+          RokidBridgeModule.configureCustomViewNotifySubscription()
+          RokidBridgeModule.recordAuthDiagnostic(
+            "custom_view_notify_resubscribe_on_connect",
+            detail: "device=\(RGCxrClientBLE.shared.connectedDeviceName ?? "unknown")"
+          )
+        }
       }
       .store(in: &RokidBridgeModule.cancellables)
     RGCxrClientBLE.shared.notifyPublisher
