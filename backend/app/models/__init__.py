@@ -27,6 +27,7 @@ from app.models.user_judgment_feedback import UserJudgmentFeedback
 from app.models.desktop_job import DesktopJob
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.models.supplement import SupplementProduct, SupplementDefinition, SupplementRecord
+from app.models.supplement_inventory import SupplementInventory
 # HabitDefinition/HabitRecord — DEPRECATED: router disabled, models retained for DB compat only
 # from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
@@ -175,6 +176,7 @@ __all__ = [
     "SupplementProduct",
     "SupplementDefinition",
     "SupplementRecord",
+    "SupplementInventory",
     # "HabitDefinition",  # DEPRECATED
     # "HabitRecord",      # DEPRECATED
     "WeightRecord",

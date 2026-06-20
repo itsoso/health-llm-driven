@@ -45,6 +45,11 @@ async def list_write_intents(
     except Exception as e:
         logger.warning(f"[write-intents] adherence 生成失败(降级,仍返回现有): {e}")
         db.rollback()
+    try:
+        svc.generate_reorder_nudges(db, current_user.id)
+    except Exception as e:  # P3(D1)复购提醒生成失败 → 降级, 不阻塞读列表
+        logger.warning(f"[write-intents] reorder 生成失败(降级,仍返回现有): {e}")
+        db.rollback()
     return {"items": svc.list_pending(db, current_user.id)}
 
 
