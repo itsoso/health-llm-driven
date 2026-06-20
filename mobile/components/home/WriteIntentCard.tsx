@@ -62,11 +62,13 @@ export default function WriteIntentCard() {
 
   const renderRow = (it: WriteIntent, last: boolean) => {
     const busy = busyId === it.id;
+    // 大多数提议用 sparkles;复购提醒(reorder_nudge)用补货箱图标,更直观。
+    const iconName = it.kind === 'reorder_nudge' ? 'package' : 'sparkles';
     return (
       <View key={it.id} style={[styles.row, last && { borderBottomWidth: 0 }]}>
         <View style={styles.head}>
           <View style={styles.icon}>
-            <Icon name="sparkles" size={17} color={C.green600} />
+            <Icon name={iconName} size={17} color={C.green600} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.title} numberOfLines={2}>{it.title}</Text>
