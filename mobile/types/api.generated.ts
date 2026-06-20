@@ -6220,6 +6220,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supplements/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Inventory
+         * @description 当前用户每个活跃补剂的库存 + 估计日消耗 + 剩余天数 + 复购状态。
+         *
+         *     缺库存的补剂 units_remaining=None, status=unknown。days_remaining 可能是小数。
+         */
+        get: operations["get_inventory_api_v1_supplements_inventory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/inventory/{supplement_id}/restock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restock Inventory
+         * @description 补货:累加 units_added 到 units_remaining(无库存行则建),记今天为 last_restock_date。
+         *
+         *     brand/spec/package_units 给定则更新。units_added 必填 > 0(Pydantic 校验,缺/<=0 → 422)。
+         *     并发建行撞唯一约束 → 回滚重读再累加(不静默丢补货)。
+         */
+        post: operations["restock_inventory_api_v1_supplements_inventory__supplement_id__restock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/inventory/{supplement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Inventory
+         * @description 手动修正剩余量(覆盖 units_remaining)。无库存行则建一行。
+         */
+        put: operations["set_inventory_api_v1_supplements_inventory__supplement_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supplements/products": {
         parameters: {
             query?: never;
@@ -14465,6 +14530,23 @@ export interface paths {
         put?: never;
         /** Create Audio Input */
         post: operations["create_audio_input_api_v1_ambient_audio_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ambient/rokid-voice-commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Rokid Voice Command */
+        post: operations["create_rokid_voice_command_api_v1_ambient_rokid_voice_commands_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -23592,6 +23674,30 @@ export interface components {
             /** Ab Comparisons */
             ab_comparisons: components["schemas"]["BehaviorABOut"][];
         };
+        /** InventoryItem */
+        InventoryItem: {
+            /** Supplement Id */
+            supplement_id: number;
+            /** Name */
+            name: string;
+            /** Brand */
+            brand: string;
+            /** Spec */
+            spec: string;
+            /** Units Remaining */
+            units_remaining: number | null;
+            /** Daily Consumption */
+            daily_consumption: number | null;
+            /** Days Remaining */
+            days_remaining: number | null;
+            /** Status */
+            status: string;
+        };
+        /** InventoryListResponse */
+        InventoryListResponse: {
+            /** Items */
+            items: components["schemas"]["InventoryItem"][];
+        };
         /**
          * InvitationCodeCreate
          * @description 创建邀请码请求
@@ -23996,6 +24102,14 @@ export interface components {
              * @description 手工输入的国家
              */
             country?: string | null;
+        };
+        /** ManualSetRequest */
+        ManualSetRequest: {
+            /**
+             * Units Remaining
+             * @description 手动修正后的剩余单位数(>= 0)
+             */
+            units_remaining: number;
         };
         /** MealTemplate */
         MealTemplate: {
@@ -26018,6 +26132,20 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** RestockRequest */
+        RestockRequest: {
+            /**
+             * Units Added
+             * @description 本次补货新增单位数(必填, 必须 > 0)
+             */
+            units_added: number;
+            /** Brand */
+            brand?: string | null;
+            /** Spec */
+            spec?: string | null;
+            /** Package Units */
+            package_units?: number | null;
+        };
         /**
          * ReviewListItem
          * @description 复盘列表项
@@ -26204,6 +26332,55 @@ export interface components {
             created_at: string;
             /** Meta */
             meta?: Record<string, never> | null;
+        };
+        /** RokidVoiceCommandCreate */
+        RokidVoiceCommandCreate: {
+            /** Transcript */
+            transcript: string;
+            /** Confidence */
+            confidence?: number | null;
+            /**
+             * Context
+             * @default rokid_health
+             */
+            context: string;
+            /** Captured At */
+            captured_at?: string | null;
+            /**
+             * Privacy Class
+             * @default health_l3
+             */
+            privacy_class: string;
+            /** Meta */
+            meta?: Record<string, never> | null;
+        };
+        /** RokidVoiceCommandResponse */
+        RokidVoiceCommandResponse: {
+            event: components["schemas"]["AudioInputEventResponse"];
+            command: components["schemas"]["RokidVoiceCommandResult"];
+        };
+        /** RokidVoiceCommandResult */
+        RokidVoiceCommandResult: {
+            /** Intent */
+            intent: string;
+            /** Client Action */
+            client_action: string;
+            /** Route */
+            route?: string | null;
+            /** Voice Reply */
+            voice_reply: string;
+            /** Display Text */
+            display_text: string;
+            /** Requires Confirmation */
+            requires_confirmation: boolean;
+            /** Safety Level */
+            safety_level: string;
+            /** Parameters */
+            parameters?: Record<string, never>;
+            /** Recommended Next Action */
+            recommended_next_action?: {
+                [key: string]: string;
+            } | null;
         };
         /**
          * RoutePoint
@@ -39784,6 +39961,96 @@ export interface operations {
             };
         };
     };
+    get_inventory_api_v1_supplements_inventory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryListResponse"];
+                };
+            };
+        };
+    };
+    restock_inventory_api_v1_supplements_inventory__supplement_id__restock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplement_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestockRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_inventory_api_v1_supplements_inventory__supplement_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplement_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_products_api_v1_supplements_products_get: {
         parameters: {
             query?: {
@@ -52749,6 +53016,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AmbientAudioInputResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rokid_voice_command_api_v1_ambient_rokid_voice_commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RokidVoiceCommandCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidVoiceCommandResponse"];
                 };
             };
             /** @description Validation Error */
