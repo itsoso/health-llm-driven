@@ -121,7 +121,7 @@ const CAPTURE_ACTIONS: {
   { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药', intent: 'medication_scan' },
 ] as const;
 
-const PHONE_VOICE_FALLBACK_SILENCE_MS = 1200;
+const PHONE_VOICE_FALLBACK_SILENCE_MS = 1800;
 
 function statusLabel(status?: RokidIntegrationStatus) {
   if (!status) {
@@ -1087,10 +1087,31 @@ export default function RokidHealthScreen() {
       armPhoneVoiceFallbackSilenceTimer();
     };
     Voice.onSpeechResults = (event: SpeechResultsEvent) => {
-      const text = event.value?.[0] ?? phoneVoiceFallbackLatestTextRef.current;
-      routePhoneVoiceFallbackText(text, 'phone_mic_result');
+      const text = event.value?.[0]?.trim();
+      if (!text || !phoneVoiceFallbackActiveRef.current) {
+        return;
+      }
+      // 根因(诊断 3/3 一致):iOS zh-CN SFSpeech 在停顿处把 "记录" 当 intermediate final 抛出。
+      // 立即路由 + Voice.stop() 会截断后续 "这顿饭"。把 final 当高置信 partial:取最长转写、重置静音
+      // 计时器,只在真静音(1.8s 无新结果)或 onSpeechEnd 后才路由完整句。
+      const longest =
+        text.length >= (phoneVoiceFallbackLatestTextRef.current?.length ?? 0)
+          ? text
+          : phoneVoiceFallbackLatestTextRef.current;
+      phoneVoiceFallbackLatestTextRef.current = longest;
+      const at = new Date().toISOString();
+      setVoiceDebug((prev) => ({
+        ...prev,
+        fallbackLastPartial: longest,
+        fallbackLastSource: 'phone_mic_result',
+        fallbackLastEventAt: at,
+      }));
+      setVoiceState({ status: 'listening', message: `手机麦克风识别中: ${longest}` });
+      armPhoneVoiceFallbackSilenceTimer();
     };
     Voice.onSpeechEnd = () => {
+      // 用户停止说话 = 自然的路由时机。路由累积到的最长转写(onSpeechResults/onSpeechPartialResults
+      // 已把 latestTextRef 维护为最长)。静音计时器作为 onSpeechEnd 不触发时的兜底。
       routePhoneVoiceFallbackText(phoneVoiceFallbackLatestTextRef.current, 'phone_mic_end');
     };
     Voice.onSpeechError = (event: SpeechErrorEvent) => {

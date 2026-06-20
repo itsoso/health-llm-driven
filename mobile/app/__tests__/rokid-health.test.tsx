@@ -511,6 +511,7 @@ describe('RokidHealthScreen', () => {
 
     await act(async () => {
       mockVoiceOnSpeechResults?.({ value: ['记录'] });
+      mockVoiceOnSpeechEnd?.();
       await flushAsyncUpdates();
     });
 
@@ -526,6 +527,52 @@ describe('RokidHealthScreen', () => {
           fallback_reason: 'rokid_audio_session_not_ready',
           raw_transcript: '记录',
           transcript_normalized_by: 'rokid_health_short_food_record',
+        },
+      });
+    });
+  });
+
+  it('accumulates the longest phone-mic transcript and routes the full phrase on speech end', async () => {
+    mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_audio_session_not_ready',
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+      expect(screen.getByText(/手机麦克风兜底已开启/)).toBeTruthy();
+    });
+
+    // iOS zh-CN SFSpeech 在停顿处先抛出截断的 intermediate final "记录",随后才补全 "记录这顿饭"。
+    // 修复后:onSpeechResults 不立即路由(否则 Voice.stop 截断),累积取最长;onSpeechEnd 才路由完整句。
+    await act(async () => {
+      mockVoiceOnSpeechResults?.({ value: ['记录'] });
+      mockVoiceOnSpeechResults?.({ value: ['记录这顿饭'] });
+      mockVoiceOnSpeechEnd?.();
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledTimes(1);
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledWith({
+        transcript: '记录这顿饭',
+        confidence: undefined,
+        context: 'rokid_health',
+        capturedAt: expect.any(String),
+        meta: {
+          source_surface: 'rokid_health_mode',
+          source_event: 'phone_mic_fallback',
+          fallback_reason: 'rokid_audio_session_not_ready',
         },
       });
     });
