@@ -116,6 +116,45 @@ export type RokidDeviceValidationStep = {
   actionLabel?: string;
 };
 
+export type RokidCapabilityId =
+  | 'cxrl_auth'
+  | 'glasses_ble'
+  | 'custom_view'
+  | 'camera_capture'
+  | 'audio_record'
+  | 'custom_app_install'
+  | 'custom_app_open'
+  | 'pushup_backend_session'
+  | 'mobile_fallback';
+export type RokidCapabilityState = 'ready' | 'degraded' | 'blocked' | 'unknown';
+export type RokidRecommendedSurface = 'rokid_glasses' | 'mobile' | 'watch' | 'backend' | 'manual';
+export type RokidRecommendedPath =
+  | 'glasses_android_app'
+  | 'mobile_fallback'
+  | 'cxrl_customview'
+  | 'diagnostic_only';
+export type RokidCapability = {
+  id: RokidCapabilityId;
+  label: string;
+  state: RokidCapabilityState;
+  detail: string;
+  source: string;
+  recommendedSurface: RokidRecommendedSurface;
+  priority: number;
+};
+export type RokidCapabilityGateway = {
+  summary: {
+    native: RokidCapabilityState;
+    display: RokidCapabilityState;
+    capture: RokidCapabilityState;
+    voice: RokidCapabilityState;
+    movement: RokidCapabilityState;
+  };
+  capabilities: RokidCapability[];
+  recommendedPath: RokidRecommendedPath;
+  blockers: string[];
+};
+
 export type RokidTranscriptEvent = {
   transcript?: string;
   text?: string;
@@ -203,6 +242,27 @@ export function formatRokidLogTimestamp(value: string) {
   return value.replace(match[0], formatTimestampInBeijing(match[0]));
 }
 
+function includesAny(value: string | undefined, needles: string[]) {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.toLowerCase();
+  return needles.some((needle) => normalized.includes(needle));
+}
+
+function hasSilentCustomViewFailure(status?: Partial<RokidIntegrationStatus> | null) {
+  return includesAny(status?.lastCustomViewOpenError, [
+    'rokid_custom_view_open_callback_missing',
+    'rokid_custom_view_not_running_after_open',
+    'rawnotify=none',
+  ]);
+}
+
+function hasBlePendingRetry(status?: Partial<RokidIntegrationStatus> | null) {
+  return status?.customViewPendingRetry === true
+    || includesAny(status?.lastCustomViewOpenError, ['pending_retry_on_ble_connect']);
+}
+
 function unavailableStatus(platform: string, reason = 'native_bridge_unavailable'): RokidIntegrationStatus {
   return {
     platform,
@@ -241,6 +301,200 @@ function getNativeEmitter(): RokidNativeEventEmitter | null {
   const emitter = new EventEmitter(native as any) as RokidNativeEventEmitter;
   cachedEmitter = emitter;
   return emitter;
+}
+
+export function buildRokidCapabilityGateway(
+  status?: Partial<RokidIntegrationStatus> | null,
+): RokidCapabilityGateway {
+  const platform = status?.platform ?? Platform.OS;
+  const ios = platform === 'ios';
+  const bridgeReady = status?.bridgeAvailable === true;
+  const sdkLinked = ios ? status?.sdkLinked === true : bridgeReady;
+  const companionReady = status?.hiRokidInstalled === true && status?.canOpenHiRokid === true;
+  const authorized = status?.authorizationState === 'authenticated';
+  const bleReady = !ios || status?.iosBleConnected === true;
+  const customViewRunning = status?.customViewRunning === true;
+  const captureReady = status?.capabilitiesReady === true;
+  const silentCustomView = hasSilentCustomViewFailure(status);
+  const pendingCustomView = hasBlePendingRetry(status);
+  const customAppSupported = status?.customAppSupported !== false;
+  const nativeState: RokidCapabilityState = bridgeReady && sdkLinked
+    ? 'ready'
+    : bridgeReady
+      ? 'degraded'
+      : 'blocked';
+  const blockers: string[] = [];
+
+  if (!bridgeReady) {
+    blockers.push('Rokid native bridge 不可用: 当前只能走手机端兜底。');
+  }
+  if (ios && bridgeReady && !sdkLinked) {
+    blockers.push('iOS RGCxrClient 未链接: 眼镜原生能力不可用。');
+  }
+  if (silentCustomView) {
+    blockers.push('CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。');
+  }
+
+  let customViewState: RokidCapabilityState = 'unknown';
+  let customViewDetail = '等待 CXR-L 会话状态。';
+  if (customViewRunning) {
+    customViewState = 'ready';
+    customViewDetail = 'CustomView 已在眼镜端运行。';
+  } else if (!bridgeReady || (ios && !sdkLinked)) {
+    customViewState = 'blocked';
+    customViewDetail = 'native bridge 或 iOS SDK 未就绪。';
+  } else if (!authorized) {
+    customViewState = 'degraded';
+    customViewDetail = '等待 CXR-L 授权。';
+  } else if (pendingCustomView) {
+    customViewState = 'degraded';
+    customViewDetail = 'CustomView 已排队, 等待眼镜蓝牙链路恢复后重试。';
+  } else if (!bleReady) {
+    customViewState = 'degraded';
+    customViewDetail = '等待眼镜蓝牙链路连接。';
+  } else if (silentCustomView) {
+    customViewState = 'blocked';
+    customViewDetail = 'CXR-L CustomView 命令静默, 不再作为核心健康流程前置条件。';
+  } else {
+    customViewState = 'degraded';
+    customViewDetail = '已具备基础链路, 仍需眼镜端 running 事件确认。';
+  }
+
+  const customAppState: RokidCapabilityState =
+    bridgeReady && sdkLinked && authorized && customAppSupported
+      ? 'degraded'
+      : !customAppSupported
+        ? 'blocked'
+        : bridgeReady && sdkLinked
+          ? 'degraded'
+          : 'blocked';
+  const movementState: RokidCapabilityState =
+    bridgeReady && sdkLinked && authorized && customAppSupported
+      ? 'ready'
+      : bridgeReady || customAppSupported
+        ? 'degraded'
+        : 'blocked';
+  const captureState: RokidCapabilityState = captureReady ? 'ready' : 'degraded';
+  const voiceState: RokidCapabilityState =
+    captureReady && !silentCustomView
+      ? 'degraded'
+      : silentCustomView || !bridgeReady || (ios && !sdkLinked)
+        ? 'blocked'
+        : 'degraded';
+
+  const capabilities: RokidCapability[] = [
+    {
+      id: 'cxrl_auth',
+      label: 'CXR-L 授权',
+      state: authorized ? 'ready' : bridgeReady && sdkLinked && companionReady ? 'degraded' : 'blocked',
+      detail: authorized ? '授权 token 可用。' : '需要先完成 Rokid 授权回调。',
+      source: 'RGCxrClient.auth',
+      recommendedSurface: 'mobile',
+      priority: 10,
+    },
+    {
+      id: 'glasses_ble',
+      label: '眼镜蓝牙链路',
+      state: bleReady ? 'ready' : authorized ? 'degraded' : 'unknown',
+      detail: bleReady ? '眼镜链路可用。' : 'Rokid AI / Hi Rokid 可能仍占用或眼镜未在线。',
+      source: 'RGCxrClientBLE.connectionStatePublisher',
+      recommendedSurface: 'rokid_glasses',
+      priority: 20,
+    },
+    {
+      id: 'custom_view',
+      label: 'CXR-L CustomView',
+      state: customViewState,
+      detail: customViewDetail,
+      source: 'RGCxrClient.openCustomView',
+      recommendedSurface: customViewState === 'blocked' ? 'manual' : 'rokid_glasses',
+      priority: 30,
+    },
+    {
+      id: 'camera_capture',
+      label: '眼镜拍照采集',
+      state: captureReady ? 'ready' : customViewState === 'blocked' ? 'blocked' : 'degraded',
+      detail: captureReady ? '拍照能力可用。' : 'Rokid iOS 拍照依赖会话构建; 饮食记录应保持手机拍照兜底。',
+      source: 'RGCxrClient.takePhoto',
+      recommendedSurface: captureReady ? 'rokid_glasses' : 'mobile',
+      priority: 40,
+    },
+    {
+      id: 'audio_record',
+      label: '眼镜语音输入',
+      state: voiceState,
+      detail: voiceState === 'blocked'
+        ? '原生录音/转写尚不能作为稳定入口; 语音记录食物先走手机输入兜底。'
+        : '音频能力仍需真实 transcript 事件验证。',
+      source: 'RGCxrClient.startRecord + onRokidTranscript',
+      recommendedSurface: voiceState === 'blocked' ? 'mobile' : 'rokid_glasses',
+      priority: 50,
+    },
+    {
+      id: 'custom_app_install',
+      label: '眼镜端 App 安装',
+      state: customAppState,
+      detail: customAppState === 'blocked'
+        ? 'CustomApp 安装/启动接口不可用或未授权。'
+        : '需要继续验证 life.executor.health.rokid.pushup APK 安装结果。',
+      source: 'RGCxrClient.installApp',
+      recommendedSurface: 'rokid_glasses',
+      priority: 60,
+    },
+    {
+      id: 'custom_app_open',
+      label: '眼镜端 App 启动',
+      state: customAppState,
+      detail: customAppState === 'blocked'
+        ? '无法启动眼镜端 Android App。'
+        : '运动识别应优先走眼镜端 Android App, 不依赖 CustomView running。',
+      source: 'RGCxrClient.openApp / manual ADB',
+      recommendedSurface: 'rokid_glasses',
+      priority: 70,
+    },
+    {
+      id: 'pushup_backend_session',
+      label: '俯卧撑后端会话',
+      state: 'ready',
+      detail: 'Reva 可接收 pose/rep 事件; 眼镜端 App 或本地计数都可写入同一会话。',
+      source: 'Rokid push-up session API',
+      recommendedSurface: 'backend',
+      priority: 80,
+    },
+    {
+      id: 'mobile_fallback',
+      label: '手机端兜底',
+      state: 'ready',
+      detail: '食物拍照、语音输入和本地俯卧撑计数保持可用。',
+      source: 'Reva mobile routes',
+      recommendedSurface: 'mobile',
+      priority: 90,
+    },
+  ];
+
+  let recommendedPath: RokidRecommendedPath = 'mobile_fallback';
+  if (!bridgeReady || (ios && !sdkLinked)) {
+    recommendedPath = 'mobile_fallback';
+  } else if (captureReady && customViewRunning) {
+    recommendedPath = 'cxrl_customview';
+  } else if ((silentCustomView || authorized) && customAppSupported) {
+    recommendedPath = 'glasses_android_app';
+  } else if (!companionReady && !authorized) {
+    recommendedPath = 'diagnostic_only';
+  }
+
+  return {
+    summary: {
+      native: nativeState,
+      display: customViewState,
+      capture: captureState,
+      voice: voiceState,
+      movement: movementState,
+    },
+    capabilities,
+    recommendedPath,
+    blockers,
+  };
 }
 
 export function getRokidDeviceValidationSteps(

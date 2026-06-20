@@ -1,9 +1,12 @@
 import {
+  buildRokidCapabilityGateway,
   formatRokidLogTimestamp,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
+  type RokidCapabilityGateway,
   type RokidDeviceValidationStep,
   type RokidIntegrationStatus,
+  type RokidRecommendedPath,
 } from '../modules/rokid-bridge';
 
 export type RokidSelfCheckSeverity = 'pass' | 'warn' | 'block' | 'info';
@@ -26,6 +29,7 @@ export type RokidSelfCheck = {
   };
   items: RokidSelfCheckItem[];
   validationSteps: RokidDeviceValidationStep[];
+  capabilityGateway: RokidCapabilityGateway;
 };
 
 function passIf(condition: boolean, passValue: string, failValue: string, failSeverity: RokidSelfCheckSeverity) {
@@ -192,6 +196,28 @@ function callbackSchemesDetail(status: RokidIntegrationStatus) {
   return parts.length > 0 ? parts.join('; ') : undefined;
 }
 
+function capabilityRouteValue(path: RokidRecommendedPath) {
+  switch (path) {
+    case 'glasses_android_app':
+      return '眼镜端 App 优先';
+    case 'cxrl_customview':
+      return 'CXR-L CustomView';
+    case 'diagnostic_only':
+      return '仅诊断';
+    default:
+      return '手机兜底';
+  }
+}
+
+function capabilityRouteSeverity(gateway: RokidCapabilityGateway): RokidSelfCheckSeverity {
+  if (gateway.recommendedPath === 'diagnostic_only') {
+    return 'block';
+  }
+  return gateway.blockers.length > 0 || Object.values(gateway.summary).includes('blocked')
+    ? 'warn'
+    : 'pass';
+}
+
 export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCheck {
   const bridgeReady = status.bridgeAvailable === true;
   const sdkLinked = status.sdkLinked === true;
@@ -199,6 +225,7 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
   const authorized = status.authorizationState === 'authenticated';
   const sessionReady = status.customViewRunning === true && status.capabilitiesReady === true;
   const validationSteps = getRokidDeviceValidationSteps(status);
+  const capabilityGateway = buildRokidCapabilityGateway(status);
 
   const bridge = passIf(bridgeReady, 'Bridge 已就绪', 'Bridge 未就绪', 'block');
   const sdk = passIf(sdkLinked, 'SDK 已链接', 'SDK 未链接', bridgeReady ? 'warn' : 'block');
@@ -330,8 +357,16 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         value: status.capabilitiesReady ? '拍照 / 音频可用' : '等待会话完成',
         severity: status.capabilitiesReady ? 'pass' : 'warn',
       },
+      {
+        id: 'capability_route',
+        label: '能力路由',
+        value: capabilityRouteValue(capabilityGateway.recommendedPath),
+        severity: capabilityRouteSeverity(capabilityGateway),
+        detail: `显示=${capabilityGateway.summary.display}; 采集=${capabilityGateway.summary.capture}; 运动=${capabilityGateway.summary.movement}`,
+      },
     ],
     validationSteps,
+    capabilityGateway,
   };
 }
 

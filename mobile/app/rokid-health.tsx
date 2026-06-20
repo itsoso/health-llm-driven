@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
 import {
+  buildRokidCapabilityGateway,
   formatRokidLogTimestamp,
   addRokidTranscriptListener,
   createRokidRevaCustomViewLayout,
@@ -24,9 +25,12 @@ import {
   requestRokidAuthorization,
   takeRokidPhotoBase64,
   updateRokidCustomView,
+  type RokidCapabilityGateway,
+  type RokidCapabilityState,
   type RokidDeviceValidationStep,
   type RokidEventSubscription,
   type RokidIntegrationStatus,
+  type RokidRecommendedPath,
   type RokidTranscriptEvent,
 } from '../modules/rokid-bridge';
 import {
@@ -241,6 +245,40 @@ function formatRokidCustomViewIssue(reason?: string) {
   return reason;
 }
 
+function capabilityRouteTitle(path: RokidRecommendedPath) {
+  switch (path) {
+    case 'glasses_android_app':
+      return '眼镜端 App 优先';
+    case 'cxrl_customview':
+      return 'CXR-L CustomView';
+    case 'diagnostic_only':
+      return '仅诊断';
+    default:
+      return '手机兜底';
+  }
+}
+
+function displayRouteLabel(state: RokidCapabilityState) {
+  switch (state) {
+    case 'ready':
+      return 'CXR-L 可用';
+    case 'blocked':
+      return 'CXR-L 阻塞';
+    case 'degraded':
+      return 'CXR-L 待确认';
+    default:
+      return '等待检测';
+  }
+}
+
+function captureRouteLabel(gateway: RokidCapabilityGateway) {
+  return gateway.summary.capture === 'ready' ? '眼镜拍照' : '手机拍照兜底';
+}
+
+function movementRouteLabel(gateway: RokidCapabilityGateway) {
+  return gateway.summary.movement === 'ready' ? '眼镜端 App 优先' : '本地计数兜底';
+}
+
 function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   const lines: string[] = [];
   if (!status) {
@@ -439,6 +477,7 @@ export default function RokidHealthScreen() {
   const isIOS = status?.platform === 'ios';
   const iosCapabilitiesReady = isIOS && status?.capabilitiesReady === true;
   const validationSteps = useMemo(() => getRokidDeviceValidationSteps(status), [status]);
+  const capabilityGateway = useMemo(() => buildRokidCapabilityGateway(status), [status]);
   const authDiagnosticLines = useMemo(() => buildAuthDiagnosticLines(status), [status]);
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
 
@@ -906,6 +945,31 @@ export default function RokidHealthScreen() {
                 </Text>
               ) : null}
 
+              <View style={styles.capabilityBox}>
+                <View style={styles.capabilityHeader}>
+                  <Text style={txt.capabilityTitle}>能力路由</Text>
+                  <Text style={txt.capabilityRoute}>
+                    推荐路径: {capabilityRouteTitle(capabilityGateway.recommendedPath)}
+                  </Text>
+                </View>
+                <View style={styles.capabilityGrid}>
+                  <Text style={txt.capabilityItem}>
+                    运动: {movementRouteLabel(capabilityGateway)}
+                  </Text>
+                  <Text style={txt.capabilityItem}>
+                    饮食: {captureRouteLabel(capabilityGateway)}
+                  </Text>
+                  <Text style={txt.capabilityItem}>
+                    显示: {displayRouteLabel(capabilityGateway.summary.display)}
+                  </Text>
+                </View>
+                {capabilityGateway.blockers.slice(0, 2).map((blocker) => (
+                  <Text key={blocker} style={txt.capabilityBlocker} numberOfLines={3}>
+                    {blocker}
+                  </Text>
+                ))}
+              </View>
+
               {authDiagnosticLines.length > 0 ? (
                 <View style={styles.authDiagnosticBox}>
                   {authDiagnosticLines.map((line) => (
@@ -961,7 +1025,7 @@ export default function RokidHealthScreen() {
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={txt.featureTitle}>俯卧撑计数</Text>
-              <Text style={txt.featureDetail}>眼镜视图展示计数、动作评价和下一步建议。</Text>
+              <Text style={txt.featureDetail}>眼镜端 App 优先，CXR-L 安装/启动失败时可用本地计数兜底。</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
           </Pressable>
@@ -1293,6 +1357,23 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     padding: spacing.sm,
     gap: 4,
   },
+  capabilityBox: {
+    marginTop: spacing.md,
+    borderRadius: radii.sm,
+    backgroundColor: c.fill,
+    padding: spacing.sm,
+    gap: 8,
+  },
+  capabilityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  capabilityGrid: {
+    flexDirection: 'column',
+    gap: 4,
+  },
   validationRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1428,6 +1509,10 @@ const createTxt = (c: ColorPalette) => ({
   openState: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
   sessionMessage: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' } as TextStyle,
   authDiagnostic: { fontSize: 11, fontWeight: '700', color: c.labelSecondary, lineHeight: 16 } as TextStyle,
+  capabilityTitle: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  capabilityRoute: { fontSize: 11, fontWeight: '800', color: c.brand, textAlign: 'right', flexShrink: 1 } as TextStyle,
+  capabilityItem: { fontSize: 12, fontWeight: '700', color: c.labelSecondary, lineHeight: 17 } as TextStyle,
+  capabilityBlocker: { fontSize: 11, fontWeight: '700', color: c.orange, lineHeight: 16 } as TextStyle,
   validationHeading: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   validationTitle: { flex: 1, fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   validationNext: { fontSize: 11, fontWeight: '800', color: c.brand, maxWidth: 140 } as TextStyle,

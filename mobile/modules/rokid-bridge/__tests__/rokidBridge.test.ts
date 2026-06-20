@@ -443,4 +443,128 @@ describe('rokid-bridge JS facade', () => {
       actionLabel: '打开 Rokid AI / Hi Rokid',
     });
   });
+
+  it('routes health features around a silent iOS CXR-L CustomView channel', () => {
+    const { bridge } = loadModule('ios');
+
+    const gateway = bridge.buildRokidCapabilityGateway({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewOpenError: 'rokid_custom_view_open_callback_missing; running=false; rawNotify=none; iosBleConnected=true; device=Glasses_0077',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(gateway.recommendedPath).toBe('glasses_android_app');
+    expect(gateway.summary).toMatchObject({
+      native: 'ready',
+      display: 'blocked',
+      capture: 'degraded',
+      voice: 'blocked',
+      movement: 'ready',
+    });
+    expect(gateway.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'custom_view',
+        state: 'blocked',
+        recommendedSurface: 'manual',
+      }),
+      expect.objectContaining({
+        id: 'custom_app_open',
+        state: 'degraded',
+        recommendedSurface: 'rokid_glasses',
+      }),
+      expect.objectContaining({
+        id: 'mobile_fallback',
+        state: 'ready',
+        recommendedSurface: 'mobile',
+      }),
+    ]));
+    expect(gateway.blockers).toEqual(expect.arrayContaining([
+      'CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。',
+    ]));
+  });
+
+  it('keeps a queued CustomView retry degraded rather than blocked', () => {
+    const { bridge } = loadModule('ios');
+
+    const gateway = bridge.buildRokidCapabilityGateway({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      customViewPendingRetry: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(gateway.summary.display).toBe('degraded');
+    expect(gateway.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'custom_view',
+        state: 'degraded',
+        detail: 'CustomView 已排队, 等待眼镜蓝牙链路恢复后重试。',
+      }),
+    ]));
+    expect(gateway.blockers).not.toContain(
+      'CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。',
+    );
+  });
+
+  it('keeps the mobile fallback ready when the native bridge is unavailable', () => {
+    const { bridge } = loadModule('ios');
+
+    const gateway = bridge.buildRokidCapabilityGateway({
+      platform: 'ios',
+      bridgeAvailable: false,
+      hiRokidInstalled: false,
+      canOpenHiRokid: false,
+      mode: 'unavailable',
+      reason: 'native_bridge_unavailable',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(gateway.recommendedPath).toBe('mobile_fallback');
+    expect(gateway.summary.native).toBe('blocked');
+    expect(gateway.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'mobile_fallback',
+        state: 'ready',
+      }),
+    ]));
+    expect(gateway.blockers).toContain('Rokid native bridge 不可用: 当前只能走手机端兜底。');
+  });
 });

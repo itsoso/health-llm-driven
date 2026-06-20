@@ -344,4 +344,48 @@ describe('rokid diagnostics', () => {
       }),
     ]));
   });
+
+  it('includes capability routing when CustomView is silent after authorization', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      lastCustomViewOpenError: 'rokid_custom_view_open_callback_missing; running=false; rawNotify=none; iosBleConnected=true; device=Glasses_0077',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.capabilityGateway.summary).toMatchObject({
+      display: 'blocked',
+      movement: 'ready',
+      capture: 'degraded',
+    });
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'capability_route',
+        label: '能力路由',
+        value: '眼镜端 App 优先',
+        severity: 'warn',
+        detail: '显示=blocked; 采集=degraded; 运动=ready',
+      }),
+    ]));
+    expect(check.capabilityGateway.blockers).toContain(
+      'CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。',
+    );
+  });
 });

@@ -30,6 +30,7 @@ jest.mock('../../modules/rokid-bridge', () => {
   const actual = jest.requireActual('../../modules/rokid-bridge');
   return {
     formatRokidLogTimestamp: actual.formatRokidLogTimestamp,
+    buildRokidCapabilityGateway: actual.buildRokidCapabilityGateway,
     getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
     getRokidDeviceValidationSteps: (...args: any[]) => mockGetRokidDeviceValidationSteps(...args),
     openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
@@ -661,6 +662,44 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('iOS BLE: connected=false')).toBeTruthy();
       expect(screen.getByText('CustomView 未运行')).toBeTruthy();
+    });
+  });
+
+  it('shows a capability route instead of treating silent CustomView as total Rokid failure', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewOpenError: 'rokid_custom_view_open_callback_missing; running=false; rawNotify=none; iosBleConnected=true; device=Glasses_0077',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('能力路由')).toBeTruthy();
+      expect(screen.getByText('推荐路径: 眼镜端 App 优先')).toBeTruthy();
+      expect(screen.getByText('运动: 眼镜端 App 优先')).toBeTruthy();
+      expect(screen.getByText('饮食: 手机拍照兜底')).toBeTruthy();
+      expect(screen.getByText('显示: CXR-L 阻塞')).toBeTruthy();
+      expect(screen.getByText(/CXR-L CustomView 静默/)).toBeTruthy();
+      expect(screen.getByText(/眼镜端 App 优先，CXR-L 安装\/启动失败时可用本地计数兜底。/)).toBeTruthy();
     });
   });
 
