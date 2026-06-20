@@ -70,13 +70,14 @@ jest.mock('../../applib/queryKeys', () => ({
   invalidateRecordMutation: (...args: any[]) => mockInvalidateRecordMutation(...args),
 }));
 
-import RokidPushupCoachScreen from '../rokid-pushup-coach';
+import RokidPushupCoachScreen, { __resetRokidPushupInstallStateForTests } from '../rokid-pushup-coach';
 import { renderWithProviders } from '../../test-utils';
 
 const flushAsyncUpdates = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('RokidPushupCoachScreen', () => {
   beforeEach(() => {
+    __resetRokidPushupInstallStateForTests();
     jest.clearAllMocks();
     mockOpenRokidCustomView.mockResolvedValue({ ok: true });
     mockUpdateRokidCustomView.mockResolvedValue({ ok: true });
@@ -192,7 +193,7 @@ describe('RokidPushupCoachScreen', () => {
     });
   });
 
-  it('keeps local counting and saving available when Rokid app installation is cancelled', async () => {
+  it('keeps local counting and saving available when the public APK download fails', async () => {
     mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
     mockInstallBundledRokidApp.mockResolvedValue({
       ok: false,
@@ -209,9 +210,10 @@ describe('RokidPushupCoachScreen', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/眼镜识别暂不可用/)).toBeTruthy();
+      expect(screen.getByText(/眼镜端 App 下载失败/)).toBeTruthy();
       expect(screen.getAllByText(/本地计数/).length).toBeGreaterThan(0);
     });
+    expect(mockGetDocumentAsync).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.press(screen.getByText('+1 校准'));
@@ -235,5 +237,82 @@ describe('RokidPushupCoachScreen', () => {
       }));
       expect(screen.getByText('已保存')).toBeTruthy();
     });
+  });
+
+  it('downloads the public APK when the bundled resource is missing without opening the picker', async () => {
+    mockQueryRokidApp.mockReset();
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+    mockDownloadAsync.mockResolvedValue({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('安装/更新眼镜端 App'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockDownloadAsync).toHaveBeenCalledWith(
+        'https://health.executor.life/rokid-pushup-glasses.apk',
+        'file://cache/rokid-pushup-glasses.apk',
+      );
+      expect(mockInstallRokidAppFromFileUri).toHaveBeenCalledWith({
+        fileUri: 'file://cache/rokid-pushup-glasses.apk',
+        packageName: 'life.executor.health.rokid.pushup',
+      });
+      expect(screen.getByText('眼镜端应用已安装到眼镜 ✓(已在眼镜端验证)')).toBeTruthy();
+    });
+    expect(mockGetDocumentAsync).not.toHaveBeenCalled();
+  });
+
+  it('opens the file picker only from the manual APK install action', async () => {
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
+    mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('手动选择 APK 安装'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: [
+          'application/vnd.android.package-archive',
+          'application/octet-stream',
+          'public.data',
+        ],
+      });
+      expect(screen.getByText(/rokid_apk_picker_cancelled/)).toBeTruthy();
+    });
+  });
+
+  it('surfaces public APK download failures instead of replacing them with picker cancellation', async () => {
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+    mockDownloadAsync.mockResolvedValue({ status: 404, uri: 'file://cache/rokid-pushup-glasses.apk' });
+    mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('安装/更新眼镜端 App'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/rokid_apk_download_http_404/)).toBeTruthy();
+    });
+    expect(mockGetDocumentAsync).not.toHaveBeenCalled();
   });
 });
