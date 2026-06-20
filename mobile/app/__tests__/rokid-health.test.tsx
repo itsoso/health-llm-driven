@@ -894,6 +894,27 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('falls back to the mobile camera when the glasses photo never returns (capture timeout)', async () => {
+    // 眼镜拍了照但照片经 BLE 回传卡住 → native promise 永不 resolve, 包装器超时返回 rokid_photo_timeout。
+    // 不能永久挂在"提交中": 应降级到手机拍照, 让这餐仍能记录。
+    mockTakeRokidPhotoBase64.mockResolvedValueOnce({ ok: false, reason: 'rokid_photo_timeout' });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('主动触发 食物视觉记录')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('眼镜拍照不可用，已切到手机拍照记录。')).toBeTruthy();
+      expect(mockRecognizeFood).not.toHaveBeenCalled();
+    });
+  });
+
   it('shows the iOS authorization and customView steps before capture is available', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',

@@ -279,7 +279,34 @@ function isRokidNativeChannelNotReady(reason?: string) {
     || normalized.includes('auto_retry_open_callback_error_code')
     || normalized.includes('rokid_glasses_ble_not_connected')
     || normalized.includes('rokid_capture_failed')
+    || normalized.includes('rokid_photo_timeout')
     || normalized.includes('rokid_record_failed');
+}
+
+// 眼镜拍照经 BLE 回传(~100-300KB)较慢, 且 native takePhotoWithData 的完成闭包无超时——
+// 数据卡住时 promise 永不 resolve, JS 会永久挂在"提交中"(用户实测:眼镜拍了照但照片没回传)。
+// 给一个宽裕的超时(覆盖慢速 BLE), 超时则返回 ok:false 让上层降级到手机相机, 而不是永久挂起。
+const ROKID_PHOTO_CAPTURE_TIMEOUT_MS = 25000;
+
+async function takeRokidPhotoBase64WithTimeout(options: {
+  width: number;
+  height: number;
+  quality: number;
+}): Promise<Record<string, unknown>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<Record<string, unknown>>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ ok: false, reason: 'rokid_photo_timeout' }),
+      ROKID_PHOTO_CAPTURE_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([takeRokidPhotoBase64(options), timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function hasRokidAudioSession(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
@@ -1442,7 +1469,12 @@ export default function RokidHealthScreen() {
         }
         throw new Error('rokid_custom_view_not_ready');
       }
-      const captureResult = await takeRokidPhotoBase64({ width: 1024, height: 768, quality: 80 });
+      setCaptureState({
+        status: 'capturing',
+        actionTitle: action.title,
+        message: `正在从眼镜拍照并回传(BLE 较慢,请稍候)…`,
+      });
+      const captureResult = await takeRokidPhotoBase64WithTimeout({ width: 1024, height: 768, quality: 80 });
       if (captureResult.ok === false) {
         const reason = typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed';
         if (action.intent === 'food_scan' && isRokidNativeChannelNotReady(reason)) {
