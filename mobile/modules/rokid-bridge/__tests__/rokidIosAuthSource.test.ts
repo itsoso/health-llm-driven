@@ -122,7 +122,15 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).not.toContain('dataEvent.data.base64EncodedString');
   });
 
-  it('does not block Rokid recording when iOS Speech is unavailable, preserving audio diagnostics', () => {
+  it('requires a confirmed CustomView running session before starting Rokid audio capture', () => {
+    expect(source).toContain('rokid_audio_session_not_ready');
+    expect(source).toContain('record_start_rejected');
+    expect(source).toContain('audio_record_start_rejected');
+    expect(source).toMatch(/guard RokidBridgeModule\.customViewRunning else \{[\s\S]+reason": "rokid_audio_session_not_ready"[\s\S]+return/);
+    expect(source).not.toContain('record_start_with_inferred_custom_view');
+  });
+
+  it('does not block Rokid recording when iOS Speech is unavailable after the audio session is confirmed', () => {
     expect(source).toContain('speech_recognition_not_ready_recording_continues');
     expect(source).toContain('CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))');
     expect(source).toContain('"speechRecognitionReady": speechReady');

@@ -951,8 +951,23 @@ public class RokidBridgeModule: Module {
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
-    guard RokidBridgeModule.hasCustomViewSessionEvidence() else {
-      promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
+    guard RokidBridgeModule.customViewRunning else {
+      lastAudioEventAt = isoTimestamp()
+      lastAudioEventType = "record_start_rejected"
+      lastAudioRecordType = type
+      activeRecordType = nil
+      recordAuthDiagnostic(
+        "audio_record_start_rejected",
+        detail: "reason=rokid_audio_session_not_ready; running=\(RokidBridgeModule.customViewRunning); evidence=\(RokidBridgeModule.hasCustomViewSessionEvidence()); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+      )
+      promise.resolve([
+        "ok": false,
+        "reason": "rokid_audio_session_not_ready",
+        "customViewRunning": RokidBridgeModule.customViewRunning,
+        "customViewSessionEvidence": RokidBridgeModule.hasCustomViewSessionEvidence(),
+        "iosBleConnected": iosBleConnected(),
+        "iosBleDeviceName": iosBleDeviceName() ?? currentDeviceName ?? "",
+      ])
       return
     }
 
@@ -965,12 +980,6 @@ public class RokidBridgeModule: Module {
           )
         }
 
-        if !RokidBridgeModule.customViewRunning {
-          recordAuthDiagnostic(
-            "record_start_with_inferred_custom_view",
-            detail: "type=\(type); evidence=\(lastCustomViewSessionEvidenceReason ?? "unknown"); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
-          )
-        }
         prepareAudioDiagnosticsForStart(type: type, codec: codec, mode: mode)
         CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
         promise.resolve([

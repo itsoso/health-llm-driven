@@ -11,7 +11,12 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Voice, {
+  type SpeechErrorEvent,
+  type SpeechResultsEvent,
+} from '@react-native-voice/voice';
 import * as Clipboard from 'expo-clipboard';
+import { setAudioModeAsync } from 'expo-audio';
 import { Stack, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -71,6 +76,13 @@ type VoiceDebugState = {
   lastCommandAt?: string;
   lastCommandReply?: string;
   lastCommandError?: string;
+  fallbackMode?: 'phone_mic';
+  fallbackReason?: string;
+  fallbackStartedAt?: string;
+  fallbackLastPartial?: string;
+  fallbackLastSource?: string;
+  fallbackLastEventAt?: string;
+  fallbackError?: string;
 };
 
 type VoiceSelfCheckStatus = 'pass' | 'warn' | 'fail' | 'info';
@@ -108,6 +120,8 @@ const CAPTURE_ACTIONS: {
   { icon: 'nutrition-outline', title: '补剂标签扫描', detail: 'OCR 后进入补剂待确认队列', intent: 'supplement_scan' },
   { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药', intent: 'medication_scan' },
 ] as const;
+
+const PHONE_VOICE_FALLBACK_SILENCE_MS = 1200;
 
 function statusLabel(status?: RokidIntegrationStatus) {
   if (!status) {
@@ -256,11 +270,16 @@ function isRokidNativeChannelNotReady(reason?: string) {
   return normalized.includes('rokid_custom_view_not_ready')
     || normalized.includes('rokid_custom_view_not_running_after_open')
     || normalized.includes('rokid_custom_view_open_callback_missing')
+    || normalized.includes('rokid_audio_session_not_ready')
     || normalized.includes('open_callback_error_code')
     || normalized.includes('auto_retry_open_callback_error_code')
     || normalized.includes('rokid_glasses_ble_not_connected')
     || normalized.includes('rokid_capture_failed')
     || normalized.includes('rokid_record_failed');
+}
+
+function hasRokidAudioSession(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
+  return result?.customViewRunning === true || result?.capabilitiesReady === true;
 }
 
 function hasRokidCustomViewSessionEvidence(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
@@ -399,6 +418,7 @@ function buildVoiceSelfCheck(
   const commandAction = voiceDebug.lastCommandAction;
   const speechDenied = status?.speechAuthorizationStatus === 'denied'
     || status?.speechAuthorizationStatus === 'restricted';
+  const phoneFallbackActive = voiceState.status === 'listening' && voiceDebug.fallbackMode === 'phone_mic';
 
   let summary = '等待启动 Rokid 语音控制';
   if (voiceState.status === 'failed') {
@@ -407,6 +427,8 @@ function buildVoiceSelfCheck(
     summary = `语音指令已路由: ${commandAction}`;
   } else if (transcript) {
     summary = `已识别: ${transcript}`;
+  } else if (phoneFallbackActive) {
+    summary = 'Rokid 音频未到，手机麦克风兜底已开启';
   } else if (recordingRequested && chunks === 0 && bytes === 0) {
     summary = '录音已请求，但 Rokid 尚未返回音频流';
   } else if (chunks > 0 && bytes > 0 && !transcript) {
@@ -464,8 +486,16 @@ function buildVoiceSelfCheck(
           ? `Speech 权限不可用: ${status?.speechAuthorizationStatus}`
           : status?.lastSpeechError
             ? `Speech 错误: ${status.lastSpeechError}`
-            : `state=${status?.speechRecognitionState ?? 'idle'} · auth=${status?.speechAuthorizationStatus ?? 'unknown'}`,
+          : `state=${status?.speechRecognitionState ?? 'idle'} · auth=${status?.speechAuthorizationStatus ?? 'unknown'}`,
     },
+    ...(voiceDebug.fallbackMode === 'phone_mic' ? [{
+      id: 'phone_mic_fallback',
+      title: '手机麦克风兜底',
+      status: voiceDebug.fallbackError ? 'fail' as const : 'pass' as const,
+      detail: voiceDebug.fallbackError
+        ? voiceDebug.fallbackError
+        : `reason=${voiceDebug.fallbackReason ?? 'rokid_audio_session_not_ready'} · ${voiceDebug.fallbackLastPartial ?? '等待语音'}`,
+    }] : []),
     {
       id: 'route',
       title: '命令路由',
@@ -533,6 +563,13 @@ function buildRokidVoiceDebugText(
     `speech.lastTranscriptAt=${debugValue(status?.lastSpeechTranscriptAt ?? voiceDebug.lastTranscriptAt)}`,
     `speech.lastEventSource=${debugValue(status?.lastSpeechEventSource)}`,
     `speech.lastError=${debugValue(status?.lastSpeechError)}`,
+    `fallback.mode=${debugValue(voiceDebug.fallbackMode)}`,
+    `fallback.reason=${debugValue(voiceDebug.fallbackReason)}`,
+    `fallback.startedAt=${debugValue(voiceDebug.fallbackStartedAt)}`,
+    `fallback.lastPartial=${debugValue(voiceDebug.fallbackLastPartial)}`,
+    `fallback.lastSource=${debugValue(voiceDebug.fallbackLastSource)}`,
+    `fallback.lastEventAt=${debugValue(voiceDebug.fallbackLastEventAt)}`,
+    `fallback.error=${debugValue(voiceDebug.fallbackError)}`,
     `route.lastAction=${debugValue(voiceDebug.lastCommandAction)}`,
     `route.lastAt=${debugValue(voiceDebug.lastCommandAt)}`,
     `route.lastReply=${debugValue(voiceDebug.lastCommandReply)}`,
@@ -853,6 +890,10 @@ export default function RokidHealthScreen() {
   const [voiceDebug, setVoiceDebug] = useState<VoiceDebugState>({});
   const voiceTranscriptSubscriptionRef = useRef<RokidEventSubscription | null>(null);
   const voiceListeningRef = useRef(false);
+  const phoneVoiceFallbackActiveRef = useRef(false);
+  const phoneVoiceFallbackSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneVoiceFallbackLatestTextRef = useRef('');
+  const phoneVoiceFallbackLastSubmittedRef = useRef('');
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -889,6 +930,164 @@ export default function RokidHealthScreen() {
     voiceTranscriptSubscriptionRef.current?.remove();
     voiceTranscriptSubscriptionRef.current = null;
   };
+
+  const clearPhoneVoiceFallbackTimer = () => {
+    if (phoneVoiceFallbackSilenceTimerRef.current) {
+      clearTimeout(phoneVoiceFallbackSilenceTimerRef.current);
+      phoneVoiceFallbackSilenceTimerRef.current = null;
+    }
+  };
+
+  const setPhoneVoiceFallbackPlaybackMode = async (allowsRecording: boolean) => {
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
+        interruptionMode: 'duckOthers',
+        allowsRecording,
+      });
+    } catch {
+      // Audio session mode is best-effort; Voice.start/stop will surface actionable failures.
+    }
+  };
+
+  const routePhoneVoiceFallbackText = (rawText: string | undefined, source: string) => {
+    const transcript = rawText?.trim();
+    if (!transcript || !phoneVoiceFallbackActiveRef.current || !voiceListeningRef.current) {
+      return;
+    }
+    if (phoneVoiceFallbackLastSubmittedRef.current === transcript) {
+      return;
+    }
+    phoneVoiceFallbackLastSubmittedRef.current = transcript;
+    clearPhoneVoiceFallbackTimer();
+    const capturedAt = new Date().toISOString();
+    setVoiceDebug((prev) => ({
+      ...prev,
+      fallbackLastPartial: transcript,
+      fallbackLastSource: source,
+      fallbackLastEventAt: capturedAt,
+      fallbackError: undefined,
+    }));
+    void Voice.stop().catch(() => undefined);
+    void setPhoneVoiceFallbackPlaybackMode(false);
+    void handleVoiceTranscript({
+      transcript,
+      capturedAt,
+      final: true,
+      meta: {
+        source_event: 'phone_mic_fallback',
+        fallback_reason: voiceDebug.fallbackReason ?? 'rokid_audio_session_not_ready',
+      },
+    });
+  };
+
+  const armPhoneVoiceFallbackSilenceTimer = () => {
+    clearPhoneVoiceFallbackTimer();
+    phoneVoiceFallbackSilenceTimerRef.current = setTimeout(() => {
+      routePhoneVoiceFallbackText(phoneVoiceFallbackLatestTextRef.current, 'phone_mic_silence');
+    }, PHONE_VOICE_FALLBACK_SILENCE_MS);
+  };
+
+  const stopPhoneVoiceFallback = async () => {
+    const wasActive = phoneVoiceFallbackActiveRef.current;
+    phoneVoiceFallbackActiveRef.current = false;
+    phoneVoiceFallbackLatestTextRef.current = '';
+    phoneVoiceFallbackLastSubmittedRef.current = '';
+    clearPhoneVoiceFallbackTimer();
+    try {
+      await Voice.stop();
+    } catch {
+      // The fallback may not have been active; stop is best-effort.
+    }
+    try {
+      await Voice.destroy();
+    } catch {
+      // Keep cleanup best-effort to avoid masking the original UI action.
+    }
+    try {
+      Voice.removeAllListeners();
+    } catch {
+      // Some test/native shims expose removeAllListeners as optional.
+    }
+    await setPhoneVoiceFallbackPlaybackMode(false);
+    if (wasActive) {
+      setVoiceDebug((prev) => ({
+        ...prev,
+        fallbackLastEventAt: new Date().toISOString(),
+      }));
+    }
+  };
+
+  const startPhoneVoiceFallback = async (reason: string) => {
+    removeVoiceTranscriptListener();
+    await stopPhoneVoiceFallback();
+    const startedAt = new Date().toISOString();
+    phoneVoiceFallbackActiveRef.current = true;
+    phoneVoiceFallbackLatestTextRef.current = '';
+    phoneVoiceFallbackLastSubmittedRef.current = '';
+    voiceListeningRef.current = true;
+    setVoiceDebug((prev) => ({
+      ...prev,
+      fallbackMode: 'phone_mic',
+      fallbackReason: reason,
+      fallbackStartedAt: startedAt,
+      fallbackLastPartial: undefined,
+      fallbackLastSource: undefined,
+      fallbackLastEventAt: startedAt,
+      fallbackError: undefined,
+      lastCommandError: undefined,
+    }));
+
+    Voice.onSpeechPartialResults = (event: SpeechResultsEvent) => {
+      const text = event.value?.[0]?.trim();
+      if (!text || !phoneVoiceFallbackActiveRef.current) {
+        return;
+      }
+      phoneVoiceFallbackLatestTextRef.current = text;
+      const at = new Date().toISOString();
+      setVoiceDebug((prev) => ({
+        ...prev,
+        fallbackLastPartial: text,
+        fallbackLastEventAt: at,
+      }));
+      setVoiceState({ status: 'listening', message: `手机麦克风识别中: ${text}` });
+      armPhoneVoiceFallbackSilenceTimer();
+    };
+    Voice.onSpeechResults = (event: SpeechResultsEvent) => {
+      const text = event.value?.[0] ?? phoneVoiceFallbackLatestTextRef.current;
+      routePhoneVoiceFallbackText(text, 'phone_mic_result');
+    };
+    Voice.onSpeechEnd = () => {
+      routePhoneVoiceFallbackText(phoneVoiceFallbackLatestTextRef.current, 'phone_mic_end');
+    };
+    Voice.onSpeechError = (event: SpeechErrorEvent) => {
+      const message = event.error?.message || 'phone_voice_recognition_failed';
+      clearPhoneVoiceFallbackTimer();
+      phoneVoiceFallbackActiveRef.current = false;
+      voiceListeningRef.current = false;
+      setVoiceDebug((prev) => ({
+        ...prev,
+        fallbackError: message,
+        fallbackLastEventAt: new Date().toISOString(),
+      }));
+      setVoiceState({ status: 'failed', message: `手机麦克风语音识别失败: ${message}` });
+      void setPhoneVoiceFallbackPlaybackMode(false);
+    };
+
+    await setPhoneVoiceFallbackPlaybackMode(true);
+    await Voice.start('zh-CN');
+    setVoiceState({
+      status: 'listening',
+      message: 'Rokid 暂无音频流，已切到手机麦克风。请说“记录这顿饭”。',
+    });
+  };
+
+  useEffect(() => () => {
+    phoneVoiceFallbackActiveRef.current = false;
+    clearPhoneVoiceFallbackTimer();
+    Voice.destroy().then(() => Voice.removeAllListeners()).catch(() => undefined);
+  }, []);
 
   const updateVoiceCustomView = async (body: string, priority = 'voice') => {
     try {
@@ -1063,20 +1262,36 @@ export default function RokidHealthScreen() {
         priority: 'voice',
       });
       const refreshed = await statusQuery.refetch();
-      const customViewReady =
+      const audioSessionReady =
+        hasRokidAudioSession(viewResult) ||
+        hasRokidAudioSession(refreshed.data);
+      const customViewHasWeakEvidence =
         hasRokidCustomViewSessionEvidence(viewResult) ||
         hasRokidCustomViewSessionEvidence(refreshed.data);
       if (viewResult.ok === false) {
-        if (!customViewReady) {
+        if (!audioSessionReady && (
+          customViewHasWeakEvidence ||
+          isRokidNativeChannelNotReady(typeof viewResult.reason === 'string' ? viewResult.reason : undefined)
+        )) {
+          await startPhoneVoiceFallback('rokid_audio_session_not_ready');
+          return;
+        }
+        if (!audioSessionReady) {
           throw new Error(typeof viewResult.reason === 'string' ? viewResult.reason : 'rokid_custom_view_failed');
         }
       }
-      if (!customViewReady) {
-        throw new Error('rokid_custom_view_not_ready');
+      if (!audioSessionReady) {
+        await startPhoneVoiceFallback('rokid_audio_session_not_ready');
+        return;
       }
       const recordResult = await startRokidVoiceCommandCapture();
       if (recordResult.ok === false) {
-        throw new Error(typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed');
+        const reason = typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed';
+        if (isRokidNativeChannelNotReady(reason)) {
+          await startPhoneVoiceFallback(reason === 'rokid_audio_session_not_ready' ? reason : 'rokid_audio_session_not_ready');
+          return;
+        }
+        throw new Error(reason);
       }
       // council #2(不假装成功):ASR 未就绪(语音/麦克风权限被拒、识别器不可用)时,麦克风在录但
       // 永远不会产生 transcript → 别显"已开启"造成"启动了却没反应"。停掉无用录音、明确告知原因。
@@ -1102,6 +1317,7 @@ export default function RokidHealthScreen() {
     } catch (error) {
       voiceListeningRef.current = false;
       removeVoiceTranscriptListener();
+      await stopPhoneVoiceFallback();
       if (recordingStarted) {
         try {
           await stopRokidVoiceCommandCapture();
@@ -1121,12 +1337,16 @@ export default function RokidHealthScreen() {
 
   const stopVoiceControl = async () => {
     setVoiceState({ status: 'stopping', message: 'Rokid 语音控制停止中...' });
+    const phoneFallbackWasActive = phoneVoiceFallbackActiveRef.current;
     voiceListeningRef.current = false;
     removeVoiceTranscriptListener();
     try {
-      const result = await stopRokidVoiceCommandCapture();
-      if (result.ok === false) {
-        throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_stop_record_failed');
+      await stopPhoneVoiceFallback();
+      if (!phoneFallbackWasActive) {
+        const result = await stopRokidVoiceCommandCapture();
+        if (result.ok === false) {
+          throw new Error(typeof result.reason === 'string' ? result.reason : 'rokid_stop_record_failed');
+        }
       }
       setVoiceState({ status: 'idle', message: 'Rokid 语音控制已停止' });
       await statusQuery.refetch();

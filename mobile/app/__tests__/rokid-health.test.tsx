@@ -20,8 +20,17 @@ const mockStartRokidVoiceCommandCapture = jest.fn();
 const mockStopRokidVoiceCommandCapture = jest.fn();
 const mockSubmitRokidVoiceCommand = jest.fn();
 const mockSetClipboardStringAsync = jest.fn();
+const mockVoiceStart = jest.fn().mockResolvedValue(undefined);
+const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
+const mockVoiceDestroy = jest.fn().mockResolvedValue(undefined);
+const mockVoiceRemoveAllListeners = jest.fn();
+const mockSetAudioModeAsync = jest.fn().mockResolvedValue(undefined);
 const mockTranscriptSubscriptionRemove = jest.fn();
 let rokidTranscriptListener: ((event: any) => void | Promise<void>) | null = null;
+let mockVoiceOnSpeechPartialResults: ((event: { value?: string[] }) => void) | undefined;
+let mockVoiceOnSpeechResults: ((event: { value?: string[] }) => void) | undefined;
+let mockVoiceOnSpeechEnd: (() => void) | undefined;
+let mockVoiceOnSpeechError: ((event: { error?: { message?: string } }) => void) | undefined;
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -72,6 +81,36 @@ jest.mock('expo-clipboard', () => ({
   setStringAsync: (...args: any[]) => mockSetClipboardStringAsync(...args),
 }));
 
+jest.mock('expo-audio', () => ({
+  setAudioModeAsync: (...args: any[]) => mockSetAudioModeAsync(...args),
+}));
+
+jest.mock('@react-native-voice/voice', () => {
+  const voice: any = {
+    start: (...args: any[]) => mockVoiceStart(...args),
+    stop: (...args: any[]) => mockVoiceStop(...args),
+    destroy: (...args: any[]) => mockVoiceDestroy(...args),
+    removeAllListeners: (...args: any[]) => mockVoiceRemoveAllListeners(...args),
+  };
+  Object.defineProperty(voice, 'onSpeechPartialResults', {
+    get: () => mockVoiceOnSpeechPartialResults,
+    set: (handler) => { mockVoiceOnSpeechPartialResults = handler; },
+  });
+  Object.defineProperty(voice, 'onSpeechResults', {
+    get: () => mockVoiceOnSpeechResults,
+    set: (handler) => { mockVoiceOnSpeechResults = handler; },
+  });
+  Object.defineProperty(voice, 'onSpeechEnd', {
+    get: () => mockVoiceOnSpeechEnd,
+    set: (handler) => { mockVoiceOnSpeechEnd = handler; },
+  });
+  Object.defineProperty(voice, 'onSpeechError', {
+    get: () => mockVoiceOnSpeechError,
+    set: (handler) => { mockVoiceOnSpeechError = handler; },
+  });
+  return { __esModule: true, default: voice };
+});
+
 import RokidHealthScreen from '../rokid-health';
 import { renderWithProviders } from '../../test-utils';
 
@@ -81,6 +120,10 @@ describe('RokidHealthScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     rokidTranscriptListener = null;
+    mockVoiceOnSpeechPartialResults = undefined;
+    mockVoiceOnSpeechResults = undefined;
+    mockVoiceOnSpeechEnd = undefined;
+    mockVoiceOnSpeechError = undefined;
     mockAddRokidTranscriptListener.mockImplementation((listener) => {
       rokidTranscriptListener = listener;
       return { remove: mockTranscriptSubscriptionRemove };
@@ -392,12 +435,12 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(mockStartRokidVoiceCommandCapture).not.toHaveBeenCalled();
       expect(mockStopRokidVoiceCommandCapture).not.toHaveBeenCalled();
-      expect(screen.getByText(/眼镜原生语音依赖 CustomView/)).toBeTruthy();
-      expect(screen.getByText('手机拍餐')).toBeTruthy();
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+      expect(screen.getByText(/已切到手机麦克风/)).toBeTruthy();
     });
   });
 
-  it('classifies iOS CustomView callback nil as a voice fallback instead of a raw Rokid error', async () => {
+  it('classifies iOS CustomView callback nil as a phone-mic voice fallback instead of a raw Rokid error', async () => {
     mockOpenRokidRevaCustomView.mockResolvedValueOnce({
       ok: false,
       reason: 'ios_ble_connected; open_callback_error_code=nil; device=Glasses_0077',
@@ -417,13 +460,13 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(mockStartRokidVoiceCommandCapture).not.toHaveBeenCalled();
-      expect(screen.getByText('眼镜原生语音依赖 CustomView，目前不可用。先用下方入口继续：手机拍餐或本地俯卧撑。')).toBeTruthy();
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+      expect(screen.getByText(/手机麦克风兜底已开启/)).toBeTruthy();
       expect(screen.queryByText(/Rokid 语音控制失败: ios_ble_connected/)).toBeNull();
-      expect(screen.getByText('手机拍餐')).toBeTruthy();
     });
   });
 
-  it('tries Rokid voice recording when nil CustomView callback still has session evidence', async () => {
+  it('falls back to phone microphone when CustomView only has weak display evidence', async () => {
     mockOpenRokidRevaCustomView.mockResolvedValueOnce({
       ok: false,
       reason: 'ios_ble_connected; open_callback_error_code=nil; device=Glasses_0077',
@@ -432,6 +475,64 @@ describe('RokidHealthScreen', () => {
       customViewSessionEvidence: true,
       customViewDisplayInferred: true,
       lastCustomViewSessionEvidenceReason: 'open_callback_false_nil_error_ble_connected',
+    });
+    mockGetRokidIntegrationStatus.mockResolvedValueOnce({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'linked',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customViewRunning: false,
+      customViewSessionEvidence: true,
+      customViewDisplayInferred: true,
+      capabilitiesReady: false,
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStartRokidVoiceCommandCapture).not.toHaveBeenCalled();
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+      expect(screen.getByText(/已切到手机麦克风/)).toBeTruthy();
+      expect(screen.getByText(/手机麦克风兜底已开启/)).toBeTruthy();
+    });
+
+    await act(async () => {
+      mockVoiceOnSpeechResults?.({ value: ['记录这顿饭'] });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledWith({
+        transcript: '记录这顿饭',
+        confidence: undefined,
+        context: 'rokid_health',
+        capturedAt: expect.any(String),
+        meta: {
+          source_surface: 'rokid_health_mode',
+          source_event: 'phone_mic_fallback',
+          fallback_reason: 'rokid_audio_session_not_ready',
+        },
+      });
+    });
+  });
+
+  it('starts phone microphone fallback when native Rokid voice capture cannot bind to a session', async () => {
+    mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_audio_session_not_ready',
     });
     const screen = renderWithProviders(<RokidHealthScreen />);
 
@@ -446,36 +547,10 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(mockStartRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
-      expect(screen.getByText('Rokid 语音控制已开启')).toBeTruthy();
-      expect(screen.queryByText(/眼镜原生语音依赖 CustomView/)).toBeNull();
-    });
-  });
-
-  it('keeps mobile fallback actions available when Rokid voice control cannot bind to CustomView', async () => {
-    mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
-      ok: false,
-      reason: 'rokid_custom_view_not_ready',
-    });
-    const screen = renderWithProviders(<RokidHealthScreen />);
-
-    await waitFor(() => {
-      expect(screen.getByText('启动语音控制')).toBeTruthy();
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+      expect(screen.getByText(/手机麦克风兜底已开启/)).toBeTruthy();
     });
 
-    await act(async () => {
-      fireEvent.press(screen.getByText('启动语音控制'));
-      await flushAsyncUpdates();
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/眼镜原生语音依赖 CustomView/)).toBeTruthy();
-      expect(screen.getByText('手机拍餐')).toBeTruthy();
-      expect(screen.getByText('本地俯卧撑')).toBeTruthy();
-    });
-
-    fireEvent.press(screen.getByText('手机拍餐'));
-
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
     expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
       title: 'Reva 语音控制',
       body: '正在等待明确语音指令',
