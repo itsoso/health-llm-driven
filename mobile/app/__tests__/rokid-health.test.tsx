@@ -388,15 +388,62 @@ describe('RokidHealthScreen', () => {
       expect(mockRecognizeFood).toHaveBeenCalledWith('jpeg-base64');
       expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
         intent: 'food_scan',
+        capturedAt: expect.any(String),
         recognitionResult: expect.objectContaining({
           total_calories: 620,
           total_protein: 32,
           total_carbs: 78,
           total_fat: 20,
         }),
+        meta: expect.objectContaining({
+          meal_type: expect.any(String),
+        }),
       }));
       expect(mockUpdateRokidCustomView).toHaveBeenCalledWith(expect.stringContaining('开始拍照记录这餐'));
       expect(screen.getByText('开始拍照记录这餐')).toBeTruthy();
+    });
+  });
+
+  it('shows a saved diet record summary after voice-triggered food photo recognition', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'food_photo',
+        client_action: 'capture_food_photo',
+        voice_reply: '开始拍照记录这餐',
+        parameters: { visual_intent: 'food_scan' },
+      },
+    });
+    mockSubmitRokidVisualInput.mockResolvedValueOnce({
+      event: {
+        id: 88,
+        status: 'processed',
+        target_type: 'diet_record',
+        target_id: 42,
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '拍一下这餐',
+        confidence: 0.93,
+        capturedAt: '2026-06-20T16:23:00+08:00',
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('已保存饮食记录：牛肉面 1碗 · 620kcal · 蛋白32g · 碳水78g · 脂肪20g')).toBeTruthy();
+      expect(screen.getByText('最近状态: 已保存饮食记录：牛肉面 1碗 · 620kcal · 蛋白32g · 碳水78g · 脂肪20g')).toBeTruthy();
     });
   });
 
@@ -483,8 +530,9 @@ describe('RokidHealthScreen', () => {
         quality: 80,
       });
       expect(mockRecognizeFood).toHaveBeenCalledWith('jpeg-base64');
-      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith({
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
         intent: 'food_scan',
+        capturedAt: expect.any(String),
         imageUri: 'private://rokid/meal-001.jpg',
         imageSha256: undefined,
         recognitionResult: {
@@ -512,16 +560,17 @@ describe('RokidHealthScreen', () => {
         },
         confidence: 0.76,
         privacyClass: 'health_l3',
-        meta: {
+        meta: expect.objectContaining({
           privacy_mode: 'workplace',
           source_surface: 'rokid_health_mode',
           raw_media_retained: false,
           manual_confirm_required: true,
+          meal_type: expect.any(String),
           image_byte_length: 2048,
           recognition_source: 'diet_recognize',
-        },
-      });
-      expect(screen.getByText('已提交食物视觉记录草稿')).toBeTruthy();
+        }),
+      }));
+      expect(screen.getByText('已提交食物视觉记录草稿：牛肉面 1碗 · 620kcal · 蛋白32g · 碳水78g · 脂肪20g')).toBeTruthy();
     });
   });
 

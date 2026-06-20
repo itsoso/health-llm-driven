@@ -39,6 +39,18 @@ export type SubmitRokidVisualInput = {
   meta?: Record<string, unknown>;
 };
 
+export type RokidAmbientEventResponse = {
+  id?: number;
+  status?: string | null;
+  target_type?: string | null;
+  target_id?: number | null;
+};
+
+export type SubmitRokidVisualInputResponse = {
+  event?: RokidAmbientEventResponse;
+  recommended_next_action?: Record<string, string> | null;
+};
+
 export type SubmitRokidAudioInput = {
   intent: RokidAudioIntent;
   transcript: string;
@@ -48,8 +60,8 @@ export type SubmitRokidAudioInput = {
   meta?: Record<string, unknown>;
 };
 
-export async function submitRokidVisualInput(input: SubmitRokidVisualInput) {
-  const response = await api.post('/ambient/visual-inputs', {
+export async function submitRokidVisualInput(input: SubmitRokidVisualInput): Promise<SubmitRokidVisualInputResponse> {
+  const response = await api.post<SubmitRokidVisualInputResponse>('/ambient/visual-inputs', {
     intent: input.intent,
     source: ROKID_SURFACE,
     device_type: ROKID_DEVICE_TYPE,

@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   buildRokidCapabilityGateway,
@@ -54,6 +54,7 @@ type OpenState = 'idle' | 'opening' | 'opened' | 'unavailable' | 'failed';
 type CaptureStatus = 'idle' | 'capturing' | 'submitted' | 'failed';
 type SessionStatus = 'idle' | 'running' | 'ready' | 'waiting' | 'failed';
 type VoiceControlStatus = 'idle' | 'starting' | 'listening' | 'stopping' | 'failed';
+type RokidMealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 type CaptureState = {
   status: CaptureStatus;
@@ -154,6 +155,67 @@ function recognitionConfidence(result?: FoodRecognitionResponse) {
     return undefined;
   }
   return confidences.reduce((sum, value) => sum + value, 0) / confidences.length;
+}
+
+function guessMealType(now = new Date()): RokidMealType {
+  const hour = now.getHours();
+  if (hour < 10) {
+    return 'breakfast';
+  }
+  if (hour < 14) {
+    return 'lunch';
+  }
+  if (hour < 20) {
+    return 'dinner';
+  }
+  return 'snack';
+}
+
+function formatFoodItemSummary(food: FoodRecognitionResponse['foods'][number]) {
+  const name = food.name?.trim();
+  if (!name) {
+    return undefined;
+  }
+  const quantity = typeof food.quantity === 'string' && food.quantity.trim().length > 0
+    ? ` ${food.quantity.trim()}`
+    : '';
+  return `${name}${quantity}`;
+}
+
+function roundNutrition(value: number) {
+  return Math.round(value);
+}
+
+function foodRecognitionSummary(result?: FoodRecognitionResponse) {
+  if (!result || result.success === false) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  const description = result.meal_description?.trim()
+    || result.foods
+      .map(formatFoodItemSummary)
+      .filter((value): value is string => Boolean(value))
+      .join(', ');
+  if (description) {
+    parts.push(description);
+  }
+  if (typeof result.total_calories === 'number') {
+    parts.push(`${roundNutrition(result.total_calories)}kcal`);
+  }
+  if (typeof result.total_protein === 'number') {
+    parts.push(`蛋白${roundNutrition(result.total_protein)}g`);
+  }
+  if (typeof result.total_carbs === 'number') {
+    parts.push(`碳水${roundNutrition(result.total_carbs)}g`);
+  }
+  if (typeof result.total_fat === 'number') {
+    parts.push(`脂肪${roundNutrition(result.total_fat)}g`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
+function isSavedDietRecordResponse(response: Awaited<ReturnType<typeof submitRokidVisualInput>>) {
+  return response.event?.target_type === 'diet_record' && typeof response.event.target_id === 'number';
 }
 
 function captureActionForVisualIntent(visualIntent?: string) {
@@ -444,6 +506,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
 
 export default function RokidHealthScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { c, s } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
@@ -711,21 +774,25 @@ export default function RokidHealthScreen() {
       }
       const imageBase64 = readString(captureResult, ['base64', 'imageBase64', 'image_base64']);
       const imageByteLength = readNumber(captureResult, ['byteLength', 'byte_length', 'size']);
+      const capturedAt = new Date().toISOString();
       const meta: Record<string, unknown> = {
         privacy_mode: privacyMode,
         source_surface: 'rokid_health_mode',
         raw_media_retained: false,
         manual_confirm_required: true,
+        meal_type: guessMealType(new Date(capturedAt)),
       };
       if (typeof imageByteLength === 'number') {
         meta.image_byte_length = imageByteLength;
       }
 
       let recognitionResult: Record<string, unknown> | undefined;
+      let foodRecognition: FoodRecognitionResponse | undefined;
       let confidence: number | undefined;
       if (action.intent === 'food_scan' && imageBase64) {
         try {
           const recognition = await recognizeFood(imageBase64);
+          foodRecognition = recognition;
           recognitionResult = recognition as unknown as Record<string, unknown>;
           confidence = recognitionConfidence(recognition);
           meta.recognition_source = 'diet_recognize';
@@ -734,20 +801,30 @@ export default function RokidHealthScreen() {
         }
       }
 
-      await submitRokidVisualInput({
+      const submitResult = await submitRokidVisualInput({
         intent: action.intent,
         imageUri: readString(captureResult, ['imageUri', 'image_uri', 'uri', 'localUri', 'path']),
         imageSha256: readValidSha256(captureResult),
         recognitionResult,
         confidence,
+        capturedAt,
         privacyClass: 'health_l3',
         meta,
       });
+      const nutritionSummary = action.intent === 'food_scan'
+        ? foodRecognitionSummary(foodRecognition)
+        : undefined;
+      const savedDietRecord = action.intent === 'food_scan' && isSavedDietRecordResponse(submitResult);
+      if (savedDietRecord) {
+        await queryClient.invalidateQueries({ queryKey: ['diet'] });
+      }
 
       setCaptureState({
         status: 'submitted',
         actionTitle: action.title,
-        message: `已提交${action.title}草稿`,
+        message: savedDietRecord
+          ? `已保存饮食记录${nutritionSummary ? `：${nutritionSummary}` : ''}`
+          : `已提交${action.title}草稿${nutritionSummary ? `：${nutritionSummary}` : ''}`,
       });
     } catch (error) {
       setCaptureState({
