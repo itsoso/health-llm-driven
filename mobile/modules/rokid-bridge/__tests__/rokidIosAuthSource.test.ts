@@ -104,6 +104,32 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).not.toContain('dataEvent.data.base64EncodedString');
   });
 
+  it('transcribes Rokid PCM with iOS Speech and emits onRokidTranscript for voice routing', () => {
+    expect(source).toContain('import Speech');
+    expect(source).toContain('private static let transcriptEventName = "onRokidTranscript"');
+    expect(source).toContain('Events(RokidBridgeModule.transcriptEventName)');
+    expect(source).toContain('sendEvent(RokidBridgeModule.transcriptEventName, payload)');
+    expect(source).toContain('SFSpeechRecognizer.requestAuthorization');
+    expect(source).toContain('SFSpeechAudioBufferRecognitionRequest');
+    expect(source).toContain('recognizer.recognitionTask(with: request)');
+    expect(source).toContain('appendRokidAudioToSpeechRecognizer(dataEvent.data');
+    expect(source).toContain('request.append(buffer)');
+    expect(source).toContain('speech_transcript_emitted');
+    expect(source).toContain('"privacy_note": "no_raw_audio_forwarded"');
+    expect(source).toContain('payload["speechRecognitionState"] = speechRecognitionState');
+    expect(source).toContain('payload["lastSpeechTranscript"] = lastSpeechTranscript');
+    expect(source).toContain('payload["lastSpeechError"] = lastSpeechError');
+    expect(source).not.toContain('dataEvent.data.base64EncodedString');
+  });
+
+  it('does not block Rokid recording when iOS Speech is unavailable, preserving audio diagnostics', () => {
+    expect(source).toContain('speech_recognition_not_ready_recording_continues');
+    expect(source).toContain('CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))');
+    expect(source).toContain('"speechRecognitionReady": speechReady');
+    expect(source).not.toContain('"audio_record_start_blocked"');
+    expect(source).not.toContain('lastAudioEventType = "record_start_blocked"');
+  });
+
   it('prints native diagnostic timestamps in Beijing UTC+8 time', () => {
     expect(source).toContain('beijingTimeZone');
     expect(source).toContain('TimeZone(secondsFromGMT: 8 * 60 * 60)');

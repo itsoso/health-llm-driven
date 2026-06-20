@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { Stack, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -60,6 +62,24 @@ type CaptureState = {
   status: CaptureStatus;
   actionTitle?: string;
   message?: string;
+};
+
+type VoiceDebugState = {
+  lastTranscript?: string;
+  lastTranscriptAt?: string;
+  lastCommandAction?: string;
+  lastCommandAt?: string;
+  lastCommandReply?: string;
+  lastCommandError?: string;
+};
+
+type VoiceSelfCheckStatus = 'pass' | 'warn' | 'fail' | 'info';
+
+type VoiceSelfCheckItem = {
+  id: string;
+  title: string;
+  status: VoiceSelfCheckStatus;
+  detail: string;
 };
 
 type RokidGlanceCard = {
@@ -341,6 +361,192 @@ function formatQueuedCustomViewMessage(status?: RokidIntegrationStatus) {
   return '眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,Reva 会在连上时自动打开眼镜视图。';
 }
 
+function isCustomViewCallbackMissing(status?: RokidIntegrationStatus) {
+  return status?.lastCustomViewOpenError?.toLowerCase().includes('rokid_custom_view_open_callback_missing') === true;
+}
+
+function voiceSelfCheckTone(status: VoiceSelfCheckStatus, s: ReturnType<typeof useTheme>['s'], c: ColorPalette) {
+  switch (status) {
+    case 'pass':
+      return { fg: s.success.solid, bg: s.success.bg, icon: 'checkmark-circle' as keyof typeof Ionicons.glyphMap };
+    case 'fail':
+      return { fg: s.warning.solid, bg: s.warning.bg, icon: 'alert-circle' as keyof typeof Ionicons.glyphMap };
+    case 'warn':
+      return { fg: c.orange, bg: c.tintOrange, icon: 'alert-circle' as keyof typeof Ionicons.glyphMap };
+    default:
+      return { fg: c.labelTertiary, bg: c.fill, icon: 'information-circle' as keyof typeof Ionicons.glyphMap };
+  }
+}
+
+function buildVoiceSelfCheck(
+  status: RokidIntegrationStatus | undefined,
+  voiceState: { status: VoiceControlStatus; message?: string },
+  voiceDebug: VoiceDebugState,
+) {
+  const chunks = status?.audioStreamChunkCount ?? 0;
+  const bytes = status?.audioStreamByteCount ?? 0;
+  const recordingRequested = voiceState.status === 'listening'
+    || status?.activeRecordType === 'reva_voice_command'
+    || status?.lastAudioRecordType === 'reva_voice_command'
+    || status?.lastAudioEventType === 'record_start_requested'
+    || status?.lastAudioEventType === 'started'
+    || status?.lastAudioEventType === 'stream';
+  const customViewEvidence = status?.customViewRunning === true
+    || status?.customViewSessionEvidence === true
+    || status?.customViewDisplayInferred === true
+    || status?.lastCustomViewOpenCommandAccepted === true;
+  const transcript = status?.lastSpeechTranscript || voiceDebug.lastTranscript;
+  const commandAction = voiceDebug.lastCommandAction;
+  const speechDenied = status?.speechAuthorizationStatus === 'denied'
+    || status?.speechAuthorizationStatus === 'restricted';
+
+  let summary = '等待启动 Rokid 语音控制';
+  if (voiceState.status === 'failed') {
+    summary = 'Rokid 语音控制失败，查看下方自检项';
+  } else if (commandAction) {
+    summary = `语音指令已路由: ${commandAction}`;
+  } else if (transcript) {
+    summary = `已识别: ${transcript}`;
+  } else if (recordingRequested && chunks === 0 && bytes === 0) {
+    summary = '录音已请求，但 Rokid 尚未返回音频流';
+  } else if (chunks > 0 && bytes > 0 && !transcript) {
+    summary = speechDenied ? '音频已到达，但 iOS Speech 未授权' : '音频已到达，等待 iOS Speech 转写';
+  } else if (voiceState.status === 'listening') {
+    summary = voiceState.message ?? 'Rokid 语音控制已开启';
+  }
+
+  const items: VoiceSelfCheckItem[] = [
+    {
+      id: 'display',
+      title: '眼镜视图',
+      status: status?.customViewRunning
+        ? 'pass'
+        : customViewEvidence
+          ? 'warn'
+          : isCustomViewCallbackMissing(status)
+            ? 'warn'
+            : 'info',
+      detail: status?.customViewRunning
+        ? 'CustomView 已运行'
+        : customViewEvidence
+          ? '眼镜显示有证据，但 SDK 未回报 running'
+          : isCustomViewCallbackMissing(status)
+            ? 'CustomView 回调缺失，眼镜显示可能已出现但 SDK 未确认'
+            : '等待打开 Reva 眼镜视图',
+    },
+    {
+      id: 'record',
+      title: '录音请求',
+      status: recordingRequested ? 'pass' : 'info',
+      detail: recordingRequested
+        ? `event=${status?.lastAudioEventType ?? 'unknown'} · active=${status?.activeRecordType ?? 'none'}`
+        : '尚未请求 Rokid startRecord',
+    },
+    {
+      id: 'audio',
+      title: '音频流',
+      status: chunks > 0 && bytes > 0 ? 'pass' : recordingRequested ? 'fail' : 'info',
+      detail: `${chunks} chunks · ${bytes} bytes`,
+    },
+    {
+      id: 'speech',
+      title: 'iOS Speech',
+      status: transcript
+        ? 'pass'
+        : speechDenied
+          ? 'fail'
+          : chunks > 0 && bytes > 0
+            ? 'warn'
+            : 'info',
+      detail: transcript
+        ? `转写: ${transcript}`
+        : speechDenied
+          ? `Speech 权限不可用: ${status?.speechAuthorizationStatus}`
+          : status?.lastSpeechError
+            ? `Speech 错误: ${status.lastSpeechError}`
+            : `state=${status?.speechRecognitionState ?? 'idle'} · auth=${status?.speechAuthorizationStatus ?? 'unknown'}`,
+    },
+    {
+      id: 'route',
+      title: '命令路由',
+      status: commandAction ? 'pass' : transcript ? 'warn' : 'info',
+      detail: commandAction
+        ? `${commandAction}${voiceDebug.lastCommandReply ? ` · ${voiceDebug.lastCommandReply}` : ''}`
+        : transcript
+          ? '已有转写，等待命令服务返回'
+          : '等待明确语音指令，例如“记录这顿饭”',
+    },
+  ];
+
+  return { summary, items };
+}
+
+function debugValue(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    return 'n/a';
+  }
+  return String(value);
+}
+
+function buildRokidVoiceDebugText(
+  status: RokidIntegrationStatus | undefined,
+  voiceState: { status: VoiceControlStatus; message?: string },
+  voiceDebug: VoiceDebugState,
+  selfCheck: ReturnType<typeof buildVoiceSelfCheck>,
+  authDiagnosticLines: string[],
+) {
+  const lines = [
+    'Rokid Voice Self Check',
+    `generated_at=${formatRokidLogTimestamp(new Date().toISOString())}`,
+    `voice.state=${voiceState.status}`,
+    `voice.message=${debugValue(voiceState.message)}`,
+    `summary=${selfCheck.summary}`,
+    `build=${debugValue(status?.nativeBuildNumber)}`,
+    `version=${debugValue(status?.nativeAppVersion)}`,
+    `bundle=${debugValue(status?.bundleIdentifier)}`,
+    `companion=${debugValue(status?.companionServerScheme)}://${debugValue(status?.companionServerHost)}`,
+    `device=${debugValue(status?.iosBleDeviceName ?? status?.currentDeviceName)}`,
+    `auth=${debugValue(status?.authorizationState)}`,
+    `ble.connected=${debugValue(status?.iosBleConnected)}`,
+    `customView.running=${debugValue(status?.customViewRunning)}`,
+    `customView.evidence=${debugValue(status?.customViewSessionEvidence)}`,
+    `customView.displayInferred=${debugValue(status?.customViewDisplayInferred)}`,
+    `customView.error=${debugValue(status?.lastCustomViewOpenError)}`,
+    `audio.event=${debugValue(status?.lastAudioEventType)}`,
+    `audio.active=${debugValue(status?.activeRecordType)}`,
+    `audio.type=${debugValue(status?.lastAudioRecordType)}`,
+    `audio.chunks=${debugValue(status?.audioStreamChunkCount)}`,
+    `audio.bytes=${debugValue(status?.audioStreamByteCount)}`,
+    `audio.lastChunk=${debugValue(status?.lastAudioChunkBytes)}`,
+    `audio.codec=${debugValue(status?.lastAudioCodec)}`,
+    `audio.channels=${debugValue(status?.lastAudioChannels)}`,
+    `audio.at=${debugValue(status?.lastAudioEventAt ? formatRokidLogTimestamp(status.lastAudioEventAt) : undefined)}`,
+    `speech.state=${debugValue(status?.speechRecognitionState)}`,
+    `speech.auth=${debugValue(status?.speechAuthorizationStatus)}`,
+    `speech.available=${debugValue(status?.speechRecognizerAvailable)}`,
+    `speech.locale=${debugValue(status?.speechRecognitionLocale)}`,
+    `speech.sampleRate=${debugValue(status?.speechAudioSampleRate)}`,
+    `speech.channels=${debugValue(status?.speechAudioChannels)}`,
+    `speech.appends=${debugValue(status?.speechAudioAppendCount)}`,
+    `speech.frames=${debugValue(status?.speechAudioFrameCount)}`,
+    `speech.lastTranscript=${debugValue(status?.lastSpeechTranscript ?? voiceDebug.lastTranscript)}`,
+    `speech.lastTranscriptAt=${debugValue(status?.lastSpeechTranscriptAt ?? voiceDebug.lastTranscriptAt)}`,
+    `speech.lastEventSource=${debugValue(status?.lastSpeechEventSource)}`,
+    `speech.lastError=${debugValue(status?.lastSpeechError)}`,
+    `route.lastAction=${debugValue(voiceDebug.lastCommandAction)}`,
+    `route.lastAt=${debugValue(voiceDebug.lastCommandAt)}`,
+    `route.lastReply=${debugValue(voiceDebug.lastCommandReply)}`,
+    `route.lastError=${debugValue(voiceDebug.lastCommandError)}`,
+    '',
+    '[self_check]',
+    ...selfCheck.items.map((item) => `${item.status} ${item.title}: ${item.detail}`),
+    '',
+    '[native_diagnostics]',
+    ...authDiagnosticLines,
+  ];
+  return lines.join('\n');
+}
+
 function capabilityRouteTitle(path: RokidRecommendedPath) {
   switch (path) {
     case 'glasses_android_app':
@@ -487,6 +693,43 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     }
     lines.push(`Rokid audio: ${parts.join(' · ')}`);
   }
+  if (
+    status.speechRecognitionState
+    || status.speechAuthorizationStatus
+    || typeof status.speechAudioAppendCount === 'number'
+    || status.lastSpeechTranscript
+    || status.lastSpeechError
+  ) {
+    const parts: string[] = [];
+    if (status.speechRecognitionState) {
+      parts.push(`state=${status.speechRecognitionState}`);
+    }
+    if (status.speechAuthorizationStatus) {
+      parts.push(`auth=${status.speechAuthorizationStatus}`);
+    }
+    if (typeof status.speechRecognizerAvailable === 'boolean') {
+      parts.push(`available=${status.speechRecognizerAvailable}`);
+    }
+    if (status.speechRecognitionLocale) {
+      parts.push(`locale=${status.speechRecognitionLocale}`);
+    }
+    if (typeof status.speechAudioAppendCount === 'number') {
+      parts.push(`appends=${status.speechAudioAppendCount}`);
+    }
+    if (typeof status.speechAudioFrameCount === 'number') {
+      parts.push(`frames=${status.speechAudioFrameCount}`);
+    }
+    if (status.lastSpeechTranscript) {
+      parts.push(`transcript=${status.lastSpeechTranscript}`);
+    }
+    if (status.lastSpeechError) {
+      parts.push(`error=${status.lastSpeechError}`);
+    }
+    if (status.lastSpeechEventAt) {
+      parts.push(formatRokidLogTimestamp(status.lastSpeechEventAt));
+    }
+    lines.push(`iOS Speech: ${parts.join(' · ')}`);
+  }
   if (typeof status.lastCustomViewPayloadBytes === 'number' || status.lastCustomViewPayloadHash) {
     const parts: string[] = [];
     if (typeof status.lastCustomViewPayloadBytes === 'number') {
@@ -607,6 +850,7 @@ export default function RokidHealthScreen() {
     status: VoiceControlStatus;
     message?: string;
   }>({ status: 'idle' });
+  const [voiceDebug, setVoiceDebug] = useState<VoiceDebugState>({});
   const voiceTranscriptSubscriptionRef = useRef<RokidEventSubscription | null>(null);
   const voiceListeningRef = useRef(false);
 
@@ -631,6 +875,14 @@ export default function RokidHealthScreen() {
   const validationSteps = useMemo(() => getRokidDeviceValidationSteps(status), [status]);
   const capabilityGateway = useMemo(() => buildRokidCapabilityGateway(status), [status]);
   const authDiagnosticLines = useMemo(() => buildAuthDiagnosticLines(status), [status]);
+  const voiceSelfCheck = useMemo(
+    () => buildVoiceSelfCheck(status, voiceState, voiceDebug),
+    [status, voiceState, voiceDebug],
+  );
+  const voiceDebugText = useMemo(
+    () => buildRokidVoiceDebugText(status, voiceState, voiceDebug, voiceSelfCheck, authDiagnosticLines),
+    [status, voiceState, voiceDebug, voiceSelfCheck, authDiagnosticLines],
+  );
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
 
   const removeVoiceTranscriptListener = () => {
@@ -669,11 +921,16 @@ export default function RokidHealthScreen() {
           : prev,
       );
     }
-  }, [status?.customViewRunning, status?.iosBleConnected, sessionState.status]);
+  }, [status, sessionState.status]);
 
   const refresh = () => {
     statusQuery.refetch();
     glanceQuery.refetch();
+  };
+
+  const copyRokidVoiceDebugInfo = async () => {
+    await Clipboard.setStringAsync(voiceDebugText);
+    Alert.alert('已复制', 'Rokid 语音自检信息已复制。');
   };
 
   const openMobileFoodCameraFallback = (action: (typeof CAPTURE_ACTIONS)[number]) => {
@@ -797,6 +1054,7 @@ export default function RokidHealthScreen() {
 
   const startVoiceControl = async () => {
     setVoiceState({ status: 'starting', message: 'Rokid 语音控制启动中...' });
+    setVoiceDebug((prev) => ({ ...prev, lastCommandError: undefined }));
     let recordingStarted = false;
     try {
       const viewResult = await openRokidRevaCustomView({
@@ -962,6 +1220,13 @@ export default function RokidHealthScreen() {
       return;
     }
 
+    const capturedAt = transcriptCapturedAt(event);
+    setVoiceDebug((prev) => ({
+      ...prev,
+      lastTranscript: transcript,
+      lastTranscriptAt: capturedAt ?? new Date().toISOString(),
+      lastCommandError: undefined,
+    }));
     setVoiceState({ status: 'listening', message: `识别: ${transcript}` });
     void updateVoiceCustomView(`识别: ${transcript}`);
     try {
@@ -969,7 +1234,7 @@ export default function RokidHealthScreen() {
         transcript,
         confidence: typeof event.confidence === 'number' ? event.confidence : undefined,
         context: 'rokid_health',
-        capturedAt: transcriptCapturedAt(event),
+        capturedAt,
         meta: {
           source_surface: 'rokid_health_mode',
           source_event: 'rokid_transcript',
@@ -978,6 +1243,13 @@ export default function RokidHealthScreen() {
       });
       const command = response.command;
       const reply = command?.voice_reply || command?.display_text;
+      setVoiceDebug((prev) => ({
+        ...prev,
+        lastCommandAction: command?.client_action ?? command?.intent ?? 'unknown',
+        lastCommandAt: new Date().toISOString(),
+        lastCommandReply: reply,
+        lastCommandError: undefined,
+      }));
       if (reply) {
         setVoiceState({ status: 'listening', message: reply });
         await updateVoiceCustomView(reply);
@@ -1015,9 +1287,15 @@ export default function RokidHealthScreen() {
         },
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'voice_command_failed';
+      setVoiceDebug((prev) => ({
+        ...prev,
+        lastCommandError: message,
+        lastCommandAt: new Date().toISOString(),
+      }));
       setVoiceState({
         status: 'failed',
-        message: `Rokid 语音指令失败: ${error instanceof Error ? error.message : 'voice_command_failed'}`,
+        message: `Rokid 语音指令失败: ${message}`,
       });
     }
   }
@@ -1282,6 +1560,53 @@ export default function RokidHealthScreen() {
               {voiceState.message}
             </Text>
           ) : null}
+          <View style={styles.voiceSelfCheckBox}>
+            <View style={styles.voiceSelfCheckHeader}>
+              <Text style={txt.voiceSelfCheckTitle}>语音自检</Text>
+              <Text
+                style={[
+                  txt.voiceSelfCheckSummary,
+                  voiceState.status === 'failed' ? { color: s.warning.solid } : null,
+                ]}
+              >
+                {voiceSelfCheck.summary}
+              </Text>
+            </View>
+            {voiceSelfCheck.items.map((item) => {
+              const tone = voiceSelfCheckTone(item.status, s, c);
+              return (
+                <View key={item.id} style={styles.voiceSelfCheckRow}>
+                  <View style={[styles.voiceSelfCheckIcon, { backgroundColor: tone.bg }]}>
+                    <Ionicons name={tone.icon} size={15} color={tone.fg} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={txt.voiceSelfCheckTitle}>{item.title}</Text>
+                    <Text style={txt.voiceSelfCheckDetail}>{item.detail}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            <View style={styles.voiceSelfCheckActions}>
+              <Pressable
+                onPress={refresh}
+                style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="刷新语音自检"
+              >
+                <Ionicons name="refresh-outline" size={15} color={c.brand} />
+                <Text style={txt.fallbackButton}>刷新自检</Text>
+              </Pressable>
+              <Pressable
+                onPress={copyRokidVoiceDebugInfo}
+                style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="复制 Rokid 语音自检信息"
+              >
+                <Ionicons name="copy-outline" size={15} color={c.brand} />
+                <Text style={txt.fallbackButton}>复制调试信息</Text>
+              </Pressable>
+            </View>
+          </View>
           {voiceState.status === 'failed' ? (
             <View style={styles.fallbackActions}>
               <Pressable
@@ -1680,6 +2005,34 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
+  voiceSelfCheckBox: {
+    marginTop: spacing.md,
+    borderRadius: radii.sm,
+    backgroundColor: c.fill,
+    padding: spacing.sm,
+    gap: 9,
+  },
+  voiceSelfCheckHeader: {
+    gap: 4,
+  },
+  voiceSelfCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  voiceSelfCheckIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  voiceSelfCheckActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: 2,
+  },
   fallbackButton: {
     flex: 1,
     minHeight: 40,
@@ -1714,6 +2067,9 @@ const createTxt = (c: ColorPalette) => ({
   validationDetail: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   sectionTitle: { fontSize: 15, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sessionState: { fontSize: 12, fontWeight: '800', color: c.labelSecondary } as TextStyle,
+  voiceSelfCheckTitle: { fontSize: 12, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  voiceSelfCheckSummary: { fontSize: 12, lineHeight: 17, fontWeight: '700', color: c.labelSecondary } as TextStyle,
+  voiceSelfCheckDetail: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: c.labelSecondary, marginTop: 1 } as TextStyle,
   sectionHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4, marginBottom: spacing.sm } as TextStyle,
   statusPill: { fontSize: 12, fontWeight: '800', maxWidth: 140 } as TextStyle,
   segmentText: { fontSize: 13, fontWeight: '800', color: c.labelSecondary } as TextStyle,

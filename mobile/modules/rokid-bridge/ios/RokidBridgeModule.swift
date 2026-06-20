@@ -1,6 +1,8 @@
 import ExpoModulesCore
+import AVFoundation
 import Combine
 import Foundation
+import Speech
 import UIKit
 
 #if canImport(RGCxrClient)
@@ -24,6 +26,7 @@ public class RokidBridgeModule: Module {
     var resolved = false
   }
 
+  private static let transcriptEventName = "onRokidTranscript"
   private static let companionAppName = "Rokid AI / Hi Rokid"
   private static let companionServerScheme = "rokidai"
   private static let companionServerHost = "connect"
@@ -79,6 +82,24 @@ public class RokidBridgeModule: Module {
   private static var lastAudioChannels: UInt32?
   private static var lastAudioChunkBytes: Int?
   private static var lastAudioTimestamp: UInt64?
+  private static var speechRecognitionState = "idle"
+  private static var speechAuthorizationStatus = "not_determined"
+  private static var speechRecognizerAvailable: Bool?
+  private static var speechRecognitionLocale = "zh-CN"
+  private static var speechAudioSampleRate: Double = 16000
+  private static var speechAudioChannels: UInt32 = 1
+  private static var speechAudioAppendCount = 0
+  private static var speechAudioFrameCount: AVAudioFramePosition = 0
+  private static var lastSpeechTranscript: String?
+  private static var lastSpeechTranscriptAt: String?
+  private static var lastSpeechEventAt: String?
+  private static var lastSpeechEventSource: String?
+  private static var lastSpeechResultIsFinal: Bool?
+  private static var lastSpeechError: String?
+  private static var lastSpeechRecognitionType: String?
+  private static var lastEmittedSpeechTranscript: String?
+  private static let speechStabilityDelaySeconds: TimeInterval = 0.9
+  private static var emitTranscriptEvent: (([String: Any]) -> Void)?
   private static let customViewOpenSettleDelaySeconds: TimeInterval = 2.0
   private static let authDiagnosticTimelineLimit = 40
   private static var authDiagnosticTimeline: [String] = []
@@ -92,6 +113,11 @@ public class RokidBridgeModule: Module {
   private static var lastAuthorizationStateBeforeAuthenticate: String?
   #if canImport(RGCxrClient)
   private static var cancellables = Set<AnyCancellable>()
+  private static var speechRecognizer: SFSpeechRecognizer?
+  private static var speechRecognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+  private static var speechRecognitionTask: SFSpeechRecognitionTask?
+  private static var speechAudioFormat: AVAudioFormat?
+  private static var speechStabilityWorkItem: DispatchWorkItem?
   #endif
 
   private static var bundleCallbackScheme: String {
@@ -130,7 +156,19 @@ public class RokidBridgeModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("RokidBridge")
-    Events("onRokidTranscript")
+    Events(RokidBridgeModule.transcriptEventName)
+
+    OnCreate {
+      RokidBridgeModule.emitTranscriptEvent = { [weak self] payload in
+        DispatchQueue.main.async {
+          self?.sendEvent(RokidBridgeModule.transcriptEventName, payload)
+        }
+      }
+    }
+
+    OnDestroy {
+      RokidBridgeModule.emitTranscriptEvent = nil
+    }
 
     AsyncFunction("getIntegrationStatus") { () -> [String: Any] in
       RokidBridgeModule.integrationStatusPayload()
@@ -202,8 +240,8 @@ public class RokidBridgeModule: Module {
       RokidBridgeModule.stopApp(packageName: packageName, promise: promise)
     }
 
-    AsyncFunction("startRecord") { (type: String, codec: String, mode: String) -> [String: Any] in
-      RokidBridgeModule.startRecord(type: type, codec: codec, mode: mode)
+    AsyncFunction("startRecord") { (type: String, codec: String, mode: String, promise: Promise) in
+      RokidBridgeModule.startRecord(type: type, codec: codec, mode: mode, promise: promise)
     }
 
     AsyncFunction("stopRecord") { (type: String) -> [String: Any] in
@@ -308,6 +346,37 @@ public class RokidBridgeModule: Module {
     }
     if let lastAudioTimestamp {
       payload["lastAudioTimestamp"] = String(lastAudioTimestamp)
+    }
+    payload["speechRecognitionState"] = speechRecognitionState
+    payload["speechAuthorizationStatus"] = speechAuthorizationStatus
+    payload["speechRecognitionLocale"] = speechRecognitionLocale
+    payload["speechAudioSampleRate"] = speechAudioSampleRate
+    payload["speechAudioChannels"] = speechAudioChannels
+    payload["speechAudioAppendCount"] = speechAudioAppendCount
+    payload["speechAudioFrameCount"] = speechAudioFrameCount
+    if let speechRecognizerAvailable {
+      payload["speechRecognizerAvailable"] = speechRecognizerAvailable
+    }
+    if let lastSpeechRecognitionType {
+      payload["lastSpeechRecognitionType"] = lastSpeechRecognitionType
+    }
+    if let lastSpeechTranscript {
+      payload["lastSpeechTranscript"] = lastSpeechTranscript
+    }
+    if let lastSpeechTranscriptAt {
+      payload["lastSpeechTranscriptAt"] = lastSpeechTranscriptAt
+    }
+    if let lastSpeechEventAt {
+      payload["lastSpeechEventAt"] = lastSpeechEventAt
+    }
+    if let lastSpeechEventSource {
+      payload["lastSpeechEventSource"] = lastSpeechEventSource
+    }
+    if let lastSpeechResultIsFinal {
+      payload["lastSpeechResultIsFinal"] = lastSpeechResultIsFinal
+    }
+    if let lastSpeechError {
+      payload["lastSpeechError"] = lastSpeechError
     }
     payload["companionAppName"] = companionAppName
     payload["companionServerScheme"] = companionServerScheme
@@ -875,36 +944,56 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
-  private static func startRecord(type: String, codec: String, mode: String) -> [String: Any] {
+  private static func startRecord(type: String, codec: String, mode: String, promise: Promise) {
     #if canImport(RGCxrClient)
     ensureCustomViewInitialized()
     guard CxrClient.shared.auth.isAuthenticated() else {
-      return ["ok": false, "reason": "rokid_not_authorized"]
+      promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
+      return
     }
     guard RokidBridgeModule.hasCustomViewSessionEvidence() else {
-      return ["ok": false, "reason": "rokid_custom_view_not_ready"]
+      promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
+      return
     }
 
-    if !RokidBridgeModule.customViewRunning {
-      recordAuthDiagnostic(
-        "record_start_with_inferred_custom_view",
-        detail: "type=\(type); evidence=\(lastCustomViewSessionEvidenceReason ?? "unknown"); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
-      )
+    prepareSpeechRecognitionForStart(type: type) { speechReady, reason in
+      DispatchQueue.main.async {
+        if !speechReady {
+          RokidBridgeModule.recordAuthDiagnostic(
+            "speech_recognition_not_ready_recording_continues",
+            detail: "type=\(type); reason=\(reason ?? "speech_recognition_unavailable")"
+          )
+        }
+
+        if !RokidBridgeModule.customViewRunning {
+          recordAuthDiagnostic(
+            "record_start_with_inferred_custom_view",
+            detail: "type=\(type); evidence=\(lastCustomViewSessionEvidenceReason ?? "unknown"); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+          )
+        }
+        prepareAudioDiagnosticsForStart(type: type, codec: codec, mode: mode)
+        CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
+        promise.resolve([
+          "ok": true,
+          "speechRecognitionReady": speechReady,
+          "speechRecognitionReason": reason ?? "",
+          "speechRecognitionState": RokidBridgeModule.speechRecognitionState,
+          "speechAuthorizationStatus": RokidBridgeModule.speechAuthorizationStatus,
+        ])
+      }
     }
-    prepareAudioDiagnosticsForStart(type: type, codec: codec, mode: mode)
-    CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
-    return ["ok": true]
     #else
     _ = type
     _ = codec
     _ = mode
-    return ["ok": false, "reason": "ios_sdk_not_linked"]
+    promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
     #endif
   }
 
   private static func stopRecord(type: String) -> [String: Any] {
     #if canImport(RGCxrClient)
     CxrClient.shared.stopRecord(type)
+    finishSpeechRecognitionSession(reason: "record_stop_requested")
     lastAudioEventAt = isoTimestamp()
     lastAudioEventType = "record_stop_requested"
     activeRecordType = nil
@@ -950,9 +1039,10 @@ public class RokidBridgeModule: Module {
       lastAudioChannels = startEvent.channels
       lastAudioChunkBytes = nil
       lastAudioTimestamp = nil
+      configureSpeechAudioFormat(channels: startEvent.channels)
       recordAuthDiagnostic(
         "audio_event_started",
-        detail: "type=\(startEvent.type); codec=\(startEvent.codec); channels=\(startEvent.channels)"
+        detail: "type=\(startEvent.type); codec=\(startEvent.codec); channels=\(startEvent.channels); speechSampleRate=\(Int(speechAudioSampleRate))"
       )
     case .stream(let dataEvent):
       let byteCount = dataEvent.data.count
@@ -963,12 +1053,317 @@ public class RokidBridgeModule: Module {
       lastAudioChunkBytes = byteCount
       lastAudioTimestamp = dataEvent.timestamp
       // Privacy: never log or forward raw PCM bytes here; diagnostics only expose counters and sizes.
+      appendRokidAudioToSpeechRecognizer(dataEvent.data, timestamp: dataEvent.timestamp)
       if audioStreamChunkCount <= 3 || audioStreamChunkCount % 20 == 0 {
         recordAuthDiagnostic(
           "audio_event_stream",
-          detail: "bytes=\(byteCount); chunks=\(audioStreamChunkCount); totalBytes=\(audioStreamByteCount); timestamp=\(dataEvent.timestamp); type=\(lastAudioRecordType ?? activeRecordType ?? "unknown")"
+          detail: "bytes=\(byteCount); chunks=\(audioStreamChunkCount); totalBytes=\(audioStreamByteCount); timestamp=\(dataEvent.timestamp); type=\(lastAudioRecordType ?? activeRecordType ?? "unknown"); speechState=\(speechRecognitionState); speechAppends=\(speechAudioAppendCount)"
         )
       }
+    @unknown default:
+      recordAuthDiagnostic("audio_event_unknown", detail: "event=\(String(describing: event))")
+    }
+  }
+
+  private static func prepareSpeechRecognitionForStart(
+    type: String,
+    completion: @escaping (Bool, String?) -> Void
+  ) {
+    let currentAuthorization = SFSpeechRecognizer.authorizationStatus()
+    speechAuthorizationStatus = speechAuthorizationStatusDescription(currentAuthorization)
+    switch currentAuthorization {
+    case .authorized:
+      completion(startSpeechRecognitionSession(type: type), lastSpeechError)
+    case .notDetermined:
+      speechRecognitionState = "requesting_authorization"
+      recordAuthDiagnostic("speech_authorization_request", detail: "locale=\(speechRecognitionLocale)")
+      SFSpeechRecognizer.requestAuthorization { status in
+        DispatchQueue.main.async {
+          speechAuthorizationStatus = speechAuthorizationStatusDescription(status)
+          recordAuthDiagnostic("speech_authorization_result", detail: "status=\(speechAuthorizationStatus)")
+          if status == .authorized {
+            completion(startSpeechRecognitionSession(type: type), lastSpeechError)
+          } else {
+            speechRecognitionState = "authorization_denied"
+            lastSpeechError = "ios_speech_authorization_\(speechAuthorizationStatus)"
+            completion(false, lastSpeechError)
+          }
+        }
+      }
+    case .denied:
+      speechRecognitionState = "authorization_denied"
+      lastSpeechError = "ios_speech_authorization_denied"
+      completion(false, lastSpeechError)
+    case .restricted:
+      speechRecognitionState = "authorization_restricted"
+      lastSpeechError = "ios_speech_authorization_restricted"
+      completion(false, lastSpeechError)
+    @unknown default:
+      speechRecognitionState = "authorization_unknown"
+      lastSpeechError = "ios_speech_authorization_unknown"
+      completion(false, lastSpeechError)
+    }
+  }
+
+  private static func startSpeechRecognitionSession(type: String) -> Bool {
+    cancelSpeechRecognitionSession(reason: "restart")
+    let recognizer = SFSpeechRecognizer(locale: Locale(identifier: speechRecognitionLocale))
+    speechRecognizer = recognizer
+    speechRecognizerAvailable = recognizer?.isAvailable
+    guard let recognizer, recognizer.isAvailable else {
+      speechRecognitionState = "recognizer_unavailable"
+      lastSpeechError = "ios_speech_recognizer_unavailable"
+      recordAuthDiagnostic("speech_recognition_unavailable", detail: "locale=\(speechRecognitionLocale)")
+      return false
+    }
+
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = true
+    request.taskHint = .dictation
+    speechRecognitionRequest = request
+    speechRecognitionState = "recognizing"
+    lastSpeechRecognitionType = type
+    lastSpeechError = nil
+    lastSpeechTranscript = nil
+    lastSpeechTranscriptAt = nil
+    lastSpeechEventAt = nil
+    lastSpeechEventSource = nil
+    lastSpeechResultIsFinal = nil
+    lastEmittedSpeechTranscript = nil
+    speechAudioAppendCount = 0
+    speechAudioFrameCount = 0
+    speechAudioChannels = 1
+    speechAudioSampleRate = 16000
+    speechAudioFormat = makeSpeechAudioFormat(channels: speechAudioChannels)
+
+    speechRecognitionTask = recognizer.recognitionTask(with: request) { result, error in
+      DispatchQueue.main.async {
+        handleSpeechRecognitionResult(result, error: error)
+      }
+    }
+    recordAuthDiagnostic(
+      "speech_recognition_started",
+      detail: "type=\(type); locale=\(speechRecognitionLocale); sampleRate=\(Int(speechAudioSampleRate)); stabilityMs=\(Int(speechStabilityDelaySeconds * 1000))"
+    )
+    return true
+  }
+
+  private static func cancelSpeechRecognitionSession(reason: String) {
+    speechStabilityWorkItem?.cancel()
+    speechStabilityWorkItem = nil
+    speechRecognitionTask?.cancel()
+    speechRecognitionTask = nil
+    speechRecognitionRequest?.endAudio()
+    speechRecognitionRequest = nil
+    if speechRecognitionState == "recognizing" || speechRecognitionState == "requesting_authorization" {
+      speechRecognitionState = "cancelled"
+    }
+    if reason != "restart" {
+      recordAuthDiagnostic("speech_recognition_cancelled", detail: "reason=\(reason)")
+    }
+  }
+
+  private static func finishSpeechRecognitionSession(reason: String) {
+    speechStabilityWorkItem?.cancel()
+    speechStabilityWorkItem = nil
+    speechRecognitionRequest?.endAudio()
+    speechRecognitionTask?.finish()
+    speechRecognitionRequest = nil
+    speechRecognitionTask = nil
+    if speechRecognitionState == "recognizing" {
+      speechRecognitionState = "ending"
+    }
+    recordAuthDiagnostic(
+      "speech_recognition_finish_requested",
+      detail: "reason=\(reason); appends=\(speechAudioAppendCount); frames=\(speechAudioFrameCount); lastTranscript=\(lastSpeechTranscript == nil ? "none" : "present")"
+    )
+  }
+
+  private static func configureSpeechAudioFormat(channels: UInt32) {
+    let resolvedChannels = max(1, channels)
+    speechAudioChannels = resolvedChannels
+    speechAudioSampleRate = 16000
+    speechAudioFormat = makeSpeechAudioFormat(channels: resolvedChannels)
+  }
+
+  private static func makeSpeechAudioFormat(channels: UInt32) -> AVAudioFormat? {
+    AVAudioFormat(
+      commonFormat: .pcmFormatInt16,
+      sampleRate: speechAudioSampleRate,
+      channels: AVAudioChannelCount(max(1, channels)),
+      interleaved: true
+    )
+  }
+
+  private static func appendRokidAudioToSpeechRecognizer(_ data: Data, timestamp: UInt64) {
+    guard speechRecognitionState == "recognizing", let request = speechRecognitionRequest else {
+      return
+    }
+    guard let format = speechAudioFormat ?? makeSpeechAudioFormat(channels: speechAudioChannels) else {
+      lastSpeechError = "ios_speech_audio_format_unavailable"
+      recordAuthDiagnostic("speech_audio_append_failed", detail: "reason=audio_format_unavailable; bytes=\(data.count)")
+      return
+    }
+    let bytesPerFrame = Int(format.streamDescription.pointee.mBytesPerFrame)
+    guard bytesPerFrame > 0 else {
+      lastSpeechError = "ios_speech_audio_bytes_per_frame_invalid"
+      recordAuthDiagnostic("speech_audio_append_failed", detail: "reason=bytes_per_frame_invalid; bytes=\(data.count)")
+      return
+    }
+    let frameCount = data.count / bytesPerFrame
+    guard frameCount > 0 else {
+      return
+    }
+    guard let buffer = AVAudioPCMBuffer(
+      pcmFormat: format,
+      frameCapacity: AVAudioFrameCount(frameCount)
+    ) else {
+      lastSpeechError = "ios_speech_audio_buffer_allocation_failed"
+      recordAuthDiagnostic("speech_audio_append_failed", detail: "reason=buffer_allocation_failed; bytes=\(data.count)")
+      return
+    }
+
+    buffer.frameLength = AVAudioFrameCount(frameCount)
+    let bytesToCopy = frameCount * bytesPerFrame
+    data.withUnsafeBytes { rawBuffer in
+      guard let source = rawBuffer.baseAddress,
+        let destination = buffer.mutableAudioBufferList.pointee.mBuffers.mData else {
+        return
+      }
+      memcpy(destination, source, bytesToCopy)
+      buffer.mutableAudioBufferList.pointee.mBuffers.mDataByteSize = UInt32(bytesToCopy)
+    }
+
+    request.append(buffer)
+    speechAudioAppendCount += 1
+    speechAudioFrameCount += AVAudioFramePosition(frameCount)
+    if speechAudioAppendCount <= 3 || speechAudioAppendCount % 20 == 0 {
+      recordAuthDiagnostic(
+        "speech_audio_appended",
+        detail: "bytes=\(bytesToCopy); frames=\(frameCount); appends=\(speechAudioAppendCount); timestamp=\(timestamp); sampleRate=\(Int(speechAudioSampleRate)); channels=\(speechAudioChannels)"
+      )
+    }
+  }
+
+  private static func handleSpeechRecognitionResult(_ result: SFSpeechRecognitionResult?, error: Error?) {
+    if let error {
+      let description = sanitizeAuthDiagnosticDetail(String(describing: error))
+      lastSpeechError = description
+      lastSpeechEventAt = isoTimestamp()
+      if speechRecognitionState == "recognizing" || speechRecognitionState == "ending" {
+        speechRecognitionState = "failed"
+      }
+      recordAuthDiagnostic("speech_recognition_error", detail: description)
+      return
+    }
+
+    guard let result else {
+      return
+    }
+    let transcript = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !transcript.isEmpty else {
+      return
+    }
+    let confidence = averageSpeechConfidence(result)
+    lastSpeechTranscript = transcript
+    lastSpeechTranscriptAt = isoTimestamp()
+    lastSpeechEventAt = lastSpeechTranscriptAt
+    lastSpeechResultIsFinal = result.isFinal
+    lastSpeechError = nil
+    if result.isFinal {
+      speechRecognitionState = "final"
+      emitSpeechTranscript(transcript, confidence: confidence, source: "ios_speech_final", isFinal: true)
+    } else {
+      speechRecognitionState = "recognizing"
+      scheduleStableSpeechTranscript(transcript, confidence: confidence)
+    }
+  }
+
+  private static func scheduleStableSpeechTranscript(_ transcript: String, confidence: Double?) {
+    speechStabilityWorkItem?.cancel()
+    let workItem = DispatchWorkItem {
+      guard lastSpeechTranscript == transcript, speechRecognitionState == "recognizing" else {
+        return
+      }
+      emitSpeechTranscript(transcript, confidence: confidence, source: "ios_speech_stable", isFinal: true)
+    }
+    speechStabilityWorkItem = workItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + speechStabilityDelaySeconds, execute: workItem)
+  }
+
+  private static func emitSpeechTranscript(
+    _ transcript: String,
+    confidence: Double?,
+    source: String,
+    isFinal: Bool
+  ) {
+    let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else {
+      return
+    }
+    if isFinal && lastEmittedSpeechTranscript == normalized {
+      return
+    }
+    if isFinal {
+      lastEmittedSpeechTranscript = normalized
+    }
+    let capturedAt = isoTimestamp()
+    lastSpeechEventAt = capturedAt
+    lastSpeechEventSource = source
+    lastSpeechResultIsFinal = isFinal
+    var payload: [String: Any] = [
+      "transcript": normalized,
+      "text": normalized,
+      "capturedAt": capturedAt,
+      "captured_at": capturedAt,
+      "source": source,
+      "type": lastSpeechRecognitionType ?? activeRecordType ?? "reva_voice_command",
+      "partial": !isFinal,
+      "isFinal": isFinal,
+      "is_final": isFinal,
+      "final": isFinal,
+      "meta": [
+        "audio_chunks": audioStreamChunkCount,
+        "audio_bytes": audioStreamByteCount,
+        "speech_appends": speechAudioAppendCount,
+        "speech_frames": speechAudioFrameCount,
+        "speech_sample_rate": speechAudioSampleRate,
+        "speech_channels": speechAudioChannels,
+        "privacy_note": "no_raw_audio_forwarded",
+      ],
+    ]
+    if let confidence {
+      payload["confidence"] = confidence
+    }
+    emitTranscriptEvent?(payload)
+    recordAuthDiagnostic(
+      "speech_transcript_emitted",
+      detail: "source=\(source); final=\(isFinal); chars=\(normalized.count); chunks=\(audioStreamChunkCount); appends=\(speechAudioAppendCount)"
+    )
+  }
+
+  private static func averageSpeechConfidence(_ result: SFSpeechRecognitionResult) -> Double? {
+    let confidences = result.bestTranscription.segments
+      .map { Double($0.confidence) }
+      .filter { $0 >= 0 && $0 <= 1 }
+    guard !confidences.isEmpty else {
+      return nil
+    }
+    return confidences.reduce(0, +) / Double(confidences.count)
+  }
+
+  private static func speechAuthorizationStatusDescription(_ status: SFSpeechRecognizerAuthorizationStatus) -> String {
+    switch status {
+    case .authorized:
+      return "authorized"
+    case .denied:
+      return "denied"
+    case .restricted:
+      return "restricted"
+    case .notDetermined:
+      return "not_determined"
+    @unknown default:
+      return "unknown"
     }
   }
   #endif

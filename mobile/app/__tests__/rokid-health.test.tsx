@@ -1,5 +1,6 @@
 /* eslint-disable import/first */
 import React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
@@ -18,6 +19,7 @@ const mockRecognizeFood = jest.fn();
 const mockStartRokidVoiceCommandCapture = jest.fn();
 const mockStopRokidVoiceCommandCapture = jest.fn();
 const mockSubmitRokidVoiceCommand = jest.fn();
+const mockSetClipboardStringAsync = jest.fn();
 const mockTranscriptSubscriptionRemove = jest.fn();
 let rokidTranscriptListener: ((event: any) => void | Promise<void>) | null = null;
 
@@ -64,6 +66,10 @@ jest.mock('../../services/rokidVoiceControl', () => ({
   startRokidVoiceCommandCapture: (...args: any[]) => mockStartRokidVoiceCommandCapture(...args),
   stopRokidVoiceCommandCapture: (...args: any[]) => mockStopRokidVoiceCommandCapture(...args),
   submitRokidVoiceCommand: (...args: any[]) => mockSubmitRokidVoiceCommand(...args),
+}));
+
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: (...args: any[]) => mockSetClipboardStringAsync(...args),
 }));
 
 import RokidHealthScreen from '../rokid-health';
@@ -154,6 +160,7 @@ describe('RokidHealthScreen', () => {
         voice_reply: '请再说一遍',
       },
     });
+    mockSetClipboardStringAsync.mockResolvedValue(undefined);
     mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
     mockGetRokidDeviceValidationSteps.mockImplementation((status) => [
       {
@@ -264,6 +271,73 @@ describe('RokidHealthScreen', () => {
       expect(mockTranscriptSubscriptionRemove).toHaveBeenCalledTimes(1);
       expect(screen.getByText('Rokid 语音控制已停止')).toBeTruthy();
     });
+  });
+
+  it('shows a voice self-check when Rokid recording starts but no audio stream arrives and copies debug info', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      sdkLinkedReason: 'can_import_RGCxrClient_with_callback_api',
+      nativeAppVersion: '1.3.0',
+      nativeBuildNumber: '173',
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      companionServerScheme: 'rokidai',
+      companionServerHost: 'connect',
+      currentDeviceName: 'Glasses_0077',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      activeRecordType: 'reva_voice_command',
+      lastAudioEventType: 'record_start_requested',
+      lastAudioRecordType: 'reva_voice_command',
+      audioStreamChunkCount: 0,
+      audioStreamByteCount: 0,
+      lastAudioEventAt: '2026-06-20T11:31:54Z',
+      lastCustomViewOpenError: 'rokid_custom_view_open_callback_missing; running=false; rawNotify=none; iosBleConnected=true; device=Glasses_0077',
+      acceptedCallbackSchemes: ['cxrl', 'life.executor.health.rokid'],
+      callbackScheme: 'cxrl',
+      callbackSchemeSource: 'info_plist',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('语音自检')).toBeTruthy();
+      expect(screen.getByText('录音已请求，但 Rokid 尚未返回音频流')).toBeTruthy();
+      expect(screen.getByText('0 chunks · 0 bytes')).toBeTruthy();
+      expect(screen.getByText('CustomView 回调缺失，眼镜显示可能已出现但 SDK 未确认')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('复制调试信息'));
+      await flushAsyncUpdates();
+    });
+
+    expect(mockSetClipboardStringAsync).toHaveBeenCalledTimes(1);
+    const copied = mockSetClipboardStringAsync.mock.calls[0]?.[0] as string;
+    expect(copied).toContain('Rokid Voice Self Check');
+    expect(copied).toContain('build=173');
+    expect(copied).toContain('audio.event=record_start_requested');
+    expect(copied).toContain('audio.chunks=0');
+    expect(copied).toContain('audio.bytes=0');
+    expect(copied).toContain('customView.error=rokid_custom_view_open_callback_missing');
+    expect(copied).not.toContain('base64');
+    expect(alertSpy).toHaveBeenCalledWith('已复制', 'Rokid 语音自检信息已复制。');
+    alertSpy.mockRestore();
   });
 
   it('opens CustomView before starting native Rokid voice recording', async () => {
