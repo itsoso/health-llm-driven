@@ -15,7 +15,7 @@ Related: `docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md` §6 (this 
 > - Audit found a real bridge bug: we observed the WRONG notify publisher. The SDK feeds
 >   `setNotifyEventListenCmds`-matched events on `CxrClient.notifyEventPublisher`
 >   (`RGCxrClientNotifyEvent`), but the bridge subscribed only `RGCxrClientBLE.notifyPublisher`
->   (raw `String`). **Build #168 (commit 5e3d1ea2/5a671d3e) subscribes the typed publisher.**
+>   (raw `String`). **Build #168 (commit 5a671d3e) subscribes the typed publisher.**
 > - Transport analysis: CXR-L is BLE (control) + TCP/WiFi (data). **Build #169 (commit 01c519b4)**
 >   adds `Dev_BatteryChanged`/`NoNetwork`/`Wifi_Status`/`Wifi_Connect_Status`/`Dev_Screen_Status`
 >   to the listen set, so the next device test shows whether the notify channel is alive at all
@@ -63,8 +63,9 @@ What each field means in our bridge:
 - `callback_missing` is set **only** when the SDK's `openCustomView(view) { success, errorCode }`
   completion closure was **never invoked** (our flag `lastCustomViewOpenCommandAccepted`
   stayed `nil` after a 2.0 s settle window).
-- `rawNotify=none` means our `RGCxrClientBLE.shared.notifyPublisher` sink received
-  **zero** notify events after the open call.
+- `rawNotify=none` means the open call observed **zero** notify evidence after the settle
+  window. On current builds this includes the typed `CxrClient.shared.notifyEventPublisher`
+  and the raw `RGCxrClientBLE.shared.notifyPublisher`.
 - `running=false` means `customViewRunningEventPublisher` never published `isRunning=true`.
 - BLE is **intermittent**: connected at 10:29, dropped by 10:39 — but the silence
   happens even while connected.
@@ -79,9 +80,11 @@ ensureCustomViewInitialized()
        options: RGCxrClientInitializationOptions(appDisplayName: nil, pageName: nil))   // on main thread
   -> CxrClient.shared.auth.config = RGCxrClientAuthConfig(...)                            // see §4
   -> bind publishers: customViewRunningEventPublisher, auth.eventPublisher,
-       RGCxrClientBLE.shared.connectionStatePublisher, RGCxrClientBLE.shared.notifyPublisher
+       CxrClient.shared.notifyEventPublisher, RGCxrClientBLE.shared.connectionStatePublisher,
+       RGCxrClientBLE.shared.notifyPublisher
   -> CxrClient.shared.setNotifyEventListenCmds([
-       Custom_View_Opened, Custom_View_Open_Failed, Custom_View_Updated, Custom_View_Closed ])
+       Custom_View_Opened, Custom_View_Open_Failed, Custom_View_Updated, Custom_View_Closed,
+       Dev_BatteryChanged, NoNetwork, Wifi_Status, Wifi_Connect_Status, Dev_Screen_Status ])
 guard CxrClient.shared.auth.isAuthenticated()        // passes
 guard RGCxrClientBLE.shared.isConnected              // passes (device Glasses_0077)
 CxrClient.shared.openCustomView(view) { success, errorCode in ... }   // <-- closure NEVER called
@@ -103,7 +106,7 @@ shape, completion returns `installed=false` or is never called.
 | Authorization scopes requested | `device_control`, `audio_stream` |
 | iOS SDK | `RGCxrClient 1.0.1` + `RGCoreKit 0.0.2` (vendored framework, first-class CocoaPod) |
 | Callback API build flag | `ROKID_CXRL_CALLBACK_API` defined (`ROKID_IOS_CLIENT_HAS_CALLBACK_API=1`) |
-| Reva build under test | EAS build **#167**, app version **1.3.0**, git commit `5e3d1ea2`, EAS profile/channel `rokid-production` |
+| Current diagnostic build to retest | EAS build **#169**, app version **1.3.0**, git commit `01c519b4`, EAS profile/channel `rokid-production` |
 | CustomView mode | `CxrClient.initialize(mode: .customView)` reported initialized (`CxrClient.isInitialized == true`) |
 
 > Note: an earlier playbook draft referenced callback scheme
@@ -137,14 +140,14 @@ shape, completion returns `installed=false` or is never called.
 - `CxrClient.initialize(mode: .customView)` is called on the main thread before auth and
   reports initialized.
 - Authorization succeeds (`isAuthenticated()==true`), callback URL is received.
-- `setNotifyEventListenCmds([...Custom_View_*])` is subscribed.
+- `setNotifyEventListenCmds([...Custom_View_*, Dev_BatteryChanged, NoNetwork, Wifi_Status, Wifi_Connect_Status, Dev_Screen_Status])` is subscribed.
 - We gate `openCustomView` on `RGCxrClientBLE.shared.isConnected` (firing it before BLE is
   up produced the same silence historically).
 - We **disabled** auto-re-firing `openCustomView` on BLE-connect (it caused double-fire →
   SDK never called back); open is now a single manual user action.
 - Build #167: re-applied `setNotifyEventListenCmds` on every BLE (re)connect — **device-tested,
   did NOT change `rawNotify=none`** (refuted the per-link-subscription hypothesis).
-- Build #168 (commit `5e3d1ea2`): found we observed the WRONG notify publisher — the bridge
+- Build #168 (commit `5a671d3e`): found we observed the WRONG notify publisher — the bridge
   subscribed only `RGCxrClientBLE.shared.notifyPublisher` (raw `String`), never
   `CxrClient.shared.notifyEventPublisher` (`RGCxrClientNotifyEvent`), which is the channel
   `setNotifyEventListenCmds` actually feeds. Now both are subscribed.
@@ -214,20 +217,27 @@ we observe or trigger it from the app?**
 > Hi Rokid team — we are integrating CXR-L (`RGCxrClient 1.0.1`) on iOS for our health app
 > Reva (`life.executor.health`, callback `cxrl://auth/callback`). Authorization succeeds
 > (`auth.isAuthenticated()==true`) and `RGCxrClientBLE.shared.isConnected==true` to glasses
-> `Glasses_0077`, but `openCustomView(view){success,errorCode}` **never invokes its completion
-> closure**, `customViewRunningEventPublisher` never fires, and we receive **zero** events on
-> both `CxrClient.notifyEventPublisher` (typed `RGCxrClientNotifyEvent`) and
-> `RGCxrClientBLE.notifyPublisher` (we subscribe both) — not even `Dev_BatteryChanged`. The
-> glasses render nothing; `installApp(path){installed}` is identically silent. We do
-> `initialize(mode:.customView)` (main thread) → set `auth.config` → subscribe the publishers →
-> `setNotifyEventListenCmds([Custom_View_*, Dev_BatteryChanged, NoNetwork, Wifi_Status, ...])`
-> → call `openCustomView` only after `isConnected==true`. We verified there is no app-callable
-> `connect()/startSession()/wifi` API (Android calls none either). Since the SDK imports
-> `Network` and `RGCxrSessionResponse` carries `tcpPort`+heartbeat, our hypothesis is that the
-> **TCP/WiFi data session never establishes** even though BLE is connected. **What must be true
-> for that session to come up — glasses on WiFi, phone+glasses on the same network, companion
-> running — and how do we observe/trigger it?** Full facts, config, device info, and questions
-> attached.
+> `Glasses_0077`, but `openCustomView(view){success,errorCode}` does not complete into a
+> running CustomView, and `customViewRunningEventPublisher` never reports `isRunning=true`.
+> Our #169 diagnostic build subscribes both `CxrClient.notifyEventPublisher` (typed
+> `RGCxrClientNotifyEvent`) and `RGCxrClientBLE.notifyPublisher` and listens for
+> `Custom_View_*`, `Dev_BatteryChanged`, `NoNetwork`, `Wifi_Status`, `Wifi_Connect_Status`,
+> and `Dev_Screen_Status`.
+>
+> #169 retest result: **[FILL IN exactly one]**
+> - [ ] zero notify events, not even `Dev_BatteryChanged`
+> - [ ] only non-CustomView typed events, e.g. `Dev_BatteryChanged` / `Wifi_Status`
+> - [ ] `NoNetwork` / WiFi-related event
+> - [ ] `Custom_View_*` event but CustomView still not rendered
+>
+> We do `initialize(mode:.customView)` (main thread) → set `auth.config` → subscribe the
+> publishers → `setNotifyEventListenCmds([...])` → call `openCustomView` only after
+> `isConnected==true`. We verified there is no app-callable `connect()/startSession()/wifi`
+> API (Android calls none either). Since the SDK imports `Network` and `RGCxrSessionResponse`
+> carries `tcpPort`+heartbeat, our hypothesis is that the **TCP/WiFi data session may not be
+> establishing** even though BLE is connected. **What must be true for that session to come up —
+> glasses on WiFi, phone+glasses on the same network, companion running — and how do we
+> observe/trigger it?** Full facts, config, device info, and questions attached.
 
 ## 10. Attachments checklist
 

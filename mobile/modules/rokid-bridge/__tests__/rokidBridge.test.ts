@@ -500,6 +500,87 @@ describe('rokid-bridge JS facade', () => {
     ]));
   });
 
+  it('does not label a live typed notify channel as total CustomView silence', () => {
+    const { bridge } = loadModule('ios');
+
+    const gateway = bridge.buildRokidCapabilityGateway({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewOpenError: 'rokid_custom_view_open_callback_missing; running=false; rawNotify=cmd=1; subCmd=Dev_BatteryChanged; status=0; reqId=7; iosBleConnected=true; device=Glasses_0077',
+      lastCustomViewRawNotify: 'cmd=1; subCmd=Dev_BatteryChanged; status=0; reqId=7',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(gateway.recommendedPath).toBe('glasses_android_app');
+    expect(gateway.summary).toMatchObject({
+      native: 'ready',
+      display: 'blocked',
+      capture: 'degraded',
+      voice: 'degraded',
+      movement: 'ready',
+    });
+    expect(gateway.blockers).toEqual(expect.arrayContaining([
+      'CXR-L notify 通道有响应，但 CustomView 未完成: 继续收集 typed notify/status 后再升级 Rokid。',
+    ]));
+    expect(gateway.blockers.join('\n')).not.toContain('未收到 callback/notify');
+  });
+
+  it('surfaces NoNetwork as a network precondition blocker', () => {
+    const { bridge } = loadModule('ios');
+
+    const gateway = bridge.buildRokidCapabilityGateway({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewOpenError: 'rokid_glasses_no_network; CXR 数据通道(TCP/WiFi)需眼镜联网; rawNotify=cmd=1; subCmd=NoNetwork; status=0; reqId=8; iosBleConnected=true; device=Glasses_0077',
+      lastCustomViewRawNotify: 'cmd=1; subCmd=NoNetwork; status=0; reqId=8',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(gateway.recommendedPath).toBe('mobile_fallback');
+    expect(gateway.summary).toMatchObject({
+      display: 'blocked',
+      capture: 'blocked',
+      voice: 'blocked',
+      movement: 'degraded',
+    });
+    expect(gateway.blockers).toEqual(expect.arrayContaining([
+      'Rokid 眼镜网络未就绪: 请确认眼镜已连 WiFi、手机和眼镜同网或 companion 已建立数据通道。',
+    ]));
+    expect(gateway.blockers.join('\n')).not.toContain('未收到 callback/notify');
+  });
+
   it('keeps a queued CustomView retry degraded rather than blocked', () => {
     const { bridge } = loadModule('ios');
 

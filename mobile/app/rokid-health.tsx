@@ -233,6 +233,9 @@ function formatRokidCustomViewIssue(reason?: string) {
     return 'custom_view_failed';
   }
   const normalized = reason.toLowerCase();
+  if (normalized.includes('rokid_glasses_no_network') || normalized.includes('subcmd=nonetwork')) {
+    return '眼镜网络未就绪: 请在 Rokid AI / Hi Rokid 中确认眼镜已连 WiFi，并让手机与眼镜处在同一可互通网络，再回 Reva 刷新。';
+  }
   if (normalized.includes('rokid_glasses_ble_not_connected')) {
     return '眼镜蓝牙链路未连接: 授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。';
   }

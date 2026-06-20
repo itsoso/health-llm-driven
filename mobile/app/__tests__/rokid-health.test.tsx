@@ -703,6 +703,89 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('routes to mobile fallback when Rokid reports the glasses CXR data channel has no network', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewOpenError: 'rokid_glasses_no_network; CXR 数据通道(TCP/WiFi)需眼镜联网; rawNotify=cmd=1; subCmd=NoNetwork; status=0; reqId=8; iosBleConnected=true; device=Glasses_0077',
+      lastCustomViewRawNotify: 'cmd=1; subCmd=NoNetwork; status=0; reqId=8',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('能力路由')).toBeTruthy();
+      expect(screen.getByText('推荐路径: 手机兜底')).toBeTruthy();
+      expect(screen.getByText('运动: 本地计数兜底')).toBeTruthy();
+      expect(screen.getByText('饮食: 手机拍照兜底')).toBeTruthy();
+      expect(screen.getByText(/Rokid 眼镜网络未就绪/)).toBeTruthy();
+      expect(screen.queryByText(/未收到 callback\/notify/)).toBeNull();
+    });
+  });
+
+  it('explains NoNetwork CustomView open failures with WiFi and same-network guidance', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      sessionMode: 'customView',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_glasses_no_network; CXR 数据通道(TCP/WiFi)需眼镜联网; rawNotify=cmd=1; subCmd=NoNetwork; status=0',
+      customViewRunning: false,
+      capabilitiesReady: false,
+    });
+
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('打开 Reva 眼镜视图')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('打开 Reva 眼镜视图'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Reva 眼镜视图失败: 眼镜网络未就绪: 请在 Rokid AI / Hi Rokid 中确认眼镜已连 WiFi，并让手机与眼镜处在同一可互通网络，再回 Reva 刷新。')).toBeTruthy();
+    });
+  });
+
   it('surfaces iOS CXR-L callback builds that did not import RGCxrClient', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',

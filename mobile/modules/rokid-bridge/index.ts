@@ -250,12 +250,67 @@ function includesAny(value: string | undefined, needles: string[]) {
   return needles.some((needle) => normalized.includes(needle));
 }
 
+function hasCustomViewCompletionFailure(status?: Partial<RokidIntegrationStatus> | null) {
+  return includesAny(status?.lastCustomViewOpenError, [
+    'rokid_custom_view_open_callback_missing',
+    'rokid_custom_view_not_running_after_open',
+    'custom_view_open_failed',
+    'open_callback_error_code',
+  ]);
+}
+
+function rawNotifyFromOpenError(error?: string) {
+  const rawNotifyMatch = error?.match(/rawnotify=([^;]+)/i);
+  return rawNotifyMatch?.[1]?.trim();
+}
+
+function rawNotifyEvidence(status?: Partial<RokidIntegrationStatus> | null) {
+  const direct = status?.lastCustomViewRawNotify?.trim();
+  if (direct && direct.toLowerCase() !== 'none') {
+    return direct;
+  }
+  const fromError = rawNotifyFromOpenError(status?.lastCustomViewOpenError);
+  if (fromError && fromError.toLowerCase() !== 'none') {
+    return fromError;
+  }
+  return undefined;
+}
+
+function hasNotifyEvidence(status?: Partial<RokidIntegrationStatus> | null) {
+  return Boolean(rawNotifyEvidence(status));
+}
+
+function hasNetworkPreconditionFailure(status?: Partial<RokidIntegrationStatus> | null) {
+  const combined = [
+    status?.lastCustomViewOpenError,
+    status?.lastCustomViewRawNotify,
+  ].filter(Boolean).join('; ');
+  return includesAny(combined, [
+    'rokid_glasses_no_network',
+    'subcmd=nonetwork',
+    'no_network',
+    'no network',
+  ]);
+}
+
 function hasSilentCustomViewFailure(status?: Partial<RokidIntegrationStatus> | null) {
+  if (!hasCustomViewCompletionFailure(status) || hasNetworkPreconditionFailure(status)) {
+    return false;
+  }
+  if (hasNotifyEvidence(status)) {
+    return false;
+  }
   return includesAny(status?.lastCustomViewOpenError, [
     'rokid_custom_view_open_callback_missing',
     'rokid_custom_view_not_running_after_open',
     'rawnotify=none',
   ]);
+}
+
+function hasCustomViewCompletionFailureWithNotify(status?: Partial<RokidIntegrationStatus> | null) {
+  return hasCustomViewCompletionFailure(status)
+    && hasNotifyEvidence(status)
+    && !hasNetworkPreconditionFailure(status);
 }
 
 function hasBlePendingRetry(status?: Partial<RokidIntegrationStatus> | null) {
@@ -315,7 +370,9 @@ export function buildRokidCapabilityGateway(
   const bleReady = !ios || status?.iosBleConnected === true;
   const customViewRunning = status?.customViewRunning === true;
   const captureReady = status?.capabilitiesReady === true;
+  const networkPreconditionFailure = hasNetworkPreconditionFailure(status);
   const silentCustomView = hasSilentCustomViewFailure(status);
+  const customViewCompletionFailureWithNotify = hasCustomViewCompletionFailureWithNotify(status);
   const pendingCustomView = hasBlePendingRetry(status);
   const customAppSupported = status?.customAppSupported !== false;
   const nativeState: RokidCapabilityState = bridgeReady && sdkLinked
@@ -331,8 +388,12 @@ export function buildRokidCapabilityGateway(
   if (ios && bridgeReady && !sdkLinked) {
     blockers.push('iOS RGCxrClient 未链接: 眼镜原生能力不可用。');
   }
-  if (silentCustomView) {
+  if (networkPreconditionFailure) {
+    blockers.push('Rokid 眼镜网络未就绪: 请确认眼镜已连 WiFi、手机和眼镜同网或 companion 已建立数据通道。');
+  } else if (silentCustomView) {
     blockers.push('CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。');
+  } else if (customViewCompletionFailureWithNotify) {
+    blockers.push('CXR-L notify 通道有响应，但 CustomView 未完成: 继续收集 typed notify/status 后再升级 Rokid。');
   }
 
   let customViewState: RokidCapabilityState = 'unknown';
@@ -352,9 +413,15 @@ export function buildRokidCapabilityGateway(
   } else if (!bleReady) {
     customViewState = 'degraded';
     customViewDetail = '等待眼镜蓝牙链路连接。';
+  } else if (networkPreconditionFailure) {
+    customViewState = 'blocked';
+    customViewDetail = '眼镜未建立 CXR 数据通道(TCP/WiFi), 先确认眼镜 WiFi/同网状态。';
   } else if (silentCustomView) {
     customViewState = 'blocked';
     customViewDetail = 'CXR-L CustomView 命令静默, 不再作为核心健康流程前置条件。';
+  } else if (customViewCompletionFailureWithNotify) {
+    customViewState = 'blocked';
+    customViewDetail = 'CXR-L notify 通道有事件, 但未收到 CustomView running/成功回调。';
   } else {
     customViewState = 'degraded';
     customViewDetail = '已具备基础链路, 仍需眼镜端 running 事件确认。';
@@ -369,16 +436,22 @@ export function buildRokidCapabilityGateway(
           ? 'degraded'
           : 'blocked';
   const movementState: RokidCapabilityState =
-    bridgeReady && sdkLinked && authorized && customAppSupported
+    networkPreconditionFailure
+      ? 'degraded'
+      : bridgeReady && sdkLinked && authorized && customAppSupported
       ? 'ready'
       : bridgeReady || customAppSupported
         ? 'degraded'
         : 'blocked';
-  const captureState: RokidCapabilityState = captureReady ? 'ready' : 'degraded';
+  const captureState: RokidCapabilityState = captureReady
+    ? 'ready'
+    : networkPreconditionFailure
+      ? 'blocked'
+      : 'degraded';
   const voiceState: RokidCapabilityState =
-    captureReady && !silentCustomView
+    captureReady && !silentCustomView && !networkPreconditionFailure
       ? 'degraded'
-      : silentCustomView || !bridgeReady || (ios && !sdkLinked)
+      : networkPreconditionFailure || silentCustomView || !bridgeReady || (ios && !sdkLinked)
         ? 'blocked'
         : 'degraded';
 
@@ -414,7 +487,11 @@ export function buildRokidCapabilityGateway(
       id: 'camera_capture',
       label: '眼镜拍照采集',
       state: captureReady ? 'ready' : customViewState === 'blocked' ? 'blocked' : 'degraded',
-      detail: captureReady ? '拍照能力可用。' : 'Rokid iOS 拍照依赖会话构建; 饮食记录应保持手机拍照兜底。',
+      detail: captureReady
+        ? '拍照能力可用。'
+        : networkPreconditionFailure
+          ? '眼镜 CXR 数据通道未就绪; 饮食记录先走手机拍照兜底。'
+          : 'Rokid iOS 拍照依赖会话构建; 饮食记录应保持手机拍照兜底。',
       source: 'RGCxrClient.takePhoto',
       recommendedSurface: captureReady ? 'rokid_glasses' : 'mobile',
       priority: 40,
@@ -424,7 +501,9 @@ export function buildRokidCapabilityGateway(
       label: '眼镜语音输入',
       state: voiceState,
       detail: voiceState === 'blocked'
-        ? '原生录音/转写尚不能作为稳定入口; 语音记录食物先走手机输入兜底。'
+        ? networkPreconditionFailure
+          ? '眼镜 CXR 数据通道未就绪; 语音记录食物先走手机输入兜底。'
+          : '原生录音/转写尚不能作为稳定入口; 语音记录食物先走手机输入兜底。'
         : '音频能力仍需真实 transcript 事件验证。',
       source: 'RGCxrClient.startRecord + onRokidTranscript',
       recommendedSurface: voiceState === 'blocked' ? 'mobile' : 'rokid_glasses',
@@ -474,6 +553,8 @@ export function buildRokidCapabilityGateway(
 
   let recommendedPath: RokidRecommendedPath = 'mobile_fallback';
   if (!bridgeReady || (ios && !sdkLinked)) {
+    recommendedPath = 'mobile_fallback';
+  } else if (networkPreconditionFailure) {
     recommendedPath = 'mobile_fallback';
   } else if (captureReady && customViewRunning) {
     recommendedPath = 'cxrl_customview';

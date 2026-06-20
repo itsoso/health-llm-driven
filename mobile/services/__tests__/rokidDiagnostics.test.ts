@@ -388,4 +388,45 @@ describe('rokid diagnostics', () => {
       'CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。',
     );
   });
+
+  it('routes to mobile fallback when Rokid reports NoNetwork for the CXR data channel', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customAppSupported: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      lastCustomViewOpenError: 'rokid_glasses_no_network; CXR 数据通道(TCP/WiFi)需眼镜联网; rawNotify=cmd=1; subCmd=NoNetwork; status=0; reqId=8; iosBleConnected=true; device=Glasses_0077',
+      lastCustomViewRawNotify: 'cmd=1; subCmd=NoNetwork; status=0; reqId=8',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.capabilityGateway.recommendedPath).toBe('mobile_fallback');
+    expect(check.capabilityGateway.blockers).toContain(
+      'Rokid 眼镜网络未就绪: 请确认眼镜已连 WiFi、手机和眼镜同网或 companion 已建立数据通道。',
+    );
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'capability_route',
+        label: '能力路由',
+        value: '手机兜底',
+        severity: 'warn',
+        detail: '显示=blocked; 采集=blocked; 运动=degraded',
+      }),
+    ]));
+  });
 });
