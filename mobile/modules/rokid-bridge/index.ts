@@ -1,4 +1,9 @@
-import { Platform, requireNativeModule } from 'expo-modules-core';
+import {
+  EventEmitter,
+  Platform,
+  requireNativeModule,
+  type EventSubscription,
+} from 'expo-modules-core';
 
 export const ROKID_SDK_ARTIFACTS = {
   clientM: 'com.rokid.cxr:client-m:1.2.2',
@@ -17,6 +22,7 @@ export type RokidAuthorizationState =
   | 'expired'
   | 'failed';
 export type RokidSessionMode = 'customView' | 'customApp' | 'unknown';
+export const ROKID_TRANSCRIPT_EVENT = 'onRokidTranscript';
 
 export type RokidIntegrationStatus = {
   platform: string;
@@ -110,6 +116,36 @@ export type RokidDeviceValidationStep = {
   actionLabel?: string;
 };
 
+export type RokidTranscriptEvent = {
+  transcript?: string;
+  text?: string;
+  confidence?: number;
+  capturedAt?: string;
+  captured_at?: string;
+  source?: string;
+  type?: string;
+  partial?: boolean;
+  isFinal?: boolean;
+  is_final?: boolean;
+  final?: boolean;
+  meta?: Record<string, unknown>;
+};
+
+export type RokidEventSubscription = {
+  remove: () => void;
+};
+
+type RokidBridgeEvents = {
+  [ROKID_TRANSCRIPT_EVENT]: (event: RokidTranscriptEvent) => void;
+};
+
+type RokidNativeEventEmitter = {
+  addListener: (
+    eventName: typeof ROKID_TRANSCRIPT_EVENT,
+    listener: RokidBridgeEvents[typeof ROKID_TRANSCRIPT_EVENT],
+  ) => EventSubscription;
+};
+
 type RokidNativeModule = {
   getIntegrationStatus: () => Promise<Partial<RokidIntegrationStatus>>;
   openHiRokid: () => Promise<boolean>;
@@ -134,6 +170,7 @@ type RokidNativeModule = {
 };
 
 let cachedNative: RokidNativeModule | null | undefined;
+let cachedEmitter: RokidNativeEventEmitter | null | undefined;
 
 type RevaCustomViewOptions = {
   title?: string;
@@ -191,6 +228,19 @@ function getNativeBridge(): RokidNativeModule | null {
     cachedNative = null;
   }
   return cachedNative;
+}
+
+function getNativeEmitter(): RokidNativeEventEmitter | null {
+  const native = getNativeBridge();
+  if (!native) {
+    return null;
+  }
+  if (cachedEmitter !== undefined) {
+    return cachedEmitter;
+  }
+  const emitter = new EventEmitter(native as any) as RokidNativeEventEmitter;
+  cachedEmitter = emitter;
+  return emitter;
 }
 
 export function getRokidDeviceValidationSteps(
@@ -531,4 +581,14 @@ export async function stopRokidRecord(type = 'interaction'): Promise<Record<stri
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
   return native.stopRecord(type);
+}
+
+export function addRokidTranscriptListener(
+  listener: (event: RokidTranscriptEvent) => void,
+): RokidEventSubscription {
+  const emitter = getNativeEmitter();
+  if (!emitter) {
+    return { remove: () => undefined };
+  }
+  return emitter.addListener(ROKID_TRANSCRIPT_EVENT, listener) as EventSubscription;
 }

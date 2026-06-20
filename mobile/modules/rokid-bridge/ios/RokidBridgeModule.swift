@@ -117,6 +117,7 @@ public class RokidBridgeModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("RokidBridge")
+    Events("onRokidTranscript")
 
     AsyncFunction("getIntegrationStatus") { () -> [String: Any] in
       RokidBridgeModule.integrationStatusPayload()

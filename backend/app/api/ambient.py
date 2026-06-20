@@ -20,6 +20,9 @@ from app.schemas.ambient import (
     HearingHealthTaskCreate,
     HearingHealthTaskEnvelope,
     HearingHealthTaskResponse,
+    RokidVoiceCommandCreate,
+    RokidVoiceCommandResponse,
+    RokidVoiceCommandResult,
     VisualInputCreate,
     VisualInputEventResponse,
 )
@@ -59,6 +62,61 @@ def create_audio_input(
 
 
 @router.post(
+    "/rokid-voice-commands",
+    response_model=RokidVoiceCommandResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_rokid_voice_command(
+    body: RokidVoiceCommandCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    command = svc.route_rokid_voice_command(body.transcript, context=body.context)
+    public_command = {
+        key: command[key]
+        for key in (
+            "intent",
+            "client_action",
+            "route",
+            "voice_reply",
+            "display_text",
+            "requires_confirmation",
+            "safety_level",
+            "parameters",
+            "recommended_next_action",
+        )
+    }
+    meta = {
+        **(body.meta or {}),
+        "context": body.context,
+        "command_intent": command["intent"],
+        "client_action": command["client_action"],
+        "route": command.get("route"),
+    }
+    event = svc.create_audio_input_event(
+        db,
+        current_user.id,
+        intent=command["event_intent"],
+        transcript=body.transcript,
+        source="rokid_glasses",
+        device_type="glasses",
+        confidence=body.confidence,
+        captured_at=body.captured_at,
+        status=command["event_status"],
+        privacy_class=body.privacy_class,
+        target_type="rokid_voice_command",
+        safety_result=command["safety_result"],
+        meta=meta,
+    )
+    db.commit()
+    db.refresh(event)
+    return RokidVoiceCommandResponse(
+        event=AudioInputEventResponse.model_validate(event),
+        command=RokidVoiceCommandResult(**public_command),
+    )
+
+
+@router.post(
     "/visual-inputs",
     response_model=AmbientVisualInputResponse,
     status_code=status.HTTP_201_CREATED,
@@ -83,6 +141,7 @@ def create_visual_input(
         privacy_class=body.privacy_class,
         meta=body.meta,
     )
+    svc.create_food_diet_record_from_visual_event(db, current_user.id, event)
     db.commit()
     db.refresh(event)
     return AmbientVisualInputResponse(

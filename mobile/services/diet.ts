@@ -73,6 +73,7 @@ export interface FoodRecognitionResponse {
   total_protein: number | null;
   total_carbs: number | null;
   total_fat: number | null;
+  total_fiber?: number | null;
   error: string | null;
 }
 

@@ -20,6 +20,7 @@ class RokidBridgeModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("RokidBridge")
+    Events("onRokidTranscript")
 
     AsyncFunction("getIntegrationStatus") {
       val installedPackage = firstInstalledHiRokidPackage()
