@@ -32,6 +32,7 @@ from app.api import (
     sleep_spo2_analysis,
     daily_recommendation,
     supplements,
+    supplement_inventory,
     supplement_products,
     supplement_audits,
     health_consultations,
@@ -222,6 +223,7 @@ api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
 api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(diet_recommendation.router)
 api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
+api_router.include_router(supplement_inventory.router, prefix="/supplements", tags=["supplement-inventory"])
 api_router.include_router(supplement_products.router, tags=["supplement-products"])
 api_router.include_router(supplement_audits.router)
 api_router.include_router(health_consultations.router)

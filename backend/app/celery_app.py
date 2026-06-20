@@ -47,6 +47,7 @@ celery_app = Celery(
         "app.tasks.data_integrity_scan",
         "app.tasks.calendar_tasks",
         "app.tasks.event_reminders",
+        "app.tasks.reorder_scan",
     ]
 )
 
@@ -355,6 +356,12 @@ celery_app.conf.beat_schedule = {
     "adherence-watch-weekly": {
         "task": "app.tasks.adherence_watch.adherence_watch",
         "schedule": crontab(hour=10, minute=40, day_of_week=0),  # 北京 周日 10:40
+    },
+
+    # P3(D1)每日复购扫描:补剂快用完 → 提议补货 write_intent + 稀缺门推送(不下单)
+    "reorder-scan-daily": {
+        "task": "app.tasks.reorder_scan.scan_reorder_nudges",
+        "schedule": crontab(hour=9, minute=10),  # 北京 09:10
     },
 }
 

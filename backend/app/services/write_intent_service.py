@@ -340,6 +340,12 @@ def _execute(db: Session, wi: WriteIntent) -> str:
                 db.flush()
                 return f"supplement_record:{dup.id}"
         raise ValueError(f"unknown adherence_nudge item_type: {item_type}")
+    if wi.kind == "reorder_nudge":
+        # P3(D1):复购提醒。确认 = **仅确认知悉(acknowledge)**,绝不下单/购买/支付。
+        # 本期不调任何电商 skill、不建 ReorderIntent —— 那是 PRD §3.D2(P5)的财务面,
+        # 要过 governance 一等对象 Gate + 财务安全评审。这里 confirm 只把意图标记为已处理。
+        # D2 落地时,会把这里的 acknowledge 换成「调快手电商 OpenClaw skill 下单」(仍逐笔强确认)。
+        return "acknowledged"
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
 
@@ -599,6 +605,50 @@ def generate_adherence_nudge(db: Session, user_id: int) -> int:
             description=_DESC, source="adherence_gap",
             target_type="supplement", target_id=supp.id,
             payload={"item_type": "supplement", "name": supp.name},
+            commit=False,
+        )
+        if wi is not None:
+            created += 1
+
+    db.commit()
+    return created
+
+
+def generate_reorder_nudges(db: Session, user_id: int) -> int:
+    """P3(D1)复购提醒:补剂剩余天数 ≤ 阈值(low)→ 提议「该补货了」write_intent(幂等)。
+
+    数据来源 reorder_detection.low_items_for_user(库存 + 依从估的剩余天数)。
+    每个 low 补剂一条;同补剂当天已提过(任何状态)→ 不重复(防每日扫描刷屏)。
+    title 带剩余天数,description 带品牌/规格(便于复购),纯物流提醒、非医疗建议。
+
+    边界:这里只**提议提醒**,不下单/不购买/不调电商 skill —— 确认执行也只 acknowledge
+    (见 _execute 的 reorder_nudge 分支)。返回新建提议数。
+    """
+    from app.services import reorder_detection
+
+    created = 0
+    for it in reorder_detection.low_items_for_user(db, user_id):
+        supp_id = it["supplement_id"]
+        if _proposed_same_day_local(db, user_id, "reorder_nudge", "supplement", supp_id):
+            continue
+        days = it.get("days_remaining")
+        days_txt = f"约 {round(days)} 天" if isinstance(days, (int, float)) else "快用完了"
+        brand_spec = " ".join(x for x in (it.get("brand"), it.get("spec")) if x).strip()
+        desc = f"{it['name']} 库存{days_txt},可以补货了。" + (
+            f"上次:{brand_spec}。" if brand_spec else ""
+        ) + "确认即标记已知悉(不会自动下单)。"
+        wi = propose(
+            db, user_id, kind="reorder_nudge",
+            title=f"{it['name']} 还剩{days_txt},该补货了",
+            description=desc, source="reorder_detection",
+            target_type="supplement", target_id=supp_id,
+            payload={
+                "name": it["name"],
+                "brand": it.get("brand") or "",
+                "spec": it.get("spec") or "",
+                "days_remaining": days,
+                "units_remaining": it.get("units_remaining"),
+            },
             commit=False,
         )
         if wi is not None:
