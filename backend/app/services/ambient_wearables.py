@@ -487,6 +487,25 @@ def create_food_diet_record_from_visual_event(
     primary_name = _food_name(foods[0])[:100]
     confidence = event.confidence or _as_float(recognition.get("confidence")) or _average_food_confidence(foods)
 
+    # R4(医疗安全):食物/饮食是用户确认类写入,采集端不自动落"已确认"记录。
+    # 调用方要求确认(meta.manual_confirm_required)、或识别置信缺失/不足(< 0.9)时,
+    # 只把事件标记为待确认草稿、不写 DietRecord;由用户在饮食页确认后再落库
+    # (避免识别错 → 静默写错一条饮食记录,council 标定的 R4 违规)。
+    manual_confirm_required = bool(meta.get("manual_confirm_required"))
+    if manual_confirm_required or confidence is None or confidence < 0.9:
+        event.status = "needs_confirmation"
+        event.target_type = "diet_draft"
+        event.safety_result = {
+            **(event.safety_result if isinstance(event.safety_result, dict) else {}),
+            "manual_confirmation_required": True,
+            "reason": "manual_confirm_required" if manual_confirm_required else "low_confidence",
+            "confidence": confidence,
+            "nutrition_from_recognition": True,
+        }
+        if flush:
+            db.flush()
+        return None
+
     record = DietRecord(
         user_id=user_id,
         record_date=record_date,
