@@ -1,7 +1,7 @@
 # Rokid CXR-L iOS Support Package — CustomView / installApp silent after auth
 
 Date: 2026-06-20
-Status: draft, ready to send to Rokid once Phase 0 device retest confirms the symptom persists
+Status: draft — transport/session focused. Send ONLY after build #169 device retest per the gate below (zero notify incl. no `Dev_BatteryChanged`, or after WiFi/companion ruled out)
 Owner: Reva (health.executor.life)
 Related: `docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md` §6 (this package implements §6 for the *post-auth* boundary)
 
@@ -10,24 +10,29 @@ Related: `docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md` §6 (this 
 > listed screenshots/logs, then send the "Message to Rokid" section (§9) plus the
 > facts table.
 >
-> UPDATE 2026-06-20 (after a 38-agent swiftinterface audit): build #167 did NOT make
-> `rawNotify` non-`none`. The audit then found a real BRIDGE bug — we observed the wrong
-> notify publisher. `setNotifyEventListenCmds([Custom_View_*])` is registered on
-> `CxrClient` and the SDK delivers the matching typed events on
-> `CxrClient.notifyEventPublisher` (`RGCxrClientNotifyEvent`, swiftinterface :92), but the
-> bridge subscribed ONLY to `RGCxrClientBLE.shared.notifyPublisher` (raw `String`, :243) —
-> so `rawNotify=none` was sourced from the wrong channel and says nothing about the typed
-> channel `setNotifyEventListenCmds` actually gates. **Build #168 (commit 5a671d3e) now also
-> subscribes the typed publisher.** Do **NOT** send this package until #168 is retested AND
-> the typed channel (`custom_view_notify_typed` diagnostic) is ALSO empty. Decision rule:
-> - #168 typed channel shows `Custom_View_*` events → it was our wrong-pipe bug; do not escalate.
-> - #168 typed channel ALSO empty, while `openCustomView` completion never fires and
->   `customViewRunningEventPublisher` never emits → THREE independent SDK channels are silent
->   → escalate (this package is now warranted).
+> UPDATE 2026-06-20 (after a 38-agent swiftinterface audit + transport analysis):
+> - Build #167 (re-subscribe on reconnect) did NOT fix it — device-confirmed `rawNotify=none`.
+> - Audit found a real bridge bug: we observed the WRONG notify publisher. The SDK feeds
+>   `setNotifyEventListenCmds`-matched events on `CxrClient.notifyEventPublisher`
+>   (`RGCxrClientNotifyEvent`), but the bridge subscribed only `RGCxrClientBLE.notifyPublisher`
+>   (raw `String`). **Build #168 (commit 5e3d1ea2/5a671d3e) subscribes the typed publisher.**
+> - Transport analysis: CXR-L is BLE (control) + TCP/WiFi (data). **Build #169 (commit 01c519b4)**
+>   adds `Dev_BatteryChanged`/`NoNetwork`/`Wifi_Status`/`Wifi_Connect_Status`/`Dev_Screen_Status`
+>   to the listen set, so the next device test shows whether the notify channel is alive at all
+>   and whether the glasses report no-network.
 >
-> Also verified by the audit: the SDK exposes NO `connect()/startSession()/bind()` — do not
-> ask Rokid for a "missing init step"; `initialize(mode:.customView)` + auth + BLE are the
-> only entry points and are all wired.
+> **Send gate — retest on build #169 first.** Decision rule from the `custom_view_notify_typed`
+> diagnostic timeline:
+> - `Custom_View_*` events appear → it was our wrong-pipe bug; do NOT escalate.
+> - Only `Dev_BatteryChanged` (no `Custom_View_*`) → notify channel alive, CustomView-specific
+>   issue → escalate with that nuance.
+> - `NoNetwork` / WiFi-error events → glasses not networked → fix WiFi first (glasses on WiFi,
+>   phone+glasses same network, companion running), do NOT escalate yet.
+> - **ZERO events (not even `Dev_BatteryChanged`)** → the data session/transport is down →
+>   escalate (this package is warranted).
+>
+> Also verified: the SDK exposes NO app-callable `connect()/startSession()/wifi` — do not ask
+> Rokid for a "missing init step"; ask about the TCP/WiFi **data session** (see §7/§8).
 
 ## 1. One-paragraph summary
 
@@ -115,11 +120,15 @@ shape, completion returns `installed=false` or is never called.
 | Glasses model | [FILL IN — display vs non-display SKU] |
 | Glasses internal name | `Glasses_0077` (shown in our diagnostics) |
 | Glasses firmware version | [FILL IN] |
-| Companion app installed | Rokid AI? Hi Rokid? both? — [FILL IN exact app name + version] |
-| Companion app running during the test? | [FILL IN — was it open / backgrounded / force-quit?] |
+| Companion app | **Rokid AI** (observed via the "◀ Rokid AI" return link on device); confirm exact version, and whether Hi Rokid is also installed — [FILL IN version] |
+| Companion running during the test? | [FILL IN — open / backgrounded / force-quit?] |
+| **Glasses connected to WiFi?** | [FILL IN — CRITICAL: the CXR data channel is TCP over WiFi] |
+| **Phone + glasses on the SAME WiFi / mutually reachable network?** | [FILL IN] |
 | Rokid account region | [FILL IN] |
 | `UIApplication.open(rokidai://connect)` succeeds? | [FILL IN — yes/no] |
 | Auth `openURL` callback received by Reva? | yes (auth completes; `isAuthenticated()==true`) |
+| Reva build under test | **#169** (EAS build `54d79578`, commit `01c519b4`) — typed `notifyEventPublisher` now subscribed + `Dev_BatteryChanged`/`NoNetwork`/`Wifi_Status`/`Wifi_Connect_Status`/`Dev_Screen_Status` added to `setNotifyEventListenCmds` |
+| `custom_view_notify_typed` events seen on #169? | [FILL IN — none at all / only `Dev_BatteryChanged` / `NoNetwork` / `Custom_View_*` ...] |
 
 ## 6. What we have already done / ruled out (Reva side)
 
@@ -133,56 +142,92 @@ shape, completion returns `installed=false` or is never called.
   up produced the same silence historically).
 - We **disabled** auto-re-firing `openCustomView` on BLE-connect (it caused double-fire →
   SDK never called back); open is now a single manual user action.
-- Pending hypothesis fix (build #167): re-apply `setNotifyEventListenCmds` on every BLE
-  (re)connect, in case the cmd registration is per-link and lost on reconnect. **If this
-  does not change `rawNotify=none`, the silence is below our layer — which is why we are
-  asking you.**
+- Build #167: re-applied `setNotifyEventListenCmds` on every BLE (re)connect — **device-tested,
+  did NOT change `rawNotify=none`** (refuted the per-link-subscription hypothesis).
+- Build #168 (commit `5e3d1ea2`): found we observed the WRONG notify publisher — the bridge
+  subscribed only `RGCxrClientBLE.shared.notifyPublisher` (raw `String`), never
+  `CxrClient.shared.notifyEventPublisher` (`RGCxrClientNotifyEvent`), which is the channel
+  `setNotifyEventListenCmds` actually feeds. Now both are subscribed.
+- Build #169 (commit `01c519b4`): added `Dev_BatteryChanged` / `NoNetwork` / `Wifi_Status` /
+  `Wifi_Connect_Status` / `Dev_Screen_Status` to the listen set, to observe whether the SDK's
+  notify channel is alive at all and whether the glasses report no-network. **If #169 still
+  shows zero typed events (not even `Dev_BatteryChanged`), the data session is not up — which
+  is why we are asking you.**
+- We verified (over the byte-identical public+private `.swiftinterface`) there is **NO**
+  app-callable `connect()/startSession()/bind()/wifi` API; the session
+  (`startSession → sessionResponse(tcpPort) → heartbeat → data`) is SDK-internal after auth.
+  The Android bridge calls no such API either.
 
 ## 7. The core question
 
-Between "BLE connected + authenticated" and a working `openCustomView`, **is there a
-required session/connect/handshake step on the iOS CXR-L 1.0.1 surface that we are not
-calling?** Our diagnostics suggest `isConnected==true` is not sufficient for the glasses
-to accept `openCustomView`. We see no public `connect()` / `startSession()` API in the
-1.0.1 framework interface.
+CXR-L is a **dual transport**: BLE (`CoreBluetooth`) for control/handshake + **TCP (Apple
+`Network`) for the data channel**. The `RGCxrClient 1.0.1` interface imports `Network`,
+`RGCxrSessionResponse` carries `tcpPort: UInt16?` + `heartbeatInterval`, the wire protocol
+`RGCxrMessageType` is `auth → authResponse → startSession → sessionResponse → heartbeat → data
+→ endSession`, and there is a full `Wifi_*` / `NoNetwork` cmd set.
 
-## 8. Specific questions for Rokid
+With auth OK and `RGCxrClientBLE.shared.isConnected == true`, but `openCustomView` /
+`installApp` totally silent (no completion callback, no `customViewRunningEvent`, no notify on
+either publisher), our strong hypothesis is that **the TCP/WiFi data session is not coming up**
+— the BLE control link is fine, but the data channel that actually carries CustomView frames /
+APK bytes never establishes. We verified there is **no** app-callable
+`connect()/startSession()/wifi` API (and Android calls none either), so this session is
+SDK-internal after auth.
 
-1. On iOS CXR-L 1.0.1, what is the exact required call sequence from app launch to a
-   rendering CustomView? Is there a session/connect step beyond `initialize(mode:.customView)`
-   + `auth` + BLE `isConnected`?
-2. Is `RGCxrClientBLE.shared.isConnected == true` sufficient to call `openCustomView`, or
-   is there a separate "session ready" signal we should wait for? If so, which publisher/event?
-3. When `openCustomView`'s completion closure is **never** invoked (no success, no error),
-   what does that indicate — command dropped before transport, glasses not in the right
-   mode, companion app required, or firmware/SDK mismatch?
-4. Does CXR-L iOS require the companion app (Rokid AI / Hi Rokid) to be **running** to bridge
-   `openCustomView` to the glasses? Or must it be **fully quit** to free the BLE central?
-   Which companion app is supported for CXR-L iOS in our region?
-5. Must `setNotifyEventListenCmds([...])` be re-applied after each BLE (re)connection, or is
-   it a one-time global registration?
-6. Is `RGCxrClient 1.0.1` still compatible with the current companion app + the firmware on
-   glasses `Glasses_0077`? Is there a newer iOS SDK (1.0.2+) / private specs repo?
-7. Which bundle ids and callback schemes must be whitelisted for this app id? Is
-   `cxrl://auth/callback` correct, or should it be `life.executor.health.rokid://auth/callback`?
-8. Are scopes `device_control` and `audio_stream` enabled for this app id? Does CustomView
-   need an additional console capability beyond the public list?
-9. Same question for `installApp(...)`: what makes the completion return `installed=false`
-   or never fire on a BLE-connected, authenticated session?
+Core question: **what must be true for the SDK's internal `startSession → sessionResponse(tcpPort)
+→ data` channel to come up over CXR-L iOS — specifically, does it require the glasses to be on
+WiFi, the phone and glasses on the same network, and/or the companion app running — and how do
+we observe or trigger it from the app?**
+
+## 8. Specific questions for Rokid (transport / session focused)
+
+1. **TCP data session**: After `auth` + `RGCxrClientBLE.isConnected==true`, does CXR-L iOS need
+   a TCP data session (`RGCxrSessionResponse.tcpPort`) to be established before `openCustomView`
+   can render? Is `startSession → sessionResponse(tcpPort) → heartbeat` driven entirely by the
+   SDK, or must the app/companion do something? What blocks it from coming up?
+2. **WiFi / network requirement**: Must the **glasses be connected to WiFi** for the data
+   channel? Must the **phone and glasses be on the same network** (local TCP), or does the data
+   path go through Rokid cloud? What is the exact network topology for CustomView frames?
+3. **`NoNetwork`**: Under what conditions do the glasses emit the `NoNetwork` notify, and what
+   is the app's correct remediation (drive `Wifi_Connect`? defer to companion?)?
+4. **Companion role**: Is the **Rokid AI companion required to be running** to establish/bridge
+   the CXR-L session (WiFi setup, TCP relay)? Earlier guidance suggested fully quitting it to
+   free the BLE central — which is correct for CXR-L iOS: companion running, or quit?
+5. **Readiness signal**: Is `RGCxrClientBLE.isConnected==true` sufficient to call
+   `openCustomView`, or is there a separate "data session ready" event/publisher we must wait
+   for? (We currently gate only on BLE `isConnected`.)
+6. **Silent completion**: When `openCustomView(view){success,errorCode}` is **never** invoked
+   (no success, no error) and **no** `RGCxrClientNotifyEvent` arrives on
+   `CxrClient.notifyEventPublisher` (we now subscribe it) — even `Dev_BatteryChanged` is absent
+   — what does total notify silence indicate at the transport layer?
+7. **Version/firmware**: Is `RGCxrClient 1.0.1` compatible with the current Rokid AI version +
+   the firmware on glasses `Glasses_0077`? Is there a newer iOS SDK (1.0.2+) / private specs repo?
+8. **Whitelisting/scopes**: Are bundle id `life.executor.health` + callback `cxrl://auth/callback`
+   whitelisted, and are scopes `device_control` + `audio_stream` enabled for this app id? Does
+   CustomView/data need any console capability beyond the public list?
+9. **installApp**: Same transport question for `installApp(path){installed}` — does it also ride
+   the TCP data session, and why would it return `installed=false`/never fire on a BLE-connected,
+   authenticated session?
 
 ## 9. Message to Rokid (paste-ready)
 
 > Hi Rokid team — we are integrating CXR-L (`RGCxrClient 1.0.1`) on iOS for our health app
-> Reva (`life.executor.health`). Authorization succeeds and `RGCxrClientBLE.shared.isConnected`
-> is true (glasses `Glasses_0077`), but `openCustomView(view){ success, errorCode }` never
-> invokes its completion closure, `customViewRunningEventPublisher` never fires, and
-> `notifyPublisher` delivers no events — the glasses render nothing. `installApp(path){ installed }`
-> behaves the same. We call `CxrClient.initialize(mode:.customView)` on the main thread, set
-> `auth.config`, subscribe `setNotifyEventListenCmds([Custom_View_Opened/Open_Failed/Updated/Closed])`,
-> and only call `openCustomView` after `isConnected==true`. What is the required call sequence
-> from authenticated+BLE-connected to a rendering CustomView on iOS 1.0.1? Is there a session
-> step we are missing, or is this a companion-app/firmware/SDK-version requirement? Full facts,
-> config, and questions attached.
+> Reva (`life.executor.health`, callback `cxrl://auth/callback`). Authorization succeeds
+> (`auth.isAuthenticated()==true`) and `RGCxrClientBLE.shared.isConnected==true` to glasses
+> `Glasses_0077`, but `openCustomView(view){success,errorCode}` **never invokes its completion
+> closure**, `customViewRunningEventPublisher` never fires, and we receive **zero** events on
+> both `CxrClient.notifyEventPublisher` (typed `RGCxrClientNotifyEvent`) and
+> `RGCxrClientBLE.notifyPublisher` (we subscribe both) — not even `Dev_BatteryChanged`. The
+> glasses render nothing; `installApp(path){installed}` is identically silent. We do
+> `initialize(mode:.customView)` (main thread) → set `auth.config` → subscribe the publishers →
+> `setNotifyEventListenCmds([Custom_View_*, Dev_BatteryChanged, NoNetwork, Wifi_Status, ...])`
+> → call `openCustomView` only after `isConnected==true`. We verified there is no app-callable
+> `connect()/startSession()/wifi` API (Android calls none either). Since the SDK imports
+> `Network` and `RGCxrSessionResponse` carries `tcpPort`+heartbeat, our hypothesis is that the
+> **TCP/WiFi data session never establishes** even though BLE is connected. **What must be true
+> for that session to come up — glasses on WiFi, phone+glasses on the same network, companion
+> running — and how do we observe/trigger it?** Full facts, config, device info, and questions
+> attached.
 
 ## 10. Attachments checklist
 
