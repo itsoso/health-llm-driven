@@ -306,6 +306,38 @@ function transcriptText(event: RokidTranscriptEvent) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function normalizeRokidHealthTranscript(rawTranscript: string) {
+  const compact = rawTranscript.replace(/[，。！？!?.,\s]/g, '');
+  const shortFoodRecordPhrases = new Set([
+    '记',
+    '记录',
+    '记一下',
+    '记录一下',
+    '帮我记',
+    '帮我记录',
+    '拍',
+    '拍照',
+    '拍一下',
+    '这餐',
+    '这顿',
+    '这顿饭',
+    '这一餐',
+  ]);
+  if (shortFoodRecordPhrases.has(compact)) {
+    return {
+      transcript: '记录这餐',
+      meta: {
+        raw_transcript: rawTranscript,
+        transcript_normalized_by: 'rokid_health_short_food_record',
+      },
+    };
+  }
+  return {
+    transcript: rawTranscript,
+    meta: {},
+  };
+}
+
 function transcriptCapturedAt(event: RokidTranscriptEvent) {
   const value = event.capturedAt ?? event.captured_at;
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -1449,10 +1481,12 @@ export default function RokidHealthScreen() {
     if (!shouldRouteTranscript(event)) {
       return;
     }
-    const transcript = transcriptText(event);
-    if (!transcript) {
+    const rawTranscript = transcriptText(event);
+    if (!rawTranscript) {
       return;
     }
+    const normalizedTranscript = normalizeRokidHealthTranscript(rawTranscript);
+    const transcript = normalizedTranscript.transcript;
 
     const capturedAt = transcriptCapturedAt(event);
     setVoiceDebug((prev) => ({
@@ -1472,6 +1506,7 @@ export default function RokidHealthScreen() {
         meta: {
           source_surface: 'rokid_health_mode',
           source_event: 'rokid_transcript',
+          ...normalizedTranscript.meta,
           ...(event.meta ?? {}),
         },
       });

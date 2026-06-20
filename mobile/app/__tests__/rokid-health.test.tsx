@@ -510,13 +510,13 @@ describe('RokidHealthScreen', () => {
     });
 
     await act(async () => {
-      mockVoiceOnSpeechResults?.({ value: ['记录这顿饭'] });
+      mockVoiceOnSpeechResults?.({ value: ['记录'] });
       await flushAsyncUpdates();
     });
 
     await waitFor(() => {
       expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledWith({
-        transcript: '记录这顿饭',
+        transcript: '记录这餐',
         confidence: undefined,
         context: 'rokid_health',
         capturedAt: expect.any(String),
@@ -524,6 +524,8 @@ describe('RokidHealthScreen', () => {
           source_surface: 'rokid_health_mode',
           source_event: 'phone_mic_fallback',
           fallback_reason: 'rokid_audio_session_not_ready',
+          raw_transcript: '记录',
+          transcript_normalized_by: 'rokid_health_short_food_record',
         },
       });
     });
